@@ -18,10 +18,13 @@ services:
     environment:
       APP_NAME: platform-service
       HTTP_ADDR: 0.0.0.0:8080
+      GRPC_ADDR: 0.0.0.0:9090
       LOG_LEVEL: info
       DATABASE_DSN: postgres://${COMMON_DATABASE_USER:-arda_common}:${COMMON_DATABASE_PASSWORD:-123456}@${COMMON_DATABASE_HOST:-host.docker.internal}:${COMMON_DATABASE_PORT:-5432}/${COMMON_DATABASE_NAME:-common}?sslmode=${COMMON_DATABASE_SSLMODE:-disable}
+      NATS_URL: ${NATS_URL:-}
     ports:
       - "8091:8080"
+      - "9091:9090"
     env_file:
       - .env
 

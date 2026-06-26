@@ -7,6 +7,9 @@ use (
 	./apps/mdm-service
 	./apps/platform-service
 	./libs/go/arda-auth
+	./libs/go/arda-errors
+	./libs/go/arda-grpc
+	./libs/go/arda-proto
 	./tools/arda-cli
 	./tools/mock-token
 )

@@ -1,5 +1,6 @@
 app_name: platform-service
 http_addr: 0.0.0.0:8091
+grpc_addr: 0.0.0.0:9091
 log_level: info
 database_dsn: postgres://arda_common:123456@localhost:5432/common?sslmode=disable
-
+nats_url: ""

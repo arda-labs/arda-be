@@ -81,6 +81,26 @@ func (r *PlatformRepository) UpsertParameter(ctx context.Context, item domain.Pa
 	return item, nil
 }
 
+func (r *PlatformRepository) GetParameter(ctx context.Context, tenantID, key, scopeType, scopeID string) (domain.Parameter, error) {
+	var item domain.Parameter
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, key, value, value_type, scope_type, scope_id, description, is_secret, created_at, updated_at
+		FROM plt_system_parameters
+		WHERE key = $1
+		  AND ($2 = '' OR COALESCE(tenant_id, '') = $2)
+		  AND scope_type = $3
+		  AND COALESCE(scope_id, '') = $4
+		LIMIT 1`, key, tenantID, scopeType, scopeID).
+		Scan(&item.ID, &item.TenantID, &item.Key, &item.Value, &item.ValueType, &item.ScopeType, &item.ScopeID, &item.Description, &item.IsSecret, &item.CreatedAt, &item.UpdatedAt)
+	if err != nil {
+		return domain.Parameter{}, err
+	}
+	if item.IsSecret {
+		item.Value = ""
+	}
+	return item, nil
+}
+
 func (r *PlatformRepository) ListLookupCategories(ctx context.Context, tenantID, scopeType, scopeID string) ([]domain.LookupCategory, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, code, name, scope_type, scope_id, is_system, description, created_at, updated_at
@@ -160,6 +180,29 @@ func (r *PlatformRepository) CreateLookupValue(ctx context.Context, categoryCode
 	err = r.db.QueryRowContext(ctx, `
 		INSERT INTO plt_lookup_values (id, category_id, code, name, sort_order, is_active, metadata)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, category_id, code, name, sort_order, is_active, metadata::text, created_at, updated_at`,
+		item.ID, item.CategoryID, item.Code, item.Name, item.SortOrder, item.IsActive, item.Metadata,
+	).Scan(&item.ID, &item.CategoryID, &item.Code, &item.Name, &item.SortOrder, &item.IsActive, &item.Metadata, &item.CreatedAt, &item.UpdatedAt)
+	return item, err
+}
+
+func (r *PlatformRepository) UpsertLookupValue(ctx context.Context, categoryCode string, item domain.LookupValue) (domain.LookupValue, error) {
+	if item.ID == "" {
+		item.ID = NewID("lookup_val")
+	}
+	if !item.IsActive {
+		item.IsActive = true
+	}
+	err := r.db.QueryRowContext(ctx, `SELECT id FROM plt_lookup_categories WHERE code = $1 LIMIT 1`, categoryCode).Scan(&item.CategoryID)
+	if err != nil {
+		return domain.LookupValue{}, fmt.Errorf("lookup category not found: %w", err)
+	}
+	err = r.db.QueryRowContext(ctx, `
+		INSERT INTO plt_lookup_values (id, category_id, code, name, sort_order, is_active, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (category_id, code)
+		DO UPDATE SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order, is_active = EXCLUDED.is_active,
+			metadata = EXCLUDED.metadata, updated_at = now()
 		RETURNING id, category_id, code, name, sort_order, is_active, metadata::text, created_at, updated_at`,
 		item.ID, item.CategoryID, item.Code, item.Name, item.SortOrder, item.IsActive, item.Metadata,
 	).Scan(&item.ID, &item.CategoryID, &item.Code, &item.Name, &item.SortOrder, &item.IsActive, &item.Metadata, &item.CreatedAt, &item.UpdatedAt)

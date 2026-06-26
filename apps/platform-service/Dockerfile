@@ -9,6 +9,5 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/bin/platform-service /app/platform-service
-EXPOSE 8080
+EXPOSE 8080 9090
 ENTRYPOINT ["/app/platform-service"]
-
