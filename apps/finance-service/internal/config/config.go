@@ -13,7 +13,9 @@ type Config struct {
 	HTTPAddr string `yaml:"http_addr"`
 	LogLevel string `yaml:"log_level"`
 
-	DatabaseDSN string `yaml:"database_dsn"`
+	DatabaseDSN      string `yaml:"database_dsn"`
+	PlatformGRPCAddr string `yaml:"platform_grpc_addr"`
+	NATSURL          string `yaml:"nats_url"`
 
 	MaxConcurrentTransactions int `yaml:"max_concurrent_transactions"`
 }
@@ -25,7 +27,9 @@ func Load() Config {
 		HTTPAddr: "0.0.0.0:8090",
 		LogLevel: "info",
 
-		DatabaseDSN: "postgres://postgres:postgres@localhost:5433/finance?sslmode=disable",
+		DatabaseDSN:      "postgres://postgres:postgres@localhost:5433/finance?sslmode=disable",
+		PlatformGRPCAddr: "localhost:9090",
+		NATSURL:          "nats://localhost:4222",
 
 		MaxConcurrentTransactions: 100,
 	}
@@ -44,6 +48,8 @@ func Load() Config {
 	envStr("HTTP_ADDR", &cfg.HTTPAddr)
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
+	envStr("PLATFORM_GRPC_ADDR", &cfg.PlatformGRPCAddr)
+	envStr("NATS_URL", &cfg.NATSURL)
 	envInt("MAX_CONCURRENT_TXNS", &cfg.MaxConcurrentTransactions)
 
 	return cfg
@@ -68,6 +74,8 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("http_addr", &c.HTTPAddr)
 	setStr("log_level", &c.LogLevel)
 	setStr("database_dsn", &c.DatabaseDSN)
+	setStr("platform_grpc_addr", &c.PlatformGRPCAddr)
+	setStr("nats_url", &c.NATSURL)
 	return true
 }
 

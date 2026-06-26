@@ -2,7 +2,10 @@ module github.com/arda-labs/arda/libs/go/arda-grpc
 
 go 1.26
 
-require google.golang.org/grpc v1.81.1
+require (
+	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
+	google.golang.org/grpc v1.81.1
+)
 
 require (
 	golang.org/x/net v0.55.0 // indirect

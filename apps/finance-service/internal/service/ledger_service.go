@@ -12,10 +12,17 @@ import (
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 )
 
+const defaultCurrencyParameter = "finance.default_currency"
+
+type ParameterResolver interface {
+	ResolveString(ctx context.Context, tenantID, key string) (string, error)
+}
+
 // LedgerService implements double-entry accounting.
 type LedgerService struct {
 	accountRepo *repository.AccountRepository
 	txnRepo     *repository.TransactionRepository
+	params      ParameterResolver
 	logger      *slog.Logger
 }
 
@@ -26,6 +33,11 @@ func NewLedgerService(accountRepo *repository.AccountRepository, txnRepo *reposi
 		txnRepo:     txnRepo,
 		logger:      slog.Default(),
 	}
+}
+
+func (s *LedgerService) WithParameterResolver(params ParameterResolver) *LedgerService {
+	s.params = params
+	return s
 }
 
 // PostTransaction validates and posts a double-entry transaction.
@@ -73,7 +85,7 @@ func (s *LedgerService) PostTransaction(ctx context.Context, txn *domain.Transac
 	}
 
 	entryID := newEntryID()
-	defaultCurrency := "VND"
+	defaultCurrency := s.resolveDefaultCurrency(ctx, txn.TenantID)
 	for i := range txn.Entries {
 		txn.Entries[i].EntryID = entryID
 		if txn.Entries[i].Currency == "" {
@@ -202,6 +214,21 @@ func (s *LedgerService) ListTransactions(ctx context.Context, tenantID, status s
 }
 
 // ── Helpers ──
+
+func (s *LedgerService) resolveDefaultCurrency(ctx context.Context, tenantID string) string {
+	if s.params == nil {
+		return "VND"
+	}
+	value, err := s.params.ResolveString(ctx, tenantID, defaultCurrencyParameter)
+	if err != nil {
+		s.logger.Debug("default currency parameter unavailable", "tenant_id", tenantID, "err", err)
+		return "VND"
+	}
+	if value == "" {
+		return "VND"
+	}
+	return value
+}
 
 func parseDecimal(s string) float64 {
 	var f float64

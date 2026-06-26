@@ -8,6 +8,7 @@ use (
 	./apps/platform-service
 	./libs/go/arda-auth
 	./libs/go/arda-errors
+	./libs/go/arda-events
 	./libs/go/arda-grpc
 	./libs/go/arda-proto
 	./tools/arda-cli

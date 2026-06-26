@@ -18,6 +18,7 @@ import (
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 	"github.com/arda-labs/arda/apps/finance-service/internal/service"
 	transport "github.com/arda-labs/arda/apps/finance-service/internal/transport/http"
+	platformclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/platform"
 )
 
 func main() {
@@ -53,6 +54,16 @@ func main() {
 
 	// ── Services ──
 	ledgerSvc := service.NewLedgerService(accountRepo, txnRepo)
+	if cfg.PlatformGRPCAddr != "" {
+		platformClient, err := platformclient.Dial(context.Background(), cfg.PlatformGRPCAddr, cfg.AppName, logger)
+		if err != nil {
+			logger.Warn("platform grpc unavailable", "addr", cfg.PlatformGRPCAddr, "err", err)
+		} else {
+			defer platformClient.Close()
+			ledgerSvc.WithParameterResolver(platformClient)
+			logger.Info("platform grpc configured", "addr", cfg.PlatformGRPCAddr)
+		}
+	}
 	approvalSvc := service.NewApprovalService(approvalRepo, txnRepo, nil)
 
 	// ── Handlers ──
