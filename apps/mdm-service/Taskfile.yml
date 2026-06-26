@@ -1,0 +1,22 @@
+version: '3'
+
+tasks:
+  build:
+    cmds:
+      - go build -o bin/mdm-service ./cmd/mdm-service
+
+  run:
+    cmds:
+      - go run ./cmd/mdm-service
+
+  test:
+    cmds:
+      - go test ./...
+
+  lint:
+    cmds:
+      - go vet ./...
+
+  docker:
+    cmds:
+      - docker build -t mdm-service:latest .

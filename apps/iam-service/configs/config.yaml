@@ -1,0 +1,12 @@
+app_name: iam-service
+http_addr: 0.0.0.0:8080
+log_level: debug
+database_dsn: "postgres://arda_iam:123456@192.168.100.201:30432/iam?sslmode=disable"
+hydra_admin_url: "http://192.168.100.201:30445"
+hydra_public_url: "https://auth.arda.io.vn"
+hydra_issuer_url: "https://auth.arda.io.vn"
+hydra_client_id: "arda-shell"
+hydra_redirect_uri: "http://localhost:5000/callback"
+redis_url: "redis://default:wuMtEVTgJAUgvsoRI4mSbwYB69h9pSc4@192.168.100.201:30379"
+totp_issuer: "arda.io.vn"
+audit_enabled: true

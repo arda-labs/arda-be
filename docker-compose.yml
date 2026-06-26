@@ -1,0 +1,50 @@
+services:
+  iam-service:
+    build:
+      context: ./apps/iam-service
+    environment:
+      APP_NAME: iam-service
+      HTTP_ADDR: 0.0.0.0:8080
+      LOG_LEVEL: info
+      DATABASE_DSN: postgres://${IAM_DATABASE_USER}:${IAM_DATABASE_PASSWORD}@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/${IAM_DATABASE_NAME}?sslmode=${IAM_DATABASE_SSLMODE:-disable}
+    ports:
+      - "8081:8080"
+    env_file:
+      - .env
+
+  auth-gateway:
+    build:
+      context: .
+      dockerfile: apps/auth-gateway/Dockerfile
+    environment:
+      APP_NAME: auth-gateway
+      HTTP_ADDR: 0.0.0.0:8080
+      LOG_LEVEL: debug
+      IAM_SERVICE_URL: http://iam-service:8080
+      TOKEN_STRATEGY: introspection
+      INTROSPECTION_URL: https://auth.arda.io.vn/oauth2/introspect
+      INTROSPECTION_CLIENT_ID: ${INTROSPECTION_CLIENT_ID}
+      INTROSPECTION_CLIENT_SECRET: ${INTROSPECTION_CLIENT_SECRET}
+      POLICY_FILE: configs/policy.yaml
+    ports:
+      - "8082:8080"
+    env_file:
+      - .env
+    depends_on:
+      - iam-service
+
+  mock-token:
+    build:
+      context: ./tools/mock-token
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: https://auth.arda.io.vn
+      JWT_AUDIENCE: arda-api
+      SUBJECT: dev-admin-sub
+      HTTP_ADDR: 0.0.0.0:8080
+    ports:
+      - "8083:8080"
+    env_file:
+      - .env
+    depends_on:
+      - auth-gateway

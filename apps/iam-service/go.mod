@@ -1,0 +1,24 @@
+module github.com/arda-labs/arda/apps/iam-service
+
+go 1.26
+
+require (
+	github.com/casbin/casbin/v3 v3.10.0
+	github.com/lib/pq v1.12.3
+	github.com/pressly/goose/v3 v3.27.1
+	github.com/redis/go-redis/v9 v9.21.0
+	golang.org/x/crypto v0.53.0
+	gopkg.in/yaml.v3 v3.0.1
+)
+
+require (
+	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
+	github.com/casbin/govaluate v1.3.0 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
+	github.com/mfridman/interpolate v0.0.2 // indirect
+	github.com/sethvargo/go-retry v0.3.0 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+)

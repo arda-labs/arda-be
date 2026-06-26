@@ -1,0 +1,17 @@
+# binaries
+arda.exe
+tools/arda.exe
+
+# go workspace
+go.work.sum
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

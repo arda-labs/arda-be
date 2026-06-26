@@ -1,0 +1,37 @@
+routes:
+  - id: iam-public
+    path: /api/iam/public/**
+    auth: false
+
+  - id: iam-me
+    path: /api/iam/me
+    methods: [GET]
+    auth: true
+
+  - id: iam-users-read
+    path: /api/iam/users/**
+    methods: [GET]
+    auth: true
+    permissions:
+      - iam.user.read
+
+  - id: iam-users-write
+    path: /api/iam/users/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    permissions:
+      - iam.user.manage
+
+  - id: mdm-read
+    path: /api/mdm/**
+    methods: [GET]
+    auth: true
+    permissions:
+      - mdm.read
+
+  - id: crm-customer-read
+    path: /api/crm/customers/**
+    methods: [GET]
+    auth: true
+    permissions:
+      - crm.customer.read

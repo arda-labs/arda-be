@@ -1,0 +1,22 @@
+version: '3'
+
+tasks:
+  build:
+    cmds:
+      - go build -o bin/auth-gateway ./cmd/auth-gateway
+
+  run:
+    cmds:
+      - go run ./cmd/auth-gateway
+
+  test:
+    cmds:
+      - go test ./...
+
+  lint:
+    cmds:
+      - go vet ./...
+
+  docker:
+    cmds:
+      - docker build -t auth-gateway:latest .

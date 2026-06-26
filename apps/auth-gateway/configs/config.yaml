@@ -1,0 +1,26 @@
+app_name: auth-gateway
+http_addr: 0.0.0.0:8082
+log_level: debug
+token_strategy: introspection
+
+jwt_secret: ""
+jwt_issuer: "https://auth.arda.io.vn"
+jwt_audience: arda-api
+
+introspection_url: "http://192.168.100.201:30445/oauth2/introspect"
+introspection_client_id: auth-gateway
+introspection_client_secret: auth-gateway-secret
+
+iam_service_url: "http://localhost:8080"
+proxy_backend_url: "http://localhost:8080"
+policy_file: "configs/policy.yaml"
+
+kratos_public_url: "https://identity.arda.io.vn"
+hydra_admin_url: "http://192.168.100.201:30445"
+
+redis_url: "redis://default:wuMtEVTgJAUgvsoRI4mSbwYB69h9pSc4@192.168.100.201:30379"
+session_cookie_name: arda_sid
+session_cookie_domain: ""
+session_ttl_seconds: 86400
+cookie_secure: false
+cookie_same_site: Lax

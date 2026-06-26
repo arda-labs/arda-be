@@ -1,0 +1,16 @@
+api:
+  insecure: true
+
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  file:
+    directory: /etc/traefik
+    watch: true
+
+log:
+  level: INFO
+
+accessLog: {}

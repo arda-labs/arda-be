@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kratos-admin-nodeport
+  namespace: platform
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: kratos
+    app.kubernetes.io/instance: kratos
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      nodePort: 30434
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hydra-admin-nodeport
+  namespace: platform
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: hydra
+    app.kubernetes.io/instance: hydra
+  ports:
+    - name: http
+      port: 4445
+      targetPort: 4445
+      nodePort: 30445

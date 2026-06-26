@@ -1,0 +1,12 @@
+{
+  "client_id": "arda-shell",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "scope": "openid email offline_access",
+  "redirect_uris": [
+    "http://localhost:5000/callback",
+    "https://arda.io.vn/callback"
+  ],
+  "token_endpoint_auth_method": "none",
+  "skip_consent": true
+}

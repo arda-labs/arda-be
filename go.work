@@ -1,0 +1,10 @@
+go 1.26.3
+
+use (
+	./apps/auth-gateway
+	./apps/iam-service
+	./apps/mdm-service
+	./libs/go/arda-auth
+	./tools/arda-cli
+	./tools/mock-token
+)
