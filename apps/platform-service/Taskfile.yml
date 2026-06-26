@@ -1,0 +1,16 @@
+version: "3"
+
+tasks:
+  build:
+    cmds:
+      - go build -o bin/platform-service ./cmd/platform-service
+  run:
+    cmds:
+      - go run ./cmd/platform-service
+  test:
+    cmds:
+      - go test ./...
+  lint:
+    cmds:
+      - go vet ./...
+

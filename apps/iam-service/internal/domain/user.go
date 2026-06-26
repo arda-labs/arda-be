@@ -19,19 +19,24 @@ type User struct {
 
 // Role represents a role assigned to users.
 type Role struct {
-	ID   string
-	Code string
-	Name string
+	ID        string
+	Code      string
+	Name      string
+	Status    string
+	TenantID  string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Permission represents a granular permission.
 type Permission struct {
-	ID        string
-	Code      string
-	Name      string
-	Module    string
-	Resource  string
-	Operation string
+	ID         string
+	Code       string
+	Name       string
+	Module     string
+	Resource   string
+	Operation  string
+	CreatedAt  time.Time
 }
 
 // Organization represents a tenant/org.

@@ -40,6 +40,11 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler)
 	mux.HandleFunc("/api/kratos/login/flows", method("GET", bffHandler.KratosGetLoginFlow))
 	mux.HandleFunc("/api/kratos/login", method("POST", bffHandler.KratosSubmitLogin))
 
+	// Session management
+	mux.HandleFunc("/api/auth/me", method("GET", bffHandler.Me))
+	mux.HandleFunc("/api/auth/logout", method("POST", bffHandler.Logout))
+	mux.HandleFunc("/api/auth/me/sessions", method("GET", bffHandler.MeSessions))
+
 	// Generic proxy for /api/* to iam-service
 	mux.HandleFunc("/api/", bffHandler.Proxy)
 

@@ -18,6 +18,12 @@ type Session struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 	User         *UserInfo `json:"user"`
 	CreatedAt    time.Time `json:"created_at"`
+
+	// Device info (tracked on login)
+	DeviceID   string `json:"device_id,omitempty"`
+	DeviceName string `json:"device_name,omitempty"`
+	DeviceType string `json:"device_type,omitempty"`
+	IPAddress  string `json:"ip_address,omitempty"`
 }
 
 // UserInfo is the safe user subset returned to the SPA (no tokens).
@@ -36,6 +42,12 @@ type Store interface {
 	Get(ctx context.Context, sessionID string) (*Session, error)
 	Delete(ctx context.Context, sessionID string) error
 	Refresh(ctx context.Context, sessionID string, newSession *Session, ttl time.Duration) error
+
+	// Extended operations
+	ListByUser(ctx context.Context, userID string) ([]*Session, error)
+	RevokeByUser(ctx context.Context, userID string, reason string) (int, error)
+	RevokeAllExcept(ctx context.Context, userID, currentSessionID string) (int, error)
+	CountActive(ctx context.Context, userID string) (int, error)
 }
 
 // NewID generates a UUID v7 session ID.
@@ -49,6 +61,7 @@ func NewID() string {
 type MemoryStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*sessionEntry
+	userIdx  map[string]map[string]bool // userID → set<sessionID>
 }
 
 type sessionEntry struct {
@@ -60,6 +73,7 @@ type sessionEntry struct {
 func NewMemoryStore() *MemoryStore {
 	s := &MemoryStore{
 		sessions: make(map[string]*sessionEntry),
+		userIdx:  make(map[string]map[string]bool),
 	}
 	go s.cleanupLoop()
 	return s
@@ -73,6 +87,13 @@ func (s *MemoryStore) Create(_ context.Context, session *Session, ttl time.Durat
 	s.sessions[session.ID] = &sessionEntry{
 		session: session,
 		expires: time.Now().Add(ttl),
+	}
+	// Index by user
+	if session.User != nil && session.User.UserID != "" {
+		if s.userIdx[session.User.UserID] == nil {
+			s.userIdx[session.User.UserID] = make(map[string]bool)
+		}
+		s.userIdx[session.User.UserID][session.ID] = true
 	}
 	return nil
 }
@@ -93,6 +114,10 @@ func (s *MemoryStore) Get(_ context.Context, sessionID string) (*Session, error)
 func (s *MemoryStore) Delete(_ context.Context, sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	entry := s.sessions[sessionID]
+	if entry != nil && entry.session.User != nil {
+		delete(s.userIdx[entry.session.User.UserID], sessionID)
+	}
 	delete(s.sessions, sessionID)
 	return nil
 }
@@ -100,14 +125,84 @@ func (s *MemoryStore) Delete(_ context.Context, sessionID string) error {
 func (s *MemoryStore) Refresh(_ context.Context, oldID string, newSession *Session, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Remove old from index
+	if oldEntry := s.sessions[oldID]; oldEntry != nil && oldEntry.session.User != nil {
+		delete(s.userIdx[oldEntry.session.User.UserID], oldID)
+	}
 	delete(s.sessions, oldID)
+
 	newSession.ID = NewID()
 	newSession.CreatedAt = time.Now()
 	s.sessions[newSession.ID] = &sessionEntry{
 		session: newSession,
 		expires: time.Now().Add(ttl),
 	}
+	if newSession.User != nil && newSession.User.UserID != "" {
+		if s.userIdx[newSession.User.UserID] == nil {
+			s.userIdx[newSession.User.UserID] = make(map[string]bool)
+		}
+		s.userIdx[newSession.User.UserID][newSession.ID] = true
+	}
 	return nil
+}
+
+func (s *MemoryStore) ListByUser(_ context.Context, userID string) ([]*Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := s.userIdx[userID]
+	var result []*Session
+	for id := range ids {
+		if entry := s.sessions[id]; entry != nil && time.Now().Before(entry.expires) {
+			result = append(result, entry.session)
+		}
+	}
+	return result, nil
+}
+
+func (s *MemoryStore) RevokeByUser(_ context.Context, userID string, reason string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := s.userIdx[userID]
+	count := 0
+	for id := range ids {
+		if entry := s.sessions[id]; entry != nil {
+			delete(s.sessions, id)
+			count++
+		}
+	}
+	delete(s.userIdx, userID)
+	return count, nil
+}
+
+func (s *MemoryStore) RevokeAllExcept(_ context.Context, userID, currentSessionID string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := s.userIdx[userID]
+	count := 0
+	for id := range ids {
+		if id == currentSessionID {
+			continue
+		}
+		if entry := s.sessions[id]; entry != nil {
+			delete(s.sessions, id)
+			delete(s.userIdx[userID], id)
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (s *MemoryStore) CountActive(_ context.Context, userID string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := s.userIdx[userID]
+	count := 0
+	for id := range ids {
+		if entry := s.sessions[id]; entry != nil && time.Now().Before(entry.expires) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (s *MemoryStore) cleanupLoop() {
@@ -118,6 +213,9 @@ func (s *MemoryStore) cleanupLoop() {
 		now := time.Now()
 		for id, entry := range s.sessions {
 			if now.After(entry.expires) {
+				if entry.session.User != nil {
+					delete(s.userIdx[entry.session.User.UserID], id)
+				}
 				delete(s.sessions, id)
 			}
 		}
@@ -127,7 +225,7 @@ func (s *MemoryStore) cleanupLoop() {
 
 // ── Helpers ──
 
-// SessionCookieName returns the default cookie name.
+// DefaultCookieName returns the default cookie name.
 const DefaultCookieName = "arda_sid"
 
 // MarshalJSON marshals user info.

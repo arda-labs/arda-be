@@ -25,9 +25,12 @@ type Config struct {
 
 	KratosAdminURL string `yaml:"kratos_admin_url"`
 
-	RedisURL    string `yaml:"redis_url"`
-	TOTPIssuer  string `yaml:"totp_issuer"`
-	AuditEnabled bool `yaml:"audit_enabled"`
+	RedisURL     string `yaml:"redis_url"`
+	TOTPIssuer   string `yaml:"totp_issuer"`
+	AuditEnabled bool   `yaml:"audit_enabled"`
+
+	SuperAdminInitialPassword string `yaml:"superadmin_initial_password"`
+	SuperAdminPasswordHash    string `yaml:"superadmin_password_hash"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -76,6 +79,8 @@ func Load() Config {
 	envStr("REDIS_URL", &cfg.RedisURL)
 	envStr("TOTP_ISSUER", &cfg.TOTPIssuer)
 	envBool("AUDIT_ENABLED", &cfg.AuditEnabled)
+	envStr("SUPERADMIN_INITIAL_PASSWORD", &cfg.SuperAdminInitialPassword)
+	envStr("SUPERADMIN_PASSWORD_HASH", &cfg.SuperAdminPasswordHash)
 
 	return cfg
 }
@@ -91,7 +96,9 @@ func (c *Config) loadYAML(path string) bool {
 		return false
 	}
 	set := func(key string, target *string) {
-		if v, ok := m[key].(string); ok { *target = v }
+		if v, ok := m[key].(string); ok {
+			*target = v
+		}
 	}
 	set("app_name", &c.AppName)
 	set("http_addr", &c.HTTPAddr)
@@ -106,14 +113,23 @@ func (c *Config) loadYAML(path string) bool {
 	set("kratos_admin_url", &c.KratosAdminURL)
 	set("redis_url", &c.RedisURL)
 	set("totp_issuer", &c.TOTPIssuer)
-	if v, ok := m["audit_enabled"].(bool); ok { c.AuditEnabled = v }
+	set("superadmin_initial_password", &c.SuperAdminInitialPassword)
+	set("superadmin_password_hash", &c.SuperAdminPasswordHash)
+	if v, ok := m["audit_enabled"].(bool); ok {
+		c.AuditEnabled = v
+	}
 	return true
 }
 
 func envStr(key string, target *string) {
-	if v := os.Getenv(key); v != "" { *target = v }
+	if v := os.Getenv(key); v != "" {
+		*target = v
+	}
 }
 func envBool(key string, target *bool) {
-	if v := os.Getenv(key); v != "" { *target = v == "true" || v == "1" }
+	if v := os.Getenv(key); v != "" {
+		*target = v == "true" || v == "1"
+	}
 }
+
 var _ = strconv.Itoa

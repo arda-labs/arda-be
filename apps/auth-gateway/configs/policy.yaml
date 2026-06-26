@@ -29,6 +29,20 @@ routes:
     permissions:
       - mdm.read
 
+  - id: platform-read
+    path: /api/platform/**
+    methods: [GET]
+    auth: true
+    permissions:
+      - platform.read
+
+  - id: platform-write
+    path: /api/platform/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    permissions:
+      - platform.manage
+
   - id: crm-customer-read
     path: /api/crm/customers/**
     methods: [GET]

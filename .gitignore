@@ -15,3 +15,23 @@ go.work.sum
 # OS
 .DS_Store
 Thumbs.db
+
+gitignore
+# environment files (chứa secrets, không được commit)
+.env
+.env.local
+.env.*.local
+
+# compiled binaries
+*.exe
+*.out
+apps/*/bin/
+
+# rendered Helm values (generated, chứa secrets)
+deployments/auth/.values-*.rendered.yaml
+
+# local AI/IDE settings
+.claude/
+
+# logs
+*.log

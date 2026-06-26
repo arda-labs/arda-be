@@ -3,31 +3,27 @@ package audit
 import (
 	"context"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
 )
 
-// Logger writes structured audit events.
-type Logger struct {
-	slog     *slog.Logger
-	dbWriter DBWriter
-	service  string
-}
-
 // DBWriter persists audit events to PostgreSQL (optional).
 type DBWriter interface {
-	InsertAuditLog(ctx context.Context, e *domain.AuthEvent) error
+	InsertWithChain(ctx context.Context, e *domain.AuthEvent) error
+}
+
+// Logger writes structured audit events with tamper-proof chain.
+type Logger struct {
+	slog    *slog.Logger
+	dbWriter DBWriter
+	service string
 }
 
 // New creates an audit logger that writes to stdout and optionally to DB.
 func New(service string, db DBWriter) *Logger {
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	})
 	return &Logger{
-		slog:     slog.New(handler),
+		slog:     slog.Default(),
 		dbWriter: db,
 		service:  service,
 	}
@@ -50,23 +46,21 @@ func (l *Logger) Event(ctx context.Context, e *domain.AuthEvent) {
 
 	if l.dbWriter != nil {
 		go func() {
-			if err := l.dbWriter.InsertAuditLog(context.Background(), e); err != nil {
+			if err := l.dbWriter.InsertWithChain(context.Background(), e); err != nil {
 				l.slog.Warn("failed to persist audit log", "err", err)
 			}
 		}()
 	}
 }
 
-// Shortcuts for common events
+// Shortcut methods (same as before)
 
 func (l *Logger) LoginAttempt(ctx context.Context, username string, success bool, providerID string, reason string, clientIP, userAgent, requestID string) {
 	result := "success"
 	if !success {
 		result = "failure"
 	}
-	details := map[string]any{
-		"provider_id": providerID,
-	}
+	details := map[string]any{"provider_id": providerID}
 	if reason != "" {
 		details["reason"] = reason
 	}

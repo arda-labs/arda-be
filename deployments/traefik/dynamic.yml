@@ -37,6 +37,14 @@ http:
       middlewares:
         - arda-forward-auth
 
+    platform-api:
+      rule: "PathPrefix(`/api/platform`)"
+      service: platform-service
+      entryPoints:
+        - web
+      middlewares:
+        - arda-forward-auth
+
   services:
     iam-service:
       loadBalancer:
@@ -47,3 +55,8 @@ http:
       loadBalancer:
         servers:
           - url: "http://mdm-service:8080"
+
+    platform-service:
+      loadBalancer:
+        servers:
+          - url: "http://platform-service:8080"

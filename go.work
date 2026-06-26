@@ -2,8 +2,10 @@ go 1.26.3
 
 use (
 	./apps/auth-gateway
+	./apps/finance-service
 	./apps/iam-service
 	./apps/mdm-service
+	./apps/platform-service
 	./libs/go/arda-auth
 	./tools/arda-cli
 	./tools/mock-token

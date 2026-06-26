@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
 )
@@ -18,6 +19,157 @@ type UserRepository struct {
 func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
+
+// ListUsersParams for paginated user listing.
+type ListUsersParams struct {
+	Page     int
+	Size     int
+	Status   string
+	Search   string // search by username or email
+	TenantID string
+}
+
+// scanUserRow scans a user row into a User.
+func scanUserRow(scanner interface {
+	Scan(dest ...any) error
+}, u *domain.User) error {
+	return scanner.Scan(&u.ID, &u.Subject, &u.Username, &u.Email, &u.DisplayName,
+		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.CreatedAt, &u.UpdatedAt)
+}
+
+// ListUsers returns paginated users with total count.
+func (r *UserRepository) ListUsers(ctx context.Context, params ListUsersParams) ([]domain.User, int, error) {
+	where := []string{"1=1"}
+	args := []any{}
+	argIdx := 1
+
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, params.Status)
+		argIdx++
+	}
+	if params.TenantID != "" {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argIdx))
+		args = append(args, params.TenantID)
+		argIdx++
+	}
+	if params.Search != "" {
+		where = append(where, fmt.Sprintf("(username ILIKE $%d OR email ILIKE $%d)", argIdx, argIdx))
+		args = append(args, "%"+params.Search+"%")
+		argIdx++
+	}
+
+	whereClause := strings.Join(where, " AND ")
+
+	// Count total
+	var total int
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM iam_users WHERE %s", whereClause)
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count users: %w", err)
+	}
+
+	// Fetch page
+	offset := (params.Page - 1) * params.Size
+	query := fmt.Sprintf(`
+		SELECT id, external_subject, username, email, display_name,
+		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id, created_at, updated_at
+		FROM iam_users
+		WHERE %s
+		ORDER BY created_at DESC
+		LIMIT $%d OFFSET $%d
+	`, whereClause, argIdx, argIdx+1)
+	args = append(args, params.Size, offset)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []domain.User
+	for rows.Next() {
+		var u domain.User
+		if err := scanUserRow(rows, &u); err != nil {
+			return nil, 0, err
+		}
+		users = append(users, u)
+	}
+	return users, total, rows.Err()
+}
+
+// UpdateUser updates a user record.
+func (r *UserRepository) UpdateUser(ctx context.Context, u *domain.User) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE iam_users SET
+			username = $1, email = $2, display_name = $3,
+			status = $4, tenant_id = $5, updated_at = now()
+		WHERE id = $6
+	`, u.Username, u.Email, u.DisplayName, u.Status, u.TenantID, u.ID)
+	if err != nil {
+		return fmt.Errorf("update user: %w", err)
+	}
+	return nil
+}
+
+// DeleteUser permanently removes a user.
+func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM iam_users WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	return nil
+}
+
+// AssignRole assigns a role to a user.
+func (r *UserRepository) AssignRole(ctx context.Context, userID, roleID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO iam_user_roles (user_id, role_id)
+		VALUES ($1, $2)
+		ON CONFLICT DO NOTHING
+	`, userID, roleID)
+	return err
+}
+
+// UnassignRole removes a role from a user.
+func (r *UserRepository) UnassignRole(ctx context.Context, userID, roleID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM iam_user_roles WHERE user_id = $1 AND role_id = $2
+	`, userID, roleID)
+	return err
+}
+
+func (r *UserRepository) UserHasRoleCode(ctx context.Context, userID, roleCode string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM iam_user_roles ur
+			JOIN iam_roles r ON r.id = ur.role_id
+			WHERE ur.user_id = $1 AND r.code = $2
+		)
+	`, userID, roleCode).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check user role: %w", err)
+	}
+	return exists, nil
+}
+
+func (r *UserRepository) CountActiveUsersWithRoleCode(ctx context.Context, roleCode string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM iam_users u
+		JOIN iam_user_roles ur ON ur.user_id = u.id
+		JOIN iam_roles r ON r.id = ur.role_id
+		WHERE r.code = $1 AND u.status = 'ACTIVE'
+	`, roleCode).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count active users by role: %w", err)
+	}
+	return count, nil
+}
+
+// ── Existing methods below ──
 
 // GetUserBySubject loads a user by external subject (OIDC sub).
 func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (*domain.User, error) {

@@ -14,10 +14,12 @@ import (
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/audit"
 	"github.com/arda-labs/arda/apps/iam-service/internal/auth"
+	"github.com/arda-labs/arda/apps/iam-service/internal/bootstrap"
 	"github.com/arda-labs/arda/apps/iam-service/internal/config"
 	"github.com/arda-labs/arda/apps/iam-service/internal/handler"
 	"github.com/arda-labs/arda/apps/iam-service/internal/hydra"
 	"github.com/arda-labs/arda/apps/iam-service/internal/kratos"
+	"github.com/arda-labs/arda/apps/iam-service/internal/mfa"
 	"github.com/arda-labs/arda/apps/iam-service/internal/migration"
 	"github.com/arda-labs/arda/apps/iam-service/internal/policy"
 	"github.com/arda-labs/arda/apps/iam-service/internal/provider"
@@ -54,8 +56,21 @@ func main() {
 	}
 	logger.Info("migrations applied")
 
+	if err := bootstrap.EnsureSuperAdmin(context.Background(), db, bootstrap.SuperAdminOptions{
+		InitialPassword: cfg.SuperAdminInitialPassword,
+		PasswordHash:    cfg.SuperAdminPasswordHash,
+	}); err != nil {
+		logger.Error("bootstrap superadmin", "err", err)
+		os.Exit(1)
+	}
+	logger.Info("superadmin bootstrap reconciled")
+
 	// ── Repositories ──
 	userRepo := repository.NewUserRepository(db)
+	auditRepo := repository.NewAuditRepository(db)
+	roleRepo := repository.NewRoleRepository(db)
+	sessionRepo := repository.NewSessionRepository(db)
+	mfaRepo := repository.NewMFARepository(db)
 
 	// ── Hydra client ──
 	hydraClient := hydra.New(cfg.HydraAdminURL, cfg.HydraPublicURL)
@@ -63,8 +78,8 @@ func main() {
 	// ── Kratos Admin client ──
 	kratosClient := kratos.New(cfg.KratosAdminURL)
 
-	// ── Audit logger ──
-	auditLogger := audit.New("iam-service", userRepo)
+	// ── Audit logger (uses chain-hash DB writer) ──
+	auditLogger := audit.New("iam-service", auditRepo)
 
 	// ── Rate limiter ──
 	limiter := ratelimit.New()
@@ -86,34 +101,44 @@ func main() {
 	var policyEnf *policy.Enforcer
 	modelPath := "config/casbin_model.conf"
 	if _, err := os.Stat(modelPath); err == nil {
-		enf, err := policy.NewEnforcer(modelPath, policy.NewMemoryAdapter())
+		casbinAdapter := policy.NewPostgresAdapter(db)
+		enf, err := policy.NewEnforcer(modelPath, casbinAdapter)
 		if err != nil {
 			logger.Warn("casbin enforcer not available", "err", err)
 		} else {
 			policyEnf = enf
-			logger.Info("casbin enforcer loaded")
+			logger.Info("casbin enforcer loaded (postgres)")
 		}
 	} else {
 		logger.Warn("casbin model not found, policy enforcement disabled", "path", modelPath)
 	}
 
-	// ── Auth orchestrator ──
+	// ── Services ──
+	sessionSvc := service.NewSessionService(sessionRepo, service.DefaultSessionConfig)
+	totpSvc := mfa.New(cfg.TOTPIssuer)
+	mfaSvc := service.NewMFAService(mfaRepo, sessionSvc, totpSvc, service.DefaultMFAConfig)
+	auditSvc := service.NewAuditService(auditRepo, service.DefaultAuditConfig)
+
+	// ── Auth orchestrator (with MFA) ──
 	orchestrator := auth.NewOrchestrator(
 		registry, hydraClient, userRepo, policyEnf,
 		limiter, auditLogger, cfg.HydraClientID, cfg.HydraRedirectURI,
-	)
+	).WithMFAService(mfaSvc)
 
-	// ── Services & Handlers ──
+	// ── Handlers ──
 	userSvc := service.NewUserService(userRepo)
 	userHandler := handler.NewUserHandler(userSvc)
 	authHandler := handler.NewAuthHandler(orchestrator, userHandler)
 	policyHandler := handler.NewPolicyHandler(policyEnf)
-	adminHandler := handler.NewAdminHandler(userRepo, kratosClient)
+	adminHandler := handler.NewAdminHandler(userRepo, roleRepo, kratosClient)
+	sessionHandler := handler.NewSessionHandler(sessionSvc)
+	mfaHandler := handler.NewMFAHandler(mfaSvc)
+	auditHandler := handler.NewAuditHandler(auditSvc)
 
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(userHandler, authHandler, policyHandler, adminHandler),
+		Handler:      transport.NewRouter(userHandler, authHandler, policyHandler, adminHandler, sessionHandler, mfaHandler, auditHandler),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -137,6 +162,7 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("shutdown error", "err", err)
 	}
+	auditSvc.Stop()
 }
 
 func parseLogLevel(level string) slog.Level {

@@ -13,7 +13,9 @@ require (
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-auth => ../../libs/go/arda-auth

@@ -2,24 +2,22 @@ package main
 
 import (
 	"fmt"
-	"os"
-
 	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("usage: go run main.go <password_to_check>")
-		os.Exit(1)
-	}
-
-	h := []byte("$2a$12$LJ3m4ys3Lk0TSwHlvS.JJOvc5sx5GQJfKPdKR0MJfN.ZcJKW5K7iW")
-	password := os.Args[1]
-
-	err := bcrypt.CompareHashAndPassword(h, []byte(password))
+	hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
 	if err != nil {
-		fmt.Printf("❌ WRONG! '%s' does NOT match the hash. Error: %v\n", password, err)
+		panic(err)
+	}
+	fmt.Println("NEW_HASH:" + string(hash))
+
+	// Also verify the existing hash
+	oldHash := []byte("$2a$12$LJ3m4ys3Lk0TSwHlvS.JJOvc5sx5GQJfKPdKR0MJfN.ZcJKW5K7iW")
+	err = bcrypt.CompareHashAndPassword(oldHash, []byte("admin123"))
+	if err != nil {
+		fmt.Println("OLD_HASH_MISMATCH:" + err.Error())
 	} else {
-		fmt.Printf("✅ CORRECT! '%s' matches the hash.\n", password)
+		fmt.Println("OLD_HASH_MATCHES_admin123")
 	}
 }

@@ -50,6 +50,7 @@ func main() {
 
 	// ── IAM client ──
 	iam := iamclient.New(cfg.IAMServiceURL)
+	_ = iam
 
 	// ── ForwardAuth handler ──
 	authHandler := handler.NewAuthHandler(verifier, iam, pol, logger)
@@ -75,7 +76,7 @@ func main() {
 	}
 
 	// ── BFF handler ──
-	bffHandler := handler.NewBFFHandler(cfg, sessStore)
+	bffHandler := handler.NewBFFHandler(cfg, sessStore, iam)
 
 	// ── HTTP server ──
 	srv := &http.Server{

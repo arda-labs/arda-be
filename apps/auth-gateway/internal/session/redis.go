@@ -9,7 +9,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const keyPrefix = "bff:session:"
+const (
+	keyPrefix      = "bff:session:"
+	userIdxPrefix  = "bff:user_sessions:"
+)
 
 // RedisStore implements Store backed by Redis.
 type RedisStore struct {
@@ -28,7 +31,15 @@ func (s *RedisStore) Create(ctx context.Context, session *Session, ttl time.Dura
 	if err != nil {
 		return fmt.Errorf("marshal session: %w", err)
 	}
-	return s.client.Set(ctx, keyPrefix+session.ID, data, ttl).Err()
+
+	pipe := s.client.TxPipeline()
+	pipe.Set(ctx, keyPrefix+session.ID, data, ttl)
+	if session.User != nil && session.User.UserID != "" {
+		pipe.SAdd(ctx, userIdxPrefix+session.User.UserID, session.ID)
+		pipe.Expire(ctx, userIdxPrefix+session.User.UserID, ttl)
+	}
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 func (s *RedisStore) Get(ctx context.Context, sessionID string) (*Session, error) {
@@ -47,6 +58,14 @@ func (s *RedisStore) Get(ctx context.Context, sessionID string) (*Session, error
 }
 
 func (s *RedisStore) Delete(ctx context.Context, sessionID string) error {
+	sess, err := s.Get(ctx, sessionID)
+	if err == nil && sess != nil && sess.User != nil {
+		pipe := s.client.TxPipeline()
+		pipe.Del(ctx, keyPrefix+sessionID)
+		pipe.SRem(ctx, userIdxPrefix+sess.User.UserID, sessionID)
+		_, err = pipe.Exec(ctx)
+		return err
+	}
 	return s.client.Del(ctx, keyPrefix+sessionID).Err()
 }
 
@@ -59,8 +78,74 @@ func (s *RedisStore) Refresh(ctx context.Context, oldID string, newSession *Sess
 	}
 
 	pipe := s.client.TxPipeline()
+
+	// Remove old from index and delete
+	if newSession.User != nil && newSession.User.UserID != "" {
+		pipe.SRem(ctx, userIdxPrefix+newSession.User.UserID, oldID)
+		pipe.SAdd(ctx, userIdxPrefix+newSession.User.UserID, newSession.ID)
+	}
 	pipe.Del(ctx, keyPrefix+oldID)
 	pipe.Set(ctx, keyPrefix+newSession.ID, data, ttl)
+
 	_, err = pipe.Exec(ctx)
 	return err
+}
+
+func (s *RedisStore) ListByUser(ctx context.Context, userID string) ([]*Session, error) {
+	ids, err := s.client.SMembers(ctx, userIdxPrefix+userID).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []*Session
+	for _, id := range ids {
+		sess, err := s.Get(ctx, id)
+		if err == nil && sess != nil {
+			result = append(result, sess)
+		} else if err == nil {
+			// Clean up stale index entry
+			s.client.SRem(ctx, userIdxPrefix+userID, id)
+		}
+	}
+	return result, nil
+}
+
+func (s *RedisStore) RevokeByUser(ctx context.Context, userID string, _ string) (int, error) {
+	ids, err := s.client.SMembers(ctx, userIdxPrefix+userID).Result()
+	if err != nil {
+		return 0, err
+	}
+
+	pipe := s.client.TxPipeline()
+	for _, id := range ids {
+		pipe.Del(ctx, keyPrefix+id)
+	}
+	pipe.Del(ctx, userIdxPrefix+userID)
+	_, err = pipe.Exec(ctx)
+	return len(ids), err
+}
+
+func (s *RedisStore) RevokeAllExcept(ctx context.Context, userID, currentSessionID string) (int, error) {
+	ids, err := s.client.SMembers(ctx, userIdxPrefix+userID).Result()
+	if err != nil {
+		return 0, err
+	}
+
+	pipe := s.client.TxPipeline()
+	count := 0
+	for _, id := range ids {
+		if id == currentSessionID {
+			continue
+		}
+		pipe.Del(ctx, keyPrefix+id)
+		pipe.SRem(ctx, userIdxPrefix+userID, id)
+		count++
+	}
+	_, err = pipe.Exec(ctx)
+	return count, err
+}
+
+func (s *RedisStore) CountActive(ctx context.Context, userID string) (int, error) {
+	count, err := s.client.SCard(ctx, userIdxPrefix+userID).Result()
+	return int(count), err
 }
