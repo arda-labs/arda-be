@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 )
 
 // respondJSON writes a JSON response.
@@ -15,7 +17,21 @@ func respondJSON(w http.ResponseWriter, status int, data any) {
 
 // respondError writes a JSON error response.
 func respondError(w http.ResponseWriter, status int, msg string) {
-	respondJSON(w, status, map[string]string{"error": msg})
+	respondErrorCode(w, status, ardaerrors.CodeForStatus(status), msg)
+}
+
+func respondErrorCode(w http.ResponseWriter, status int, code, msg string) {
+	err := ardaerrors.New(code, msg)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(ardaerrors.Response{Error: *err})
+}
+
+func respondRequestErrorCode(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	err := ardaerrors.New(code, msg).WithRequestID(r.Header.Get("X-Request-Id"))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(ardaerrors.Response{Error: *err})
 }
 
 // extractIP extracts the client IP from request headers or remote address.

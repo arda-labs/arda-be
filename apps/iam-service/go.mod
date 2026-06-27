@@ -3,6 +3,7 @@ module github.com/arda-labs/arda/apps/iam-service
 go 1.26
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/casbin/casbin/v3 v3.10.0
 	github.com/lib/pq v1.12.3
 	github.com/pressly/goose/v3 v3.27.1
@@ -27,3 +28,5 @@ require (
 	golang.org/x/sync v0.21.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
+
+replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors

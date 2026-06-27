@@ -11,6 +11,7 @@ import (
 	"github.com/arda-labs/arda/apps/iam-service/internal/kratos"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	"github.com/arda-labs/arda/apps/iam-service/internal/system"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -276,7 +277,7 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u.ID == system.SuperAdminUserID || u.Username == system.SuperAdminUsername {
-		respondError(w, http.StatusForbidden, "system superadmin user cannot be deleted")
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminSystemUserProtected, "")
 		return
 	}
 	if h.isProtectedSuperAdmin(w, r, u.ID) {
@@ -491,7 +492,7 @@ func (h *AdminHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if role.Code == system.SuperAdminRoleCode {
-		respondError(w, http.StatusForbidden, "system role cannot be modified")
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminRoleProtected, "")
 		return
 	}
 	if req.Name != nil {
@@ -516,7 +517,7 @@ func (h *AdminHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if role.Code == system.SuperAdminRoleCode {
-		respondError(w, http.StatusForbidden, "system role cannot be deleted")
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminRoleProtected, "")
 		return
 	}
 	if err := h.roleRepo.Delete(r.Context(), id); err != nil {
@@ -648,7 +649,7 @@ func (h *AdminHandler) DeletePermission(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if perm.Code == system.SuperAdminPermissionCode {
-		respondError(w, http.StatusForbidden, "system permission cannot be deleted")
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminPermissionProtected, "")
 		return
 	}
 	if err := h.roleRepo.DeletePermission(r.Context(), id); err != nil {
@@ -673,7 +674,7 @@ func (h *AdminHandler) isProtectedSuperAdmin(w http.ResponseWriter, r *http.Requ
 		return true
 	}
 	if count <= 1 {
-		respondError(w, http.StatusForbidden, "cannot remove the last active superadmin")
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminLastActive, "")
 		return true
 	}
 	return false
@@ -689,7 +690,7 @@ func (h *AdminHandler) isProtectedSuperAdminRoleRemoval(w http.ResponseWriter, r
 		return false
 	}
 	if userID == system.SuperAdminUserID {
-		respondError(w, http.StatusForbidden, "system superadmin role cannot be removed from the system user")
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminRoleProtected, "")
 		return true
 	}
 	count, err := h.userRepo.CountActiveUsersWithRoleCode(r.Context(), system.SuperAdminRoleCode)
@@ -706,7 +707,7 @@ func (h *AdminHandler) isProtectedSuperAdminRoleRemoval(w http.ResponseWriter, r
 		return false
 	}
 	if count <= 1 {
-		respondError(w, http.StatusForbidden, "cannot remove the last active superadmin")
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminLastActive, "")
 		return true
 	}
 	return false
@@ -730,7 +731,7 @@ func (h *AdminHandler) isProtectedSuperAdminPermissionRemoval(w http.ResponseWri
 		return false
 	}
 	if perm.Code == system.SuperAdminPermissionCode {
-		respondError(w, http.StatusForbidden, "system permission cannot be removed from superadmin role")
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminPermissionProtected, "")
 		return true
 	}
 	return false
