@@ -1,0 +1,16 @@
+version: "3"
+
+tasks:
+  build:
+    cmds:
+      - go build ./cmd/media-service
+  run:
+    cmds:
+      - go run ./cmd/media-service
+  test:
+    cmds:
+      - go test ./...
+  lint:
+    cmds:
+      - go vet ./...
+

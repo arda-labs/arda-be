@@ -1,0 +1,20 @@
+app_name: media-service
+http_addr: 0.0.0.0:8092
+grpc_addr: 0.0.0.0:9092
+log_level: info
+database_dsn: postgres://arda_media:123456@localhost:5432/media?sslmode=disable
+nats_url: ""
+
+storage_provider: garage-main
+storage_endpoint: ""
+storage_region: garage
+storage_bucket: media
+storage_access_key: ""
+storage_secret_key: ""
+storage_force_path_style: true
+
+upload_max_size_mb: 100
+presign_upload_ttl: 15m
+presign_download_ttl: 5m
+require_scan_before_ready: false
+

@@ -28,6 +28,28 @@ services:
     env_file:
       - .env
 
+  media-service:
+    build:
+      context: ./apps/media-service
+    environment:
+      APP_NAME: media-service
+      HTTP_ADDR: 0.0.0.0:8080
+      GRPC_ADDR: 0.0.0.0:9090
+      LOG_LEVEL: info
+      DATABASE_DSN: postgres://${MEDIA_DATABASE_USER:-arda_media}:${MEDIA_DATABASE_PASSWORD:-123456}@${MEDIA_DATABASE_HOST:-host.docker.internal}:${MEDIA_DATABASE_PORT:-5432}/${MEDIA_DATABASE_NAME:-media}?sslmode=${MEDIA_DATABASE_SSLMODE:-disable}
+      NATS_URL: ${NATS_URL:-}
+      STORAGE_ENDPOINT: ${GARAGE_ENDPOINT:-}
+      STORAGE_ACCESS_KEY: ${GARAGE_ACCESS_KEY:-}
+      STORAGE_SECRET_KEY: ${GARAGE_SECRET_KEY:-}
+      STORAGE_BUCKET: ${GARAGE_BUCKET:-media}
+      STORAGE_REGION: ${GARAGE_REGION:-garage}
+      STORAGE_FORCE_PATH_STYLE: ${GARAGE_FORCE_PATH_STYLE:-true}
+    ports:
+      - "8092:8080"
+      - "9092:9090"
+    env_file:
+      - .env
+
   auth-gateway:
     build:
       context: .
