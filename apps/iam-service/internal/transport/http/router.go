@@ -25,6 +25,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	// ── Auth API (public) ──
 	mux.HandleFunc("/api/auth/login-page", method("GET", authHandler.LoginPage))
 	mux.HandleFunc("/api/auth/login/password", method("POST", authHandler.LoginPassword))
+	mux.HandleFunc("/api/auth/login/mfa", method("POST", authHandler.LoginMFA))
 	mux.HandleFunc("/api/auth/login/external", method("POST", authHandler.LoginExternal))
 	mux.HandleFunc("/api/auth/callback/{provider_id}", method("GET", authHandler.CallbackProvider))
 	mux.HandleFunc("/api/auth/callback", method("POST", authHandler.CallbackToken))
@@ -96,6 +97,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	// ── User API ──
 	mux.HandleFunc("/api/iam/me", method("GET", userHandler.Me))
 	mux.HandleFunc("/api/iam/me/profile/avatar", method("POST", userHandler.UpdateMyAvatar))
+	mux.HandleFunc("/api/iam/me/profile", method("PUT", userHandler.UpdateMyProfile))
 
 	// ── Policy API ──
 	if policyHandler != nil {
@@ -141,6 +143,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	mux.HandleFunc("/api/iam/me/mfa/enroll", method("POST", mfaHandler.GenerateSecret))
 	mux.HandleFunc("/api/iam/me/mfa/verify-enroll", method("POST", mfaHandler.VerifyEnroll))
 	mux.HandleFunc("/api/iam/me/mfa/status", method("GET", mfaHandler.MFAStatus))
+	mux.HandleFunc("/api/iam/me/mfa/reset", method("POST", mfaHandler.ResetMyMFA))
 	mux.HandleFunc("/api/iam/me/mfa/verify", method("POST", mfaHandler.VerifyCode))
 	mux.HandleFunc("/api/iam/me/mfa/backup", method("POST", mfaHandler.VerifyBackupCode))
 	mux.HandleFunc("/api/admin/users/{id}/mfa/reset", method("POST", mfaHandler.AdminResetMFA))

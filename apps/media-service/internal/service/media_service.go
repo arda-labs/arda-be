@@ -202,6 +202,14 @@ func (s *MediaService) GetDownloadURL(ctx context.Context, fileID string) (domai
 	}, nil
 }
 
+func (s *MediaService) GetContentRedirectURL(ctx context.Context, fileID string) (string, error) {
+	resp, err := s.GetDownloadURL(ctx, fileID)
+	if err != nil {
+		return "", err
+	}
+	return resp.URL, nil
+}
+
 func buildObjectKey(tenantID, fileID, versionID string) string {
 	now := time.Now().UTC()
 	return fmt.Sprintf("tenants/%s/%04d/%02d/%02d/%s/%s/original", tenantID, now.Year(), now.Month(), now.Day(), fileID, versionID)
@@ -213,4 +221,3 @@ func defaultString(value, fallback string) string {
 	}
 	return value
 }
-

@@ -56,6 +56,23 @@ func (h *AuthHandler) LoginPassword(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
+// LoginMFA completes password login after a successful MFA challenge.
+func (h *AuthHandler) LoginMFA(w http.ResponseWriter, r *http.Request) {
+	var req auth.MFALoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.orch.LoginWithMFA(r.Context(), &req)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
 // LoginExternal initiates an external SSO login.
 func (h *AuthHandler) LoginExternal(w http.ResponseWriter, r *http.Request) {
 	var req auth.ExternalLoginRequest

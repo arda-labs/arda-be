@@ -54,13 +54,20 @@ type PasswordLoginRequest struct {
 	Password       string `json:"password"`
 }
 
+type MFALoginRequest struct {
+	LoginChallenge string `json:"login_challenge"`
+	UserID         string `json:"userId"`
+	ChallengeToken string `json:"mfaChallengeToken"`
+	Code           string `json:"code"`
+}
+
 type LoginCompleteResult struct {
-	RedirectURL string              `json:"redirect_url"`
-	User        *domain.UserContext `json:"user,omitempty"`
-	PolicyCheck *PolicyCheckResult  `json:"policy_check,omitempty"`
-	RequiresMFA bool                `json:"requiresMfa,omitempty"`
-	MFAToken    string              `json:"mfaToken,omitempty"`
-	MFAUserID   string              `json:"mfaUserId,omitempty"`
+	RedirectURL       string              `json:"redirect_url"`
+	User              *domain.UserContext `json:"user,omitempty"`
+	PolicyCheck       *PolicyCheckResult  `json:"policy_check,omitempty"`
+	RequiresMFA       bool                `json:"requiresMfa,omitempty"`
+	MFAChallengeToken string              `json:"mfaChallengeToken,omitempty"`
+	MFAUserID         string              `json:"mfaUserId,omitempty"`
 }
 
 type ExternalLoginRequest struct {
@@ -75,8 +82,8 @@ type TokenExchangeRequest struct {
 
 type TokenResponse struct {
 	AccessToken, RefreshToken, IDToken, TokenType string
-	ExpiresIn int
-	User      *domain.UserContext
+	ExpiresIn                                     int
+	User                                          *domain.UserContext
 }
 
 type LoginPageData struct {
@@ -101,8 +108,12 @@ func (o *Orchestrator) LoginWithPassword(ctx context.Context, req *PasswordLogin
 		return nil, fmt.Errorf("rate limited: %w", err)
 	}
 	p, err := o.registry.Get("internal")
-	if err != nil { return nil, fmt.Errorf("internal provider not available: %w", err) }
-	if !p.SupportsDirect() { return nil, fmt.Errorf("internal provider misconfigured") }
+	if err != nil {
+		return nil, fmt.Errorf("internal provider not available: %w", err)
+	}
+	if !p.SupportsDirect() {
+		return nil, fmt.Errorf("internal provider misconfigured")
+	}
 	authResult, err := p.AuthenticateDirect(ctx, &provider.DirectAuthRequest{
 		Credential: map[string]string{"username": req.Username, "password": req.Password},
 	})
@@ -113,22 +124,64 @@ func (o *Orchestrator) LoginWithPassword(ctx context.Context, req *PasswordLogin
 	}
 	o.limiter.Reset(req.Username)
 	o.audit.LoginAttempt(ctx, req.Username, true, "internal", "", clientIP, userAgent, requestID)
-	return o.finalizeLogin(ctx, req.LoginChallenge, authResult)
+	return o.finalizeLogin(ctx, req.LoginChallenge, authResult, false)
 }
 
-func (o *Orchestrator) finalizeLogin(ctx context.Context, loginChallenge string, authResult *provider.AuthenticationResult) (*LoginCompleteResult, error) {
+func (o *Orchestrator) LoginWithMFA(ctx context.Context, req *MFALoginRequest) (*LoginCompleteResult, error) {
+	if o.mfaSvc == nil {
+		return nil, fmt.Errorf("MFA is not configured")
+	}
+	if req.LoginChallenge == "" || req.UserID == "" || req.ChallengeToken == "" || req.Code == "" {
+		return nil, fmt.Errorf("login_challenge, userId, mfaChallengeToken and code are required")
+	}
+	if err := o.mfaSvc.VerifyLoginChallenge(ctx, req.UserID, req.LoginChallenge, req.ChallengeToken, req.Code); err != nil {
+		return nil, err
+	}
+	return o.finalizeLogin(ctx, req.LoginChallenge, &provider.AuthenticationResult{
+		InternalUserID: req.UserID,
+		AMR:            []string{"pwd", "otp"},
+		ACR:            "urn:arda:loa:2",
+	}, true)
+}
+
+func (o *Orchestrator) finalizeLogin(ctx context.Context, loginChallenge string, authResult *provider.AuthenticationResult, mfaVerified bool) (*LoginCompleteResult, error) {
 	user, err := o.userRepo.GetUserByID(ctx, authResult.InternalUserID)
-	if err != nil || user == nil { return nil, fmt.Errorf("user not found") }
+	if err != nil || user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
 	userCtx := &domain.UserContext{
 		UserID: user.ID, Subject: user.Subject, Username: user.Username, Email: user.Email, TenantID: user.TenantID,
+	}
+	if !mfaVerified && o.mfaSvc != nil {
+		mfaResult, err := o.mfaSvc.CheckMFA(ctx, user.ID, "")
+		if err != nil {
+			return nil, fmt.Errorf("check MFA: %w", err)
+		}
+		if mfaResult.RequiresMFA {
+			challengeToken, err := o.mfaSvc.IssueLoginChallenge(ctx, user.ID, loginChallenge)
+			if err != nil {
+				return nil, fmt.Errorf("issue MFA challenge: %w", err)
+			}
+			return &LoginCompleteResult{
+				User:              userCtx,
+				RequiresMFA:       true,
+				MFAUserID:         user.ID,
+				MFAChallengeToken: challengeToken,
+			}, nil
+		}
 	}
 	if loginChallenge == "" {
 		return &LoginCompleteResult{User: userCtx}, nil
 	}
 	redirectURL, err := o.hydra.AcceptLogin(ctx, loginChallenge, &hydra.AcceptLoginBody{
-		Subject: authResult.InternalUserID, Remember: true,
+		Subject:  authResult.InternalUserID,
+		Remember: true,
+		ACR:      authResult.ACR,
+		AMR:      authResult.AMR,
 	})
-	if err != nil { return nil, fmt.Errorf("hydra accept login: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("hydra accept login: %w", err)
+	}
 	return &LoginCompleteResult{RedirectURL: redirectURL, User: userCtx}, nil
 }
 
@@ -138,9 +191,13 @@ func (o *Orchestrator) GetLoginPageData(ctx context.Context, loginChallenge stri
 func (o *Orchestrator) ListProviders() []provider.Metadata { return o.registry.ListEnabled() }
 
 func (o *Orchestrator) CheckPolicy(ctx context.Context, sub, obj, act string, env map[string]any) (*PolicyCheckResult, error) {
-	if o.policyEnf == nil { return &PolicyCheckResult{Allowed: true}, nil }
+	if o.policyEnf == nil {
+		return &PolicyCheckResult{Allowed: true}, nil
+	}
 	allowed, err := o.policyEnf.Enforce(sub, obj, act, env)
-	if err != nil { return &PolicyCheckResult{Allowed: false, Error: err.Error()}, err }
+	if err != nil {
+		return &PolicyCheckResult{Allowed: false, Error: err.Error()}, err
+	}
 	return &PolicyCheckResult{Allowed: allowed}, nil
 }
 

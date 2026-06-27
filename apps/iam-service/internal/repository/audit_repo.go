@@ -79,8 +79,8 @@ func (r *AuditRepository) Query(ctx context.Context, params QueryParams) ([]doma
 		where = append(where, fmt.Sprintf("event_type IN (%s)", strings.Join(placeholders, ",")))
 	}
 	if params.Subject != "" {
-		where = append(where, fmt.Sprintf("subject = $%d", idx))
-		args = append(args, params.Subject)
+		where = append(where, fmt.Sprintf("subject ILIKE $%d", idx))
+		args = append(args, "%"+params.Subject+"%")
 		idx++
 	}
 	if params.Result != "" {
@@ -115,7 +115,7 @@ func (r *AuditRepository) Query(ctx context.Context, params QueryParams) ([]doma
 		params.Page = 1
 	}
 	if params.Size < 1 || params.Size > 500 {
-		params.Size = 50
+		params.Size = 10
 	}
 	offset := (params.Page - 1) * params.Size
 

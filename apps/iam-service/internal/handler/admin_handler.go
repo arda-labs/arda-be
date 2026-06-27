@@ -41,7 +41,7 @@ type userListItem struct {
 	Email     string   `json:"email"`
 	Name      string   `json:"name"`
 	Status    string   `json:"status"`
-	Roles     []string `json:"roles,omitempty"`
+	Roles     []string `json:"roles"`
 	TenantID  string   `json:"tenantId"`
 	CreatedAt string   `json:"createdAt"`
 }
@@ -61,18 +61,22 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
 	if size < 1 || size > 100 {
-		size = 20
+		size = 10
 	}
 	status := r.URL.Query().Get("status")
 	search := r.URL.Query().Get("search")
 	tenantID := r.URL.Query().Get("tenantId")
+	sortField := r.URL.Query().Get("sortField")
+	sortOrder := r.URL.Query().Get("sortOrder")
 
 	users, total, err := h.userRepo.ListUsers(r.Context(), repository.ListUsersParams{
-		Page:     page,
-		Size:     size,
-		Status:   status,
-		Search:   search,
-		TenantID: tenantID,
+		Page:      page,
+		Size:      size,
+		Status:    status,
+		Search:    search,
+		TenantID:  tenantID,
+		SortField: sortField,
+		SortOrder: sortOrder,
 	})
 	if err != nil {
 		h.logger.Error("list users", "err", err)
@@ -412,7 +416,7 @@ func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 	}
 	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
 	if size < 1 || size > 100 {
-		size = 20
+		size = 10
 	}
 	tenantID := r.URL.Query().Get("tenantId")
 	search := r.URL.Query().Get("search")
@@ -591,7 +595,7 @@ func (h *AdminHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 	}
 	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
 	if size < 1 || size > 100 {
-		size = 100
+		size = 10
 	}
 	mod := r.URL.Query().Get("module")
 

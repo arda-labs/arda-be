@@ -4,41 +4,47 @@ import "time"
 
 // User represents an IAM user.
 type User struct {
-	ID           string
-	Subject      string
-	Username     string
-	Email        string
-	DisplayName  string
-	PasswordHash string
-	Status       string
-	Source       string // "internal", "entra_id", "google", "ldap"...
-	TenantID     string
-	AvatarFileID string
-	PictureURL   string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID            string
+	Subject       string
+	Username      string
+	Email         string
+	DisplayName   string
+	PasswordHash  string
+	Status        string
+	Source        string // "internal", "entra_id", "google", "ldap"...
+	TenantID      string
+	AvatarFileID  string
+	PictureURL    string
+	Department    string
+	Position      string
+	EmployeeID    string
+	ApprovalLevel string
+	DailyLimit    string
+	Bio           string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // Role represents a role assigned to users.
 type Role struct {
-	ID        string
-	Code      string
-	Name      string
-	Status    string
-	TenantID  string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        string    `json:"id"`
+	Code      string    `json:"code"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	TenantID  string    `json:"tenantId"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Permission represents a granular permission.
 type Permission struct {
-	ID        string
-	Code      string
-	Name      string
-	Module    string
-	Resource  string
-	Operation string
-	CreatedAt time.Time
+	ID        string    `json:"id"`
+	Code      string    `json:"code"`
+	Name      string    `json:"name"`
+	Module    string    `json:"module"`
+	Resource  string    `json:"resource"`
+	Operation string    `json:"operation"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // Organization represents a tenant/org.
@@ -50,16 +56,22 @@ type Organization struct {
 
 // UserContext is the enriched user profile returned to gateways and services.
 type UserContext struct {
-	UserID       string   `json:"userId"`
-	Subject      string   `json:"subject"`
-	Username     string   `json:"username"`
-	Email        string   `json:"email"`
-	PictureURL   string   `json:"picture,omitempty"`
-	AvatarFileID string   `json:"avatarFileId,omitempty"`
-	TenantID     string   `json:"tenantId"`
-	OrgIDs       []string `json:"orgIds"`
-	Roles        []string `json:"roles"`
-	Permissions  []string `json:"permissions"`
+	UserID        string   `json:"userId"`
+	Subject       string   `json:"subject"`
+	Username      string   `json:"username"`
+	Email         string   `json:"email"`
+	PictureURL    string   `json:"picture,omitempty"`
+	AvatarFileID  string   `json:"avatarFileId,omitempty"`
+	TenantID      string   `json:"tenantId"`
+	OrgIDs        []string `json:"orgIds"`
+	Roles         []string `json:"roles"`
+	Permissions   []string `json:"permissions"`
+	Department    string   `json:"department,omitempty"`
+	Position      string   `json:"position,omitempty"`
+	EmployeeID    string   `json:"employeeId,omitempty"`
+	ApprovalLevel string   `json:"approvalLevel,omitempty"`
+	DailyLimit    string   `json:"dailyLimit,omitempty"`
+	Bio           string   `json:"bio,omitempty"`
 }
 
 // IdentityMapping links an external identity to an internal user.
@@ -75,16 +87,16 @@ type IdentityMapping struct {
 
 // AuthEvent represents an auditable authentication event.
 type AuthEvent struct {
-	ID          string
-	Timestamp   time.Time
-	EventType   string
-	Subject     string
-	Action      string
-	Resource    string
-	Result      string // success, failure, denied
-	Details     map[string]any
-	ClientIP    string
-	UserAgent   string
-	RequestID   string
-	ServiceName string
+	ID          string         `json:"id"`
+	Timestamp   time.Time      `json:"timestamp"`
+	EventType   string         `json:"eventType"`
+	Subject     string         `json:"subject"`
+	Action      string         `json:"action"`
+	Resource    string         `json:"resource"`
+	Result      string         `json:"result"` // success, failure, denied
+	Details     map[string]any `json:"details"`
+	ClientIP    string         `json:"clientIp"`
+	UserAgent   string         `json:"userAgent"`
+	RequestID   string         `json:"requestId"`
+	ServiceName string         `json:"serviceName"`
 }

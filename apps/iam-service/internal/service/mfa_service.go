@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -118,10 +121,66 @@ func (s *MFAService) VerifyAndEnroll(ctx context.Context, userID, code string) (
 
 // MFAResult is returned during login when MFA is required.
 type MFAResult struct {
-	RequiresMFA bool   `json:"requiresMfa"`
-	MFAToken    string `json:"mfaToken,omitempty"` // temporary token for MFA step
-	CanUseMFA   bool   `json:"canUseMfa"`
+	RequiresMFA bool     `json:"requiresMfa"`
+	MFAToken    string   `json:"mfaToken,omitempty"` // temporary token for MFA step
+	CanUseMFA   bool     `json:"canUseMfa"`
 	Methods     []string `json:"methods"`
+}
+
+func (s *MFAService) IssueLoginChallenge(ctx context.Context, userID, loginChallenge string) (string, error) {
+	settings, err := s.mfaRepo.GetSettings(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if settings == nil || !settings.IsEnrolled {
+		return "", fmt.Errorf("MFA not enrolled")
+	}
+
+	exp := time.Now().UTC().Add(5 * time.Minute).Unix()
+	payload := strings.Join([]string{userID, loginChallenge, strconv.FormatInt(exp, 10)}, "\n")
+	signature := hmacSHA256Hex([]byte(settings.Secret), payload)
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + signature, nil
+}
+
+func (s *MFAService) VerifyLoginChallenge(ctx context.Context, userID, loginChallenge, token, code string) error {
+	settings, err := s.mfaRepo.GetSettings(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if settings == nil || !settings.IsEnrolled {
+		return fmt.Errorf("MFA not enrolled")
+	}
+
+	payload, signature, ok := strings.Cut(token, ".")
+	if !ok || payload == "" || signature == "" {
+		return fmt.Errorf("invalid MFA challenge")
+	}
+	rawPayload, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return fmt.Errorf("invalid MFA challenge")
+	}
+	expectedSignature := hmacSHA256Hex([]byte(settings.Secret), string(rawPayload))
+	if !hmac.Equal([]byte(signature), []byte(expectedSignature)) {
+		return fmt.Errorf("invalid MFA challenge")
+	}
+
+	parts := strings.Split(string(rawPayload), "\n")
+	if len(parts) != 3 || parts[0] != userID || parts[1] != loginChallenge {
+		return fmt.Errorf("invalid MFA challenge")
+	}
+	exp, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil || time.Now().UTC().Unix() > exp {
+		return fmt.Errorf("MFA challenge expired")
+	}
+
+	okCode, err := s.totp.Verify(settings.Secret, code)
+	if err != nil {
+		return err
+	}
+	if !okCode {
+		return fmt.Errorf("invalid MFA code")
+	}
+	return nil
 }
 
 // CheckMFA checks if user has MFA enrolled and returns the verification requirement.
@@ -263,6 +322,12 @@ func (s *MFAService) generateBackupCodes(ctx context.Context, userID string) ([]
 func sha256Hex(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return base64.RawURLEncoding.EncodeToString(h[:])
+}
+
+func hmacSHA256Hex(key []byte, data string) string {
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(data))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func generateRandomCode(length int) string {

@@ -28,7 +28,7 @@ func (h *AuditHandler) Query(w http.ResponseWriter, r *http.Request) {
 	}
 	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
 	if size < 1 || size > 500 {
-		size = 50
+		size = 10
 	}
 
 	eventTypes := r.URL.Query()["event_type"]

@@ -22,11 +22,13 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 
 // ListUsersParams for paginated user listing.
 type ListUsersParams struct {
-	Page     int
-	Size     int
-	Status   string
-	Search   string // search by username or email
-	TenantID string
+	Page      int
+	Size      int
+	Status    string
+	Search    string // search by username or email
+	TenantID  string
+	SortField string
+	SortOrder string
 }
 
 // scanUserRow scans a user row into a User.
@@ -34,7 +36,9 @@ func scanUserRow(scanner interface {
 	Scan(dest ...any) error
 }, u *domain.User) error {
 	return scanner.Scan(&u.ID, &u.Subject, &u.Username, &u.Email, &u.DisplayName,
-		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL, &u.CreatedAt, &u.UpdatedAt)
+		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL,
+		&u.Department, &u.Position, &u.EmployeeID, &u.ApprovalLevel, &u.DailyLimit, &u.Bio,
+		&u.CreatedAt, &u.UpdatedAt)
 }
 
 // ListUsers returns paginated users with total count.
@@ -70,15 +74,37 @@ func (r *UserRepository) ListUsers(ctx context.Context, params ListUsersParams) 
 
 	// Fetch page
 	offset := (params.Page - 1) * params.Size
+
+	sortCol := "created_at"
+	if params.SortField != "" {
+		switch params.SortField {
+		case "username":
+			sortCol = "username"
+		case "email":
+			sortCol = "email"
+		case "status":
+			sortCol = "status"
+		case "createdAt":
+			sortCol = "created_at"
+		}
+	}
+	sortDir := "DESC"
+	if strings.ToUpper(params.SortOrder) == "ASC" {
+		sortDir = "ASC"
+	}
+
 	query := fmt.Sprintf(`
 		SELECT id, external_subject, username, email, display_name,
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       created_at, updated_at
 		FROM iam_users
 		WHERE %s
-		ORDER BY created_at DESC
+		ORDER BY %s %s
 		LIMIT $%d OFFSET $%d
-	`, whereClause, argIdx, argIdx+1)
+	`, whereClause, sortCol, sortDir, argIdx, argIdx+1)
 	args = append(args, params.Size, offset)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -103,9 +129,14 @@ func (r *UserRepository) UpdateUser(ctx context.Context, u *domain.User) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE iam_users SET
 			username = $1, email = $2, display_name = $3,
-			status = $4, tenant_id = $5, updated_at = now()
-		WHERE id = $6
-	`, u.Username, u.Email, u.DisplayName, u.Status, u.TenantID, u.ID)
+			status = $4, tenant_id = $5,
+			department = $6, position = $7, employee_id = $8,
+			approval_level = $9, daily_limit = $10, bio = $11,
+			updated_at = now()
+		WHERE id = $12
+	`, u.Username, u.Email, u.DisplayName, u.Status, u.TenantID,
+		u.Department, u.Position, u.EmployeeID, u.ApprovalLevel, u.DailyLimit, u.Bio,
+		u.ID)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
@@ -121,7 +152,10 @@ func (r *UserRepository) UpdateUserAvatar(ctx context.Context, userID, avatarFil
 		WHERE id = $1
 		RETURNING id, external_subject, username, email, display_name,
 		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
+		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		          created_at, updated_at
 	`, userID, avatarFileID, pictureURL)
 	u := &domain.User{}
 	if err := scanUserRow(row, u); err != nil {
@@ -129,6 +163,35 @@ func (r *UserRepository) UpdateUserAvatar(ctx context.Context, userID, avatarFil
 			return nil, nil
 		}
 		return nil, fmt.Errorf("update user avatar: %w", err)
+	}
+	return u, nil
+}
+
+func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID, name, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.User, error) {
+	row := r.db.QueryRowContext(ctx, `
+		UPDATE iam_users
+		SET display_name = $2,
+		    position = $3,
+		    department = $4,
+		    employee_id = $5,
+		    approval_level = $6,
+		    daily_limit = $7,
+		    bio = $8,
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING id, external_subject, username, email, display_name,
+		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		          created_at, updated_at
+	`, userID, name, position, department, employeeID, approvalLevel, dailyLimit, bio)
+	u := &domain.User{}
+	if err := scanUserRow(row, u); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("update user profile: %w", err)
 	}
 	return u, nil
 }
@@ -198,7 +261,10 @@ func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, external_subject, username, email, display_name,
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       created_at, updated_at
 		FROM iam_users
 		WHERE external_subject = $1
 	`, subject)
@@ -211,7 +277,10 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, external_subject, username, email, display_name,
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       created_at, updated_at
 		FROM iam_users
 		WHERE id = $1
 	`, id)
@@ -224,7 +293,10 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, external_subject, username, email, display_name,
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       created_at, updated_at
 		FROM iam_users
 		WHERE username = $1
 	`, username)
@@ -237,7 +309,10 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*dom
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, external_subject, username, email, display_name,
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       created_at, updated_at
 		FROM iam_users
 		WHERE email = $1
 	`, email)
@@ -390,8 +465,7 @@ func marshalDetails(d map[string]any) any {
 
 func (r *UserRepository) scanUser(row *sql.Row) (*domain.User, error) {
 	u := &domain.User{}
-	err := row.Scan(&u.ID, &u.Subject, &u.Username, &u.Email, &u.DisplayName,
-		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL, &u.CreatedAt, &u.UpdatedAt)
+	err := scanUserRow(row, u)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

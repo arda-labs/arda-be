@@ -2,19 +2,18 @@ app_name: media-service
 http_addr: 0.0.0.0:8092
 grpc_addr: 0.0.0.0:9092
 log_level: info
-database_dsn: postgres://arda_media:123456@localhost:5432/media?sslmode=disable
-nats_url: ""
+database_dsn: "postgres://arda_media:123456@192.168.100.201:30432/media?sslmode=disable"
+nats_url: "nats://192.168.100.201:30222,nats://192.168.100.202:30222,nats://192.168.100.203:30222"
 
 storage_provider: garage-main
-storage_endpoint: ""
+storage_endpoint: "https://s3.arda.io.vn"
 storage_region: garage
 storage_bucket: media
-storage_access_key: ""
-storage_secret_key: ""
+storage_access_key: "GK7bf2e3ca8c35e3bf358b757b"
+storage_secret_key: "92264dbff432a737a89c9a40e9f02eed84622e82f41305c9291a434cf2c604c1"
 storage_force_path_style: true
 
 upload_max_size_mb: 100
 presign_upload_ttl: 15m
 presign_download_ttl: 5m
 require_scan_before_ready: false
-

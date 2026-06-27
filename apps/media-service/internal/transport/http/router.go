@@ -34,6 +34,8 @@ func NewRouter(mediaHandler *handler.MediaHandler) http.Handler {
 			mediaHandler.CompleteUpload(w, r, fileID)
 		case action == "download-url" && r.Method == http.MethodGet:
 			mediaHandler.GetDownloadURL(w, r, fileID)
+		case action == "content" && r.Method == http.MethodGet:
+			mediaHandler.GetContent(w, r, fileID)
 		default:
 			methodNotAllowed(w)
 		}
@@ -70,4 +72,3 @@ func methodNotAllowed(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	_, _ = w.Write([]byte(`{"error":{"code":"common.error.method_not_allowed","message":"Method not allowed"}}`))
 }
-

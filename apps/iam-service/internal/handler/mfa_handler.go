@@ -38,7 +38,7 @@ func (h *MFAHandler) GenerateSecret(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]any{
-		"secret":       secret.Secret,
+		"secret":      secret.Secret,
 		"otpauth_url": secret.OTPAuth,
 	})
 }
@@ -95,11 +95,33 @@ func (h *MFAHandler) MFAStatus(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, map[string]any{
 		"is_enrolled": settings != nil && settings.IsEnrolled,
-		"method":      func() string { if settings != nil { return settings.Method }; return "" }(),
+		"method": func() string {
+			if settings != nil {
+				return settings.Method
+			}
+			return ""
+		}(),
 	})
 }
 
 // ── Admin ──
+
+// ResetMyMFA removes MFA enrollment for the current user.
+// POST /api/iam/me/mfa/reset
+func (h *MFAHandler) ResetMyMFA(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("X-User-Id")
+	if userID == "" {
+		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		return
+	}
+
+	if err := h.svc.ResetMFA(r.Context(), userID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "reset"})
+}
 
 // AdminResetMFA resets MFA enrollment for a user (admin only).
 // POST /api/admin/users/{id}/mfa/reset

@@ -61,6 +61,16 @@ func (h *MediaHandler) GetDownloadURL(w http.ResponseWriter, r *http.Request, fi
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (h *MediaHandler) GetContent(w http.ResponseWriter, r *http.Request, fileID string) {
+	redirectURL, err := h.service.GetContentRedirectURL(r.Context(), fileID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=240")
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
 func applyRequestContext(r *http.Request, req *domain.InitUploadRequest) {
 	if req.TenantID == "" {
 		req.TenantID = firstHeader(r, "X-Tenant-Id", "X-Tenant-ID")
@@ -112,4 +122,3 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 		},
 	})
 }
-

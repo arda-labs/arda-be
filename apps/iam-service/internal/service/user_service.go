@@ -59,6 +59,20 @@ func (s *UserService) UpdateUserAvatar(ctx context.Context, userID, avatarFileID
 	return s.buildContext(ctx, user)
 }
 
+func (s *UserService) UpdateUserProfile(ctx context.Context, userID, name, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.UserContext, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("user id is required")
+	}
+	user, err := s.repo.UpdateUserProfile(ctx, userID, name, position, department, employeeID, approvalLevel, dailyLimit, bio)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	return s.buildContext(ctx, user)
+}
+
 func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*domain.UserContext, error) {
 	roles, err := s.repo.GetUserRoles(ctx, user.ID)
 	if err != nil {
@@ -86,15 +100,21 @@ func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*dom
 	}
 
 	return &domain.UserContext{
-		UserID:       user.ID,
-		Subject:      user.Subject,
-		Username:     user.Username,
-		Email:        user.Email,
-		PictureURL:   user.PictureURL,
-		AvatarFileID: user.AvatarFileID,
-		TenantID:     user.TenantID,
-		OrgIDs:       orgs,
-		Roles:        roleCodes,
-		Permissions:  permCodes,
+		UserID:        user.ID,
+		Subject:       user.Subject,
+		Username:      user.Username,
+		Email:         user.Email,
+		PictureURL:    user.PictureURL,
+		AvatarFileID:  user.AvatarFileID,
+		TenantID:      user.TenantID,
+		OrgIDs:        orgs,
+		Roles:         roleCodes,
+		Permissions:   permCodes,
+		Department:    user.Department,
+		Position:      user.Position,
+		EmployeeID:    user.EmployeeID,
+		ApprovalLevel: user.ApprovalLevel,
+		DailyLimit:    user.DailyLimit,
+		Bio:           user.Bio,
 	}, nil
 }

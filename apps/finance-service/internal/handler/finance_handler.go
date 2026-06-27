@@ -121,7 +121,7 @@ func (h *FinanceHandler) CreateTransaction(w http.ResponseWriter, r *http.Reques
 		SourceRef      string `json:"sourceRef"`
 		Entries        []struct {
 			AccountID string `json:"accountId"`
-			Type      string `json:"type"`   // DEBIT or CREDIT
+			Type      string `json:"type"` // DEBIT or CREDIT
 			Amount    string `json:"amount"`
 			Currency  string `json:"currency"`
 		} `json:"entries"`
@@ -204,7 +204,7 @@ func (h *FinanceHandler) ListTransactions(w http.ResponseWriter, r *http.Request
 	}
 	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
 	if size < 1 || size > 100 {
-		size = 20
+		size = 10
 	}
 	var from, to time.Time
 	if f := r.URL.Query().Get("from"); f != "" {
@@ -269,7 +269,7 @@ func (h *FinanceHandler) TrialBalance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type tbEntry struct {
-		Account *domain.Account   `json:"account"`
+		Account *domain.Account        `json:"account"`
 		Balance *domain.AccountBalance `json:"balance"`
 	}
 

@@ -71,6 +71,41 @@ func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, ctx)
 }
 
+func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
+	if userID == "" {
+		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		return
+	}
+	var req struct {
+		Name          string `json:"name"`
+		Headline      string `json:"headline"`
+		Department    string `json:"department"`
+		EmployeeID    string `json:"employee_id"`
+		ApprovalLevel string `json:"approval_level"`
+		DailyLimit    string `json:"daily_limit"`
+		Bio           string `json:"bio"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	ctx, err := h.svc.UpdateUserProfile(r.Context(), userID,
+		strings.TrimSpace(req.Name),
+		strings.TrimSpace(req.Headline),
+		strings.TrimSpace(req.Department),
+		strings.TrimSpace(req.EmployeeID),
+		strings.TrimSpace(req.ApprovalLevel),
+		strings.TrimSpace(req.DailyLimit),
+		strings.TrimSpace(req.Bio),
+	)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, ctx)
+}
+
 func (h *UserHandler) getContextBySubject(w http.ResponseWriter, ctx context.Context, subject string) {
 	userCtx, err := h.svc.GetUserContextBySubject(ctx, subject)
 	if err != nil {
