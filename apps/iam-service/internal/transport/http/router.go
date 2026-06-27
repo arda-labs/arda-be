@@ -95,6 +95,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 
 	// ── User API ──
 	mux.HandleFunc("/api/iam/me", method("GET", userHandler.Me))
+	mux.HandleFunc("/api/iam/me/profile/avatar", method("POST", userHandler.UpdateMyAvatar))
 
 	// ── Policy API ──
 	if policyHandler != nil {

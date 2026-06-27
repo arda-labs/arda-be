@@ -6,19 +6,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
 // UserContext mirrors the IAM internal API response.
 type UserContext struct {
-	UserID      string   `json:"userId"`
-	Subject     string   `json:"subject"`
-	Username    string   `json:"username"`
-	Email       string   `json:"email"`
-	TenantID    string   `json:"tenantId"`
-	OrgIDs      []string `json:"orgIds"`
-	Roles       []string `json:"roles"`
-	Permissions []string `json:"permissions"`
+	UserID       string   `json:"userId"`
+	Subject      string   `json:"subject"`
+	Username     string   `json:"username"`
+	Email        string   `json:"email"`
+	PictureURL   string   `json:"picture,omitempty"`
+	AvatarFileID string   `json:"avatarFileId,omitempty"`
+	TenantID     string   `json:"tenantId"`
+	OrgIDs       []string `json:"orgIds"`
+	Roles        []string `json:"roles"`
+	Permissions  []string `json:"permissions"`
 }
 
 // CreateSessionRequest is sent to IAM internal API to create a session record.
@@ -59,12 +62,27 @@ func New(baseURL string) *Client {
 
 // GetUserBySubject fetches a user context by external subject.
 func (c *Client) GetUserBySubject(ctx context.Context, subject string) (*UserContext, error) {
-	url := c.baseURL + "/internal/iam/users/by-subject/" + subject
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	endpoint := c.baseURL + "/internal/iam/users/by-subject/" + url.PathEscape(subject)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 
+	return c.doUserContext(req)
+}
+
+// GetUserByID fetches a user context by internal IAM UUID.
+func (c *Client) GetUserByID(ctx context.Context, id string) (*UserContext, error) {
+	endpoint := c.baseURL + "/internal/iam/users/by-id/" + url.PathEscape(id) + "/context"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.doUserContext(req)
+}
+
+func (c *Client) doUserContext(req *http.Request) (*UserContext, error) {
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("iam request failed: %w", err)

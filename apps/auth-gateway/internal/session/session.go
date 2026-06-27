@@ -28,12 +28,16 @@ type Session struct {
 
 // UserInfo is the safe user subset returned to the SPA (no tokens).
 type UserInfo struct {
-	UserID      string   `json:"userId"`
-	Subject     string   `json:"subject"`
-	Username    string   `json:"username"`
-	Email       string   `json:"email"`
-	Roles       []string `json:"roles"`
-	Permissions []string `json:"permissions"`
+	UserID       string   `json:"userId"`
+	Subject      string   `json:"subject"`
+	Username     string   `json:"username"`
+	Email        string   `json:"email"`
+	Picture      string   `json:"picture,omitempty"`
+	AvatarFileID string   `json:"avatarFileId,omitempty"`
+	TenantID     string   `json:"tenantId,omitempty"`
+	OrgIDs       []string `json:"orgIds,omitempty"`
+	Roles        []string `json:"roles"`
+	Permissions  []string `json:"permissions"`
 }
 
 // Store defines the session persistence interface.
@@ -231,12 +235,16 @@ const DefaultCookieName = "arda_sid"
 // MarshalJSON marshals user info.
 func (u *UserInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]any{
-		"userId":      u.UserID,
-		"subject":     u.Subject,
-		"username":    u.Username,
-		"email":       u.Email,
-		"roles":       u.Roles,
-		"permissions": u.Permissions,
+		"userId":       u.UserID,
+		"subject":      u.Subject,
+		"username":     u.Username,
+		"email":        u.Email,
+		"picture":      u.Picture,
+		"avatarFileId": u.AvatarFileID,
+		"tenantId":     u.TenantID,
+		"orgIds":       u.OrgIDs,
+		"roles":        u.Roles,
+		"permissions":  u.Permissions,
 	})
 }
 

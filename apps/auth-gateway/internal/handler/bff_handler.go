@@ -165,7 +165,7 @@ func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BFFHandler) devExchangeCode(w http.ResponseWriter, r *http.Request) {
-	userInfo := &session.UserInfo{UserID: "dev-user", Subject: "dev-user", Username: "admin", Email: "admin@arda.local"}
+	userInfo, _ := h.resolveSessionUser(r.Context(), &session.UserInfo{UserID: "dev-user", Subject: "dev-user", Username: "admin", Email: "admin@arda.local"})
 	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
 	sess := &session.Session{AccessToken: "dev-token", RefreshToken: "dev-token", ExpiresAt: time.Now().Add(ttl), User: userInfo, IPAddress: extractIP(r)}
 	if err := h.store.Create(r.Context(), sess, ttl); err != nil {
@@ -173,10 +173,10 @@ func (h *BFFHandler) devExchangeCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.setSessionCookie(w, sess.ID, ttl)
-	if h.iamClient != nil {
+	if h.iamClient != nil && userInfo.UserID != "" {
 		go h.trackSession(r, userInfo.UserID)
 	}
-	respondJSON(w, http.StatusOK, map[string]any{"user": map[string]any{"userId": userInfo.UserID, "subject": userInfo.Subject, "username": userInfo.Username, "email": userInfo.Email}})
+	respondJSON(w, http.StatusOK, map[string]any{"user": userInfo})
 }
 
 func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, tokenData *hydraTokenResponse) {
@@ -185,21 +185,93 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 		parts := strings.Split(tokenData.IDToken, ".")
 		if len(parts) == 3 {
 			if payload, err := base64.RawURLEncoding.DecodeString(parts[1]); err == nil {
-				var claims struct{ Sub, Email, Username string }
+				var claims struct {
+					Sub      string `json:"sub"`
+					Email    string `json:"email"`
+					Username string `json:"username"`
+				}
 				if json.Unmarshal(payload, &claims) == nil {
-					userInfo = &session.UserInfo{UserID: claims.Sub, Subject: claims.Sub, Username: claims.Username, Email: claims.Email}
+					userInfo = &session.UserInfo{Subject: claims.Sub, Username: claims.Username, Email: claims.Email}
 				}
 			}
 		}
 	}
+	var ok bool
+	userInfo, ok = h.resolveSessionUser(r.Context(), userInfo)
+	if !ok || userInfo.UserID == "" {
+		respondError(w, http.StatusBadGateway, "user context unavailable")
+		return
+	}
 	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
 	sess := &session.Session{AccessToken: tokenData.AccessToken, RefreshToken: tokenData.RefreshToken, ExpiresAt: time.Now().Add(ttl), User: userInfo, IPAddress: extractIP(r)}
-	h.store.Create(r.Context(), sess, ttl)
+	if err := h.store.Create(r.Context(), sess, ttl); err != nil {
+		respondError(w, http.StatusInternalServerError, "session creation failed")
+		return
+	}
 	h.setSessionCookie(w, sess.ID, ttl)
 	if h.iamClient != nil && userInfo.UserID != "" {
 		go h.trackSession(r, userInfo.UserID)
 	}
-	respondJSON(w, http.StatusOK, map[string]any{"user": map[string]any{"userId": userInfo.UserID, "subject": userInfo.Subject, "username": userInfo.Username, "email": userInfo.Email}})
+	respondJSON(w, http.StatusOK, map[string]any{"user": userInfo})
+}
+
+func (h *BFFHandler) resolveSessionUser(ctx context.Context, fallback *session.UserInfo) (*session.UserInfo, bool) {
+	if fallback == nil {
+		fallback = &session.UserInfo{}
+	}
+	if h.iamClient == nil {
+		return fallback, true
+	}
+
+	if fallback.Subject != "" {
+		if uc, err := h.iamClient.GetUserBySubject(ctx, fallback.Subject); err == nil {
+			return sessionUserFromIAM(uc, fallback), true
+		} else {
+			h.logger.Warn("resolve user by subject failed", "subject", fallback.Subject, "err", err)
+		}
+	}
+
+	candidates := []string{fallback.UserID, fallback.Subject}
+	for _, id := range candidates {
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		if uc, err := h.iamClient.GetUserByID(ctx, id); err == nil {
+			return sessionUserFromIAM(uc, fallback), true
+		} else {
+			h.logger.Warn("resolve user by id failed", "user_id", id, "err", err)
+		}
+	}
+
+	return fallback, false
+}
+
+func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *session.UserInfo {
+	if uc == nil {
+		return fallback
+	}
+	info := &session.UserInfo{
+		UserID:       uc.UserID,
+		Subject:      uc.Subject,
+		Username:     uc.Username,
+		Email:        uc.Email,
+		Picture:      uc.PictureURL,
+		AvatarFileID: uc.AvatarFileID,
+		TenantID:     uc.TenantID,
+		OrgIDs:       uc.OrgIDs,
+		Roles:        uc.Roles,
+		Permissions:  uc.Permissions,
+	}
+	if info.Subject == "" && fallback != nil {
+		info.Subject = fallback.Subject
+	}
+	if info.Username == "" && fallback != nil {
+		info.Username = fallback.Username
+	}
+	if info.Email == "" && fallback != nil {
+		info.Email = fallback.Email
+	}
+	return info
 }
 
 func (h *BFFHandler) trackSession(r *http.Request, userID string) {
@@ -270,6 +342,13 @@ func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "session expired")
 		return
 	}
+	userInfo, ok := h.resolveSessionUser(r.Context(), sess.User)
+	if !ok || userInfo.UserID == "" {
+		h.clearSessionCookie(w)
+		respondError(w, http.StatusUnauthorized, "user context unavailable")
+		return
+	}
+	sess.User = userInfo
 	respondJSON(w, http.StatusOK, sess.User)
 }
 
@@ -279,7 +358,20 @@ func (h *BFFHandler) MeSessions(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
-	sessions, _ := h.store.ListByUser(r.Context(), "dev-user")
+	sess, _ := h.store.Get(r.Context(), sessionID)
+	if sess == nil || sess.User == nil {
+		h.clearSessionCookie(w)
+		respondError(w, http.StatusUnauthorized, "session expired")
+		return
+	}
+	userInfo, ok := h.resolveSessionUser(r.Context(), sess.User)
+	if !ok || userInfo.UserID == "" {
+		h.clearSessionCookie(w)
+		respondError(w, http.StatusUnauthorized, "user context unavailable")
+		return
+	}
+	sess.User = userInfo
+	sessions, _ := h.store.ListByUser(r.Context(), sess.User.UserID)
 	respondJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "current": sessionID})
 }
 
@@ -309,12 +401,18 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	if sessionID != "" {
 		sess, _ := h.store.Get(r.Context(), sessionID)
 		if sess != nil {
-			proxyReq.Header.Set("Authorization", "Bearer "+sess.AccessToken)
-			proxyReq.Header.Set("X-User-Id", sess.User.UserID)
-			proxyReq.Header.Set("X-User-Subject", sess.User.Subject)
-			proxyReq.Header.Set("X-Username", sess.User.Username)
-			proxyReq.Header.Set("X-User-Email", sess.User.Email)
-			proxyReq.Header.Set("X-Auth-Checked", "true")
+			if userInfo, ok := h.resolveSessionUser(r.Context(), sess.User); ok && userInfo.UserID != "" {
+				sess.User = userInfo
+				proxyReq.Header.Set("Authorization", "Bearer "+sess.AccessToken)
+				proxyReq.Header.Set("X-User-Id", sess.User.UserID)
+				proxyReq.Header.Set("X-User-Subject", sess.User.Subject)
+				proxyReq.Header.Set("X-Username", sess.User.Username)
+				proxyReq.Header.Set("X-User-Email", sess.User.Email)
+				proxyReq.Header.Set("X-Tenant-Id", sess.User.TenantID)
+				proxyReq.Header.Set("X-Roles", strings.Join(sess.User.Roles, ","))
+				proxyReq.Header.Set("X-Permissions", strings.Join(sess.User.Permissions, ","))
+				proxyReq.Header.Set("X-Auth-Checked", "true")
+			}
 		}
 	}
 	resp, err := h.httpClient.Do(proxyReq)

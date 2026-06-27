@@ -45,6 +45,9 @@ auth-gateway also exposes auth/session routes and currently has a generic `/api/
 
 The permission model uses IAM permissions plus Casbin policies.
 
+Identity headers are standardized in `docs/auth-user-context-contract.md`.
+The key rule is: `X-User-Id` is the internal IAM user UUID, while `X-User-Subject` is the external/Ory/Hydra subject.
+
 Important current permissions:
 
 - `superadmin`: sentinel wildcard permission for the system superadmin

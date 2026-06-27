@@ -13,6 +13,8 @@ type User struct {
 	Status       string
 	Source       string // "internal", "entra_id", "google", "ldap"...
 	TenantID     string
+	AvatarFileID string
+	PictureURL   string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -30,13 +32,13 @@ type Role struct {
 
 // Permission represents a granular permission.
 type Permission struct {
-	ID         string
-	Code       string
-	Name       string
-	Module     string
-	Resource   string
-	Operation  string
-	CreatedAt  time.Time
+	ID        string
+	Code      string
+	Name      string
+	Module    string
+	Resource  string
+	Operation string
+	CreatedAt time.Time
 }
 
 // Organization represents a tenant/org.
@@ -48,14 +50,16 @@ type Organization struct {
 
 // UserContext is the enriched user profile returned to gateways and services.
 type UserContext struct {
-	UserID      string   `json:"userId"`
-	Subject     string   `json:"subject"`
-	Username    string   `json:"username"`
-	Email       string   `json:"email"`
-	TenantID    string   `json:"tenantId"`
-	OrgIDs      []string `json:"orgIds"`
-	Roles       []string `json:"roles"`
-	Permissions []string `json:"permissions"`
+	UserID       string   `json:"userId"`
+	Subject      string   `json:"subject"`
+	Username     string   `json:"username"`
+	Email        string   `json:"email"`
+	PictureURL   string   `json:"picture,omitempty"`
+	AvatarFileID string   `json:"avatarFileId,omitempty"`
+	TenantID     string   `json:"tenantId"`
+	OrgIDs       []string `json:"orgIds"`
+	Roles        []string `json:"roles"`
+	Permissions  []string `json:"permissions"`
 }
 
 // IdentityMapping links an external identity to an internal user.

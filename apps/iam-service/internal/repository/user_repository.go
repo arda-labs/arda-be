@@ -34,7 +34,7 @@ func scanUserRow(scanner interface {
 	Scan(dest ...any) error
 }, u *domain.User) error {
 	return scanner.Scan(&u.ID, &u.Subject, &u.Username, &u.Email, &u.DisplayName,
-		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.CreatedAt, &u.UpdatedAt)
+		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL, &u.CreatedAt, &u.UpdatedAt)
 }
 
 // ListUsers returns paginated users with total count.
@@ -72,7 +72,8 @@ func (r *UserRepository) ListUsers(ctx context.Context, params ListUsersParams) 
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
 		SELECT id, external_subject, username, email, display_name,
-		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id, created_at, updated_at
+		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
 		FROM iam_users
 		WHERE %s
 		ORDER BY created_at DESC
@@ -109,6 +110,27 @@ func (r *UserRepository) UpdateUser(ctx context.Context, u *domain.User) error {
 		return fmt.Errorf("update user: %w", err)
 	}
 	return nil
+}
+
+func (r *UserRepository) UpdateUserAvatar(ctx context.Context, userID, avatarFileID, pictureURL string) (*domain.User, error) {
+	row := r.db.QueryRowContext(ctx, `
+		UPDATE iam_users
+		SET avatar_file_id = NULLIF($2, ''),
+		    picture_url = NULLIF($3, ''),
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING id, external_subject, username, email, display_name,
+		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
+	`, userID, avatarFileID, pictureURL)
+	u := &domain.User{}
+	if err := scanUserRow(row, u); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("update user avatar: %w", err)
+	}
+	return u, nil
 }
 
 // DeleteUser permanently removes a user.
@@ -174,7 +196,9 @@ func (r *UserRepository) CountActiveUsersWithRoleCode(ctx context.Context, roleC
 // GetUserBySubject loads a user by external subject (OIDC sub).
 func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, external_subject, username, email, display_name, COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id, created_at, updated_at
+		SELECT id, external_subject, username, email, display_name,
+		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
 		FROM iam_users
 		WHERE external_subject = $1
 	`, subject)
@@ -185,7 +209,9 @@ func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (
 // GetUserByID loads a user by UUID.
 func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, external_subject, username, email, display_name, COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id, created_at, updated_at
+		SELECT id, external_subject, username, email, display_name,
+		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
 		FROM iam_users
 		WHERE id = $1
 	`, id)
@@ -196,7 +222,9 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 // GetUserByUsername loads a user by username (for password auth).
 func (r *UserRepository) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, external_subject, username, email, display_name, COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id, created_at, updated_at
+		SELECT id, external_subject, username, email, display_name,
+		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
 		FROM iam_users
 		WHERE username = $1
 	`, username)
@@ -207,7 +235,9 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 // GetUserByEmail loads a user by email (for identity mapping).
 func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, external_subject, username, email, display_name, COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id, created_at, updated_at
+		SELECT id, external_subject, username, email, display_name,
+		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), created_at, updated_at
 		FROM iam_users
 		WHERE email = $1
 	`, email)
@@ -361,7 +391,7 @@ func marshalDetails(d map[string]any) any {
 func (r *UserRepository) scanUser(row *sql.Row) (*domain.User, error) {
 	u := &domain.User{}
 	err := row.Scan(&u.ID, &u.Subject, &u.Username, &u.Email, &u.DisplayName,
-		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.CreatedAt, &u.UpdatedAt)
+		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL, &u.CreatedAt, &u.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

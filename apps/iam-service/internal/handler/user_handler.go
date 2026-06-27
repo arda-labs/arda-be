@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
 )
@@ -17,14 +19,14 @@ func NewUserHandler(svc *service.UserService) *UserHandler {
 	return &UserHandler{svc: svc}
 }
 
-// Me returns the current user context based on the injected X-User-Subject header.
+// Me returns the current user context based on the injected internal IAM user id.
 func (h *UserHandler) Me(w http.ResponseWriter, r *http.Request) {
-	sub := r.Header.Get("X-User-Subject")
-	if sub == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Subject")
+	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
+	if userID == "" {
+		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
-	h.getContextBySubject(w, r.Context(), sub)
+	h.getContextByID(w, r.Context(), userID)
 }
 
 // GetBySubject returns a user context by external subject.
@@ -44,9 +46,26 @@ func (h *UserHandler) GetContextByID(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "missing id")
 		return
 	}
-	ctx, err := h.svc.GetUserContextByID(r.Context(), id)
+	h.getContextByID(w, r.Context(), id)
+}
+
+func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
+	if userID == "" {
+		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		return
+	}
+	var req struct {
+		AvatarFileID string `json:"avatar_file_id"`
+		PictureURL   string `json:"picture_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	ctx, err := h.svc.UpdateUserAvatar(r.Context(), userID, strings.TrimSpace(req.AvatarFileID), strings.TrimSpace(req.PictureURL))
 	if err != nil {
-		respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	respondJSON(w, http.StatusOK, ctx)
@@ -54,6 +73,15 @@ func (h *UserHandler) GetContextByID(w http.ResponseWriter, r *http.Request) {
 
 func (h *UserHandler) getContextBySubject(w http.ResponseWriter, ctx context.Context, subject string) {
 	userCtx, err := h.svc.GetUserContextBySubject(ctx, subject)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, userCtx)
+}
+
+func (h *UserHandler) getContextByID(w http.ResponseWriter, ctx context.Context, id string) {
+	userCtx, err := h.svc.GetUserContextByID(ctx, id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return

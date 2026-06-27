@@ -14,10 +14,10 @@ import (
 
 // AuthHandler implements the ForwardAuth endpoint.
 type AuthHandler struct {
-	verifier  token.Verifier
-	iam       *iamclient.Client
-	policy    *policy.Policy
-	logger    *slog.Logger
+	verifier token.Verifier
+	iam      *iamclient.Client
+	policy   *policy.Policy
+	logger   *slog.Logger
 }
 
 // NewAuthHandler creates the auth check handler.
@@ -69,7 +69,7 @@ func (h *AuthHandler) Check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, err := h.iam.GetUserBySubject(r.Context(), claims.Subject)
+	ctx, err := h.resolveUserContext(r, claims.Subject)
 	if err != nil {
 		h.logger.Warn("unauthorized", "path", forwardedURI, "subject", claims.Subject, "reason", err.Error())
 		h.respondDenied(w, "user context unavailable")
@@ -95,6 +95,20 @@ func (h *AuthHandler) injectHeaders(w http.ResponseWriter, ctx *iamclient.UserCo
 	w.Header().Set("X-Roles", strings.Join(ctx.Roles, ","))
 	w.Header().Set("X-Permissions", strings.Join(ctx.Permissions, ","))
 	w.Header().Set("X-Auth-Checked", "true")
+}
+
+func (h *AuthHandler) resolveUserContext(r *http.Request, subject string) (*iamclient.UserContext, error) {
+	ctx, err := h.iam.GetUserBySubject(r.Context(), subject)
+	if err == nil {
+		return ctx, nil
+	}
+
+	ctx, byIDErr := h.iam.GetUserByID(r.Context(), subject)
+	if byIDErr == nil {
+		return ctx, nil
+	}
+
+	return nil, err
 }
 
 func (h *AuthHandler) respondDenied(w http.ResponseWriter, msg string) {
