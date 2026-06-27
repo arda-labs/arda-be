@@ -3,11 +3,13 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,6 +18,12 @@ import (
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/config"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/iamclient"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/session"
+)
+
+const (
+	deviceCookieName      = "arda_did"
+	deviceCookieMaxAge    = 365 * 24 * 60 * 60
+	rememberMFACookieName = "arda_rmf"
 )
 
 type BFFHandler struct {
@@ -151,12 +159,17 @@ func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := h.httpClient.Do(tokenReq)
 	if err != nil {
+		h.logger.Error("token exchange request failed", "err", err, "hydra_url", tokenURL)
 		respondError(w, http.StatusBadGateway, "token exchange failed")
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		respondError(w, resp.StatusCode, "token exchange failed")
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		h.logger.Error("token exchange failed", "status", resp.StatusCode, "hydra_url", tokenURL,
+			"redirect_uri", h.cfg.OAuthRedirectURI, "client_id", h.cfg.OAuthClientID,
+			"hydra_response", string(bodyBytes))
+		respondError(w, resp.StatusCode, "token exchange failed: "+string(bodyBytes))
 		return
 	}
 	var tokenData hydraTokenResponse
@@ -168,14 +181,31 @@ func (h *BFFHandler) devExchangeCode(w http.ResponseWriter, r *http.Request) {
 	userInfo, _ := h.resolveSessionUser(r.Context(), &session.UserInfo{UserID: "dev-user", Subject: "dev-user", Username: "admin", Email: "admin@arda.local"})
 	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
 	sess := &session.Session{AccessToken: "dev-token", RefreshToken: "dev-token", ExpiresAt: time.Now().Add(ttl), User: userInfo, IPAddress: extractIP(r)}
+	deviceToken := h.readDeviceCookie(r)
+	if deviceToken == "" {
+		deviceToken = generateDeviceToken()
+	}
+	trustForMFA := h.readRememberMFACookie(r)
+	if h.iamClient != nil && userInfo.UserID != "" {
+		if tracked, err := h.trackSession(r, userInfo.UserID, deviceToken, trustForMFA); err != nil {
+			h.logger.Warn("session tracking failed", "err", err)
+		} else if tracked != nil {
+			sess.IAMSessionID = tracked.SessionID
+			sess.DeviceID = tracked.DeviceID
+			sess.DeviceName = tracked.DeviceName
+			sess.DeviceType = tracked.DeviceType
+		}
+	}
 	if err := h.store.Create(r.Context(), sess, ttl); err != nil {
+		if sess.IAMSessionID != "" && h.iamClient != nil {
+			_ = h.iamClient.RevokeSession(r.Context(), sess.IAMSessionID)
+		}
 		respondError(w, http.StatusInternalServerError, "session creation failed")
 		return
 	}
 	h.setSessionCookie(w, sess.ID, ttl)
-	if h.iamClient != nil && userInfo.UserID != "" {
-		go h.trackSession(r, userInfo.UserID)
-	}
+	h.setDeviceCookie(w, deviceToken)
+	h.clearRememberMFACookie(w)
 	respondJSON(w, http.StatusOK, map[string]any{"user": userInfo})
 }
 
@@ -204,14 +234,31 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 	}
 	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
 	sess := &session.Session{AccessToken: tokenData.AccessToken, RefreshToken: tokenData.RefreshToken, ExpiresAt: time.Now().Add(ttl), User: userInfo, IPAddress: extractIP(r)}
+	deviceToken := h.readDeviceCookie(r)
+	if deviceToken == "" {
+		deviceToken = generateDeviceToken()
+	}
+	trustForMFA := h.readRememberMFACookie(r)
+	if h.iamClient != nil && userInfo.UserID != "" {
+		if tracked, err := h.trackSession(r, userInfo.UserID, deviceToken, trustForMFA); err != nil {
+			h.logger.Warn("session tracking failed", "err", err)
+		} else if tracked != nil {
+			sess.IAMSessionID = tracked.SessionID
+			sess.DeviceID = tracked.DeviceID
+			sess.DeviceName = tracked.DeviceName
+			sess.DeviceType = tracked.DeviceType
+		}
+	}
 	if err := h.store.Create(r.Context(), sess, ttl); err != nil {
+		if sess.IAMSessionID != "" && h.iamClient != nil {
+			_ = h.iamClient.RevokeSession(r.Context(), sess.IAMSessionID)
+		}
 		respondError(w, http.StatusInternalServerError, "session creation failed")
 		return
 	}
 	h.setSessionCookie(w, sess.ID, ttl)
-	if h.iamClient != nil && userInfo.UserID != "" {
-		go h.trackSession(r, userInfo.UserID)
-	}
+	h.setDeviceCookie(w, deviceToken)
+	h.clearRememberMFACookie(w)
 	respondJSON(w, http.StatusOK, map[string]any{"user": userInfo})
 }
 
@@ -223,7 +270,11 @@ func (h *BFFHandler) resolveSessionUser(ctx context.Context, fallback *session.U
 		return fallback, true
 	}
 
-	if fallback.Subject != "" {
+	if fallback.UserID == "" && looksLikeUUID(fallback.Subject) {
+		fallback.UserID = fallback.Subject
+	}
+
+	if fallback.Subject != "" && !looksLikeUUID(fallback.Subject) {
 		if uc, err := h.iamClient.GetUserBySubject(ctx, fallback.Subject); err == nil {
 			return sessionUserFromIAM(uc, fallback), true
 		} else {
@@ -255,8 +306,18 @@ func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *
 		Subject:      uc.Subject,
 		Username:     uc.Username,
 		Email:        uc.Email,
+		DisplayName:  uc.DisplayName,
+		FirstName:    uc.FirstName,
+		LastName:     uc.LastName,
+		PhoneNumber:  uc.PhoneNumber,
+		Birthdate:    uc.Birthdate,
+		Gender:       uc.Gender,
+		Address:      uc.Address,
+		Country:      uc.Country,
 		Picture:      uc.PictureURL,
 		AvatarFileID: uc.AvatarFileID,
+		CoverImage:   uc.CoverImageURL,
+		CoverFileID:  uc.CoverFileID,
 		TenantID:     uc.TenantID,
 		OrgIDs:       uc.OrgIDs,
 		Roles:        uc.Roles,
@@ -271,20 +332,78 @@ func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *
 	if info.Email == "" && fallback != nil {
 		info.Email = fallback.Email
 	}
+	if info.DisplayName == "" && fallback != nil {
+		info.DisplayName = fallback.DisplayName
+	}
+	if info.FirstName == "" && fallback != nil {
+		info.FirstName = fallback.FirstName
+	}
+	if info.LastName == "" && fallback != nil {
+		info.LastName = fallback.LastName
+	}
+	if info.PhoneNumber == "" && fallback != nil {
+		info.PhoneNumber = fallback.PhoneNumber
+	}
+	if info.Birthdate == "" && fallback != nil {
+		info.Birthdate = fallback.Birthdate
+	}
+	if info.Gender == "" && fallback != nil {
+		info.Gender = fallback.Gender
+	}
+	if info.Address == "" && fallback != nil {
+		info.Address = fallback.Address
+	}
+	if info.Country == "" && fallback != nil {
+		info.Country = fallback.Country
+	}
+	if info.CoverImage == "" && fallback != nil {
+		info.CoverImage = fallback.CoverImage
+	}
+	if info.CoverFileID == "" && fallback != nil {
+		info.CoverFileID = fallback.CoverFileID
+	}
 	return info
 }
 
-func (h *BFFHandler) trackSession(r *http.Request, userID string) {
+type trackedSession struct {
+	SessionID  string
+	DeviceID   string
+	DeviceName string
+	DeviceType string
+}
+
+func (h *BFFHandler) trackSession(r *http.Request, userID, deviceToken string, trustForMFA bool) (*trackedSession, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ua := r.UserAgent()
 	fp := iamclient.DeviceFingerprint{UserAgent: ua, IP: extractIP(r)}
-	iamReq := &iamclient.CreateSessionRequest{UserID: userID, IPAddress: extractIP(r), UserAgent: ua, DeviceName: parseDeviceName(ua), DeviceType: "browser", OS: parseOS(ua), Browser: parseBrowser(ua), Fingerprint: fp.Hash()}
-	if result, err := h.iamClient.CreateSession(ctx, iamReq); err != nil {
-		h.logger.Warn("session tracking failed", "err", err)
-	} else {
-		h.logger.Info("session tracked", "session_id", result.SessionID, "device_id", result.DeviceID)
+	deviceType := parseDeviceType(ua)
+	osName := parseOS(ua)
+	browserName := parseBrowser(ua)
+	deviceName := parseDeviceName(ua, deviceType, osName, browserName)
+	iamReq := &iamclient.CreateSessionRequest{
+		UserID:      userID,
+		IPAddress:   extractIP(r),
+		UserAgent:   ua,
+		DeviceName:  deviceName,
+		DeviceType:  deviceType,
+		OS:          osName,
+		Browser:     browserName,
+		Fingerprint: fp.Hash(),
+		DeviceToken: deviceToken,
+		TrustForMFA: trustForMFA,
 	}
+	result, err := h.iamClient.CreateSession(ctx, iamReq)
+	if err != nil {
+		return nil, err
+	}
+	h.logger.Info("session tracked", "session_id", result.SessionID, "device_id", result.DeviceID)
+	return &trackedSession{
+		SessionID:  result.SessionID,
+		DeviceID:   result.DeviceID,
+		DeviceName: deviceName,
+		DeviceType: deviceType,
+	}, nil
 }
 
 func (h *BFFHandler) KratosWhoami(w http.ResponseWriter, r *http.Request) {
@@ -326,6 +445,36 @@ func (h *BFFHandler) proxyToKratos(w http.ResponseWriter, r *http.Request, path 
 func (h *BFFHandler) setSessionCookie(w http.ResponseWriter, id string, ttl time.Duration) {
 	http.SetCookie(w, &http.Cookie{Name: h.cfg.SessionCookieName, Value: id, Path: "/", HttpOnly: true, Secure: h.cfg.CookieSecure, SameSite: parseSameSite(h.cfg.CookieSameSite), MaxAge: int(ttl.Seconds())})
 }
+
+func (h *BFFHandler) setDeviceCookie(w http.ResponseWriter, token string) {
+	if token == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     deviceCookieName,
+		Value:    token,
+		Path:     "/",
+		Domain:   h.cfg.SessionCookieDomain,
+		HttpOnly: true,
+		Secure:   h.cfg.CookieSecure,
+		SameSite: parseSameSite(h.cfg.CookieSameSite),
+		MaxAge:   deviceCookieMaxAge,
+	})
+}
+
+func (h *BFFHandler) clearRememberMFACookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     rememberMFACookieName,
+		Value:    "",
+		Path:     "/",
+		Domain:   h.cfg.SessionCookieDomain,
+		HttpOnly: true,
+		Secure:   h.cfg.CookieSecure,
+		SameSite: parseSameSite(h.cfg.CookieSameSite),
+		MaxAge:   -1,
+	})
+}
+
 func (h *BFFHandler) clearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{Name: h.cfg.SessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: h.cfg.CookieSecure, MaxAge: -1})
 }
@@ -378,6 +527,11 @@ func (h *BFFHandler) MeSessions(w http.ResponseWriter, r *http.Request) {
 func (h *BFFHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	sessionID := h.readSessionCookie(r)
 	if sessionID != "" {
+		if sess, _ := h.store.Get(r.Context(), sessionID); sess != nil && sess.IAMSessionID != "" && h.iamClient != nil {
+			if err := h.iamClient.RevokeSession(r.Context(), sess.IAMSessionID); err != nil {
+				h.logger.Warn("revoke iam session failed", "session_id", sess.IAMSessionID, "err", err)
+			}
+		}
 		h.store.Delete(r.Context(), sessionID)
 		h.clearSessionCookie(w)
 	}
@@ -411,6 +565,9 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 				proxyReq.Header.Set("X-Tenant-Id", sess.User.TenantID)
 				proxyReq.Header.Set("X-Roles", strings.Join(sess.User.Roles, ","))
 				proxyReq.Header.Set("X-Permissions", strings.Join(sess.User.Permissions, ","))
+				if sess.IAMSessionID != "" {
+					proxyReq.Header.Set("X-Session-Id", sess.IAMSessionID)
+				}
 				proxyReq.Header.Set("X-Auth-Checked", "true")
 			}
 		}
@@ -438,49 +595,85 @@ func (h *BFFHandler) readSessionCookie(r *http.Request) string {
 	return c.Value
 }
 
+func (h *BFFHandler) readDeviceCookie(r *http.Request) string {
+	c, err := r.Cookie(deviceCookieName)
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}
+
+func (h *BFFHandler) readRememberMFACookie(r *http.Request) bool {
+	c, err := r.Cookie(rememberMFACookieName)
+	if err != nil {
+		return false
+	}
+	return c.Value == "1"
+}
+
 func extractIP(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		if ip, _, ok := strings.Cut(fwd, ","); ok {
-			return strings.TrimSpace(ip)
+			return normalizeIP(strings.TrimSpace(ip))
 		}
 	}
-	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
-		return r.RemoteAddr[:idx]
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return normalizeIP(host)
 	}
-	return r.RemoteAddr
+	return normalizeIP(r.RemoteAddr)
 }
 
-func parseDeviceName(ua string) string {
+func parseDeviceType(ua string) string {
+	switch {
+	case strings.Contains(ua, "iPad"), strings.Contains(ua, "Tablet"):
+		return "tablet"
+	case strings.Contains(ua, "iPhone"), strings.Contains(ua, "Android"), strings.Contains(ua, "Mobile"):
+		return "mobile"
+	default:
+		return "browser"
+	}
+}
+
+func parseDeviceName(ua, deviceType, osName, browserName string) string {
 	switch {
 	case strings.Contains(ua, "iPhone"):
 		return "iPhone"
 	case strings.Contains(ua, "iPad"):
 		return "iPad"
 	case strings.Contains(ua, "Android"):
-		return "Android " + extractAndroidModel(ua)
-	case strings.Contains(ua, "Windows"):
-		return "Windows PC"
-	case strings.Contains(ua, "Macintosh"):
-		return "Mac"
-	case strings.Contains(ua, "Linux"):
-		return "Linux"
+		if model := extractAndroidModel(ua); model != "" {
+			return model
+		}
+		if deviceType == "tablet" {
+			return "Android Tablet"
+		}
+		return "Android Phone"
+	case browserName != "Unknown" && osName != "Unknown":
+		return browserName + " on " + osName
+	case osName != "Unknown":
+		switch deviceType {
+		case "mobile":
+			return osName + " Phone"
+		case "tablet":
+			return osName + " Tablet"
+		default:
+			return osName + " Device"
+		}
 	default:
-		return "Unknown Device"
+		return "Web Browser"
 	}
 }
 
 func parseOS(ua string) string {
 	switch {
-	case strings.Contains(ua, "Windows NT 10"):
-		return "Windows 10"
-	case strings.Contains(ua, "Windows NT 11"):
-		return "Windows 11"
-	case strings.Contains(ua, "Mac OS X"):
-		return "macOS"
+	case strings.Contains(ua, "Windows NT"):
+		return "Windows"
+	case strings.Contains(ua, "iPhone"), strings.Contains(ua, "iPad"):
+		return "iOS"
 	case strings.Contains(ua, "Android"):
 		return "Android"
-	case strings.Contains(ua, "iPhone"):
-		return "iOS"
+	case strings.Contains(ua, "Mac OS X"):
+		return "macOS"
 	case strings.Contains(ua, "Linux"):
 		return "Linux"
 	default:
@@ -492,26 +685,62 @@ func parseBrowser(ua string) string {
 	switch {
 	case strings.Contains(ua, "Edg/"):
 		return "Edge"
+	case strings.Contains(ua, "OPR/"):
+		return "Opera"
+	case strings.Contains(ua, "SamsungBrowser/"):
+		return "Samsung Internet"
+	case strings.Contains(ua, "CriOS/"):
+		return "Chrome"
 	case strings.Contains(ua, "Chrome/"):
 		return "Chrome"
 	case strings.Contains(ua, "Firefox/"):
 		return "Firefox"
-	case strings.Contains(ua, "Safari/"):
+	case strings.Contains(ua, "Version/") && strings.Contains(ua, "Safari/"):
 		return "Safari"
-	case strings.Contains(ua, "OPR/"):
-		return "Opera"
 	default:
 		return "Unknown"
 	}
 }
 
 func extractAndroidModel(ua string) string {
-	if _, after, ok := strings.Cut(ua, "; "); ok {
-		if end := strings.Index(after, " "); end != -1 {
-			return after[:end]
+	parts := strings.Split(ua, ";")
+	for _, part := range parts {
+		segment := strings.TrimSpace(part)
+		switch {
+		case segment == "":
+			continue
+		case strings.HasPrefix(segment, "Linux"):
+			continue
+		case strings.HasPrefix(segment, "Android"):
+			continue
+		case segment == "wv":
+			continue
+		}
+
+		if idx := strings.Index(segment, " Build/"); idx != -1 {
+			segment = segment[:idx]
+		}
+		if segment != "" {
+			return segment
 		}
 	}
 	return ""
+}
+
+func generateDeviceToken() string {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return session.NewID()
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
+func looksLikeUUID(value string) bool {
+	return len(value) == 36 && strings.Count(value, "-") == 4
+}
+
+func normalizeIP(value string) string {
+	return strings.Trim(value, "[]")
 }
 
 func parseSameSite(s string) http.SameSite {

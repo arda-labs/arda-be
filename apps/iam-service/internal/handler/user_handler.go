@@ -71,6 +71,28 @@ func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, ctx)
 }
 
+func (h *UserHandler) UpdateMyCover(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
+	if userID == "" {
+		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		return
+	}
+	var req struct {
+		CoverFileID   string `json:"cover_file_id"`
+		CoverImageURL string `json:"cover_image_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	ctx, err := h.svc.UpdateUserCover(r.Context(), userID, strings.TrimSpace(req.CoverFileID), strings.TrimSpace(req.CoverImageURL))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, ctx)
+}
+
 func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
@@ -79,6 +101,13 @@ func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Name          string `json:"name"`
+		FirstName     string `json:"first_name"`
+		LastName      string `json:"last_name"`
+		PhoneNumber   string `json:"phone_number"`
+		Birthdate     string `json:"birthdate"`
+		Gender        string `json:"gender"`
+		Address       string `json:"address"`
+		Country       string `json:"country"`
 		Headline      string `json:"headline"`
 		Department    string `json:"department"`
 		EmployeeID    string `json:"employee_id"`
@@ -92,6 +121,13 @@ func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, err := h.svc.UpdateUserProfile(r.Context(), userID,
 		strings.TrimSpace(req.Name),
+		strings.TrimSpace(req.FirstName),
+		strings.TrimSpace(req.LastName),
+		strings.TrimSpace(req.PhoneNumber),
+		strings.TrimSpace(req.Birthdate),
+		strings.TrimSpace(req.Gender),
+		strings.TrimSpace(req.Address),
+		strings.TrimSpace(req.Country),
 		strings.TrimSpace(req.Headline),
 		strings.TrimSpace(req.Department),
 		strings.TrimSpace(req.EmployeeID),

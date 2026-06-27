@@ -59,6 +59,7 @@ type MFALoginRequest struct {
 	UserID         string `json:"userId"`
 	ChallengeToken string `json:"mfaChallengeToken"`
 	Code           string `json:"code"`
+	RememberDevice bool   `json:"rememberDevice"`
 }
 
 type LoginCompleteResult struct {
@@ -103,7 +104,7 @@ type PolicyCheckResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func (o *Orchestrator) LoginWithPassword(ctx context.Context, req *PasswordLoginRequest, clientIP, userAgent, requestID string) (*LoginCompleteResult, error) {
+func (o *Orchestrator) LoginWithPassword(ctx context.Context, req *PasswordLoginRequest, clientIP, userAgent, requestID, deviceToken string) (*LoginCompleteResult, error) {
 	if err := o.limiter.CheckLogin(req.Username); err != nil {
 		return nil, fmt.Errorf("rate limited: %w", err)
 	}
@@ -124,7 +125,7 @@ func (o *Orchestrator) LoginWithPassword(ctx context.Context, req *PasswordLogin
 	}
 	o.limiter.Reset(req.Username)
 	o.audit.LoginAttempt(ctx, req.Username, true, "internal", "", clientIP, userAgent, requestID)
-	return o.finalizeLogin(ctx, req.LoginChallenge, authResult, false)
+	return o.finalizeLogin(ctx, req.LoginChallenge, authResult, false, deviceToken)
 }
 
 func (o *Orchestrator) LoginWithMFA(ctx context.Context, req *MFALoginRequest) (*LoginCompleteResult, error) {
@@ -141,10 +142,10 @@ func (o *Orchestrator) LoginWithMFA(ctx context.Context, req *MFALoginRequest) (
 		InternalUserID: req.UserID,
 		AMR:            []string{"pwd", "otp"},
 		ACR:            "urn:arda:loa:2",
-	}, true)
+	}, true, "")
 }
 
-func (o *Orchestrator) finalizeLogin(ctx context.Context, loginChallenge string, authResult *provider.AuthenticationResult, mfaVerified bool) (*LoginCompleteResult, error) {
+func (o *Orchestrator) finalizeLogin(ctx context.Context, loginChallenge string, authResult *provider.AuthenticationResult, mfaVerified bool, deviceToken string) (*LoginCompleteResult, error) {
 	user, err := o.userRepo.GetUserByID(ctx, authResult.InternalUserID)
 	if err != nil || user == nil {
 		return nil, fmt.Errorf("user not found")
@@ -153,7 +154,7 @@ func (o *Orchestrator) finalizeLogin(ctx context.Context, loginChallenge string,
 		UserID: user.ID, Subject: user.Subject, Username: user.Username, Email: user.Email, TenantID: user.TenantID,
 	}
 	if !mfaVerified && o.mfaSvc != nil {
-		mfaResult, err := o.mfaSvc.CheckMFA(ctx, user.ID, "")
+		mfaResult, err := o.mfaSvc.CheckMFA(ctx, user.ID, deviceToken)
 		if err != nil {
 			return nil, fmt.Errorf("check MFA: %w", err)
 		}

@@ -18,6 +18,7 @@ type Session struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 	User         *UserInfo `json:"user"`
 	CreatedAt    time.Time `json:"created_at"`
+	IAMSessionID string    `json:"iam_session_id,omitempty"`
 
 	// Device info (tracked on login)
 	DeviceID   string `json:"device_id,omitempty"`
@@ -32,8 +33,18 @@ type UserInfo struct {
 	Subject      string   `json:"subject"`
 	Username     string   `json:"username"`
 	Email        string   `json:"email"`
+	DisplayName  string   `json:"displayName,omitempty"`
+	FirstName    string   `json:"firstName,omitempty"`
+	LastName     string   `json:"lastName,omitempty"`
+	PhoneNumber  string   `json:"phoneNumber,omitempty"`
+	Birthdate    string   `json:"birthdate,omitempty"`
+	Gender       string   `json:"gender,omitempty"`
+	Address      string   `json:"address,omitempty"`
+	Country      string   `json:"country,omitempty"`
 	Picture      string   `json:"picture,omitempty"`
 	AvatarFileID string   `json:"avatarFileId,omitempty"`
+	CoverImage   string   `json:"coverImage,omitempty"`
+	CoverFileID  string   `json:"coverFileId,omitempty"`
 	TenantID     string   `json:"tenantId,omitempty"`
 	OrgIDs       []string `json:"orgIds,omitempty"`
 	Roles        []string `json:"roles"`
@@ -239,8 +250,18 @@ func (u *UserInfo) MarshalJSON() ([]byte, error) {
 		"subject":      u.Subject,
 		"username":     u.Username,
 		"email":        u.Email,
+		"displayName":  u.DisplayName,
+		"firstName":    u.FirstName,
+		"lastName":     u.LastName,
+		"phoneNumber":  u.PhoneNumber,
+		"birthdate":    u.Birthdate,
+		"gender":       u.Gender,
+		"address":      u.Address,
+		"country":      u.Country,
 		"picture":      u.Picture,
 		"avatarFileId": u.AvatarFileID,
+		"coverImage":   u.CoverImage,
+		"coverFileId":  u.CoverFileID,
 		"tenantId":     u.TenantID,
 		"orgIds":       u.OrgIDs,
 		"roles":        u.Roles,

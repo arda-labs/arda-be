@@ -17,8 +17,6 @@ func NewSessionHandler(svc *service.SessionService) *SessionHandler {
 	return &SessionHandler{svc: svc}
 }
 
-// ── User self-service ──
-
 // ListMySessions returns current user's active sessions.
 // GET /api/iam/me/sessions
 func (h *SessionHandler) ListMySessions(w http.ResponseWriter, r *http.Request) {
@@ -28,27 +26,39 @@ func (h *SessionHandler) ListMySessions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	sessions, err := h.svc.ListSessions(r.Context(), userID)
+	sessions, err := h.svc.ListSessionDetails(r.Context(), userID)
 	if err != nil {
+		h.svc.Logger().Error("ListSessionDetails failed", "user_id", userID, "err", err)
 		respondError(w, http.StatusInternalServerError, "list sessions failed")
 		return
 	}
 
+	currentSessionID := r.Header.Get("X-Session-Id")
 	resp := make([]map[string]any, 0, len(sessions))
 	for _, s := range sessions {
 		resp = append(resp, map[string]any{
-			"id":         s.ID,
-			"deviceId":   s.DeviceID,
-			"ipAddress":  s.IPAddress,
-			"userAgent":  s.UserAgent,
-			"createdAt":  s.CreatedAt,
-			"lastSeenAt": s.LastSeenAt,
-			"expiresAt":  s.ExpiresAt,
-			"isActive":   s.IsActive,
+			"id":           s.ID,
+			"deviceId":     s.DeviceID,
+			"deviceName":   s.DeviceName,
+			"deviceType":   s.DeviceType,
+			"os":           s.OS,
+			"browser":      s.Browser,
+			"isTrusted":    s.IsTrusted,
+			"trustedUntil": s.TrustedUntil,
+			"ipAddress":    s.IPAddress,
+			"userAgent":    s.UserAgent,
+			"createdAt":    s.CreatedAt,
+			"lastSeenAt":   s.LastSeenAt,
+			"expiresAt":    s.ExpiresAt,
+			"isActive":     s.IsActive,
+			"isCurrent":    currentSessionID != "" && s.ID == currentSessionID,
 		})
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{"sessions": resp})
+	respondJSON(w, http.StatusOK, map[string]any{
+		"sessions":         resp,
+		"currentSessionId": currentSessionID,
+	})
 }
 
 // RevokeMySession revokes a specific session.
@@ -98,8 +108,6 @@ func (h *SessionHandler) RevokeMyOtherSessions(w http.ResponseWriter, r *http.Re
 	respondJSON(w, http.StatusOK, map[string]any{"status": "revoked", "count": n})
 }
 
-// ── Device handlers ──
-
 // ListMyDevices returns current user's devices.
 // GET /api/iam/me/devices
 func (h *SessionHandler) ListMyDevices(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +123,24 @@ func (h *SessionHandler) ListMyDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{"devices": devices})
+	resp := make([]map[string]any, 0, len(devices))
+	for _, d := range devices {
+		resp = append(resp, map[string]any{
+			"id":           d.ID,
+			"userId":       d.UserID,
+			"deviceName":   d.DeviceName,
+			"deviceType":   d.DeviceType,
+			"os":           d.OS,
+			"browser":      d.Browser,
+			"fingerprint":  d.Fingerprint,
+			"isTrusted":    d.IsTrusted,
+			"trustedUntil": d.TrustedUntil,
+			"firstSeenAt":  d.FirstSeenAt,
+			"lastSeenAt":   d.LastSeenAt,
+		})
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{"devices": resp})
 }
 
 // DeleteMyDevice removes a device (and revokes its sessions).
@@ -171,8 +196,6 @@ func (h *SessionHandler) SessionConfig(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, cfg)
 }
 
-// ── Internal API (service-to-service, called by auth-gateway) ──
-
 type internalCreateSessionRequest struct {
 	UserID          string `json:"userId"`
 	HydraSessionID  string `json:"hydraSessionId"`
@@ -185,6 +208,8 @@ type internalCreateSessionRequest struct {
 	OS              string `json:"os"`
 	Browser         string `json:"browser"`
 	Fingerprint     string `json:"fingerprint"`
+	DeviceToken     string `json:"deviceToken"`
+	TrustForMFA     bool   `json:"trustForMfa"`
 	DeviceID        string `json:"deviceId,omitempty"`
 }
 
@@ -201,23 +226,24 @@ func (h *SessionHandler) InternalCreateSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Get or create device
 	deviceID := req.DeviceID
 	if dev, err := h.svc.GetOrCreateDevice(r.Context(), req.UserID,
-		req.DeviceName, req.DeviceType, req.OS, req.Browser, req.Fingerprint); err == nil {
+		req.DeviceName, req.DeviceType, req.OS, req.Browser, req.Fingerprint, req.DeviceToken); err == nil {
 		deviceID = dev.ID
+		if req.TrustForMFA && deviceID != "" {
+			if err := h.svc.TrustDevice(r.Context(), deviceID, req.UserID, true); err != nil {
+				h.svc.Logger().Warn("trust device skipped", "device_id", deviceID, "err", err)
+			}
+		}
 	} else {
 		h.svc.Logger().Warn("device tracking skipped", "err", err)
 	}
 
-	// Create session (enforces concurrent limits)
 	sess, err := h.svc.CreateSession(r.Context(), req.UserID, deviceID,
 		req.HydraSessionID, req.AccessTokenJTI, req.RefreshTokenJTI,
 		req.IPAddress, req.UserAgent)
 	if err != nil {
-		respondJSON(w, http.StatusTooManyRequests, map[string]string{
-			"error": err.Error(),
-		})
+		respondJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -263,8 +289,6 @@ func (h *SessionHandler) InternalListSessionByUser(w http.ResponseWriter, r *htt
 	respondJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
 }
 
-// ── Admin handlers ──
-
 // AdminListUserSessions returns all sessions for a user (admin only).
 // GET /api/admin/users/{id}/sessions
 func (h *SessionHandler) AdminListUserSessions(w http.ResponseWriter, r *http.Request) {
@@ -274,7 +298,7 @@ func (h *SessionHandler) AdminListUserSessions(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	sessions, err := h.svc.ListSessions(r.Context(), userID)
+	sessions, err := h.svc.ListSessionDetails(r.Context(), userID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "list sessions failed")
 		return

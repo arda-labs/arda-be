@@ -16,12 +16,22 @@ type UserContext struct {
 	Subject      string   `json:"subject"`
 	Username     string   `json:"username"`
 	Email        string   `json:"email"`
-	PictureURL   string   `json:"picture,omitempty"`
-	AvatarFileID string   `json:"avatarFileId,omitempty"`
-	TenantID     string   `json:"tenantId"`
-	OrgIDs       []string `json:"orgIds"`
-	Roles        []string `json:"roles"`
-	Permissions  []string `json:"permissions"`
+	DisplayName  string   `json:"displayName,omitempty"`
+	FirstName    string   `json:"firstName,omitempty"`
+	LastName     string   `json:"lastName,omitempty"`
+	PhoneNumber  string   `json:"phoneNumber,omitempty"`
+	Birthdate    string   `json:"birthdate,omitempty"`
+	Gender       string   `json:"gender,omitempty"`
+	Address      string   `json:"address,omitempty"`
+	Country      string   `json:"country,omitempty"`
+	PictureURL    string   `json:"picture,omitempty"`
+	AvatarFileID  string   `json:"avatarFileId,omitempty"`
+	CoverImageURL string   `json:"coverImage,omitempty"`
+	CoverFileID   string   `json:"coverFileId,omitempty"`
+	TenantID      string   `json:"tenantId"`
+	OrgIDs        []string `json:"orgIds"`
+	Roles         []string `json:"roles"`
+	Permissions   []string `json:"permissions"`
 }
 
 // CreateSessionRequest is sent to IAM internal API to create a session record.
@@ -37,6 +47,8 @@ type CreateSessionRequest struct {
 	OS              string `json:"os"`
 	Browser         string `json:"browser"`
 	Fingerprint     string `json:"fingerprint"`
+	DeviceToken     string `json:"deviceToken"`
+	TrustForMFA     bool   `json:"trustForMfa"`
 }
 
 // CreateSessionResponse is the response from IAM internal session creation.

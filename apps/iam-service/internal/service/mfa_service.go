@@ -40,7 +40,7 @@ var DefaultMFAConfig = MFAConfig{
 // MFAService orchestrates MFA enrollment, verification, and backup codes.
 type MFAService struct {
 	mfaRepo    *repository.MFARepository
-	sessionSvc *SessionService // for device trust check
+	sessionSvc *SessionService
 	totp       *mfa.TOTPService
 	cfg        MFAConfig
 	logger     *slog.Logger
@@ -57,8 +57,6 @@ func NewMFAService(mfaRepo *repository.MFARepository, sessionSvc *SessionService
 	}
 }
 
-// ── Enrollment ──
-
 // GenerateSecret generates a TOTP secret for enrollment.
 func (s *MFAService) GenerateSecret(ctx context.Context, userID, username, email string) (*mfa.TOTPSecret, error) {
 	secret, err := s.totp.GenerateSecret(userID, username, email)
@@ -66,7 +64,6 @@ func (s *MFAService) GenerateSecret(ctx context.Context, userID, username, email
 		return nil, err
 	}
 
-	// Save to DB (not yet enrolled — user must verify first)
 	settings := &domain.MFASettings{
 		UserID:     userID,
 		Method:     "totp",
@@ -101,13 +98,11 @@ func (s *MFAService) VerifyAndEnroll(ctx context.Context, userID, code string) (
 		return nil, fmt.Errorf("invalid TOTP code")
 	}
 
-	// Activate
 	settings.IsEnrolled = true
 	if err := s.mfaRepo.UpsertSettings(ctx, settings); err != nil {
 		return nil, err
 	}
 
-	// Generate backup codes
 	codes, err := s.generateBackupCodes(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("generate backup codes: %w", err)
@@ -117,12 +112,10 @@ func (s *MFAService) VerifyAndEnroll(ctx context.Context, userID, code string) (
 	return codes, nil
 }
 
-// ── Verification ──
-
 // MFAResult is returned during login when MFA is required.
 type MFAResult struct {
 	RequiresMFA bool     `json:"requiresMfa"`
-	MFAToken    string   `json:"mfaToken,omitempty"` // temporary token for MFA step
+	MFAToken    string   `json:"mfaToken,omitempty"`
 	CanUseMFA   bool     `json:"canUseMfa"`
 	Methods     []string `json:"methods"`
 }
@@ -184,7 +177,7 @@ func (s *MFAService) VerifyLoginChallenge(ctx context.Context, userID, loginChal
 }
 
 // CheckMFA checks if user has MFA enrolled and returns the verification requirement.
-func (s *MFAService) CheckMFA(ctx context.Context, userID, deviceID string) (*MFAResult, error) {
+func (s *MFAService) CheckMFA(ctx context.Context, userID, deviceToken string) (*MFAResult, error) {
 	settings, err := s.mfaRepo.GetSettings(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -200,11 +193,9 @@ func (s *MFAService) CheckMFA(ctx context.Context, userID, deviceID string) (*MF
 		return result, nil
 	}
 
-	// Check remember device
-	if s.cfg.RememberDevice && deviceID != "" {
-		dev, _ := s.sessionSvc.sessionRepo.GetDevice(ctx, deviceID)
-		if dev != nil && dev.IsTrusted {
-			result.RequiresMFA = false // trusted device — skip MFA
+	if s.cfg.RememberDevice && deviceToken != "" {
+		dev, _ := s.sessionSvc.GetDeviceByToken(ctx, userID, deviceToken)
+		if s.sessionSvc.IsDeviceTrusted(dev) {
 			return result, nil
 		}
 	}
@@ -212,6 +203,14 @@ func (s *MFAService) CheckMFA(ctx context.Context, userID, deviceID string) (*MF
 	result.RequiresMFA = true
 	result.CanUseMFA = true
 	return result, nil
+}
+
+// RememberDevice trusts the current browser profile for the configured remember duration.
+func (s *MFAService) RememberDevice(ctx context.Context, userID, deviceToken string) (*domain.Device, error) {
+	if !s.cfg.RememberDevice {
+		return nil, nil
+	}
+	return s.sessionSvc.RememberDevice(ctx, userID, deviceToken, time.Now().Add(s.cfg.RememberDuration))
 }
 
 // VerifyCode verifies a TOTP code and returns a temporary MFA token.
@@ -232,8 +231,6 @@ func (s *MFAService) VerifyCode(ctx context.Context, userID, code string) error 
 		return fmt.Errorf("invalid MFA code")
 	}
 
-	// Update last used
-	// In production, update this in the repository
 	_ = settings
 	return nil
 }
@@ -256,8 +253,6 @@ func (s *MFAService) VerifyBackupCode(ctx context.Context, userID, code string) 
 	}
 	return fmt.Errorf("invalid or already used backup code")
 }
-
-// ── Admin ──
 
 // ResetMFA removes MFA enrollment for a user (admin only).
 func (s *MFAService) ResetMFA(ctx context.Context, userID string) error {
@@ -285,10 +280,7 @@ func (s *MFAService) GetSettings(ctx context.Context, userID string) (*domain.MF
 	return s.mfaRepo.GetSettings(ctx, userID)
 }
 
-// ── Internal ──
-
 func (s *MFAService) generateBackupCodes(ctx context.Context, userID string) ([]string, error) {
-	// Remove old codes
 	if err := s.mfaRepo.DeleteBackupCodes(ctx, userID); err != nil {
 		return nil, err
 	}
@@ -317,8 +309,6 @@ func (s *MFAService) generateBackupCodes(ctx context.Context, userID string) ([]
 	return plainCodes, nil
 }
 
-// ── Helpers ──
-
 func sha256Hex(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return base64.RawURLEncoding.EncodeToString(h[:])
@@ -337,7 +327,6 @@ func generateRandomCode(length int) string {
 }
 
 func formatCode(code string) string {
-	// Format as xxxx-xxxx-xxxx
 	clean := strings.ToUpper(code[:12])
 	var parts []string
 	for i := 0; i < 12; i += 4 {

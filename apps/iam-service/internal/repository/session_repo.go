@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -19,17 +21,24 @@ func NewSessionRepository(db *sql.DB) *SessionRepository {
 	return &SessionRepository{db: db}
 }
 
-// ── Devices ──
-
+// DeviceFingerprint is a soft fallback when no durable device token exists yet.
 type DeviceFingerprint struct {
-	UserAgent   string
-	IP          string
-	AcceptLang  string
+	UserAgent  string
+	IP         string
+	AcceptLang string
 }
 
 func (f DeviceFingerprint) Hash() string {
-	// simplified — in production use sha256
+	// simplified - in production use a richer fingerprint strategy
 	return fmt.Sprintf("%s|%s|%s", truncate(f.UserAgent, 128), maskIP(f.IP), f.AcceptLang)
+}
+
+func HashDeviceToken(token string) string {
+	if token == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(token))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
 func truncate(s string, n int) string {
@@ -52,45 +61,91 @@ func maskIP(ip string) string {
 func (r *SessionRepository) FindDeviceByFingerprint(ctx context.Context, userID, fingerprint string) (*domain.Device, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, user_id, device_name, device_type, os, browser,
-		       fingerprint_hash, is_trusted, first_seen_at, last_seen_at
+		       fingerprint_hash, device_token_hash, is_trusted, trusted_until, first_seen_at, last_seen_at
 		FROM iam_devices
 		WHERE user_id = $1 AND fingerprint_hash = $2
+		ORDER BY last_seen_at DESC
+		LIMIT 1
 	`, userID, fingerprint)
+
+	return scanDevice(row)
+}
+
+// FindDeviceByTokenHash looks up a device by durable token hash.
+func (r *SessionRepository) FindDeviceByTokenHash(ctx context.Context, userID, tokenHash string) (*domain.Device, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, user_id, device_name, device_type, os, browser,
+		       fingerprint_hash, device_token_hash, is_trusted, trusted_until, first_seen_at, last_seen_at
+		FROM iam_devices
+		WHERE user_id = $1 AND device_token_hash = $2
+		ORDER BY last_seen_at DESC
+		LIMIT 1
+	`, userID, tokenHash)
 
 	return scanDevice(row)
 }
 
 // UpsertDevice creates or updates a device record.
 func (r *SessionRepository) UpsertDevice(ctx context.Context, d *domain.Device) (*domain.Device, error) {
+	var existing *domain.Device
+	var err error
+
+	if d.DeviceTokenHash != "" {
+		existing, err = r.FindDeviceByTokenHash(ctx, d.UserID, d.DeviceTokenHash)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if existing == nil && d.Fingerprint != "" {
+		existing, err = r.FindDeviceByFingerprint(ctx, d.UserID, d.Fingerprint)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if existing != nil {
+		merged := mergeDevice(existing, d)
+		_, err = r.db.ExecContext(ctx, `
+			UPDATE iam_devices
+			SET device_name = $2,
+			    device_type = $3,
+			    os = $4,
+			    browser = $5,
+			    fingerprint_hash = $6,
+			    device_token_hash = $7,
+			    is_trusted = $8,
+			    trusted_until = $9,
+			    last_seen_at = now()
+			WHERE id = $1
+		`, merged.ID, merged.DeviceName, merged.DeviceType, merged.OS, merged.Browser,
+			merged.Fingerprint, merged.DeviceTokenHash, merged.IsTrusted, merged.TrustedUntil)
+		if err != nil {
+			return nil, fmt.Errorf("update device: %w", err)
+		}
+		return r.GetDevice(ctx, merged.ID)
+	}
+
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO iam_devices (user_id, device_name, device_type, os, browser, fingerprint_hash, is_trusted, last_seen_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, now())
-		ON CONFLICT DO NOTHING
+		INSERT INTO iam_devices (
+			user_id, device_name, device_type, os, browser,
+			fingerprint_hash, device_token_hash, is_trusted, trusted_until, last_seen_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
 		RETURNING id, first_seen_at, last_seen_at
-	`, d.UserID, d.DeviceName, d.DeviceType, d.OS, d.Browser, d.Fingerprint, d.IsTrusted)
+	`, d.UserID, d.DeviceName, d.DeviceType, d.OS, d.Browser,
+		d.Fingerprint, d.DeviceTokenHash, d.IsTrusted, d.TrustedUntil)
 
-	err := row.Scan(&d.ID, &d.FirstSeenAt, &d.LastSeenAt)
-	if err == nil {
-		return d, nil
+	if err := row.Scan(&d.ID, &d.FirstSeenAt, &d.LastSeenAt); err != nil {
+		return nil, fmt.Errorf("insert device: %w", err)
 	}
-
-	// Already exists — update last_seen
-	_, err = r.db.ExecContext(ctx, `
-		UPDATE iam_devices SET last_seen_at = now()
-		WHERE user_id = $1 AND fingerprint_hash = $2
-	`, d.UserID, d.Fingerprint)
-	if err != nil {
-		return nil, fmt.Errorf("update device: %w", err)
-	}
-
-	return r.FindDeviceByFingerprint(ctx, d.UserID, d.Fingerprint)
+	return d, nil
 }
 
 // ListDevicesByUser returns all devices for a user.
 func (r *SessionRepository) ListDevicesByUser(ctx context.Context, userID string) ([]domain.Device, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, user_id, device_name, device_type, os, browser,
-		       fingerprint_hash, is_trusted, first_seen_at, last_seen_at
+		       fingerprint_hash, device_token_hash, is_trusted, trusted_until, first_seen_at, last_seen_at
 		FROM iam_devices
 		WHERE user_id = $1
 		ORDER BY last_seen_at DESC
@@ -104,8 +159,8 @@ func (r *SessionRepository) ListDevicesByUser(ctx context.Context, userID string
 	for rows.Next() {
 		var d domain.Device
 		if err := rows.Scan(&d.ID, &d.UserID, &d.DeviceName, &d.DeviceType,
-			&d.OS, &d.Browser, &d.Fingerprint, &d.IsTrusted,
-			&d.FirstSeenAt, &d.LastSeenAt); err != nil {
+			&d.OS, &d.Browser, &d.Fingerprint, &d.DeviceTokenHash,
+			&d.IsTrusted, &d.TrustedUntil, &d.FirstSeenAt, &d.LastSeenAt); err != nil {
 			return nil, err
 		}
 		devices = append(devices, d)
@@ -117,7 +172,7 @@ func (r *SessionRepository) ListDevicesByUser(ctx context.Context, userID string
 func (r *SessionRepository) GetDevice(ctx context.Context, deviceID string) (*domain.Device, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, user_id, device_name, device_type, os, browser,
-		       fingerprint_hash, is_trusted, first_seen_at, last_seen_at
+		       fingerprint_hash, device_token_hash, is_trusted, trusted_until, first_seen_at, last_seen_at
 		FROM iam_devices
 		WHERE id = $1
 	`, deviceID)
@@ -131,14 +186,14 @@ func (r *SessionRepository) DeleteDevice(ctx context.Context, deviceID string) e
 }
 
 // TrustDevice marks a device as trusted (skip MFA).
-func (r *SessionRepository) TrustDevice(ctx context.Context, deviceID string, trusted bool) error {
+func (r *SessionRepository) TrustDevice(ctx context.Context, deviceID string, trusted bool, trustedUntil *time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE iam_devices SET is_trusted = $1 WHERE id = $2
-	`, trusted, deviceID)
+		UPDATE iam_devices SET is_trusted = $1, trusted_until = $2 WHERE id = $3
+	`, trusted, trustedUntil, deviceID)
 	return err
 }
 
-// ── Sessions ──
+// Sessions
 
 func (r *SessionRepository) CreateSession(ctx context.Context, s *domain.Session) error {
 	row := r.db.QueryRowContext(ctx, `
@@ -185,12 +240,26 @@ func (r *SessionRepository) ListSessionsByUser(ctx context.Context, userID strin
 	var sessions []domain.Session
 	for rows.Next() {
 		var s domain.Session
-		if err := rows.Scan(&s.ID, &s.UserID, &s.DeviceID, &s.HydraSessionID,
-			&s.AccessTokenJTI, &s.RefreshTokenJTI, &s.IPAddress, &s.UserAgent,
-			&s.IsActive, &s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt,
-			&s.RevokedAt, &s.RevokedReason); err != nil {
+		var deviceID, hydraSessionID, accessTokenJTI, refreshTokenJTI sql.NullString
+		var expiresAt, revokedAt sql.NullTime
+		var revokedReason sql.NullString
+		if err := rows.Scan(&s.ID, &s.UserID, &deviceID, &hydraSessionID,
+			&accessTokenJTI, &refreshTokenJTI, &s.IPAddress, &s.UserAgent,
+			&s.IsActive, &s.CreatedAt, &expiresAt, &s.LastSeenAt,
+			&revokedAt, &revokedReason); err != nil {
 			return nil, err
 		}
+		s.DeviceID = deviceID.String
+		s.HydraSessionID = hydraSessionID.String
+		s.AccessTokenJTI = accessTokenJTI.String
+		s.RefreshTokenJTI = refreshTokenJTI.String
+		if expiresAt.Valid {
+			s.ExpiresAt = expiresAt.Time
+		}
+		if revokedAt.Valid {
+			s.RevokedAt = &revokedAt.Time
+		}
+		s.RevokedReason = revokedReason.String
 		sessions = append(sessions, s)
 	}
 	return sessions, rows.Err()
@@ -213,12 +282,26 @@ func (r *SessionRepository) ListActiveSessionsByUser(ctx context.Context, userID
 	var sessions []domain.Session
 	for rows.Next() {
 		var s domain.Session
-		if err := rows.Scan(&s.ID, &s.UserID, &s.DeviceID, &s.HydraSessionID,
-			&s.AccessTokenJTI, &s.RefreshTokenJTI, &s.IPAddress, &s.UserAgent,
-			&s.IsActive, &s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt,
-			&s.RevokedAt, &s.RevokedReason); err != nil {
+		var deviceID, hydraSessionID, accessTokenJTI, refreshTokenJTI sql.NullString
+		var expiresAt, revokedAt sql.NullTime
+		var revokedReason sql.NullString
+		if err := rows.Scan(&s.ID, &s.UserID, &deviceID, &hydraSessionID,
+			&accessTokenJTI, &refreshTokenJTI, &s.IPAddress, &s.UserAgent,
+			&s.IsActive, &s.CreatedAt, &expiresAt, &s.LastSeenAt,
+			&revokedAt, &revokedReason); err != nil {
 			return nil, err
 		}
+		s.DeviceID = deviceID.String
+		s.HydraSessionID = hydraSessionID.String
+		s.AccessTokenJTI = accessTokenJTI.String
+		s.RefreshTokenJTI = refreshTokenJTI.String
+		if expiresAt.Valid {
+			s.ExpiresAt = expiresAt.Time
+		}
+		if revokedAt.Valid {
+			s.RevokedAt = &revokedAt.Time
+		}
+		s.RevokedReason = revokedReason.String
 		sessions = append(sessions, s)
 	}
 	return sessions, rows.Err()
@@ -280,7 +363,7 @@ func (r *SessionRepository) TouchSession(ctx context.Context, sessionID string) 
 	return err
 }
 
-// ── Token Blacklist (for revoked tokens) ──
+// Token Blacklist (for revoked tokens)
 
 func (r *SessionRepository) BlacklistToken(ctx context.Context, jti, userID string, expiresAt time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
@@ -305,7 +388,7 @@ func (r *SessionRepository) CleanExpiredBlacklist(ctx context.Context) error {
 	return err
 }
 
-// ── Max concurrent sessions ──
+// Max concurrent sessions
 
 // MaxConcurrentReached checks if the user has reached the session limit.
 // If max <= 0, no limit is enforced.
@@ -320,13 +403,13 @@ func (r *SessionRepository) MaxConcurrentReached(ctx context.Context, userID str
 	return count >= max, nil
 }
 
-// ── Scanners ──
+// Scanners
 
 func scanDevice(row *sql.Row) (*domain.Device, error) {
 	d := &domain.Device{}
 	err := row.Scan(&d.ID, &d.UserID, &d.DeviceName, &d.DeviceType,
-		&d.OS, &d.Browser, &d.Fingerprint, &d.IsTrusted,
-		&d.FirstSeenAt, &d.LastSeenAt)
+		&d.OS, &d.Browser, &d.Fingerprint, &d.DeviceTokenHash,
+		&d.IsTrusted, &d.TrustedUntil, &d.FirstSeenAt, &d.LastSeenAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -338,17 +421,63 @@ func scanDevice(row *sql.Row) (*domain.Device, error) {
 
 func scanSession(row *sql.Row) (*domain.Session, error) {
 	s := &domain.Session{}
-	err := row.Scan(&s.ID, &s.UserID, &s.DeviceID, &s.HydraSessionID,
-		&s.AccessTokenJTI, &s.RefreshTokenJTI, &s.IPAddress, &s.UserAgent,
-		&s.IsActive, &s.CreatedAt, &s.ExpiresAt, &s.LastSeenAt,
-		&s.RevokedAt, &s.RevokedReason)
+	var deviceID, hydraSessionID, accessTokenJTI, refreshTokenJTI sql.NullString
+	var expiresAt, revokedAt sql.NullTime
+	var revokedReason sql.NullString
+
+	err := row.Scan(&s.ID, &s.UserID, &deviceID, &hydraSessionID,
+		&accessTokenJTI, &refreshTokenJTI, &s.IPAddress, &s.UserAgent,
+		&s.IsActive, &s.CreatedAt, &expiresAt, &s.LastSeenAt,
+		&revokedAt, &revokedReason)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("scan session: %w", err)
 	}
+
+	s.DeviceID = deviceID.String
+	s.HydraSessionID = hydraSessionID.String
+	s.AccessTokenJTI = accessTokenJTI.String
+	s.RefreshTokenJTI = refreshTokenJTI.String
+	if expiresAt.Valid {
+		s.ExpiresAt = expiresAt.Time
+	}
+	if revokedAt.Valid {
+		s.RevokedAt = &revokedAt.Time
+	}
+	s.RevokedReason = revokedReason.String
+
 	return s, nil
+}
+
+func mergeDevice(existing, incoming *domain.Device) *domain.Device {
+	merged := *existing
+	if incoming.DeviceName != "" {
+		merged.DeviceName = incoming.DeviceName
+	}
+	if incoming.DeviceType != "" {
+		merged.DeviceType = incoming.DeviceType
+	}
+	if incoming.OS != "" {
+		merged.OS = incoming.OS
+	}
+	if incoming.Browser != "" {
+		merged.Browser = incoming.Browser
+	}
+	if incoming.Fingerprint != "" {
+		merged.Fingerprint = incoming.Fingerprint
+	}
+	if incoming.DeviceTokenHash != "" {
+		merged.DeviceTokenHash = incoming.DeviceTokenHash
+	}
+	if incoming.IsTrusted {
+		merged.IsTrusted = true
+	}
+	if incoming.TrustedUntil != nil {
+		merged.TrustedUntil = incoming.TrustedUntil
+	}
+	return &merged
 }
 
 func nullUUID(s string) *string {

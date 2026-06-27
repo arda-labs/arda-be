@@ -36,7 +36,8 @@ func scanUserRow(scanner interface {
 	Scan(dest ...any) error
 }, u *domain.User) error {
 	return scanner.Scan(&u.ID, &u.Subject, &u.Username, &u.Email, &u.DisplayName,
-		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL,
+		&u.FirstName, &u.LastName, &u.PhoneNumber, &u.Birthdate, &u.Gender, &u.Address, &u.Country,
+		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL, &u.CoverFileID, &u.CoverImageURL,
 		&u.Department, &u.Position, &u.EmployeeID, &u.ApprovalLevel, &u.DailyLimit, &u.Bio,
 		&u.CreatedAt, &u.UpdatedAt)
 }
@@ -95,8 +96,10 @@ func (r *UserRepository) ListUsers(ctx context.Context, params ListUsersParams) 
 
 	query := fmt.Sprintf(`
 		SELECT id, external_subject, username, email, display_name,
+		       COALESCE(first_name,''), COALESCE(last_name,''),
+		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
 		       created_at, updated_at
@@ -132,11 +135,15 @@ func (r *UserRepository) UpdateUser(ctx context.Context, u *domain.User) error {
 			status = $4, tenant_id = $5,
 			department = $6, position = $7, employee_id = $8,
 			approval_level = $9, daily_limit = $10, bio = $11,
+			first_name = $12, last_name = $13,
+			phone_number = $14, birthdate = $15, gender = $16, address = $17, country = $18,
+			cover_file_id = $19, cover_image_url = $20,
 			updated_at = now()
-		WHERE id = $12
+		WHERE id = $21
 	`, u.Username, u.Email, u.DisplayName, u.Status, u.TenantID,
 		u.Department, u.Position, u.EmployeeID, u.ApprovalLevel, u.DailyLimit, u.Bio,
-		u.ID)
+		u.FirstName, u.LastName, u.PhoneNumber, u.Birthdate, u.Gender, u.Address, u.Country,
+		u.CoverFileID, u.CoverImageURL, u.ID)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
@@ -151,8 +158,10 @@ func (r *UserRepository) UpdateUserAvatar(ctx context.Context, userID, avatarFil
 		    updated_at = now()
 		WHERE id = $1
 		RETURNING id, external_subject, username, email, display_name,
+		          COALESCE(first_name,''), COALESCE(last_name,''),
+		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
 		          created_at, updated_at
@@ -167,25 +176,60 @@ func (r *UserRepository) UpdateUserAvatar(ctx context.Context, userID, avatarFil
 	return u, nil
 }
 
-func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID, name, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.User, error) {
+func (r *UserRepository) UpdateUserCover(ctx context.Context, userID, coverFileID, coverImageURL string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE iam_users
-		SET display_name = $2,
-		    position = $3,
-		    department = $4,
-		    employee_id = $5,
-		    approval_level = $6,
-		    daily_limit = $7,
-		    bio = $8,
+		SET cover_file_id = NULLIF($2, ''),
+		    cover_image_url = NULLIF($3, ''),
 		    updated_at = now()
 		WHERE id = $1
 		RETURNING id, external_subject, username, email, display_name,
+		          COALESCE(first_name,''), COALESCE(last_name,''),
+		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
 		          created_at, updated_at
-	`, userID, name, position, department, employeeID, approvalLevel, dailyLimit, bio)
+	`, userID, coverFileID, coverImageURL)
+	u := &domain.User{}
+	if err := scanUserRow(row, u); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("update user cover: %w", err)
+	}
+	return u, nil
+}
+
+func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID, name, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.User, error) {
+	row := r.db.QueryRowContext(ctx, `
+		UPDATE iam_users
+		SET display_name = $2,
+		    first_name = $3,
+		    last_name = $4,
+		    phone_number = $5,
+		    birthdate = $6,
+		    gender = $7,
+		    address = $8,
+		    country = $9,
+		    position = $10,
+		    department = $11,
+		    employee_id = $12,
+		    approval_level = $13,
+		    daily_limit = $14,
+		    bio = $15,
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING id, external_subject, username, email, display_name,
+		          COALESCE(first_name,''), COALESCE(last_name,''),
+		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
+		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
+		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		          created_at, updated_at
+	`, userID, name, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio)
 	u := &domain.User{}
 	if err := scanUserRow(row, u); err != nil {
 		if err == sql.ErrNoRows {
@@ -260,8 +304,10 @@ func (r *UserRepository) CountActiveUsersWithRoleCode(ctx context.Context, roleC
 func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, external_subject, username, email, display_name,
+		       COALESCE(first_name,''), COALESCE(last_name,''),
+		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
 		       created_at, updated_at
@@ -276,8 +322,10 @@ func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (
 func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, external_subject, username, email, display_name,
+		       COALESCE(first_name,''), COALESCE(last_name,''),
+		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
 		       created_at, updated_at
@@ -292,8 +340,10 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 func (r *UserRepository) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, external_subject, username, email, display_name,
+		       COALESCE(first_name,''), COALESCE(last_name,''),
+		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
 		       created_at, updated_at
@@ -308,8 +358,10 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, external_subject, username, email, display_name,
+		       COALESCE(first_name,''), COALESCE(last_name,''),
+		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
-		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''),
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
 		       created_at, updated_at

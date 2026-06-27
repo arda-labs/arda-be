@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 
@@ -38,11 +39,14 @@ func respondRequestErrorCode(w http.ResponseWriter, r *http.Request, status int,
 func extractIP(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		ip, _, _ := strings.Cut(fwd, ",")
-		return strings.TrimSpace(ip)
+		return normalizeIP(strings.TrimSpace(ip))
 	}
-	addr := r.RemoteAddr
-	if idx := strings.LastIndex(addr, ":"); idx != -1 {
-		return addr[:idx]
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return normalizeIP(host)
 	}
-	return addr
+	return normalizeIP(r.RemoteAddr)
+}
+
+func normalizeIP(value string) string {
+	return strings.Trim(value, "[]")
 }

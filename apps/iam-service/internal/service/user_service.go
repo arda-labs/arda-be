@@ -59,11 +59,28 @@ func (s *UserService) UpdateUserAvatar(ctx context.Context, userID, avatarFileID
 	return s.buildContext(ctx, user)
 }
 
-func (s *UserService) UpdateUserProfile(ctx context.Context, userID, name, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.UserContext, error) {
+func (s *UserService) UpdateUserCover(ctx context.Context, userID, coverFileID, coverImageURL string) (*domain.UserContext, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("user id is required")
 	}
-	user, err := s.repo.UpdateUserProfile(ctx, userID, name, position, department, employeeID, approvalLevel, dailyLimit, bio)
+	if coverFileID == "" && coverImageURL == "" {
+		return nil, fmt.Errorf("cover_file_id or cover_image_url is required")
+	}
+	user, err := s.repo.UpdateUserCover(ctx, userID, coverFileID, coverImageURL)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	return s.buildContext(ctx, user)
+}
+
+func (s *UserService) UpdateUserProfile(ctx context.Context, userID, name, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.UserContext, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("user id is required")
+	}
+	user, err := s.repo.UpdateUserProfile(ctx, userID, name, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio)
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +121,18 @@ func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*dom
 		Subject:       user.Subject,
 		Username:      user.Username,
 		Email:         user.Email,
+		DisplayName:   user.DisplayName,
+		FirstName:     user.FirstName,
+		LastName:      user.LastName,
+		PhoneNumber:   user.PhoneNumber,
+		Birthdate:     user.Birthdate,
+		Gender:        user.Gender,
+		Address:       user.Address,
+		Country:       user.Country,
 		PictureURL:    user.PictureURL,
 		AvatarFileID:  user.AvatarFileID,
+		CoverImageURL: user.CoverImageURL,
+		CoverFileID:   user.CoverFileID,
 		TenantID:      user.TenantID,
 		OrgIDs:        orgs,
 		Roles:         roleCodes,

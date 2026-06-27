@@ -1,11 +1,19 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/auth"
 )
+
+const deviceCookieName = "arda_did"
+const deviceCookieMaxAge = 365 * 24 * 60 * 60
+const rememberMFACookieName = "arda_rmf"
 
 // AuthHandler exposes authentication endpoints.
 type AuthHandler struct {
@@ -46,8 +54,9 @@ func (h *AuthHandler) LoginPassword(w http.ResponseWriter, r *http.Request) {
 	clientIP := extractIP(r)
 	userAgent := r.UserAgent()
 	requestID := r.Header.Get("X-Request-ID")
+	deviceToken := ensureDeviceToken(w, r)
 
-	result, err := h.orch.LoginWithPassword(r.Context(), &req, clientIP, userAgent, requestID)
+	result, err := h.orch.LoginWithPassword(r.Context(), &req, clientIP, userAgent, requestID, deviceToken)
 	if err != nil {
 		respondError(w, http.StatusUnauthorized, err.Error())
 		return
@@ -68,6 +77,11 @@ func (h *AuthHandler) LoginMFA(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusUnauthorized, err.Error())
 		return
+	}
+	if req.RememberDevice {
+		setShortLivedCookie(w, r, rememberMFACookieName, "1", 10*60)
+	} else {
+		clearShortLivedCookie(w, r, rememberMFACookieName)
 	}
 
 	respondJSON(w, http.StatusOK, result)
@@ -211,5 +225,70 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		"id":       user.ID,
 		"username": user.Username,
 		"email":    user.Email,
+	})
+}
+
+func readDeviceToken(r *http.Request) string {
+	cookie, err := r.Cookie(deviceCookieName)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+func ensureDeviceToken(w http.ResponseWriter, r *http.Request) string {
+	if token := readDeviceToken(r); token != "" {
+		return token
+	}
+
+	token := generateDeviceToken()
+	http.SetCookie(w, &http.Cookie{
+		Name:     deviceCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   deviceCookieMaxAge,
+	})
+	return token
+}
+
+func generateDeviceToken() string {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return base64.RawURLEncoding.EncodeToString([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
+func isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func setShortLivedCookie(w http.ResponseWriter, r *http.Request, name, value string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   maxAge,
+	})
+}
+
+func clearShortLivedCookie(w http.ResponseWriter, r *http.Request, name string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
 	})
 }

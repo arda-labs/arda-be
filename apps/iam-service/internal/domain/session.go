@@ -22,14 +22,16 @@ type Session struct {
 
 // Device represents a known device used for authentication.
 type Device struct {
-	ID          string
-	UserID      string
-	DeviceName  string    // "Chrome on Windows", "iPhone 15"
-	DeviceType  string    // browser, mobile_app, api_key
-	OS          string
-	Browser     string
-	Fingerprint string    // hashed device fingerprint
-	IsTrusted   bool
-	FirstSeenAt time.Time
-	LastSeenAt  time.Time
+	ID              string
+	UserID          string
+	DeviceName      string // "Chrome on Windows", "iPhone 15"
+	DeviceType      string // browser, mobile_app, api_key
+	OS              string
+	Browser         string
+	Fingerprint     string // hashed device fingerprint
+	DeviceTokenHash string
+	IsTrusted       bool
+	TrustedUntil    *time.Time
+	FirstSeenAt     time.Time
+	LastSeenAt      time.Time
 }

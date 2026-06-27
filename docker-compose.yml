@@ -86,3 +86,48 @@ services:
       - .env
     depends_on:
       - auth-gateway
+
+  workflow-service:
+    build:
+      context: ./apps/workflow-service
+    environment:
+      APP_NAME: workflow-service
+      HTTP_ADDR: 0.0.0.0:8080
+      LOG_LEVEL: info
+      DATABASE_DSN: postgres://arda_workflow:123456@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/workflow?sslmode=${IAM_DATABASE_SSLMODE:-disable}
+      ZEEBE_ADDR: ${ZEEBE_ADDR:-192.168.100.201:30650}
+    ports:
+      - "8093:8080"
+    env_file:
+      - .env
+
+  crm-service:
+    build:
+      context: ./apps/crm-service
+    environment:
+      APP_NAME: crm-service
+      HTTP_ADDR: 0.0.0.0:8080
+      LOG_LEVEL: info
+      DATABASE_DSN: postgres://arda_crm:123456@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/crm?sslmode=${IAM_DATABASE_SSLMODE:-disable}
+      ZEEBE_ADDR: ${ZEEBE_ADDR:-192.168.100.201:30650}
+      WORKFLOW_SERVICE_URL: http://workflow-service:8080
+    ports:
+      - "8094:8080"
+    env_file:
+      - .env
+    depends_on:
+      - workflow-service
+
+  notification-service:
+    build:
+      context: ./apps/notification-service
+    environment:
+      APP_NAME: notification-service
+      HTTP_ADDR: 0.0.0.0:8080
+      LOG_LEVEL: info
+      ZEEBE_ADDR: ${ZEEBE_ADDR:-192.168.100.201:30650}
+    ports:
+      - "8095:8080"
+    env_file:
+      - .env
+

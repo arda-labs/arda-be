@@ -2,11 +2,14 @@ go 1.26.3
 
 use (
 	./apps/auth-gateway
+	./apps/crm-service
 	./apps/finance-service
 	./apps/iam-service
 	./apps/mdm-service
 	./apps/media-service
+	./apps/notification-service
 	./apps/platform-service
+	./apps/workflow-service
 	./libs/go/arda-auth
 	./libs/go/arda-errors
 	./libs/go/arda-events

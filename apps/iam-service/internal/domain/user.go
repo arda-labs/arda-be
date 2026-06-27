@@ -9,12 +9,21 @@ type User struct {
 	Username      string
 	Email         string
 	DisplayName   string
+	FirstName     string
+	LastName      string
+	PhoneNumber   string
+	Birthdate     string
+	Gender        string
+	Address       string
+	Country       string
 	PasswordHash  string
 	Status        string
 	Source        string // "internal", "entra_id", "google", "ldap"...
 	TenantID      string
 	AvatarFileID  string
 	PictureURL    string
+	CoverFileID   string
+	CoverImageURL string
 	Department    string
 	Position      string
 	EmployeeID    string
@@ -60,8 +69,18 @@ type UserContext struct {
 	Subject       string   `json:"subject"`
 	Username      string   `json:"username"`
 	Email         string   `json:"email"`
+	DisplayName   string   `json:"displayName,omitempty"`
+	FirstName     string   `json:"firstName,omitempty"`
+	LastName      string   `json:"lastName,omitempty"`
+	PhoneNumber   string   `json:"phoneNumber,omitempty"`
+	Birthdate     string   `json:"birthdate,omitempty"`
+	Gender        string   `json:"gender,omitempty"`
+	Address       string   `json:"address,omitempty"`
+	Country       string   `json:"country,omitempty"`
 	PictureURL    string   `json:"picture,omitempty"`
 	AvatarFileID  string   `json:"avatarFileId,omitempty"`
+	CoverImageURL string   `json:"coverImage,omitempty"`
+	CoverFileID   string   `json:"coverFileId,omitempty"`
 	TenantID      string   `json:"tenantId"`
 	OrgIDs        []string `json:"orgIds"`
 	Roles         []string `json:"roles"`
