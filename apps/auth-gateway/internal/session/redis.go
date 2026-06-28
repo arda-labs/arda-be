@@ -33,13 +33,25 @@ func (s *RedisStore) Create(ctx context.Context, session *Session, ttl time.Dura
 	}
 
 	pipe := s.client.TxPipeline()
-	pipe.Set(ctx, keyPrefix+session.ID, data, ttl)
+	setCmd := pipe.Set(ctx, keyPrefix+session.ID, data, ttl)
+	var saddCmd *redis.IntCmd
+	var expireCmd *redis.BoolCmd
 	if session.User != nil && session.User.UserID != "" {
-		pipe.SAdd(ctx, userIdxPrefix+session.User.UserID, session.ID)
-		pipe.Expire(ctx, userIdxPrefix+session.User.UserID, ttl)
+		saddCmd = pipe.SAdd(ctx, userIdxPrefix+session.User.UserID, session.ID)
+		expireCmd = pipe.Expire(ctx, userIdxPrefix+session.User.UserID, ttl)
 	}
 	_, err = pipe.Exec(ctx)
-	return err
+	if err != nil {
+		var saddErr, expireErr error
+		if saddCmd != nil {
+			saddErr = saddCmd.Err()
+		}
+		if expireCmd != nil {
+			expireErr = expireCmd.Err()
+		}
+		return fmt.Errorf("tx exec failed: %v (set_err: %v, sadd_err: %v, expire_err: %v)", err, setCmd.Err(), saddErr, expireErr)
+	}
+	return nil
 }
 
 func (s *RedisStore) Get(ctx context.Context, sessionID string) (*Session, error) {
