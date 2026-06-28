@@ -35,8 +35,17 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	mux.HandleFunc("/api/auth/register", method("POST", authHandler.RegisterUser))
 
 	// ── Admin API — User management ──
+	mux.HandleFunc("/api/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			adminHandler.ListUsers(w, r)
+		case http.MethodPost:
+			adminHandler.CreateUser(w, r)
+		default:
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
 	mux.HandleFunc("/api/admin/users/create", method("POST", adminHandler.CreateUser))
-	mux.HandleFunc("/api/admin/users", method("GET", adminHandler.ListUsers))
 	mux.HandleFunc("/api/admin/users/{id}/sessions", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -50,7 +59,22 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	mux.HandleFunc("/api/admin/users/{id}/delete", method("DELETE", adminHandler.DeleteUser))
 	mux.HandleFunc("/api/admin/users/{id}/disable", method("POST", adminHandler.DisableUser))
 	mux.HandleFunc("/api/admin/users/{id}/enable", method("POST", adminHandler.EnableUser))
-	mux.HandleFunc("/api/admin/users/{id}", method("GET", adminHandler.GetUser))
+	mux.HandleFunc("/api/admin/users/{id}/status", method("PUT", adminHandler.SetUserStatus))
+	mux.HandleFunc("/api/admin/users/{id}/identity/provision", method("POST", adminHandler.ProvisionUserIdentity))
+	mux.HandleFunc("/api/admin/users/{id}/identity/password/reset", method("POST", adminHandler.ResetUserPassword))
+	mux.HandleFunc("/api/admin/identity/consistency", method("GET", adminHandler.AuditIdentityConsistency))
+	mux.HandleFunc("/api/admin/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			adminHandler.GetUser(w, r)
+		case http.MethodPut:
+			adminHandler.UpdateUser(w, r)
+		case http.MethodDelete:
+			adminHandler.DeleteUser(w, r)
+		default:
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
 	mux.HandleFunc("/api/admin/users/{userId}/roles/{roleId}/remove", method("DELETE", adminHandler.UnassignUserRole))
 	mux.HandleFunc("/api/admin/users/roles/assign", method("POST", adminHandler.AssignUserRole))
 
@@ -100,6 +124,8 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	mux.HandleFunc("/api/iam/me/profile/cover", method("POST", userHandler.UpdateMyCover))
 	mux.HandleFunc("/api/iam/me/profile", method("PUT", userHandler.UpdateMyProfile))
 	mux.HandleFunc("/api/iam/me/profile/email", method("PUT", userHandler.UpdateMyEmail))
+	mux.HandleFunc("/api/identity/me/email", method("PUT", userHandler.UpdateMyEmail))
+	mux.HandleFunc("/api/identity/me/password", method("PUT", userHandler.UpdateMyPassword))
 
 	// ── Policy API ──
 	if policyHandler != nil {
@@ -117,6 +143,8 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	// ── Internal API (service-to-service) ──
 	mux.HandleFunc("/internal/iam/users/by-subject/{subject}", method("GET", userHandler.GetBySubject))
 	mux.HandleFunc("/internal/iam/users/by-id/{id}/context", method("GET", userHandler.GetContextByID))
+	mux.HandleFunc("/internal/iam/users/by-kratos-identity/{identityId}/context", method("GET", userHandler.GetContextByKratosIdentityID))
+	mux.HandleFunc("/internal/iam/users/resolve-kratos-identity", method("POST", userHandler.ResolveOrLinkKratosIdentity))
 	mux.HandleFunc("/internal/iam/sessions", method("POST", sessionHandler.InternalCreateSession))
 	mux.HandleFunc("/internal/iam/sessions/{id}", method("DELETE", sessionHandler.InternalRevokeSession))
 

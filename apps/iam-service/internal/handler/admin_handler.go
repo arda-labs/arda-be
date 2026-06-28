@@ -8,27 +8,26 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
-	"github.com/arda-labs/arda/apps/iam-service/internal/kratos"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
+	"github.com/arda-labs/arda/apps/iam-service/internal/service"
 	"github.com/arda-labs/arda/apps/iam-service/internal/system"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // AdminHandler manages users, roles, permissions.
 type AdminHandler struct {
 	userRepo *repository.UserRepository
 	roleRepo *repository.RoleRepository
-	kratos   *kratos.Client
+	userSvc  *service.AdminUserService
 	logger   *slog.Logger
 }
 
 // NewAdminHandler creates an admin handler.
-func NewAdminHandler(userRepo *repository.UserRepository, roleRepo *repository.RoleRepository, kratosClient *kratos.Client) *AdminHandler {
+func NewAdminHandler(userRepo *repository.UserRepository, roleRepo *repository.RoleRepository, userSvc *service.AdminUserService) *AdminHandler {
 	return &AdminHandler{
 		userRepo: userRepo,
 		roleRepo: roleRepo,
-		kratos:   kratosClient,
+		userSvc:  userSvc,
 		logger:   slog.Default(),
 	}
 }
@@ -69,7 +68,7 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	sortField := r.URL.Query().Get("sortField")
 	sortOrder := r.URL.Query().Get("sortOrder")
 
-	users, total, err := h.userRepo.ListUsers(r.Context(), repository.ListUsersParams{
+	users, total, err := h.userSvc.ListUsers(r.Context(), repository.ListUsersParams{
 		Page:      page,
 		Size:      size,
 		Status:    status,
@@ -87,14 +86,9 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	totalPages := (total + size - 1) / size
 	items := make([]userListItem, 0, len(users))
 	for _, u := range users {
-		roles, _ := h.userRepo.GetUserRoles(r.Context(), u.ID)
-		roleCodes := make([]string, len(roles))
-		for i, r := range roles {
-			roleCodes[i] = r.Code
-		}
 		items = append(items, userListItem{
 			ID: u.ID, Username: u.Username, Email: u.Email,
-			Name: u.DisplayName, Status: u.Status, Roles: roleCodes,
+			Name: u.Name, Status: u.Status, Roles: u.Roles,
 			TenantID: u.TenantID, CreatedAt: u.CreatedAt.Format(time.RFC3339),
 		})
 	}
@@ -112,22 +106,17 @@ func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := h.userRepo.GetUserByID(r.Context(), id)
-	if err != nil || u == nil {
+	detail, err := h.userSvc.GetUser(r.Context(), id)
+	if err != nil || detail == nil || detail.User == nil {
 		respondError(w, http.StatusNotFound, "user not found")
 		return
 	}
-
-	roles, _ := h.userRepo.GetUserRoles(r.Context(), id)
-	roleCodes := make([]string, len(roles))
-	for i, r := range roles {
-		roleCodes[i] = r.Code
-	}
+	u := detail.User
 
 	respondJSON(w, http.StatusOK, map[string]any{
 		"id": u.ID, "username": u.Username, "email": u.Email,
 		"name": u.DisplayName, "status": u.Status, "tenantId": u.TenantID,
-		"source": u.Source, "roles": roleCodes,
+		"source": u.Source, "roles": detail.Roles,
 		"createdAt": u.CreatedAt.Format(time.RFC3339),
 		"updatedAt": u.UpdatedAt.Format(time.RFC3339),
 	})
@@ -156,53 +145,18 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		req.TenantID = "default"
 	}
 
-	// 1. Create identity in Kratos
-	var kratosIdentityID string
-	if h.kratos != nil {
-		identity, err := h.kratos.CreateIdentity(req.Email, req.Password, req.Name)
-		if err != nil {
-			h.logger.Warn("kratos create identity", "err", err)
-			respondError(w, http.StatusConflict, err.Error())
-			return
-		}
-		kratosIdentityID = identity.ID
-	}
-
-	// 2. Create user in iam-service DB
-	hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-
-	user := &domain.User{
-		Username:     req.Username,
-		Email:        req.Email,
-		DisplayName:  req.Name,
-		Subject:      kratosIdentityID,
-		PasswordHash: string(hash),
-		Source:       "kratos",
-		Status:       "ACTIVE",
-		TenantID:     req.TenantID,
-	}
-	created, err := h.userRepo.CreateUser(r.Context(), user)
+	created, err := h.userSvc.CreateUser(r.Context(), service.CreateAdminUserInput{
+		Username: req.Username,
+		Email:    req.Email,
+		Password: req.Password,
+		Name:     req.Name,
+		TenantID: req.TenantID,
+		RoleIDs:  req.RoleIDs,
+	})
 	if err != nil {
-		if kratosIdentityID != "" && h.kratos != nil {
-			h.kratos.DeleteIdentity(kratosIdentityID)
-		}
-		respondError(w, http.StatusInternalServerError, err.Error())
+		h.logger.Warn("admin create user failed", "username", req.Username, "err", err)
+		respondError(w, http.StatusConflict, err.Error())
 		return
-	}
-
-	// 3. Identity mapping
-	if kratosIdentityID != "" {
-		h.userRepo.CreateIdentityMapping(r.Context(), &domain.IdentityMapping{
-			ProviderID:     "kratos",
-			ExternalID:     kratosIdentityID,
-			InternalUserID: created.ID,
-			IsActive:       true,
-		})
-	}
-
-	// 4. Assign roles
-	for _, roleID := range req.RoleIDs {
-		h.userRepo.AssignRole(r.Context(), created.ID, roleID)
 	}
 
 	h.logger.Info("user created", "username", req.Username, "id", created.ID)
@@ -229,39 +183,29 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := h.userRepo.GetUserByID(r.Context(), id)
-	if err != nil || u == nil {
-		respondError(w, http.StatusNotFound, "user not found")
-		return
-	}
-
 	var req updateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	if req.Username != nil {
-		u.Username = *req.Username
-	}
-	if req.Email != nil {
-		u.Email = *req.Email
-	}
-	if req.Name != nil {
-		u.DisplayName = *req.Name
-	}
-	if req.Status != nil {
-		if *req.Status != "ACTIVE" && h.isProtectedSuperAdmin(w, r, u.ID) {
-			return
-		}
-		u.Status = *req.Status
-	}
-	if req.TenantID != nil {
-		u.TenantID = *req.TenantID
+	if req.Status != nil && *req.Status != "ACTIVE" && h.isProtectedSuperAdmin(w, r, id) {
+		return
 	}
 
-	if err := h.userRepo.UpdateUser(r.Context(), u); err != nil {
+	u, err := h.userSvc.UpdateUser(r.Context(), id, service.UpdateAdminUserInput{
+		Username: req.Username,
+		Email:    req.Email,
+		Name:     req.Name,
+		Status:   req.Status,
+		TenantID: req.TenantID,
+	})
+	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if u == nil {
+		respondError(w, http.StatusNotFound, "user not found")
 		return
 	}
 
@@ -288,12 +232,7 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete Kratos identity if exists
-	if u.Subject != "" && h.kratos != nil {
-		h.kratos.DeleteIdentity(u.Subject)
-	}
-
-	if err := h.userRepo.DeleteUser(r.Context(), id); err != nil {
+	if _, err := h.userSvc.DeleteUser(r.Context(), id); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -317,8 +256,7 @@ func (h *AdminHandler) DisableUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u.Status = "DISABLED"
-	if err := h.userRepo.UpdateUser(r.Context(), u); err != nil {
+	if _, err := h.userSvc.SetStatus(r.Context(), id, "DISABLED"); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -339,8 +277,7 @@ func (h *AdminHandler) EnableUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u.Status = "ACTIVE"
-	if err := h.userRepo.UpdateUser(r.Context(), u); err != nil {
+	if _, err := h.userSvc.SetStatus(r.Context(), id, "ACTIVE"); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -348,7 +285,109 @@ func (h *AdminHandler) EnableUser(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
 }
 
+func (h *AdminHandler) SetUserStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "missing user id")
+		return
+	}
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Status != "ACTIVE" && req.Status != "DISABLED" {
+		respondError(w, http.StatusBadRequest, "status must be ACTIVE or DISABLED")
+		return
+	}
+	if req.Status != "ACTIVE" && h.isProtectedSuperAdmin(w, r, id) {
+		return
+	}
+	u, err := h.userSvc.SetStatus(r.Context(), id, req.Status)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if u == nil {
+		respondError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+func (h *AdminHandler) ResetUserPassword(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "missing user id")
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Password == "" {
+		respondError(w, http.StatusBadRequest, "password is required")
+		return
+	}
+	u, err := h.userSvc.ResetPassword(r.Context(), id, req.Password)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if u == nil {
+		respondError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"status": "password_reset"})
+}
+
 // ── Role assignment ──
+
+func (h *AdminHandler) AuditIdentityConsistency(w http.ResponseWriter, r *http.Request) {
+	issues, err := h.userSvc.AuditIdentityConsistency(r.Context())
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{
+		"ok":     len(issues) == 0,
+		"count":  len(issues),
+		"issues": issues,
+	})
+}
+
+func (h *AdminHandler) ProvisionUserIdentity(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "missing user id")
+		return
+	}
+	var req struct {
+		TemporaryPassword string `json:"temporaryPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	u, identityID, err := h.userSvc.ProvisionIdentity(r.Context(), id, req.TemporaryPassword)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if u == nil {
+		respondError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{
+		"status":           "provisioned",
+		"kratosIdentityId": identityID,
+	})
+}
 
 func (h *AdminHandler) AssignUserRole(w http.ResponseWriter, r *http.Request) {
 	var req struct {

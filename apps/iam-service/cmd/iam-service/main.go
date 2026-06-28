@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -77,6 +78,9 @@ func main() {
 
 	// ── Kratos Admin client ──
 	kratosClient := kratos.New(cfg.KratosAdminURL)
+	if strings.Contains(cfg.KratosAdminURL, "localhost") || strings.Contains(cfg.KratosAdminURL, "127.0.0.1") {
+		logger.Warn("kratos admin url points to localhost; remote/dev environments may fail user management operations", "kratos_admin_url", cfg.KratosAdminURL)
+	}
 
 	// ── Audit logger (uses chain-hash DB writer) ──
 	auditLogger := audit.New("iam-service", auditRepo)
@@ -126,11 +130,13 @@ func main() {
 	).WithMFAService(mfaSvc)
 
 	// ── Handlers ──
-	userSvc := service.NewUserService(userRepo, kratosClient)
+	identitySvc := service.NewIdentityService(userRepo, kratosClient)
+	userSvc := service.NewUserService(userRepo, identitySvc)
 	userHandler := handler.NewUserHandler(userSvc)
 	authHandler := handler.NewAuthHandler(orchestrator, userHandler)
 	policyHandler := handler.NewPolicyHandler(policyEnf)
-	adminHandler := handler.NewAdminHandler(userRepo, roleRepo, kratosClient)
+	adminUserSvc := service.NewAdminUserService(userRepo, roleRepo, identitySvc)
+	adminHandler := handler.NewAdminHandler(userRepo, roleRepo, adminUserSvc)
 	sessionHandler := handler.NewSessionHandler(sessionSvc)
 	mfaHandler := handler.NewMFAHandler(mfaSvc)
 	auditHandler := handler.NewAuditHandler(auditSvc)

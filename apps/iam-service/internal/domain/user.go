@@ -4,34 +4,36 @@ import "time"
 
 // User represents an IAM user.
 type User struct {
-	ID            string
-	Subject       string
-	Username      string
-	Email         string
-	DisplayName   string
-	FirstName     string
-	LastName      string
-	PhoneNumber   string
-	Birthdate     string
-	Gender        string
-	Address       string
-	Country       string
-	PasswordHash  string
-	Status        string
-	Source        string // "internal", "entra_id", "google", "ldap"...
-	TenantID      string
-	AvatarFileID  string
-	PictureURL    string
-	CoverFileID   string
-	CoverImageURL string
-	Department    string
-	Position      string
-	EmployeeID    string
-	ApprovalLevel string
-	DailyLimit    string
-	Bio           string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID               string
+	Subject          string
+	KratosIdentityID string
+	Username         string
+	Email            string
+	DisplayName      string
+	Nickname         string
+	FirstName        string
+	LastName         string
+	PhoneNumber      string
+	Birthdate        string
+	Gender           string
+	Address          string
+	Country          string
+	PasswordHash     string
+	Status           string
+	Source           string // "internal", "entra_id", "google", "ldap"...
+	TenantID         string
+	AvatarFileID     string
+	PictureURL       string
+	CoverFileID      string
+	CoverImageURL    string
+	Department       string
+	Position         string
+	EmployeeID       string
+	ApprovalLevel    string
+	DailyLimit       string
+	Bio              string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // Role represents a role assigned to users.
@@ -70,6 +72,7 @@ type UserContext struct {
 	Username      string   `json:"username"`
 	Email         string   `json:"email"`
 	DisplayName   string   `json:"displayName,omitempty"`
+	Nickname      string   `json:"nickname,omitempty"`
 	FirstName     string   `json:"firstName,omitempty"`
 	LastName      string   `json:"lastName,omitempty"`
 	PhoneNumber   string   `json:"phoneNumber,omitempty"`

@@ -51,6 +51,43 @@ func (h *UserHandler) GetContextByID(w http.ResponseWriter, r *http.Request) {
 	h.getContextByID(w, r.Context(), id)
 }
 
+func (h *UserHandler) GetContextByKratosIdentityID(w http.ResponseWriter, r *http.Request) {
+	identityID := r.PathValue("identityId")
+	if identityID == "" {
+		respondError(w, http.StatusBadRequest, "missing identity id")
+		return
+	}
+	userCtx, err := h.svc.GetUserContextByKratosIdentityID(r.Context(), identityID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, userCtx)
+}
+
+func (h *UserHandler) ResolveOrLinkKratosIdentity(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IdentityID string `json:"identityId"`
+		Email      string `json:"email"`
+		Name       string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	identityID := strings.TrimSpace(req.IdentityID)
+	if identityID == "" {
+		respondError(w, http.StatusBadRequest, "identityId is required")
+		return
+	}
+	userCtx, err := h.svc.ResolveOrLinkKratosIdentity(r.Context(), identityID, strings.TrimSpace(req.Email), strings.TrimSpace(req.Name))
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, userCtx)
+}
+
 func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
@@ -119,6 +156,7 @@ func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Name          string `json:"name"`
+		Nickname      string `json:"nickname"`
 		FirstName     string `json:"first_name"`
 		LastName      string `json:"last_name"`
 		PhoneNumber   string `json:"phone_number"`
@@ -139,6 +177,7 @@ func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, err := h.svc.UpdateUserProfile(r.Context(), userID,
 		strings.TrimSpace(req.Name),
+		strings.TrimSpace(req.Nickname),
 		strings.TrimSpace(req.FirstName),
 		strings.TrimSpace(req.LastName),
 		strings.TrimSpace(req.PhoneNumber),
@@ -202,4 +241,29 @@ func (h *UserHandler) UpdateMyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, ctx)
+}
+
+func (h *UserHandler) UpdateMyPassword(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
+	if userID == "" {
+		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	newPassword := strings.TrimSpace(req.Password)
+	if newPassword == "" {
+		respondError(w, http.StatusBadRequest, "password is required")
+		return
+	}
+	if err := h.svc.UpdateUserPassword(r.Context(), userID, newPassword); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }

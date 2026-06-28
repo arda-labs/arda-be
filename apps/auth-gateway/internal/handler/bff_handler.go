@@ -48,10 +48,21 @@ func (h *BFFHandler) doPut(url, contentType string, body io.Reader) (*http.Respo
 }
 
 type loginAcceptRequest struct {
-	LoginChallenge string `json:"login_challenge"`
-	Subject        string `json:"subject"`
-	Remember       bool   `json:"remember"`
-	RememberFor    int    `json:"remember_for"`
+	LoginChallenge     string `json:"login_challenge"`
+	Subject            string `json:"subject"`
+	Remember           bool   `json:"remember"`
+	RememberFor        int    `json:"remember_for"`
+	KratosSessionToken string `json:"kratos_session_token"`
+}
+
+type kratosWhoamiResponse struct {
+	Identity struct {
+		ID     string `json:"id"`
+		Traits struct {
+			Email string `json:"email"`
+			Name  string `json:"name"`
+		} `json:"traits"`
+	} `json:"identity"`
 }
 
 type consentAcceptRequest struct {
@@ -73,6 +84,70 @@ func (h *BFFHandler) AcceptLogin(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	hydraURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/login/accept?login_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(req.LoginChallenge))
+	b, _ := json.Marshal(map[string]any{"subject": req.Subject, "remember": req.Remember, "remember_for": req.RememberFor})
+	resp, err := h.doPut(hydraURL, "application/json", bytes.NewReader(b))
+	if err != nil {
+		respondError(w, http.StatusBadGateway, "accept login failed")
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		respondError(w, resp.StatusCode, string(body))
+		return
+	}
+	var result struct {
+		RedirectTo string `json:"redirect_to"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result.RedirectTo == "" {
+		respondError(w, http.StatusBadGateway, "accept login returned empty redirect_to")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"redirect_url": result.RedirectTo})
+}
+
+func (h *BFFHandler) AcceptKratosLogin(w http.ResponseWriter, r *http.Request) {
+	var req loginAcceptRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.LoginChallenge == "" {
+		respondError(w, http.StatusBadRequest, "missing login_challenge")
+		return
+	}
+	whoami, err := h.kratosWhoami(r, req.KratosSessionToken)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	if h.iamClient == nil {
+		respondError(w, http.StatusBadGateway, "iam client is not configured")
+		return
+	}
+	uc, err := h.iamClient.GetUserByKratosIdentityID(r.Context(), whoami.Identity.ID)
+	if err != nil {
+		h.logger.Warn("resolve kratos identity failed", "identity_id", whoami.Identity.ID, "err", err)
+		uc, err = h.iamClient.ResolveOrLinkKratosIdentity(r.Context(), whoami.Identity.ID, whoami.Identity.Traits.Email, whoami.Identity.Traits.Name)
+		if err != nil {
+			h.logger.Warn("resolve or link kratos identity failed", "identity_id", whoami.Identity.ID, "email", whoami.Identity.Traits.Email, "err", err)
+			respondError(w, http.StatusBadGateway, "user context unavailable")
+			return
+		}
+	}
+	req.Subject = uc.UserID
+	if !req.Remember {
+		req.Remember = true
+	}
+	if req.RememberFor == 0 {
+		req.RememberFor = int((24 * time.Hour).Seconds())
+	}
+	h.acceptHydraLogin(w, r, req)
+}
+
+func (h *BFFHandler) acceptHydraLogin(w http.ResponseWriter, r *http.Request, req loginAcceptRequest) {
 	hydraURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/login/accept?login_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(req.LoginChallenge))
 	b, _ := json.Marshal(map[string]any{"subject": req.Subject, "remember": req.Remember, "remember_for": req.RememberFor})
 	resp, err := h.doPut(hydraURL, "application/json", bytes.NewReader(b))
@@ -327,6 +402,7 @@ func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *
 		Username:     uc.Username,
 		Email:        uc.Email,
 		DisplayName:  uc.DisplayName,
+		Nickname:     uc.Nickname,
 		FirstName:    uc.FirstName,
 		LastName:     uc.LastName,
 		PhoneNumber:  uc.PhoneNumber,
@@ -354,6 +430,9 @@ func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *
 	}
 	if info.DisplayName == "" && fallback != nil {
 		info.DisplayName = fallback.DisplayName
+	}
+	if info.Nickname == "" && fallback != nil {
+		info.Nickname = fallback.Nickname
 	}
 	if info.FirstName == "" && fallback != nil {
 		info.FirstName = fallback.FirstName
@@ -429,6 +508,9 @@ func (h *BFFHandler) trackSession(r *http.Request, userID, deviceToken string, t
 func (h *BFFHandler) KratosWhoami(w http.ResponseWriter, r *http.Request) {
 	h.proxyToKratos(w, r, "sessions/whoami")
 }
+func (h *BFFHandler) KratosCreateLoginAPIFlow(w http.ResponseWriter, r *http.Request) {
+	h.proxyToKratos(w, r, "self-service/login/api")
+}
 func (h *BFFHandler) KratosCreateLoginFlow(w http.ResponseWriter, r *http.Request) {
 	h.proxyToKratos(w, r, "self-service/login/browser")
 }
@@ -437,6 +519,33 @@ func (h *BFFHandler) KratosGetLoginFlow(w http.ResponseWriter, r *http.Request) 
 }
 func (h *BFFHandler) KratosSubmitLogin(w http.ResponseWriter, r *http.Request) {
 	h.proxyToKratos(w, r, "self-service/login?"+r.URL.RawQuery)
+}
+func (h *BFFHandler) KratosCreateSettingsFlow(w http.ResponseWriter, r *http.Request) {
+	h.proxyToKratos(w, r, "self-service/settings/browser")
+}
+func (h *BFFHandler) KratosGetSettingsFlow(w http.ResponseWriter, r *http.Request) {
+	h.proxyToKratos(w, r, "self-service/settings/flows?"+r.URL.RawQuery)
+}
+func (h *BFFHandler) KratosSubmitSettings(w http.ResponseWriter, r *http.Request) {
+	h.proxyToKratos(w, r, "self-service/settings?"+r.URL.RawQuery)
+}
+func (h *BFFHandler) KratosCreateRecoveryFlow(w http.ResponseWriter, r *http.Request) {
+	h.proxyToKratos(w, r, "self-service/recovery/browser")
+}
+func (h *BFFHandler) KratosGetRecoveryFlow(w http.ResponseWriter, r *http.Request) {
+	h.proxyToKratos(w, r, "self-service/recovery/flows?"+r.URL.RawQuery)
+}
+func (h *BFFHandler) KratosSubmitRecovery(w http.ResponseWriter, r *http.Request) {
+	h.proxyToKratos(w, r, "self-service/recovery?"+r.URL.RawQuery)
+}
+func (h *BFFHandler) KratosCreateVerificationFlow(w http.ResponseWriter, r *http.Request) {
+	h.proxyToKratos(w, r, "self-service/verification/browser")
+}
+func (h *BFFHandler) KratosGetVerificationFlow(w http.ResponseWriter, r *http.Request) {
+	h.proxyToKratos(w, r, "self-service/verification/flows?"+r.URL.RawQuery)
+}
+func (h *BFFHandler) KratosSubmitVerification(w http.ResponseWriter, r *http.Request) {
+	h.proxyToKratos(w, r, "self-service/verification?"+r.URL.RawQuery)
 }
 
 func (h *BFFHandler) proxyToKratos(w http.ResponseWriter, r *http.Request, path string) {
@@ -460,6 +569,47 @@ func (h *BFFHandler) proxyToKratos(w http.ResponseWriter, r *http.Request, path 
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+func (h *BFFHandler) kratosWhoami(r *http.Request, sessionToken string) (*kratosWhoamiResponse, error) {
+	target := fmt.Sprintf("%s/%s", strings.TrimSuffix(h.cfg.KratosPublicURL, "/"), "sessions/whoami")
+	proxyReq, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
+	proxyReq.Header = r.Header.Clone()
+	proxyReq.Header.Set("Accept", "application/json")
+	proxyReq.Header.Del("Accept-Encoding")
+	if strings.TrimSpace(sessionToken) != "" {
+		proxyReq.Header.Set("X-Session-Token", strings.TrimSpace(sessionToken))
+	}
+	proxyReq.Header.Set("X-Forwarded-Proto", "https")
+	proxyReq.Header.Set("X-Forwarded-Host", r.Host)
+	resp, err := h.httpClient.Do(proxyReq)
+	if err != nil {
+		return nil, fmt.Errorf("kratos whoami failed")
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("kratos session is not authenticated: HTTP %d: %s", resp.StatusCode, truncateBody(body))
+	}
+	var whoami kratosWhoamiResponse
+	if err := json.Unmarshal(body, &whoami); err != nil {
+		return nil, fmt.Errorf("decode kratos whoami failed: %s", truncateBody(body))
+	}
+	if strings.TrimSpace(whoami.Identity.ID) == "" {
+		return nil, fmt.Errorf("kratos whoami missing identity: %s", truncateBody(body))
+	}
+	return &whoami, nil
+}
+
+func truncateBody(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if len(text) > 500 {
+		return text[:500]
+	}
+	if text == "" {
+		return "<empty response>"
+	}
+	return text
 }
 
 func (h *BFFHandler) setSessionCookie(w http.ResponseWriter, id string, ttl time.Duration) {
@@ -586,6 +736,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 				proxyReq.Header.Set("X-User-Subject", sess.User.Subject)
 				proxyReq.Header.Set("X-Username", sess.User.Username)
 				proxyReq.Header.Set("X-User-Email", sess.User.Email)
+				proxyReq.Header.Set("X-Nickname", sess.User.Nickname)
 				proxyReq.Header.Set("X-Tenant-Id", sess.User.TenantID)
 				proxyReq.Header.Set("X-Roles", strings.Join(sess.User.Roles, ","))
 				proxyReq.Header.Set("X-Permissions", strings.Join(sess.User.Permissions, ","))

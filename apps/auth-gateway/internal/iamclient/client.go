@@ -12,18 +12,19 @@ import (
 
 // UserContext mirrors the IAM internal API response.
 type UserContext struct {
-	UserID       string   `json:"userId"`
-	Subject      string   `json:"subject"`
-	Username     string   `json:"username"`
-	Email        string   `json:"email"`
-	DisplayName  string   `json:"displayName,omitempty"`
-	FirstName    string   `json:"firstName,omitempty"`
-	LastName     string   `json:"lastName,omitempty"`
-	PhoneNumber  string   `json:"phoneNumber,omitempty"`
-	Birthdate    string   `json:"birthdate,omitempty"`
-	Gender       string   `json:"gender,omitempty"`
-	Address      string   `json:"address,omitempty"`
-	Country      string   `json:"country,omitempty"`
+	UserID        string   `json:"userId"`
+	Subject       string   `json:"subject"`
+	Username      string   `json:"username"`
+	Email         string   `json:"email"`
+	DisplayName   string   `json:"displayName,omitempty"`
+	Nickname      string   `json:"nickname,omitempty"`
+	FirstName     string   `json:"firstName,omitempty"`
+	LastName      string   `json:"lastName,omitempty"`
+	PhoneNumber   string   `json:"phoneNumber,omitempty"`
+	Birthdate     string   `json:"birthdate,omitempty"`
+	Gender        string   `json:"gender,omitempty"`
+	Address       string   `json:"address,omitempty"`
+	Country       string   `json:"country,omitempty"`
 	PictureURL    string   `json:"picture,omitempty"`
 	AvatarFileID  string   `json:"avatarFileId,omitempty"`
 	CoverImageURL string   `json:"coverImage,omitempty"`
@@ -91,6 +92,34 @@ func (c *Client) GetUserByID(ctx context.Context, id string) (*UserContext, erro
 		return nil, err
 	}
 
+	return c.doUserContext(req)
+}
+
+func (c *Client) GetUserByKratosIdentityID(ctx context.Context, identityID string) (*UserContext, error) {
+	endpoint := c.baseURL + "/internal/iam/users/by-kratos-identity/" + url.PathEscape(identityID) + "/context"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.doUserContext(req)
+}
+
+func (c *Client) ResolveOrLinkKratosIdentity(ctx context.Context, identityID, email, name string) (*UserContext, error) {
+	body, err := json.Marshal(map[string]string{
+		"identityId": identityID,
+		"email":      email,
+		"name":       name,
+	})
+	if err != nil {
+		return nil, err
+	}
+	endpoint := c.baseURL + "/internal/iam/users/resolve-kratos-identity"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
 	return c.doUserContext(req)
 }
 

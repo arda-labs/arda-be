@@ -31,11 +31,21 @@ type ListUsersParams struct {
 	SortOrder string
 }
 
+type IdentityConsistencyIssue struct {
+	Type              string `json:"type"`
+	UserID            string `json:"userId,omitempty"`
+	Username          string `json:"username,omitempty"`
+	Email             string `json:"email,omitempty"`
+	KratosIdentityID  string `json:"kratosIdentityId,omitempty"`
+	MappingIdentityID string `json:"mappingIdentityId,omitempty"`
+	Count             int    `json:"count,omitempty"`
+}
+
 // scanUserRow scans a user row into a User.
 func scanUserRow(scanner interface {
 	Scan(dest ...any) error
 }, u *domain.User) error {
-	return scanner.Scan(&u.ID, &u.Subject, &u.Username, &u.Email, &u.DisplayName,
+	return scanner.Scan(&u.ID, &u.Subject, &u.KratosIdentityID, &u.Username, &u.Email, &u.DisplayName, &u.Nickname,
 		&u.FirstName, &u.LastName, &u.PhoneNumber, &u.Birthdate, &u.Gender, &u.Address, &u.Country,
 		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL, &u.CoverFileID, &u.CoverImageURL,
 		&u.Department, &u.Position, &u.EmployeeID, &u.ApprovalLevel, &u.DailyLimit, &u.Bio,
@@ -95,8 +105,8 @@ func (r *UserRepository) ListUsers(ctx context.Context, params ListUsersParams) 
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, external_subject, username, email, display_name,
-		       COALESCE(first_name,''), COALESCE(last_name,''),
+		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
@@ -132,18 +142,19 @@ func (r *UserRepository) UpdateUser(ctx context.Context, u *domain.User) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE iam_users SET
 			username = $1, email = $2, display_name = $3,
-			status = $4, tenant_id = $5,
-			department = $6, position = $7, employee_id = $8,
-			approval_level = $9, daily_limit = $10, bio = $11,
-			first_name = $12, last_name = $13,
-			phone_number = $14, birthdate = $15, gender = $16, address = $17, country = $18,
-			cover_file_id = $19, cover_image_url = $20,
+			nickname = $4, status = $5, tenant_id = $6,
+			department = $7, position = $8, employee_id = $9,
+			approval_level = $10, daily_limit = $11, bio = $12,
+			first_name = $13, last_name = $14,
+			phone_number = $15, birthdate = $16, gender = $17, address = $18, country = $19,
+			cover_file_id = $20, cover_image_url = $21,
+			kratos_identity_id = NULLIF($22, ''),
 			updated_at = now()
-		WHERE id = $21
-	`, u.Username, u.Email, u.DisplayName, u.Status, u.TenantID,
+		WHERE id = $23
+	`, u.Username, u.Email, u.DisplayName, u.Nickname, u.Status, u.TenantID,
 		u.Department, u.Position, u.EmployeeID, u.ApprovalLevel, u.DailyLimit, u.Bio,
 		u.FirstName, u.LastName, u.PhoneNumber, u.Birthdate, u.Gender, u.Address, u.Country,
-		u.CoverFileID, u.CoverImageURL, u.ID)
+		u.CoverFileID, u.CoverImageURL, u.KratosIdentityID, u.ID)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
@@ -157,8 +168,8 @@ func (r *UserRepository) UpdateUserAvatar(ctx context.Context, userID, avatarFil
 		    picture_url = NULLIF($3, ''),
 		    updated_at = now()
 		WHERE id = $1
-		RETURNING id, external_subject, username, email, display_name,
-		          COALESCE(first_name,''), COALESCE(last_name,''),
+		RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		          COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
@@ -183,8 +194,8 @@ func (r *UserRepository) UpdateUserCover(ctx context.Context, userID, coverFileI
 		    cover_image_url = NULLIF($3, ''),
 		    updated_at = now()
 		WHERE id = $1
-		RETURNING id, external_subject, username, email, display_name,
-		          COALESCE(first_name,''), COALESCE(last_name,''),
+		RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		          COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
@@ -202,34 +213,35 @@ func (r *UserRepository) UpdateUserCover(ctx context.Context, userID, coverFileI
 	return u, nil
 }
 
-func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID, name, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.User, error) {
+func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE iam_users
 		SET display_name = $2,
-		    first_name = $3,
-		    last_name = $4,
-		    phone_number = $5,
-		    birthdate = $6,
-		    gender = $7,
-		    address = $8,
-		    country = $9,
-		    position = $10,
-		    department = $11,
-		    employee_id = $12,
-		    approval_level = $13,
-		    daily_limit = $14,
-		    bio = $15,
+		    nickname = $3,
+		    first_name = $4,
+		    last_name = $5,
+		    phone_number = $6,
+		    birthdate = $7,
+		    gender = $8,
+		    address = $9,
+		    country = $10,
+		    position = $11,
+		    department = $12,
+		    employee_id = $13,
+		    approval_level = $14,
+		    daily_limit = $15,
+		    bio = $16,
 		    updated_at = now()
 		WHERE id = $1
-		RETURNING id, external_subject, username, email, display_name,
-		          COALESCE(first_name,''), COALESCE(last_name,''),
+		RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		          COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
 		          created_at, updated_at
-	`, userID, name, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio)
+	`, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio)
 	u := &domain.User{}
 	if err := scanUserRow(row, u); err != nil {
 		if err == sql.ErrNoRows {
@@ -246,8 +258,8 @@ func (r *UserRepository) UpdateUserEmail(ctx context.Context, userID, email stri
 		SET email = $2,
 		    updated_at = now()
 		WHERE id = $1
-		RETURNING id, external_subject, username, email, display_name,
-		          COALESCE(first_name,''), COALESCE(last_name,''),
+		RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		          COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
@@ -328,8 +340,8 @@ func (r *UserRepository) CountActiveUsersWithRoleCode(ctx context.Context, roleC
 // GetUserBySubject loads a user by external subject (OIDC sub).
 func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, external_subject, username, email, display_name,
-		       COALESCE(first_name,''), COALESCE(last_name,''),
+		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
@@ -346,8 +358,8 @@ func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (
 // GetUserByID loads a user by UUID.
 func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, external_subject, username, email, display_name,
-		       COALESCE(first_name,''), COALESCE(last_name,''),
+		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
@@ -361,11 +373,28 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 	return r.scanUser(row)
 }
 
+func (r *UserRepository) GetUserByKratosIdentityID(ctx context.Context, identityID string) (*domain.User, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
+		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
+		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
+		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       created_at, updated_at
+		FROM iam_users
+		WHERE kratos_identity_id = $1
+	`, identityID)
+
+	return r.scanUser(row)
+}
+
 // GetUserByUsername loads a user by username (for password auth).
 func (r *UserRepository) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, external_subject, username, email, display_name,
-		       COALESCE(first_name,''), COALESCE(last_name,''),
+		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
@@ -382,8 +411,8 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 // GetUserByEmail loads a user by email (for identity mapping).
 func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, external_subject, username, email, display_name,
-		       COALESCE(first_name,''), COALESCE(last_name,''),
+		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
 		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
@@ -400,10 +429,10 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*dom
 // CreateUser inserts a new user.
 func (r *UserRepository) CreateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO iam_users (external_subject, username, email, display_name, password_hash, source, status, tenant_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO iam_users (external_subject, kratos_identity_id, username, email, display_name, password_hash, source, status, tenant_id)
+		VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, created_at, updated_at
-	`, u.Subject, u.Username, u.Email, u.DisplayName, u.PasswordHash, u.Source, u.Status, u.TenantID)
+	`, u.Subject, u.KratosIdentityID, u.Username, u.Email, u.DisplayName, u.PasswordHash, u.Source, u.Status, u.TenantID)
 
 	err := row.Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
@@ -443,6 +472,102 @@ func (r *UserRepository) FindIdentityMapping(ctx context.Context, providerID, ex
 		return nil, fmt.Errorf("find identity mapping: %w", err)
 	}
 	return m, nil
+}
+
+// FindIdentityMappingByUser looks up an identity mapping by provider + internal user ID.
+func (r *UserRepository) FindIdentityMappingByUser(ctx context.Context, providerID, internalUserID string) (*domain.IdentityMapping, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, provider_id, external_id, internal_user_id, is_active, last_login_at, created_at
+		FROM iam_identity_mappings
+		WHERE provider_id = $1 AND internal_user_id = $2
+		ORDER BY created_at ASC
+		LIMIT 1
+	`, providerID, internalUserID)
+
+	m := &domain.IdentityMapping{}
+	err := row.Scan(&m.ID, &m.ProviderID, &m.ExternalID, &m.InternalUserID, &m.IsActive, &m.LastLoginAt, &m.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find identity mapping by user: %w", err)
+	}
+	return m, nil
+}
+
+func (r *UserRepository) AuditKratosIdentityConsistency(ctx context.Context) ([]IdentityConsistencyIssue, error) {
+	var issues []IdentityConsistencyIssue
+
+	missingRows, err := r.db.QueryContext(ctx, `
+		SELECT id, username, email
+		FROM iam_users
+		WHERE source = 'kratos' AND COALESCE(kratos_identity_id, '') = ''
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("audit missing kratos identity id: %w", err)
+	}
+	defer missingRows.Close()
+	for missingRows.Next() {
+		var issue IdentityConsistencyIssue
+		issue.Type = "missing_kratos_identity_id"
+		if err := missingRows.Scan(&issue.UserID, &issue.Username, &issue.Email); err != nil {
+			return nil, err
+		}
+		issues = append(issues, issue)
+	}
+	if err := missingRows.Err(); err != nil {
+		return nil, err
+	}
+
+	duplicateRows, err := r.db.QueryContext(ctx, `
+		SELECT kratos_identity_id, COUNT(*)
+		FROM iam_users
+		WHERE COALESCE(kratos_identity_id, '') <> ''
+		GROUP BY kratos_identity_id
+		HAVING COUNT(*) > 1
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("audit duplicate kratos identity id: %w", err)
+	}
+	defer duplicateRows.Close()
+	for duplicateRows.Next() {
+		var issue IdentityConsistencyIssue
+		issue.Type = "duplicate_kratos_identity_id"
+		if err := duplicateRows.Scan(&issue.KratosIdentityID, &issue.Count); err != nil {
+			return nil, err
+		}
+		issues = append(issues, issue)
+	}
+	if err := duplicateRows.Err(); err != nil {
+		return nil, err
+	}
+
+	mismatchRows, err := r.db.QueryContext(ctx, `
+		SELECT u.id, u.username, u.email, COALESCE(u.kratos_identity_id, ''), m.external_id
+		FROM iam_users u
+		JOIN iam_identity_mappings m ON m.internal_user_id = u.id AND m.provider_id = 'kratos'
+		WHERE COALESCE(u.kratos_identity_id, '') <> ''
+		  AND COALESCE(m.external_id, '') <> ''
+		  AND u.kratos_identity_id <> m.external_id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("audit kratos mapping mismatch: %w", err)
+	}
+	defer mismatchRows.Close()
+	for mismatchRows.Next() {
+		var issue IdentityConsistencyIssue
+		issue.Type = "kratos_mapping_mismatch"
+		if err := mismatchRows.Scan(&issue.UserID, &issue.Username, &issue.Email, &issue.KratosIdentityID, &issue.MappingIdentityID); err != nil {
+			return nil, err
+		}
+		issues = append(issues, issue)
+	}
+	if err := mismatchRows.Err(); err != nil {
+		return nil, err
+	}
+
+	return issues, nil
 }
 
 // GetUserRoles returns all roles assigned to a user.

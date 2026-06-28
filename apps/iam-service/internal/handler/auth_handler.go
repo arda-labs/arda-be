@@ -45,24 +45,7 @@ func (h *AuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 
 // LoginPassword handles username/password login.
 func (h *AuthHandler) LoginPassword(w http.ResponseWriter, r *http.Request) {
-	var req auth.PasswordLoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	clientIP := extractIP(r)
-	userAgent := r.UserAgent()
-	requestID := r.Header.Get("X-Request-ID")
-	deviceToken := ensureDeviceToken(w, r)
-
-	result, err := h.orch.LoginWithPassword(r.Context(), &req, clientIP, userAgent, requestID, deviceToken)
-	if err != nil {
-		respondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, result)
+	respondError(w, http.StatusGone, "password login is managed by Kratos")
 }
 
 // LoginMFA completes password login after a successful MFA challenge.
@@ -199,33 +182,9 @@ func (h *AuthHandler) Consent(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"redirect_url": redirectTo})
 }
 
-// RegisterUser creates a new internal user with bcrypt password.
+// RegisterUser is disabled because identity creation is managed by Kratos.
 func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if req.Username == "" || req.Password == "" {
-		respondError(w, http.StatusBadRequest, "username and password required")
-		return
-	}
-
-	user, err := h.orch.CreateUser(r.Context(), req.Username, req.Email, req.Password)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusCreated, map[string]any{
-		"id":       user.ID,
-		"username": user.Username,
-		"email":    user.Email,
-	})
+	respondError(w, http.StatusGone, "registration is managed by Kratos identity flows")
 }
 
 func readDeviceToken(r *http.Request) string {

@@ -5,19 +5,18 @@ import (
 	"fmt"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
-	"github.com/arda-labs/arda/apps/iam-service/internal/kratos"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 )
 
 // UserService orchestrates user-related business logic.
 type UserService struct {
-	repo   *repository.UserRepository
-	kratos *kratos.Client
+	repo     *repository.UserRepository
+	identity *IdentityService
 }
 
 // NewUserService creates a new user service.
-func NewUserService(repo *repository.UserRepository, kratos *kratos.Client) *UserService {
-	return &UserService{repo: repo, kratos: kratos}
+func NewUserService(repo *repository.UserRepository, identity *IdentityService) *UserService {
+	return &UserService{repo: repo, identity: identity}
 }
 
 // GetUserContextBySubject builds a user context from an external subject.
@@ -42,6 +41,48 @@ func (s *UserService) GetUserContextByID(ctx context.Context, id string) (*domai
 		return nil, fmt.Errorf("user not found")
 	}
 	return s.buildContext(ctx, user)
+}
+
+func (s *UserService) GetUserContextByKratosIdentityID(ctx context.Context, identityID string) (*domain.UserContext, error) {
+	user, err := s.repo.GetUserByKratosIdentityID(ctx, identityID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	return s.buildContext(ctx, user)
+}
+
+func (s *UserService) ResolveOrLinkKratosIdentity(ctx context.Context, identityID, email, name string) (*domain.UserContext, error) {
+	user, err := s.repo.GetUserByKratosIdentityID(ctx, identityID)
+	if err != nil {
+		return nil, err
+	}
+	if user != nil {
+		return s.buildContext(ctx, user)
+	}
+	if email == "" {
+		return nil, fmt.Errorf("user not found")
+	}
+	user, err = s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if user.DisplayName == "" {
+		user.DisplayName = name
+	}
+	if err := s.identity.LinkIdentity(ctx, user, identityID); err != nil {
+		return nil, err
+	}
+	linkedUser, err := s.repo.GetUserByID(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildContext(ctx, linkedUser)
 }
 
 func (s *UserService) UpdateUserAvatar(ctx context.Context, userID, avatarFileID, pictureURL string) (*domain.UserContext, error) {
@@ -78,11 +119,11 @@ func (s *UserService) UpdateUserCover(ctx context.Context, userID, coverFileID, 
 	return s.buildContext(ctx, user)
 }
 
-func (s *UserService) UpdateUserProfile(ctx context.Context, userID, name, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.UserContext, error) {
+func (s *UserService) UpdateUserProfile(ctx context.Context, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.UserContext, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("user id is required")
 	}
-	user, err := s.repo.UpdateUserProfile(ctx, userID, name, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio)
+	user, err := s.repo.UpdateUserProfile(ctx, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +165,7 @@ func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*dom
 		Username:      user.Username,
 		Email:         user.Email,
 		DisplayName:   user.DisplayName,
+		Nickname:      user.Nickname,
 		FirstName:     user.FirstName,
 		LastName:      user.LastName,
 		PhoneNumber:   user.PhoneNumber,
@@ -168,11 +210,12 @@ func (s *UserService) UpdateUserEmail(ctx context.Context, userID, newEmail stri
 		return s.buildContext(ctx, user)
 	}
 
-	if user.Subject != "" {
-		err = s.kratos.UpdateIdentityEmail(user.Subject, newEmail, user.DisplayName)
+	if user.Source == kratosProviderID {
+		updatedUser, err := s.identity.UpdateEmail(ctx, user, newEmail)
 		if err != nil {
 			return nil, fmt.Errorf("failed to update Kratos identity: %w", err)
 		}
+		return s.buildContext(ctx, updatedUser)
 	}
 
 	updatedUser, err := s.repo.UpdateUserEmail(ctx, userID, newEmail)
@@ -184,4 +227,21 @@ func (s *UserService) UpdateUserEmail(ctx context.Context, userID, newEmail stri
 	}
 
 	return s.buildContext(ctx, updatedUser)
+}
+
+func (s *UserService) UpdateUserPassword(ctx context.Context, userID, newPassword string) error {
+	if userID == "" {
+		return fmt.Errorf("user id is required")
+	}
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+	if user.Source != kratosProviderID {
+		return fmt.Errorf("password is not managed by Kratos for this user")
+	}
+	return s.identity.UpdatePassword(ctx, user, newPassword)
 }

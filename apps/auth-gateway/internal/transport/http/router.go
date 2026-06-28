@@ -29,6 +29,7 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler)
 
 	// Hydra Admin (proxied)
 	mux.HandleFunc("/api/auth/accept-login", method("POST", bffHandler.AcceptLogin))
+	mux.HandleFunc("/api/auth/kratos/accept-login", method("POST", bffHandler.AcceptKratosLogin))
 	mux.HandleFunc("/api/auth/accept-consent", method("POST", bffHandler.AcceptConsent))
 
 	// Token exchange (direct with Hydra)
@@ -36,9 +37,19 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler)
 
 	// Kratos proxy
 	mux.HandleFunc("/api/kratos/whoami", bffHandler.KratosWhoami)
+	mux.HandleFunc("/api/kratos/login/api", method("GET", bffHandler.KratosCreateLoginAPIFlow))
 	mux.HandleFunc("/api/kratos/login/browser", method("GET", bffHandler.KratosCreateLoginFlow))
 	mux.HandleFunc("/api/kratos/login/flows", method("GET", bffHandler.KratosGetLoginFlow))
 	mux.HandleFunc("/api/kratos/login", method("POST", bffHandler.KratosSubmitLogin))
+	mux.HandleFunc("/api/kratos/settings/browser", method("GET", bffHandler.KratosCreateSettingsFlow))
+	mux.HandleFunc("/api/kratos/settings/flows", method("GET", bffHandler.KratosGetSettingsFlow))
+	mux.HandleFunc("/api/kratos/settings", method("POST", bffHandler.KratosSubmitSettings))
+	mux.HandleFunc("/api/kratos/recovery/browser", method("GET", bffHandler.KratosCreateRecoveryFlow))
+	mux.HandleFunc("/api/kratos/recovery/flows", method("GET", bffHandler.KratosGetRecoveryFlow))
+	mux.HandleFunc("/api/kratos/recovery", method("POST", bffHandler.KratosSubmitRecovery))
+	mux.HandleFunc("/api/kratos/verification/browser", method("GET", bffHandler.KratosCreateVerificationFlow))
+	mux.HandleFunc("/api/kratos/verification/flows", method("GET", bffHandler.KratosGetVerificationFlow))
+	mux.HandleFunc("/api/kratos/verification", method("POST", bffHandler.KratosSubmitVerification))
 
 	// Session management
 	mux.HandleFunc("/api/auth/me", method("GET", bffHandler.Me))

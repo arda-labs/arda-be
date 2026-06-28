@@ -91,6 +91,7 @@ func (h *AuthHandler) injectHeaders(w http.ResponseWriter, ctx *iamclient.UserCo
 	w.Header().Set("X-User-Subject", ctx.Subject)
 	w.Header().Set("X-Username", ctx.Username)
 	w.Header().Set("X-User-Email", ctx.Email)
+	w.Header().Set("X-Nickname", ctx.Nickname)
 	w.Header().Set("X-Tenant-Id", ctx.TenantID)
 	w.Header().Set("X-Roles", strings.Join(ctx.Roles, ","))
 	w.Header().Set("X-Permissions", strings.Join(ctx.Permissions, ","))

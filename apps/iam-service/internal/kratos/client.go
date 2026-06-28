@@ -6,15 +6,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
 // Identity represents a Kratos identity.
 type Identity struct {
-	ID       string                `json:"id"`
-	SchemaID string                `json:"schema_id"`
-	Traits   IdentityTraits        `json:"traits"`
-	State    string                `json:"state"`
+	ID       string         `json:"id"`
+	SchemaID string         `json:"schema_id"`
+	Traits   IdentityTraits `json:"traits"`
+	State    string         `json:"state"`
 }
 
 // IdentityTraits holds the identity traits.
@@ -25,10 +26,10 @@ type IdentityTraits struct {
 
 // CreateIdentityRequest is the payload to create a Kratos identity.
 type CreateIdentityRequest struct {
-	SchemaID    string              `json:"schema_id"`
-	Traits      IdentityTraits      `json:"traits"`
+	SchemaID    string               `json:"schema_id"`
+	Traits      IdentityTraits       `json:"traits"`
 	Credentials *IdentityCredentials `json:"credentials,omitempty"`
-	State       string              `json:"state,omitempty"`
+	State       string               `json:"state,omitempty"`
 }
 
 // IdentityCredentials holds password credentials.
@@ -128,6 +129,30 @@ func (c *Client) GetIdentity(id string) (*Identity, error) {
 	return &identity, nil
 }
 
+// FindIdentityByIdentifier retrieves an identity by a credential identifier such as email.
+func (c *Client) FindIdentityByIdentifier(identifier string) (*Identity, error) {
+	endpoint := fmt.Sprintf("%s/admin/identities?credentials_identifier=%s", c.adminURL, url.QueryEscape(identifier))
+	resp, err := c.httpClient.Get(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("kratos list identities: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("kratos list identities: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var identities []Identity
+	if err := json.NewDecoder(resp.Body).Decode(&identities); err != nil {
+		return nil, fmt.Errorf("kratos list identities decode: %w", err)
+	}
+	if len(identities) == 0 {
+		return nil, nil
+	}
+	return &identities[0], nil
+}
+
 // DeleteIdentity removes an identity by ID.
 func (c *Client) DeleteIdentity(id string) error {
 	url := fmt.Sprintf("%s/admin/identities/%s", c.adminURL, id)
@@ -176,6 +201,59 @@ func (c *Client) UpdateIdentityEmail(id, email, name string) error {
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("kratos update: HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// UpdateIdentityPassword replaces the password credential for an identity.
+func (c *Client) UpdateIdentityPassword(id, password string) error {
+	identity, err := c.GetIdentity(id)
+	if err != nil {
+		return err
+	}
+	if identity == nil {
+		return fmt.Errorf("identity not found")
+	}
+
+	req := struct {
+		SchemaID    string               `json:"schema_id"`
+		Traits      IdentityTraits       `json:"traits"`
+		Credentials *IdentityCredentials `json:"credentials,omitempty"`
+		State       string               `json:"state"`
+	}{
+		SchemaID: identity.SchemaID,
+		Traits:   identity.Traits,
+		Credentials: &IdentityCredentials{
+			Password: &PasswordConfig{
+				Config: PasswordConfigInner{Password: password},
+			},
+		},
+		State: identity.State,
+	}
+	if req.SchemaID == "" {
+		req.SchemaID = "default"
+	}
+	if req.State == "" {
+		req.State = "active"
+	}
+
+	body, _ := json.Marshal(req)
+	url := fmt.Sprintf("%s/admin/identities/%s", c.adminURL, id)
+	request, err := http.NewRequest("PUT", url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("kratos password update request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("kratos password update: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("kratos password update: HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
 }

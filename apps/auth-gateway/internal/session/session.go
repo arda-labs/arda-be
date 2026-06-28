@@ -34,6 +34,7 @@ type UserInfo struct {
 	Username     string   `json:"username"`
 	Email        string   `json:"email"`
 	DisplayName  string   `json:"displayName,omitempty"`
+	Nickname     string   `json:"nickname,omitempty"`
 	FirstName    string   `json:"firstName,omitempty"`
 	LastName     string   `json:"lastName,omitempty"`
 	PhoneNumber  string   `json:"phoneNumber,omitempty"`
@@ -251,6 +252,7 @@ func (u *UserInfo) MarshalJSON() ([]byte, error) {
 		"username":     u.Username,
 		"email":        u.Email,
 		"displayName":  u.DisplayName,
+		"nickname":     u.Nickname,
 		"firstName":    u.FirstName,
 		"lastName":     u.LastName,
 		"phoneNumber":  u.PhoneNumber,
