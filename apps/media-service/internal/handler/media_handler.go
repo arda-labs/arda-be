@@ -21,6 +21,24 @@ func NewMediaHandler(service *service.MediaService) *MediaHandler {
 }
 
 func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
+	contentType := r.Header.Get("Content-Type")
+	if strings.Contains(contentType, "application/json") {
+		var req domain.InitUploadRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
+			return
+		}
+		applyRequestContext(r, &req)
+
+		resp, err := h.service.InitUpload(r.Context(), req)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, resp)
+		return
+	}
+
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "media.upload.invalid_form", "Failed to parse multipart form")
 		return
