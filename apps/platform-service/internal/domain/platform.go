@@ -84,6 +84,7 @@ type FileTemplate struct {
 	TenantID      string     `json:"tenant_id"`
 	Code          string     `json:"code"`
 	Name          string     `json:"name"`
+	Description   *string    `json:"description,omitempty"`
 	FileType      string     `json:"file_type"`
 	FileURL       string     `json:"file_url"`
 	MappingConfig *string    `json:"mapping_config,omitempty"` // String representing JSON mapping configuration

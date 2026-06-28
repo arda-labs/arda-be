@@ -344,7 +344,7 @@ func (r *PlatformRepository) DeleteLookupValue(ctx context.Context, id string) e
 
 func (r *PlatformRepository) ListFileTemplates(ctx context.Context, tenantID string) ([]domain.FileTemplate, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, tenant_id, code, name, file_type, file_url, mapping_config::text, is_active, created_at, updated_at
+		SELECT id, tenant_id, code, name, description, file_type, file_url, mapping_config::text, is_active, created_at, updated_at
 		FROM plt_file_templates
 		WHERE ($1 = '' OR tenant_id = $1)
 		ORDER BY code`, tenantID)
@@ -356,7 +356,7 @@ func (r *PlatformRepository) ListFileTemplates(ctx context.Context, tenantID str
 	items := make([]domain.FileTemplate, 0)
 	for rows.Next() {
 		var item domain.FileTemplate
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.FileType, &item.FileURL, &item.MappingConfig, &item.IsActive, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Description, &item.FileType, &item.FileURL, &item.MappingConfig, &item.IsActive, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -367,10 +367,10 @@ func (r *PlatformRepository) ListFileTemplates(ctx context.Context, tenantID str
 func (r *PlatformRepository) GetFileTemplateByID(ctx context.Context, id string) (domain.FileTemplate, error) {
 	var item domain.FileTemplate
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, code, name, file_type, file_url, mapping_config::text, is_active, created_at, updated_at
+		SELECT id, tenant_id, code, name, description, file_type, file_url, mapping_config::text, is_active, created_at, updated_at
 		FROM plt_file_templates
 		WHERE id = $1 LIMIT 1`, id).
-		Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.FileType, &item.FileURL, &item.MappingConfig, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
+		Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Description, &item.FileType, &item.FileURL, &item.MappingConfig, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 
@@ -382,22 +382,22 @@ func (r *PlatformRepository) CreateFileTemplate(ctx context.Context, item domain
 		item.TenantID = "default"
 	}
 	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO plt_file_templates (id, tenant_id, code, name, file_type, file_url, mapping_config, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, tenant_id, code, name, file_type, file_url, mapping_config::text, is_active, created_at, updated_at`,
-		item.ID, item.TenantID, item.Code, item.Name, item.FileType, item.FileURL, item.MappingConfig, item.IsActive,
-	).Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.FileType, &item.FileURL, &item.MappingConfig, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
+		INSERT INTO plt_file_templates (id, tenant_id, code, name, description, file_type, file_url, mapping_config, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, tenant_id, code, name, description, file_type, file_url, mapping_config::text, is_active, created_at, updated_at`,
+		item.ID, item.TenantID, item.Code, item.Name, item.Description, item.FileType, item.FileURL, item.MappingConfig, item.IsActive,
+	).Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Description, &item.FileType, &item.FileURL, &item.MappingConfig, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 
 func (r *PlatformRepository) UpdateFileTemplate(ctx context.Context, item domain.FileTemplate) (domain.FileTemplate, error) {
 	err := r.db.QueryRowContext(ctx, `
 		UPDATE plt_file_templates
-		SET code = $2, name = $3, file_type = $4, file_url = $5, mapping_config = $6, is_active = $7, updated_at = now()
+		SET code = $2, name = $3, description = $4, file_type = $5, file_url = $6, mapping_config = $7, is_active = $8, updated_at = now()
 		WHERE id = $1
-		RETURNING id, tenant_id, code, name, file_type, file_url, mapping_config::text, is_active, created_at, updated_at`,
-		item.ID, item.Code, item.Name, item.FileType, item.FileURL, item.MappingConfig, item.IsActive,
-	).Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.FileType, &item.FileURL, &item.MappingConfig, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
+		RETURNING id, tenant_id, code, name, description, file_type, file_url, mapping_config::text, is_active, created_at, updated_at`,
+		item.ID, item.Code, item.Name, item.Description, item.FileType, item.FileURL, item.MappingConfig, item.IsActive,
+	).Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Description, &item.FileType, &item.FileURL, &item.MappingConfig, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 
