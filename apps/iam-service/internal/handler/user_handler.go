@@ -1,16 +1,14 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
+	ardamedia "github.com/arda-labs/arda/libs/go/arda-media"
 )
 
 // UserHandler exposes IAM HTTP handlers.
@@ -75,7 +73,7 @@ func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 
 	avatarID := strings.TrimSpace(req.AvatarFileID)
 	if avatarID != "" {
-		if err := attachMediaFile(r.Context(), avatarID, "iam_user", userID, r); err != nil {
+		if err := ardamedia.NewClient().Attach(r.Context(), []string{avatarID}, "iam_user", userID, r); err != nil {
 			slog.Error("failed to attach avatar file", "file_id", avatarID, "err", err)
 		}
 	}
@@ -105,50 +103,12 @@ func (h *UserHandler) UpdateMyCover(w http.ResponseWriter, r *http.Request) {
 
 	coverID := strings.TrimSpace(req.CoverFileID)
 	if coverID != "" {
-		if err := attachMediaFile(r.Context(), coverID, "iam_user_cover", userID, r); err != nil {
+		if err := ardamedia.NewClient().Attach(r.Context(), []string{coverID}, "iam_user_cover", userID, r); err != nil {
 			slog.Error("failed to attach cover file", "file_id", coverID, "err", err)
 		}
 	}
 
 	respondJSON(w, http.StatusOK, ctx)
-}
-
-func attachMediaFile(ctx context.Context, publicID, ownerType, ownerID string, r *http.Request) error {
-	url := "http://localhost:8092/api/media/attach"
-	if envUrl := os.Getenv("MEDIA_SERVICE_URL"); envUrl != "" {
-		url = strings.TrimSuffix(envUrl, "/") + "/api/media/attach"
-	}
-
-	payload := map[string]any{
-		"public_ids": []string{publicID},
-		"owner_type": ownerType,
-		"owner_id":   ownerID,
-	}
-	bodyData, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyData))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	req.Header.Set("X-Tenant-Id", r.Header.Get("X-Tenant-Id"))
-	req.Header.Set("X-Org-Id", r.Header.Get("X-Org-Id"))
-	req.Header.Set("X-User-Id", r.Header.Get("X-User-Id"))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to attach: status %d", resp.StatusCode)
-	}
-	return nil
 }
 
 func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {

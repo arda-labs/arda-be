@@ -13,6 +13,7 @@ require (
 require (
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-media v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/kr/pretty v0.3.1 // indirect
@@ -34,3 +35,5 @@ replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 
 replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
+
+replace github.com/arda-labs/arda/libs/go/arda-media => ../../libs/go/arda-media

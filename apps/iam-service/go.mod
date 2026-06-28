@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-media v0.0.0
 	github.com/casbin/casbin/v3 v3.10.0
 	github.com/lib/pq v1.12.3
 	github.com/pressly/goose/v3 v3.27.1
@@ -30,3 +31,5 @@ require (
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
+
+replace github.com/arda-labs/arda/libs/go/arda-media => ../../libs/go/arda-media
