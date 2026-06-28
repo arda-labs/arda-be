@@ -32,7 +32,7 @@ func (s *RedisStore) Create(ctx context.Context, session *Session, ttl time.Dura
 		return fmt.Errorf("marshal session: %w", err)
 	}
 
-	pipe := s.client.TxPipeline()
+	pipe := s.client.Pipeline()
 	setCmd := pipe.Set(ctx, keyPrefix+session.ID, data, ttl)
 	var saddCmd *redis.IntCmd
 	var expireCmd *redis.BoolCmd
@@ -72,7 +72,7 @@ func (s *RedisStore) Get(ctx context.Context, sessionID string) (*Session, error
 func (s *RedisStore) Delete(ctx context.Context, sessionID string) error {
 	sess, err := s.Get(ctx, sessionID)
 	if err == nil && sess != nil && sess.User != nil {
-		pipe := s.client.TxPipeline()
+		pipe := s.client.Pipeline()
 		pipe.Del(ctx, keyPrefix+sessionID)
 		pipe.SRem(ctx, userIdxPrefix+sess.User.UserID, sessionID)
 		_, err = pipe.Exec(ctx)
@@ -89,7 +89,7 @@ func (s *RedisStore) Refresh(ctx context.Context, oldID string, newSession *Sess
 		return fmt.Errorf("marshal session: %w", err)
 	}
 
-	pipe := s.client.TxPipeline()
+	pipe := s.client.Pipeline()
 
 	// Remove old from index and delete
 	if newSession.User != nil && newSession.User.UserID != "" {
@@ -128,7 +128,7 @@ func (s *RedisStore) RevokeByUser(ctx context.Context, userID string, _ string) 
 		return 0, err
 	}
 
-	pipe := s.client.TxPipeline()
+	pipe := s.client.Pipeline()
 	for _, id := range ids {
 		pipe.Del(ctx, keyPrefix+id)
 	}
@@ -143,7 +143,7 @@ func (s *RedisStore) RevokeAllExcept(ctx context.Context, userID, currentSession
 		return 0, err
 	}
 
-	pipe := s.client.TxPipeline()
+	pipe := s.client.Pipeline()
 	count := 0
 	for _, id := range ids {
 		if id == currentSessionID {
