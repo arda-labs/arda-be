@@ -140,6 +140,7 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 	if file.SizeBytes < MaxStreamSize {
 		stream, err := h.service.GetObjectStream(ctx, file)
 		if err != nil {
+			slog.Error("failed to get stream", "err", err)
 			writeError(w, http.StatusInternalServerError, "media.stream.failed", "Failed to stream file")
 			return
 		}

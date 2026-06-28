@@ -187,14 +187,32 @@ func (p *S3Provider) DeleteObject(ctx context.Context, bucket, key string) error
 }
 
 func (p *S3Provider) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
-	out, err := p.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
+	presigned, err := p.PresignGetObject(ctx, PresignGetInput{
+		Bucket:    bucket,
+		Key:       key,
+		ExpiresIn: 5 * time.Minute,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("s3 get object: %w", err)
+		return nil, fmt.Errorf("presign get URL: %w", err)
 	}
-	return out.Body, nil
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, presigned.URL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create GET request: %w", err)
+	}
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("execute GET request: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		resp.Body.Close()
+		return nil, fmt.Errorf("GET request returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	return resp.Body, nil
 }
 
 func (p *S3Provider) newSignedHeadRequest(ctx context.Context, bucket, key string) (*http.Request, error) {
