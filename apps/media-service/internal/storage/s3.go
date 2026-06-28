@@ -97,10 +97,14 @@ func (p *S3Provider) PresignPutObject(ctx context.Context, input PresignPutInput
 
 func (p *S3Provider) PresignGetObject(ctx context.Context, input PresignGetInput) (PresignedURL, error) {
 	expiresAt := time.Now().UTC().Add(input.ExpiresIn)
-	out, err := p.presign.PresignGetObject(ctx, &s3.GetObjectInput{
+	getObjectInput := &s3.GetObjectInput{
 		Bucket: aws.String(input.Bucket),
 		Key:    aws.String(input.Key),
-	}, func(opts *s3.PresignOptions) {
+	}
+	if input.ResponseContentDisposition != "" {
+		getObjectInput.ResponseContentDisposition = aws.String(input.ResponseContentDisposition)
+	}
+	out, err := p.presign.PresignGetObject(ctx, getObjectInput, func(opts *s3.PresignOptions) {
 		opts.Expires = input.ExpiresIn
 	})
 	if err != nil {

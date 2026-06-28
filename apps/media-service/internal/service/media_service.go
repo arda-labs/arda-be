@@ -179,6 +179,10 @@ func (s *MediaService) GetFile(ctx context.Context, fileID string) (domain.File,
 }
 
 func (s *MediaService) GetDownloadURL(ctx context.Context, fileID string) (domain.DownloadURLResponse, error) {
+	return s.GetDownloadURLWithDisposition(ctx, fileID, "")
+}
+
+func (s *MediaService) GetDownloadURLWithDisposition(ctx context.Context, fileID string, disposition string) (domain.DownloadURLResponse, error) {
 	file, err := s.GetFile(ctx, fileID)
 	if err != nil {
 		return domain.DownloadURLResponse{}, err
@@ -187,9 +191,10 @@ func (s *MediaService) GetDownloadURL(ctx context.Context, fileID string) (domai
 		return domain.DownloadURLResponse{}, ErrNotReady
 	}
 	presigned, err := s.storage.PresignGetObject(ctx, storage.PresignGetInput{
-		Bucket:    file.Bucket,
-		Key:       file.ObjectKey,
-		ExpiresIn: s.cfg.PresignDownloadTTL,
+		Bucket:                     file.Bucket,
+		Key:                        file.ObjectKey,
+		ExpiresIn:                  s.cfg.PresignDownloadTTL,
+		ResponseContentDisposition: disposition,
 	})
 	if err != nil {
 		return domain.DownloadURLResponse{}, err
@@ -202,8 +207,15 @@ func (s *MediaService) GetDownloadURL(ctx context.Context, fileID string) (domai
 	}, nil
 }
 
-func (s *MediaService) GetContentRedirectURL(ctx context.Context, fileID string) (string, error) {
-	resp, err := s.GetDownloadURL(ctx, fileID)
+func (s *MediaService) GetContentRedirectURL(ctx context.Context, fileID string, download bool) (string, error) {
+	var disposition string
+	if download {
+		file, err := s.GetFile(ctx, fileID)
+		if err == nil {
+			disposition = fmt.Sprintf("attachment; filename=%q", file.OriginalFilename)
+		}
+	}
+	resp, err := s.GetDownloadURLWithDisposition(ctx, fileID, disposition)
 	if err != nil {
 		return "", err
 	}

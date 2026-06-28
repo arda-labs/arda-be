@@ -62,7 +62,8 @@ func (h *MediaHandler) GetDownloadURL(w http.ResponseWriter, r *http.Request, fi
 }
 
 func (h *MediaHandler) GetContent(w http.ResponseWriter, r *http.Request, fileID string) {
-	redirectURL, err := h.service.GetContentRedirectURL(r.Context(), fileID)
+	download := r.URL.Query().Get("download") == "true"
+	redirectURL, err := h.service.GetContentRedirectURL(r.Context(), fileID, download)
 	if err != nil {
 		writeServiceError(w, err)
 		return

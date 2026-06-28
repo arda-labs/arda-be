@@ -13,9 +13,10 @@ type PresignPutInput struct {
 }
 
 type PresignGetInput struct {
-	Bucket    string
-	Key       string
-	ExpiresIn time.Duration
+	Bucket                     string
+	Key                        string
+	ExpiresIn                  time.Duration
+	ResponseContentDisposition string
 }
 
 type PresignedURL struct {
