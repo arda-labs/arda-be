@@ -131,7 +131,7 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 	fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s media_id=%s action=%s ip=%s ua=%s result=success\n",
 		userID, tenantID, orgID, file.ID, action, ip, userAgent)
 
-	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded {
+	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded && file.Status != domain.StatusTemp && file.Status != domain.StatusAttached {
 		writeError(w, http.StatusConflict, "media.file.not_ready", "File is not ready")
 		return
 	}
