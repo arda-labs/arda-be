@@ -146,9 +146,11 @@ type tokenExchangeRequest struct {
 func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 	var req tokenExchangeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Error("failed to decode exchange request body", "err", err)
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	h.logger.Debug("exchanging authorization code", "code", req.Code, "redirect_uri", h.cfg.OAuthRedirectURI)
 	if req.Code == "dev" {
 		h.devExchangeCode(w, r)
 		return
@@ -166,14 +168,19 @@ func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		h.logger.Error("token exchange failed", "status", resp.StatusCode, "hydra_url", tokenURL,
+		h.logger.Error("token exchange failed from hydra", "status", resp.StatusCode, "hydra_url", tokenURL,
 			"redirect_uri", h.cfg.OAuthRedirectURI, "client_id", h.cfg.OAuthClientID,
 			"hydra_response", string(bodyBytes))
 		respondError(w, resp.StatusCode, "token exchange failed: "+string(bodyBytes))
 		return
 	}
 	var tokenData hydraTokenResponse
-	json.NewDecoder(resp.Body).Decode(&tokenData)
+	if err := json.NewDecoder(resp.Body).Decode(&tokenData); err != nil {
+		h.logger.Error("failed to decode token response", "err", err)
+		respondError(w, http.StatusInternalServerError, "failed to decode token response")
+		return
+	}
+	h.logger.Debug("token response decoded successfully", "expires_in", tokenData.ExpiresIn)
 	h.createBFFSession(w, r, &tokenData)
 }
 
@@ -222,16 +229,27 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 				}
 				if json.Unmarshal(payload, &claims) == nil {
 					userInfo = &session.UserInfo{Subject: claims.Sub, Username: claims.Username, Email: claims.Email}
+					h.logger.Debug("extracted claims from ID token", "sub", claims.Sub, "email", claims.Email)
+				} else {
+					h.logger.Warn("failed to unmarshal ID token payload claims")
 				}
+			} else {
+				h.logger.Warn("failed to decode ID token payload base64", "err", err)
 			}
+		} else {
+			h.logger.Warn("invalid ID token parts count", "parts", len(parts))
 		}
+	} else {
+		h.logger.Warn("id token is empty in hydra token response")
 	}
 	var ok bool
 	userInfo, ok = h.resolveSessionUser(r.Context(), userInfo)
 	if !ok || userInfo.UserID == "" {
+		h.logger.Error("user context resolution failed", "subject", userInfo.Subject)
 		respondError(w, http.StatusBadGateway, "user context unavailable")
 		return
 	}
+	h.logger.Debug("user context resolved successfully", "user_id", userInfo.UserID, "username", userInfo.Username)
 	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
 	sess := &session.Session{AccessToken: tokenData.AccessToken, RefreshToken: tokenData.RefreshToken, ExpiresAt: time.Now().Add(ttl), User: userInfo, IPAddress: extractIP(r)}
 	deviceToken := h.readDeviceCookie(r)
@@ -250,12 +268,14 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 		}
 	}
 	if err := h.store.Create(r.Context(), sess, ttl); err != nil {
+		h.logger.Error("failed to create session in store", "err", err)
 		if sess.IAMSessionID != "" && h.iamClient != nil {
 			_ = h.iamClient.RevokeSession(r.Context(), sess.IAMSessionID)
 		}
 		respondError(w, http.StatusInternalServerError, "session creation failed")
 		return
 	}
+	h.logger.Info("session created successfully", "session_id", sess.ID, "user_id", userInfo.UserID)
 	h.setSessionCookie(w, sess.ID, ttl)
 	h.setDeviceCookie(w, deviceToken)
 	h.clearRememberMFACookie(w)
