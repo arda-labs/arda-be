@@ -78,3 +78,16 @@ type GeoAdminUnit struct {
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
+
+type FileTemplate struct {
+	ID            string     `json:"id"`
+	TenantID      string     `json:"tenant_id"`
+	Code          string     `json:"code"`
+	Name          string     `json:"name"`
+	FileType      string     `json:"file_type"`
+	FileURL       string     `json:"file_url"`
+	MappingConfig *string    `json:"mapping_config,omitempty"` // String representing JSON mapping configuration
+	IsActive      bool       `json:"is_active"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}

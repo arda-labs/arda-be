@@ -112,6 +112,30 @@ func NewRouter(platformHandler *handler.PlatformHandler) http.Handler {
 		}
 	})
 
+	mux.HandleFunc("/api/platform/templates", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			platformHandler.ListFileTemplates(w, r)
+		case http.MethodPost:
+			platformHandler.CreateFileTemplate(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
+	mux.HandleFunc("/api/platform/templates/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			platformHandler.GetFileTemplate(w, r)
+		case http.MethodPut:
+			platformHandler.UpdateFileTemplate(w, r)
+		case http.MethodDelete:
+			platformHandler.DeleteFileTemplate(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
 	return mux
 }
 

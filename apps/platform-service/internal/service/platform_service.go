@@ -101,3 +101,23 @@ func (s *PlatformService) DeleteLookupCategory(ctx context.Context, id string) e
 func (s *PlatformService) DeleteLookupValue(ctx context.Context, id string) error {
 	return s.repo.DeleteLookupValue(ctx, id)
 }
+
+func (s *PlatformService) ListFileTemplates(ctx context.Context, tenantID string) ([]domain.FileTemplate, error) {
+	return s.repo.ListFileTemplates(ctx, tenantID)
+}
+
+func (s *PlatformService) GetFileTemplateByID(ctx context.Context, id string) (domain.FileTemplate, error) {
+	return s.repo.GetFileTemplateByID(ctx, id)
+}
+
+func (s *PlatformService) CreateFileTemplate(ctx context.Context, item domain.FileTemplate) (domain.FileTemplate, error) {
+	return s.repo.CreateFileTemplate(ctx, item)
+}
+
+func (s *PlatformService) UpdateFileTemplate(ctx context.Context, item domain.FileTemplate) (domain.FileTemplate, error) {
+	return s.repo.UpdateFileTemplate(ctx, item)
+}
+
+func (s *PlatformService) DeleteFileTemplate(ctx context.Context, id string) error {
+	return s.repo.DeleteFileTemplate(ctx, id)
+}

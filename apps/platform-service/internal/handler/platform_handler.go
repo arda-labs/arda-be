@@ -190,6 +190,67 @@ func (h *PlatformHandler) DeleteLookupValue(w http.ResponseWriter, r *http.Reque
 	writeResult(w, map[string]bool{"ok": true}, err)
 }
 
+func (h *PlatformHandler) ListFileTemplates(w http.ResponseWriter, r *http.Request) {
+	items, err := h.svc.ListFileTemplates(r.Context(), r.URL.Query().Get("tenant_id"))
+	writeResult(w, items, err)
+}
+
+func (h *PlatformHandler) GetFileTemplate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	item, err := h.svc.GetFileTemplateByID(r.Context(), id)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) CreateFileTemplate(w http.ResponseWriter, r *http.Request) {
+	var req domain.FileTemplate
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, "validation.invalid_json", "invalid json")
+		return
+	}
+
+	if req.Code == "" || req.Name == "" || req.FileType == "" || req.FileURL == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, file_type and file_url are required")
+		return
+	}
+	item, err := h.svc.CreateFileTemplate(r.Context(), req)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) UpdateFileTemplate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	var req domain.FileTemplate
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, "validation.invalid_json", "invalid json")
+		return
+	}
+
+	req.ID = id
+	if req.Code == "" || req.Name == "" || req.FileType == "" || req.FileURL == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, file_type and file_url are required")
+		return
+	}
+	item, err := h.svc.UpdateFileTemplate(r.Context(), req)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) DeleteFileTemplate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	err := h.svc.DeleteFileTemplate(r.Context(), id)
+	writeResult(w, map[string]bool{"ok": true}, err)
+}
+
 func writeResult(w http.ResponseWriter, data any, err error) {
 	if err != nil {
 		var appErr *ardaerrors.Error
