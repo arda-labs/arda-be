@@ -1,9 +1,14 @@
 package handler
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -217,6 +222,14 @@ func (h *PlatformHandler) CreateFileTemplate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	item, err := h.svc.CreateFileTemplate(r.Context(), req)
+	if err == nil {
+		publicID := extractPublicID(item.FileURL)
+		if publicID != "" {
+			if attachErr := attachMediaFile(r.Context(), publicID, "file_template", item.Code, r); attachErr != nil {
+				slog.Error("failed to attach template file on create", "public_id", publicID, "err", attachErr)
+			}
+		}
+	}
 	writeResult(w, item, err)
 }
 
@@ -238,6 +251,14 @@ func (h *PlatformHandler) UpdateFileTemplate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	item, err := h.svc.UpdateFileTemplate(r.Context(), req)
+	if err == nil {
+		publicID := extractPublicID(item.FileURL)
+		if publicID != "" {
+			if attachErr := attachMediaFile(r.Context(), publicID, "file_template", item.Code, r); attachErr != nil {
+				slog.Error("failed to attach template file on update", "public_id", publicID, "err", attachErr)
+			}
+		}
+	}
 	writeResult(w, item, err)
 }
 
@@ -249,6 +270,56 @@ func (h *PlatformHandler) DeleteFileTemplate(w http.ResponseWriter, r *http.Requ
 	}
 	err := h.svc.DeleteFileTemplate(r.Context(), id)
 	writeResult(w, map[string]bool{"ok": true}, err)
+}
+
+func extractPublicID(fileURL string) string {
+	parts := strings.Split(strings.TrimRight(fileURL, "/"), "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	last := parts[len(parts)-1]
+	if strings.HasPrefix(last, "mf_") {
+		return last
+	}
+	return ""
+}
+
+func attachMediaFile(ctx context.Context, publicID, ownerType, ownerID string, r *http.Request) error {
+	url := "http://localhost:8092/api/media/attach"
+	if envUrl := os.Getenv("MEDIA_SERVICE_URL"); envUrl != "" {
+		url = strings.TrimSuffix(envUrl, "/") + "/api/media/attach"
+	}
+
+	payload := map[string]any{
+		"public_ids": []string{publicID},
+		"owner_type": ownerType,
+		"owner_id":   ownerID,
+	}
+	bodyData, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	req.Header.Set("X-Tenant-Id", r.Header.Get("X-Tenant-Id"))
+	req.Header.Set("X-Org-Id", r.Header.Get("X-Org-Id"))
+	req.Header.Set("X-User-Id", r.Header.Get("X-User-Id"))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to attach: status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func writeResult(w http.ResponseWriter, data any, err error) {
