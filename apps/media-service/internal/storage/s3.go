@@ -140,16 +140,38 @@ func (p *S3Provider) HeadObject(ctx context.Context, bucket, key string) (Object
 }
 
 func (p *S3Provider) PutObject(ctx context.Context, bucket, key string, body io.Reader, size int64, contentType string) error {
-	_, err := p.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:        aws.String(bucket),
-		Key:           aws.String(key),
-		Body:          body,
-		ContentLength: aws.Int64(size),
-		ContentType:   aws.String(contentType),
+	presigned, err := p.PresignPutObject(ctx, PresignPutInput{
+		Bucket:      bucket,
+		Key:         key,
+		ContentType: contentType,
+		ExpiresIn:   5 * time.Minute,
 	})
 	if err != nil {
-		return fmt.Errorf("s3 put object: %w", err)
+		return fmt.Errorf("presign put URL: %w", err)
 	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, presigned.URL, body)
+	if err != nil {
+		return fmt.Errorf("create PUT request: %w", err)
+	}
+
+	req.ContentLength = size
+	for k, v := range presigned.Headers {
+		req.Header.Set(k, v)
+	}
+	req.Header.Set("Content-Type", contentType)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("execute PUT request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("PUT request returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
 	return nil
 }
 
