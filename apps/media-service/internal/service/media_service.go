@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"path"
 	"strings"
 	"time"
@@ -58,6 +59,7 @@ func (s *MediaService) InitUpload(ctx context.Context, req domain.InitUploadRequ
 	visibility := defaultString(req.Visibility, "private")
 	objectKey := buildObjectKey(req.TenantID, fileID, versionID)
 	expiresAt := time.Now().UTC().Add(s.cfg.PresignUploadTTL)
+	tempExpiresAt := time.Now().UTC().Add(s.cfg.TempFileTTL)
 
 	file := domain.File{
 		ID:               fileID,
@@ -66,8 +68,8 @@ func (s *MediaService) InitUpload(ctx context.Context, req domain.InitUploadRequ
 		OrgID:            req.OrgID,
 		OwnerUserID:      req.OwnerUserID,
 		Module:           req.Module,
-		EntityType:       req.EntityType,
-		EntityID:         req.EntityID,
+		EntityType:       "", // Left empty for TEMP
+		EntityID:         "", // Left empty for TEMP
 		OriginalFilename: req.OriginalFilename,
 		ContentType:      req.ContentType,
 		Extension:        extension,
@@ -82,6 +84,7 @@ func (s *MediaService) InitUpload(ctx context.Context, req domain.InitUploadRequ
 		VersionID:        versionID,
 		Visibility:       visibility,
 		CreatedBy:        req.CreatedBy,
+		ExpiresAt:        &tempExpiresAt,
 	}
 	session := domain.UploadSession{
 		ID:        domain.NewID("upl"),
@@ -144,7 +147,7 @@ func (s *MediaService) CompleteUpload(ctx context.Context, fileID string) (domai
 		return domain.CompleteUploadResponse{}, err
 	}
 
-	nextStatus := domain.StatusReady
+	nextStatus := domain.StatusTemp
 	scanStatus := domain.ScanNotRequired
 	if s.cfg.RequireScanBeforeReady {
 		nextStatus = domain.StatusScanPending
@@ -181,50 +184,6 @@ func (s *MediaService) GetFile(ctx context.Context, fileID string) (domain.File,
 	return file, nil
 }
 
-func (s *MediaService) GetDownloadURL(ctx context.Context, fileID string) (domain.DownloadURLResponse, error) {
-	return s.GetDownloadURLWithDisposition(ctx, fileID, "")
-}
-
-func (s *MediaService) GetDownloadURLWithDisposition(ctx context.Context, fileID string, disposition string) (domain.DownloadURLResponse, error) {
-	file, err := s.GetFile(ctx, fileID)
-	if err != nil {
-		return domain.DownloadURLResponse{}, err
-	}
-	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded {
-		return domain.DownloadURLResponse{}, ErrNotReady
-	}
-	presigned, err := s.storage.PresignGetObject(ctx, storage.PresignGetInput{
-		Bucket:                     file.Bucket,
-		Key:                        file.ObjectKey,
-		ExpiresIn:                  s.cfg.PresignDownloadTTL,
-		ResponseContentDisposition: disposition,
-	})
-	if err != nil {
-		return domain.DownloadURLResponse{}, err
-	}
-	return domain.DownloadURLResponse{
-		FileID:    file.ID,
-		Method:    "GET",
-		URL:       presigned.URL,
-		ExpiresAt: presigned.ExpiresAt,
-	}, nil
-}
-
-func (s *MediaService) GetContentRedirectURL(ctx context.Context, fileID string, download bool) (string, error) {
-	var disposition string
-	if download {
-		file, err := s.GetFile(ctx, fileID)
-		if err == nil {
-			disposition = fmt.Sprintf("attachment; filename=%q", file.OriginalFilename)
-		}
-	}
-	resp, err := s.GetDownloadURLWithDisposition(ctx, fileID, disposition)
-	if err != nil {
-		return "", err
-	}
-	return resp.URL, nil
-}
-
 func (s *MediaService) GetFileByPublicID(ctx context.Context, publicID string) (domain.File, error) {
 	file, err := s.repo.GetFileByPublicID(ctx, publicID)
 	if err != nil {
@@ -237,33 +196,51 @@ func (s *MediaService) GetFileByPublicID(ctx context.Context, publicID string) (
 }
 
 func (s *MediaService) DeleteFileByPublicID(ctx context.Context, publicID string) error {
-	file, err := s.GetFileByPublicID(ctx, publicID)
+	file, err := s.repo.GetFileByPublicID(ctx, publicID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
 		return err
 	}
-	// Delete from storage
-	if err := s.storage.DeleteObject(ctx, file.Bucket, file.ObjectKey); err != nil {
-		// Log error but continue to delete from metadata
-		fmt.Printf("failed to delete S3 object: %v\n", err)
+
+	// 1. Delete object from storage
+	err = s.storage.DeleteObject(ctx, file.Bucket, file.ObjectKey)
+	if err != nil {
+		return fmt.Errorf("delete from S3: %w", err)
 	}
-	// Delete from DB
+
+	// 2. Mark as deleted in repo
 	return s.repo.DeleteFile(ctx, file.ID)
 }
 
 func (s *MediaService) GetContentRedirectURLByPublicID(ctx context.Context, publicID string, download bool) (string, error) {
-	file, err := s.GetFileByPublicID(ctx, publicID)
+	file, err := s.repo.GetFileByPublicID(ctx, publicID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrNotFound
+		}
 		return "", err
 	}
-	var disposition string
+
+	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded && file.Status != domain.StatusTemp && file.Status != domain.StatusAttached {
+		return "", ErrNotReady
+	}
+
+	input := storage.PresignGetInput{
+		Bucket:    file.Bucket,
+		Key:       file.ObjectKey,
+		ExpiresIn: s.cfg.PresignDownloadTTL,
+	}
 	if download {
-		disposition = fmt.Sprintf("attachment; filename=%q", file.OriginalFilename)
+		input.ResponseContentDisposition = fmt.Sprintf("attachment; filename=%q", file.OriginalFilename)
 	}
-	resp, err := s.GetDownloadURLWithDisposition(ctx, file.ID, disposition)
+
+	presigned, err := s.storage.PresignGetObject(ctx, input)
 	if err != nil {
 		return "", err
 	}
-	return resp.URL, nil
+	return presigned.URL, nil
 }
 
 func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequest, body io.Reader) (domain.File, error) {
@@ -277,6 +254,12 @@ func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequ
 	if req.Module == "" || req.OriginalFilename == "" || req.ContentType == "" {
 		return domain.File{}, fmt.Errorf("%w: module, original_filename and content_type are required", ErrInvalidInput)
 	}
+	if req.SizeBytes < 0 {
+		return domain.File{}, fmt.Errorf("%w: size_bytes must be positive", ErrInvalidInput)
+	}
+	if s.cfg.UploadMaxSizeMB > 0 && req.SizeBytes > s.cfg.UploadMaxSizeMB*1024*1024 {
+		return domain.File{}, fmt.Errorf("%w: file is larger than upload limit", ErrInvalidInput)
+	}
 
 	fileID := domain.NewID("file")
 	publicID := domain.NewID("mf")
@@ -285,6 +268,7 @@ func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequ
 	storageClass := defaultString(req.StorageClass, "standard")
 	visibility := defaultString(req.Visibility, "private")
 	objectKey := buildObjectKey(req.TenantID, fileID, versionID)
+	tempExpiresAt := time.Now().UTC().Add(s.cfg.TempFileTTL)
 
 	file := domain.File{
 		ID:               fileID,
@@ -293,14 +277,14 @@ func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequ
 		OrgID:            req.OrgID,
 		OwnerUserID:      req.OwnerUserID,
 		Module:           req.Module,
-		EntityType:       req.EntityType,
-		EntityID:         req.EntityID,
+		EntityType:       "", // Left empty for TEMP
+		EntityID:         "", // Left empty for TEMP
 		OriginalFilename: req.OriginalFilename,
 		ContentType:      req.ContentType,
 		Extension:        extension,
 		SizeBytes:        req.SizeBytes,
 		ChecksumSHA256:   req.ChecksumSHA256,
-		Status:           domain.StatusReady,
+		Status:           domain.StatusTemp,
 		ScanStatus:       domain.ScanNotRequired,
 		StorageProvider:  s.cfg.StorageProvider,
 		Bucket:           s.cfg.StorageBucket,
@@ -309,6 +293,7 @@ func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequ
 		VersionID:        versionID,
 		Visibility:       visibility,
 		CreatedBy:        req.CreatedBy,
+		ExpiresAt:        &tempExpiresAt,
 	}
 
 	err := s.storage.PutObject(ctx, file.Bucket, file.ObjectKey, body, file.SizeBytes, file.ContentType)
@@ -340,7 +325,7 @@ func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequ
 		return domain.File{}, err
 	}
 
-	updated, err := s.repo.CompleteUpload(ctx, created.ID, file.SizeBytes, file.ContentType, domain.StatusReady, domain.ScanNotRequired, map[string]any{
+	updated, err := s.repo.CompleteUpload(ctx, created.ID, file.SizeBytes, file.ContentType, domain.StatusTemp, domain.ScanNotRequired, map[string]any{
 		"file_id":      created.ID,
 		"public_id":    created.PublicID,
 		"tenant_id":    created.TenantID,
@@ -356,6 +341,52 @@ func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequ
 	}
 
 	return updated, nil
+}
+
+func (s *MediaService) AttachFiles(ctx context.Context, publicIDs []string, tenantID, orgID, userID string, ownerType, ownerID string) error {
+	if len(publicIDs) == 0 {
+		return nil
+	}
+
+	payloads := make(map[string]map[string]any)
+	for _, pid := range publicIDs {
+		payloads[pid] = map[string]any{
+			"public_id":   pid,
+			"tenant_id":   tenantID,
+			"org_id":      orgID,
+			"owner_type":  ownerType,
+			"owner_id":    ownerID,
+			"attached_by": userID,
+			"attached_at": time.Now().UTC(),
+		}
+	}
+
+	return s.repo.AttachFiles(ctx, publicIDs, tenantID, orgID, userID, ownerType, ownerID, payloads)
+}
+
+func (s *MediaService) CleanupExpiredTempFiles(ctx context.Context) (int, error) {
+	files, err := s.repo.GetExpiredTempFiles(ctx, 100)
+	if err != nil {
+		return 0, fmt.Errorf("query expired temp files: %w", err)
+	}
+
+	count := 0
+	for _, f := range files {
+		err := s.storage.DeleteObject(ctx, f.Bucket, f.ObjectKey)
+		if err != nil {
+			slog.Error("failed to delete expired temp file from storage", "file_id", f.ID, "object_key", f.ObjectKey, "err", err)
+		}
+
+		err = s.repo.DeleteFile(ctx, f.ID)
+		if err != nil {
+			slog.Error("failed to mark expired temp file as deleted in DB", "file_id", f.ID, "err", err)
+			continue
+		}
+
+		count++
+	}
+
+	return count, nil
 }
 
 func buildObjectKey(tenantID, fileID, versionID string) string {

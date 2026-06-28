@@ -27,6 +27,7 @@ type Config struct {
 	PresignUploadTTL       time.Duration `yaml:"presign_upload_ttl"`
 	PresignDownloadTTL     time.Duration `yaml:"presign_download_ttl"`
 	RequireScanBeforeReady bool          `yaml:"require_scan_before_ready"`
+	TempFileTTL            time.Duration `yaml:"temp_file_ttl"`
 }
 
 func Load() Config {
@@ -45,6 +46,7 @@ func Load() Config {
 		UploadMaxSizeMB:       100,
 		PresignUploadTTL:      15 * time.Minute,
 		PresignDownloadTTL:    5 * time.Minute,
+		TempFileTTL:           24 * time.Hour,
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -92,6 +94,8 @@ func Load() Config {
 	envDuration("MEDIA_PRESIGN_UPLOAD_TTL", &cfg.PresignUploadTTL)
 	envDuration("PRESIGN_DOWNLOAD_TTL", &cfg.PresignDownloadTTL)
 	envDuration("MEDIA_PRESIGN_DOWNLOAD_TTL", &cfg.PresignDownloadTTL)
+	envDuration("TEMP_FILE_TTL", &cfg.TempFileTTL)
+	envDuration("MEDIA_TEMP_FILE_TTL", &cfg.TempFileTTL)
 	envBool("REQUIRE_SCAN_BEFORE_READY", &cfg.RequireScanBeforeReady)
 	envBool("MEDIA_REQUIRE_SCAN_BEFORE_READY", &cfg.RequireScanBeforeReady)
 
@@ -120,6 +124,7 @@ func (c *Config) loadYAML(path string) bool {
 		UploadMaxSizeMB        int64  `yaml:"upload_max_size_mb"`
 		PresignUploadTTL       string `yaml:"presign_upload_ttl"`
 		PresignDownloadTTL     string `yaml:"presign_download_ttl"`
+		TempFileTTL            string `yaml:"temp_file_ttl"`
 		RequireScanBeforeReady *bool  `yaml:"require_scan_before_ready"`
 	}
 	var raw rawConfig
@@ -153,6 +158,11 @@ func (c *Config) loadYAML(path string) bool {
 	if raw.PresignDownloadTTL != "" {
 		if d, err := time.ParseDuration(raw.PresignDownloadTTL); err == nil {
 			c.PresignDownloadTTL = d
+		}
+	}
+	if raw.TempFileTTL != "" {
+		if d, err := time.ParseDuration(raw.TempFileTTL); err == nil {
+			c.TempFileTTL = d
 		}
 	}
 	if raw.RequireScanBeforeReady != nil {

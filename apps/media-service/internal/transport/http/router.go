@@ -22,6 +22,15 @@ func NewRouter(mediaHandler *handler.MediaHandler) http.Handler {
 	})
 
 	mux.HandleFunc("/api/media/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/media/attach" || r.URL.Path == "/api/media/attach/" {
+			if r.Method == http.MethodPost {
+				mediaHandler.Attach(w, r)
+			} else {
+				methodNotAllowed(w)
+			}
+			return
+		}
+
 		publicID, action, ok := parseMediaAction(r.URL.Path)
 		if !ok {
 			http.NotFound(w, r)

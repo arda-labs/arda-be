@@ -30,17 +30,17 @@ INSERT INTO media_files (
   id, public_id, tenant_id, org_id, owner_user_id, module, entity_type, entity_id,
   original_filename, content_type, extension, size_bytes, checksum_sha256,
   status, scan_status, storage_provider, bucket, object_key, storage_class,
-  version_id, visibility, created_by
+  version_id, visibility, created_by, expires_at
 ) VALUES (
   $1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,NULLIF($7,''),NULLIF($8,''),
-  $9,$10,NULLIF($11,''),$12,NULLIF($13,''),$14,$15,$16,$17,$18,$19,$20,$21,NULLIF($22,'')
+  $9,$10,NULLIF($11,''),$12,NULLIF($13,''),$14,$15,$16,$17,$18,$19,$20,$21,NULLIF($22,''),$23
 )
 RETURNING created_at`
 	if err := tx.QueryRowContext(ctx, insertFile,
 		file.ID, file.PublicID, file.TenantID, file.OrgID, file.OwnerUserID, file.Module, file.EntityType, file.EntityID,
 		file.OriginalFilename, file.ContentType, file.Extension, file.SizeBytes, file.ChecksumSHA256,
 		file.Status, file.ScanStatus, file.StorageProvider, file.Bucket, file.ObjectKey, file.StorageClass,
-		file.VersionID, file.Visibility, file.CreatedBy,
+		file.VersionID, file.Visibility, file.CreatedBy, file.ExpiresAt,
 	).Scan(&file.CreatedAt); err != nil {
 		return domain.File{}, fmt.Errorf("insert media file: %w", err)
 	}
@@ -69,7 +69,7 @@ SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,'')
   COALESCE(entity_type,''), COALESCE(entity_id,''), original_filename, content_type,
   COALESCE(extension,''), size_bytes, COALESCE(checksum_sha256,''), status, scan_status,
   storage_provider, bucket, object_key, storage_class, version_id, visibility,
-  COALESCE(created_by,''), created_at, uploaded_at
+  COALESCE(created_by,''), created_at, uploaded_at, expires_at
 FROM media_files
 WHERE id = $1 AND deleted_at IS NULL`
 	var file domain.File
@@ -78,7 +78,7 @@ WHERE id = $1 AND deleted_at IS NULL`
 		&file.EntityType, &file.EntityID, &file.OriginalFilename, &file.ContentType,
 		&file.Extension, &file.SizeBytes, &file.ChecksumSHA256, &file.Status, &file.ScanStatus,
 		&file.StorageProvider, &file.Bucket, &file.ObjectKey, &file.StorageClass, &file.VersionID, &file.Visibility,
-		&file.CreatedBy, &file.CreatedAt, &file.UploadedAt,
+		&file.CreatedBy, &file.CreatedAt, &file.UploadedAt, &file.ExpiresAt,
 	)
 	if err != nil {
 		return domain.File{}, err
@@ -139,7 +139,7 @@ SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,'')
   COALESCE(entity_type,''), COALESCE(entity_id,''), original_filename, content_type,
   COALESCE(extension,''), size_bytes, COALESCE(checksum_sha256,''), status, scan_status,
   storage_provider, bucket, object_key, storage_class, version_id, visibility,
-  COALESCE(created_by,''), created_at, uploaded_at
+  COALESCE(created_by,''), created_at, uploaded_at, expires_at
 FROM media_files
 WHERE public_id = $1 AND deleted_at IS NULL`
 	var file domain.File
@@ -148,7 +148,7 @@ WHERE public_id = $1 AND deleted_at IS NULL`
 		&file.EntityType, &file.EntityID, &file.OriginalFilename, &file.ContentType,
 		&file.Extension, &file.SizeBytes, &file.ChecksumSHA256, &file.Status, &file.ScanStatus,
 		&file.StorageProvider, &file.Bucket, &file.ObjectKey, &file.StorageClass, &file.VersionID, &file.Visibility,
-		&file.CreatedBy, &file.CreatedAt, &file.UploadedAt,
+		&file.CreatedBy, &file.CreatedAt, &file.UploadedAt, &file.ExpiresAt,
 	)
 	if err != nil {
 		return domain.File{}, err
@@ -160,6 +160,93 @@ func (r *MediaRepository) DeleteFile(ctx context.Context, fileID string) error {
 	const query = `UPDATE media_files SET deleted_at = now(), status = 'deleted' WHERE id = $1`
 	_, err := r.db.ExecContext(ctx, query, fileID)
 	return err
+}
+
+func (r *MediaRepository) AttachFiles(ctx context.Context, publicIDs []string, tenantID, orgID, userID string, ownerType, ownerID string, payloads map[string]map[string]any) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	const updateQuery = `
+UPDATE media_files
+SET status = 'attached',
+    entity_type = $1,
+    entity_id = $2,
+    expires_at = NULL
+WHERE public_id = $3
+  AND status = 'temp'
+  AND tenant_id = $4
+  AND COALESCE(org_id, '') = $5
+  AND owner_user_id = $6
+  AND deleted_at IS NULL
+RETURNING id`
+
+	for _, publicID := range publicIDs {
+		var fileID string
+		err := tx.QueryRowContext(ctx, updateQuery, ownerType, ownerID, publicID, tenantID, orgID, userID).Scan(&fileID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("file not found, not in temp state, or not owned by user: %s", publicID)
+			}
+			return fmt.Errorf("attach file %s: %w", publicID, err)
+		}
+
+		payload := payloads[publicID]
+		if payload == nil {
+			payload = map[string]any{
+				"file_id":    fileID,
+				"public_id":  publicID,
+				"owner_type": ownerType,
+				"owner_id":   ownerID,
+				"attached_at": time.Now().UTC(),
+			}
+		}
+
+		if err := insertOutbox(ctx, tx, tenantID, "media.file.attached", "media_file", fileID, payload); err != nil {
+			return fmt.Errorf("outbox insert for %s: %w", publicID, err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *MediaRepository) GetExpiredTempFiles(ctx context.Context, limit int) ([]domain.File, error) {
+	const query = `
+SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,''), module,
+  COALESCE(entity_type,''), COALESCE(entity_id,''), original_filename, content_type,
+  COALESCE(extension,''), size_bytes, COALESCE(checksum_sha256,''), status, scan_status,
+  storage_provider, bucket, object_key, storage_class, version_id, visibility,
+  COALESCE(created_by,''), created_at, uploaded_at, expires_at
+FROM media_files
+WHERE status = 'temp'
+  AND expires_at < now()
+  AND deleted_at IS NULL
+LIMIT $1`
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []domain.File
+	for rows.Next() {
+		var file domain.File
+		err := rows.Scan(
+			&file.ID, &file.PublicID, &file.TenantID, &file.OrgID, &file.OwnerUserID, &file.Module,
+			&file.EntityType, &file.EntityID, &file.OriginalFilename, &file.ContentType,
+			&file.Extension, &file.SizeBytes, &file.ChecksumSHA256, &file.Status, &file.ScanStatus,
+			&file.StorageProvider, &file.Bucket, &file.ObjectKey, &file.StorageClass, &file.VersionID, &file.Visibility,
+			&file.CreatedBy, &file.CreatedAt, &file.UploadedAt, &file.ExpiresAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, file)
+	}
+	return files, nil
 }
 
 func insertOutbox(ctx context.Context, tx *sql.Tx, tenantID, eventType, aggregateType, aggregateID string, payload map[string]any) error {

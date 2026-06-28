@@ -63,6 +63,28 @@ func main() {
 	mediaSvc := service.NewMediaService(cfg, repo, provider)
 	mediaHandler := handler.NewMediaHandler(mediaSvc)
 
+	// Start background worker for cleaning expired temporary uploads
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+
+		ctx := context.Background()
+		// Run initial check
+		if count, err := mediaSvc.CleanupExpiredTempFiles(ctx); err != nil {
+			logger.Error("failed to cleanup expired temp files", "err", err)
+		} else if count > 0 {
+			logger.Info("cleaned up expired temp files on startup", "count", count)
+		}
+
+		for range ticker.C {
+			if count, err := mediaSvc.CleanupExpiredTempFiles(ctx); err != nil {
+				logger.Error("failed to cleanup expired temp files", "err", err)
+			} else if count > 0 {
+				logger.Info("cleaned up expired temp files", "count", count)
+			}
+		}
+	}()
+
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
 		Handler:      transport.NewRouter(mediaHandler),

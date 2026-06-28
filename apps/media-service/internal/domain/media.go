@@ -9,6 +9,8 @@ const (
 	StatusReady         = "ready"
 	StatusQuarantined   = "quarantined"
 	StatusDeleted       = "deleted"
+	StatusTemp          = "temp"
+	StatusAttached      = "attached"
 
 	ScanNotRequired = "not_required"
 	ScanPending     = "pending"
@@ -41,6 +43,7 @@ type File struct {
 	CreatedBy        string     `json:"created_by,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UploadedAt       *time.Time `json:"uploaded_at,omitempty"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
 }
 
 type UploadSession struct {
@@ -89,5 +92,11 @@ type DownloadURLResponse struct {
 	Method    string    `json:"method"`
 	URL       string    `json:"url"`
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type AttachRequest struct {
+	PublicIDs []string `json:"public_ids"`
+	OwnerType string   `json:"owner_type"`
+	OwnerID   string   `json:"owner_id"`
 }
 

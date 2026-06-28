@@ -175,6 +175,31 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 	}
 }
 
+func (h *MediaHandler) Attach(w http.ResponseWriter, r *http.Request) {
+	slog.Info("incoming attach request", "method", r.Method)
+	var req domain.AttachRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
+		return
+	}
+
+	tenantID := firstHeader(r, "X-Tenant-Id", "X-Tenant-ID")
+	orgID := firstHeader(r, "X-Org-Id", "X-Org-ID")
+	userID := firstHeader(r, "X-User-Id", "X-User-Subject")
+
+	if tenantID == "" {
+		tenantID = domain.DefaultTenantID
+	}
+
+	err := h.service.AttachFiles(r.Context(), req.PublicIDs, tenantID, orgID, userID, req.OwnerType, req.OwnerID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "attached"})
+}
+
 func applyRequestContext(r *http.Request, req *domain.InitUploadRequest) {
 	if req.TenantID == "" {
 		req.TenantID = firstHeader(r, "X-Tenant-Id", "X-Tenant-ID")
