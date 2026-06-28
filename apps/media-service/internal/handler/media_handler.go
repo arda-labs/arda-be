@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -22,6 +23,7 @@ func NewMediaHandler(service *service.MediaService) *MediaHandler {
 
 func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
+	slog.Info("incoming upload request", "method", r.Method, "content_type", contentType)
 	if strings.Contains(contentType, "application/json") {
 		var req domain.InitUploadRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -85,6 +87,7 @@ func (h *MediaHandler) Download(w http.ResponseWriter, r *http.Request, publicID
 }
 
 func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request, publicID string) {
+	slog.Info("incoming delete request", "public_id", publicID)
 	ctx := r.Context()
 	userID := firstHeader(r, "X-User-Id", "X-User-Subject")
 	tenantID := firstHeader(r, "X-Tenant-Id")
@@ -107,6 +110,7 @@ func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request, publicID s
 }
 
 func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, publicID string, download bool) {
+	slog.Info("incoming retrieve request", "public_id", publicID, "download", download)
 	ctx := r.Context()
 	file, err := h.service.GetFileByPublicID(ctx, publicID)
 	if err != nil {
@@ -195,6 +199,7 @@ func firstHeader(r *http.Request, names ...string) string {
 }
 
 func writeServiceError(w http.ResponseWriter, err error) {
+	slog.Error("media service error", "err", err)
 	switch {
 	case errors.Is(err, service.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "validation.invalid_input", err.Error())
@@ -214,6 +219,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
+	slog.Warn("returning client error", "status", status, "code", code, "message", message)
 	writeJSON(w, status, map[string]any{
 		"error": map[string]string{
 			"code":    code,
