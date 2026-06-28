@@ -54,10 +54,11 @@ func Connect(ctx context.Context, redisURL string) (*redis.Client, error) {
 		sentinelAddrs := strings.Split(hostPart, ",")
 
 		rdb := redis.NewFailoverClient(&redis.FailoverOptions{
-			MasterName:    masterName,
-			SentinelAddrs: sentinelAddrs,
-			Username:      username,
-			Password:      password,
+			MasterName:       masterName,
+			SentinelAddrs:    sentinelAddrs,
+			Username:         username,
+			Password:         password,
+			SentinelPassword: password,
 		})
 
 		if err := rdb.Ping(ctx).Err(); err != nil {
