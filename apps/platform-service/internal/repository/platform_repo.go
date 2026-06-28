@@ -211,7 +211,7 @@ func (r *PlatformRepository) UpsertLookupValue(ctx context.Context, categoryCode
 
 func (r *PlatformRepository) ListOrganizations(ctx context.Context, tenantID string) ([]domain.Organization, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, tenant_id, parent_id, code, name, org_type, admin_unit_code, address, is_active, created_at, updated_at
+		SELECT id, tenant_id, parent_id, code, name, admin_unit_code, address, is_active, created_at, updated_at
 		FROM plt_organizations
 		WHERE ($1 = '' OR tenant_id = $1)
 		ORDER BY parent_id NULLS FIRST, code`, tenantID)
@@ -223,7 +223,7 @@ func (r *PlatformRepository) ListOrganizations(ctx context.Context, tenantID str
 	items := make([]domain.Organization, 0)
 	for rows.Next() {
 		var item domain.Organization
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.OrgType, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -238,18 +238,15 @@ func (r *PlatformRepository) CreateOrganization(ctx context.Context, item domain
 	if item.TenantID == "" {
 		item.TenantID = "default"
 	}
-	if item.OrgType == "" {
-		item.OrgType = "branch"
-	}
 	if !item.IsActive {
 		item.IsActive = true
 	}
 	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO plt_organizations (id, tenant_id, parent_id, code, name, org_type, admin_unit_code, address, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, tenant_id, parent_id, code, name, org_type, admin_unit_code, address, is_active, created_at, updated_at`,
-		item.ID, item.TenantID, item.ParentID, item.Code, item.Name, item.OrgType, item.AdminUnitCode, item.Address, item.IsActive,
-	).Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.OrgType, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
+		INSERT INTO plt_organizations (id, tenant_id, parent_id, code, name, admin_unit_code, address, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, tenant_id, parent_id, code, name, admin_unit_code, address, is_active, created_at, updated_at`,
+		item.ID, item.TenantID, item.ParentID, item.Code, item.Name, item.AdminUnitCode, item.Address, item.IsActive,
+	).Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 
@@ -307,21 +304,21 @@ func (r *PlatformRepository) UpsertGeoAdminUnit(ctx context.Context, item domain
 func (r *PlatformRepository) GetOrganizationByID(ctx context.Context, id string) (domain.Organization, error) {
 	var item domain.Organization
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, parent_id, code, name, org_type, admin_unit_code, address, is_active, created_at, updated_at
+		SELECT id, tenant_id, parent_id, code, name, admin_unit_code, address, is_active, created_at, updated_at
 		FROM plt_organizations
 		WHERE id = $1 LIMIT 1`, id).
-		Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.OrgType, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
+		Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 
 func (r *PlatformRepository) UpdateOrganization(ctx context.Context, item domain.Organization) (domain.Organization, error) {
 	err := r.db.QueryRowContext(ctx, `
 		UPDATE plt_organizations
-		SET parent_id = $2, code = $3, name = $4, org_type = $5, admin_unit_code = $6, address = $7, is_active = $8, updated_at = now()
+		SET parent_id = $2, code = $3, name = $4, admin_unit_code = $5, address = $6, is_active = $7, updated_at = now()
 		WHERE id = $1
-		RETURNING id, tenant_id, parent_id, code, name, org_type, admin_unit_code, address, is_active, created_at, updated_at`,
-		item.ID, item.ParentID, item.Code, item.Name, item.OrgType, item.AdminUnitCode, item.Address, item.IsActive,
-	).Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.OrgType, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
+		RETURNING id, tenant_id, parent_id, code, name, admin_unit_code, address, is_active, created_at, updated_at`,
+		item.ID, item.ParentID, item.Code, item.Name, item.AdminUnitCode, item.Address, item.IsActive,
+	).Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 

@@ -55,7 +55,6 @@ type Organization struct {
 	ParentID      *string   `json:"parent_id,omitempty"`
 	Code          string    `json:"code"`
 	Name          string    `json:"name"`
-	OrgType       string    `json:"org_type"`
 	AdminUnitCode *string   `json:"admin_unit_code,omitempty"`
 	Address       *string   `json:"address,omitempty"`
 	IsActive      bool      `json:"is_active"`
