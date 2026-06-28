@@ -539,7 +539,11 @@ func (h *BFFHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
-	target := h.cfg.ProxyURL() + r.URL.Path
+	baseURL := h.cfg.ProxyURL()
+	if strings.HasPrefix(r.URL.Path, "/api/platform") {
+		baseURL = h.cfg.PlatformServiceURL
+	}
+	target := baseURL + r.URL.Path
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
 	}

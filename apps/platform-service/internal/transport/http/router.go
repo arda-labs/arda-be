@@ -50,12 +50,52 @@ func NewRouter(platformHandler *handler.PlatformHandler) http.Handler {
 		}
 	})
 
+	mux.HandleFunc("/api/platform/parameters/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodDelete:
+			platformHandler.DeleteParameter(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
+	mux.HandleFunc("/api/platform/lookups/{id}/delete", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodDelete:
+			platformHandler.DeleteLookupCategory(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
+	mux.HandleFunc("/api/platform/lookup-values/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodDelete:
+			platformHandler.DeleteLookupValue(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
 	mux.HandleFunc("/api/platform/organizations", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			platformHandler.ListOrganizations(w, r)
 		case http.MethodPost:
 			platformHandler.CreateOrganization(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
+	mux.HandleFunc("/api/platform/organizations/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			platformHandler.GetOrganization(w, r)
+		case http.MethodPut:
+			platformHandler.UpdateOrganization(w, r)
+		case http.MethodDelete:
+			platformHandler.DeleteOrganization(w, r)
 		default:
 			methodNotAllowed(w)
 		}

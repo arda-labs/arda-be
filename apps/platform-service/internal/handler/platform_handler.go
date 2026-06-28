@@ -120,6 +120,76 @@ func (h *PlatformHandler) UpsertGeoAdminUnit(w http.ResponseWriter, r *http.Requ
 	writeResult(w, item, err)
 }
 
+func (h *PlatformHandler) GetOrganization(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	item, err := h.svc.GetOrganizationByID(r.Context(), id)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	var req domain.Organization
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, "validation.invalid_json", "invalid json")
+		return
+	}
+	req.ID = id
+	if req.Code == "" || req.Name == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code and name are required")
+		return
+	}
+	item, err := h.svc.UpdateOrganization(r.Context(), req)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	err := h.svc.DeleteOrganization(r.Context(), id)
+	writeResult(w, map[string]bool{"ok": true}, err)
+}
+
+func (h *PlatformHandler) DeleteParameter(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	err := h.svc.DeleteParameter(r.Context(), id)
+	writeResult(w, map[string]bool{"ok": true}, err)
+}
+
+func (h *PlatformHandler) DeleteLookupCategory(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	err := h.svc.DeleteLookupCategory(r.Context(), id)
+	writeResult(w, map[string]bool{"ok": true}, err)
+}
+
+func (h *PlatformHandler) DeleteLookupValue(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	err := h.svc.DeleteLookupValue(r.Context(), id)
+	writeResult(w, map[string]bool{"ok": true}, err)
+}
+
 func writeResult(w http.ResponseWriter, data any, err error) {
 	if err != nil {
 		var appErr *ardaerrors.Error

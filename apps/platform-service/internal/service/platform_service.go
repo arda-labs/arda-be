@@ -77,3 +77,27 @@ func (s *PlatformService) ListGeoAdminUnits(ctx context.Context, parentCode stri
 func (s *PlatformService) UpsertGeoAdminUnit(ctx context.Context, item domain.GeoAdminUnit) (domain.GeoAdminUnit, error) {
 	return s.repo.UpsertGeoAdminUnit(ctx, item)
 }
+
+func (s *PlatformService) GetOrganizationByID(ctx context.Context, id string) (domain.Organization, error) {
+	return s.repo.GetOrganizationByID(ctx, id)
+}
+
+func (s *PlatformService) UpdateOrganization(ctx context.Context, item domain.Organization) (domain.Organization, error) {
+	return s.repo.UpdateOrganization(ctx, item)
+}
+
+func (s *PlatformService) DeleteOrganization(ctx context.Context, id string) error {
+	return s.repo.DeleteOrganization(ctx, id)
+}
+
+func (s *PlatformService) DeleteParameter(ctx context.Context, id string) error {
+	return s.repo.DeleteParameter(ctx, id)
+}
+
+func (s *PlatformService) DeleteLookupCategory(ctx context.Context, id string) error {
+	return s.repo.DeleteLookupCategory(ctx, id)
+}
+
+func (s *PlatformService) DeleteLookupValue(ctx context.Context, id string) error {
+	return s.repo.DeleteLookupValue(ctx, id)
+}

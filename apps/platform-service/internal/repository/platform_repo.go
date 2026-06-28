@@ -303,3 +303,44 @@ func (r *PlatformRepository) UpsertGeoAdminUnit(ctx context.Context, item domain
 	).Scan(&item.Code, &item.Name, &item.FullName, &item.ParentCode, &item.Level, &item.UnitType, &item.CountryCode, &item.RegionCode, &item.EffectiveFrom, &item.EffectiveTo, &item.IsActive, &item.Metadata, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
+
+func (r *PlatformRepository) GetOrganizationByID(ctx context.Context, id string) (domain.Organization, error) {
+	var item domain.Organization
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, parent_id, code, name, org_type, admin_unit_code, address, is_active, created_at, updated_at
+		FROM plt_organizations
+		WHERE id = $1 LIMIT 1`, id).
+		Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.OrgType, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
+	return item, err
+}
+
+func (r *PlatformRepository) UpdateOrganization(ctx context.Context, item domain.Organization) (domain.Organization, error) {
+	err := r.db.QueryRowContext(ctx, `
+		UPDATE plt_organizations
+		SET parent_id = $2, code = $3, name = $4, org_type = $5, admin_unit_code = $6, address = $7, is_active = $8, updated_at = now()
+		WHERE id = $1
+		RETURNING id, tenant_id, parent_id, code, name, org_type, admin_unit_code, address, is_active, created_at, updated_at`,
+		item.ID, item.ParentID, item.Code, item.Name, item.OrgType, item.AdminUnitCode, item.Address, item.IsActive,
+	).Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.OrgType, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
+	return item, err
+}
+
+func (r *PlatformRepository) DeleteOrganization(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE plt_organizations SET is_active = false, updated_at = now() WHERE id = $1`, id)
+	return err
+}
+
+func (r *PlatformRepository) DeleteParameter(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_system_parameters WHERE id = $1`, id)
+	return err
+}
+
+func (r *PlatformRepository) DeleteLookupCategory(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_lookup_categories WHERE id = $1`, id)
+	return err
+}
+
+func (r *PlatformRepository) DeleteLookupValue(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_lookup_values WHERE id = $1`, id)
+	return err
+}

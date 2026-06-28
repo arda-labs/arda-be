@@ -22,9 +22,10 @@ type Config struct {
 	IntrospectionClientID     string `yaml:"introspection_client_id"`
 	IntrospectionClientSecret string `yaml:"introspection_client_secret"`
 
-	IAMServiceURL   string `yaml:"iam_service_url"`
-	ProxyBackendURL string `yaml:"proxy_backend_url"`
-	PolicyFile      string `yaml:"policy_file"`
+	IAMServiceURL      string `yaml:"iam_service_url"`
+	PlatformServiceURL string `yaml:"platform_service_url"`
+	ProxyBackendURL    string `yaml:"proxy_backend_url"`
+	PolicyFile         string `yaml:"policy_file"`
 
 	RedisURL            string `yaml:"redis_url"`
 	SessionCookieName   string `yaml:"session_cookie_name"`
@@ -58,8 +59,9 @@ func Load() Config {
 		JWTSecret:     "super-secret-dev-key-change-in-production",
 		JWTIssuer:     "https://auth.arda.io.vn",
 		JWTAudience:   "arda-api",
-		IAMServiceURL: "http://localhost:8081",
-		PolicyFile:    "configs/policy.yaml",
+		IAMServiceURL:      "http://localhost:8081",
+		PlatformServiceURL: "http://localhost:8091",
+		PolicyFile:         "configs/policy.yaml",
 		SessionCookieName:   "arda_sid",
 		SessionTTL:     86400,
 		CookieSecure:   true,
@@ -92,6 +94,7 @@ func Load() Config {
 	envStr("INTROSPECTION_CLIENT_ID", &cfg.IntrospectionClientID)
 	envStr("INTROSPECTION_CLIENT_SECRET", &cfg.IntrospectionClientSecret)
 	envStr("IAM_SERVICE_URL", &cfg.IAMServiceURL)
+	envStr("PLATFORM_SERVICE_URL", &cfg.PlatformServiceURL)
 	envStr("PROXY_BACKEND_URL", &cfg.ProxyBackendURL)
 	envStr("POLICY_FILE", &cfg.PolicyFile)
 	envStr("REDIS_URL", &cfg.RedisURL)
@@ -135,6 +138,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("introspection_client_id", &c.IntrospectionClientID)
 	setStr("introspection_client_secret", &c.IntrospectionClientSecret)
 	setStr("iam_service_url", &c.IAMServiceURL)
+	setStr("platform_service_url", &c.PlatformServiceURL)
 	setStr("proxy_backend_url", &c.ProxyBackendURL)
 	setStr("policy_file", &c.PolicyFile)
 	setStr("redis_url", &c.RedisURL)
