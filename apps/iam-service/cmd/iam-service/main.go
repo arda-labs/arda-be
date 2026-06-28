@@ -24,7 +24,6 @@ import (
 	"github.com/arda-labs/arda/apps/iam-service/internal/migration"
 	"github.com/arda-labs/arda/apps/iam-service/internal/policy"
 	"github.com/arda-labs/arda/apps/iam-service/internal/provider"
-	providerpassword "github.com/arda-labs/arda/apps/iam-service/internal/provider/password"
 	"github.com/arda-labs/arda/apps/iam-service/internal/ratelimit"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
@@ -90,11 +89,6 @@ func main() {
 
 	// ── Provider registry ──
 	registry := provider.NewRegistry()
-	internalProvider := providerpassword.New(userRepo)
-	if err := registry.Register(internalProvider); err != nil {
-		logger.Error("register internal provider", "err", err)
-		os.Exit(1)
-	}
 	if err := registry.ValidateAll(context.Background()); err != nil {
 		logger.Error("validate providers", "err", err)
 		os.Exit(1)

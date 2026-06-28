@@ -140,14 +140,8 @@ func (h *MFAHandler) AdminResetMFA(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "reset"})
 }
 
-// MFAVerification is the temporary token used during login MFA step.
-type MFAVerification struct {
-	UserID    string
-	ExpiresAt int64
-}
-
-// VerifyCode verifies a TOTP code during login (called from orchestrator).
-// POST /api/auth/login/mfa
+// VerifyCode verifies a TOTP code for the current MFA flow.
+// POST /api/iam/me/mfa/verify
 func (h *MFAHandler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		UserID string `json:"userId"`
@@ -170,8 +164,8 @@ func (h *MFAHandler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "verified", "mfaToken": req.UserID + "_mfa_ok"})
 }
 
-// VerifyBackupCode verifies a backup code during login.
-// POST /api/auth/login/mfa/backup
+// VerifyBackupCode verifies a backup code for the current MFA flow.
+// POST /api/iam/me/mfa/backup
 func (h *MFAHandler) VerifyBackupCode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		UserID string `json:"userId"`

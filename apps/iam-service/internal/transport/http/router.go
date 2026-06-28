@@ -24,15 +24,12 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 
 	// ── Auth API (public) ──
 	mux.HandleFunc("/api/auth/login-page", method("GET", authHandler.LoginPage))
-	mux.HandleFunc("/api/auth/login/password", method("POST", authHandler.LoginPassword))
-	mux.HandleFunc("/api/auth/login/mfa", method("POST", authHandler.LoginMFA))
 	mux.HandleFunc("/api/auth/login/external", method("POST", authHandler.LoginExternal))
 	mux.HandleFunc("/api/auth/callback/{provider_id}", method("GET", authHandler.CallbackProvider))
 	mux.HandleFunc("/api/auth/callback", method("POST", authHandler.CallbackToken))
 	mux.HandleFunc("/api/auth/refresh", method("POST", authHandler.Refresh))
 	mux.HandleFunc("/api/auth/providers", method("GET", authHandler.ListProviders))
 	mux.HandleFunc("/api/auth/consent", method("POST", authHandler.Consent))
-	mux.HandleFunc("/api/auth/register", method("POST", authHandler.RegisterUser))
 
 	// ── Admin API — User management ──
 	mux.HandleFunc("/api/admin/users", func(w http.ResponseWriter, r *http.Request) {

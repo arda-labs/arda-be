@@ -1,19 +1,11 @@
 package handler
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"strings"
-	"time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/auth"
 )
-
-const deviceCookieName = "arda_did"
-const deviceCookieMaxAge = 365 * 24 * 60 * 60
-const rememberMFACookieName = "arda_rmf"
 
 // AuthHandler exposes authentication endpoints.
 type AuthHandler struct {
@@ -41,33 +33,6 @@ func (h *AuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, data)
-}
-
-// LoginPassword handles username/password login.
-func (h *AuthHandler) LoginPassword(w http.ResponseWriter, r *http.Request) {
-	respondError(w, http.StatusGone, "password login is managed by Kratos")
-}
-
-// LoginMFA completes password login after a successful MFA challenge.
-func (h *AuthHandler) LoginMFA(w http.ResponseWriter, r *http.Request) {
-	var req auth.MFALoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	result, err := h.orch.LoginWithMFA(r.Context(), &req)
-	if err != nil {
-		respondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-	if req.RememberDevice {
-		setShortLivedCookie(w, r, rememberMFACookieName, "1", 10*60)
-	} else {
-		clearShortLivedCookie(w, r, rememberMFACookieName)
-	}
-
-	respondJSON(w, http.StatusOK, result)
 }
 
 // LoginExternal initiates an external SSO login.
@@ -180,74 +145,4 @@ func (h *AuthHandler) Consent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"redirect_url": redirectTo})
-}
-
-// RegisterUser is disabled because identity creation is managed by Kratos.
-func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
-	respondError(w, http.StatusGone, "registration is managed by Kratos identity flows")
-}
-
-func readDeviceToken(r *http.Request) string {
-	cookie, err := r.Cookie(deviceCookieName)
-	if err != nil {
-		return ""
-	}
-	return cookie.Value
-}
-
-func ensureDeviceToken(w http.ResponseWriter, r *http.Request) string {
-	if token := readDeviceToken(r); token != "" {
-		return token
-	}
-
-	token := generateDeviceToken()
-	http.SetCookie(w, &http.Cookie{
-		Name:     deviceCookieName,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   deviceCookieMaxAge,
-	})
-	return token
-}
-
-func generateDeviceToken() string {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return base64.RawURLEncoding.EncodeToString([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
-	}
-	return base64.RawURLEncoding.EncodeToString(buf)
-}
-
-func isSecureRequest(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
-	}
-	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-}
-
-func setShortLivedCookie(w http.ResponseWriter, r *http.Request, name, value string, maxAge int) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     name,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   maxAge,
-	})
-}
-
-func clearShortLivedCookie(w http.ResponseWriter, r *http.Request, name string) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     name,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-	})
 }
