@@ -27,17 +27,17 @@ func (r *MediaRepository) CreatePendingUpload(ctx context.Context, file domain.F
 
 	const insertFile = `
 INSERT INTO media_files (
-  id, tenant_id, org_id, owner_user_id, module, entity_type, entity_id,
+  id, public_id, tenant_id, org_id, owner_user_id, module, entity_type, entity_id,
   original_filename, content_type, extension, size_bytes, checksum_sha256,
   status, scan_status, storage_provider, bucket, object_key, storage_class,
   version_id, visibility, created_by
 ) VALUES (
-  $1,$2,NULLIF($3,''),NULLIF($4,''),$5,NULLIF($6,''),NULLIF($7,''),
-  $8,$9,NULLIF($10,''),$11,NULLIF($12,''),$13,$14,$15,$16,$17,$18,$19,$20,NULLIF($21,'')
+  $1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,NULLIF($7,''),NULLIF($8,''),
+  $9,$10,NULLIF($11,''),$12,NULLIF($13,''),$14,$15,$16,$17,$18,$19,$20,$21,NULLIF($22,'')
 )
 RETURNING created_at`
 	if err := tx.QueryRowContext(ctx, insertFile,
-		file.ID, file.TenantID, file.OrgID, file.OwnerUserID, file.Module, file.EntityType, file.EntityID,
+		file.ID, file.PublicID, file.TenantID, file.OrgID, file.OwnerUserID, file.Module, file.EntityType, file.EntityID,
 		file.OriginalFilename, file.ContentType, file.Extension, file.SizeBytes, file.ChecksumSHA256,
 		file.Status, file.ScanStatus, file.StorageProvider, file.Bucket, file.ObjectKey, file.StorageClass,
 		file.VersionID, file.Visibility, file.CreatedBy,
@@ -65,7 +65,7 @@ INSERT INTO media_upload_sessions (
 
 func (r *MediaRepository) GetFile(ctx context.Context, fileID string) (domain.File, error) {
 	const query = `
-SELECT id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,''), module,
+SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,''), module,
   COALESCE(entity_type,''), COALESCE(entity_id,''), original_filename, content_type,
   COALESCE(extension,''), size_bytes, COALESCE(checksum_sha256,''), status, scan_status,
   storage_provider, bucket, object_key, storage_class, version_id, visibility,
@@ -74,7 +74,7 @@ FROM media_files
 WHERE id = $1 AND deleted_at IS NULL`
 	var file domain.File
 	err := r.db.QueryRowContext(ctx, query, fileID).Scan(
-		&file.ID, &file.TenantID, &file.OrgID, &file.OwnerUserID, &file.Module,
+		&file.ID, &file.PublicID, &file.TenantID, &file.OrgID, &file.OwnerUserID, &file.Module,
 		&file.EntityType, &file.EntityID, &file.OriginalFilename, &file.ContentType,
 		&file.Extension, &file.SizeBytes, &file.ChecksumSHA256, &file.Status, &file.ScanStatus,
 		&file.StorageProvider, &file.Bucket, &file.ObjectKey, &file.StorageClass, &file.VersionID, &file.Visibility,
@@ -131,6 +131,35 @@ WHERE file_id = $1 AND status = 'pending'`
 		return domain.File{}, err
 	}
 	return r.GetFile(ctx, fileID)
+}
+
+func (r *MediaRepository) GetFileByPublicID(ctx context.Context, publicID string) (domain.File, error) {
+	const query = `
+SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,''), module,
+  COALESCE(entity_type,''), COALESCE(entity_id,''), original_filename, content_type,
+  COALESCE(extension,''), size_bytes, COALESCE(checksum_sha256,''), status, scan_status,
+  storage_provider, bucket, object_key, storage_class, version_id, visibility,
+  COALESCE(created_by,''), created_at, uploaded_at
+FROM media_files
+WHERE public_id = $1 AND deleted_at IS NULL`
+	var file domain.File
+	err := r.db.QueryRowContext(ctx, query, publicID).Scan(
+		&file.ID, &file.PublicID, &file.TenantID, &file.OrgID, &file.OwnerUserID, &file.Module,
+		&file.EntityType, &file.EntityID, &file.OriginalFilename, &file.ContentType,
+		&file.Extension, &file.SizeBytes, &file.ChecksumSHA256, &file.Status, &file.ScanStatus,
+		&file.StorageProvider, &file.Bucket, &file.ObjectKey, &file.StorageClass, &file.VersionID, &file.Visibility,
+		&file.CreatedBy, &file.CreatedAt, &file.UploadedAt,
+	)
+	if err != nil {
+		return domain.File{}, err
+	}
+	return file, nil
+}
+
+func (r *MediaRepository) DeleteFile(ctx context.Context, fileID string) error {
+	const query = `UPDATE media_files SET deleted_at = now(), status = 'deleted' WHERE id = $1`
+	_, err := r.db.ExecContext(ctx, query, fileID)
+	return err
 }
 
 func insertOutbox(ctx context.Context, tx *sql.Tx, tenantID, eventType, aggregateType, aggregateID string, payload map[string]any) error {

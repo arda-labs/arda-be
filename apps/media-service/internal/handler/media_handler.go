@@ -3,6 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -18,58 +20,136 @@ func NewMediaHandler(service *service.MediaService) *MediaHandler {
 	return &MediaHandler{service: service}
 }
 
-func (h *MediaHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
-	var req domain.InitUploadRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
+func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "media.upload.invalid_form", "Failed to parse multipart form")
 		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "media.upload.missing_file", "File is required")
+		return
+	}
+	defer file.Close()
+
+	req := domain.InitUploadRequest{
+		Module:           r.FormValue("module"),
+		EntityType:       r.FormValue("entity_type"),
+		EntityID:         r.FormValue("entity_id"),
+		OriginalFilename: header.Filename,
+		ContentType:      header.Header.Get("Content-Type"),
+		SizeBytes:        header.Size,
 	}
 	applyRequestContext(r, &req)
 
-	resp, err := h.service.InitUpload(r.Context(), req)
+	resp, err := h.service.UploadFile(r.Context(), req, file)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, resp)
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"public_id":  resp.PublicID,
+		"file_name":  resp.OriginalFilename,
+		"mime_type":  resp.ContentType,
+		"size":       resp.SizeBytes,
+		"created_at": resp.CreatedAt,
+	})
 }
 
-func (h *MediaHandler) CompleteUpload(w http.ResponseWriter, r *http.Request, fileID string) {
-	resp, err := h.service.CompleteUpload(r.Context(), fileID)
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
+func (h *MediaHandler) View(w http.ResponseWriter, r *http.Request, publicID string) {
+	h.handleRetrieve(w, r, publicID, false)
 }
 
-func (h *MediaHandler) GetFile(w http.ResponseWriter, r *http.Request, fileID string) {
-	file, err := h.service.GetFile(r.Context(), fileID)
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, file)
+func (h *MediaHandler) Download(w http.ResponseWriter, r *http.Request, publicID string) {
+	h.handleRetrieve(w, r, publicID, true)
 }
 
-func (h *MediaHandler) GetDownloadURL(w http.ResponseWriter, r *http.Request, fileID string) {
-	resp, err := h.service.GetDownloadURL(r.Context(), fileID)
+func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request, publicID string) {
+	ctx := r.Context()
+	userID := firstHeader(r, "X-User-Id", "X-User-Subject")
+	tenantID := firstHeader(r, "X-Tenant-Id")
+	orgID := firstHeader(r, "X-Org-Id")
+	ip := r.RemoteAddr
+	userAgent := r.UserAgent()
+
+	err := h.service.DeleteFileByPublicID(ctx, publicID)
 	if err != nil {
+		fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s media_id=%s action=delete ip=%s ua=%s result=failed error=%v\n",
+			userID, tenantID, orgID, publicID, ip, userAgent, err)
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+
+	fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s media_id=%s action=delete ip=%s ua=%s result=success\n",
+		userID, tenantID, orgID, publicID, ip, userAgent)
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
 }
 
-func (h *MediaHandler) GetContent(w http.ResponseWriter, r *http.Request, fileID string) {
-	download := r.URL.Query().Get("download") == "true"
-	redirectURL, err := h.service.GetContentRedirectURL(r.Context(), fileID, download)
+func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, publicID string, download bool) {
+	ctx := r.Context()
+	file, err := h.service.GetFileByPublicID(ctx, publicID)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	w.Header().Set("Cache-Control", "private, max-age=240")
-	http.Redirect(w, r, redirectURL, http.StatusFound)
+
+	userID := firstHeader(r, "X-User-Id", "X-User-Subject")
+	tenantID := firstHeader(r, "X-Tenant-Id")
+	orgID := firstHeader(r, "X-Org-Id")
+	ip := r.RemoteAddr
+	userAgent := r.UserAgent()
+
+	action := "view"
+	if download {
+		action = "download"
+	}
+	fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s media_id=%s action=%s ip=%s ua=%s result=success\n",
+		userID, tenantID, orgID, file.ID, action, ip, userAgent)
+
+	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded {
+		writeError(w, http.StatusConflict, "media.file.not_ready", "File is not ready")
+		return
+	}
+
+	const MaxStreamSize = 2 * 1024 * 1024 // 2MB
+	if file.SizeBytes < MaxStreamSize {
+		stream, err := h.service.GetObjectStream(ctx, file)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "media.stream.failed", "Failed to stream file")
+			return
+		}
+		defer stream.Close()
+
+		w.Header().Set("Content-Type", file.ContentType)
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", file.SizeBytes))
+		w.Header().Set("Cache-Control", "private, max-age=86400")
+
+		if download {
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", file.OriginalFilename))
+		}
+
+		etag := fmt.Sprintf(`W/"%s-%d"`, publicID, file.SizeBytes)
+		w.Header().Set("ETag", etag)
+
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, stream)
+	} else {
+		redirectURL, err := h.service.GetContentRedirectURLByPublicID(ctx, publicID, download)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		w.Header().Set("Cache-Control", "private, max-age=30")
+		http.Redirect(w, r, redirectURL, http.StatusFound)
+	}
 }
 
 func applyRequestContext(r *http.Request, req *domain.InitUploadRequest) {

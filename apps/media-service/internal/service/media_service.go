@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"strings"
 	"time"
@@ -50,6 +51,7 @@ func (s *MediaService) InitUpload(ctx context.Context, req domain.InitUploadRequ
 	}
 
 	fileID := domain.NewID("file")
+	publicID := domain.NewID("mf")
 	versionID := "v1"
 	extension := strings.TrimPrefix(strings.ToLower(path.Ext(req.OriginalFilename)), ".")
 	storageClass := defaultString(req.StorageClass, "standard")
@@ -59,6 +61,7 @@ func (s *MediaService) InitUpload(ctx context.Context, req domain.InitUploadRequ
 
 	file := domain.File{
 		ID:               fileID,
+		PublicID:         publicID,
 		TenantID:         req.TenantID,
 		OrgID:            req.OrgID,
 		OwnerUserID:      req.OwnerUserID,
@@ -222,6 +225,139 @@ func (s *MediaService) GetContentRedirectURL(ctx context.Context, fileID string,
 	return resp.URL, nil
 }
 
+func (s *MediaService) GetFileByPublicID(ctx context.Context, publicID string) (domain.File, error) {
+	file, err := s.repo.GetFileByPublicID(ctx, publicID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.File{}, ErrNotFound
+		}
+		return domain.File{}, err
+	}
+	return file, nil
+}
+
+func (s *MediaService) DeleteFileByPublicID(ctx context.Context, publicID string) error {
+	file, err := s.GetFileByPublicID(ctx, publicID)
+	if err != nil {
+		return err
+	}
+	// Delete from storage
+	if err := s.storage.DeleteObject(ctx, file.Bucket, file.ObjectKey); err != nil {
+		// Log error but continue to delete from metadata
+		fmt.Printf("failed to delete S3 object: %v\n", err)
+	}
+	// Delete from DB
+	return s.repo.DeleteFile(ctx, file.ID)
+}
+
+func (s *MediaService) GetContentRedirectURLByPublicID(ctx context.Context, publicID string, download bool) (string, error) {
+	file, err := s.GetFileByPublicID(ctx, publicID)
+	if err != nil {
+		return "", err
+	}
+	var disposition string
+	if download {
+		disposition = fmt.Sprintf("attachment; filename=%q", file.OriginalFilename)
+	}
+	resp, err := s.GetDownloadURLWithDisposition(ctx, file.ID, disposition)
+	if err != nil {
+		return "", err
+	}
+	return resp.URL, nil
+}
+
+func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequest, body io.Reader) (domain.File, error) {
+	req.TenantID = strings.TrimSpace(req.TenantID)
+	if req.TenantID == "" {
+		req.TenantID = domain.DefaultTenantID
+	}
+	req.Module = strings.TrimSpace(req.Module)
+	req.OriginalFilename = strings.TrimSpace(req.OriginalFilename)
+	req.ContentType = strings.TrimSpace(req.ContentType)
+	if req.Module == "" || req.OriginalFilename == "" || req.ContentType == "" {
+		return domain.File{}, fmt.Errorf("%w: module, original_filename and content_type are required", ErrInvalidInput)
+	}
+
+	fileID := domain.NewID("file")
+	publicID := domain.NewID("mf")
+	versionID := "v1"
+	extension := strings.TrimPrefix(strings.ToLower(path.Ext(req.OriginalFilename)), ".")
+	storageClass := defaultString(req.StorageClass, "standard")
+	visibility := defaultString(req.Visibility, "private")
+	objectKey := buildObjectKey(req.TenantID, fileID, versionID)
+
+	file := domain.File{
+		ID:               fileID,
+		PublicID:         publicID,
+		TenantID:         req.TenantID,
+		OrgID:            req.OrgID,
+		OwnerUserID:      req.OwnerUserID,
+		Module:           req.Module,
+		EntityType:       req.EntityType,
+		EntityID:         req.EntityID,
+		OriginalFilename: req.OriginalFilename,
+		ContentType:      req.ContentType,
+		Extension:        extension,
+		SizeBytes:        req.SizeBytes,
+		ChecksumSHA256:   req.ChecksumSHA256,
+		Status:           domain.StatusReady,
+		ScanStatus:       domain.ScanNotRequired,
+		StorageProvider:  s.cfg.StorageProvider,
+		Bucket:           s.cfg.StorageBucket,
+		ObjectKey:        objectKey,
+		StorageClass:     storageClass,
+		VersionID:        versionID,
+		Visibility:       visibility,
+		CreatedBy:        req.CreatedBy,
+	}
+
+	err := s.storage.PutObject(ctx, file.Bucket, file.ObjectKey, body, file.SizeBytes, file.ContentType)
+	if err != nil {
+		return domain.File{}, fmt.Errorf("upload to S3: %w", err)
+	}
+
+	session := domain.UploadSession{
+		ID:        domain.NewID("upl"),
+		TenantID:  req.TenantID,
+		FileID:    fileID,
+		ExpiresAt: time.Now().UTC().Add(time.Hour),
+		Status:    "completed",
+	}
+
+	file.Status = domain.StatusPendingUpload
+	created, err := s.repo.CreatePendingUpload(ctx, file, session, map[string]any{
+		"file_id":      file.ID,
+		"public_id":    file.PublicID,
+		"tenant_id":    file.TenantID,
+		"org_id":       file.OrgID,
+		"module":       file.Module,
+		"entity_type":  file.EntityType,
+		"entity_id":    file.EntityID,
+		"content_type": file.ContentType,
+		"size_bytes":   file.SizeBytes,
+	})
+	if err != nil {
+		return domain.File{}, err
+	}
+
+	updated, err := s.repo.CompleteUpload(ctx, created.ID, file.SizeBytes, file.ContentType, domain.StatusReady, domain.ScanNotRequired, map[string]any{
+		"file_id":      created.ID,
+		"public_id":    created.PublicID,
+		"tenant_id":    created.TenantID,
+		"org_id":       created.OrgID,
+		"module":       created.Module,
+		"entity_type":  created.EntityType,
+		"entity_id":    created.EntityID,
+		"content_type": created.ContentType,
+		"size_bytes":   created.SizeBytes,
+	})
+	if err != nil {
+		return domain.File{}, err
+	}
+
+	return updated, nil
+}
+
 func buildObjectKey(tenantID, fileID, versionID string) string {
 	now := time.Now().UTC()
 	return fmt.Sprintf("tenants/%s/%04d/%02d/%02d/%s/%s/original", tenantID, now.Year(), now.Month(), now.Day(), fileID, versionID)
@@ -232,4 +368,8 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func (s *MediaService) GetObjectStream(ctx context.Context, file domain.File) (io.ReadCloser, error) {
+	return s.storage.GetObject(ctx, file.Bucket, file.ObjectKey)
 }

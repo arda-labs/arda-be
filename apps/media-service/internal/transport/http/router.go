@@ -13,29 +13,27 @@ func NewRouter(mediaHandler *handler.MediaHandler) http.Handler {
 	mux.HandleFunc("/health/live", health("ok"))
 	mux.HandleFunc("/health/ready", health("ready"))
 
-	mux.HandleFunc("/api/media/files/init-upload", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
+	mux.HandleFunc("/api/media", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			mediaHandler.Upload(w, r)
+		} else {
 			methodNotAllowed(w)
-			return
 		}
-		mediaHandler.InitUpload(w, r)
 	})
 
-	mux.HandleFunc("/api/media/files/", func(w http.ResponseWriter, r *http.Request) {
-		fileID, action, ok := parseFileAction(r.URL.Path)
+	mux.HandleFunc("/api/media/", func(w http.ResponseWriter, r *http.Request) {
+		publicID, action, ok := parseMediaAction(r.URL.Path)
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
 		switch {
 		case action == "" && r.Method == http.MethodGet:
-			mediaHandler.GetFile(w, r, fileID)
-		case action == "complete-upload" && r.Method == http.MethodPost:
-			mediaHandler.CompleteUpload(w, r, fileID)
-		case action == "download-url" && r.Method == http.MethodGet:
-			mediaHandler.GetDownloadURL(w, r, fileID)
-		case action == "content" && r.Method == http.MethodGet:
-			mediaHandler.GetContent(w, r, fileID)
+			mediaHandler.View(w, r, publicID)
+		case action == "download" && r.Method == http.MethodGet:
+			mediaHandler.Download(w, r, publicID)
+		case action == "" && r.Method == http.MethodDelete:
+			mediaHandler.Delete(w, r, publicID)
 		default:
 			methodNotAllowed(w)
 		}
@@ -44,8 +42,8 @@ func NewRouter(mediaHandler *handler.MediaHandler) http.Handler {
 	return mux
 }
 
-func parseFileAction(urlPath string) (fileID string, action string, ok bool) {
-	rest := strings.TrimPrefix(urlPath, "/api/media/files/")
+func parseMediaAction(urlPath string) (publicID string, action string, ok bool) {
+	rest := strings.TrimPrefix(urlPath, "/api/media/")
 	parts := strings.Split(strings.Trim(rest, "/"), "/")
 	if len(parts) == 0 || parts[0] == "" {
 		return "", "", false

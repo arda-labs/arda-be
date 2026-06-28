@@ -137,6 +137,42 @@ func (p *S3Provider) HeadObject(ctx context.Context, bucket, key string) (Object
 	}, nil
 }
 
+func (p *S3Provider) PutObject(ctx context.Context, bucket, key string, body io.Reader, size int64, contentType string) error {
+	_, err := p.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(bucket),
+		Key:           aws.String(key),
+		Body:          body,
+		ContentLength: aws.Int64(size),
+		ContentType:   aws.String(contentType),
+	})
+	if err != nil {
+		return fmt.Errorf("s3 put object: %w", err)
+	}
+	return nil
+}
+
+func (p *S3Provider) DeleteObject(ctx context.Context, bucket, key string) error {
+	_, err := p.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("s3 delete object: %w", err)
+	}
+	return nil
+}
+
+func (p *S3Provider) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+	out, err := p.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("s3 get object: %w", err)
+	}
+	return out.Body, nil
+}
+
 func (p *S3Provider) newSignedHeadRequest(ctx context.Context, bucket, key string) (*http.Request, error) {
 	endpointURL, err := url.Parse(p.endpoint)
 	if err != nil {
