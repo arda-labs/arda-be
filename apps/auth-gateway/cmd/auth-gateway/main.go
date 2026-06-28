@@ -17,7 +17,7 @@ import (
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/session"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/token"
 	transport "github.com/arda-labs/arda/apps/auth-gateway/internal/transport/http"
-	"github.com/redis/go-redis/v9"
+	ardaredis "github.com/arda-labs/arda/libs/go/arda-redis"
 )
 
 func main() {
@@ -58,14 +58,9 @@ func main() {
 	// ── Session store ──
 	var sessStore session.Store
 	if cfg.RedisURL != "" {
-		opts, err := redis.ParseURL(cfg.RedisURL)
+		rdb, err := ardaredis.Connect(context.Background(), cfg.RedisURL)
 		if err != nil {
-			logger.Error("parse redis url", "err", err)
-			os.Exit(1)
-		}
-		rdb := redis.NewClient(opts)
-		if err := rdb.Ping(context.Background()).Err(); err != nil {
-			logger.Error("redis ping", "err", err)
+			logger.Error("redis connect", "err", err)
 			os.Exit(1)
 		}
 		sessStore = session.NewRedisStore(rdb)

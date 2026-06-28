@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-auth v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-redis v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.21.0
@@ -24,3 +25,4 @@ require (
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-auth => ../../libs/go/arda-auth
+replace github.com/arda-labs/arda/libs/go/arda-redis => ../../libs/go/arda-redis
