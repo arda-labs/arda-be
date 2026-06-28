@@ -99,6 +99,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	mux.HandleFunc("/api/iam/me/profile/avatar", method("POST", userHandler.UpdateMyAvatar))
 	mux.HandleFunc("/api/iam/me/profile/cover", method("POST", userHandler.UpdateMyCover))
 	mux.HandleFunc("/api/iam/me/profile", method("PUT", userHandler.UpdateMyProfile))
+	mux.HandleFunc("/api/iam/me/profile/email", method("PUT", userHandler.UpdateMyEmail))
 
 	// ── Policy API ──
 	if policyHandler != nil {

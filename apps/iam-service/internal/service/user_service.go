@@ -5,17 +5,19 @@ import (
 	"fmt"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
+	"github.com/arda-labs/arda/apps/iam-service/internal/kratos"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 )
 
 // UserService orchestrates user-related business logic.
 type UserService struct {
-	repo *repository.UserRepository
+	repo   *repository.UserRepository
+	kratos *kratos.Client
 }
 
 // NewUserService creates a new user service.
-func NewUserService(repo *repository.UserRepository) *UserService {
-	return &UserService{repo: repo}
+func NewUserService(repo *repository.UserRepository, kratos *kratos.Client) *UserService {
+	return &UserService{repo: repo, kratos: kratos}
 }
 
 // GetUserContextBySubject builds a user context from an external subject.
@@ -144,4 +146,42 @@ func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*dom
 		DailyLimit:    user.DailyLimit,
 		Bio:           user.Bio,
 	}, nil
+}
+
+func (s *UserService) UpdateUserEmail(ctx context.Context, userID, newEmail string) (*domain.UserContext, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("user id is required")
+	}
+	if newEmail == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	if user.Email == newEmail {
+		return s.buildContext(ctx, user)
+	}
+
+	if user.Subject != "" {
+		err = s.kratos.UpdateIdentityEmail(user.Subject, newEmail, user.DisplayName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update Kratos identity: %w", err)
+		}
+	}
+
+	updatedUser, err := s.repo.UpdateUserEmail(ctx, userID, newEmail)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update user email in DB: %w", err)
+	}
+	if updatedUser == nil {
+		return nil, fmt.Errorf("user not found after update")
+	}
+
+	return s.buildContext(ctx, updatedUser)
 }

@@ -240,6 +240,31 @@ func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID, name, fi
 	return u, nil
 }
 
+func (r *UserRepository) UpdateUserEmail(ctx context.Context, userID, email string) (*domain.User, error) {
+	row := r.db.QueryRowContext(ctx, `
+		UPDATE iam_users
+		SET email = $2,
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING id, external_subject, username, email, display_name,
+		          COALESCE(first_name,''), COALESCE(last_name,''),
+		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
+		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
+		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		          created_at, updated_at
+	`, userID, email)
+	u := &domain.User{}
+	if err := scanUserRow(row, u); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("update user email in db: %w", err)
+	}
+	return u, nil
+}
+
 // DeleteUser permanently removes a user.
 func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM iam_users WHERE id = $1`, id)

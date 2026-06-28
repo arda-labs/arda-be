@@ -159,3 +159,29 @@ func (h *UserHandler) getContextByID(w http.ResponseWriter, ctx context.Context,
 	}
 	respondJSON(w, http.StatusOK, userCtx)
 }
+
+func (h *UserHandler) UpdateMyEmail(w http.ResponseWriter, r *http.Request) {
+	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
+	if userID == "" {
+		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		return
+	}
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	newEmail := strings.TrimSpace(req.Email)
+	if newEmail == "" {
+		respondError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+	ctx, err := h.svc.UpdateUserEmail(r.Context(), userID, newEmail)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, ctx)
+}

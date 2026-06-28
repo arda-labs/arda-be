@@ -142,3 +142,40 @@ func (c *Client) DeleteIdentity(id string) error {
 	}
 	return nil
 }
+
+// UpdateIdentityEmail updates the traits of an identity in Kratos.
+func (c *Client) UpdateIdentityEmail(id, email, name string) error {
+	req := struct {
+		SchemaID string         `json:"schema_id"`
+		Traits   IdentityTraits `json:"traits"`
+		State    string         `json:"state"`
+	}{
+		SchemaID: "default",
+		Traits: IdentityTraits{
+			Email: email,
+			Name:  name,
+		},
+		State: "active",
+	}
+
+	body, _ := json.Marshal(req)
+	url := fmt.Sprintf("%s/admin/identities/%s", c.adminURL, id)
+
+	request, err := http.NewRequest("PUT", url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("kratos update request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("kratos update: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("kratos update: HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}

@@ -126,7 +126,7 @@ func main() {
 	).WithMFAService(mfaSvc)
 
 	// ── Handlers ──
-	userSvc := service.NewUserService(userRepo)
+	userSvc := service.NewUserService(userRepo, kratosClient)
 	userHandler := handler.NewUserHandler(userSvc)
 	authHandler := handler.NewAuthHandler(orchestrator, userHandler)
 	policyHandler := handler.NewPolicyHandler(policyEnf)
