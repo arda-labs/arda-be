@@ -62,6 +62,8 @@ func NewS3Provider(ctx context.Context, cfg S3Config) (*S3Provider, error) {
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(cfg.Endpoint)
 		o.UsePathStyle = cfg.ForcePathStyle
+		o.RequestChecksumCalculation = 0
+		o.ResponseChecksumValidation = 0
 	})
 
 	return &S3Provider{
