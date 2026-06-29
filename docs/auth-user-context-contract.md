@@ -1,6 +1,6 @@
 # Auth User Context Contract
 
-Last updated: 2026-06-27
+Last updated: 2026-06-29
 
 ## Purpose
 
@@ -10,7 +10,7 @@ The most important rule:
 
 ```txt
 X-User-Id is always the internal IAM user UUID.
-X-User-Subject is always the external/Ory/Hydra subject.
+X-User-Subject is the upstream auth subject kept for traceability.
 ```
 
 Services must not guess whether `X-User-Id` is an OAuth subject, username, email, or provider id.
@@ -20,7 +20,7 @@ Services must not guess whether `X-User-Id` is an OAuth subject, username, email
 | Header | Required | Meaning |
 | --- | --- | --- |
 | `X-User-Id` | yes for user requests | Internal IAM `iam_users.id` UUID. This is the canonical user key inside Arda. |
-| `X-User-Subject` | yes when available | External identity subject. For Ory/Hydra/Kratos this is the token/session subject. |
+| `X-User-Subject` | yes when available | Upstream auth subject kept for traceability. In the current Kratos-first login bridge, Hydra is accepted with `iam_users.id`, so this may equal `X-User-Id`. It is not a database foreign key. |
 | `X-Username` | optional | Display/login username from IAM context. |
 | `X-User-Email` | optional | User email from IAM context. |
 | `X-Tenant-Id` | yes for tenant-scoped requests | Current tenant id from IAM context. |
@@ -46,11 +46,12 @@ x-auth-checked
 The edge auth layer is responsible for translating token/session data into internal IAM context.
 
 ```txt
-Token/session subject
+Token/session or Kratos identity
   -> auth-gateway
   -> IAM user context lookup
-       1. by external subject
-       2. by internal id as compatibility fallback
+       1. by Kratos identity ID during login bridge
+       2. by internal id for existing BFF/Hydra sessions
+       3. by legacy external subject only as compatibility fallback
   -> inject X-User-* headers
   -> downstream service
 ```
@@ -115,3 +116,7 @@ iam_users.picture_url
 During migration, a Hydra subject may already be an internal IAM UUID for password login flows. Gateway supports this by trying IAM lookup by subject first and by internal id second.
 
 This fallback belongs only in auth-gateway. New service code should depend on the normalized `X-User-Id` header.
+
+With the current Kratos-first bridge, newly accepted Hydra login requests should
+use `iam_users.id` as the Hydra subject. Kratos identity IDs are stored on the IAM
+user and in identity mappings; they should not be used as `X-User-Id`.

@@ -1,6 +1,6 @@
 # Backend Current State
 
-Last updated: 2026-06-27
+Last updated: 2026-06-29
 
 ## Overview
 
@@ -48,11 +48,46 @@ The permission model uses IAM permissions plus Casbin policies.
 Identity headers are standardized in `docs/auth-user-context-contract.md`.
 The key rule is: `X-User-Id` is the internal IAM user UUID, while `X-User-Subject` is the external/Ory/Hydra subject.
 
+Identity and credential ownership is documented in `docs/kratos-first-identity-design.md`.
+The current direction is Kratos-first:
+
+- Kratos owns identity traits and password credentials.
+- Hydra owns OAuth2/OIDC login challenges, consent, and token issuance.
+- IAM owns internal users, business profile, RBAC, sessions/devices, MFA policy, and audit.
+- auth-gateway bridges Kratos, Hydra, IAM, and BFF browser sessions.
+
+The browser login flow uses auth-gateway `/api/kratos/*` proxy routes and then
+`/api/auth/kratos/accept-login` to accept the Hydra challenge with `iam_users.id`
+as the Hydra subject.
+
 Important current permissions:
 
 - `superadmin`: sentinel wildcard permission for the system superadmin
 - `platform.read`: read platform/reference data
 - `platform.manage`: manage platform/reference data
+
+## User And Identity State
+
+Current admin user management routes are canonicalized under `/api/admin/users`:
+
+- `GET/POST /api/admin/users`
+- `GET/PUT/DELETE /api/admin/users/{id}`
+- `PUT /api/admin/users/{id}/status`
+- `POST /api/admin/users/{id}/identity/provision`
+- `POST /api/admin/users/{id}/identity/password/reset`
+- `GET/DELETE /api/admin/users/{id}/sessions`
+- `GET /api/admin/identity/consistency`
+
+Self-service profile and identity routes are intentionally split:
+
+- IAM profile: `GET /api/iam/me`, `PUT /api/iam/me/profile`,
+  `POST /api/iam/me/profile/avatar`, `POST /api/iam/me/profile/cover`
+- Identity credentials: `PUT /api/identity/me/email`,
+  `PUT /api/identity/me/password`
+
+IAM runtime no longer uses legacy IAM password hashes for login. Password
+authentication and password reset are managed by Kratos through IAM
+`IdentityService`.
 
 Route-level auth-gateway policy includes:
 

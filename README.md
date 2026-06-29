@@ -16,9 +16,10 @@ Go workspace for Arda backend services.
 
 - [Backend Current State](docs/backend-current-state.md)
 - [Backend Roadmap](docs/backend-roadmap.md)
+- [Kratos-first Identity Flow](docs/kratos-first-identity-design.md)
+- [Auth User Context Contract](docs/auth-user-context-contract.md)
 - [Platform Service](docs/platform-service.md)
 
 ## Direction
 
 The backend remains HTTP/JSON at the edge and will evolve toward gRPC for internal service-to-service communication.
-
