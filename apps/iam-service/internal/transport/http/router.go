@@ -42,7 +42,6 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		}
 	})
-	mux.HandleFunc("/api/admin/users/create", method("POST", adminHandler.CreateUser))
 	mux.HandleFunc("/api/admin/users/{id}/sessions", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -53,9 +52,6 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		}
 	})
-	mux.HandleFunc("/api/admin/users/{id}/delete", method("DELETE", adminHandler.DeleteUser))
-	mux.HandleFunc("/api/admin/users/{id}/disable", method("POST", adminHandler.DisableUser))
-	mux.HandleFunc("/api/admin/users/{id}/enable", method("POST", adminHandler.EnableUser))
 	mux.HandleFunc("/api/admin/users/{id}/status", method("PUT", adminHandler.SetUserStatus))
 	mux.HandleFunc("/api/admin/users/{id}/identity/provision", method("POST", adminHandler.ProvisionUserIdentity))
 	mux.HandleFunc("/api/admin/users/{id}/identity/password/reset", method("POST", adminHandler.ResetUserPassword))
@@ -72,8 +68,8 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		}
 	})
-	mux.HandleFunc("/api/admin/users/{userId}/roles/{roleId}/remove", method("DELETE", adminHandler.UnassignUserRole))
-	mux.HandleFunc("/api/admin/users/roles/assign", method("POST", adminHandler.AssignUserRole))
+	mux.HandleFunc("/api/admin/users/{userId}/roles", method("POST", adminHandler.AssignUserRole))
+	mux.HandleFunc("/api/admin/users/{userId}/roles/{roleId}", method("DELETE", adminHandler.UnassignUserRole))
 
 	// ── Admin API — Role management ──
 	mux.HandleFunc("/api/admin/roles", func(w http.ResponseWriter, r *http.Request) {

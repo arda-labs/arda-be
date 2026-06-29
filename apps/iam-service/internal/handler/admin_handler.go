@@ -240,51 +240,6 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
-func (h *AdminHandler) DisableUser(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing user id")
-		return
-	}
-
-	u, err := h.userRepo.GetUserByID(r.Context(), id)
-	if err != nil || u == nil {
-		respondError(w, http.StatusNotFound, "user not found")
-		return
-	}
-	if h.isProtectedSuperAdmin(w, r, u.ID) {
-		return
-	}
-
-	if _, err := h.userSvc.SetStatus(r.Context(), id, "DISABLED"); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
-}
-
-func (h *AdminHandler) EnableUser(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing user id")
-		return
-	}
-
-	u, err := h.userRepo.GetUserByID(r.Context(), id)
-	if err != nil || u == nil {
-		respondError(w, http.StatusNotFound, "user not found")
-		return
-	}
-
-	if _, err := h.userSvc.SetStatus(r.Context(), id, "ACTIVE"); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
-}
-
 func (h *AdminHandler) SetUserStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -397,6 +352,9 @@ func (h *AdminHandler) AssignUserRole(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid body")
 		return
+	}
+	if req.UserID == "" {
+		req.UserID = r.PathValue("userId")
 	}
 	if req.UserID == "" || req.RoleID == "" {
 		respondError(w, http.StatusBadRequest, "user_id and role_id required")
