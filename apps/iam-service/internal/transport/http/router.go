@@ -120,7 +120,6 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	mux.HandleFunc("/api/iam/me/profile/avatar", method("POST", userHandler.UpdateMyAvatar))
 	mux.HandleFunc("/api/iam/me/profile/cover", method("POST", userHandler.UpdateMyCover))
 	mux.HandleFunc("/api/iam/me/profile", method("PUT", userHandler.UpdateMyProfile))
-	mux.HandleFunc("/api/iam/me/profile/email", method("PUT", userHandler.UpdateMyEmail))
 	mux.HandleFunc("/api/identity/me/email", method("PUT", userHandler.UpdateMyEmail))
 	mux.HandleFunc("/api/identity/me/password", method("PUT", userHandler.UpdateMyPassword))
 
