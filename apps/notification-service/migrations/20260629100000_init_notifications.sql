@@ -49,6 +49,24 @@ CREATE INDEX idx_noti_deliveries_claim
     WHERE status IN ('queued', 'retrying');
 CREATE INDEX idx_noti_deliveries_notification ON noti_deliveries (notification_id);
 
+CREATE TABLE noti_inbox (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    public_id TEXT NOT NULL UNIQUE,
+    notification_id UUID REFERENCES noti_notifications(id) ON DELETE SET NULL,
+    tenant_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'info',
+    title_key TEXT NOT NULL DEFAULT '',
+    body_key TEXT NOT NULL DEFAULT '',
+    params JSONB NOT NULL DEFAULT '{}'::jsonb,
+    href TEXT NOT NULL DEFAULT '',
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_noti_inbox_user_created ON noti_inbox (tenant_id, user_id, created_at DESC);
+CREATE INDEX idx_noti_inbox_user_unread ON noti_inbox (tenant_id, user_id, created_at DESC) WHERE read_at IS NULL;
+
 CREATE TABLE noti_delivery_attempts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     delivery_id UUID NOT NULL REFERENCES noti_deliveries(id) ON DELETE CASCADE,
@@ -67,5 +85,6 @@ CREATE INDEX idx_noti_delivery_attempts_delivery ON noti_delivery_attempts (deli
 
 -- +goose Down
 DROP TABLE IF EXISTS noti_delivery_attempts;
+DROP TABLE IF EXISTS noti_inbox;
 DROP TABLE IF EXISTS noti_deliveries;
 DROP TABLE IF EXISTS noti_notifications;

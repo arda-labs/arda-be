@@ -17,7 +17,7 @@ func NewNotificationRepository(db *sql.DB) *NotificationRepository {
 	return &NotificationRepository{db: db}
 }
 
-func (r *NotificationRepository) CreateNotificationWithDeliveries(ctx context.Context, n *domain.Notification, deliveries []domain.Delivery) (*domain.Notification, error) {
+func (r *NotificationRepository) CreateNotification(ctx context.Context, n *domain.Notification, deliveries []domain.Delivery, inboxItems []domain.InboxItem) (*domain.Notification, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -62,10 +62,70 @@ func (r *NotificationRepository) CreateNotificationWithDeliveries(ctx context.Co
 		}
 	}
 
+	for _, item := range inboxItems {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO noti_inbox (
+				public_id, notification_id, tenant_id, user_id, type, title_key, body_key, params, href
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
+			item.PublicID, created.ID, created.TenantID, item.UserID, item.Type, item.TitleKey, item.BodyKey, string(item.Params), item.Href,
+		); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return created, nil
+}
+
+func (r *NotificationRepository) ListInbox(ctx context.Context, tenantID, userID string, limit int) ([]domain.InboxItem, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id::text, public_id, tenant_id, user_id, type, title_key, body_key, params, href, read_at, created_at
+		FROM noti_inbox
+		WHERE tenant_id = $1 AND user_id = $2
+		ORDER BY created_at DESC
+		LIMIT $3`, tenantID, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.InboxItem, 0, limit)
+	for rows.Next() {
+		var item domain.InboxItem
+		if err := rows.Scan(&item.ID, &item.PublicID, &item.TenantID, &item.UserID, &item.Type,
+			&item.TitleKey, &item.BodyKey, &item.Params, &item.Href, &item.ReadAt, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *NotificationRepository) UnreadCount(ctx context.Context, tenantID, userID string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM noti_inbox
+		WHERE tenant_id = $1 AND user_id = $2 AND read_at IS NULL`, tenantID, userID).Scan(&count)
+	return count, err
+}
+
+func (r *NotificationRepository) MarkInboxRead(ctx context.Context, tenantID, userID, publicID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE noti_inbox
+		SET read_at = COALESCE(read_at, now())
+		WHERE tenant_id = $1 AND user_id = $2 AND public_id = $3`, tenantID, userID, publicID)
+	return err
+}
+
+func (r *NotificationRepository) MarkAllInboxRead(ctx context.Context, tenantID, userID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE noti_inbox
+		SET read_at = COALESCE(read_at, now())
+		WHERE tenant_id = $1 AND user_id = $2 AND read_at IS NULL`, tenantID, userID)
+	return err
 }
 
 func (r *NotificationRepository) GetNotificationByPublicID(ctx context.Context, publicID string) (*domain.Notification, error) {

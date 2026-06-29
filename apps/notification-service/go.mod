@@ -3,11 +3,14 @@ module github.com/arda-labs/arda/apps/notification-service
 go 1.26
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-auth v0.0.0
 	github.com/camunda/zeebe/clients/go/v8 v8.5.5
 	github.com/lib/pq v1.12.3
 	github.com/pressly/goose/v3 v3.27.1
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/arda-labs/arda/libs/go/arda-auth => ../../libs/go/arda-auth
 
 require (
 	github.com/asaskevich/govalidator v0.0.0-20200108200545-475eaeb16496 // indirect

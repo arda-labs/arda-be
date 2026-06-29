@@ -7,6 +7,7 @@ const (
 	ChannelWebhook = "webhook"
 	ChannelSMS     = "sms"
 	ChannelPush    = "push"
+	ChannelInApp   = "in_app"
 
 	NotificationStatusAccepted = "accepted"
 
@@ -59,4 +60,18 @@ type Delivery struct {
 	LastErrorMessage string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+type InboxItem struct {
+	ID        string
+	PublicID  string
+	TenantID  string
+	UserID    string
+	Type      string
+	TitleKey  string
+	BodyKey   string
+	Params    []byte
+	Href      string
+	ReadAt    *time.Time
+	CreatedAt time.Time
 }

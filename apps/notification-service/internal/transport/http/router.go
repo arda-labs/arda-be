@@ -22,8 +22,11 @@ func NewRouter(notificationHandler *handler.NotificationHandler) http.Handler {
 
 	mux.HandleFunc("POST /internal/notifications", notificationHandler.Create)
 	mux.HandleFunc("GET /internal/notifications/{id}", notificationHandler.Get)
-	mux.HandleFunc("POST /api/notifications", notificationHandler.Create)
-	mux.HandleFunc("GET /api/notifications/{id}", notificationHandler.Get)
+	mux.HandleFunc("GET /api/notifications", notificationHandler.ListInbox)
+	mux.HandleFunc("GET /api/notifications/unread-count", notificationHandler.UnreadCount)
+	mux.HandleFunc("GET /api/notifications/stream", notificationHandler.Stream)
+	mux.HandleFunc("POST /api/notifications/{id}/read", notificationHandler.MarkRead)
+	mux.HandleFunc("POST /api/notifications/read-all", notificationHandler.MarkAllRead)
 
 	return mux
 }
