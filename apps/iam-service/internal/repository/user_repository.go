@@ -429,10 +429,20 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*dom
 // CreateUser inserts a new user.
 func (r *UserRepository) CreateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO iam_users (external_subject, kratos_identity_id, username, email, display_name, source, status, tenant_id)
-		VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, $7, $8)
+		INSERT INTO iam_users (
+			external_subject, kratos_identity_id, username, email, display_name,
+			nickname, first_name, last_name, gender, address, country, position,
+			source, status, tenant_id
+		)
+		VALUES (
+			$1, NULLIF($2, ''), $3, $4, $5,
+			$6, $7, $8, $9, $10, $11, $12,
+			$13, $14, $15
+		)
 		RETURNING id, created_at, updated_at
-	`, u.Subject, u.KratosIdentityID, u.Username, u.Email, u.DisplayName, u.Source, u.Status, u.TenantID)
+	`, u.Subject, u.KratosIdentityID, u.Username, u.Email, u.DisplayName,
+		u.Nickname, u.FirstName, u.LastName, u.Gender, u.Address, u.Country, u.Position,
+		u.Source, u.Status, u.TenantID)
 
 	err := row.Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {

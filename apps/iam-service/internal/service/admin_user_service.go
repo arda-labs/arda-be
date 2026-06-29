@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
@@ -14,6 +15,13 @@ type AdminUserSummary struct {
 	Username         string
 	Email            string
 	Name             string
+	Nickname         string
+	FirstName        string
+	LastName         string
+	Gender           string
+	Country          string
+	Address          string
+	Position         string
 	Status           string
 	Source           string
 	KratosIdentityID string
@@ -28,20 +36,34 @@ type AdminUserDetails struct {
 }
 
 type CreateAdminUserInput struct {
-	Username string
-	Email    string
-	Password string
-	Name     string
-	TenantID string
-	RoleIDs  []string
+	Username  string
+	Email     string
+	Password  string
+	Name      string
+	Nickname  string
+	FirstName string
+	LastName  string
+	Gender    string
+	Country   string
+	Address   string
+	Position  string
+	TenantID  string
+	RoleIDs   []string
 }
 
 type UpdateAdminUserInput struct {
-	Username *string
-	Email    *string
-	Name     *string
-	Status   *string
-	TenantID *string
+	Username  *string
+	Email     *string
+	Name      *string
+	Nickname  *string
+	FirstName *string
+	LastName  *string
+	Gender    *string
+	Country   *string
+	Address   *string
+	Position  *string
+	Status    *string
+	TenantID  *string
 }
 
 type AdminUserService struct {
@@ -79,6 +101,13 @@ func (s *AdminUserService) ListUsers(ctx context.Context, params repository.List
 			Username:         u.Username,
 			Email:            u.Email,
 			Name:             u.DisplayName,
+			Nickname:         u.Nickname,
+			FirstName:        u.FirstName,
+			LastName:         u.LastName,
+			Gender:           u.Gender,
+			Country:          u.Country,
+			Address:          u.Address,
+			Position:         u.Position,
 			Status:           u.Status,
 			Source:           u.Source,
 			KratosIdentityID: u.KratosIdentityID,
@@ -116,7 +145,8 @@ func (s *AdminUserService) GetUser(ctx context.Context, id string) (*AdminUserDe
 }
 
 func (s *AdminUserService) CreateUser(ctx context.Context, input CreateAdminUserInput) (*domain.User, error) {
-	kratosIdentityID, err := s.identity.CreateIdentity(ctx, input.Email, input.Password, input.Name)
+	displayName := displayNameFromParts(input.Name, input.FirstName, input.LastName, input.Username, input.Email)
+	kratosIdentityID, err := s.identity.CreateIdentity(ctx, input.Email, input.Password, displayName)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +154,14 @@ func (s *AdminUserService) CreateUser(ctx context.Context, input CreateAdminUser
 	user := &domain.User{
 		Username:         input.Username,
 		Email:            input.Email,
-		DisplayName:      input.Name,
+		DisplayName:      displayName,
+		Nickname:         input.Nickname,
+		FirstName:        input.FirstName,
+		LastName:         input.LastName,
+		Gender:           input.Gender,
+		Country:          input.Country,
+		Address:          input.Address,
+		Position:         input.Position,
 		Subject:          kratosIdentityID,
 		KratosIdentityID: kratosIdentityID,
 		Source:           kratosProviderID,
@@ -181,6 +218,30 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, id string, input Upda
 	}
 	if input.Name != nil {
 		user.DisplayName = *input.Name
+	}
+	if input.Nickname != nil {
+		user.Nickname = *input.Nickname
+	}
+	if input.FirstName != nil {
+		user.FirstName = *input.FirstName
+	}
+	if input.LastName != nil {
+		user.LastName = *input.LastName
+	}
+	if input.Gender != nil {
+		user.Gender = *input.Gender
+	}
+	if input.Country != nil {
+		user.Country = *input.Country
+	}
+	if input.Address != nil {
+		user.Address = *input.Address
+	}
+	if input.Position != nil {
+		user.Position = *input.Position
+	}
+	if input.Name == nil && (input.FirstName != nil || input.LastName != nil) {
+		user.DisplayName = displayNameFromParts("", user.FirstName, user.LastName, user.Username, user.Email)
 	}
 	if input.Status != nil {
 		user.Status = *input.Status
@@ -264,4 +325,18 @@ func (s *AdminUserService) ProvisionIdentity(ctx context.Context, id, temporaryP
 
 func (s *AdminUserService) AuditIdentityConsistency(ctx context.Context) ([]repository.IdentityConsistencyIssue, error) {
 	return s.userRepo.AuditKratosIdentityConsistency(ctx)
+}
+
+func displayNameFromParts(name, firstName, lastName, username, email string) string {
+	if name != "" {
+		return name
+	}
+	fullName := strings.TrimSpace(strings.TrimSpace(firstName) + " " + strings.TrimSpace(lastName))
+	if fullName != "" {
+		return fullName
+	}
+	if username != "" {
+		return username
+	}
+	return email
 }

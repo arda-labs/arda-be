@@ -39,6 +39,13 @@ type userListItem struct {
 	Username         string   `json:"username"`
 	Email            string   `json:"email"`
 	Name             string   `json:"name"`
+	Nickname         string   `json:"nickname"`
+	FirstName        string   `json:"firstName"`
+	LastName         string   `json:"lastName"`
+	Gender           string   `json:"gender"`
+	Country          string   `json:"country"`
+	Address          string   `json:"address"`
+	Position         string   `json:"position"`
 	Status           string   `json:"status"`
 	Source           string   `json:"source"`
 	KratosIdentityID string   `json:"kratosIdentityId"`
@@ -91,6 +98,8 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		items = append(items, userListItem{
 			ID: u.ID, Username: u.Username, Email: u.Email,
 			Name: u.Name, Status: u.Status, Source: u.Source,
+			Nickname: u.Nickname, FirstName: u.FirstName, LastName: u.LastName,
+			Gender: u.Gender, Country: u.Country, Address: u.Address, Position: u.Position,
 			KratosIdentityID: u.KratosIdentityID, Roles: u.Roles,
 			TenantID: u.TenantID, CreatedAt: u.CreatedAt.Format(time.RFC3339),
 		})
@@ -119,6 +128,8 @@ func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{
 		"id": u.ID, "username": u.Username, "email": u.Email,
 		"name": u.DisplayName, "status": u.Status, "tenantId": u.TenantID,
+		"nickname": u.Nickname, "firstName": u.FirstName, "lastName": u.LastName,
+		"gender": u.Gender, "country": u.Country, "address": u.Address, "position": u.Position,
 		"source": u.Source, "kratosIdentityId": u.KratosIdentityID, "roles": detail.Roles,
 		"createdAt": u.CreatedAt.Format(time.RFC3339),
 		"updatedAt": u.UpdatedAt.Format(time.RFC3339),
@@ -126,12 +137,19 @@ func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 type createUserRequest struct {
-	Username string   `json:"username"`
-	Email    string   `json:"email"`
-	Password string   `json:"password"`
-	Name     string   `json:"name"`
-	TenantID string   `json:"tenantId"`
-	RoleIDs  []string `json:"role_ids,omitempty"`
+	Username  string   `json:"username"`
+	Email     string   `json:"email"`
+	Password  string   `json:"password"`
+	Name      string   `json:"name"`
+	Nickname  string   `json:"nickname"`
+	FirstName string   `json:"firstName"`
+	LastName  string   `json:"lastName"`
+	Gender    string   `json:"gender"`
+	Country   string   `json:"country"`
+	Address   string   `json:"address"`
+	Position  string   `json:"position"`
+	TenantID  string   `json:"tenantId"`
+	RoleIDs   []string `json:"role_ids,omitempty"`
 }
 
 func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -149,12 +167,19 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	created, err := h.userSvc.CreateUser(r.Context(), service.CreateAdminUserInput{
-		Username: req.Username,
-		Email:    req.Email,
-		Password: req.Password,
-		Name:     req.Name,
-		TenantID: req.TenantID,
-		RoleIDs:  req.RoleIDs,
+		Username:  req.Username,
+		Email:     req.Email,
+		Password:  req.Password,
+		Name:      req.Name,
+		Nickname:  req.Nickname,
+		FirstName: req.FirstName,
+		LastName:  req.LastName,
+		Gender:    req.Gender,
+		Country:   req.Country,
+		Address:   req.Address,
+		Position:  req.Position,
+		TenantID:  req.TenantID,
+		RoleIDs:   req.RoleIDs,
 	})
 	if err != nil {
 		h.logger.Warn("admin create user failed", "username", req.Username, "err", err)
@@ -172,11 +197,18 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateUserRequest struct {
-	Username *string `json:"username,omitempty"`
-	Email    *string `json:"email,omitempty"`
-	Name     *string `json:"name,omitempty"`
-	Status   *string `json:"status,omitempty"`
-	TenantID *string `json:"tenantId,omitempty"`
+	Username  *string `json:"username,omitempty"`
+	Email     *string `json:"email,omitempty"`
+	Name      *string `json:"name,omitempty"`
+	Nickname  *string `json:"nickname,omitempty"`
+	FirstName *string `json:"firstName,omitempty"`
+	LastName  *string `json:"lastName,omitempty"`
+	Gender    *string `json:"gender,omitempty"`
+	Country   *string `json:"country,omitempty"`
+	Address   *string `json:"address,omitempty"`
+	Position  *string `json:"position,omitempty"`
+	Status    *string `json:"status,omitempty"`
+	TenantID  *string `json:"tenantId,omitempty"`
 }
 
 func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -197,11 +229,18 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u, err := h.userSvc.UpdateUser(r.Context(), id, service.UpdateAdminUserInput{
-		Username: req.Username,
-		Email:    req.Email,
-		Name:     req.Name,
-		Status:   req.Status,
-		TenantID: req.TenantID,
+		Username:  req.Username,
+		Email:     req.Email,
+		Name:      req.Name,
+		Nickname:  req.Nickname,
+		FirstName: req.FirstName,
+		LastName:  req.LastName,
+		Gender:    req.Gender,
+		Country:   req.Country,
+		Address:   req.Address,
+		Position:  req.Position,
+		Status:    req.Status,
+		TenantID:  req.TenantID,
 	})
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
