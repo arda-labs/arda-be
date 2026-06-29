@@ -509,7 +509,7 @@ func (h *BFFHandler) KratosWhoami(w http.ResponseWriter, r *http.Request) {
 	h.proxyToKratos(w, r, "sessions/whoami")
 }
 func (h *BFFHandler) KratosCreateLoginAPIFlow(w http.ResponseWriter, r *http.Request) {
-	h.proxyToKratos(w, r, "self-service/login/api")
+	h.proxyToKratosAPI(w, r, "self-service/login/api")
 }
 func (h *BFFHandler) KratosCreateLoginFlow(w http.ResponseWriter, r *http.Request) {
 	h.proxyToKratos(w, r, "self-service/login/browser")
@@ -518,7 +518,7 @@ func (h *BFFHandler) KratosGetLoginFlow(w http.ResponseWriter, r *http.Request) 
 	h.proxyToKratos(w, r, "self-service/login/flows?"+r.URL.RawQuery)
 }
 func (h *BFFHandler) KratosSubmitLogin(w http.ResponseWriter, r *http.Request) {
-	h.proxyToKratos(w, r, "self-service/login?"+r.URL.RawQuery)
+	h.proxyToKratosAPI(w, r, "self-service/login?"+r.URL.RawQuery)
 }
 func (h *BFFHandler) KratosCreateSettingsFlow(w http.ResponseWriter, r *http.Request) {
 	h.proxyToKratos(w, r, "self-service/settings/browser")
@@ -549,11 +549,29 @@ func (h *BFFHandler) KratosSubmitVerification(w http.ResponseWriter, r *http.Req
 }
 
 func (h *BFFHandler) proxyToKratos(w http.ResponseWriter, r *http.Request, path string) {
+	h.proxyToKratosWithOptions(w, r, path, false)
+}
+
+func (h *BFFHandler) proxyToKratosAPI(w http.ResponseWriter, r *http.Request, path string) {
+	h.proxyToKratosWithOptions(w, r, path, true)
+}
+
+func (h *BFFHandler) proxyToKratosWithOptions(w http.ResponseWriter, r *http.Request, path string, stripBrowserHeaders bool) {
 	target := fmt.Sprintf("%s/%s", strings.TrimSuffix(h.cfg.KratosPublicURL, "/"), strings.TrimPrefix(path, "/"))
 	body, _ := io.ReadAll(r.Body)
 	r.Body.Close()
 	proxyReq, _ := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
 	proxyReq.Header = r.Header.Clone()
+	if stripBrowserHeaders {
+		// Kratos API flows reject browser AJAX requests with Origin/Sec-Fetch headers.
+		// The BFF is intentionally converting this same-origin browser call into a
+		// server-to-server API-flow request so Kratos can return a session_token.
+		proxyReq.Header.Del("Origin")
+		proxyReq.Header.Del("Referer")
+		proxyReq.Header.Del("Sec-Fetch-Dest")
+		proxyReq.Header.Del("Sec-Fetch-Mode")
+		proxyReq.Header.Del("Sec-Fetch-Site")
+	}
 	proxyReq.Header.Set("X-Forwarded-Proto", "https")
 	proxyReq.Header.Set("X-Forwarded-Host", r.Host)
 	resp, err := h.httpClient.Do(proxyReq)
