@@ -169,7 +169,7 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, id string, input Upda
 		user.Username = *input.Username
 	}
 	if input.Email != nil {
-		if user.Source == kratosProviderID {
+		if s.identity.CanManageIdentity(ctx, user) {
 			updated, err := s.identity.UpdateEmail(ctx, user, *input.Email)
 			if err != nil {
 				return nil, err
@@ -204,7 +204,7 @@ func (s *AdminUserService) DeleteUser(ctx context.Context, id string) (*domain.U
 		return nil, nil
 	}
 
-	if user.Source == kratosProviderID {
+	if s.identity.CanManageIdentity(ctx, user) {
 		_ = s.identity.DeleteIdentity(ctx, user)
 	}
 	if err := s.userRepo.DeleteUser(ctx, id); err != nil {
@@ -236,9 +236,6 @@ func (s *AdminUserService) ResetPassword(ctx context.Context, id, newPassword st
 	}
 	if user == nil {
 		return nil, nil
-	}
-	if user.Source != kratosProviderID {
-		return nil, fmt.Errorf("password is not managed by Kratos for this user")
 	}
 	if err := s.identity.UpdatePassword(ctx, user, newPassword); err != nil {
 		return nil, err

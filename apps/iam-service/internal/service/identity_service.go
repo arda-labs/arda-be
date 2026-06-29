@@ -71,6 +71,11 @@ func (s *IdentityService) ResolveKratosIdentityID(ctx context.Context, user *dom
 	return "", fmt.Errorf("missing kratos identity id for user")
 }
 
+func (s *IdentityService) CanManageIdentity(ctx context.Context, user *domain.User) bool {
+	identityID, err := s.ResolveKratosIdentityID(ctx, user)
+	return err == nil && strings.TrimSpace(identityID) != ""
+}
+
 func (s *IdentityService) UpdateEmail(ctx context.Context, user *domain.User, newEmail string) (*domain.User, error) {
 	if s.kratos == nil {
 		return nil, fmt.Errorf("kratos client is not configured")

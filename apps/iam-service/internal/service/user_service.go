@@ -210,7 +210,7 @@ func (s *UserService) UpdateUserEmail(ctx context.Context, userID, newEmail stri
 		return s.buildContext(ctx, user)
 	}
 
-	if user.Source == kratosProviderID {
+	if s.identity.CanManageIdentity(ctx, user) {
 		updatedUser, err := s.identity.UpdateEmail(ctx, user, newEmail)
 		if err != nil {
 			return nil, fmt.Errorf("failed to update Kratos identity: %w", err)
@@ -239,9 +239,6 @@ func (s *UserService) UpdateUserPassword(ctx context.Context, userID, newPasswor
 	}
 	if user == nil {
 		return fmt.Errorf("user not found")
-	}
-	if user.Source != kratosProviderID {
-		return fmt.Errorf("password is not managed by Kratos for this user")
 	}
 	return s.identity.UpdatePassword(ctx, user, newPassword)
 }
