@@ -47,7 +47,7 @@ func scanUserRow(scanner interface {
 }, u *domain.User) error {
 	return scanner.Scan(&u.ID, &u.Subject, &u.KratosIdentityID, &u.Username, &u.Email, &u.DisplayName, &u.Nickname,
 		&u.FirstName, &u.LastName, &u.PhoneNumber, &u.Birthdate, &u.Gender, &u.Address, &u.Country,
-		&u.PasswordHash, &u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL, &u.CoverFileID, &u.CoverImageURL,
+		&u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL, &u.CoverFileID, &u.CoverImageURL,
 		&u.Department, &u.Position, &u.EmployeeID, &u.ApprovalLevel, &u.DailyLimit, &u.Bio,
 		&u.CreatedAt, &u.UpdatedAt)
 }
@@ -108,7 +108,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, params ListUsersParams) 
 		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
 		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
@@ -171,7 +171,7 @@ func (r *UserRepository) UpdateUserAvatar(ctx context.Context, userID, avatarFil
 		RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
 		          COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(source,'internal'), status, tenant_id,
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
@@ -197,7 +197,7 @@ func (r *UserRepository) UpdateUserCover(ctx context.Context, userID, coverFileI
 		RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
 		          COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(source,'internal'), status, tenant_id,
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
@@ -236,7 +236,7 @@ func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID, name, ni
 		RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
 		          COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(source,'internal'), status, tenant_id,
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
@@ -261,7 +261,7 @@ func (r *UserRepository) UpdateUserEmail(ctx context.Context, userID, email stri
 		RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
 		          COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		          COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(source,'internal'), status, tenant_id,
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
@@ -343,7 +343,7 @@ func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (
 		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
 		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
@@ -361,7 +361,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
 		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
@@ -378,7 +378,7 @@ func (r *UserRepository) GetUserByKratosIdentityID(ctx context.Context, identity
 		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
 		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
@@ -396,7 +396,7 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
 		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
@@ -414,7 +414,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*dom
 		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
 		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
 		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		       COALESCE(password_hash,''), COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(source,'internal'), status, tenant_id,
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
@@ -429,10 +429,10 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*dom
 // CreateUser inserts a new user.
 func (r *UserRepository) CreateUser(ctx context.Context, u *domain.User) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO iam_users (external_subject, kratos_identity_id, username, email, display_name, password_hash, source, status, tenant_id)
-		VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO iam_users (external_subject, kratos_identity_id, username, email, display_name, source, status, tenant_id)
+		VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at
-	`, u.Subject, u.KratosIdentityID, u.Username, u.Email, u.DisplayName, u.PasswordHash, u.Source, u.Status, u.TenantID)
+	`, u.Subject, u.KratosIdentityID, u.Username, u.Email, u.DisplayName, u.Source, u.Status, u.TenantID)
 
 	err := row.Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {

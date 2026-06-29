@@ -18,7 +18,6 @@ type User struct {
 	Gender           string
 	Address          string
 	Country          string
-	PasswordHash     string
 	Status           string
 	Source           string // "internal", "entra_id", "google", "ldap"...
 	TenantID         string

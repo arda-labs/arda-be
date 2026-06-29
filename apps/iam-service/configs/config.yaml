@@ -12,9 +12,3 @@ kratos_admin_url: "http://192.168.100.201:30446"
 redis_url: "redis://default:wuMtEVTgJAUgvsoRI4mSbwYB69h9pSc4@192.168.100.201:30381"
 totp_issuer: "arda.io.vn"
 audit_enabled: true
-
-# Bootstrap-only superadmin secret. Prefer SUPERADMIN_PASSWORD_HASH or an
-# external secret manager in shared environments. Leave both empty to keep the
-# system superadmin account locked while still reconciling its role/permissions.
-superadmin_initial_password: ""
-superadmin_password_hash: ""

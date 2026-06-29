@@ -7,13 +7,9 @@ import (
 	"log/slog"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/system"
-	"golang.org/x/crypto/bcrypt"
 )
 
-type SuperAdminOptions struct {
-	InitialPassword string
-	PasswordHash    string
-}
+type SuperAdminOptions struct{}
 
 func EnsureSuperAdmin(ctx context.Context, db *sql.DB, opts SuperAdminOptions) error {
 	if err := ensureSuperAdminRole(ctx, db); err != nil {
@@ -76,40 +72,23 @@ func ensureSuperAdminPermission(ctx context.Context, db *sql.DB) error {
 }
 
 func ensureSuperAdminUser(ctx context.Context, db *sql.DB, opts SuperAdminOptions) error {
-	passwordHash, hasBootstrapSecret, err := resolvePasswordHash(opts)
-	if err != nil {
-		return err
-	}
+	_ = opts
 
-	status := system.SuperAdminLockedStatus
-	if hasBootstrapSecret {
-		status = "ACTIVE"
-	}
-
-	_, err = db.ExecContext(ctx, `
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO iam_users (
 			id, external_subject, username, email, display_name,
-			password_hash, source, status, tenant_id
+			source, status, tenant_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, 'internal', $7, $8)
+		VALUES ($1, $2, $3, $4, $5, 'internal', $6, $7)
 		ON CONFLICT (username) DO UPDATE SET
 			display_name = EXCLUDED.display_name,
-			source = 'internal',
+			source = EXCLUDED.source,
+			status = EXCLUDED.status,
 			tenant_id = EXCLUDED.tenant_id,
-			password_hash = CASE
-				WHEN $9 THEN EXCLUDED.password_hash
-				WHEN iam_users.password_hash = $10 THEN ''
-				ELSE iam_users.password_hash
-			END,
-			status = CASE
-				WHEN $9 THEN 'ACTIVE'
-				WHEN iam_users.password_hash = $10 THEN $7
-				ELSE iam_users.status
-			END,
 			updated_at = now()
 	`, system.SuperAdminUserID, system.SuperAdminExternalSubject, system.SuperAdminUsername,
-		system.SuperAdminEmail, system.SuperAdminDisplayName, passwordHash, status,
-		system.SuperAdminTenantID, hasBootstrapSecret, system.LegacyDefaultAdmin123Hash)
+		system.SuperAdminEmail, system.SuperAdminDisplayName, "ACTIVE",
+		system.SuperAdminTenantID)
 	if err != nil {
 		return fmt.Errorf("ensure superadmin user: %w", err)
 	}
@@ -138,24 +117,7 @@ func ensureSuperAdminUser(ctx context.Context, db *sql.DB, opts SuperAdminOption
 		slog.Warn("assign superadmin root org skipped", "err", err)
 	}
 
-	if !hasBootstrapSecret {
-		slog.Warn("superadmin exists without bootstrap password; account remains locked unless a secure SUPERADMIN_INITIAL_PASSWORD or SUPERADMIN_PASSWORD_HASH is provided")
-	}
 	return nil
-}
-
-func resolvePasswordHash(opts SuperAdminOptions) (string, bool, error) {
-	if opts.PasswordHash != "" {
-		return opts.PasswordHash, true, nil
-	}
-	if opts.InitialPassword == "" {
-		return "", false, nil
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(opts.InitialPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return "", false, fmt.Errorf("hash superadmin password: %w", err)
-	}
-	return string(hash), true, nil
 }
 
 func ensureCasbinSuperAdminPolicy(ctx context.Context, db *sql.DB) error {

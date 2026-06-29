@@ -108,6 +108,7 @@ Target login flow:
 6. Add consistency audit command before dropping legacy columns.
 7. Remove direct Kratos calls from handlers and business services.
 8. Remove IAM password authentication once Kratos login bridge is complete.
+9. Drop the legacy `iam_users.password_hash` column after runtime no longer reads or writes it.
 
 ## Done criteria
 
@@ -115,5 +116,5 @@ Target login flow:
 - No service uses `external_subject` as a Kratos identity ID.
 - Create, update email, reset password, disable/delete identity all go through `IdentityService`.
 - Hydra subject is consistently `iam_users.id`.
-- IAM no longer needs `password_hash` for normal login.
+- IAM no longer reads, writes, or stores `password_hash`.
 - Frontend identity routes are separate from IAM business profile routes.

@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -28,9 +27,6 @@ type Config struct {
 	RedisURL     string `yaml:"redis_url"`
 	TOTPIssuer   string `yaml:"totp_issuer"`
 	AuditEnabled bool   `yaml:"audit_enabled"`
-
-	SuperAdminInitialPassword string `yaml:"superadmin_initial_password"`
-	SuperAdminPasswordHash    string `yaml:"superadmin_password_hash"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -79,8 +75,6 @@ func Load() Config {
 	envStr("REDIS_URL", &cfg.RedisURL)
 	envStr("TOTP_ISSUER", &cfg.TOTPIssuer)
 	envBool("AUDIT_ENABLED", &cfg.AuditEnabled)
-	envStr("SUPERADMIN_INITIAL_PASSWORD", &cfg.SuperAdminInitialPassword)
-	envStr("SUPERADMIN_PASSWORD_HASH", &cfg.SuperAdminPasswordHash)
 
 	return cfg
 }
@@ -113,8 +107,6 @@ func (c *Config) loadYAML(path string) bool {
 	set("kratos_admin_url", &c.KratosAdminURL)
 	set("redis_url", &c.RedisURL)
 	set("totp_issuer", &c.TOTPIssuer)
-	set("superadmin_initial_password", &c.SuperAdminInitialPassword)
-	set("superadmin_password_hash", &c.SuperAdminPasswordHash)
 	if v, ok := m["audit_enabled"].(bool); ok {
 		c.AuditEnabled = v
 	}
@@ -131,5 +123,3 @@ func envBool(key string, target *bool) {
 		*target = v == "true" || v == "1"
 	}
 }
-
-var _ = strconv.Itoa

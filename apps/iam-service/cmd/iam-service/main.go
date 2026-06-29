@@ -56,10 +56,7 @@ func main() {
 	}
 	logger.Info("migrations applied")
 
-	if err := bootstrap.EnsureSuperAdmin(context.Background(), db, bootstrap.SuperAdminOptions{
-		InitialPassword: cfg.SuperAdminInitialPassword,
-		PasswordHash:    cfg.SuperAdminPasswordHash,
-	}); err != nil {
+	if err := bootstrap.EnsureSuperAdmin(context.Background(), db, bootstrap.SuperAdminOptions{}); err != nil {
 		logger.Error("bootstrap superadmin", "err", err)
 		os.Exit(1)
 	}

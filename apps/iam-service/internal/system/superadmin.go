@@ -13,9 +13,4 @@ const (
 
 	SuperAdminRoleCode       = "SUPER_ADMIN"
 	SuperAdminPermissionCode = "superadmin"
-	SuperAdminLockedStatus   = "LOCKED"
 )
-
-// LegacyDefaultAdmin123Hash is the old development hash that must never remain
-// active for the system superadmin account without an explicit bootstrap secret.
-const LegacyDefaultAdmin123Hash = "$2a$12$LJ3m4ys3Lk0TSwHlvS.JJOvc5sx5GQJfKPdKR0MJfN.ZcJKW5K7iW"
