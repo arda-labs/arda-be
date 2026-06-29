@@ -14,6 +14,7 @@ const (
 	SubjectPlatformLookupChanged    = "arda.platform.lookup.changed"
 	SubjectFinanceTransactionPosted = "arda.finance.transaction.posted"
 	SubjectIAMUserChanged           = "arda.iam.user.changed"
+	SubjectNotificationInboxCreated = "arda.notification.inbox.created.v1"
 )
 
 const (
@@ -21,6 +22,7 @@ const (
 	EventPlatformLookupChanged    = "platform.lookup.changed"
 	EventFinanceTransactionPosted = "finance.transaction.posted"
 	EventIAMUserChanged           = "iam.user.changed"
+	EventNotificationInboxCreated = "notification.inbox.created"
 )
 
 type Actor struct {

@@ -67,6 +67,26 @@ CREATE TABLE noti_inbox (
 CREATE INDEX idx_noti_inbox_user_created ON noti_inbox (tenant_id, user_id, created_at DESC);
 CREATE INDEX idx_noti_inbox_user_unread ON noti_inbox (tenant_id, user_id, created_at DESC) WHERE read_at IS NULL;
 
+CREATE TABLE noti_outbox (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    subject TEXT NOT NULL,
+    event_code TEXT NOT NULL,
+    aggregate_type TEXT NOT NULL,
+    aggregate_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL DEFAULT '',
+    user_id TEXT NOT NULL DEFAULT '',
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    locked_until TIMESTAMPTZ,
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    published_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_noti_outbox_pending ON noti_outbox (status, next_retry_at, locked_until, created_at);
+
 CREATE TABLE noti_delivery_attempts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     delivery_id UUID NOT NULL REFERENCES noti_deliveries(id) ON DELETE CASCADE,
@@ -85,6 +105,7 @@ CREATE INDEX idx_noti_delivery_attempts_delivery ON noti_delivery_attempts (deli
 
 -- +goose Down
 DROP TABLE IF EXISTS noti_delivery_attempts;
+DROP TABLE IF EXISTS noti_outbox;
 DROP TABLE IF EXISTS noti_inbox;
 DROP TABLE IF EXISTS noti_deliveries;
 DROP TABLE IF EXISTS noti_notifications;

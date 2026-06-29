@@ -75,3 +75,11 @@ type InboxItem struct {
 	ReadAt    *time.Time
 	CreatedAt time.Time
 }
+
+type OutboxEvent struct {
+	ID        string
+	Subject   string
+	Payload   []byte
+	Attempts  int
+	CreatedAt time.Time
+}

@@ -13,6 +13,7 @@ type Config struct {
 	LogLevel    string `yaml:"log_level"`
 	DatabaseDSN string `yaml:"database_dsn"`
 	ZeebeAddr   string `yaml:"zeebe_addr"`
+	NATSURL     string `yaml:"nats_url"`
 }
 
 func Load() Config {
@@ -22,6 +23,7 @@ func Load() Config {
 		LogLevel:    "info",
 		DatabaseDSN: "postgres://postgres:postgres@localhost:5432/notification?sslmode=disable",
 		ZeebeAddr:   "192.168.100.201:30650",
+		NATSURL:     "",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -39,6 +41,8 @@ func Load() Config {
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("ZEEBE_ADDR", &cfg.ZeebeAddr)
+	envStr("NATS_URL", &cfg.NATSURL)
+	envStr("NOTIFICATION_NATS_URL", &cfg.NATSURL)
 
 	return cfg
 }
@@ -63,6 +67,7 @@ func (c *Config) loadYAML(path string) bool {
 	set("log_level", &c.LogLevel)
 	set("database_dsn", &c.DatabaseDSN)
 	set("zeebe_addr", &c.ZeebeAddr)
+	set("nats_url", &c.NATSURL)
 	return true
 }
 

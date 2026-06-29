@@ -3,10 +3,12 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 )
 
 type NotificationRepository struct {
@@ -71,12 +73,97 @@ func (r *NotificationRepository) CreateNotification(ctx context.Context, n *doma
 		); err != nil {
 			return nil, err
 		}
+		if err := insertOutbox(ctx, tx, ardaevents.SubjectNotificationInboxCreated, ardaevents.EventNotificationInboxCreated, "noti_inbox", item.PublicID, created.TenantID, item.UserID, map[string]any{
+			"notification_id": created.PublicID,
+			"inbox_id":        item.PublicID,
+			"tenant_id":       created.TenantID,
+			"user_id":         item.UserID,
+			"type":            item.Type,
+			"title_key":       item.TitleKey,
+			"body_key":        item.BodyKey,
+			"params":          json.RawMessage(item.Params),
+			"href":            item.Href,
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return created, nil
+}
+
+func (r *NotificationRepository) ClaimPendingOutbox(ctx context.Context, limit int) ([]domain.OutboxEvent, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id::text, subject, payload, attempts, created_at
+		FROM noti_outbox
+		WHERE status IN ('pending', 'publishing')
+		  AND next_retry_at <= now()
+		  AND (locked_until IS NULL OR locked_until < now())
+		ORDER BY created_at ASC
+		FOR UPDATE SKIP LOCKED
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := make([]domain.OutboxEvent, 0, limit)
+	for rows.Next() {
+		var event domain.OutboxEvent
+		if err := rows.Scan(&event.ID, &event.Subject, &event.Payload, &event.Attempts, &event.CreatedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	for _, event := range events {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE noti_outbox
+			SET status = 'publishing',
+				attempts = attempts + 1,
+				locked_until = now() + interval '30 seconds'
+			WHERE id = $1`, event.ID); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
+func (r *NotificationRepository) MarkOutboxPublished(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE noti_outbox
+		SET status = 'published', published_at = now(), locked_until = NULL, last_error = ''
+		WHERE id = $1`, id)
+	return err
+}
+
+func (r *NotificationRepository) MarkOutboxFailed(ctx context.Context, id, reason string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE noti_outbox
+		SET status = 'pending',
+			next_retry_at = now() + interval '30 seconds',
+			locked_until = NULL,
+			last_error = $2
+		WHERE id = $1`, id, reason)
+	return err
 }
 
 func (r *NotificationRepository) ListInbox(ctx context.Context, tenantID, userID string, limit int) ([]domain.InboxItem, error) {
@@ -265,4 +352,24 @@ func scanNotification(row scanner, n *domain.Notification) error {
 		&n.EventType, &n.Recipients, &n.Channels, &n.TemplateKey, &n.TemplateVersion,
 		&n.Payload, &n.Status, &n.IdempotencyKey, &n.CorrelationID, &n.Priority,
 		&n.CreatedAt, &n.UpdatedAt)
+}
+
+func insertOutbox(ctx context.Context, tx *sql.Tx, subject, eventCode, aggregateType, aggregateID, tenantID, userID string, payload any) error {
+	env, err := ardaevents.NewEnvelope(eventCode, payload, ardaevents.Options{
+		SourceService: "notification-service",
+		TenantID:      tenantID,
+	})
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(env)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO noti_outbox (
+			subject, event_code, aggregate_type, aggregate_id, tenant_id, user_id, payload
+		) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+		subject, eventCode, aggregateType, aggregateID, tenantID, userID, string(data))
+	return err
 }

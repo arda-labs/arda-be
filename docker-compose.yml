@@ -126,8 +126,8 @@ services:
       HTTP_ADDR: 0.0.0.0:8080
       LOG_LEVEL: info
       ZEEBE_ADDR: ${ZEEBE_ADDR:-192.168.100.201:30650}
+      NATS_URL: ${NATS_URL:-}
     ports:
       - "8095:8080"
     env_file:
       - .env
-

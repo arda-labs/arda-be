@@ -12,8 +12,10 @@ import (
 
 	"github.com/camunda/zeebe/clients/go/v8/pkg/zbc"
 	_ "github.com/lib/pq"
+	"github.com/nats-io/nats.go"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/config"
+	appevents "github.com/arda-labs/arda/apps/notification-service/internal/events"
 	"github.com/arda-labs/arda/apps/notification-service/internal/handler"
 	"github.com/arda-labs/arda/apps/notification-service/internal/migration"
 	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
@@ -58,6 +60,18 @@ func main() {
 	workerCtx, stopWorker := context.WithCancel(context.Background())
 	go deliveryWorker.Run(workerCtx)
 	defer stopWorker()
+
+	if cfg.NATSURL != "" {
+		nc, err := nats.Connect(cfg.NATSURL, nats.Name(cfg.AppName))
+		if err != nil {
+			logger.Warn("NATS unavailable; notification outbox will remain pending", "err", err)
+		} else {
+			defer nc.Close()
+			outboxWorker := worker.NewOutboxWorker(notificationRepo, appevents.NewNATSPublisher(nc))
+			go outboxWorker.Run(workerCtx)
+			logger.Info("Notification outbox publisher started", "nats_url", cfg.NATSURL)
+		}
+	}
 
 	// Zeebe Client & Job Workers
 	zeebeClient, err := zbc.NewClient(&zbc.ClientConfig{
