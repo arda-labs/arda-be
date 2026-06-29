@@ -10,14 +10,16 @@ import (
 )
 
 type AdminUserSummary struct {
-	ID        string
-	Username  string
-	Email     string
-	Name      string
-	Status    string
-	Roles     []string
-	TenantID  string
-	CreatedAt time.Time
+	ID               string
+	Username         string
+	Email            string
+	Name             string
+	Status           string
+	Source           string
+	KratosIdentityID string
+	Roles            []string
+	TenantID         string
+	CreatedAt        time.Time
 }
 
 type AdminUserDetails struct {
@@ -73,14 +75,16 @@ func (s *AdminUserService) ListUsers(ctx context.Context, params repository.List
 			roleCodes[i] = r.Code
 		}
 		items = append(items, AdminUserSummary{
-			ID:        u.ID,
-			Username:  u.Username,
-			Email:     u.Email,
-			Name:      u.DisplayName,
-			Status:    u.Status,
-			Roles:     roleCodes,
-			TenantID:  u.TenantID,
-			CreatedAt: u.CreatedAt,
+			ID:               u.ID,
+			Username:         u.Username,
+			Email:            u.Email,
+			Name:             u.DisplayName,
+			Status:           u.Status,
+			Source:           u.Source,
+			KratosIdentityID: u.KratosIdentityID,
+			Roles:            roleCodes,
+			TenantID:         u.TenantID,
+			CreatedAt:        u.CreatedAt,
 		})
 	}
 

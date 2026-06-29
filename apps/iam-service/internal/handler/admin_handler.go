@@ -35,14 +35,16 @@ func NewAdminHandler(userRepo *repository.UserRepository, roleRepo *repository.R
 // ── User CRUD ──
 
 type userListItem struct {
-	ID        string   `json:"id"`
-	Username  string   `json:"username"`
-	Email     string   `json:"email"`
-	Name      string   `json:"name"`
-	Status    string   `json:"status"`
-	Roles     []string `json:"roles"`
-	TenantID  string   `json:"tenantId"`
-	CreatedAt string   `json:"createdAt"`
+	ID               string   `json:"id"`
+	Username         string   `json:"username"`
+	Email            string   `json:"email"`
+	Name             string   `json:"name"`
+	Status           string   `json:"status"`
+	Source           string   `json:"source"`
+	KratosIdentityID string   `json:"kratosIdentityId"`
+	Roles            []string `json:"roles"`
+	TenantID         string   `json:"tenantId"`
+	CreatedAt        string   `json:"createdAt"`
 }
 
 type userListResponse struct {
@@ -88,7 +90,8 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	for _, u := range users {
 		items = append(items, userListItem{
 			ID: u.ID, Username: u.Username, Email: u.Email,
-			Name: u.Name, Status: u.Status, Roles: u.Roles,
+			Name: u.Name, Status: u.Status, Source: u.Source,
+			KratosIdentityID: u.KratosIdentityID, Roles: u.Roles,
 			TenantID: u.TenantID, CreatedAt: u.CreatedAt.Format(time.RFC3339),
 		})
 	}
@@ -116,7 +119,7 @@ func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{
 		"id": u.ID, "username": u.Username, "email": u.Email,
 		"name": u.DisplayName, "status": u.Status, "tenantId": u.TenantID,
-		"source": u.Source, "roles": detail.Roles,
+		"source": u.Source, "kratosIdentityId": u.KratosIdentityID, "roles": detail.Roles,
 		"createdAt": u.CreatedAt.Format(time.RFC3339),
 		"updatedAt": u.UpdatedAt.Format(time.RFC3339),
 	})
