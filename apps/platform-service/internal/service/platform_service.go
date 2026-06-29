@@ -102,6 +102,46 @@ func (s *PlatformService) DeleteLookupValue(ctx context.Context, id string) erro
 	return s.repo.DeleteLookupValue(ctx, id)
 }
 
+func (s *PlatformService) ListCreditInstitutions(ctx context.Context, tenantID, status, query string) ([]domain.CreditInstitution, error) {
+	return s.repo.ListCreditInstitutions(ctx, tenantID, status, query)
+}
+
+func (s *PlatformService) GetCreditInstitutionByID(ctx context.Context, id string) (domain.CreditInstitution, error) {
+	return s.repo.GetCreditInstitutionByID(ctx, id)
+}
+
+func (s *PlatformService) CreateCreditInstitution(ctx context.Context, item domain.CreditInstitution) (domain.CreditInstitution, error) {
+	return s.repo.CreateCreditInstitution(ctx, item)
+}
+
+func (s *PlatformService) UpdateCreditInstitution(ctx context.Context, item domain.CreditInstitution) (domain.CreditInstitution, error) {
+	return s.repo.UpdateCreditInstitution(ctx, item)
+}
+
+func (s *PlatformService) DeleteCreditInstitution(ctx context.Context, id string) error {
+	return s.repo.DeleteCreditInstitution(ctx, id)
+}
+
+func (s *PlatformService) ListAreas(ctx context.Context, tenantID, status, areaTypeCode, parentID, query string) ([]domain.Area, error) {
+	return s.repo.ListAreas(ctx, tenantID, status, areaTypeCode, parentID, query)
+}
+
+func (s *PlatformService) GetAreaByID(ctx context.Context, id string) (domain.Area, error) {
+	return s.repo.GetAreaByID(ctx, id)
+}
+
+func (s *PlatformService) CreateArea(ctx context.Context, item domain.Area) (domain.Area, error) {
+	return s.repo.CreateArea(ctx, item)
+}
+
+func (s *PlatformService) UpdateArea(ctx context.Context, item domain.Area) (domain.Area, error) {
+	return s.repo.UpdateArea(ctx, item)
+}
+
+func (s *PlatformService) DeleteArea(ctx context.Context, id string) error {
+	return s.repo.DeleteArea(ctx, id)
+}
+
 func (s *PlatformService) ListFileTemplates(ctx context.Context, tenantID string) ([]domain.FileTemplate, error) {
 	return s.repo.ListFileTemplates(ctx, tenantID)
 }

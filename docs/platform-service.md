@@ -1,6 +1,6 @@
 # Platform Service
 
-Last updated: 2026-06-27
+Last updated: 2026-06-29
 
 ## Purpose
 
@@ -9,6 +9,8 @@ Last updated: 2026-06-27
 - system parameters
 - lookup/combobox categories and values
 - organization/unit/branch tree
+- business areas / operational areas
+- credit institutions
 - administrative geography
 - later: sequences, feature flags, tenant settings
 
@@ -23,6 +25,8 @@ This service should not become a dumping ground. If data has a clear business ow
 | system parameters | `platform-service` |
 | common lookups | `platform-service` |
 | organizations, branches, departments | `platform-service` |
+| business/operational areas | `platform-service` |
+| credit institutions | `platform-service` |
 | administrative geography | `platform-service` |
 | finance accounts/transactions | `finance-service` |
 
@@ -90,6 +94,18 @@ POST /api/platform/lookups/{category}/values
 GET  /api/platform/organizations
 POST /api/platform/organizations
 
+GET  /api/platform/credit-institutions
+POST /api/platform/credit-institutions
+GET  /api/platform/credit-institutions/{id}
+PUT  /api/platform/credit-institutions/{id}
+DELETE /api/platform/credit-institutions/{id}
+
+GET  /api/platform/areas
+POST /api/platform/areas
+GET  /api/platform/areas/{id}
+PUT  /api/platform/areas/{id}
+DELETE /api/platform/areas/{id}
+
 GET  /api/platform/geo/admin-units
 POST /api/platform/geo/admin-units
 ```
@@ -118,4 +134,4 @@ The service also supports `DATABASE_DSN`.
 2. Add seed/import flow for Vietnamese administrative geography.
 3. Add service-layer parameter fallback resolution.
 4. Add audit events for platform changes.
-5. Add admin UI screens for parameters, lookups, organizations, and geo data.
+5. Add admin UI screens for parameters, lookups, organizations, areas, credit institutions, and geo data.

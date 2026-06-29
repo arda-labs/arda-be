@@ -1,0 +1,7 @@
+app_name: "finance-service"
+http_addr: "0.0.0.0:8090"
+log_level: "info"
+database_dsn: "postgres://arda_finance:123456@192.168.100.201:30432/finance?sslmode=disable"
+platform_grpc_addr: "localhost:9090"
+nats_url: "nats://192.168.100.201:30222,nats://192.168.100.202:30222,nats://192.168.100.203:30222"
+max_concurrent_transactions: 100

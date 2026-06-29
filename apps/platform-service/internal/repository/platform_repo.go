@@ -342,6 +342,297 @@ func (r *PlatformRepository) DeleteLookupValue(ctx context.Context, id string) e
 	return err
 }
 
+func (r *PlatformRepository) ListCreditInstitutions(ctx context.Context, tenantID, status, query string) ([]domain.CreditInstitution, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, code, name, address, status, effective_from::text, short_name, phone, email,
+			license_no, license_date::text, tax_code, website, note, created_at, updated_at
+		FROM plt_credit_institutions
+		WHERE ($1 = '' OR tenant_id = $1)
+		  AND ($2 = '' OR status = $2)
+		  AND (
+			$3 = ''
+			OR code ILIKE '%' || $3 || '%'
+			OR name ILIKE '%' || $3 || '%'
+			OR COALESCE(short_name, '') ILIKE '%' || $3 || '%'
+			OR COALESCE(tax_code, '') ILIKE '%' || $3 || '%'
+			OR COALESCE(license_no, '') ILIKE '%' || $3 || '%'
+		  )
+		ORDER BY code`, tenantID, status, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.CreditInstitution, 0)
+	for rows.Next() {
+		var item domain.CreditInstitution
+		if err := rows.Scan(
+			&item.ID,
+			&item.TenantID,
+			&item.Code,
+			&item.Name,
+			&item.Address,
+			&item.Status,
+			&item.EffectiveFrom,
+			&item.ShortName,
+			&item.Phone,
+			&item.Email,
+			&item.LicenseNo,
+			&item.LicenseDate,
+			&item.TaxCode,
+			&item.Website,
+			&item.Note,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *PlatformRepository) GetCreditInstitutionByID(ctx context.Context, id string) (domain.CreditInstitution, error) {
+	var item domain.CreditInstitution
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, code, name, address, status, effective_from::text, short_name, phone, email,
+			license_no, license_date::text, tax_code, website, note, created_at, updated_at
+		FROM plt_credit_institutions
+		WHERE id = $1
+		LIMIT 1`, id).
+		Scan(
+			&item.ID,
+			&item.TenantID,
+			&item.Code,
+			&item.Name,
+			&item.Address,
+			&item.Status,
+			&item.EffectiveFrom,
+			&item.ShortName,
+			&item.Phone,
+			&item.Email,
+			&item.LicenseNo,
+			&item.LicenseDate,
+			&item.TaxCode,
+			&item.Website,
+			&item.Note,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		)
+	return item, err
+}
+
+func (r *PlatformRepository) CreateCreditInstitution(ctx context.Context, item domain.CreditInstitution) (domain.CreditInstitution, error) {
+	if item.ID == "" {
+		item.ID = NewID("ci")
+	}
+	if item.TenantID == "" {
+		item.TenantID = "default"
+	}
+	err := r.db.QueryRowContext(ctx, `
+		INSERT INTO plt_credit_institutions (
+			id, tenant_id, code, name, address, status, effective_from, short_name, phone, email,
+			license_no, license_date, tax_code, website, note
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12::date, $13, $14, $15)
+		RETURNING id, tenant_id, code, name, address, status, effective_from::text, short_name, phone, email,
+			license_no, license_date::text, tax_code, website, note, created_at, updated_at`,
+		item.ID, item.TenantID, item.Code, item.Name, item.Address, item.Status, item.EffectiveFrom, item.ShortName, item.Phone, item.Email,
+		item.LicenseNo, item.LicenseDate, item.TaxCode, item.Website, item.Note,
+	).Scan(
+		&item.ID,
+		&item.TenantID,
+		&item.Code,
+		&item.Name,
+		&item.Address,
+		&item.Status,
+		&item.EffectiveFrom,
+		&item.ShortName,
+		&item.Phone,
+		&item.Email,
+		&item.LicenseNo,
+		&item.LicenseDate,
+		&item.TaxCode,
+		&item.Website,
+		&item.Note,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	return item, err
+}
+
+func (r *PlatformRepository) UpdateCreditInstitution(ctx context.Context, item domain.CreditInstitution) (domain.CreditInstitution, error) {
+	err := r.db.QueryRowContext(ctx, `
+		UPDATE plt_credit_institutions
+		SET code = $2, name = $3, address = $4, status = $5, effective_from = $6::date, short_name = $7, phone = $8, email = $9,
+			license_no = $10, license_date = $11::date, tax_code = $12, website = $13, note = $14, updated_at = now()
+		WHERE id = $1
+		RETURNING id, tenant_id, code, name, address, status, effective_from::text, short_name, phone, email,
+			license_no, license_date::text, tax_code, website, note, created_at, updated_at`,
+		item.ID, item.Code, item.Name, item.Address, item.Status, item.EffectiveFrom, item.ShortName, item.Phone, item.Email,
+		item.LicenseNo, item.LicenseDate, item.TaxCode, item.Website, item.Note,
+	).Scan(
+		&item.ID,
+		&item.TenantID,
+		&item.Code,
+		&item.Name,
+		&item.Address,
+		&item.Status,
+		&item.EffectiveFrom,
+		&item.ShortName,
+		&item.Phone,
+		&item.Email,
+		&item.LicenseNo,
+		&item.LicenseDate,
+		&item.TaxCode,
+		&item.Website,
+		&item.Note,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	return item, err
+}
+
+func (r *PlatformRepository) DeleteCreditInstitution(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_credit_institutions WHERE id = $1`, id)
+	return err
+}
+
+func (r *PlatformRepository) ListAreas(ctx context.Context, tenantID, status, areaTypeCode, parentID, query string) ([]domain.Area, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, parent_id, code, name, area_type_code, admin_unit_code, description, status,
+			effective_from::text, effective_to::text, created_at, updated_at
+		FROM plt_areas
+		WHERE ($1 = '' OR tenant_id = $1)
+		  AND ($2 = '' OR status = $2)
+		  AND ($3 = '' OR area_type_code = $3)
+		  AND ($4 = '' OR COALESCE(parent_id, '') = $4)
+		  AND (
+			$5 = ''
+			OR code ILIKE '%' || $5 || '%'
+			OR name ILIKE '%' || $5 || '%'
+			OR COALESCE(description, '') ILIKE '%' || $5 || '%'
+		  )
+		ORDER BY parent_id NULLS FIRST, code`, tenantID, status, areaTypeCode, parentID, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.Area, 0)
+	for rows.Next() {
+		var item domain.Area
+		if err := rows.Scan(
+			&item.ID,
+			&item.TenantID,
+			&item.ParentID,
+			&item.Code,
+			&item.Name,
+			&item.AreaTypeCode,
+			&item.AdminUnitCode,
+			&item.Description,
+			&item.Status,
+			&item.EffectiveFrom,
+			&item.EffectiveTo,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *PlatformRepository) GetAreaByID(ctx context.Context, id string) (domain.Area, error) {
+	var item domain.Area
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, parent_id, code, name, area_type_code, admin_unit_code, description, status,
+			effective_from::text, effective_to::text, created_at, updated_at
+		FROM plt_areas
+		WHERE id = $1
+		LIMIT 1`, id).
+		Scan(
+			&item.ID,
+			&item.TenantID,
+			&item.ParentID,
+			&item.Code,
+			&item.Name,
+			&item.AreaTypeCode,
+			&item.AdminUnitCode,
+			&item.Description,
+			&item.Status,
+			&item.EffectiveFrom,
+			&item.EffectiveTo,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		)
+	return item, err
+}
+
+func (r *PlatformRepository) CreateArea(ctx context.Context, item domain.Area) (domain.Area, error) {
+	if item.ID == "" {
+		item.ID = NewID("area")
+	}
+	if item.TenantID == "" {
+		item.TenantID = "default"
+	}
+	err := r.db.QueryRowContext(ctx, `
+		INSERT INTO plt_areas (id, tenant_id, parent_id, code, name, area_type_code, admin_unit_code, description, status, effective_from, effective_to)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date)
+		RETURNING id, tenant_id, parent_id, code, name, area_type_code, admin_unit_code, description, status,
+			effective_from::text, effective_to::text, created_at, updated_at`,
+		item.ID, item.TenantID, item.ParentID, item.Code, item.Name, item.AreaTypeCode, item.AdminUnitCode, item.Description, item.Status, item.EffectiveFrom, item.EffectiveTo,
+	).Scan(
+		&item.ID,
+		&item.TenantID,
+		&item.ParentID,
+		&item.Code,
+		&item.Name,
+		&item.AreaTypeCode,
+		&item.AdminUnitCode,
+		&item.Description,
+		&item.Status,
+		&item.EffectiveFrom,
+		&item.EffectiveTo,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	return item, err
+}
+
+func (r *PlatformRepository) UpdateArea(ctx context.Context, item domain.Area) (domain.Area, error) {
+	err := r.db.QueryRowContext(ctx, `
+		UPDATE plt_areas
+		SET parent_id = $2, code = $3, name = $4, area_type_code = $5, admin_unit_code = $6, description = $7,
+			status = $8, effective_from = $9::date, effective_to = $10::date, updated_at = now()
+		WHERE id = $1
+		RETURNING id, tenant_id, parent_id, code, name, area_type_code, admin_unit_code, description, status,
+			effective_from::text, effective_to::text, created_at, updated_at`,
+		item.ID, item.ParentID, item.Code, item.Name, item.AreaTypeCode, item.AdminUnitCode, item.Description, item.Status, item.EffectiveFrom, item.EffectiveTo,
+	).Scan(
+		&item.ID,
+		&item.TenantID,
+		&item.ParentID,
+		&item.Code,
+		&item.Name,
+		&item.AreaTypeCode,
+		&item.AdminUnitCode,
+		&item.Description,
+		&item.Status,
+		&item.EffectiveFrom,
+		&item.EffectiveTo,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	return item, err
+}
+
+func (r *PlatformRepository) DeleteArea(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE plt_areas SET status = 'inactive', updated_at = now() WHERE id = $1`, id)
+	return err
+}
+
 func (r *PlatformRepository) ListFileTemplates(ctx context.Context, tenantID string) ([]domain.FileTemplate, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, code, name, description, file_type, file_url, mapping_config::text, is_active, created_at, updated_at

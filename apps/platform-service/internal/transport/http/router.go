@@ -7,7 +7,7 @@ import (
 	"github.com/arda-labs/arda/apps/platform-service/internal/handler"
 )
 
-func NewRouter(platformHandler *handler.PlatformHandler) http.Handler {
+func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handler.CalendarHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -112,6 +112,54 @@ func NewRouter(platformHandler *handler.PlatformHandler) http.Handler {
 		}
 	})
 
+	mux.HandleFunc("/api/platform/credit-institutions", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			platformHandler.ListCreditInstitutions(w, r)
+		case http.MethodPost:
+			platformHandler.CreateCreditInstitution(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
+	mux.HandleFunc("/api/platform/credit-institutions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			platformHandler.GetCreditInstitution(w, r)
+		case http.MethodPut:
+			platformHandler.UpdateCreditInstitution(w, r)
+		case http.MethodDelete:
+			platformHandler.DeleteCreditInstitution(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
+	mux.HandleFunc("/api/platform/areas", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			platformHandler.ListAreas(w, r)
+		case http.MethodPost:
+			platformHandler.CreateArea(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
+	mux.HandleFunc("/api/platform/areas/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			platformHandler.GetArea(w, r)
+		case http.MethodPut:
+			platformHandler.UpdateArea(w, r)
+		case http.MethodDelete:
+			platformHandler.DeleteArea(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
 	mux.HandleFunc("/api/platform/templates", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -131,6 +179,39 @@ func NewRouter(platformHandler *handler.PlatformHandler) http.Handler {
 			platformHandler.UpdateFileTemplate(w, r)
 		case http.MethodDelete:
 			platformHandler.DeleteFileTemplate(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+
+	// ── Calendar & Cut-off ──
+	mux.HandleFunc("/api/platform/calendar/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		calendarHandler.GetStatus(w, r)
+	})
+	mux.HandleFunc("/api/platform/calendar/eod", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		calendarHandler.TriggerEOD(w, r)
+	})
+	mux.HandleFunc("/api/platform/calendar/evaluate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		calendarHandler.EvaluateDate(w, r)
+	})
+	mux.HandleFunc("/api/platform/calendar/holidays", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			calendarHandler.ListHolidays(w, r)
+		case http.MethodPost:
+			calendarHandler.AddHoliday(w, r)
 		default:
 			methodNotAllowed(w)
 		}

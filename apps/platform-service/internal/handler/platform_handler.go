@@ -192,6 +192,136 @@ func (h *PlatformHandler) DeleteLookupValue(w http.ResponseWriter, r *http.Reque
 	writeResult(w, map[string]bool{"ok": true}, err)
 }
 
+func (h *PlatformHandler) ListCreditInstitutions(w http.ResponseWriter, r *http.Request) {
+	items, err := h.svc.ListCreditInstitutions(
+		r.Context(),
+		r.URL.Query().Get("tenant_id"),
+		r.URL.Query().Get("status"),
+		r.URL.Query().Get("q"),
+	)
+	writeResult(w, items, err)
+}
+
+func (h *PlatformHandler) GetCreditInstitution(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	item, err := h.svc.GetCreditInstitutionByID(r.Context(), id)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) CreateCreditInstitution(w http.ResponseWriter, r *http.Request) {
+	var req domain.CreditInstitution
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, "validation.invalid_json", "invalid json")
+		return
+	}
+	if req.Code == "" || req.Name == "" || req.Address == "" || req.Status == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, address and status are required")
+		return
+	}
+	item, err := h.svc.CreateCreditInstitution(r.Context(), req)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) UpdateCreditInstitution(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	var req domain.CreditInstitution
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, "validation.invalid_json", "invalid json")
+		return
+	}
+	req.ID = id
+	if req.Code == "" || req.Name == "" || req.Address == "" || req.Status == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, address and status are required")
+		return
+	}
+	item, err := h.svc.UpdateCreditInstitution(r.Context(), req)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) DeleteCreditInstitution(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	err := h.svc.DeleteCreditInstitution(r.Context(), id)
+	writeResult(w, map[string]bool{"ok": true}, err)
+}
+
+func (h *PlatformHandler) ListAreas(w http.ResponseWriter, r *http.Request) {
+	items, err := h.svc.ListAreas(
+		r.Context(),
+		r.URL.Query().Get("tenant_id"),
+		r.URL.Query().Get("status"),
+		r.URL.Query().Get("area_type_code"),
+		r.URL.Query().Get("parent_id"),
+		r.URL.Query().Get("q"),
+	)
+	writeResult(w, items, err)
+}
+
+func (h *PlatformHandler) GetArea(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	item, err := h.svc.GetAreaByID(r.Context(), id)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) CreateArea(w http.ResponseWriter, r *http.Request) {
+	var req domain.Area
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, "validation.invalid_json", "invalid json")
+		return
+	}
+	if req.Code == "" || req.Name == "" || req.AreaTypeCode == "" || req.Status == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, area_type_code and status are required")
+		return
+	}
+	item, err := h.svc.CreateArea(r.Context(), req)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) UpdateArea(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	var req domain.Area
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, "validation.invalid_json", "invalid json")
+		return
+	}
+	req.ID = id
+	if req.Code == "" || req.Name == "" || req.AreaTypeCode == "" || req.Status == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, area_type_code and status are required")
+		return
+	}
+	item, err := h.svc.UpdateArea(r.Context(), req)
+	writeResult(w, item, err)
+}
+
+func (h *PlatformHandler) DeleteArea(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	err := h.svc.DeleteArea(r.Context(), id)
+	writeResult(w, map[string]bool{"ok": true}, err)
+}
+
 func (h *PlatformHandler) ListFileTemplates(w http.ResponseWriter, r *http.Request) {
 	items, err := h.svc.ListFileTemplates(r.Context(), r.URL.Query().Get("tenant_id"))
 	writeResult(w, items, err)

@@ -19,6 +19,7 @@ Go workspace for Arda backend services.
 - [Kratos-first Identity Flow](docs/kratos-first-identity-design.md)
 - [Auth User Context Contract](docs/auth-user-context-contract.md)
 - [Platform Service](docs/platform-service.md)
+- [Calendar & Cut-off Design](docs/calendar-cutoff-design.md)
 
 ## Direction
 

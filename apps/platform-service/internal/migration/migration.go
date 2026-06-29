@@ -14,7 +14,7 @@ func Run(db *sql.DB, dialect string) error {
 	if err := goose.SetDialect(dialect); err != nil {
 		return fmt.Errorf("set migration dialect: %w", err)
 	}
-	if err := goose.Up(db, "."); err != nil {
+	if err := goose.Up(db, ".", goose.WithAllowMissing()); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 	return nil

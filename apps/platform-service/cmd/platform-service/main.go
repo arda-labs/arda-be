@@ -53,12 +53,17 @@ func main() {
 	logger.Info("migrations applied")
 
 	repo := repository.NewPlatformRepository(db)
+	calendarRepo := repository.NewCalendarRepository(db)
+
 	platformSvc := service.NewPlatformService(repo)
+	calendarSvc := service.NewCalendarService(calendarRepo)
+
 	platformHandler := handler.NewPlatformHandler(platformSvc)
+	calendarHandler := handler.NewCalendarHandler(calendarSvc)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(platformHandler),
+		Handler:      transport.NewRouter(platformHandler, calendarHandler),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

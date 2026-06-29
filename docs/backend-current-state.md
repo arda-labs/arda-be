@@ -20,7 +20,7 @@ Current services:
 | `auth-gateway` | active | BFF/auth edge, session, Kratos/Hydra proxy, forward-auth |
 | `iam-service` | active | users, roles, permissions, sessions, MFA, audit, login orchestration |
 | `finance-service` | scaffolded/active | accounts, transactions, approvals |
-| `platform-service` | scaffolded | system parameters, lookups, organizations, administrative geography |
+| `platform-service` | scaffolded/active | system parameters, lookups, organizations, credit institutions, administrative geography |
 | `mdm-service` | scaffold | placeholder service |
 
 ## Current Edge Flow
@@ -102,8 +102,47 @@ Route-level auth-gateway policy includes:
 - `plt_lookup_categories`
 - `plt_lookup_values`
 - `plt_organizations`
+- `plt_areas`
+- `plt_credit_institutions`
 - `geo_admin_units`
 - `geo_admin_unit_aliases`
+
+Areas are modeled separately from administrative geography. `geo_admin_units`
+captures legal/government structure, while `plt_areas` captures business or
+operational grouping such as sales territories, service zones, or coverage
+regions. Current managed fields include:
+
+```txt
+code
+name
+area_type_code
+parent_id
+admin_unit_code
+description
+status
+effective_from
+effective_to
+```
+
+Credit institutions are modeled separately from organizations because they are
+shared reference entities with their own business identifiers and licensing
+attributes. Current managed fields include:
+
+```txt
+code
+name
+address
+status
+effective_from
+short_name
+phone
+email
+license_no
+license_date
+tax_code
+website
+note
+```
 
 The administrative geography model is intentionally not hardcoded as `province -> district -> ward`. It uses a generic tree:
 

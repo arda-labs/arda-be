@@ -5,6 +5,8 @@ Platform service owns cross-module reference data:
 - scoped system parameters
 - scoped lookup categories and values
 - organization/branch/unit tree
+- business/operational areas
+- credit institutions
 - versioned administrative geography
 
 More details:
