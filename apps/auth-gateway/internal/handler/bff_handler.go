@@ -571,6 +571,7 @@ func (h *BFFHandler) proxyToKratosWithOptions(w http.ResponseWriter, r *http.Req
 		proxyReq.Header.Del("Sec-Fetch-Dest")
 		proxyReq.Header.Del("Sec-Fetch-Mode")
 		proxyReq.Header.Del("Sec-Fetch-Site")
+		proxyReq.Header.Del("Cookie")
 	}
 	proxyReq.Header.Set("X-Forwarded-Proto", "https")
 	proxyReq.Header.Set("X-Forwarded-Host", r.Host)
