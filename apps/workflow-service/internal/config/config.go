@@ -18,7 +18,7 @@ type Config struct {
 func Load() Config {
 	cfg := Config{
 		AppName:     "workflow-service",
-		HTTPAddr:    "0.0.0.0:8080",
+		HTTPAddr:    "0.0.0.0:8093",
 		LogLevel:    "info",
 		DatabaseDSN: "postgres://postgres:postgres@localhost:5432/workflow?sslmode=disable",
 		ZeebeAddr:   "192.168.100.201:30650",

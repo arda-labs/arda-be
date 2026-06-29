@@ -53,7 +53,7 @@ func (c Config) ProxyURL() string {
 func Load() Config {
 	cfg := Config{
 		AppName:       "auth-gateway",
-		HTTPAddr:      "0.0.0.0:8080",
+		HTTPAddr:      "0.0.0.0:8082",
 		LogLevel:      "info",
 		TokenStrategy: "jwt",
 		JWTSecret:     "super-secret-dev-key-change-in-production",

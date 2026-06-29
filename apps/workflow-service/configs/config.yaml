@@ -1,7 +1,5 @@
-app:
-  name: workflow-service
-  http_addr: 0.0.0.0:8080
-
-log:
-  level: info
-  format: json
+app_name: workflow-service
+http_addr: 0.0.0.0:8093
+log_level: info
+database_dsn: "postgres://arda_workflow:123456@192.168.100.201:30432/workflow?sslmode=disable"
+zeebe_addr: 192.168.100.201:30650

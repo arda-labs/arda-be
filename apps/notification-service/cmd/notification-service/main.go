@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,8 +11,13 @@ import (
 	"time"
 
 	"github.com/camunda/zeebe/clients/go/v8/pkg/zbc"
+	_ "github.com/lib/pq"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/config"
+	"github.com/arda-labs/arda/apps/notification-service/internal/handler"
+	"github.com/arda-labs/arda/apps/notification-service/internal/migration"
+	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
+	"github.com/arda-labs/arda/apps/notification-service/internal/service"
 	transport "github.com/arda-labs/arda/apps/notification-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/notification-service/internal/worker"
 )
@@ -23,6 +29,35 @@ func main() {
 		Level: parseLogLevel(cfg.LogLevel),
 	}))
 	slog.SetDefault(logger)
+
+	db, err := sql.Open("postgres", cfg.DatabaseDSN)
+	if err != nil {
+		logger.Error("Failed to open database", "err", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := db.PingContext(dbCtx); err != nil {
+		dbCancel()
+		logger.Error("Failed to connect to database", "err", err)
+		os.Exit(1)
+	}
+	dbCancel()
+
+	if err := migration.Run(db, "postgres"); err != nil {
+		logger.Error("Failed to run migrations", "err", err)
+		os.Exit(1)
+	}
+
+	notificationRepo := repository.NewNotificationRepository(db)
+	notificationService := service.NewNotificationService(notificationRepo)
+	notificationHandler := handler.NewNotificationHandler(notificationService)
+
+	deliveryWorker := worker.NewDeliveryWorker(notificationRepo)
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	go deliveryWorker.Run(workerCtx)
+	defer stopWorker()
 
 	// Zeebe Client & Job Workers
 	zeebeClient, err := zbc.NewClient(&zbc.ClientConfig{
@@ -53,7 +88,7 @@ func main() {
 	// Router and HTTP Server
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(),
+		Handler:      transport.NewRouter(notificationHandler),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -72,6 +107,8 @@ func main() {
 	<-quit
 
 	logger.Info("Shutting down service", "name", cfg.AppName)
+	stopWorker()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

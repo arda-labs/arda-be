@@ -67,7 +67,7 @@ type config struct {
 func loadConfig() config {
 	return config{
 		AppName:   "mdm-service",
-		HTTPAddr:  envOr("HTTP_ADDR", "0.0.0.0:8080"),
+		HTTPAddr:  envOr("HTTP_ADDR", "0.0.0.0:8096"),
 		LogLevel:  envOr("LOG_LEVEL", "info"),
 	}
 }

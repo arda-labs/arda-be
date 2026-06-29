@@ -31,11 +31,10 @@ func (w *NotificationWorkers) SendEmailHandler(client worker.JobClient, job enti
 		email = "default@example.com"
 	}
 
-	slog.Info("📧 EMAIL SENT SUCCESSFULLY", 
-		"recipientName", name, 
-		"recipientEmail", email, 
+	slog.Info("notification.email accepted; provider dispatch is not configured yet",
+		"recipientName", name,
+		"recipientEmail", email,
 		"subject", "Welcome to Arda Onboarding!",
-		"content", "Hello "+name+", your customer account onboarding process has been initiated.",
 	)
 
 	ctx := context.Background()
@@ -58,8 +57,8 @@ func (w *NotificationWorkers) SendSMSHandler(client worker.JobClient, job entiti
 
 	name, _ := variables["customerName"].(string)
 
-	slog.Info("💬 SMS SENT SUCCESSFULLY", 
-		"recipientName", name, 
+	slog.Info("notification.sms accepted; provider dispatch is not configured yet",
+		"recipientName", name,
 		"message", "Arda: Your onboarding process is currently updating.",
 	)
 
@@ -83,10 +82,9 @@ func (w *NotificationWorkers) SendPushHandler(client worker.JobClient, job entit
 
 	name, _ := variables["customerName"].(string)
 
-	slog.Info("🔔 PUSH NOTIFICATION SENT SUCCESSFULLY", 
-		"recipientName", name, 
+	slog.Info("notification.push accepted; provider dispatch is not configured yet",
+		"recipientName", name,
 		"title", "Account Onboarding Approved",
-		"body", "Congratulations "+name+"! Your account has been approved.",
 	)
 
 	ctx := context.Background()

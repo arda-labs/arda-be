@@ -19,7 +19,7 @@ type Config struct {
 func Load() Config {
 	cfg := Config{
 		AppName:            "crm-service",
-		HTTPAddr:           "0.0.0.0:8080",
+		HTTPAddr:           "0.0.0.0:8094",
 		LogLevel:           "info",
 		DatabaseDSN:        "postgres://postgres:postgres@localhost:5432/crm?sslmode=disable",
 		ZeebeAddr:          "192.168.100.201:30650",
