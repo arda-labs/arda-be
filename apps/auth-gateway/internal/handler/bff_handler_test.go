@@ -3,9 +3,11 @@ package handler
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/config"
+	"github.com/arda-labs/arda/apps/auth-gateway/internal/session"
 )
 
 func TestStripAuthContextHeaders(t *testing.T) {
@@ -66,5 +68,18 @@ func TestProxyRequiresAuthWhenPolicyDoesNotMatch(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestIAMLookupIDsOnlyReturnsUniqueUUIDs(t *testing.T) {
+	uuid := "00000000-0000-0000-0000-000000000002"
+	got := iamLookupIDs(&session.UserInfo{UserID: uuid, Subject: "super-admin"})
+	if !reflect.DeepEqual(got, []string{uuid}) {
+		t.Fatalf("ids = %#v, want only %s", got, uuid)
+	}
+
+	got = iamLookupIDs(&session.UserInfo{UserID: uuid, Subject: uuid})
+	if !reflect.DeepEqual(got, []string{uuid}) {
+		t.Fatalf("duplicate ids = %#v, want one %s", got, uuid)
 	}
 }

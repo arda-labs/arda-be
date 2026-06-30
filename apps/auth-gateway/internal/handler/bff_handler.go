@@ -344,7 +344,7 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 	respondJSON(w, http.StatusOK, map[string]any{"user": userInfo})
 }
 
-func (h *BFFHandler) resolveSessionUser(ctx context.Context, fallback *session.UserInfo) (*session.UserInfo, bool) {
+func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.UserInfo) (*session.UserInfo, bool) {
 	if fallback == nil {
 		fallback = &session.UserInfo{}
 	}
@@ -356,20 +356,19 @@ func (h *BFFHandler) resolveSessionUser(ctx context.Context, fallback *session.U
 		fallback.UserID = fallback.Subject
 	}
 
+	lookupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	if fallback.Subject != "" && !looksLikeUUID(fallback.Subject) {
-		if uc, err := h.iamClient.GetUserBySubject(ctx, fallback.Subject); err == nil {
+		if uc, err := h.iamClient.GetUserBySubject(lookupCtx, fallback.Subject); err == nil {
 			return sessionUserFromIAM(uc, fallback), true
 		} else {
 			h.logger.Warn("resolve user by subject failed", "subject", fallback.Subject, "err", err)
 		}
 	}
 
-	candidates := []string{fallback.UserID, fallback.Subject}
-	for _, id := range candidates {
-		if strings.TrimSpace(id) == "" {
-			continue
-		}
-		if uc, err := h.iamClient.GetUserByID(ctx, id); err == nil {
+	for _, id := range iamLookupIDs(fallback) {
+		if uc, err := h.iamClient.GetUserByID(lookupCtx, id); err == nil {
 			return sessionUserFromIAM(uc, fallback), true
 		} else {
 			h.logger.Warn("resolve user by id failed", "user_id", id, "err", err)
@@ -377,6 +376,26 @@ func (h *BFFHandler) resolveSessionUser(ctx context.Context, fallback *session.U
 	}
 
 	return fallback, false
+}
+
+func iamLookupIDs(info *session.UserInfo) []string {
+	if info == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var ids []string
+	for _, id := range []string{info.UserID, info.Subject} {
+		id = strings.TrimSpace(id)
+		if id == "" || !looksLikeUUID(id) {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *session.UserInfo {
