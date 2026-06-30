@@ -12,6 +12,7 @@ http:
           - "X-Tenant-Id"
           - "X-Roles"
           - "X-Permissions"
+          - "X-Auth-Version"
           - "X-Auth-Risk"
           - "X-Auth-Checked"
 

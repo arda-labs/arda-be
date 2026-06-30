@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -98,6 +99,7 @@ func (h *AuthHandler) injectHeaders(w http.ResponseWriter, ctx *iamclient.UserCo
 	w.Header().Set("X-Tenant-Id", ctx.TenantID)
 	w.Header().Set("X-Roles", strings.Join(ctx.Roles, ","))
 	w.Header().Set("X-Permissions", strings.Join(ctx.Permissions, ","))
+	w.Header().Set("X-Auth-Version", fmt.Sprintf("%d", ctx.AuthVersion))
 	w.Header().Set("X-Auth-Risk", risk)
 	w.Header().Set("X-Auth-Checked", "true")
 }

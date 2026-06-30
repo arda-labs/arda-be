@@ -33,6 +33,7 @@ type UserContext struct {
 	OrgIDs        []string `json:"orgIds"`
 	Roles         []string `json:"roles"`
 	Permissions   []string `json:"permissions"`
+	AuthVersion   int64    `json:"authVersion"`
 }
 
 // CreateSessionRequest is sent to IAM internal API to create a session record.

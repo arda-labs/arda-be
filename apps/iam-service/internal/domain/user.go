@@ -87,6 +87,7 @@ type UserContext struct {
 	OrgIDs        []string `json:"orgIds"`
 	Roles         []string `json:"roles"`
 	Permissions   []string `json:"permissions"`
+	AuthVersion   int64    `json:"authVersion"`
 	Department    string   `json:"department,omitempty"`
 	Position      string   `json:"position,omitempty"`
 	EmployeeID    string   `json:"employeeId,omitempty"`

@@ -109,7 +109,10 @@ func (s *IdentityService) UpdatePassword(ctx context.Context, user *domain.User,
 	if err != nil {
 		return err
 	}
-	return s.kratos.UpdateIdentityPassword(identityID, newPassword)
+	if err := s.kratos.UpdateIdentityPassword(identityID, newPassword); err != nil {
+		return err
+	}
+	return s.userRepo.BumpAuthVersion(ctx, user.ID)
 }
 
 func (s *IdentityService) ProvisionIdentity(ctx context.Context, user *domain.User, temporaryPassword string) (string, error) {

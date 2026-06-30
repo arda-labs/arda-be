@@ -149,6 +149,11 @@ func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*dom
 		return nil, err
 	}
 
+	authVersion, err := s.repo.GetAuthVersion(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	roleCodes := make([]string, len(roles))
 	for i, r := range roles {
 		roleCodes[i] = r.Code
@@ -181,6 +186,7 @@ func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*dom
 		OrgIDs:        orgs,
 		Roles:         roleCodes,
 		Permissions:   permCodes,
+		AuthVersion:   authVersion,
 		Department:    user.Department,
 		Position:      user.Position,
 		EmployeeID:    user.EmployeeID,

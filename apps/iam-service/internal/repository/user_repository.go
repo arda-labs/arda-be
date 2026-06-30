@@ -149,6 +149,7 @@ func (r *UserRepository) UpdateUser(ctx context.Context, u *domain.User) error {
 			phone_number = $15, birthdate = $16, gender = $17, address = $18, country = $19,
 			cover_file_id = $20, cover_image_url = $21,
 			kratos_identity_id = NULLIF($22, ''),
+			auth_version = auth_version + 1,
 			updated_at = now()
 		WHERE id = $23
 	`, u.Username, u.Email, u.DisplayName, u.Nickname, u.Status, u.TenantID,
@@ -256,6 +257,7 @@ func (r *UserRepository) UpdateUserEmail(ctx context.Context, userID, email stri
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE iam_users
 		SET email = $2,
+		    auth_version = auth_version + 1,
 		    updated_at = now()
 		WHERE id = $1
 		RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
@@ -293,7 +295,10 @@ func (r *UserRepository) AssignRole(ctx context.Context, userID, roleID string) 
 		VALUES ($1, $2)
 		ON CONFLICT DO NOTHING
 	`, userID, roleID)
-	return err
+	if err != nil {
+		return err
+	}
+	return r.BumpAuthVersion(ctx, userID)
 }
 
 // UnassignRole removes a role from a user.
@@ -301,7 +306,10 @@ func (r *UserRepository) UnassignRole(ctx context.Context, userID, roleID string
 	_, err := r.db.ExecContext(ctx, `
 		DELETE FROM iam_user_roles WHERE user_id = $1 AND role_id = $2
 	`, userID, roleID)
-	return err
+	if err != nil {
+		return err
+	}
+	return r.BumpAuthVersion(ctx, userID)
 }
 
 func (r *UserRepository) UserHasRoleCode(ctx context.Context, userID, roleCode string) (bool, error) {
@@ -335,7 +343,64 @@ func (r *UserRepository) CountActiveUsersWithRoleCode(ctx context.Context, roleC
 	return count, nil
 }
 
+func (r *UserRepository) GetAuthVersion(ctx context.Context, userID string) (int64, error) {
+	var version int64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT auth_version FROM iam_users WHERE id = $1
+	`, userID).Scan(&version)
+	if err != nil {
+		return 0, fmt.Errorf("get auth version: %w", err)
+	}
+	return version, nil
+}
+
+func (r *UserRepository) BumpAuthVersion(ctx context.Context, userID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE iam_users
+		SET auth_version = auth_version + 1,
+		    updated_at = now()
+		WHERE id = $1
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("bump auth version: %w", err)
+	}
+	return nil
+}
+
+func (r *UserRepository) BumpAuthVersionByRole(ctx context.Context, roleID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE iam_users
+		SET auth_version = auth_version + 1,
+		    updated_at = now()
+		WHERE id IN (
+			SELECT user_id FROM iam_user_roles WHERE role_id = $1
+		)
+	`, roleID)
+	if err != nil {
+		return fmt.Errorf("bump auth version by role: %w", err)
+	}
+	return nil
+}
+
 // ── Existing methods below ──
+
+func (r *UserRepository) BumpAuthVersionByPermission(ctx context.Context, permissionID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE iam_users
+		SET auth_version = auth_version + 1,
+		    updated_at = now()
+		WHERE id IN (
+			SELECT ur.user_id
+			FROM iam_user_roles ur
+			JOIN iam_role_permissions rp ON rp.role_id = ur.role_id
+			WHERE rp.permission_id = $1
+		)
+	`, permissionID)
+	if err != nil {
+		return fmt.Errorf("bump auth version by permission: %w", err)
+	}
+	return nil
+}
 
 // GetUserBySubject loads a user by external subject (OIDC sub).
 func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (*domain.User, error) {

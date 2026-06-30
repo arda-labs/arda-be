@@ -563,6 +563,10 @@ func (h *AdminHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminRoleProtected, "")
 		return
 	}
+	if err := h.userRepo.BumpAuthVersionByRole(r.Context(), id); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if err := h.roleRepo.Delete(r.Context(), id); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -591,6 +595,10 @@ func (h *AdminHandler) AssignRolePermission(w http.ResponseWriter, r *http.Reque
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err := h.userRepo.BumpAuthVersionByRole(r.Context(), roleID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	respondJSON(w, http.StatusOK, map[string]string{"status": "assigned"})
 }
 
@@ -605,6 +613,10 @@ func (h *AdminHandler) UnassignRolePermission(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := h.roleRepo.UnassignPermission(r.Context(), roleID, permID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := h.userRepo.BumpAuthVersionByRole(r.Context(), roleID); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -693,6 +705,10 @@ func (h *AdminHandler) DeletePermission(w http.ResponseWriter, r *http.Request) 
 	}
 	if perm.Code == system.SuperAdminPermissionCode {
 		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminPermissionProtected, "")
+		return
+	}
+	if err := h.userRepo.BumpAuthVersionByPermission(r.Context(), id); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := h.roleRepo.DeletePermission(r.Context(), id); err != nil {

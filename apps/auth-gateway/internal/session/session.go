@@ -50,6 +50,7 @@ type UserInfo struct {
 	OrgIDs       []string `json:"orgIds,omitempty"`
 	Roles        []string `json:"roles"`
 	Permissions  []string `json:"permissions"`
+	AuthVersion  int64    `json:"authVersion"`
 }
 
 // Store defines the session persistence interface.

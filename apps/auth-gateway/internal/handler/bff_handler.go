@@ -388,6 +388,7 @@ func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *
 		OrgIDs:       uc.OrgIDs,
 		Roles:        uc.Roles,
 		Permissions:  uc.Permissions,
+		AuthVersion:  uc.AuthVersion,
 	}
 	if info.Subject == "" && fallback != nil {
 		info.Subject = fallback.Subject
@@ -730,6 +731,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 				proxyReq.Header.Set("X-Tenant-Id", sess.User.TenantID)
 				proxyReq.Header.Set("X-Roles", strings.Join(sess.User.Roles, ","))
 				proxyReq.Header.Set("X-Permissions", strings.Join(sess.User.Permissions, ","))
+				proxyReq.Header.Set("X-Auth-Version", fmt.Sprintf("%d", sess.User.AuthVersion))
 				if sess.IAMSessionID != "" {
 					proxyReq.Header.Set("X-Session-Id", sess.IAMSessionID)
 				}
@@ -763,6 +765,7 @@ func stripAuthContextHeaders(header http.Header) {
 		"X-Roles",
 		"X-Permissions",
 		"X-Session-Id",
+		"X-Auth-Version",
 		"X-Auth-Risk",
 		"X-Auth-Checked",
 	} {

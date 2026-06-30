@@ -58,7 +58,7 @@ Target production policy:
 - Emergency revocation uses one or more of:
   - browser session revocation in Valkey;
   - `jti` denylist for active access tokens;
-  - user/session `auth_version` bump.
+- user/session `auth_version` bump.
 
 Introspection remains useful for opaque tokens, emergency checks, or high-risk
 flows, but should not be required for every normal API request.
@@ -143,5 +143,7 @@ user agent, route/action, result, and correlation/request id.
   requires Kratos whoami and IAM subject resolution.
 - Done: ForwardAuth caches IAM user context for non-high-risk routes with a
   short configurable TTL. High-risk routes always resolve fresh IAM context.
-- Next: add `auth_version` or equivalent cache invalidation for role/user
-  security changes.
+- Done: IAM exposes `authVersion` / `X-Auth-Version` and bumps it for user,
+  password, role, and permission changes.
+- Next: make gateway cache/session invalidation compare cached auth version
+  against token/session auth version when version claims are added.

@@ -26,6 +26,7 @@ Services must not guess whether `X-User-Id` is an OAuth subject, username, email
 | `X-Tenant-Id` | yes for tenant-scoped requests | Current tenant id from IAM context. |
 | `X-Roles` | optional | Comma-separated role codes. |
 | `X-Permissions` | optional | Comma-separated permission codes. |
+| `X-Auth-Version` | yes for user requests | IAM security stamp. It increases when user security, roles, or effective permissions change. |
 | `X-Auth-Checked` | yes for protected routes | Set to `true` by auth-gateway after auth has been evaluated. |
 
 For future gRPC calls, these headers become lowercase metadata keys:
@@ -38,6 +39,7 @@ x-user-email
 x-tenant-id
 x-roles
 x-permissions
+x-auth-version
 x-auth-checked
 ```
 

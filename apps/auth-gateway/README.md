@@ -61,6 +61,7 @@ Protected proxied requests receive:
 - `X-Tenant-Id`
 - `X-Roles`
 - `X-Permissions`
+- `X-Auth-Version`
 - `X-Auth-Checked: true`
 
 See `../../docs/auth-user-context-contract.md` for the stable contract.
