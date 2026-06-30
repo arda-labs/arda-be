@@ -74,6 +74,22 @@ func New(baseURL string) *Client {
 	}
 }
 
+func (c *Client) Ready(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health/ready", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("iam ready request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("iam ready returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // GetUserBySubject fetches a user context by external subject.
 func (c *Client) GetUserBySubject(ctx context.Context, subject string) (*UserContext, error) {
 	endpoint := c.baseURL + "/internal/iam/users/by-subject/" + url.PathEscape(subject)

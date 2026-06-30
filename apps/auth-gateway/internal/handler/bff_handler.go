@@ -44,6 +44,18 @@ func NewBFFHandler(cfg config.Config, store session.Store, iamClient *iamclient.
 	}
 }
 
+func (h *BFFHandler) Ready(w http.ResponseWriter, r *http.Request) {
+	if h.iamClient != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := h.iamClient.Ready(ctx); err != nil {
+			respondJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "iam": err.Error()})
+			return
+		}
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}
+
 func (h *BFFHandler) doPut(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, _ := http.NewRequest("PUT", url, body)
 	req.Header.Set("Content-Type", contentType)
