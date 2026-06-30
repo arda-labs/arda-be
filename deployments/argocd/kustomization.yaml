@@ -1,0 +1,4 @@
+resources:
+  - project.yaml
+  - apps/arda-backend.yaml
+  - apps/arda-frontend.yaml

@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: arda-backend
+  namespace: argocd
+spec:
+  project: arda
+  source:
+    repoURL: https://github.com/arda-labs/arda-be.git
+    targetRevision: main
+    path: deployments/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arda-app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

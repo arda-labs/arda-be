@@ -54,7 +54,7 @@ rg -l "arda-labs" deployments/k8s | xargs sed -i "s/arda-labs/<github-owner-or-o
 Then apply:
 
 ```bash
-kubectl apply -k deployments/k8s/apps
+kubectl apply -k deployments/k8s
 ```
 
 Keep runtime secrets out of git:
