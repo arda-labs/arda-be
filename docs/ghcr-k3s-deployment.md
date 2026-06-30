@@ -78,3 +78,30 @@ kubectl -n arda-app create secret generic arda-app-secrets \
   --from-literal=GARAGE_ACCESS_KEY='<garage-access-key>' \
   --from-literal=GARAGE_SECRET_KEY='<garage-secret-key>'
 ```
+
+For an existing cluster, patch the missing keys instead of recreating the
+secret:
+
+```bash
+kubectl -n arda-app patch secret arda-app-secrets --type merge -p '{
+  "stringData": {
+    "FINANCE_DATABASE_DSN": "postgres://arda_finance:123456@pg-main-rw.database.svc.cluster.local:5432/finance?sslmode=disable",
+    "MEDIA_DATABASE_DSN": "postgres://arda_media:123456@pg-main-rw.database.svc.cluster.local:5432/media?sslmode=disable",
+    "WORKFLOW_DATABASE_DSN": "postgres://arda_workflow:123456@pg-main-rw.database.svc.cluster.local:5432/workflow?sslmode=disable",
+    "CRM_DATABASE_DSN": "postgres://arda_crm:123456@pg-main-rw.database.svc.cluster.local:5432/crm?sslmode=disable",
+    "NOTIFICATION_DATABASE_DSN": "postgres://arda_notification:123456@pg-main-rw.database.svc.cluster.local:5432/notification?sslmode=disable",
+    "GARAGE_ACCESS_KEY": "<garage-access-key>",
+    "GARAGE_SECRET_KEY": "<garage-secret-key>"
+  }
+}'
+```
+
+The databases and roles must exist before the services start. The services run
+their own schema migrations on startup.
+
+Bootstrap the new app databases with:
+
+```bash
+cd deployments/k8s
+./bootstrap-app-databases.sh
+```

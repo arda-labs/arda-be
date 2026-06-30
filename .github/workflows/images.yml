@@ -15,44 +15,78 @@ env:
   IMAGE_NAMESPACE: ${{ github.repository_owner }}/arda-be
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: files
+        shell: bash
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" || "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -z "${BEFORE}" || "${BEFORE}" =~ ^0+$ ]]; then
+            git diff-tree --no-commit-id --name-only -r "${GITHUB_SHA}" > /tmp/changed-files
+          else
+            git diff --name-only "${BEFORE}" "${GITHUB_SHA}" > /tmp/changed-files
+          fi
+          {
+            echo "changed<<EOF"
+            cat /tmp/changed-files
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - id: plan
+        uses: actions/github-script@v7
+        env:
+          ALL: ${{ steps.files.outputs.all }}
+          CHANGED: ${{ steps.files.outputs.changed }}
+        with:
+          script: |
+            const services = [
+              { service: "auth-gateway", image: "auth-gateway", file: "apps/auth-gateway/Dockerfile", paths: ["apps/auth-gateway/"] },
+              { service: "iam-service", image: "iam-service", file: "apps/iam-service/Dockerfile", paths: ["apps/iam-service/"] },
+              { service: "platform-service", image: "platform-service", file: "apps/platform-service/Dockerfile", paths: ["apps/platform-service/"] },
+              { service: "finance-service", image: "finance-service", file: "apps/finance-service/Dockerfile", paths: ["apps/finance-service/"] },
+              { service: "media-service", image: "media-service", file: "apps/media-service/Dockerfile", paths: ["apps/media-service/"] },
+              { service: "workflow-service", image: "workflow-service", file: "apps/workflow-service/Dockerfile", paths: ["apps/workflow-service/"] },
+              { service: "crm-service", image: "crm-service", file: "apps/crm-service/Dockerfile", paths: ["apps/crm-service/"] },
+              { service: "notification-service", image: "notification-service", file: "apps/notification-service/Dockerfile", paths: ["apps/notification-service/"] },
+            ];
+            const sharedPrefixes = ["libs/go/"];
+            const sharedFiles = ["go.work"];
+            const changed = (process.env.CHANGED || "").split(/\r?\n/).filter(Boolean);
+            const buildAll = process.env.ALL === "true" ||
+              changed.some(path => sharedPrefixes.some(prefix => path.startsWith(prefix)) || sharedFiles.includes(path));
+            const include = buildAll
+              ? services
+              : services.filter(s => changed.some(path =>
+                  s.paths.some(prefix => path.startsWith(prefix)) ||
+                  path === s.file ||
+                  path === `deployments/k8s/apps/${s.service}.yaml`
+                ));
+            const matrix = { include };
+            core.setOutput("matrix", JSON.stringify(matrix));
+            core.setOutput("has_changes", include.length > 0 ? "true" : "false");
+            core.info(`Images to build: ${include.map(s => s.service).join(", ") || "none"}`);
+
   backend:
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.has_changes == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - service: auth-gateway
-            image: auth-gateway
-            context: .
-            file: apps/auth-gateway/Dockerfile
-          - service: iam-service
-            image: iam-service
-            context: .
-            file: apps/iam-service/Dockerfile
-          - service: platform-service
-            image: platform-service
-            context: .
-            file: apps/platform-service/Dockerfile
-          - service: finance-service
-            image: finance-service
-            context: .
-            file: apps/finance-service/Dockerfile
-          - service: media-service
-            image: media-service
-            context: .
-            file: apps/media-service/Dockerfile
-          - service: workflow-service
-            image: workflow-service
-            context: .
-            file: apps/workflow-service/Dockerfile
-          - service: crm-service
-            image: crm-service
-            context: .
-            file: apps/crm-service/Dockerfile
-          - service: notification-service
-            image: notification-service
-            context: .
-            file: apps/notification-service/Dockerfile
+      matrix: ${{ fromJson(needs.changes.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -76,7 +110,7 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.context }}
+          context: .
           file: ${{ matrix.file }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -85,25 +119,42 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
   update-manifests:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
-    needs: backend
+    needs: [changes, backend]
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.ref_name }}
 
       - name: Update image tags
+        env:
+          MATRIX: ${{ needs.changes.outputs.matrix }}
         run: |
           set -euo pipefail
-          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/auth-gateway:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/auth-gateway:${GITHUB_SHA}#" deployments/k8s/apps/auth-gateway.yaml
-          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/iam-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/iam-service:${GITHUB_SHA}#" deployments/k8s/apps/iam-service.yaml
-          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/platform-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/platform-service:${GITHUB_SHA}#" deployments/k8s/apps/platform-service.yaml
-          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/finance-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/finance-service:${GITHUB_SHA}#" deployments/k8s/apps/finance-service.yaml
-          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/media-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/media-service:${GITHUB_SHA}#" deployments/k8s/apps/media-service.yaml
-          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/workflow-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/workflow-service:${GITHUB_SHA}#" deployments/k8s/apps/workflow-service.yaml
-          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/crm-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/crm-service:${GITHUB_SHA}#" deployments/k8s/apps/crm-service.yaml
-          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/notification-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/notification-service:${GITHUB_SHA}#" deployments/k8s/apps/notification-service.yaml
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+
+          registry = os.environ["REGISTRY"]
+          namespace = os.environ["IMAGE_NAMESPACE"]
+          sha = os.environ["GITHUB_SHA"]
+          matrix = json.loads(os.environ["MATRIX"])
+
+          for item in matrix["include"]:
+              service = item["service"]
+              image = item["image"]
+              path = pathlib.Path(f"deployments/k8s/apps/{service}.yaml")
+              text = path.read_text()
+              pattern = rf"image: {re.escape(registry)}/{re.escape(namespace)}/{re.escape(image)}:.*"
+              replacement = f"image: {registry}/{namespace}/{image}:{sha}"
+              text, count = re.subn(pattern, replacement, text)
+              if count != 1:
+                  raise SystemExit(f"expected one image line for {service}, changed {count}")
+              path.write_text(text)
+          PY
 
       - name: Commit manifest image tags
         run: |
@@ -115,5 +166,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add deployments/k8s/apps
-          git commit -m "chore: update backend image tags to ${GITHUB_SHA}"
+          git commit -m "chore: update backend image tags to ${GITHUB_SHA} [skip ci]"
           git push
