@@ -8,6 +8,8 @@ hydra_issuer_url: "https://auth.arda.io.vn"
 hydra_client_id: "arda-shell"
 hydra_redirect_uri: "http://localhost:5000/callback"
 kratos_admin_url: "http://192.168.100.201:30446"
+# Set via env in local/prod secret store when bootstrapping:
+# SUPERADMIN_INITIAL_PASSWORD=admin123
 # redis_url: "redis://default:wuMtEVTgJAUgvsoRI4mSbwYB69h9pSc4@192.168.100.201:30380"
 redis_url: "redis://default:wuMtEVTgJAUgvsoRI4mSbwYB69h9pSc4@192.168.100.201:30381"
 totp_issuer: "arda.io.vn"

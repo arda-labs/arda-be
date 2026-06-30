@@ -24,6 +24,8 @@ type Config struct {
 
 	KratosAdminURL string `yaml:"kratos_admin_url"`
 
+	SuperAdminInitialPassword string `yaml:"superadmin_initial_password"`
+
 	RedisURL     string `yaml:"redis_url"`
 	TOTPIssuer   string `yaml:"totp_issuer"`
 	AuditEnabled bool   `yaml:"audit_enabled"`
@@ -72,6 +74,7 @@ func Load() Config {
 	envStr("HYDRA_CLIENT_SECRET", &cfg.HydraClientSecret)
 	envStr("HYDRA_REDIRECT_URI", &cfg.HydraRedirectURI)
 	envStr("KRATOS_ADMIN_URL", &cfg.KratosAdminURL)
+	envStr("SUPERADMIN_INITIAL_PASSWORD", &cfg.SuperAdminInitialPassword)
 	envStr("REDIS_URL", &cfg.RedisURL)
 	envStr("TOTP_ISSUER", &cfg.TOTPIssuer)
 	envBool("AUDIT_ENABLED", &cfg.AuditEnabled)
@@ -105,6 +108,7 @@ func (c *Config) loadYAML(path string) bool {
 	set("hydra_client_secret", &c.HydraClientSecret)
 	set("hydra_redirect_uri", &c.HydraRedirectURI)
 	set("kratos_admin_url", &c.KratosAdminURL)
+	set("superadmin_initial_password", &c.SuperAdminInitialPassword)
 	set("redis_url", &c.RedisURL)
 	set("totp_issuer", &c.TOTPIssuer)
 	if v, ok := m["audit_enabled"].(bool); ok {

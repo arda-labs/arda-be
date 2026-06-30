@@ -27,6 +27,7 @@ import (
 	"github.com/arda-labs/arda/apps/iam-service/internal/ratelimit"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
+	"github.com/arda-labs/arda/apps/iam-service/internal/system"
 	transport "github.com/arda-labs/arda/apps/iam-service/internal/transport/http"
 )
 
@@ -122,6 +123,10 @@ func main() {
 
 	// ── Handlers ──
 	identitySvc := service.NewIdentityService(userRepo, kratosClient)
+	if err := ensureSuperAdminIdentity(context.Background(), cfg, userRepo, identitySvc); err != nil {
+		logger.Error("provision superadmin identity", "err", err)
+		os.Exit(1)
+	}
 	userSvc := service.NewUserService(userRepo, identitySvc)
 	userHandler := handler.NewUserHandler(userSvc)
 	authHandler := handler.NewAuthHandler(orchestrator, userHandler)
@@ -182,4 +187,20 @@ func providerIDs(registry *provider.Registry) []string {
 		ids[i] = p.ID
 	}
 	return ids
+}
+
+func ensureSuperAdminIdentity(ctx context.Context, cfg config.Config, userRepo *repository.UserRepository, identitySvc *service.IdentityService) error {
+	password := strings.TrimSpace(cfg.SuperAdminInitialPassword)
+	if password == "" {
+		return nil
+	}
+
+	user, err := userRepo.GetUserByUsername(ctx, system.SuperAdminUsername)
+	if err != nil || user == nil {
+		return err
+	}
+	if _, err := identitySvc.ProvisionIdentity(ctx, user, password); err != nil {
+		return err
+	}
+	return identitySvc.UpdatePassword(ctx, user, password)
 }
