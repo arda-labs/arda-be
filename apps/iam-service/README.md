@@ -16,6 +16,28 @@ Arda is Kratos-first for identity and credentials:
 
 Do not add direct `kratos.Client` calls in handlers or unrelated services.
 
+## Superadmin bootstrap
+
+`iam-service` always reconciles the canonical `superadmin@arda.local` IAM user
+and `SUPER_ADMIN` role on startup. To also ensure the Kratos identity can log in,
+set `SUPERADMIN_INITIAL_PASSWORD` on the `iam-service` deployment.
+
+For the current k3s dev cluster:
+
+```bash
+kubectl -n platform create secret generic iam-service-secrets \
+  --from-literal=SUPERADMIN_INITIAL_PASSWORD=admin123 \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n platform set env deploy/iam-service \
+  --from=secret/iam-service-secrets
+
+kubectl -n platform rollout restart deploy/iam-service
+```
+
+Use a real secret value outside dev. Leaving `SUPERADMIN_INITIAL_PASSWORD` unset
+keeps existing superadmin credentials untouched.
+
 ## Admin user management
 
 | Route | Purpose |
