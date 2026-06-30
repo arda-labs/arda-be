@@ -4,7 +4,6 @@
   "response_types": ["code"],
   "scope": "openid email offline_access",
   "redirect_uris": [
-    "http://localhost:5000/callback",
     "https://arda.io.vn/callback"
   ],
   "token_endpoint_auth_method": "none",

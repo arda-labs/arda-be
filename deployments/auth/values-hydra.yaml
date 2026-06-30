@@ -14,9 +14,9 @@ hydra:
     urls:
       self:
         issuer: https://auth.arda.io.vn/
-      login: http://localhost:5000/login
-      consent: http://localhost:5000/consent
-      logout: http://localhost:5000/logout
+      login: https://arda.io.vn/login
+      consent: https://arda.io.vn/consent
+      logout: https://arda.io.vn/logout
 
     secrets:
       system:

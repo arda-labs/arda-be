@@ -52,7 +52,7 @@ spec:
             - name: HYDRA_CLIENT_ID
               value: arda-shell
             - name: HYDRA_REDIRECT_URI
-              value: http://localhost:5000/callback
+              value: https://arda.io.vn/callback
             - name: KRATOS_ADMIN_URL
               value: http://kratos-admin.auth.svc.cluster.local
           readinessProbe:

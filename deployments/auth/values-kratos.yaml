@@ -38,12 +38,14 @@ kratos:
         base_url: http://kratos-admin.auth.svc.cluster.local:4434/
 
     selfservice:
-      default_browser_return_url: http://localhost:5000/
+      default_browser_return_url: https://arda.io.vn/
       allowed_return_urls:
         - http://localhost:5000/
         - http://localhost:5000/login
         - http://localhost:5000/callback
         - https://arda.io.vn/
+        - https://arda.io.vn/login
+        - https://arda.io.vn/callback
         - https://auth.arda.io.vn/
 
       methods:
@@ -52,20 +54,20 @@ kratos:
 
       flows:
         login:
-          ui_url: http://localhost:5000/login
+          ui_url: https://arda.io.vn/login
         registration:
-          ui_url: http://localhost:5000/registration
+          ui_url: https://arda.io.vn/registration
         recovery:
           enabled: true
-          ui_url: http://localhost:5000/recovery
+          ui_url: https://arda.io.vn/recovery
         verification:
           enabled: false
-          ui_url: http://localhost:5000/verification
+          ui_url: https://arda.io.vn/verification
         settings:
-          ui_url: http://localhost:5000/settings
+          ui_url: https://arda.io.vn/settings
         logout:
           after:
-            default_browser_return_url: http://localhost:5000/login
+            default_browser_return_url: https://arda.io.vn/login
 
     log:
       level: debug
