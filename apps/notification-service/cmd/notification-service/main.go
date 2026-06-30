@@ -101,11 +101,10 @@ func main() {
 
 	// Router and HTTP Server
 	srv := &http.Server{
-		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(notificationHandler),
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:        cfg.HTTPAddr,
+		Handler:     transport.NewRouter(notificationHandler),
+		ReadTimeout: 10 * time.Second,
+		IdleTimeout: 60 * time.Second,
 	}
 
 	go func() {

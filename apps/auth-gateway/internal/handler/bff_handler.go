@@ -29,18 +29,20 @@ const (
 )
 
 type BFFHandler struct {
-	cfg        config.Config
-	store      session.Store
-	iamClient  *iamclient.Client
-	policy     *policy.Policy
-	logger     *slog.Logger
-	httpClient *http.Client
+	cfg              config.Config
+	store            session.Store
+	iamClient        *iamclient.Client
+	policy           *policy.Policy
+	logger           *slog.Logger
+	httpClient       *http.Client
+	streamHTTPClient *http.Client
 }
 
 func NewBFFHandler(cfg config.Config, store session.Store, iamClient *iamclient.Client, pol *policy.Policy) *BFFHandler {
 	return &BFFHandler{
 		cfg: cfg, store: store, iamClient: iamClient, policy: pol, logger: slog.Default(),
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient:       &http.Client{Timeout: 30 * time.Second},
+		streamHTTPClient: &http.Client{},
 	}
 }
 
@@ -804,7 +806,14 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			proxyReq.Header.Set("X-Auth-Checked", "true")
 		}
 	}
-	resp, err := h.httpClient.Do(proxyReq)
+	client := h.httpClient
+	if isEventStreamRequest(r) {
+		client = h.streamHTTPClient
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(proxyReq)
 	if err != nil {
 		respondError(w, http.StatusBadGateway, "upstream error")
 		return
@@ -817,6 +826,10 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+func isEventStreamRequest(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/event-stream")
 }
 
 func (h *BFFHandler) upstreamBaseURL(path string) string {

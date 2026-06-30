@@ -71,6 +71,15 @@ func TestProxyRequiresAuthWhenPolicyDoesNotMatch(t *testing.T) {
 	}
 }
 
+func TestIsEventStreamRequest(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/notifications/stream", nil)
+	req.Header.Set("Accept", "text/event-stream")
+
+	if !isEventStreamRequest(req) {
+		t.Fatal("event stream request was not detected")
+	}
+}
+
 func TestIAMLookupIDsOnlyReturnsUniqueUUIDs(t *testing.T) {
 	uuid := "00000000-0000-0000-0000-000000000002"
 	got := iamLookupIDs(&session.UserInfo{UserID: uuid, Subject: "super-admin"})
