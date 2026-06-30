@@ -1,0 +1,4 @@
+resources:
+  - auth-gateway.yaml
+  - iam-service.yaml
+  - platform-service.yaml

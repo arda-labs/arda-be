@@ -9,5 +9,6 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/bin/iam-service /app/iam-service
+COPY config /app/config
 EXPOSE 8080
 ENTRYPOINT ["/app/iam-service"]
