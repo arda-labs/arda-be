@@ -140,6 +140,26 @@ func (c *Client) ResolveOrLinkKratosIdentity(ctx context.Context, identityID, em
 	return c.doUserContext(req)
 }
 
+func (c *Client) ResolveOrLinkIdentity(ctx context.Context, providerID, externalID, email, name string, emailVerified bool) (*UserContext, error) {
+	body, err := json.Marshal(map[string]any{
+		"providerId":    providerID,
+		"externalId":    externalID,
+		"email":         email,
+		"name":          name,
+		"emailVerified": emailVerified,
+	})
+	if err != nil {
+		return nil, err
+	}
+	endpoint := c.baseURL + "/internal/iam/users/resolve-identity"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return c.doUserContext(req)
+}
+
 func (c *Client) doUserContext(req *http.Request) (*UserContext, error) {
 	resp, err := c.client.Do(req)
 	if err != nil {

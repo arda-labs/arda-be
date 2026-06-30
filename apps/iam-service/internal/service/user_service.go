@@ -85,6 +85,47 @@ func (s *UserService) ResolveOrLinkKratosIdentity(ctx context.Context, identityI
 	return s.buildContext(ctx, linkedUser)
 }
 
+func (s *UserService) ResolveOrLinkIdentity(ctx context.Context, providerID, externalID, email, name string, emailVerified bool) (*domain.UserContext, error) {
+	if providerID == "" || externalID == "" {
+		return nil, fmt.Errorf("provider id and external id are required")
+	}
+	mapping, err := s.repo.FindIdentityMapping(ctx, providerID, externalID)
+	if err != nil {
+		return nil, err
+	}
+	if mapping != nil {
+		if !mapping.IsActive {
+			return nil, fmt.Errorf("identity mapping is inactive")
+		}
+		return s.GetUserContextByID(ctx, mapping.InternalUserID)
+	}
+	if email == "" {
+		return nil, fmt.Errorf("user not found")
+	}
+	if !emailVerified {
+		return nil, fmt.Errorf("verified email is required for first-time identity link")
+	}
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if user.DisplayName == "" {
+		user.DisplayName = name
+	}
+	if err := s.repo.CreateIdentityMapping(ctx, &domain.IdentityMapping{
+		ProviderID:     providerID,
+		ExternalID:     externalID,
+		InternalUserID: user.ID,
+		IsActive:       true,
+	}); err != nil {
+		return nil, err
+	}
+	return s.buildContext(ctx, user)
+}
+
 func (s *UserService) UpdateUserAvatar(ctx context.Context, userID, avatarFileID, pictureURL string) (*domain.UserContext, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("user id is required")

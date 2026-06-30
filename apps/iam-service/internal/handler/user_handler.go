@@ -88,6 +88,33 @@ func (h *UserHandler) ResolveOrLinkKratosIdentity(w http.ResponseWriter, r *http
 	respondJSON(w, http.StatusOK, userCtx)
 }
 
+func (h *UserHandler) ResolveOrLinkIdentity(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ProviderID    string `json:"providerId"`
+		ExternalID    string `json:"externalId"`
+		Email         string `json:"email"`
+		Name          string `json:"name"`
+		EmailVerified bool   `json:"emailVerified"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	userCtx, err := h.svc.ResolveOrLinkIdentity(
+		r.Context(),
+		strings.TrimSpace(req.ProviderID),
+		strings.TrimSpace(req.ExternalID),
+		strings.TrimSpace(req.Email),
+		strings.TrimSpace(req.Name),
+		req.EmailVerified,
+	)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, userCtx)
+}
+
 func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {

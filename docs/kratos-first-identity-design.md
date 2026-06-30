@@ -168,6 +168,7 @@ Internal gateway-to-IAM routes:
 - `DELETE /internal/iam/sessions/{id}`
 - `GET /internal/iam/users/by-kratos-identity/{identityId}/context`
 - `POST /internal/iam/users/resolve-kratos-identity`
+- `POST /internal/iam/users/resolve-identity`
 
 ## Service boundary
 

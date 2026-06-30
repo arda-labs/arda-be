@@ -151,5 +151,7 @@ user agent, route/action, result, and correlation/request id.
   `recent_auth_window_seconds`.
 - Done: BFF proxy enforces matched route auth and permissions instead of only
   forwarding best-effort user headers.
+- Done: IAM has a generic internal identity resolver for future SSO providers
+  using `providerId + externalId`, with verified-email required for first link.
 - Next: make gateway cache/session invalidation compare cached auth version
   against token/session auth version when version claims are added.

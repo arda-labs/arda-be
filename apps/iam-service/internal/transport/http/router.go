@@ -137,6 +137,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	mux.HandleFunc("/internal/iam/users/by-id/{id}/context", method("GET", userHandler.GetContextByID))
 	mux.HandleFunc("/internal/iam/users/by-kratos-identity/{identityId}/context", method("GET", userHandler.GetContextByKratosIdentityID))
 	mux.HandleFunc("/internal/iam/users/resolve-kratos-identity", method("POST", userHandler.ResolveOrLinkKratosIdentity))
+	mux.HandleFunc("/internal/iam/users/resolve-identity", method("POST", userHandler.ResolveOrLinkIdentity))
 	mux.HandleFunc("/internal/iam/sessions", method("POST", sessionHandler.InternalCreateSession))
 	mux.HandleFunc("/internal/iam/sessions/{id}", method("DELETE", sessionHandler.InternalRevokeSession))
 
