@@ -17,7 +17,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: platform-service
-          image: ghcr.io/<github-owner>/arda-be/platform-service:main
+          image: ghcr.io/arda-labs/arda-be/platform-service:main
           imagePullPolicy: Always
           ports:
             - name: http

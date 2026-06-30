@@ -3,9 +3,9 @@
 Backend images are built by GitHub Actions and pushed to GHCR:
 
 ```text
-ghcr.io/<github-owner>/arda-be/auth-gateway:<tag>
-ghcr.io/<github-owner>/arda-be/iam-service:<tag>
-ghcr.io/<github-owner>/arda-be/platform-service:<tag>
+ghcr.io/arda-labs/arda-be/auth-gateway:<tag>
+ghcr.io/arda-labs/arda-be/iam-service:<tag>
+ghcr.io/arda-labs/arda-be/platform-service:<tag>
 ```
 
 Tags:
@@ -45,10 +45,10 @@ kubectl -n arda-web create secret docker-registry ghcr-pull \
 
 ## Deploy Backend
 
-Replace `<github-owner>` in manifests once:
+Replace `arda-labs` in manifests once:
 
 ```bash
-rg -l "<github-owner>" deployments/k8s | xargs sed -i "s/<github-owner>/<github-owner-or-org>/g"
+rg -l "arda-labs" deployments/k8s | xargs sed -i "s/arda-labs/<github-owner-or-org>/g"
 ```
 
 Then apply:
