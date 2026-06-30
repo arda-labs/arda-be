@@ -21,6 +21,9 @@ func EnsureSuperAdmin(ctx context.Context, db *sql.DB, opts SuperAdminOptions) e
 	if err := ensureSuperAdminUser(ctx, db, opts); err != nil {
 		return err
 	}
+	if err := ensureDevAdminSuperAdmin(ctx, db); err != nil {
+		return err
+	}
 	if err := ensureCasbinSuperAdminPolicy(ctx, db); err != nil {
 		return err
 	}
@@ -115,6 +118,48 @@ func ensureSuperAdminUser(ctx context.Context, db *sql.DB, opts SuperAdminOption
 	`, system.SuperAdminUsername)
 	if err != nil {
 		slog.Warn("assign superadmin root org skipped", "err", err)
+	}
+
+	return nil
+}
+
+func ensureDevAdminSuperAdmin(ctx context.Context, db *sql.DB) error {
+	result, err := db.ExecContext(ctx, `
+		INSERT INTO iam_user_roles (user_id, role_id)
+		SELECT u.id, r.id
+		FROM iam_users u
+		JOIN iam_roles r ON r.code = $1
+		WHERE u.username = 'admin' OR u.email = 'admin@arda.local'
+		ON CONFLICT DO NOTHING
+	`, system.SuperAdminRoleCode)
+	if err != nil {
+		return fmt.Errorf("assign dev admin superadmin role: %w", err)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows > 0 {
+		_, err = db.ExecContext(ctx, `
+			UPDATE iam_users
+			SET status = 'ACTIVE',
+			    auth_version = auth_version + 1,
+			    updated_at = now()
+			WHERE username = 'admin' OR email = 'admin@arda.local'
+		`)
+		if err != nil {
+			return fmt.Errorf("bump dev admin auth version: %w", err)
+		}
+	}
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO iam_user_organizations (user_id, organization_id)
+		SELECT u.id, o.id
+		FROM iam_users u
+		JOIN iam_organizations o ON o.code = 'root'
+		WHERE u.username = 'admin' OR u.email = 'admin@arda.local'
+		ON CONFLICT DO NOTHING
+	`)
+	if err != nil {
+		slog.Warn("assign dev admin root org skipped", "err", err)
 	}
 
 	return nil
