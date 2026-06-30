@@ -29,6 +29,7 @@ hydra_admin_url: "http://192.168.100.201:30445"
 hydra_public_url: "https://auth.arda.io.vn"
 oauth_client_id: "arda-shell"
 oauth_redirect_uri: "http://localhost:5000/callback"
+oauth_redirect_uris: "https://arda.io.vn/callback,http://localhost:5000/callback"
 
 # redis_url: "redis://default:wuMtEVTgJAUgvsoRI4mSbwYB69h9pSc4@192.168.100.201:30380"
 redis_url: "redis://default:wuMtEVTgJAUgvsoRI4mSbwYB69h9pSc4@192.168.100.201:30381"

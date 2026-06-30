@@ -44,11 +44,12 @@ type Config struct {
 	CookieSameSite      string `yaml:"cookie_same_site"`
 
 	// Kratos + Hydra
-	KratosPublicURL  string `yaml:"kratos_public_url"`
-	HydraAdminURL    string `yaml:"hydra_admin_url"`
-	HydraPublicURL   string `yaml:"hydra_public_url"`
-	OAuthClientID    string `yaml:"oauth_client_id"`
-	OAuthRedirectURI string `yaml:"oauth_redirect_uri"`
+	KratosPublicURL   string `yaml:"kratos_public_url"`
+	HydraAdminURL     string `yaml:"hydra_admin_url"`
+	HydraPublicURL    string `yaml:"hydra_public_url"`
+	OAuthClientID     string `yaml:"oauth_client_id"`
+	OAuthRedirectURI  string `yaml:"oauth_redirect_uri"`
+	OAuthRedirectURIs string `yaml:"oauth_redirect_uris"`
 }
 
 func (c Config) ProxyURL() string {
@@ -86,6 +87,7 @@ func Load() Config {
 		HydraPublicURL:     "https://auth.arda.io.vn",
 		OAuthClientID:      "arda-shell",
 		OAuthRedirectURI:   "http://localhost:5000/callback",
+		OAuthRedirectURIs:  "https://arda.io.vn/callback,http://localhost:5000/callback",
 	}
 
 	// Try loading YAML
@@ -134,6 +136,7 @@ func Load() Config {
 	envStr("HYDRA_PUBLIC_URL", &cfg.HydraPublicURL)
 	envStr("OAUTH_CLIENT_ID", &cfg.OAuthClientID)
 	envStr("OAUTH_REDIRECT_URI", &cfg.OAuthRedirectURI)
+	envStr("OAUTH_REDIRECT_URIS", &cfg.OAuthRedirectURIs)
 
 	return cfg
 }
@@ -195,6 +198,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("hydra_public_url", &c.HydraPublicURL)
 	setStr("oauth_client_id", &c.OAuthClientID)
 	setStr("oauth_redirect_uri", &c.OAuthRedirectURI)
+	setStr("oauth_redirect_uris", &c.OAuthRedirectURIs)
 	return true
 }
 

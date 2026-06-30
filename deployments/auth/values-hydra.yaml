@@ -14,8 +14,8 @@ hydra:
     urls:
       self:
         issuer: https://auth.arda.io.vn/
-      login: https://arda.io.vn/login
-      consent: https://arda.io.vn/consent
+      login: https://arda.io.vn/api/auth/login
+      consent: https://arda.io.vn/api/auth/consent
       logout: https://arda.io.vn/logout
 
     secrets:

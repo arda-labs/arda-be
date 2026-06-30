@@ -91,7 +91,8 @@ admin@arda.local      / admin123
 ```text
 App
 -> Hydra /oauth2/auth
--> /login?login_challenge=...
+-> auth-gateway /api/auth/login
+-> FE /login?login_challenge=...
 -> Login app uses Kratos login
 -> auth-gateway accepts Hydra login/consent
 -> /callback?code=...

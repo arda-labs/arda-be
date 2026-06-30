@@ -24,6 +24,8 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler)
 	// ── BFF endpoints for Kratos + Hydra flow ──
 
 	// Hydra bridge
+	mux.HandleFunc("/api/auth/login", method("GET", bffHandler.Login))
+	mux.HandleFunc("/api/auth/consent", method("GET", bffHandler.Consent))
 	mux.HandleFunc("/api/auth/kratos/accept-login", method("POST", bffHandler.AcceptKratosLogin))
 	mux.HandleFunc("/api/auth/accept-consent", method("POST", bffHandler.AcceptConsent))
 

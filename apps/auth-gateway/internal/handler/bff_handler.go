@@ -87,6 +87,13 @@ type consentAcceptRequest struct {
 	Remember         bool   `json:"remember"`
 }
 
+type hydraAuthRequest struct {
+	RequestURL string `json:"request_url"`
+	Client     struct {
+		ClientID string `json:"client_id"`
+	} `json:"client"`
+}
+
 type hydraTokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -132,6 +139,66 @@ func (h *BFFHandler) AcceptKratosLogin(w http.ResponseWriter, r *http.Request) {
 		req.RememberFor = int((24 * time.Hour).Seconds())
 	}
 	h.acceptHydraLogin(w, r, req)
+}
+
+func (h *BFFHandler) Login(w http.ResponseWriter, r *http.Request) {
+	h.redirectToAuthUI(w, r, "login", "login_challenge")
+}
+
+func (h *BFFHandler) Consent(w http.ResponseWriter, r *http.Request) {
+	h.redirectToAuthUI(w, r, "consent", "consent_challenge")
+}
+
+func (h *BFFHandler) redirectToAuthUI(w http.ResponseWriter, r *http.Request, flow, challengeParam string) {
+	challenge := r.URL.Query().Get(challengeParam)
+	if challenge == "" {
+		respondError(w, http.StatusBadRequest, "missing "+challengeParam)
+		return
+	}
+	req, err := h.getHydraAuthRequest(r.Context(), flow, challengeParam, challenge)
+	if err != nil {
+		h.logger.Warn("get hydra auth request failed", "flow", flow, "err", err)
+		respondError(w, http.StatusBadGateway, "auth request unavailable")
+		return
+	}
+	redirectURI, err := redirectURIFromRequestURL(req.RequestURL)
+	if err != nil || !h.isAllowedOAuthRedirectURI(redirectURI) {
+		h.logger.Warn("invalid auth request redirect_uri", "flow", flow, "redirect_uri", redirectURI, "err", err)
+		respondError(w, http.StatusBadRequest, "redirect_uri is not allowed")
+		return
+	}
+	origin, err := originFromURL(redirectURI)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid redirect_uri")
+		return
+	}
+	target, _ := url.Parse(origin + "/" + flow)
+	q := target.Query()
+	q.Set(challengeParam, challenge)
+	target.RawQuery = q.Encode()
+	http.Redirect(w, r, target.String(), http.StatusFound)
+}
+
+func (h *BFFHandler) getHydraAuthRequest(ctx context.Context, flow, challengeParam, challenge string) (*hydraAuthRequest, error) {
+	getURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/%s?%s=%s", h.cfg.HydraAdminURL, flow, challengeParam, url.QueryEscape(challenge))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, getURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("hydra returned %d: %s", resp.StatusCode, string(body))
+	}
+	var data hydraAuthRequest
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+	return &data, nil
 }
 
 func (h *BFFHandler) acceptHydraLogin(w http.ResponseWriter, r *http.Request, req loginAcceptRequest) {
@@ -203,6 +270,7 @@ type tokenExchangeRequest struct {
 	Code         string `json:"code"`
 	CodeVerifier string `json:"code_verifier"`
 	State        string `json:"state"`
+	RedirectURI  string `json:"redirect_uri"`
 }
 
 func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
@@ -212,13 +280,21 @@ func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	h.logger.Debug("exchanging authorization code", "code", req.Code, "redirect_uri", h.cfg.OAuthRedirectURI)
 	if req.Code == "dev" {
 		h.devExchangeCode(w, r)
 		return
 	}
+	redirectURI := req.RedirectURI
+	if redirectURI == "" {
+		redirectURI = h.cfg.OAuthRedirectURI
+	}
+	if !h.isAllowedOAuthRedirectURI(redirectURI) {
+		respondError(w, http.StatusBadRequest, "redirect_uri is not allowed")
+		return
+	}
+	h.logger.Debug("exchanging authorization code", "code", req.Code, "redirect_uri", redirectURI)
 	tokenURL := fmt.Sprintf("%s/oauth2/token", strings.TrimSuffix(h.cfg.HydraPublicURL, "/"))
-	data := url.Values{"grant_type": {"authorization_code"}, "code": {req.Code}, "redirect_uri": {h.cfg.OAuthRedirectURI}, "client_id": {h.cfg.OAuthClientID}, "code_verifier": {req.CodeVerifier}}
+	data := url.Values{"grant_type": {"authorization_code"}, "code": {req.Code}, "redirect_uri": {redirectURI}, "client_id": {h.cfg.OAuthClientID}, "code_verifier": {req.CodeVerifier}}
 	tokenReq, _ := http.NewRequest("POST", tokenURL, strings.NewReader(data.Encode()))
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := h.httpClient.Do(tokenReq)
@@ -231,7 +307,7 @@ func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		h.logger.Error("token exchange failed from hydra", "status", resp.StatusCode, "hydra_url", tokenURL,
-			"redirect_uri", h.cfg.OAuthRedirectURI, "client_id", h.cfg.OAuthClientID,
+			"redirect_uri", redirectURI, "client_id", h.cfg.OAuthClientID,
 			"hydra_response", string(bodyBytes))
 		respondError(w, resp.StatusCode, "token exchange failed: "+string(bodyBytes))
 		return
@@ -1053,6 +1129,44 @@ func parseSameSite(s string) http.SameSite {
 	default:
 		return http.SameSiteLaxMode
 	}
+}
+
+func (h *BFFHandler) isAllowedOAuthRedirectURI(redirectURI string) bool {
+	if redirectURI == "" {
+		return false
+	}
+	for _, allowed := range strings.Split(h.cfg.OAuthRedirectURIs, ",") {
+		if strings.TrimSpace(allowed) == redirectURI {
+			return true
+		}
+	}
+	return h.cfg.OAuthRedirectURI == redirectURI
+}
+
+func redirectURIFromRequestURL(requestURL string) (string, error) {
+	u, err := url.Parse(requestURL)
+	if err != nil {
+		return "", err
+	}
+	redirectURI := u.Query().Get("redirect_uri")
+	if redirectURI == "" {
+		return "", fmt.Errorf("missing redirect_uri")
+	}
+	return redirectURI, nil
+}
+
+func originFromURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported scheme")
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("missing host")
+	}
+	return u.Scheme + "://" + u.Host, nil
 }
 
 func respondJSON(w http.ResponseWriter, status int, data any) {

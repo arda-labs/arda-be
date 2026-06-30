@@ -87,6 +87,7 @@ create_hydra_client() {
     --response-type code \
     --scope openid,email,offline_access \
     --redirect-uri https://arda.io.vn/callback \
+    --redirect-uri http://localhost:5000/callback \
     --token-endpoint-auth-method none
 }
 
