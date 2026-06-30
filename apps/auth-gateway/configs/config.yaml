@@ -1,11 +1,12 @@
 app_name: auth-gateway
 http_addr: 0.0.0.0:8082
 log_level: debug
-token_strategy: introspection
+token_strategy: jwks
 
 jwt_secret: ""
 jwt_issuer: "https://auth.arda.io.vn"
 jwt_audience: arda-api
+jwks_url: "https://auth.arda.io.vn/.well-known/jwks.json"
 
 introspection_url: "http://192.168.100.201:30445/oauth2/introspect"
 introspection_client_id: auth-gateway

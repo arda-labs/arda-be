@@ -82,11 +82,11 @@ func (h *AuthHandler) Check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.injectHeaders(w, ctx)
+	h.injectHeaders(w, ctx, match.Route.Risk)
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *AuthHandler) injectHeaders(w http.ResponseWriter, ctx *iamclient.UserContext) {
+func (h *AuthHandler) injectHeaders(w http.ResponseWriter, ctx *iamclient.UserContext, risk string) {
 	w.Header().Set("X-User-Id", ctx.UserID)
 	w.Header().Set("X-User-Subject", ctx.Subject)
 	w.Header().Set("X-Username", ctx.Username)
@@ -95,6 +95,7 @@ func (h *AuthHandler) injectHeaders(w http.ResponseWriter, ctx *iamclient.UserCo
 	w.Header().Set("X-Tenant-Id", ctx.TenantID)
 	w.Header().Set("X-Roles", strings.Join(ctx.Roles, ","))
 	w.Header().Set("X-Permissions", strings.Join(ctx.Permissions, ","))
+	w.Header().Set("X-Auth-Risk", risk)
 	w.Header().Set("X-Auth-Checked", "true")
 }
 

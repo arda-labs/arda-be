@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/config"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/handler"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/iamclient"
@@ -18,12 +17,13 @@ import (
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/token"
 	transport "github.com/arda-labs/arda/apps/auth-gateway/internal/transport/http"
 	ardaredis "github.com/arda-labs/arda/libs/go/arda-redis"
+	"github.com/joho/godotenv"
 )
 
 func main() {
 	// Load .env file (optional — không lỗi nếu không có)
-	_ = godotenv.Load()                      // thư mục hiện tại
-	_ = godotenv.Load("../.env")             // fallback: thư mục workspace
+	_ = godotenv.Load()          // thư mục hiện tại
+	_ = godotenv.Load("../.env") // fallback: thư mục workspace
 	_ = godotenv.Load("../../.env")
 
 	cfg := config.Load()
@@ -41,7 +41,7 @@ func main() {
 	logger.Info("policy loaded", "routes", len(pol.Routes))
 
 	// ── Token verifier (for ForwardAuth) ──
-	verifier, err := token.New(cfg.TokenStrategy, cfg.JWTIssuer, cfg.JWTAudience, cfg.JWTSecret, cfg.IntrospectionURL, cfg.IntrospectionClientID, cfg.IntrospectionClientSecret)
+	verifier, err := token.New(cfg.TokenStrategy, cfg.JWTIssuer, cfg.JWTAudience, cfg.JWTSecret, cfg.JWKSURL, cfg.IntrospectionURL, cfg.IntrospectionClientID, cfg.IntrospectionClientSecret)
 	if err != nil {
 		logger.Error("create token verifier", "err", err)
 		os.Exit(1)

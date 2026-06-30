@@ -6,7 +6,7 @@
 
 - Traefik forward-auth endpoint: `GET /auth/check`
 - Kratos public flow proxy: `/api/kratos/*`
-- Hydra bridge: accept login/consent and token exchange
+- Hydra bridge: Kratos-authenticated login accept, consent accept, and token exchange
 - Browser BFF session creation, validation, logout, and header forwarding
 - IAM context resolution before protected requests reach downstream services
 
@@ -36,7 +36,6 @@ Important behavior:
 | --- | --- |
 | `GET /auth/check` | ForwardAuth check for Traefik |
 | `POST /api/auth/kratos/accept-login` | Complete Kratos-authenticated Hydra login challenge |
-| `POST /api/auth/accept-login` | Legacy/direct Hydra accept-login wrapper |
 | `POST /api/auth/accept-consent` | Accept Hydra consent |
 | `POST /api/auth/callback` | Exchange authorization code with Hydra |
 | `GET /api/kratos/whoami` | Proxy Kratos whoami |

@@ -18,6 +18,7 @@ type Config struct {
 	JWTSecret                 string `yaml:"jwt_secret"`
 	JWTIssuer                 string `yaml:"jwt_issuer"`
 	JWTAudience               string `yaml:"jwt_audience"`
+	JWKSURL                   string `yaml:"jwks_url"`
 	IntrospectionURL          string `yaml:"introspection_url"`
 	IntrospectionClientID     string `yaml:"introspection_client_id"`
 	IntrospectionClientSecret string `yaml:"introspection_client_secret"`
@@ -52,23 +53,23 @@ func (c Config) ProxyURL() string {
 // Load reads config from YAML file (optional) + env overrides.
 func Load() Config {
 	cfg := Config{
-		AppName:       "auth-gateway",
-		HTTPAddr:      "0.0.0.0:8082",
-		LogLevel:      "info",
-		TokenStrategy: "jwt",
-		JWTSecret:     "super-secret-dev-key-change-in-production",
-		JWTIssuer:     "https://auth.arda.io.vn",
-		JWTAudience:   "arda-api",
+		AppName:            "auth-gateway",
+		HTTPAddr:           "0.0.0.0:8082",
+		LogLevel:           "info",
+		TokenStrategy:      "jwt",
+		JWTSecret:          "super-secret-dev-key-change-in-production",
+		JWTIssuer:          "https://auth.arda.io.vn",
+		JWTAudience:        "arda-api",
 		IAMServiceURL:      "http://localhost:8081",
 		PlatformServiceURL: "http://localhost:8091",
 		PolicyFile:         "configs/policy.yaml",
-		SessionCookieName:   "arda_sid",
-		SessionTTL:     86400,
-		CookieSecure:   true,
-		CookieSameSite: "Lax",
-		HydraPublicURL: "https://auth.arda.io.vn",
-		OAuthClientID:  "arda-shell",
-		OAuthRedirectURI: "http://localhost:5000/callback",
+		SessionCookieName:  "arda_sid",
+		SessionTTL:         86400,
+		CookieSecure:       true,
+		CookieSameSite:     "Lax",
+		HydraPublicURL:     "https://auth.arda.io.vn",
+		OAuthClientID:      "arda-shell",
+		OAuthRedirectURI:   "http://localhost:5000/callback",
 	}
 
 	// Try loading YAML
@@ -90,6 +91,7 @@ func Load() Config {
 	envStr("JWT_SECRET", &cfg.JWTSecret)
 	envStr("JWT_ISSUER", &cfg.JWTIssuer)
 	envStr("JWT_AUDIENCE", &cfg.JWTAudience)
+	envStr("JWKS_URL", &cfg.JWKSURL)
 	envStr("INTROSPECTION_URL", &cfg.IntrospectionURL)
 	envStr("INTROSPECTION_CLIENT_ID", &cfg.IntrospectionClientID)
 	envStr("INTROSPECTION_CLIENT_SECRET", &cfg.IntrospectionClientSecret)
@@ -134,6 +136,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("jwt_secret", &c.JWTSecret)
 	setStr("jwt_issuer", &c.JWTIssuer)
 	setStr("jwt_audience", &c.JWTAudience)
+	setStr("jwks_url", &c.JWKSURL)
 	setStr("introspection_url", &c.IntrospectionURL)
 	setStr("introspection_client_id", &c.IntrospectionClientID)
 	setStr("introspection_client_secret", &c.IntrospectionClientSecret)
@@ -144,8 +147,12 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("redis_url", &c.RedisURL)
 	setStr("session_cookie_name", &c.SessionCookieName)
 	setStr("session_cookie_domain", &c.SessionCookieDomain)
-	if v, ok := m["session_ttl_seconds"].(int); ok { c.SessionTTL = v }
-	if v, ok := m["cookie_secure"].(bool); ok { c.CookieSecure = v }
+	if v, ok := m["session_ttl_seconds"].(int); ok {
+		c.SessionTTL = v
+	}
+	if v, ok := m["cookie_secure"].(bool); ok {
+		c.CookieSecure = v
+	}
 	setStr("cookie_same_site", &c.CookieSameSite)
 	setStr("kratos_public_url", &c.KratosPublicURL)
 	setStr("hydra_admin_url", &c.HydraAdminURL)

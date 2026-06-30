@@ -2,16 +2,19 @@ routes:
   - id: iam-public
     path: /api/iam/public/**
     auth: false
+    risk: public
 
   - id: iam-me
     path: /api/iam/me
     methods: [GET]
     auth: true
+    risk: low
 
   - id: iam-users-read
     path: /api/iam/users/**
     methods: [GET]
     auth: true
+    risk: medium
     permissions:
       - iam.user.read
 
@@ -19,6 +22,7 @@ routes:
     path: /api/iam/users/**
     methods: [POST, PUT, PATCH, DELETE]
     auth: true
+    risk: high
     permissions:
       - iam.user.manage
 
@@ -26,6 +30,7 @@ routes:
     path: /api/mdm/**
     methods: [GET]
     auth: true
+    risk: low
     permissions:
       - mdm.read
 
@@ -33,6 +38,7 @@ routes:
     path: /api/platform/**
     methods: [GET]
     auth: true
+    risk: low
     permissions:
       - platform.read
 
@@ -40,6 +46,7 @@ routes:
     path: /api/platform/**
     methods: [POST, PUT, PATCH, DELETE]
     auth: true
+    risk: high
     permissions:
       - platform.manage
 
@@ -47,5 +54,6 @@ routes:
     path: /api/crm/customers/**
     methods: [GET]
     auth: true
+    risk: low
     permissions:
       - crm.customer.read

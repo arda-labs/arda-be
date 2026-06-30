@@ -14,6 +14,7 @@ type Route struct {
 	Path        string   `yaml:"path"`
 	Methods     []string `yaml:"methods,omitempty"`
 	Auth        bool     `yaml:"auth"`
+	Risk        string   `yaml:"risk,omitempty"`
 	Permissions []string `yaml:"permissions,omitempty"`
 }
 
@@ -35,6 +36,12 @@ func Load(path string) (*Policy, error) {
 	}
 
 	for i := range p.Routes {
+		if p.Routes[i].Risk == "" {
+			p.Routes[i].Risk = defaultRisk(p.Routes[i].Auth)
+		}
+		if !validRisk(p.Routes[i].Risk) {
+			return nil, fmt.Errorf("route %q has invalid risk %q", p.Routes[i].ID, p.Routes[i].Risk)
+		}
 		for j := range p.Routes[i].Methods {
 			p.Routes[i].Methods[j] = strings.ToUpper(p.Routes[i].Methods[j])
 		}
@@ -113,4 +120,20 @@ func contains(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func defaultRisk(auth bool) string {
+	if !auth {
+		return "public"
+	}
+	return "medium"
+}
+
+func validRisk(risk string) bool {
+	switch risk {
+	case "public", "low", "medium", "high":
+		return true
+	default:
+		return false
+	}
 }

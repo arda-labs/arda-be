@@ -78,36 +78,6 @@ type hydraTokenResponse struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
-func (h *BFFHandler) AcceptLogin(w http.ResponseWriter, r *http.Request) {
-	var req loginAcceptRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	hydraURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/login/accept?login_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(req.LoginChallenge))
-	b, _ := json.Marshal(map[string]any{"subject": req.Subject, "remember": req.Remember, "remember_for": req.RememberFor})
-	resp, err := h.doPut(hydraURL, "application/json", bytes.NewReader(b))
-	if err != nil {
-		respondError(w, http.StatusBadGateway, "accept login failed")
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		respondError(w, resp.StatusCode, string(body))
-		return
-	}
-	var result struct {
-		RedirectTo string `json:"redirect_to"`
-	}
-	json.NewDecoder(resp.Body).Decode(&result)
-	if result.RedirectTo == "" {
-		respondError(w, http.StatusBadGateway, "accept login returned empty redirect_to")
-		return
-	}
-	respondJSON(w, http.StatusOK, map[string]string{"redirect_url": result.RedirectTo})
-}
-
 func (h *BFFHandler) AcceptKratosLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginAcceptRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -744,6 +714,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			proxyReq.Header.Add(k, v)
 		}
 	}
+	stripAuthContextHeaders(proxyReq.Header)
 	sessionID := h.readSessionCookie(r)
 	if sessionID != "" {
 		sess, _ := h.store.Get(r.Context(), sessionID)
@@ -779,6 +750,24 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+func stripAuthContextHeaders(header http.Header) {
+	for _, key := range []string{
+		"X-User-Id",
+		"X-User-Subject",
+		"X-Username",
+		"X-User-Email",
+		"X-Nickname",
+		"X-Tenant-Id",
+		"X-Roles",
+		"X-Permissions",
+		"X-Session-Id",
+		"X-Auth-Risk",
+		"X-Auth-Checked",
+	} {
+		header.Del(key)
+	}
 }
 
 func (h *BFFHandler) readSessionCookie(r *http.Request) string {
