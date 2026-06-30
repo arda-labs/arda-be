@@ -145,5 +145,7 @@ user agent, route/action, result, and correlation/request id.
   short configurable TTL. High-risk routes always resolve fresh IAM context.
 - Done: IAM exposes `authVersion` / `X-Auth-Version` and bumps it for user,
   password, role, and permission changes.
+- Done: BFF sessions store primary auth time and forward `X-Auth-Time` for
+  downstream recent-auth checks.
 - Next: make gateway cache/session invalidation compare cached auth version
   against token/session auth version when version claims are added.

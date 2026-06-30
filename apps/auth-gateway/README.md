@@ -62,6 +62,7 @@ Protected proxied requests receive:
 - `X-Roles`
 - `X-Permissions`
 - `X-Auth-Version`
+- `X-Auth-Time`
 - `X-Auth-Checked: true`
 
 See `../../docs/auth-user-context-contract.md` for the stable contract.

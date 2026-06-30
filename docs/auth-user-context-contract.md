@@ -27,6 +27,7 @@ Services must not guess whether `X-User-Id` is an OAuth subject, username, email
 | `X-Roles` | optional | Comma-separated role codes. |
 | `X-Permissions` | optional | Comma-separated permission codes. |
 | `X-Auth-Version` | yes for user requests | IAM security stamp. It increases when user security, roles, or effective permissions change. |
+| `X-Auth-Time` | BFF session requests | Unix timestamp for the last primary authentication event, used for recent-auth checks. |
 | `X-Auth-Checked` | yes for protected routes | Set to `true` by auth-gateway after auth has been evaluated. |
 
 For future gRPC calls, these headers become lowercase metadata keys:
@@ -40,6 +41,7 @@ x-tenant-id
 x-roles
 x-permissions
 x-auth-version
+x-auth-time
 x-auth-checked
 ```
 

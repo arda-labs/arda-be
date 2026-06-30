@@ -18,6 +18,7 @@ type Session struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 	User         *UserInfo `json:"user"`
 	CreatedAt    time.Time `json:"created_at"`
+	AuthTime     time.Time `json:"auth_time"`
 	IAMSessionID string    `json:"iam_session_id,omitempty"`
 
 	// Device info (tracked on login)

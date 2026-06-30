@@ -232,7 +232,8 @@ func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 func (h *BFFHandler) devExchangeCode(w http.ResponseWriter, r *http.Request) {
 	userInfo, _ := h.resolveSessionUser(r.Context(), &session.UserInfo{UserID: "dev-user", Subject: "dev-user", Username: "admin", Email: "admin@arda.local"})
 	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
-	sess := &session.Session{AccessToken: "dev-token", RefreshToken: "dev-token", ExpiresAt: time.Now().Add(ttl), User: userInfo, IPAddress: extractIP(r)}
+	now := time.Now()
+	sess := &session.Session{AccessToken: "dev-token", RefreshToken: "dev-token", ExpiresAt: now.Add(ttl), User: userInfo, IPAddress: extractIP(r), AuthTime: now}
 	deviceToken := h.readDeviceCookie(r)
 	if deviceToken == "" {
 		deviceToken = generateDeviceToken()
@@ -296,7 +297,8 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 	}
 	h.logger.Debug("user context resolved successfully", "user_id", userInfo.UserID, "username", userInfo.Username)
 	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
-	sess := &session.Session{AccessToken: tokenData.AccessToken, RefreshToken: tokenData.RefreshToken, ExpiresAt: time.Now().Add(ttl), User: userInfo, IPAddress: extractIP(r)}
+	now := time.Now()
+	sess := &session.Session{AccessToken: tokenData.AccessToken, RefreshToken: tokenData.RefreshToken, ExpiresAt: now.Add(ttl), User: userInfo, IPAddress: extractIP(r), AuthTime: now}
 	deviceToken := h.readDeviceCookie(r)
 	if deviceToken == "" {
 		deviceToken = generateDeviceToken()
@@ -732,6 +734,9 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 				proxyReq.Header.Set("X-Roles", strings.Join(sess.User.Roles, ","))
 				proxyReq.Header.Set("X-Permissions", strings.Join(sess.User.Permissions, ","))
 				proxyReq.Header.Set("X-Auth-Version", fmt.Sprintf("%d", sess.User.AuthVersion))
+				if !sess.AuthTime.IsZero() {
+					proxyReq.Header.Set("X-Auth-Time", fmt.Sprintf("%d", sess.AuthTime.Unix()))
+				}
 				if sess.IAMSessionID != "" {
 					proxyReq.Header.Set("X-Session-Id", sess.IAMSessionID)
 				}
@@ -766,6 +771,7 @@ func stripAuthContextHeaders(header http.Header) {
 		"X-Permissions",
 		"X-Session-Id",
 		"X-Auth-Version",
+		"X-Auth-Time",
 		"X-Auth-Risk",
 		"X-Auth-Checked",
 	} {
