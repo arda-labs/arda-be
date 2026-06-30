@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -50,7 +50,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}
           tags: |
-            type=sha,prefix=
+            type=sha,format=long,prefix=
             type=ref,event=tag
             type=raw,value=main,enable={{is_default_branch}}
 
@@ -63,3 +63,32 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  update-manifests:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Update image tags
+        run: |
+          set -euo pipefail
+          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/auth-gateway:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/auth-gateway:${GITHUB_SHA}#" deployments/k8s/apps/auth-gateway.yaml
+          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/iam-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/iam-service:${GITHUB_SHA}#" deployments/k8s/apps/iam-service.yaml
+          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/platform-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/platform-service:${GITHUB_SHA}#" deployments/k8s/apps/platform-service.yaml
+
+      - name: Commit manifest image tags
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- deployments/k8s/apps; then
+            echo "No manifest image tag changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deployments/k8s/apps
+          git commit -m "chore: update backend image tags to ${GITHUB_SHA}"
+          git push
