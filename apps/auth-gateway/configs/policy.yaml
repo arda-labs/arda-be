@@ -10,6 +10,17 @@ routes:
     auth: true
     risk: low
 
+  - id: iam-me-subtree
+    path: /api/iam/me/**
+    auth: true
+    risk: low
+
+  - id: iam-session-config
+    path: /api/iam/session/config
+    methods: [GET]
+    auth: true
+    risk: low
+
   - id: iam-users-read
     path: /api/iam/users/**
     methods: [GET]

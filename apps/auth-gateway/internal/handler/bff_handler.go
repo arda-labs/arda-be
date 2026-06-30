@@ -773,7 +773,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		}
 		userInfo, ok := h.resolveSessionUser(r.Context(), sess.User)
 		if !ok || userInfo.UserID == "" {
-			if match != nil && match.RequireAuth {
+			if requireAuth {
 				h.clearSessionCookie(w)
 				respondError(w, http.StatusUnauthorized, "user context unavailable")
 				return
