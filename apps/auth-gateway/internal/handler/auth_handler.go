@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/iamclient"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/policy"
@@ -18,15 +19,17 @@ type AuthHandler struct {
 	iam      *iamclient.Client
 	policy   *policy.Policy
 	logger   *slog.Logger
+	cache    *userContextCache
 }
 
 // NewAuthHandler creates the auth check handler.
-func NewAuthHandler(verifier token.Verifier, iam *iamclient.Client, pol *policy.Policy, logger *slog.Logger) *AuthHandler {
+func NewAuthHandler(verifier token.Verifier, iam *iamclient.Client, pol *policy.Policy, logger *slog.Logger, cacheTTL time.Duration) *AuthHandler {
 	return &AuthHandler{
 		verifier: verifier,
 		iam:      iam,
 		policy:   pol,
 		logger:   logger,
+		cache:    newUserContextCache(cacheTTL),
 	}
 }
 
@@ -69,7 +72,7 @@ func (h *AuthHandler) Check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, err := h.resolveUserContext(r, claims.Subject)
+	ctx, err := h.resolveUserContext(r, claims.Subject, match.Route.Risk)
 	if err != nil {
 		h.logger.Warn("unauthorized", "path", forwardedURI, "subject", claims.Subject, "reason", err.Error())
 		h.respondDenied(w, "user context unavailable")
@@ -99,14 +102,26 @@ func (h *AuthHandler) injectHeaders(w http.ResponseWriter, ctx *iamclient.UserCo
 	w.Header().Set("X-Auth-Checked", "true")
 }
 
-func (h *AuthHandler) resolveUserContext(r *http.Request, subject string) (*iamclient.UserContext, error) {
+func (h *AuthHandler) resolveUserContext(r *http.Request, subject, risk string) (*iamclient.UserContext, error) {
+	if risk != "high" {
+		if ctx, ok := h.cache.get(subject); ok {
+			return ctx, nil
+		}
+	}
+
 	ctx, err := h.iam.GetUserBySubject(r.Context(), subject)
 	if err == nil {
+		if risk != "high" {
+			h.cache.set(subject, ctx)
+		}
 		return ctx, nil
 	}
 
 	ctx, byIDErr := h.iam.GetUserByID(r.Context(), subject)
 	if byIDErr == nil {
+		if risk != "high" {
+			h.cache.set(subject, ctx)
+		}
 		return ctx, nil
 	}
 

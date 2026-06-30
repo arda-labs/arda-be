@@ -13,6 +13,7 @@ introspection_client_id: auth-gateway
 introspection_client_secret: auth-gateway-secret
 
 iam_service_url: "http://localhost:8080"
+iam_context_cache_ttl_seconds: 60
 proxy_backend_url: "http://localhost:8080"
 policy_file: "configs/policy.yaml"
 

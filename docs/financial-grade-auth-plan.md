@@ -141,5 +141,7 @@ user agent, route/action, result, and correlation/request id.
   RS256 JWT verification.
 - Done: legacy direct Hydra accept-login endpoint was removed; login accept now
   requires Kratos whoami and IAM subject resolution.
-- Next: decide when to switch production from introspection to JWKS, then add
-  IAM context cache.
+- Done: ForwardAuth caches IAM user context for non-high-risk routes with a
+  short configurable TTL. High-risk routes always resolve fresh IAM context.
+- Next: add `auth_version` or equivalent cache invalidation for role/user
+  security changes.

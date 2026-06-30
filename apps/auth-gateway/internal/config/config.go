@@ -24,6 +24,7 @@ type Config struct {
 	IntrospectionClientSecret string `yaml:"introspection_client_secret"`
 
 	IAMServiceURL      string `yaml:"iam_service_url"`
+	IAMContextCacheTTL int    `yaml:"iam_context_cache_ttl_seconds"`
 	PlatformServiceURL string `yaml:"platform_service_url"`
 	ProxyBackendURL    string `yaml:"proxy_backend_url"`
 	PolicyFile         string `yaml:"policy_file"`
@@ -61,6 +62,7 @@ func Load() Config {
 		JWTIssuer:          "https://auth.arda.io.vn",
 		JWTAudience:        "arda-api",
 		IAMServiceURL:      "http://localhost:8081",
+		IAMContextCacheTTL: 60,
 		PlatformServiceURL: "http://localhost:8091",
 		PolicyFile:         "configs/policy.yaml",
 		SessionCookieName:  "arda_sid",
@@ -96,6 +98,7 @@ func Load() Config {
 	envStr("INTROSPECTION_CLIENT_ID", &cfg.IntrospectionClientID)
 	envStr("INTROSPECTION_CLIENT_SECRET", &cfg.IntrospectionClientSecret)
 	envStr("IAM_SERVICE_URL", &cfg.IAMServiceURL)
+	envInt("IAM_CONTEXT_CACHE_TTL_SECONDS", &cfg.IAMContextCacheTTL)
 	envStr("PLATFORM_SERVICE_URL", &cfg.PlatformServiceURL)
 	envStr("PROXY_BACKEND_URL", &cfg.ProxyBackendURL)
 	envStr("POLICY_FILE", &cfg.PolicyFile)
@@ -141,6 +144,9 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("introspection_client_id", &c.IntrospectionClientID)
 	setStr("introspection_client_secret", &c.IntrospectionClientSecret)
 	setStr("iam_service_url", &c.IAMServiceURL)
+	if v, ok := m["iam_context_cache_ttl_seconds"].(int); ok {
+		c.IAMContextCacheTTL = v
+	}
 	setStr("platform_service_url", &c.PlatformServiceURL)
 	setStr("proxy_backend_url", &c.ProxyBackendURL)
 	setStr("policy_file", &c.PolicyFile)

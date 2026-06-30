@@ -53,7 +53,7 @@ func main() {
 	_ = iam
 
 	// ── ForwardAuth handler ──
-	authHandler := handler.NewAuthHandler(verifier, iam, pol, logger)
+	authHandler := handler.NewAuthHandler(verifier, iam, pol, logger, time.Duration(cfg.IAMContextCacheTTL)*time.Second)
 
 	// ── Session store ──
 	var sessStore session.Store

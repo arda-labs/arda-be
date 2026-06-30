@@ -59,6 +59,7 @@ services:
       HTTP_ADDR: 0.0.0.0:8080
       LOG_LEVEL: debug
       IAM_SERVICE_URL: http://iam-service:8080
+      IAM_CONTEXT_CACHE_TTL_SECONDS: 60
       TOKEN_STRATEGY: jwks
       JWKS_URL: https://auth.arda.io.vn/.well-known/jwks.json
       INTROSPECTION_URL: https://auth.arda.io.vn/oauth2/introspect
