@@ -57,6 +57,10 @@ spec:
               value: arda-shell
             - name: OAUTH_REDIRECT_URI
               value: https://arda.io.vn/callback
+            - name: COOKIE_SECURE
+              value: "true"
+            - name: COOKIE_SAMESITE
+              value: Lax
             - name: REDIS_URL
               valueFrom:
                 secretKeyRef:
