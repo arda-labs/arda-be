@@ -26,6 +26,22 @@ routes:
     permissions:
       - iam.user.manage
 
+  - id: admin-read
+    path: /api/admin/**
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - iam.user.read
+
+  - id: admin-write
+    path: /api/admin/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - iam.user.manage
+
   - id: mdm-read
     path: /api/mdm/**
     methods: [GET]

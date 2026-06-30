@@ -19,6 +19,7 @@ import (
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/iamclient"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/policy"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/session"
+	"github.com/arda-labs/arda/libs/go/arda-auth/permission"
 )
 
 const (
@@ -720,34 +721,58 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	stripAuthContextHeaders(proxyReq.Header)
+	var match *policy.MatchResult
+	if h.policy != nil {
+		match, _ = h.policy.Match(r.URL.Path, r.Method)
+	}
 	sessionID := h.readSessionCookie(r)
+	var sess *session.Session
 	if sessionID != "" {
-		sess, _ := h.store.Get(r.Context(), sessionID)
-		if sess != nil {
-			if !h.recentAuthOK(r, sess) {
-				respondError(w, http.StatusForbidden, "recent_auth_required")
+		sess, _ = h.store.Get(r.Context(), sessionID)
+	}
+	if match != nil && match.RequireAuth && sess == nil {
+		h.clearSessionCookie(w)
+		respondError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	if sess != nil {
+		if !h.recentAuthOK(r, sess) {
+			respondError(w, http.StatusForbidden, "recent_auth_required")
+			return
+		}
+		userInfo, ok := h.resolveSessionUser(r.Context(), sess.User)
+		if !ok || userInfo.UserID == "" {
+			if match != nil && match.RequireAuth {
+				h.clearSessionCookie(w)
+				respondError(w, http.StatusUnauthorized, "user context unavailable")
 				return
 			}
-			if userInfo, ok := h.resolveSessionUser(r.Context(), sess.User); ok && userInfo.UserID != "" {
-				sess.User = userInfo
-				proxyReq.Header.Set("Authorization", "Bearer "+sess.AccessToken)
-				proxyReq.Header.Set("X-User-Id", sess.User.UserID)
-				proxyReq.Header.Set("X-User-Subject", sess.User.Subject)
-				proxyReq.Header.Set("X-Username", sess.User.Username)
-				proxyReq.Header.Set("X-User-Email", sess.User.Email)
-				proxyReq.Header.Set("X-Nickname", sess.User.Nickname)
-				proxyReq.Header.Set("X-Tenant-Id", sess.User.TenantID)
-				proxyReq.Header.Set("X-Roles", strings.Join(sess.User.Roles, ","))
-				proxyReq.Header.Set("X-Permissions", strings.Join(sess.User.Permissions, ","))
-				proxyReq.Header.Set("X-Auth-Version", fmt.Sprintf("%d", sess.User.AuthVersion))
-				if !sess.AuthTime.IsZero() {
-					proxyReq.Header.Set("X-Auth-Time", fmt.Sprintf("%d", sess.AuthTime.Unix()))
-				}
-				if sess.IAMSessionID != "" {
-					proxyReq.Header.Set("X-Session-Id", sess.IAMSessionID)
-				}
-				proxyReq.Header.Set("X-Auth-Checked", "true")
+		} else {
+			sess.User = userInfo
+			if match != nil && len(match.Route.Permissions) > 0 && !permission.HasAny(sess.User.Permissions, match.Route.Permissions...) {
+				respondError(w, http.StatusForbidden, "insufficient permissions")
+				return
 			}
+			proxyReq.Header.Set("Authorization", "Bearer "+sess.AccessToken)
+			proxyReq.Header.Set("X-User-Id", sess.User.UserID)
+			proxyReq.Header.Set("X-User-Subject", sess.User.Subject)
+			proxyReq.Header.Set("X-Username", sess.User.Username)
+			proxyReq.Header.Set("X-User-Email", sess.User.Email)
+			proxyReq.Header.Set("X-Nickname", sess.User.Nickname)
+			proxyReq.Header.Set("X-Tenant-Id", sess.User.TenantID)
+			proxyReq.Header.Set("X-Roles", strings.Join(sess.User.Roles, ","))
+			proxyReq.Header.Set("X-Permissions", strings.Join(sess.User.Permissions, ","))
+			proxyReq.Header.Set("X-Auth-Version", fmt.Sprintf("%d", sess.User.AuthVersion))
+			if !sess.AuthTime.IsZero() {
+				proxyReq.Header.Set("X-Auth-Time", fmt.Sprintf("%d", sess.AuthTime.Unix()))
+			}
+			if sess.IAMSessionID != "" {
+				proxyReq.Header.Set("X-Session-Id", sess.IAMSessionID)
+			}
+			if match != nil {
+				proxyReq.Header.Set("X-Auth-Risk", match.Route.Risk)
+			}
+			proxyReq.Header.Set("X-Auth-Checked", "true")
 		}
 	}
 	resp, err := h.httpClient.Do(proxyReq)

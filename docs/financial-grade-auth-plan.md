@@ -149,5 +149,7 @@ user agent, route/action, result, and correlation/request id.
   downstream recent-auth checks.
 - Done: BFF proxy enforces recent-auth for `risk: high` routes using
   `recent_auth_window_seconds`.
+- Done: BFF proxy enforces matched route auth and permissions instead of only
+  forwarding best-effort user headers.
 - Next: make gateway cache/session invalidation compare cached auth version
   against token/session auth version when version claims are added.
