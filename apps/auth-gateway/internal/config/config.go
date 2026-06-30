@@ -26,6 +26,12 @@ type Config struct {
 	IAMServiceURL      string `yaml:"iam_service_url"`
 	IAMContextCacheTTL int    `yaml:"iam_context_cache_ttl_seconds"`
 	PlatformServiceURL string `yaml:"platform_service_url"`
+	FinanceServiceURL  string `yaml:"finance_service_url"`
+	MediaServiceURL    string `yaml:"media_service_url"`
+	WorkflowServiceURL string `yaml:"workflow_service_url"`
+	CRMServiceURL      string `yaml:"crm_service_url"`
+	NotificationURL    string `yaml:"notification_service_url"`
+	MDMServiceURL      string `yaml:"mdm_service_url"`
 	ProxyBackendURL    string `yaml:"proxy_backend_url"`
 	PolicyFile         string `yaml:"policy_file"`
 
@@ -65,6 +71,12 @@ func Load() Config {
 		IAMServiceURL:      "http://localhost:8081",
 		IAMContextCacheTTL: 60,
 		PlatformServiceURL: "http://localhost:8091",
+		FinanceServiceURL:  "http://localhost:8090",
+		MediaServiceURL:    "http://localhost:8092",
+		WorkflowServiceURL: "http://localhost:8093",
+		CRMServiceURL:      "http://localhost:8094",
+		NotificationURL:    "http://localhost:8095",
+		MDMServiceURL:      "http://localhost:8096",
 		PolicyFile:         "configs/policy.yaml",
 		SessionCookieName:  "arda_sid",
 		SessionTTL:         86400,
@@ -102,6 +114,12 @@ func Load() Config {
 	envStr("IAM_SERVICE_URL", &cfg.IAMServiceURL)
 	envInt("IAM_CONTEXT_CACHE_TTL_SECONDS", &cfg.IAMContextCacheTTL)
 	envStr("PLATFORM_SERVICE_URL", &cfg.PlatformServiceURL)
+	envStr("FINANCE_SERVICE_URL", &cfg.FinanceServiceURL)
+	envStr("MEDIA_SERVICE_URL", &cfg.MediaServiceURL)
+	envStr("WORKFLOW_SERVICE_URL", &cfg.WorkflowServiceURL)
+	envStr("CRM_SERVICE_URL", &cfg.CRMServiceURL)
+	envStr("NOTIFICATION_SERVICE_URL", &cfg.NotificationURL)
+	envStr("MDM_SERVICE_URL", &cfg.MDMServiceURL)
 	envStr("PROXY_BACKEND_URL", &cfg.ProxyBackendURL)
 	envStr("POLICY_FILE", &cfg.PolicyFile)
 	envStr("REDIS_URL", &cfg.RedisURL)
@@ -151,6 +169,12 @@ func (c *Config) loadYAML(path string) bool {
 		c.IAMContextCacheTTL = v
 	}
 	setStr("platform_service_url", &c.PlatformServiceURL)
+	setStr("finance_service_url", &c.FinanceServiceURL)
+	setStr("media_service_url", &c.MediaServiceURL)
+	setStr("workflow_service_url", &c.WorkflowServiceURL)
+	setStr("crm_service_url", &c.CRMServiceURL)
+	setStr("notification_service_url", &c.NotificationURL)
+	setStr("mdm_service_url", &c.MDMServiceURL)
 	setStr("proxy_backend_url", &c.ProxyBackendURL)
 	setStr("policy_file", &c.PolicyFile)
 	setStr("redis_url", &c.RedisURL)

@@ -716,10 +716,7 @@ func (h *BFFHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
-	baseURL := h.cfg.ProxyURL()
-	if strings.HasPrefix(r.URL.Path, "/api/platform") {
-		baseURL = h.cfg.PlatformServiceURL
-	}
+	baseURL := h.upstreamBaseURL(r.URL.Path)
 	target := baseURL + r.URL.Path
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
@@ -742,7 +739,8 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	if sessionID != "" {
 		sess, _ = h.store.Get(r.Context(), sessionID)
 	}
-	if match != nil && match.RequireAuth && sess == nil {
+	requireAuth := match == nil || match.RequireAuth
+	if requireAuth && sess == nil {
 		h.clearSessionCookie(w)
 		respondError(w, http.StatusUnauthorized, "not authenticated")
 		return
@@ -800,6 +798,26 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+func (h *BFFHandler) upstreamBaseURL(path string) string {
+	for _, route := range []struct {
+		prefix string
+		url    string
+	}{
+		{"/api/platform", h.cfg.PlatformServiceURL},
+		{"/api/finance", h.cfg.FinanceServiceURL},
+		{"/api/media", h.cfg.MediaServiceURL},
+		{"/api/workflow", h.cfg.WorkflowServiceURL},
+		{"/api/crm", h.cfg.CRMServiceURL},
+		{"/api/notifications", h.cfg.NotificationURL},
+		{"/api/mdm", h.cfg.MDMServiceURL},
+	} {
+		if strings.HasPrefix(path, route.prefix) && strings.TrimSpace(route.url) != "" {
+			return route.url
+		}
+	}
+	return h.cfg.ProxyURL()
 }
 
 func (h *BFFHandler) recentAuthOK(r *http.Request, sess *session.Session) bool {

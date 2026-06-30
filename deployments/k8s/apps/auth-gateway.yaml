@@ -35,6 +35,18 @@ spec:
               value: http://iam-service:8080
             - name: PLATFORM_SERVICE_URL
               value: http://platform-service:8080
+            - name: FINANCE_SERVICE_URL
+              value: http://finance-service:8080
+            - name: MEDIA_SERVICE_URL
+              value: http://media-service:8080
+            - name: WORKFLOW_SERVICE_URL
+              value: http://workflow-service:8080
+            - name: CRM_SERVICE_URL
+              value: http://crm-service:8080
+            - name: NOTIFICATION_SERVICE_URL
+              value: http://notification-service:8080
+            - name: MDM_SERVICE_URL
+              value: http://mdm-service:8080
             - name: KRATOS_PUBLIC_URL
               value: https://identity.arda.io.vn
             - name: HYDRA_ADMIN_URL

@@ -14,6 +14,13 @@ introspection_client_secret: auth-gateway-secret
 
 iam_service_url: "http://localhost:8080"
 iam_context_cache_ttl_seconds: 60
+platform_service_url: "http://localhost:8091"
+finance_service_url: "http://localhost:8090"
+media_service_url: "http://localhost:8092"
+workflow_service_url: "http://localhost:8093"
+crm_service_url: "http://localhost:8094"
+notification_service_url: "http://localhost:8095"
+mdm_service_url: "http://localhost:8096"
 proxy_backend_url: "http://localhost:8080"
 policy_file: "configs/policy.yaml"
 
