@@ -54,7 +54,7 @@ spec:
             - name: HYDRA_REDIRECT_URI
               value: http://localhost:5000/callback
             - name: KRATOS_ADMIN_URL
-              value: http://kratos-admin.auth.svc.cluster.local:4434
+              value: http://kratos-admin.auth.svc
           readinessProbe:
             httpGet:
               path: /health/ready
