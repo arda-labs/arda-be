@@ -71,7 +71,7 @@ func main() {
 	}
 
 	// ── BFF handler ──
-	bffHandler := handler.NewBFFHandler(cfg, sessStore, iam)
+	bffHandler := handler.NewBFFHandler(cfg, sessStore, iam, pol)
 
 	// ── HTTP server ──
 	srv := &http.Server{

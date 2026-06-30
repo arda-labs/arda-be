@@ -17,6 +17,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/config"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/iamclient"
+	"github.com/arda-labs/arda/apps/auth-gateway/internal/policy"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/session"
 )
 
@@ -30,13 +31,14 @@ type BFFHandler struct {
 	cfg        config.Config
 	store      session.Store
 	iamClient  *iamclient.Client
+	policy     *policy.Policy
 	logger     *slog.Logger
 	httpClient *http.Client
 }
 
-func NewBFFHandler(cfg config.Config, store session.Store, iamClient *iamclient.Client) *BFFHandler {
+func NewBFFHandler(cfg config.Config, store session.Store, iamClient *iamclient.Client, pol *policy.Policy) *BFFHandler {
 	return &BFFHandler{
-		cfg: cfg, store: store, iamClient: iamClient, logger: slog.Default(),
+		cfg: cfg, store: store, iamClient: iamClient, policy: pol, logger: slog.Default(),
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -722,6 +724,10 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	if sessionID != "" {
 		sess, _ := h.store.Get(r.Context(), sessionID)
 		if sess != nil {
+			if !h.recentAuthOK(r, sess) {
+				respondError(w, http.StatusForbidden, "recent_auth_required")
+				return
+			}
 			if userInfo, ok := h.resolveSessionUser(r.Context(), sess.User); ok && userInfo.UserID != "" {
 				sess.User = userInfo
 				proxyReq.Header.Set("Authorization", "Bearer "+sess.AccessToken)
@@ -757,6 +763,20 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+func (h *BFFHandler) recentAuthOK(r *http.Request, sess *session.Session) bool {
+	if h.cfg.RecentAuthWindow <= 0 || sess == nil || h.policy == nil {
+		return true
+	}
+	match, err := h.policy.Match(r.URL.Path, r.Method)
+	if err != nil || match.Route.Risk != "high" {
+		return true
+	}
+	if sess.AuthTime.IsZero() {
+		return false
+	}
+	return time.Since(sess.AuthTime) <= time.Duration(h.cfg.RecentAuthWindow)*time.Second
 }
 
 func stripAuthContextHeaders(header http.Header) {

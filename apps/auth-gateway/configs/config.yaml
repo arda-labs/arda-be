@@ -28,5 +28,6 @@ redis_url: "redis://default:wuMtEVTgJAUgvsoRI4mSbwYB69h9pSc4@192.168.100.201:303
 session_cookie_name: arda_sid
 session_cookie_domain: ""
 session_ttl_seconds: 86400
+recent_auth_window_seconds: 300
 cookie_secure: false
 cookie_same_site: Lax

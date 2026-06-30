@@ -147,5 +147,7 @@ user agent, route/action, result, and correlation/request id.
   password, role, and permission changes.
 - Done: BFF sessions store primary auth time and forward `X-Auth-Time` for
   downstream recent-auth checks.
+- Done: BFF proxy enforces recent-auth for `risk: high` routes using
+  `recent_auth_window_seconds`.
 - Next: make gateway cache/session invalidation compare cached auth version
   against token/session auth version when version claims are added.
