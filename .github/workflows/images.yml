@@ -33,6 +33,26 @@ jobs:
             image: platform-service
             context: .
             file: apps/platform-service/Dockerfile
+          - service: finance-service
+            image: finance-service
+            context: .
+            file: apps/finance-service/Dockerfile
+          - service: media-service
+            image: media-service
+            context: .
+            file: apps/media-service/Dockerfile
+          - service: workflow-service
+            image: workflow-service
+            context: .
+            file: apps/workflow-service/Dockerfile
+          - service: crm-service
+            image: crm-service
+            context: .
+            file: apps/crm-service/Dockerfile
+          - service: notification-service
+            image: notification-service
+            context: .
+            file: apps/notification-service/Dockerfile
 
     steps:
       - uses: actions/checkout@v4
@@ -79,6 +99,11 @@ jobs:
           sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/auth-gateway:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/auth-gateway:${GITHUB_SHA}#" deployments/k8s/apps/auth-gateway.yaml
           sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/iam-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/iam-service:${GITHUB_SHA}#" deployments/k8s/apps/iam-service.yaml
           sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/platform-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/platform-service:${GITHUB_SHA}#" deployments/k8s/apps/platform-service.yaml
+          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/finance-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/finance-service:${GITHUB_SHA}#" deployments/k8s/apps/finance-service.yaml
+          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/media-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/media-service:${GITHUB_SHA}#" deployments/k8s/apps/media-service.yaml
+          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/workflow-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/workflow-service:${GITHUB_SHA}#" deployments/k8s/apps/workflow-service.yaml
+          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/crm-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/crm-service:${GITHUB_SHA}#" deployments/k8s/apps/crm-service.yaml
+          sed -i "s#image: ${REGISTRY}/${IMAGE_NAMESPACE}/notification-service:.*#image: ${REGISTRY}/${IMAGE_NAMESPACE}/notification-service:${GITHUB_SHA}#" deployments/k8s/apps/notification-service.yaml
 
       - name: Commit manifest image tags
         run: |

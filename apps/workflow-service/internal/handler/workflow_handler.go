@@ -12,13 +12,13 @@ import (
 )
 
 type WorkflowHandler struct {
-	zeebeSvc   *service.ZeebeService
+	zeebeSvc    *service.ZeebeService
 	mappingRepo *repository.MappingRepository
 }
 
 func NewWorkflowHandler(zeebeSvc *service.ZeebeService, mappingRepo *repository.MappingRepository) *WorkflowHandler {
 	return &WorkflowHandler{
-		zeebeSvc:   zeebeSvc,
+		zeebeSvc:    zeebeSvc,
 		mappingRepo: mappingRepo,
 	}
 }
@@ -158,14 +158,13 @@ func (h *WorkflowHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// URL format: /api/v1/workflows/instances/{instanceKey}/cancel or similar
 	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) < 6 {
+	if len(parts) < 2 {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
 
-	instanceKeyStr := parts[5]
+	instanceKeyStr := parts[len(parts)-2]
 	instanceKey, err := strconv.ParseInt(instanceKeyStr, 10, 64)
 	if err != nil {
 		http.Error(w, "Invalid instance key: "+instanceKeyStr, http.StatusBadRequest)
@@ -191,14 +190,13 @@ func (h *WorkflowHandler) GetMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// URL path: /api/v1/workflows/instances/mapping/{businessKey}
 	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) < 7 {
+	if len(parts) < 2 {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
 
-	businessKey := parts[6]
+	businessKey := parts[len(parts)-1]
 	mapping, err := h.mappingRepo.GetMapping(r.Context(), businessKey)
 	if err != nil {
 		http.Error(w, "Failed to query mapping: "+err.Error(), http.StatusInternalServerError)

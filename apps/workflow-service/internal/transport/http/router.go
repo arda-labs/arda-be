@@ -23,9 +23,12 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 
 	// Workflow APIs
 	mux.HandleFunc("/api/v1/workflows/deploy", wfHandler.Deploy)
+	mux.HandleFunc("/api/workflow/deploy", wfHandler.Deploy)
 	mux.HandleFunc("/api/v1/workflows/start", wfHandler.Start)
+	mux.HandleFunc("/api/workflow/start", wfHandler.Start)
 	mux.HandleFunc("/api/v1/workflows/messages", wfHandler.PublishMessage)
-	
+	mux.HandleFunc("/api/workflow/messages", wfHandler.PublishMessage)
+
 	// Dynamic paths
 	mux.HandleFunc("/api/v1/workflows/instances/", func(w http.ResponseWriter, r *http.Request) {
 		// e.g. /api/v1/workflows/instances/{instanceKey}/cancel
@@ -38,6 +41,21 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 
 		// e.g. /api/v1/workflows/instances/mapping/{businessKey}
 		if r.Method == http.MethodGet && len(r.URL.Path) > len("/api/v1/workflows/instances/mapping/") {
+			wfHandler.GetMapping(w, r)
+			return
+		}
+
+		http.NotFound(w, r)
+	})
+	mux.HandleFunc("/api/workflow/instances/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && len(r.URL.Path) > len("/api/workflow/instances/") {
+			if r.URL.Path[len(r.URL.Path)-len("/cancel"):] == "/cancel" {
+				wfHandler.Cancel(w, r)
+				return
+			}
+		}
+
+		if r.Method == http.MethodGet && len(r.URL.Path) > len("/api/workflow/instances/mapping/") {
 			wfHandler.GetMapping(w, r)
 			return
 		}

@@ -6,6 +6,11 @@ Backend images are built by GitHub Actions and pushed to GHCR:
 ghcr.io/arda-labs/arda-be/auth-gateway:<tag>
 ghcr.io/arda-labs/arda-be/iam-service:<tag>
 ghcr.io/arda-labs/arda-be/platform-service:<tag>
+ghcr.io/arda-labs/arda-be/finance-service:<tag>
+ghcr.io/arda-labs/arda-be/media-service:<tag>
+ghcr.io/arda-labs/arda-be/workflow-service:<tag>
+ghcr.io/arda-labs/arda-be/crm-service:<tag>
+ghcr.io/arda-labs/arda-be/notification-service:<tag>
 ```
 
 Tags:
@@ -63,6 +68,13 @@ Keep runtime secrets out of git:
 kubectl -n arda-app create secret generic arda-app-secrets \
   --from-literal=IAM_DATABASE_DSN='<dsn>' \
   --from-literal=PLATFORM_DATABASE_DSN='<dsn>' \
+  --from-literal=FINANCE_DATABASE_DSN='<dsn>' \
+  --from-literal=MEDIA_DATABASE_DSN='<dsn>' \
+  --from-literal=WORKFLOW_DATABASE_DSN='<dsn>' \
+  --from-literal=CRM_DATABASE_DSN='<dsn>' \
+  --from-literal=NOTIFICATION_DATABASE_DSN='<dsn>' \
   --from-literal=REDIS_URL='<redis-url>' \
-  --from-literal=NATS_URL='<nats-url>'
+  --from-literal=NATS_URL='<nats-url>' \
+  --from-literal=GARAGE_ACCESS_KEY='<garage-access-key>' \
+  --from-literal=GARAGE_SECRET_KEY='<garage-secret-key>'
 ```
