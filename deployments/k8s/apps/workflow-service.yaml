@@ -17,7 +17,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: workflow-service
-          image: ghcr.io/arda-labs/arda-be/workflow-service:main
+          image: ghcr.io/arda-labs/arda-be/workflow-service:4d6ac06502846150414f20fab8fee06c379cc77b
           imagePullPolicy: Always
           ports:
             - name: http

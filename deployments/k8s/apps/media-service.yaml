@@ -17,7 +17,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: media-service
-          image: ghcr.io/arda-labs/arda-be/media-service:main
+          image: ghcr.io/arda-labs/arda-be/media-service:4d6ac06502846150414f20fab8fee06c379cc77b
           imagePullPolicy: Always
           ports:
             - name: http
