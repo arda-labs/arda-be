@@ -27,11 +27,11 @@ jobs:
             file: apps/auth-gateway/Dockerfile
           - service: iam-service
             image: iam-service
-            context: apps/iam-service
+            context: .
             file: apps/iam-service/Dockerfile
           - service: platform-service
             image: platform-service
-            context: apps/platform-service
+            context: .
             file: apps/platform-service/Dockerfile
 
     steps:
