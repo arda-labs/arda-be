@@ -17,7 +17,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: auth-gateway
-          image: ghcr.io/arda-labs/arda-be/auth-gateway:main
+          image: ghcr.io/arda-labs/arda-be/auth-gateway:db7b3cfd45be446ecfa76125f463755cb5a7206a
           imagePullPolicy: Always
           ports:
             - name: http
