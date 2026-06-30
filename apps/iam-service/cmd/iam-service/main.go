@@ -124,8 +124,7 @@ func main() {
 	// ── Handlers ──
 	identitySvc := service.NewIdentityService(userRepo, kratosClient)
 	if err := ensureSuperAdminIdentity(context.Background(), cfg, userRepo, identitySvc); err != nil {
-		logger.Error("provision superadmin identity", "err", err)
-		os.Exit(1)
+		logger.Warn("provision superadmin identity skipped", "err", err)
 	}
 	userSvc := service.NewUserService(userRepo, identitySvc)
 	userHandler := handler.NewUserHandler(userSvc)
