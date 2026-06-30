@@ -2,7 +2,7 @@
 set -euo pipefail
 
 NAMESPACE="${AUTH_NAMESPACE:-auth}"
-APP_NAMESPACE="${APP_NAMESPACE:-platform}"
+APP_NAMESPACE="${APP_NAMESPACE:-arda-app}"
 IAM_DEPLOYMENT="${IAM_DEPLOYMENT:-iam-service}"
 IAM_SECRET="${IAM_SECRET:-iam-service-secrets}"
 HYDRA_RELEASE="${HYDRA_RELEASE:-hydra}"

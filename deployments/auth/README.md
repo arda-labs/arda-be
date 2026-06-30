@@ -32,7 +32,7 @@ auth/
 
 ```text
 AUTH_NAMESPACE=auth
-APP_NAMESPACE=platform
+APP_NAMESPACE=arda-app
 IAM_DEPLOYMENT=iam-service
 SUPERADMIN_EMAIL=superadmin@arda.local
 SUPERADMIN_INITIAL_PASSWORD=admin123
@@ -76,7 +76,7 @@ SUPERADMIN_INITIAL_PASSWORD=admin123 ./setup.sh iam-secret
 4. Creates admin NodePorts:
    - Hydra Admin: `30445`
    - Kratos Admin: `30446`
-5. If `deploy/iam-service` exists in namespace `platform`, creates/updates
+5. If `deploy/iam-service` exists in namespace `arda-app`, creates/updates
    secret `iam-service-secrets`, sets env from it, and restarts `iam-service`.
 
 After `iam-service` restarts, the expected dev logins are:
@@ -103,8 +103,8 @@ App
 ```bash
 kubectl get pods -n auth
 kubectl get svc -n auth | grep -E 'hydra|kratos'
-kubectl get deploy -n platform iam-service
-kubectl get secret -n platform iam-service-secrets
+kubectl get deploy -n arda-app iam-service
+kubectl get secret -n arda-app iam-service-secrets
 ```
 
 Check the Hydra client:
