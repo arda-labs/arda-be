@@ -17,7 +17,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: notification-service
-          image: ghcr.io/arda-labs/arda-be/notification-service:4d6ac06502846150414f20fab8fee06c379cc77b
+          image: ghcr.io/arda-labs/arda-be/notification-service:f6da8d29d8d69623ae5aa10f668636f7f8f6614b
           imagePullPolicy: Always
           ports:
             - name: http
