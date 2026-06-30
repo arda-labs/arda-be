@@ -40,10 +40,13 @@ func TestUpstreamBaseURLRoutesKnownAPIPrefixes(t *testing.T) {
 		CRMServiceURL:      "http://crm",
 		NotificationURL:    "http://notification",
 		MDMServiceURL:      "http://mdm",
+		ProxyBackendURL:    "http://fallback",
 	}}
 
 	tests := map[string]string{
 		"/api/admin/users":          "http://iam",
+		"/api/iam/me":               "http://iam",
+		"/api/unknown":              "http://fallback",
 		"/api/platform/parameters":  "http://platform",
 		"/api/finance/accounts":     "http://finance",
 		"/api/media/files":          "http://media",

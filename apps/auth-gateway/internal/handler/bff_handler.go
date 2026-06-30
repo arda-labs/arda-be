@@ -837,6 +837,8 @@ func (h *BFFHandler) upstreamBaseURL(path string) string {
 		prefix string
 		url    string
 	}{
+		{"/api/admin", h.cfg.IAMServiceURL},
+		{"/api/iam", h.cfg.IAMServiceURL},
 		{"/api/platform", h.cfg.PlatformServiceURL},
 		{"/api/finance", h.cfg.FinanceServiceURL},
 		{"/api/media", h.cfg.MediaServiceURL},
