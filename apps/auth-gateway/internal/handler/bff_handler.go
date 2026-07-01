@@ -835,6 +835,19 @@ func (h *BFFHandler) clearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
+func (h *BFFHandler) updateSession(ctx context.Context, sess *session.Session) {
+	if sess == nil || sess.ID == "" {
+		return
+	}
+	ttl := time.Until(sess.ExpiresAt)
+	if ttl <= 0 {
+		return
+	}
+	if err := h.store.Update(ctx, sess, ttl); err != nil {
+		h.logger.Warn("update session failed", "session_id", sess.ID, "err", err)
+	}
+}
+
 func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
 	sessionID := h.readSessionCookie(r)
 	if sessionID == "" {
@@ -854,6 +867,7 @@ func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess.User = userInfo
+	h.updateSession(r.Context(), sess)
 	respondJSON(w, http.StatusOK, sess.User)
 }
 
@@ -876,6 +890,7 @@ func (h *BFFHandler) MeSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess.User = userInfo
+	h.updateSession(r.Context(), sess)
 	sessions, _ := h.store.ListByUser(r.Context(), sess.User.UserID)
 	respondJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "current": sessionID})
 }
@@ -982,6 +997,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			sess.User = userInfo
+			h.updateSession(r.Context(), sess)
 			if match != nil && len(match.Route.Permissions) > 0 && !permission.HasAny(sess.User.Permissions, match.Route.Permissions...) {
 				respondError(w, http.StatusForbidden, "insufficient permissions")
 				return

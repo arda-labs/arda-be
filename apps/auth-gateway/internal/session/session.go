@@ -58,6 +58,7 @@ type UserInfo struct {
 type Store interface {
 	Create(ctx context.Context, session *Session, ttl time.Duration) error
 	Get(ctx context.Context, sessionID string) (*Session, error)
+	Update(ctx context.Context, session *Session, ttl time.Duration) error
 	Delete(ctx context.Context, sessionID string) error
 	Refresh(ctx context.Context, sessionID string, newSession *Session, ttl time.Duration) error
 
@@ -127,6 +128,22 @@ func (s *MemoryStore) Get(_ context.Context, sessionID string) (*Session, error)
 		return nil, nil
 	}
 	return entry.session, nil
+}
+
+func (s *MemoryStore) Update(_ context.Context, session *Session, ttl time.Duration) error {
+	if session == nil || session.ID == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions[session.ID] = &sessionEntry{session: session, expires: time.Now().Add(ttl)}
+	if session.User != nil && session.User.UserID != "" {
+		if s.userIdx[session.User.UserID] == nil {
+			s.userIdx[session.User.UserID] = make(map[string]bool)
+		}
+		s.userIdx[session.User.UserID][session.ID] = true
+	}
+	return nil
 }
 
 func (s *MemoryStore) Delete(_ context.Context, sessionID string) error {

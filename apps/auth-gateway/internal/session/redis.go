@@ -69,6 +69,24 @@ func (s *RedisStore) Get(ctx context.Context, sessionID string) (*Session, error
 	return &sess, nil
 }
 
+func (s *RedisStore) Update(ctx context.Context, session *Session, ttl time.Duration) error {
+	if session == nil || session.ID == "" {
+		return nil
+	}
+	data, err := json.Marshal(session)
+	if err != nil {
+		return fmt.Errorf("marshal session: %w", err)
+	}
+	pipe := s.client.Pipeline()
+	pipe.Set(ctx, keyPrefix+session.ID, data, ttl)
+	if session.User != nil && session.User.UserID != "" {
+		pipe.SAdd(ctx, userIdxPrefix+session.User.UserID, session.ID)
+		pipe.Expire(ctx, userIdxPrefix+session.User.UserID, ttl)
+	}
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
 func (s *RedisStore) Delete(ctx context.Context, sessionID string) error {
 	sess, err := s.Get(ctx, sessionID)
 	if err == nil && sess != nil && sess.User != nil {
