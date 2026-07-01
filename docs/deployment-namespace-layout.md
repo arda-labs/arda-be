@@ -33,7 +33,7 @@ kubectl create namespace arda-web --dry-run=client -o yaml | kubectl apply -f -
 The auth setup script expects `iam-service` in `arda-app` by default:
 
 ```bash
-cd arda-be/deployments/auth
+cd arda-infra/auth
 SUPERADMIN_INITIAL_PASSWORD=admin123 ./setup.sh iam-secret
 ```
 
