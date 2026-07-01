@@ -34,6 +34,7 @@ type BFFHandler struct {
 	iamClient        *iamclient.Client
 	policy           *policy.Policy
 	logger           *slog.Logger
+	cache            *userContextCache
 	httpClient       *http.Client
 	streamHTTPClient *http.Client
 }
@@ -41,6 +42,7 @@ type BFFHandler struct {
 func NewBFFHandler(cfg config.Config, store session.Store, iamClient *iamclient.Client, pol *policy.Policy) *BFFHandler {
 	return &BFFHandler{
 		cfg: cfg, store: store, iamClient: iamClient, policy: pol, logger: slog.Default(),
+		cache:            newUserContextCache(time.Duration(cfg.IAMContextCacheTTL) * time.Second),
 		httpClient:       &http.Client{Timeout: 30 * time.Second},
 		streamHTTPClient: &http.Client{},
 	}
@@ -433,12 +435,23 @@ func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.Use
 	if fallback.UserID == "" && looksLikeUUID(fallback.Subject) {
 		fallback.UserID = fallback.Subject
 	}
+	if h.cache != nil {
+		for _, key := range []string{fallback.UserID, fallback.Subject} {
+			if key == "" {
+				continue
+			}
+			if uc, ok := h.cache.get(key); ok {
+				return sessionUserFromIAM(uc, fallback), true
+			}
+		}
+	}
 
 	lookupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	if fallback.Subject != "" && !looksLikeUUID(fallback.Subject) {
 		if uc, err := h.iamClient.GetUserBySubject(lookupCtx, fallback.Subject); err == nil {
+			h.cacheSessionUser(fallback, uc)
 			return sessionUserFromIAM(uc, fallback), true
 		} else {
 			h.logger.Warn("resolve user by subject failed", "subject", fallback.Subject, "err", err)
@@ -447,6 +460,7 @@ func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.Use
 
 	for _, id := range iamLookupIDs(fallback) {
 		if uc, err := h.iamClient.GetUserByID(lookupCtx, id); err == nil {
+			h.cacheSessionUser(fallback, uc)
 			return sessionUserFromIAM(uc, fallback), true
 		} else {
 			h.logger.Warn("resolve user by id failed", "user_id", id, "err", err)
@@ -454,6 +468,17 @@ func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.Use
 	}
 
 	return fallback, false
+}
+
+func (h *BFFHandler) cacheSessionUser(fallback *session.UserInfo, uc *iamclient.UserContext) {
+	if h.cache == nil || uc == nil {
+		return
+	}
+	for _, key := range []string{uc.UserID, uc.Subject, fallback.UserID, fallback.Subject} {
+		if key != "" {
+			h.cache.set(key, uc)
+		}
+	}
 }
 
 func iamLookupIDs(info *session.UserInfo) []string {
