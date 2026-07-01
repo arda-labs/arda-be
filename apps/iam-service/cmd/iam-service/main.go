@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -45,6 +46,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	configureDBPool(db, logger)
 
 	if err := db.PingContext(context.Background()); err != nil {
 		logger.Error("ping database", "err", err)
@@ -177,6 +179,31 @@ func parseLogLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func configureDBPool(db *sql.DB, logger *slog.Logger) {
+	maxOpen := envInt("DB_MAX_OPEN_CONNS", 8)
+	maxIdle := envInt("DB_MAX_IDLE_CONNS", 4)
+	if maxIdle > maxOpen {
+		maxIdle = maxOpen
+	}
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
+	db.SetConnMaxLifetime(time.Duration(envInt("DB_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second)
+	db.SetConnMaxIdleTime(time.Duration(envInt("DB_CONN_MAX_IDLE_TIME_SECONDS", 300)) * time.Second)
+	logger.Info("database pool configured", "max_open", maxOpen, "max_idle", maxIdle)
+}
+
+func envInt(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return fallback
+	}
+	return value
 }
 
 func providerIDs(registry *provider.Registry) []string {
