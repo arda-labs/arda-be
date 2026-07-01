@@ -23,17 +23,19 @@ type Config struct {
 	IntrospectionClientID     string `yaml:"introspection_client_id"`
 	IntrospectionClientSecret string `yaml:"introspection_client_secret"`
 
-	IAMServiceURL      string `yaml:"iam_service_url"`
-	IAMContextCacheTTL int    `yaml:"iam_context_cache_ttl_seconds"`
-	PlatformServiceURL string `yaml:"platform_service_url"`
-	FinanceServiceURL  string `yaml:"finance_service_url"`
-	MediaServiceURL    string `yaml:"media_service_url"`
-	WorkflowServiceURL string `yaml:"workflow_service_url"`
-	CRMServiceURL      string `yaml:"crm_service_url"`
-	NotificationURL    string `yaml:"notification_service_url"`
-	MDMServiceURL      string `yaml:"mdm_service_url"`
-	ProxyBackendURL    string `yaml:"proxy_backend_url"`
-	PolicyFile         string `yaml:"policy_file"`
+	IAMServiceURL             string `yaml:"iam_service_url"`
+	IAMContextCacheTTL        int    `yaml:"iam_context_cache_ttl_seconds"`
+	SlowRequestLogEnabled     bool   `yaml:"slow_request_log_enabled"`
+	SlowRequestLogThresholdMS int    `yaml:"slow_request_log_threshold_ms"`
+	PlatformServiceURL        string `yaml:"platform_service_url"`
+	FinanceServiceURL         string `yaml:"finance_service_url"`
+	MediaServiceURL           string `yaml:"media_service_url"`
+	WorkflowServiceURL        string `yaml:"workflow_service_url"`
+	CRMServiceURL             string `yaml:"crm_service_url"`
+	NotificationURL           string `yaml:"notification_service_url"`
+	MDMServiceURL             string `yaml:"mdm_service_url"`
+	ProxyBackendURL           string `yaml:"proxy_backend_url"`
+	PolicyFile                string `yaml:"policy_file"`
 
 	RedisURL            string `yaml:"redis_url"`
 	SessionCookieName   string `yaml:"session_cookie_name"`
@@ -62,32 +64,34 @@ func (c Config) ProxyURL() string {
 // Load reads config from YAML file (optional) + env overrides.
 func Load() Config {
 	cfg := Config{
-		AppName:            "auth-gateway",
-		HTTPAddr:           "0.0.0.0:8082",
-		LogLevel:           "info",
-		TokenStrategy:      "jwt",
-		JWTSecret:          "super-secret-dev-key-change-in-production",
-		JWTIssuer:          "https://auth.arda.io.vn",
-		JWTAudience:        "arda-api",
-		IAMServiceURL:      "http://localhost:8081",
-		IAMContextCacheTTL: 60,
-		PlatformServiceURL: "http://localhost:8091",
-		FinanceServiceURL:  "http://localhost:8090",
-		MediaServiceURL:    "http://localhost:8092",
-		WorkflowServiceURL: "http://localhost:8093",
-		CRMServiceURL:      "http://localhost:8094",
-		NotificationURL:    "http://localhost:8095",
-		MDMServiceURL:      "http://localhost:8096",
-		PolicyFile:         "configs/policy.yaml",
-		SessionCookieName:  "arda_sid",
-		SessionTTL:         86400,
-		RecentAuthWindow:   300,
-		CookieSecure:       true,
-		CookieSameSite:     "Lax",
-		HydraPublicURL:     "https://auth.arda.io.vn",
-		OAuthClientID:      "arda-shell",
-		OAuthRedirectURI:   "http://localhost:5000/callback",
-		OAuthRedirectURIs:  "https://arda.io.vn/callback,http://localhost:5000/callback",
+		AppName:                   "auth-gateway",
+		HTTPAddr:                  "0.0.0.0:8082",
+		LogLevel:                  "info",
+		TokenStrategy:             "jwt",
+		JWTSecret:                 "super-secret-dev-key-change-in-production",
+		JWTIssuer:                 "https://auth.arda.io.vn",
+		JWTAudience:               "arda-api",
+		IAMServiceURL:             "http://localhost:8081",
+		IAMContextCacheTTL:        60,
+		SlowRequestLogEnabled:     false,
+		SlowRequestLogThresholdMS: 1000,
+		PlatformServiceURL:        "http://localhost:8091",
+		FinanceServiceURL:         "http://localhost:8090",
+		MediaServiceURL:           "http://localhost:8092",
+		WorkflowServiceURL:        "http://localhost:8093",
+		CRMServiceURL:             "http://localhost:8094",
+		NotificationURL:           "http://localhost:8095",
+		MDMServiceURL:             "http://localhost:8096",
+		PolicyFile:                "configs/policy.yaml",
+		SessionCookieName:         "arda_sid",
+		SessionTTL:                86400,
+		RecentAuthWindow:          300,
+		CookieSecure:              true,
+		CookieSameSite:            "Lax",
+		HydraPublicURL:            "https://auth.arda.io.vn",
+		OAuthClientID:             "arda-shell",
+		OAuthRedirectURI:          "http://localhost:5000/callback",
+		OAuthRedirectURIs:         "https://arda.io.vn/callback,http://localhost:5000/callback",
 	}
 
 	// Try loading YAML
@@ -115,6 +119,8 @@ func Load() Config {
 	envStr("INTROSPECTION_CLIENT_SECRET", &cfg.IntrospectionClientSecret)
 	envStr("IAM_SERVICE_URL", &cfg.IAMServiceURL)
 	envInt("IAM_CONTEXT_CACHE_TTL_SECONDS", &cfg.IAMContextCacheTTL)
+	envBool("SLOW_REQUEST_LOG_ENABLED", &cfg.SlowRequestLogEnabled)
+	envInt("SLOW_REQUEST_LOG_THRESHOLD_MS", &cfg.SlowRequestLogThresholdMS)
 	envStr("PLATFORM_SERVICE_URL", &cfg.PlatformServiceURL)
 	envStr("FINANCE_SERVICE_URL", &cfg.FinanceServiceURL)
 	envStr("MEDIA_SERVICE_URL", &cfg.MediaServiceURL)
@@ -170,6 +176,12 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("iam_service_url", &c.IAMServiceURL)
 	if v, ok := m["iam_context_cache_ttl_seconds"].(int); ok {
 		c.IAMContextCacheTTL = v
+	}
+	if v, ok := m["slow_request_log_enabled"].(bool); ok {
+		c.SlowRequestLogEnabled = v
+	}
+	if v, ok := m["slow_request_log_threshold_ms"].(int); ok {
+		c.SlowRequestLogThresholdMS = v
 	}
 	setStr("platform_service_url", &c.PlatformServiceURL)
 	setStr("finance_service_url", &c.FinanceServiceURL)

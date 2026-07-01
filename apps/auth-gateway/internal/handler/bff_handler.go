@@ -1113,12 +1113,34 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	if client == nil {
 		client = http.DefaultClient
 	}
+	slowLogThreshold := time.Duration(h.cfg.SlowRequestLogThresholdMS) * time.Millisecond
+	slowLogEnabled := h.cfg.SlowRequestLogEnabled && slowLogThreshold > 0
+	upstreamStart := time.Now()
 	resp, err := client.Do(proxyReq)
+	upstreamDuration := time.Since(upstreamStart)
 	if err != nil {
 		respondError(w, http.StatusBadGateway, "upstream error")
+		if slowLogEnabled && upstreamDuration >= slowLogThreshold {
+			h.logger.Warn("slow upstream request",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"upstream", baseURL,
+				"duration_ms", upstreamDuration.Milliseconds(),
+				"err", err,
+			)
+		}
 		return
 	}
 	defer resp.Body.Close()
+	if slowLogEnabled && upstreamDuration >= slowLogThreshold {
+		h.logger.Warn("slow upstream request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"upstream", baseURL,
+			"status", resp.StatusCode,
+			"duration_ms", upstreamDuration.Milliseconds(),
+		)
+	}
 	for k, vs := range resp.Header {
 		for _, v := range vs {
 			w.Header().Add(k, v)

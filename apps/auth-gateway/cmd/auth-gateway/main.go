@@ -76,7 +76,7 @@ func main() {
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(authHandler, bffHandler),
+		Handler:      transport.NewRouter(authHandler, bffHandler, cfg),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
