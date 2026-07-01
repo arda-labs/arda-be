@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	keyPrefix      = "bff:session:"
-	userIdxPrefix  = "bff:user_sessions:"
+	keyPrefix     = "bff:session:"
+	userIdxPrefix = "bff:user_sessions:"
 )
 
 // RedisStore implements Store backed by Redis.

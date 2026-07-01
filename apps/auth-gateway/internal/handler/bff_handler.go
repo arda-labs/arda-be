@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/config"
@@ -35,14 +36,27 @@ type BFFHandler struct {
 	policy           *policy.Policy
 	logger           *slog.Logger
 	cache            *userContextCache
+	resolveMu        sync.Mutex
+	resolveInflight  map[string]*sessionUserResolveCall
 	httpClient       *http.Client
 	streamHTTPClient *http.Client
+}
+
+type sessionUserResolveCall struct {
+	done   chan struct{}
+	result sessionUserResolveResult
+}
+
+type sessionUserResolveResult struct {
+	user *session.UserInfo
+	ok   bool
 }
 
 func NewBFFHandler(cfg config.Config, store session.Store, iamClient *iamclient.Client, pol *policy.Policy) *BFFHandler {
 	return &BFFHandler{
 		cfg: cfg, store: store, iamClient: iamClient, policy: pol, logger: slog.Default(),
 		cache:            newUserContextCache(time.Duration(cfg.IAMContextCacheTTL) * time.Second),
+		resolveInflight:  make(map[string]*sessionUserResolveCall),
 		httpClient:       &http.Client{Timeout: 30 * time.Second},
 		streamHTTPClient: &http.Client{},
 	}
@@ -443,6 +457,37 @@ func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.Use
 		}
 	}
 
+	return h.resolveSessionUserOnce(fallback)
+}
+
+func (h *BFFHandler) resolveSessionUserOnce(fallback *session.UserInfo) (*session.UserInfo, bool) {
+	key := sessionUserResolveKey(fallback)
+	if key == "" {
+		return h.resolveSessionUserUncached(fallback)
+	}
+
+	h.resolveMu.Lock()
+	if call, ok := h.resolveInflight[key]; ok {
+		h.resolveMu.Unlock()
+		<-call.done
+		result := call.result
+		return result.user, result.ok
+	}
+	call := &sessionUserResolveCall{done: make(chan struct{})}
+	h.resolveInflight[key] = call
+	h.resolveMu.Unlock()
+
+	user, ok := h.resolveSessionUserUncached(fallback)
+	call.result = sessionUserResolveResult{user: user, ok: ok}
+
+	h.resolveMu.Lock()
+	delete(h.resolveInflight, key)
+	h.resolveMu.Unlock()
+	close(call.done)
+	return user, ok
+}
+
+func (h *BFFHandler) resolveSessionUserUncached(fallback *session.UserInfo) (*session.UserInfo, bool) {
 	lookupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -465,6 +510,24 @@ func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.Use
 	}
 
 	return fallback, false
+}
+
+func sessionUserResolveKey(info *session.UserInfo) string {
+	if info == nil {
+		return ""
+	}
+	if info.AuthVersion > 0 {
+		if keys := sessionUserCacheKeys(info.UserID, info.Subject, info.AuthVersion); len(keys) > 0 {
+			return keys[0]
+		}
+	}
+	for _, base := range []string{info.UserID, info.Subject} {
+		base = strings.TrimSpace(base)
+		if base != "" {
+			return base
+		}
+	}
+	return ""
 }
 
 func (h *BFFHandler) cacheSessionUser(fallback *session.UserInfo, uc *iamclient.UserContext) {
