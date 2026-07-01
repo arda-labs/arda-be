@@ -750,7 +750,16 @@ func (h *BFFHandler) clearRememberMFACookie(w http.ResponseWriter) {
 }
 
 func (h *BFFHandler) clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: h.cfg.SessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: h.cfg.CookieSecure, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.cfg.SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   h.cfg.CookieSecure,
+		SameSite: parseSameSite(h.cfg.CookieSameSite),
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
 }
 
 func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
@@ -807,8 +816,8 @@ func (h *BFFHandler) Logout(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		h.store.Delete(r.Context(), sessionID)
-		h.clearSessionCookie(w)
 	}
+	h.clearSessionCookie(w)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }
 
