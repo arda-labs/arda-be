@@ -73,7 +73,7 @@ routes:
     path: /api/platform/**
     methods: [POST, PUT, PATCH, DELETE]
     auth: true
-    risk: high
+    risk: medium
     permissions:
       - platform.manage
 

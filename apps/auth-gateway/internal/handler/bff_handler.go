@@ -590,6 +590,34 @@ func (h *BFFHandler) trackSession(r *http.Request, userID, deviceToken string, t
 	}, nil
 }
 
+func (h *BFFHandler) verifyMFA(ctx context.Context, userID, code string) error {
+	if h.iamClient == nil {
+		return fmt.Errorf("iam client is not configured")
+	}
+	body, err := json.Marshal(map[string]string{
+		"userId": userID,
+		"code":   code,
+	})
+	if err != nil {
+		return err
+	}
+	endpoint := h.iamClient.InternalBaseURL() + "/api/iam/me/mfa/verify"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("iam mfa verify returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func (h *BFFHandler) KratosWhoami(w http.ResponseWriter, r *http.Request) {
 	h.proxyToKratos(w, r, "sessions/whoami")
 }
@@ -819,6 +847,50 @@ func (h *BFFHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	h.clearSessionCookie(w)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
+}
+
+func (h *BFFHandler) StepUp(w http.ResponseWriter, r *http.Request) {
+	sessionID := h.readSessionCookie(r)
+	if sessionID == "" {
+		respondError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	sess, _ := h.store.Get(r.Context(), sessionID)
+	if sess == nil || sess.User == nil || sess.User.UserID == "" {
+		h.clearSessionCookie(w)
+		respondError(w, http.StatusUnauthorized, "session expired")
+		return
+	}
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Code) == "" {
+		respondError(w, http.StatusBadRequest, "code is required")
+		return
+	}
+	if err := h.verifyMFA(r.Context(), sess.User.UserID, strings.TrimSpace(req.Code)); err != nil {
+		respondError(w, http.StatusUnauthorized, "invalid MFA code")
+		return
+	}
+	sess.AuthTime = time.Now()
+	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	if err := h.store.Refresh(r.Context(), sessionID, sess, ttl); err != nil {
+		respondError(w, http.StatusInternalServerError, "refresh session failed")
+		return
+	}
+	h.setSessionCookie(w, sess.ID, ttl)
+	respondJSON(w, http.StatusOK, map[string]any{
+		"status":       "verified",
+		"stepUpUntil":  sess.AuthTime.Add(time.Duration(h.cfg.RecentAuthWindow) * time.Second).Format(time.RFC3339),
+		"validSeconds": h.cfg.RecentAuthWindow,
+	})
 }
 
 func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
