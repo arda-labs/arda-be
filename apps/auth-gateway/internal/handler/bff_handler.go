@@ -325,7 +325,7 @@ func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BFFHandler) devExchangeCode(w http.ResponseWriter, r *http.Request) {
-	userInfo, _ := h.resolveSessionUser(r.Context(), &session.UserInfo{UserID: "dev-user", Subject: "dev-user", Username: "admin", Email: "admin@arda.local"})
+	userInfo, _ := h.resolveSessionUser(r.Context(), &session.UserInfo{UserID: "dev-user", Subject: "dev-user", Username: "admin", Email: "admin@arda.local"}, true)
 	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
 	now := time.Now()
 	sess := &session.Session{AccessToken: "dev-token", RefreshToken: "dev-token", ExpiresAt: now.Add(ttl), User: userInfo, IPAddress: extractIP(r), AuthTime: now}
@@ -384,7 +384,7 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 		h.logger.Warn("id token is empty in hydra token response")
 	}
 	var ok bool
-	userInfo, ok = h.resolveSessionUser(r.Context(), userInfo)
+	userInfo, ok = h.resolveSessionUser(r.Context(), userInfo, true)
 	if !ok || userInfo.UserID == "" {
 		h.logger.Error("user context resolution failed", "subject", userInfo.Subject)
 		respondError(w, http.StatusBadGateway, "user context unavailable")
@@ -424,7 +424,7 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 	respondJSON(w, http.StatusOK, map[string]any{"user": userInfo})
 }
 
-func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.UserInfo) (*session.UserInfo, bool) {
+func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.UserInfo, useCache bool) (*session.UserInfo, bool) {
 	if fallback == nil {
 		fallback = &session.UserInfo{}
 	}
@@ -435,11 +435,8 @@ func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.Use
 	if fallback.UserID == "" && looksLikeUUID(fallback.Subject) {
 		fallback.UserID = fallback.Subject
 	}
-	if h.cache != nil {
-		for _, key := range []string{fallback.UserID, fallback.Subject} {
-			if key == "" {
-				continue
-			}
+	if useCache && h.cache != nil {
+		for _, key := range sessionUserCacheKeys(fallback.UserID, fallback.Subject, fallback.AuthVersion) {
 			if uc, ok := h.cache.get(key); ok {
 				return sessionUserFromIAM(uc, fallback), true
 			}
@@ -474,11 +471,34 @@ func (h *BFFHandler) cacheSessionUser(fallback *session.UserInfo, uc *iamclient.
 	if h.cache == nil || uc == nil {
 		return
 	}
-	for _, key := range []string{uc.UserID, uc.Subject, fallback.UserID, fallback.Subject} {
-		if key != "" {
+	for _, key := range sessionUserCacheKeys(uc.UserID, uc.Subject, uc.AuthVersion) {
+		h.cache.set(key, uc)
+	}
+	if fallback != nil && fallback.AuthVersion == uc.AuthVersion {
+		for _, key := range sessionUserCacheKeys(fallback.UserID, fallback.Subject, fallback.AuthVersion) {
 			h.cache.set(key, uc)
 		}
 	}
+}
+
+func sessionUserCacheKeys(userID, subject string, authVersion int64) []string {
+	if authVersion <= 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var keys []string
+	for _, base := range []string{strings.TrimSpace(userID), strings.TrimSpace(subject)} {
+		if base == "" {
+			continue
+		}
+		key := fmt.Sprintf("%s:v%d", base, authVersion)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func iamLookupIDs(info *session.UserInfo) []string {
@@ -827,7 +847,7 @@ func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "session expired")
 		return
 	}
-	userInfo, ok := h.resolveSessionUser(r.Context(), sess.User)
+	userInfo, ok := h.resolveSessionUser(r.Context(), sess.User, true)
 	if !ok || userInfo.UserID == "" {
 		h.clearSessionCookie(w)
 		respondError(w, http.StatusUnauthorized, "user context unavailable")
@@ -849,7 +869,7 @@ func (h *BFFHandler) MeSessions(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "session expired")
 		return
 	}
-	userInfo, ok := h.resolveSessionUser(r.Context(), sess.User)
+	userInfo, ok := h.resolveSessionUser(r.Context(), sess.User, true)
 	if !ok || userInfo.UserID == "" {
 		h.clearSessionCookie(w)
 		respondError(w, http.StatusUnauthorized, "user context unavailable")
@@ -953,7 +973,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusForbidden, "recent_auth_required")
 			return
 		}
-		userInfo, ok := h.resolveSessionUser(r.Context(), sess.User)
+		userInfo, ok := h.resolveSessionUser(r.Context(), sess.User, match == nil || match.Route.Risk != "high")
 		if !ok || userInfo.UserID == "" {
 			if requireAuth {
 				h.clearSessionCookie(w)
