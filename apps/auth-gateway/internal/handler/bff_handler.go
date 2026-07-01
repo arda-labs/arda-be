@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -458,6 +459,32 @@ func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.Use
 	}
 
 	return h.resolveSessionUserOnce(fallback)
+}
+
+func sessionUserComplete(user *session.UserInfo) bool {
+	return user != nil &&
+		strings.TrimSpace(user.UserID) != "" &&
+		strings.TrimSpace(user.Subject) != "" &&
+		user.AuthVersion > 0
+}
+
+func (h *BFFHandler) ensureSessionUser(ctx context.Context, sess *session.Session, forceFresh bool) bool {
+	if sess == nil {
+		return false
+	}
+	if !forceFresh && sessionUserComplete(sess.User) {
+		return true
+	}
+	previous := sess.User
+	userInfo, ok := h.resolveSessionUser(ctx, sess.User, !forceFresh)
+	if !ok || userInfo.UserID == "" {
+		return false
+	}
+	sess.User = userInfo
+	if !reflect.DeepEqual(previous, userInfo) {
+		h.updateSession(ctx, sess)
+	}
+	return true
 }
 
 func (h *BFFHandler) resolveSessionUserOnce(fallback *session.UserInfo) (*session.UserInfo, bool) {
@@ -923,14 +950,11 @@ func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "session expired")
 		return
 	}
-	userInfo, ok := h.resolveSessionUser(r.Context(), sess.User, true)
-	if !ok || userInfo.UserID == "" {
+	if !h.ensureSessionUser(r.Context(), sess, false) {
 		h.clearSessionCookie(w)
 		respondError(w, http.StatusUnauthorized, "user context unavailable")
 		return
 	}
-	sess.User = userInfo
-	h.updateSession(r.Context(), sess)
 	respondJSON(w, http.StatusOK, sess.User)
 }
 
@@ -946,14 +970,11 @@ func (h *BFFHandler) MeSessions(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "session expired")
 		return
 	}
-	userInfo, ok := h.resolveSessionUser(r.Context(), sess.User, true)
-	if !ok || userInfo.UserID == "" {
+	if !h.ensureSessionUser(r.Context(), sess, false) {
 		h.clearSessionCookie(w)
 		respondError(w, http.StatusUnauthorized, "user context unavailable")
 		return
 	}
-	sess.User = userInfo
-	h.updateSession(r.Context(), sess)
 	sessions, _ := h.store.ListByUser(r.Context(), sess.User.UserID)
 	respondJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "current": sessionID})
 }
@@ -1051,16 +1072,14 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusForbidden, "recent_auth_required")
 			return
 		}
-		userInfo, ok := h.resolveSessionUser(r.Context(), sess.User, match == nil || match.Route.Risk != "high")
-		if !ok || userInfo.UserID == "" {
+		forceFreshUser := match != nil && match.Route.Risk == "high"
+		if !h.ensureSessionUser(r.Context(), sess, forceFreshUser) {
 			if requireAuth {
 				h.clearSessionCookie(w)
 				respondError(w, http.StatusUnauthorized, "user context unavailable")
 				return
 			}
 		} else {
-			sess.User = userInfo
-			h.updateSession(r.Context(), sess)
 			if match != nil && len(match.Route.Permissions) > 0 && !permission.HasAny(sess.User.Permissions, match.Route.Permissions...) {
 				respondError(w, http.StatusForbidden, "insufficient permissions")
 				return
