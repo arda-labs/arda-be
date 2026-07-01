@@ -15,6 +15,7 @@ use (
 	./libs/go/arda-events
 	./libs/go/arda-grpc
 	./libs/go/arda-media
+	./libs/go/arda-postgres
 	./libs/go/arda-proto
 	./libs/go/arda-redis
 	./tools/arda-cli

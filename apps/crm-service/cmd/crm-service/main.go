@@ -20,6 +20,7 @@ import (
 	"github.com/arda-labs/arda/apps/crm-service/internal/repository"
 	transport "github.com/arda-labs/arda/apps/crm-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/crm-service/internal/worker"
+	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
 func main() {
@@ -37,6 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	ardapostgres.ConfigureDefaultPool(db, logger)
 
 	if err := db.PingContext(context.Background()); err != nil {
 		logger.Error("Failed to ping database", "err", err)

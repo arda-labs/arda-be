@@ -14,6 +14,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
 	github.com/casbin/govaluate v1.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -33,3 +34,5 @@ require (
 replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
 
 replace github.com/arda-labs/arda/libs/go/arda-media => ../../libs/go/arda-media
+
+replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres

@@ -17,6 +17,7 @@ replace github.com/arda-labs/arda/libs/go/arda-auth => ../../libs/go/arda-auth
 replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/asaskevich/govalidator v0.0.0-20200108200545-475eaeb16496 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0 // indirect
@@ -43,3 +44,5 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
+
+replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres

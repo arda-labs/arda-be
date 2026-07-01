@@ -18,6 +18,7 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 	transport "github.com/arda-labs/arda/apps/workflow-service/internal/transport/http"
+	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
 func main() {
@@ -35,6 +36,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	ardapostgres.ConfigureDefaultPool(db, logger)
 
 	if err := db.PingContext(context.Background()); err != nil {
 		logger.Error("Failed to ping database", "err", err)

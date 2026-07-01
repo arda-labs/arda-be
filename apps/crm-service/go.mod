@@ -10,6 +10,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/asaskevich/govalidator v0.0.0-20200108200545-475eaeb16496 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0 // indirect
@@ -31,3 +32,5 @@ require (
 	google.golang.org/grpc v1.62.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres

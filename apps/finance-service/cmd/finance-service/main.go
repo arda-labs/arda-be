@@ -19,6 +19,7 @@ import (
 	"github.com/arda-labs/arda/apps/finance-service/internal/service"
 	transport "github.com/arda-labs/arda/apps/finance-service/internal/transport/http"
 	platformclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/platform"
+	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
 func main() {
@@ -35,6 +36,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	ardapostgres.ConfigureDefaultPool(db, logger)
 
 	if err := db.PingContext(context.Background()); err != nil {
 		logger.Error("ping database", "err", err)

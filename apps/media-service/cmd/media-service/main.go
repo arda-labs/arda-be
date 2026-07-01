@@ -19,6 +19,7 @@ import (
 	"github.com/arda-labs/arda/apps/media-service/internal/service"
 	"github.com/arda-labs/arda/apps/media-service/internal/storage"
 	transport "github.com/arda-labs/arda/apps/media-service/internal/transport/http"
+	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
 func main() {
@@ -35,6 +36,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	ardapostgres.ConfigureDefaultPool(db, logger)
 
 	if err := db.PingContext(ctx); err != nil {
 		logger.Error("ping database", "err", err)
@@ -125,4 +127,3 @@ func parseLogLevel(level string) slog.Level {
 		return slog.LevelInfo
 	}
 }
-

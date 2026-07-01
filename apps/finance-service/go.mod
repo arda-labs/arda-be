@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
@@ -20,3 +21,5 @@ require (
 	golang.org/x/sys v0.46.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
+
+replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
