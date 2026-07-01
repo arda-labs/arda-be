@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/arda-labs/arda/apps/iam-service/internal/audit"
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
@@ -19,15 +20,17 @@ type AdminHandler struct {
 	userRepo *repository.UserRepository
 	roleRepo *repository.RoleRepository
 	userSvc  *service.AdminUserService
+	audit    *audit.Logger
 	logger   *slog.Logger
 }
 
 // NewAdminHandler creates an admin handler.
-func NewAdminHandler(userRepo *repository.UserRepository, roleRepo *repository.RoleRepository, userSvc *service.AdminUserService) *AdminHandler {
+func NewAdminHandler(userRepo *repository.UserRepository, roleRepo *repository.RoleRepository, userSvc *service.AdminUserService, auditLogger *audit.Logger) *AdminHandler {
 	return &AdminHandler{
 		userRepo: userRepo,
 		roleRepo: roleRepo,
 		userSvc:  userSvc,
+		audit:    auditLogger,
 		logger:   slog.Default(),
 	}
 }
@@ -188,6 +191,11 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("user created", "username", req.Username, "id", created.ID)
+	h.auditAdmin(r, "admin.user.create", "create", "user", "success", map[string]any{
+		"target_user_id": created.ID,
+		"username":       created.Username,
+		"tenant_id":      created.TenantID,
+	})
 
 	respondJSON(w, http.StatusCreated, map[string]any{
 		"id": created.ID, "username": created.Username,
@@ -250,6 +258,11 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "user not found")
 		return
 	}
+	h.auditAdmin(r, "admin.user.update", "update", "user", "success", map[string]any{
+		"target_user_id": u.ID,
+		"username":       u.Username,
+		"tenant_id":      u.TenantID,
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
@@ -278,6 +291,11 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.auditAdmin(r, "admin.user.delete", "delete", "user", "success", map[string]any{
+		"target_user_id": u.ID,
+		"username":       u.Username,
+		"tenant_id":      u.TenantID,
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
@@ -311,6 +329,12 @@ func (h *AdminHandler) SetUserStatus(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "user not found")
 		return
 	}
+	h.auditAdmin(r, "admin.user.status", "update_status", "user", "success", map[string]any{
+		"target_user_id": u.ID,
+		"username":       u.Username,
+		"status":         u.Status,
+		"tenant_id":      u.TenantID,
+	})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
@@ -340,6 +364,11 @@ func (h *AdminHandler) ResetUserPassword(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusNotFound, "user not found")
 		return
 	}
+	h.auditAdmin(r, "admin.user.password_reset", "reset_password", "user", "success", map[string]any{
+		"target_user_id": u.ID,
+		"username":       u.Username,
+		"tenant_id":      u.TenantID,
+	})
 	respondJSON(w, http.StatusOK, map[string]string{"status": "password_reset"})
 }
 
@@ -380,6 +409,12 @@ func (h *AdminHandler) ProvisionUserIdentity(w http.ResponseWriter, r *http.Requ
 		respondError(w, http.StatusNotFound, "user not found")
 		return
 	}
+	h.auditAdmin(r, "admin.user.identity_provision", "provision_identity", "user", "success", map[string]any{
+		"target_user_id":     u.ID,
+		"username":           u.Username,
+		"kratos_identity_id": identityID,
+		"tenant_id":          u.TenantID,
+	})
 	respondJSON(w, http.StatusOK, map[string]string{
 		"status":           "provisioned",
 		"kratosIdentityId": identityID,
@@ -407,6 +442,10 @@ func (h *AdminHandler) AssignUserRole(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.auditAdmin(r, "admin.user.assign_role", "assign_role", "user", "success", map[string]any{
+		"target_user_id": req.UserID,
+		"role_id":        req.RoleID,
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "assigned"})
 }
@@ -426,6 +465,10 @@ func (h *AdminHandler) UnassignUserRole(w http.ResponseWriter, r *http.Request) 
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.auditAdmin(r, "admin.user.unassign_role", "unassign_role", "user", "success", map[string]any{
+		"target_user_id": userID,
+		"role_id":        roleID,
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "unassigned"})
 }
@@ -794,4 +837,21 @@ func (h *AdminHandler) isProtectedSuperAdminPermissionRemoval(w http.ResponseWri
 		return true
 	}
 	return false
+}
+
+func (h *AdminHandler) auditAdmin(r *http.Request, eventType, action, resource, result string, details map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	h.audit.Event(r.Context(), &domain.AuthEvent{
+		EventType: eventType,
+		Subject:   r.Header.Get("X-User-Id"),
+		Action:    action,
+		Resource:  resource,
+		Result:    result,
+		Details:   details,
+		ClientIP:  extractIP(r),
+		UserAgent: r.UserAgent(),
+		RequestID: r.Header.Get("X-Request-Id"),
+	})
 }

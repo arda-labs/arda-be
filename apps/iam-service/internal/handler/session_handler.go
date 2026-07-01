@@ -4,17 +4,20 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/arda-labs/arda/apps/iam-service/internal/audit"
+	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
 )
 
 // SessionHandler exposes session management endpoints.
 type SessionHandler struct {
-	svc *service.SessionService
+	svc   *service.SessionService
+	audit *audit.Logger
 }
 
 // NewSessionHandler creates a session handler.
-func NewSessionHandler(svc *service.SessionService) *SessionHandler {
-	return &SessionHandler{svc: svc}
+func NewSessionHandler(svc *service.SessionService, auditLogger *audit.Logger) *SessionHandler {
+	return &SessionHandler{svc: svc, audit: auditLogger}
 }
 
 // ListMySessions returns current user's active sessions.
@@ -80,6 +83,10 @@ func (h *SessionHandler) RevokeMySession(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.auditSession(r, "session_revoked", userID, "revoke", "success", map[string]any{
+		"session_id": sessionID,
+		"reason":     "user_revoked",
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
@@ -104,6 +111,11 @@ func (h *SessionHandler) RevokeMyOtherSessions(w http.ResponseWriter, r *http.Re
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.auditSession(r, "session_revoked", userID, "revoke_others", "success", map[string]any{
+		"keep_session_id": keepID,
+		"count":           n,
+		"reason":          "user_revoked_others",
+	})
 
 	respondJSON(w, http.StatusOK, map[string]any{"status": "revoked", "count": n})
 }
@@ -246,6 +258,10 @@ func (h *SessionHandler) InternalCreateSession(w http.ResponseWriter, r *http.Re
 		respondJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 		return
 	}
+	h.auditSession(r, "session_created", req.UserID, "create", "success", map[string]any{
+		"session_id": sess.ID,
+		"device_id":  deviceID,
+	})
 
 	respondJSON(w, http.StatusCreated, map[string]any{
 		"sessionId": sess.ID,
@@ -267,6 +283,10 @@ func (h *SessionHandler) InternalRevokeSession(w http.ResponseWriter, r *http.Re
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	h.auditSession(r, "session_revoked", sessionID, "logout", "success", map[string]any{
+		"session_id": sessionID,
+		"reason":     "logout",
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
@@ -326,6 +346,28 @@ func (h *SessionHandler) AdminRevokeUserSessions(w http.ResponseWriter, r *http.
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.auditSession(r, "session_revoked", userID, "admin_revoke", "success", map[string]any{
+		"target_user_id": userID,
+		"count":          n,
+		"reason":         reason,
+	})
 
 	respondJSON(w, http.StatusOK, map[string]any{"status": "revoked", "count": n})
+}
+
+func (h *SessionHandler) auditSession(r *http.Request, eventType, subject, action, result string, details map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	h.audit.Event(r.Context(), &domain.AuthEvent{
+		EventType: eventType,
+		Subject:   subject,
+		Action:    action,
+		Resource:  "session",
+		Result:    result,
+		Details:   details,
+		ClientIP:  extractIP(r),
+		UserAgent: r.UserAgent(),
+		RequestID: r.Header.Get("X-Request-Id"),
+	})
 }

@@ -131,8 +131,8 @@ func main() {
 	authHandler := handler.NewAuthHandler(orchestrator, userHandler)
 	policyHandler := handler.NewPolicyHandler(policyEnf)
 	adminUserSvc := service.NewAdminUserService(userRepo, roleRepo, identitySvc)
-	adminHandler := handler.NewAdminHandler(userRepo, roleRepo, adminUserSvc)
-	sessionHandler := handler.NewSessionHandler(sessionSvc)
+	adminHandler := handler.NewAdminHandler(userRepo, roleRepo, adminUserSvc, auditLogger)
+	sessionHandler := handler.NewSessionHandler(sessionSvc, auditLogger)
 	mfaHandler := handler.NewMFAHandler(mfaSvc)
 	auditHandler := handler.NewAuditHandler(auditSvc)
 
