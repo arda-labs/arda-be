@@ -910,11 +910,34 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
+	if isEventStreamRequest(r) {
+		copyEventStream(w, resp.Body)
+		return
+	}
 	io.Copy(w, resp.Body)
 }
 
 func isEventStreamRequest(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/event-stream")
+}
+
+func copyEventStream(w http.ResponseWriter, body io.Reader) {
+	flusher, _ := w.(http.Flusher)
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := body.Read(buf)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 func (h *BFFHandler) upstreamBaseURL(path string) string {
