@@ -569,7 +569,7 @@ func (h *BFFHandler) cacheSessionUser(fallback *session.UserInfo, uc *iamclient.
 	for _, key := range sessionUserCacheKeys(uc.UserID, uc.Subject, uc.AuthVersion) {
 		h.cache.set(key, uc)
 	}
-	if fallback != nil && fallback.AuthVersion == uc.AuthVersion {
+	if fallback != nil && (fallback.AuthVersion <= 0 || fallback.AuthVersion == uc.AuthVersion) {
 		for _, key := range sessionUserCacheKeys(fallback.UserID, fallback.Subject, fallback.AuthVersion) {
 			h.cache.set(key, uc)
 		}

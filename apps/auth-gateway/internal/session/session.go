@@ -287,6 +287,7 @@ func (u *UserInfo) MarshalJSON() ([]byte, error) {
 		"orgIds":       u.OrgIDs,
 		"roles":        u.Roles,
 		"permissions":  u.Permissions,
+		"authVersion":  u.AuthVersion,
 	})
 }
 

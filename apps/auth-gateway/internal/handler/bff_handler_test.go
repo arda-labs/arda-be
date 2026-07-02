@@ -5,8 +5,10 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/config"
+	"github.com/arda-labs/arda/apps/auth-gateway/internal/iamclient"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/session"
 )
 
@@ -117,5 +119,21 @@ func TestSessionUserCacheKeysAllowLegacyVersion(t *testing.T) {
 	want := []string{"u1:legacy", "s1:legacy"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("legacy keys = %#v, want %#v", got, want)
+	}
+}
+
+func TestCacheSessionUserStoresLegacyFallback(t *testing.T) {
+	handler := &BFFHandler{cache: newUserContextCache(time.Minute)}
+	handler.cacheSessionUser(
+		&session.UserInfo{UserID: "u1", Subject: "s1"},
+		&iamclient.UserContext{UserID: "u1", Subject: "s1", AuthVersion: 18},
+	)
+
+	uc, ok := handler.cache.get("u1:legacy")
+	if !ok {
+		t.Fatal("legacy user id cache key was not stored")
+	}
+	if uc.AuthVersion != 18 {
+		t.Fatalf("auth version = %d, want 18", uc.AuthVersion)
 	}
 }
