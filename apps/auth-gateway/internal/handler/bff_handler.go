@@ -92,6 +92,7 @@ type loginAcceptRequest struct {
 	Remember           bool   `json:"remember"`
 	RememberFor        int    `json:"remember_for"`
 	KratosSessionToken string `json:"kratos_session_token"`
+	MFACode            string `json:"mfa_code"`
 }
 
 type kratosWhoamiResponse struct {
@@ -160,7 +161,78 @@ func (h *BFFHandler) AcceptKratosLogin(w http.ResponseWriter, r *http.Request) {
 	if req.RememberFor == 0 {
 		req.RememberFor = int((24 * time.Hour).Seconds())
 	}
+	if h.requiresLoginMFA(uc) {
+		status, err := h.iamClient.GetMFAStatus(r.Context(), uc.UserID)
+		if err != nil {
+			h.logger.Warn("mfa status check failed", "user_id", uc.UserID, "err", err)
+			respondError(w, http.StatusBadGateway, "mfa status unavailable")
+			return
+		}
+		if status == nil || !status.IsEnrolled {
+			if strings.TrimSpace(req.MFACode) == "" {
+				secret, err := h.iamClient.GenerateMFASecret(r.Context(), uc.UserID, uc.Username, uc.Email)
+				if err != nil {
+					h.logger.Warn("mfa enrollment secret failed", "user_id", uc.UserID, "err", err)
+					respondError(w, http.StatusBadGateway, "mfa enrollment unavailable")
+					return
+				}
+				respondJSON(w, http.StatusOK, map[string]any{
+					"mfa_enrollment_required": true,
+					"method":                  "totp",
+					"user":                    uc.Username,
+					"secret":                  secret.Secret,
+					"otpauth_url":             secret.OTPAuthURL,
+				})
+				return
+			}
+			enroll, err := h.iamClient.VerifyMFAEnrollment(r.Context(), uc.UserID, strings.TrimSpace(req.MFACode))
+			if err != nil {
+				h.logger.Warn("mfa enrollment verify failed", "user_id", uc.UserID, "err", err)
+				respondError(w, http.StatusUnauthorized, "invalid_mfa_code")
+				return
+			}
+			redirectURL, ok := h.acceptHydraLoginURL(w, r, req, uc.UserID)
+			if !ok {
+				return
+			}
+			respondJSON(w, http.StatusOK, map[string]any{
+				"redirect_url": redirectURL,
+				"backup_codes": enroll.BackupCodes,
+			})
+			return
+		}
+		if strings.TrimSpace(req.MFACode) == "" {
+			respondJSON(w, http.StatusOK, map[string]any{
+				"mfa_required": true,
+				"method":       status.Method,
+				"user":         uc.Username,
+			})
+			return
+		}
+		if err := h.iamClient.VerifyMFA(r.Context(), uc.UserID, strings.TrimSpace(req.MFACode)); err != nil {
+			h.logger.Warn("mfa login verify failed", "user_id", uc.UserID, "err", err)
+			respondError(w, http.StatusUnauthorized, "invalid_mfa_code")
+			return
+		}
+	}
 	h.acceptHydraLogin(w, r, req)
+}
+
+func (h *BFFHandler) requiresLoginMFA(uc *iamclient.UserContext) bool {
+	if uc == nil {
+		return false
+	}
+	for _, role := range uc.Roles {
+		if role == "SUPER_ADMIN" || role == "ADMIN" {
+			return true
+		}
+	}
+	for _, code := range uc.Permissions {
+		if code == "superadmin" {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *BFFHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -224,18 +296,26 @@ func (h *BFFHandler) getHydraAuthRequest(ctx context.Context, flow, challengePar
 }
 
 func (h *BFFHandler) acceptHydraLogin(w http.ResponseWriter, r *http.Request, req loginAcceptRequest) {
+	redirectURL, ok := h.acceptHydraLoginURL(w, r, req, req.Subject)
+	if !ok {
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"redirect_url": redirectURL})
+}
+
+func (h *BFFHandler) acceptHydraLoginURL(w http.ResponseWriter, r *http.Request, req loginAcceptRequest, subject string) (string, bool) {
 	hydraURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/login/accept?login_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(req.LoginChallenge))
-	b, _ := json.Marshal(map[string]any{"subject": req.Subject, "remember": req.Remember, "remember_for": req.RememberFor})
+	b, _ := json.Marshal(map[string]any{"subject": subject, "remember": req.Remember, "remember_for": req.RememberFor})
 	resp, err := h.doPut(hydraURL, "application/json", bytes.NewReader(b))
 	if err != nil {
 		respondError(w, http.StatusBadGateway, "accept login failed")
-		return
+		return "", false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		respondError(w, resp.StatusCode, string(body))
-		return
+		return "", false
 	}
 	var result struct {
 		RedirectTo string `json:"redirect_to"`
@@ -243,9 +323,9 @@ func (h *BFFHandler) acceptHydraLogin(w http.ResponseWriter, r *http.Request, re
 	json.NewDecoder(resp.Body).Decode(&result)
 	if result.RedirectTo == "" {
 		respondError(w, http.StatusBadGateway, "accept login returned empty redirect_to")
-		return
+		return "", false
 	}
-	respondJSON(w, http.StatusOK, map[string]string{"redirect_url": result.RedirectTo})
+	return result.RedirectTo, true
 }
 
 func (h *BFFHandler) AcceptConsent(w http.ResponseWriter, r *http.Request) {

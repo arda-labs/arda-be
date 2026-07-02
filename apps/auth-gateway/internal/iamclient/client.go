@@ -60,6 +60,21 @@ type CreateSessionResponse struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
+type MFAStatus struct {
+	IsEnrolled bool   `json:"is_enrolled"`
+	Method     string `json:"method"`
+}
+
+type MFASecret struct {
+	Secret     string `json:"secret"`
+	OTPAuthURL string `json:"otpauth_url"`
+}
+
+type MFAEnrollResponse struct {
+	Status      string   `json:"status"`
+	BackupCodes []string `json:"backup_codes"`
+}
+
 // Client calls the IAM service internal APIs.
 type Client struct {
 	baseURL string
@@ -234,6 +249,101 @@ func (c *Client) RevokeSession(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("revoke session returned status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func (c *Client) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/iam/me/mfa/status", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-User-Id", userID)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mfa status request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("mfa status returned status %d", resp.StatusCode)
+	}
+	var status MFAStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return nil, fmt.Errorf("decode mfa status: %w", err)
+	}
+	return &status, nil
+}
+
+func (c *Client) VerifyMFA(ctx context.Context, userID, code string) error {
+	body, err := json.Marshal(map[string]string{"userId": userID, "code": code})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/iam/me/mfa/verify", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("mfa verify request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("mfa verify returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Client) GenerateMFASecret(ctx context.Context, userID, username, email string) (*MFASecret, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/iam/me/mfa/enroll", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-User-Id", userID)
+	req.Header.Set("X-Username", username)
+	req.Header.Set("X-User-Email", email)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mfa enroll request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("mfa enroll returned status %d", resp.StatusCode)
+	}
+	var secret MFASecret
+	if err := json.NewDecoder(resp.Body).Decode(&secret); err != nil {
+		return nil, fmt.Errorf("decode mfa secret: %w", err)
+	}
+	return &secret, nil
+}
+
+func (c *Client) VerifyMFAEnrollment(ctx context.Context, userID, code string) (*MFAEnrollResponse, error) {
+	body, err := json.Marshal(map[string]string{"code": code})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/iam/me/mfa/verify-enroll", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Id", userID)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mfa verify enroll request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("mfa verify enroll returned status %d", resp.StatusCode)
+	}
+	var result MFAEnrollResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode mfa enroll response: %w", err)
+	}
+	return &result, nil
 }
 
 // InternalBaseURL returns the base URL for IAM internal API calls.
