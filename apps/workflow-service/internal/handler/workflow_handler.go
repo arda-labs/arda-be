@@ -405,6 +405,9 @@ func (h *WorkflowHandler) ProcessDefinitionByID(w http.ResponseWriter, r *http.R
 		}
 		item, err := h.processDefinition.Update(r.Context(), id, in)
 		writeUpdateOrError(w, item, err, "Process definition not found")
+	case r.Method == http.MethodDelete && action == "":
+		deleted, err := h.processDefinition.Delete(r.Context(), id)
+		writeDeleteOrError(w, deleted, err, "Process definition not found")
 	case r.Method == http.MethodGet && action == "xml":
 		item, err := h.processDefinition.Get(r.Context(), id)
 		if err != nil {
@@ -894,6 +897,18 @@ func writeUpdateOrError(w http.ResponseWriter, item any, err error, notFound str
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
+}
+
+func writeDeleteOrError(w http.ResponseWriter, deleted bool, err error, notFound string) {
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !deleted {
+		http.Error(w, notFound, http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

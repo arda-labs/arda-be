@@ -154,6 +154,21 @@ func (r *ProcessDefinitionRepository) MarkDeployed(ctx context.Context, id strin
 	return &item, err
 }
 
+func (r *ProcessDefinitionRepository) Delete(ctx context.Context, id string) (bool, error) {
+	if id == "" {
+		return false, errors.New("id is required")
+	}
+	result, err := r.db.ExecContext(ctx, `DELETE FROM workflow_process_definitions WHERE id = $1`, id)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
+}
+
 func validateProcessDefinitionImport(in ProcessDefinitionImport, requireCode bool) (string, error) {
 	switch {
 	case requireCode && strings.TrimSpace(in.ProcessCode) == "":
