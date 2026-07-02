@@ -86,16 +86,17 @@ func (s *AdminUserService) ListUsers(ctx context.Context, params repository.List
 		return nil, 0, err
 	}
 
+	userIDs := make([]string, 0, len(users))
+	for _, u := range users {
+		userIDs = append(userIDs, u.ID)
+	}
+	rolesByUserID, err := s.userRepo.GetUserRoleCodesByUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get user roles: %w", err)
+	}
+
 	items := make([]AdminUserSummary, 0, len(users))
 	for _, u := range users {
-		roles, err := s.userRepo.GetUserRoles(ctx, u.ID)
-		if err != nil {
-			return nil, 0, fmt.Errorf("get user roles: %w", err)
-		}
-		roleCodes := make([]string, len(roles))
-		for i, r := range roles {
-			roleCodes[i] = r.Code
-		}
 		items = append(items, AdminUserSummary{
 			ID:               u.ID,
 			Username:         u.Username,
@@ -111,7 +112,7 @@ func (s *AdminUserService) ListUsers(ctx context.Context, params repository.List
 			Status:           u.Status,
 			Source:           u.Source,
 			KratosIdentityID: u.KratosIdentityID,
-			Roles:            roleCodes,
+			Roles:            rolesByUserID[u.ID],
 			TenantID:         u.TenantID,
 			CreatedAt:        u.CreatedAt,
 		})

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
+	"github.com/lib/pq"
 )
 
 // UserRepository provides persistence for users and their context.
@@ -667,6 +668,33 @@ func (r *UserRepository) GetUserRoles(ctx context.Context, userID string) ([]dom
 		roles = append(roles, role)
 	}
 	return roles, rows.Err()
+}
+
+func (r *UserRepository) GetUserRoleCodesByUserIDs(ctx context.Context, userIDs []string) (map[string][]string, error) {
+	result := make(map[string][]string, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT ur.user_id, r.code
+		FROM iam_user_roles ur
+		JOIN iam_roles r ON r.id = ur.role_id
+		WHERE ur.user_id = ANY($1)
+		ORDER BY ur.user_id, r.code
+	`, pq.Array(userIDs))
+	if err != nil {
+		return nil, fmt.Errorf("get user role codes by user ids: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID, roleCode string
+		if err := rows.Scan(&userID, &roleCode); err != nil {
+			return nil, err
+		}
+		result[userID] = append(result[userID], roleCode)
+	}
+	return result, rows.Err()
 }
 
 // GetUserPermissions returns all permissions granted to a user through their roles.
