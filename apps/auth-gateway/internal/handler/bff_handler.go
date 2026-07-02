@@ -30,6 +30,7 @@ const (
 	deviceCookieMaxAge    = 365 * 24 * 60 * 60
 	rememberMFACookieName = "arda_rmf"
 	oauthStateMaxAge      = 10 * 60
+	loginRememberMaxAge   = 30 * 24 * 60 * 60
 )
 
 type BFFHandler struct {
@@ -163,13 +164,9 @@ func (h *BFFHandler) AcceptKratosLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	req.Subject = uc.UserID
-	if !req.Remember {
-		req.Remember = true
-	}
-	if req.RememberFor == 0 {
-		req.RememberFor = int((24 * time.Hour).Seconds())
-	}
-	if h.requiresLoginMFA(uc) {
+	requiresMFA := h.requiresLoginMFA(uc)
+	applyLoginRememberPolicy(&req, requiresMFA)
+	if requiresMFA {
 		status, err := h.iamClient.GetMFAStatus(r.Context(), uc.UserID)
 		if err != nil {
 			h.logger.Warn("mfa status check failed", "user_id", uc.UserID, "err", err)
@@ -241,6 +238,17 @@ func (h *BFFHandler) requiresLoginMFA(uc *iamclient.UserContext) bool {
 		}
 	}
 	return false
+}
+
+func applyLoginRememberPolicy(req *loginAcceptRequest, privileged bool) {
+	if privileged || !req.Remember {
+		req.Remember = false
+		req.RememberFor = 0
+		return
+	}
+	if req.RememberFor <= 0 || req.RememberFor > loginRememberMaxAge {
+		req.RememberFor = loginRememberMaxAge
+	}
 }
 
 func (h *BFFHandler) Login(w http.ResponseWriter, r *http.Request) {

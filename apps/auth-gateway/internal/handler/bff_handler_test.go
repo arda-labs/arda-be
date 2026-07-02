@@ -138,6 +138,26 @@ func TestCacheSessionUserStoresLegacyFallback(t *testing.T) {
 	}
 }
 
+func TestApplyLoginRememberPolicy(t *testing.T) {
+	privileged := loginAcceptRequest{Remember: true, RememberFor: loginRememberMaxAge}
+	applyLoginRememberPolicy(&privileged, true)
+	if privileged.Remember || privileged.RememberFor != 0 {
+		t.Fatalf("privileged remember = (%v, %d), want disabled", privileged.Remember, privileged.RememberFor)
+	}
+
+	regular := loginAcceptRequest{Remember: true}
+	applyLoginRememberPolicy(&regular, false)
+	if !regular.Remember || regular.RememberFor != loginRememberMaxAge {
+		t.Fatalf("regular remember = (%v, %d), want 30 days", regular.Remember, regular.RememberFor)
+	}
+
+	tooLong := loginAcceptRequest{Remember: true, RememberFor: loginRememberMaxAge + 1}
+	applyLoginRememberPolicy(&tooLong, false)
+	if tooLong.RememberFor != loginRememberMaxAge {
+		t.Fatalf("remember_for = %d, want cap %d", tooLong.RememberFor, loginRememberMaxAge)
+	}
+}
+
 func TestWebCheckRedirectsMissingSessionToOAuthStart(t *testing.T) {
 	handler := &BFFHandler{store: session.NewMemoryStore()}
 	req := httptest.NewRequest(http.MethodGet, "/auth/web-check", nil)
