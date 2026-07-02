@@ -137,3 +137,39 @@ func TestCacheSessionUserStoresLegacyFallback(t *testing.T) {
 		t.Fatalf("auth version = %d, want 18", uc.AuthVersion)
 	}
 }
+
+func TestWebCheckRedirectsMissingSessionToOAuthStart(t *testing.T) {
+	handler := &BFFHandler{store: session.NewMemoryStore()}
+	req := httptest.NewRequest(http.MethodGet, "/auth/web-check", nil)
+	req.Header.Set("X-Forwarded-Uri", "/finance?tab=accounts")
+	rec := httptest.NewRecorder()
+
+	handler.WebCheck(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+	if got := rec.Header().Get("Location"); got != "/api/auth/start?return_to=%2Ffinance%3Ftab%3Daccounts" {
+		t.Fatalf("location = %q", got)
+	}
+}
+
+func TestWebCheckAllowsValidBFFSession(t *testing.T) {
+	store := session.NewMemoryStore()
+	handler := &BFFHandler{cfg: config.Config{SessionCookieName: "arda_sid"}, store: store}
+	sess := &session.Session{
+		User: &session.UserInfo{UserID: "u1", Subject: "s1", AuthVersion: 1},
+	}
+	if err := store.Create(nil, sess, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/auth/web-check", nil)
+	req.AddCookie(&http.Cookie{Name: "arda_sid", Value: sess.ID})
+	rec := httptest.NewRecorder()
+
+	handler.WebCheck(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}

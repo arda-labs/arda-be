@@ -24,6 +24,7 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler,
 
 	// ForwardAuth (Traefik)
 	mux.HandleFunc("/auth/check", method("GET", authHandler.Check))
+	mux.HandleFunc("/auth/web-check", method("GET", bffHandler.WebCheck))
 
 	// ── BFF endpoints for Kratos + Hydra flow ──
 

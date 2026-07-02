@@ -1198,6 +1198,32 @@ func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *BFFHandler) WebCheck(w http.ResponseWriter, r *http.Request) {
+	sessionID := h.readSessionCookie(r)
+	if sessionID == "" {
+		h.redirectToOAuthStart(w, r)
+		return
+	}
+	sess, _ := h.store.Get(r.Context(), sessionID)
+	if sess == nil {
+		h.clearSessionCookie(w)
+		h.redirectToOAuthStart(w, r)
+		return
+	}
+	if !h.ensureSessionUser(r.Context(), sess, false) {
+		h.clearSessionCookie(w)
+		h.redirectToOAuthStart(w, r)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *BFFHandler) redirectToOAuthStart(w http.ResponseWriter, r *http.Request) {
+	returnTo := safeReturnTo(firstNonEmpty(r.Header.Get("X-Forwarded-Uri"), r.URL.RequestURI()))
+	target := "/api/auth/start?return_to=" + url.QueryEscape(returnTo)
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
 func (h *BFFHandler) MeSessions(w http.ResponseWriter, r *http.Request) {
 	sessionID := h.readSessionCookie(r)
 	if sessionID == "" {
