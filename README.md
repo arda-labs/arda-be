@@ -8,7 +8,8 @@ Go workspace for Arda backend services.
 | --- | --- |
 | `apps/auth-gateway` | Auth edge/BFF, sessions, Kratos/Hydra proxy, forward-auth |
 | `apps/iam-service` | IAM, users, roles, permissions, MFA, audit |
-| `apps/finance-service` | Finance accounts, transactions, approvals |
+| `apps/finance-service` | Finance accounts, transactions, approvals, operation queues, accounting config reads |
+| `apps/workflow-service` | Zeebe facade, business cases, workflow configuration, BPMN process definitions |
 | `apps/platform-service` | Platform reference data, parameters, lookups, organizations, geography |
 | `apps/mdm-service` | MDM scaffold |
 
@@ -23,7 +24,8 @@ Go workspace for Arda backend services.
 - Argo CD and Kubernetes manifests live in sibling repo `arda-infra`.
 - [Platform Service](docs/platform-service.md)
 - [Calendar & Cut-off Design](docs/calendar-cutoff-design.md)
+- `apps/workflow-service/README.md`
 
 ## Direction
 
-The backend remains HTTP/JSON at the edge and will evolve toward gRPC for internal service-to-service communication.
+The backend remains HTTP/JSON at the edge and will evolve toward gRPC for internal service-to-service communication. BPM runtime targets Zeebe 8.5 through `workflow-service`; Arda owns the product UI in `arda-mfe`.

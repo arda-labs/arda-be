@@ -1,6 +1,6 @@
 # Backend Current State
 
-Last updated: 2026-06-29
+Last updated: 2026-07-03
 
 ## Overview
 
@@ -19,7 +19,8 @@ Current services:
 | --- | --- | --- |
 | `auth-gateway` | active | BFF/auth edge, session, Kratos/Hydra proxy, forward-auth |
 | `iam-service` | active | users, roles, permissions, sessions, MFA, audit, login orchestration |
-| `finance-service` | scaffolded/active | accounts, transactions, approvals |
+| `finance-service` | active | accounts, transactions, approvals, finance operation queues, accounting config reads |
+| `workflow-service` | active | Zeebe facade, business cases, workflow configuration, BPMN process definitions, monitoring data facade |
 | `platform-service` | scaffolded/active | system parameters, lookups, organizations, credit institutions, administrative geography |
 | `mdm-service` | scaffold | placeholder service |
 
@@ -38,6 +39,8 @@ Traefik dynamic routing currently includes:
 - `/api/iam/*` -> `iam-service`, with forward-auth
 - `/api/mdm/*` -> `mdm-service`, with forward-auth
 - `/api/platform/*` -> `platform-service`, with forward-auth
+- `/api/finance/*` -> `finance-service`, with forward-auth
+- `/api/workflow/*` -> `workflow-service`, with forward-auth
 
 auth-gateway also exposes auth/session routes and currently has a generic `/api/*` proxy. That proxy should not become the long-term service router for every service; service routing should remain explicit.
 
@@ -93,6 +96,76 @@ Route-level auth-gateway policy includes:
 
 - `GET /api/platform/**` requires `platform.read`
 - write methods on `/api/platform/**` require `platform.manage`
+
+## Finance Service State
+
+`finance-service` now covers the finance core plus business-operation screens used by BPM flows:
+
+- chart of accounts and balances
+- double-entry transactions and reversal
+- approvals
+- incoming transaction operation queue
+- outgoing transaction operation queue
+- cross-direction transaction search
+- accounting configuration read APIs
+
+Current finance operation APIs:
+
+```txt
+GET  /api/finance/incoming-transactions
+POST /api/finance/incoming-transactions
+GET  /api/finance/incoming-transactions/{id}
+
+GET  /api/finance/outgoing-transactions
+POST /api/finance/outgoing-transactions
+GET  /api/finance/outgoing-transactions/{id}
+
+GET  /api/finance/transactions/search
+```
+
+Accounting config APIs are currently read-only:
+
+```txt
+GET /api/finance/accounting/process-configs
+GET /api/finance/accounting/account-classifications
+GET /api/finance/accounting/journal-definitions
+GET /api/finance/accounting/regulatory-accounts
+GET /api/finance/accounting/internal-accounts
+```
+
+Write APIs for accounting configuration should wait until rule ownership, validation, and audit semantics are finalized.
+
+## Workflow Service State
+
+`workflow-service` targets Zeebe 8.5 through the Zeebe Gateway and owns Arda workflow facade data. It does not own domain business rules.
+
+Current workflow areas:
+
+- case type and process config registry
+- business cases and timeline reads
+- SLA policies and task-level SLA rows
+- description templates with business subsystem
+- process roles
+- role catalog, role memberships, assignment rules, and delegations
+- BPMN process definitions with XML import/update/download/deploy
+
+Current process definition APIs:
+
+```txt
+GET  /api/workflow/process-definitions
+POST /api/workflow/process-definitions
+PUT  /api/workflow/process-definitions/{id}
+GET  /api/workflow/process-definitions/{id}/xml
+POST /api/workflow/process-definitions/{id}/deploy
+```
+
+Known workflow gaps:
+
+- runtime task claim/complete/reassign facade
+- maker/checker separation enforcement
+- incident/retry/suspend/resume APIs backed by Zeebe runtime state
+- documents, notes, audit-write, SLA event, and shared workflow timeline APIs
+- real Zeebe workers calling domain services over gRPC
 
 ## Platform Service State
 
@@ -169,6 +242,8 @@ Verified:
 
 - `go test ./...` passes in `apps/platform-service`
 - `go test ./...` passes in `apps/iam-service`
+- `go test ./...` passes in `apps/finance-service`
+- `go test ./...` passes in `apps/workflow-service`
 - `platform-service` compiles
 
 Not verified locally:
@@ -180,4 +255,4 @@ Not verified locally:
 - gRPC for service-to-service communication.
 - NATS for async events, cache invalidation, and future workflow/event use cases.
 - Multilingual support through stable error codes, locale metadata, and translatable platform reference data.
-- BPMN direction is Camunda 8.8+ / Zeebe with Arda workers and gRPC domain service calls; implementation should wait for Camunda 8.10 GA/stable.
+- BPMN direction is Zeebe 8.5 with Arda-owned UI, workflow-service facade APIs, Arda workers, and gRPC domain service calls.
