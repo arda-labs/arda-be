@@ -9,6 +9,8 @@ import (
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type WorkflowHandler struct {
@@ -54,7 +56,7 @@ func (h *WorkflowHandler) Deploy(w http.ResponseWriter, r *http.Request) {
 
 	key, err := h.zeebeSvc.DeployWorkflow(r.Context(), header.Filename, content)
 	if err != nil {
-		http.Error(w, "Failed to deploy: "+err.Error(), http.StatusInternalServerError)
+		writeDeployError(w, err)
 		return
 	}
 
@@ -440,7 +442,7 @@ func (h *WorkflowHandler) deployProcessDefinition(w http.ResponseWriter, r *http
 
 	key, err := h.zeebeSvc.DeployWorkflow(r.Context(), item.ResourceName, []byte(item.XMLContent))
 	if err != nil {
-		http.Error(w, "Failed to deploy: "+err.Error(), http.StatusInternalServerError)
+		writeDeployError(w, err)
 		return
 	}
 	deployed, err := h.processDefinition.MarkDeployed(r.Context(), id, key)
@@ -898,4 +900,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeDeployError(w http.ResponseWriter, err error) {
+	statusCode := http.StatusInternalServerError
+	if status.Code(err) == codes.InvalidArgument {
+		statusCode = http.StatusBadRequest
+	}
+	http.Error(w, "Failed to deploy: "+err.Error(), statusCode)
 }
