@@ -63,6 +63,14 @@ func (r *AccountRepository) GetByCode(ctx context.Context, code string) (*domain
 	return scanAccount(row)
 }
 
+func (r *AccountRepository) GetByTenantCode(ctx context.Context, tenantID, code string) (*domain.Account, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, code, name, type, normal_balance, currency, is_active, parent_id, metadata, created_at, updated_at
+		FROM fin_accounts WHERE tenant_id = $1 AND code = $2
+	`, tenantID, code)
+	return scanAccount(row)
+}
+
 func (r *AccountRepository) List(ctx context.Context, tenantID string) ([]domain.Account, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, code, name, type, normal_balance, currency, is_active, parent_id, metadata, created_at, updated_at

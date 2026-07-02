@@ -30,19 +30,29 @@ func (r *TransactionRepository) Create(ctx context.Context, txn *domain.Transact
 	}
 
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO fin_transactions (tenant_id, idempotency_key, txn_type, txn_date, status, description, source_ref, created_by, approved_by, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		INSERT INTO fin_transactions (
+			tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
+			txn_date, status, amount, currency, description, source_ref,
+			counterparty_name, counterparty_account, current_step, priority,
+			created_by, approved_by, metadata
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 		RETURNING id, posted_at, created_at
-	`, txn.TenantID, nullStr(txn.IdempotencyKey), txn.TxnType, txn.TxnDate,
-		string(txn.Status), txn.Description, txn.SourceRef, txn.CreatedBy,
-		nullStr(txn.ApprovedBy), meta)
+	`, txn.TenantID, nullStr(txn.IdempotencyKey), txn.TxnType, nullStr(string(txn.Direction)),
+		nullStr(txn.CaseType), nullStr(txn.OperationName), txn.TxnDate, string(txn.Status),
+		nullStr(txn.Amount), nullStr(txn.Currency), txn.Description, txn.SourceRef,
+		nullStr(txn.CounterpartyName), nullStr(txn.CounterpartyAccount), nullStr(txn.CurrentStep),
+		nullStr(txn.Priority), txn.CreatedBy, nullStr(txn.ApprovedBy), meta)
 
 	return row.Scan(&txn.ID, &txn.PostedAt, &txn.CreatedAt)
 }
 
 func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*domain.Transaction, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, idempotency_key, txn_type, txn_date, posted_at, status, description, source_ref, created_by, approved_by, metadata, created_at
+		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
+		       txn_date, posted_at, status, amount, currency, description, source_ref,
+		       counterparty_name, counterparty_account, current_step, priority,
+		       created_by, approved_by, metadata, created_at
 		FROM fin_transactions WHERE id = $1
 	`, id)
 	return scanTransaction(row)
@@ -50,7 +60,10 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*domain
 
 func (r *TransactionRepository) GetByIdempotencyKey(ctx context.Context, key string) (*domain.Transaction, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, idempotency_key, txn_type, txn_date, posted_at, status, description, source_ref, created_by, approved_by, metadata, created_at
+		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
+		       txn_date, posted_at, status, amount, currency, description, source_ref,
+		       counterparty_name, counterparty_account, current_step, priority,
+		       created_by, approved_by, metadata, created_at
 		FROM fin_transactions WHERE idempotency_key = $1
 	`, key)
 	return scanTransaction(row)
@@ -91,12 +104,111 @@ func (r *TransactionRepository) List(ctx context.Context, tenantID string, statu
 	offset := (page - 1) * size
 
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, idempotency_key, txn_type, txn_date, posted_at, status, description, source_ref, created_by, approved_by, metadata, created_at
+		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
+		       txn_date, posted_at, status, amount, currency, description, source_ref,
+		       counterparty_name, counterparty_account, current_step, priority,
+		       created_by, approved_by, metadata, created_at
 		FROM fin_transactions WHERE %s ORDER BY posted_at DESC LIMIT $%d OFFSET $%d
 	`, wc, idx, idx+1)
 	allArgs := append(args, size, offset)
 
 	rows, err := r.db.QueryContext(ctx, query, allArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var txns []domain.Transaction
+	for rows.Next() {
+		var t domain.Transaction
+		if err := scanTransactionRow(rows, &t); err != nil {
+			return nil, 0, err
+		}
+		txns = append(txns, t)
+	}
+	return txns, total, rows.Err()
+}
+
+type TransactionSearchFilter struct {
+	TenantID  string
+	Keyword   string
+	Direction string
+	CaseType  string
+	Status    string
+	TxnType   string
+	From      time.Time
+	To        time.Time
+	Page      int
+	Size      int
+}
+
+func (r *TransactionRepository) Search(ctx context.Context, f TransactionSearchFilter) ([]domain.Transaction, int, error) {
+	where := []string{"tenant_id = $1"}
+	args := []any{f.TenantID}
+	idx := 2
+
+	if f.Keyword != "" {
+		where = append(where, fmt.Sprintf("(description ILIKE $%d OR source_ref ILIKE $%d OR counterparty_name ILIKE $%d OR counterparty_account ILIKE $%d)", idx, idx, idx, idx))
+		args = append(args, "%"+f.Keyword+"%")
+		idx++
+	}
+	if f.Direction != "" {
+		where = append(where, fmt.Sprintf("direction = $%d", idx))
+		args = append(args, f.Direction)
+		idx++
+	}
+	if f.CaseType != "" {
+		where = append(where, fmt.Sprintf("case_type = $%d", idx))
+		args = append(args, f.CaseType)
+		idx++
+	}
+	if f.Status != "" {
+		where = append(where, fmt.Sprintf("status = $%d", idx))
+		args = append(args, f.Status)
+		idx++
+	}
+	if f.TxnType != "" {
+		where = append(where, fmt.Sprintf("txn_type = $%d", idx))
+		args = append(args, f.TxnType)
+		idx++
+	}
+	if !f.From.IsZero() {
+		where = append(where, fmt.Sprintf("posted_at >= $%d", idx))
+		args = append(args, f.From)
+		idx++
+	}
+	if !f.To.IsZero() {
+		where = append(where, fmt.Sprintf("posted_at <= $%d", idx))
+		args = append(args, f.To)
+		idx++
+	}
+
+	wc := strings.Join(where, " AND ")
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM fin_transactions WHERE "+wc, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.Size < 1 {
+		f.Size = 20
+	}
+	if f.Size > 100 {
+		f.Size = 100
+	}
+	offset := (f.Page - 1) * f.Size
+
+	query := fmt.Sprintf(`
+		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
+		       txn_date, posted_at, status, amount, currency, description, source_ref,
+		       counterparty_name, counterparty_account, current_step, priority,
+		       created_by, approved_by, metadata, created_at
+		FROM fin_transactions WHERE %s ORDER BY posted_at DESC LIMIT $%d OFFSET $%d
+	`, wc, idx, idx+1)
+
+	rows, err := r.db.QueryContext(ctx, query, append(args, f.Size, offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -210,9 +322,14 @@ func scanTransactionRow(scanner interface{ Scan(dest ...any) error }, t *domain.
 	var meta sql.NullString
 	var idKey sql.NullString
 	var approvedBy sql.NullString
+	var direction, caseType, operationName sql.NullString
+	var amount, currency sql.NullString
+	var counterpartyName, counterpartyAccount, currentStep, priority sql.NullString
 
-	err := scanner.Scan(&t.ID, &t.TenantID, &idKey, &t.TxnType, &t.TxnDate,
-		&t.PostedAt, &t.Status, &t.Description, &t.SourceRef, &t.CreatedBy,
+	err := scanner.Scan(&t.ID, &t.TenantID, &idKey, &t.TxnType, &direction,
+		&caseType, &operationName, &t.TxnDate, &t.PostedAt, &t.Status,
+		&amount, &currency, &t.Description, &t.SourceRef, &counterpartyName,
+		&counterpartyAccount, &currentStep, &priority, &t.CreatedBy,
 		&approvedBy, &meta, &t.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -221,6 +338,15 @@ func scanTransactionRow(scanner interface{ Scan(dest ...any) error }, t *domain.
 		return err
 	}
 	t.IdempotencyKey = idKey.String
+	t.Direction = domain.TransactionDirection(direction.String)
+	t.CaseType = caseType.String
+	t.OperationName = operationName.String
+	t.Amount = amount.String
+	t.Currency = currency.String
+	t.CounterpartyName = counterpartyName.String
+	t.CounterpartyAccount = counterpartyAccount.String
+	t.CurrentStep = currentStep.String
+	t.Priority = priority.String
 	t.ApprovedBy = approvedBy.String
 	if meta.Valid {
 		json.Unmarshal([]byte(meta.String), &t.Metadata)

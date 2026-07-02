@@ -52,6 +52,7 @@ func main() {
 	// ── Repositories ──
 	accountRepo := repository.NewAccountRepository(db)
 	txnRepo := repository.NewTransactionRepository(db)
+	configRepo := repository.NewConfigRepository(db)
 	approvalRepo := repository.NewApprovalRepository(db)
 
 	// ── Services ──
@@ -67,9 +68,11 @@ func main() {
 		}
 	}
 	approvalSvc := service.NewApprovalService(approvalRepo, txnRepo, nil)
+	operationSvc := service.NewFinanceOperationService(accountRepo, txnRepo, configRepo)
+	accountingConfigSvc := service.NewAccountingConfigService(configRepo)
 
 	// ── Handlers ──
-	financeHandler := handler.NewFinanceHandler(ledgerSvc)
+	financeHandler := handler.NewFinanceHandler(ledgerSvc, operationSvc, accountingConfigSvc)
 	approvalHandler := handler.NewApprovalHandler(approvalSvc)
 
 	// ── HTTP server ──

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"time"
@@ -100,6 +99,15 @@ func (s *LedgerService) PostTransaction(ctx context.Context, txn *domain.Transac
 	}
 	if txn.TenantID == "" {
 		txn.TenantID = "default"
+	}
+	if txn.Currency == "" {
+		txn.Currency = defaultCurrency
+	}
+	if txn.Amount == "" {
+		txn.Amount = fmt.Sprintf("%.6f", totalDebit)
+	}
+	if txn.CreatedBy == "" {
+		txn.CreatedBy = "00000000-0000-0000-0000-000000000000"
 	}
 
 	if err := s.txnRepo.Create(ctx, txn); err != nil {
@@ -238,8 +246,12 @@ func parseDecimal(s string) float64 {
 
 func newEntryID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "00000000-0000-4000-8000-000000000000"
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 var _ = fmt.Sprintf

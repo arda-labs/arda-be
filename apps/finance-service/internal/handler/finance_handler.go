@@ -1,22 +1,27 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/domain"
+	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 	"github.com/arda-labs/arda/apps/finance-service/internal/service"
 )
 
 // FinanceHandler exposes finance API endpoints.
 type FinanceHandler struct {
-	svc *service.LedgerService
+	svc       *service.LedgerService
+	ops       *service.FinanceOperationService
+	configSvc *service.AccountingConfigService
 }
 
-func NewFinanceHandler(svc *service.LedgerService) *FinanceHandler {
-	return &FinanceHandler{svc: svc}
+func NewFinanceHandler(svc *service.LedgerService, ops *service.FinanceOperationService, configSvc *service.AccountingConfigService) *FinanceHandler {
+	return &FinanceHandler{svc: svc, ops: ops, configSvc: configSvc}
 }
 
 // ── Accounts ──
@@ -168,6 +173,9 @@ func (h *FinanceHandler) CreateTransaction(w http.ResponseWriter, r *http.Reques
 		CreatedBy:      userID,
 		Entries:        entries,
 	}
+	if txn.IdempotencyKey == "" {
+		txn.IdempotencyKey = r.Header.Get("X-Idempotency-Key")
+	}
 
 	result, err := h.svc.PostTransaction(r.Context(), txn)
 	if err != nil {
@@ -224,6 +232,120 @@ func (h *FinanceHandler) ListTransactions(w http.ResponseWriter, r *http.Request
 	respondJSON(w, http.StatusOK, map[string]any{
 		"transactions": txns, "total": total, "page": page, "size": size, "totalPages": totalPages,
 	})
+}
+
+func (h *FinanceHandler) SearchTransactions(w http.ResponseWriter, r *http.Request) {
+	page, size := pageSizeFrom(r)
+	from, to := dateRangeFrom(r)
+	txns, total, err := h.ops.Search(r.Context(), repository.TransactionSearchFilter{
+		TenantID:  tenantIDFrom(r),
+		Keyword:   strings.TrimSpace(r.URL.Query().Get("keyword")),
+		Direction: r.URL.Query().Get("direction"),
+		CaseType:  r.URL.Query().Get("case_type"),
+		Status:    r.URL.Query().Get("status"),
+		TxnType:   r.URL.Query().Get("txn_type"),
+		From:      from,
+		To:        to,
+		Page:      page,
+		Size:      size,
+	})
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondPaged(w, txns, total, page, size)
+}
+
+func (h *FinanceHandler) ListIncomingTransactions(w http.ResponseWriter, r *http.Request) {
+	h.listOperationTransactions(w, r, string(domain.TxnDirectionIncoming))
+}
+
+func (h *FinanceHandler) ListOutgoingTransactions(w http.ResponseWriter, r *http.Request) {
+	h.listOperationTransactions(w, r, string(domain.TxnDirectionOutgoing))
+}
+
+func (h *FinanceHandler) CreateIncomingTransaction(w http.ResponseWriter, r *http.Request) {
+	h.createOperationTransaction(w, r, h.ops.CreateIncoming)
+}
+
+func (h *FinanceHandler) CreateOutgoingTransaction(w http.ResponseWriter, r *http.Request) {
+	h.createOperationTransaction(w, r, h.ops.CreateOutgoing)
+}
+
+func (h *FinanceHandler) GetOperationTransaction(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	txn, err := h.ops.Get(r.Context(), id)
+	if err != nil || txn == nil {
+		respondError(w, http.StatusNotFound, "transaction not found")
+		return
+	}
+	respondJSON(w, http.StatusOK, txn)
+}
+
+func (h *FinanceHandler) listOperationTransactions(w http.ResponseWriter, r *http.Request, direction string) {
+	page, size := pageSizeFrom(r)
+	from, to := dateRangeFrom(r)
+	txns, total, err := h.ops.Search(r.Context(), repository.TransactionSearchFilter{
+		TenantID:  tenantIDFrom(r),
+		Keyword:   strings.TrimSpace(r.URL.Query().Get("keyword")),
+		Direction: direction,
+		Status:    r.URL.Query().Get("status"),
+		TxnType:   r.URL.Query().Get("txn_type"),
+		From:      from,
+		To:        to,
+		Page:      page,
+		Size:      size,
+	})
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondPaged(w, txns, total, page, size)
+}
+
+func (h *FinanceHandler) createOperationTransaction(w http.ResponseWriter, r *http.Request, create func(context.Context, string, service.OperationCreateRequest) (*domain.Transaction, error)) {
+	var req struct {
+		IdempotencyKey      string `json:"idempotencyKey"`
+		TxnType             string `json:"txnType"`
+		TxnDate             string `json:"txnDate"`
+		Amount              string `json:"amount"`
+		Currency            string `json:"currency"`
+		Description         string `json:"description"`
+		SourceRef           string `json:"sourceRef"`
+		CounterpartyName    string `json:"counterpartyName"`
+		CounterpartyAccount string `json:"counterpartyAccount"`
+		Priority            string `json:"priority"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	key := req.IdempotencyKey
+	if key == "" {
+		key = r.Header.Get("X-Idempotency-Key")
+	}
+	txn, err := create(r.Context(), tenantIDFrom(r), service.OperationCreateRequest{
+		IdempotencyKey:      key,
+		TxnType:             req.TxnType,
+		TxnDate:             req.TxnDate,
+		Amount:              req.Amount,
+		Currency:            req.Currency,
+		Description:         req.Description,
+		SourceRef:           req.SourceRef,
+		CounterpartyName:    req.CounterpartyName,
+		CounterpartyAccount: req.CounterpartyAccount,
+		Priority:            req.Priority,
+		CreatedBy:           userIDFrom(r),
+	})
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusCreated, txn)
 }
 
 func (h *FinanceHandler) ReverseTransaction(w http.ResponseWriter, r *http.Request) {
@@ -286,6 +408,88 @@ func (h *FinanceHandler) TrialBalance(w http.ResponseWriter, r *http.Request) {
 }
 
 // ── Shared ──
+
+func (h *FinanceHandler) ListProcessConfigs(w http.ResponseWriter, r *http.Request) {
+	items, err := h.configSvc.ListProcessConfigs(r.Context(), tenantIDFrom(r))
+	respondList(w, "processConfigs", items, err)
+}
+
+func (h *FinanceHandler) ListAccountClassifications(w http.ResponseWriter, r *http.Request) {
+	items, err := h.configSvc.ListAccountClassifications(r.Context(), tenantIDFrom(r))
+	respondList(w, "accountClassifications", items, err)
+}
+
+func (h *FinanceHandler) ListJournalDefinitions(w http.ResponseWriter, r *http.Request) {
+	items, err := h.configSvc.ListJournalDefinitions(r.Context(), tenantIDFrom(r))
+	respondList(w, "journalDefinitions", items, err)
+}
+
+func (h *FinanceHandler) ListRegulatoryAccounts(w http.ResponseWriter, r *http.Request) {
+	items, err := h.configSvc.ListRegulatoryAccounts(r.Context(), tenantIDFrom(r))
+	respondList(w, "regulatoryAccounts", items, err)
+}
+
+func (h *FinanceHandler) ListInternalAccounts(w http.ResponseWriter, r *http.Request) {
+	items, err := h.configSvc.ListInternalAccounts(r.Context(), tenantIDFrom(r))
+	respondList(w, "internalAccounts", items, err)
+}
+
+func tenantIDFrom(r *http.Request) string {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		return "default"
+	}
+	return tenantID
+}
+
+func userIDFrom(r *http.Request) string {
+	userID := r.Header.Get("X-User-Id")
+	if userID == "" {
+		userID = r.Header.Get("X-User-Subject")
+	}
+	if userID == "" {
+		return "00000000-0000-0000-0000-000000000000"
+	}
+	return userID
+}
+
+func pageSizeFrom(r *http.Request) (int, int) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+	if size < 1 || size > 100 {
+		size = 10
+	}
+	return page, size
+}
+
+func dateRangeFrom(r *http.Request) (time.Time, time.Time) {
+	var from, to time.Time
+	if f := r.URL.Query().Get("from"); f != "" {
+		from, _ = time.Parse(time.RFC3339, f)
+	}
+	if t := r.URL.Query().Get("to"); t != "" {
+		to, _ = time.Parse(time.RFC3339, t)
+	}
+	return from, to
+}
+
+func respondPaged(w http.ResponseWriter, txns []domain.Transaction, total, page, size int) {
+	totalPages := (total + size - 1) / size
+	respondJSON(w, http.StatusOK, map[string]any{
+		"transactions": txns, "total": total, "page": page, "size": size, "totalPages": totalPages,
+	})
+}
+
+func respondList(w http.ResponseWriter, key string, data any, err error) {
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{key: data})
+}
 
 func respondJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")

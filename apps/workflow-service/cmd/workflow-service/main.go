@@ -59,9 +59,11 @@ func main() {
 
 	// Repositories
 	mappingRepo := repository.NewMappingRepository(db)
+	caseRepo := repository.NewCaseRepository(db)
+	processDefinitionRepo := repository.NewProcessDefinitionRepository(db)
 
 	// Handlers
-	wfHandler := handler.NewWorkflowHandler(zeebeSvc, mappingRepo)
+	wfHandler := handler.NewWorkflowHandler(zeebeSvc, mappingRepo, caseRepo, processDefinitionRepo)
 
 	// Router and HTTP Server
 	srv := &http.Server{
