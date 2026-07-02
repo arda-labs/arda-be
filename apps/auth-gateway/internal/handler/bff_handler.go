@@ -63,6 +63,11 @@ func NewBFFHandler(cfg config.Config, store session.Store, iamClient *iamclient.
 	}
 }
 
+func (h *BFFHandler) slowLogSettings() (bool, time.Duration) {
+	threshold := time.Duration(h.cfg.SlowRequestLogThresholdMS) * time.Millisecond
+	return h.cfg.SlowRequestLogEnabled && threshold > 0, threshold
+}
+
 func (h *BFFHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	if h.iamClient != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -939,23 +944,43 @@ func (h *BFFHandler) updateSession(ctx context.Context, sess *session.Session) {
 }
 
 func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	slowLogEnabled, slowLogThreshold := h.slowLogSettings()
 	sessionID := h.readSessionCookie(r)
 	if sessionID == "" {
 		respondError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
+	sessionStart := time.Now()
 	sess, _ := h.store.Get(r.Context(), sessionID)
+	sessionDuration := time.Since(sessionStart)
 	if sess == nil {
 		h.clearSessionCookie(w)
 		respondError(w, http.StatusUnauthorized, "session expired")
 		return
 	}
+	ensureStart := time.Now()
 	if !h.ensureSessionUser(r.Context(), sess, false) {
 		h.clearSessionCookie(w)
 		respondError(w, http.StatusUnauthorized, "user context unavailable")
 		return
 	}
+	ensureDuration := time.Since(ensureStart)
+	writeStart := time.Now()
 	respondJSON(w, http.StatusOK, sess.User)
+	writeDuration := time.Since(writeStart)
+	totalDuration := time.Since(start)
+	if slowLogEnabled && totalDuration >= slowLogThreshold {
+		h.logger.Warn("slow bff request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", http.StatusOK,
+			"session_ms", sessionDuration.Milliseconds(),
+			"ensure_user_ms", ensureDuration.Milliseconds(),
+			"write_ms", writeDuration.Milliseconds(),
+			"total_ms", totalDuration.Milliseconds(),
+		)
+	}
 }
 
 func (h *BFFHandler) MeSessions(w http.ResponseWriter, r *http.Request) {
@@ -1038,13 +1063,17 @@ func (h *BFFHandler) StepUp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	slowLogEnabled, slowLogThreshold := h.slowLogSettings()
 	baseURL := h.upstreamBaseURL(r.URL.Path)
 	target := baseURL + r.URL.Path
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
 	}
+	readStart := time.Now()
 	body, _ := io.ReadAll(r.Body)
 	r.Body.Close()
+	readDuration := time.Since(readStart)
 	proxyReq, _ := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
 	for k, vs := range r.Header {
 		for _, v := range vs {
@@ -1058,8 +1087,11 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := h.readSessionCookie(r)
 	var sess *session.Session
+	var sessionDuration time.Duration
 	if sessionID != "" {
+		sessionStart := time.Now()
 		sess, _ = h.store.Get(r.Context(), sessionID)
+		sessionDuration = time.Since(sessionStart)
 	}
 	requireAuth := match == nil || match.RequireAuth
 	if requireAuth && sess == nil {
@@ -1067,19 +1099,23 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
+	var ensureDuration time.Duration
 	if sess != nil {
 		if !h.recentAuthOK(r, sess) {
 			respondError(w, http.StatusForbidden, "recent_auth_required")
 			return
 		}
 		forceFreshUser := match != nil && match.Route.Risk == "high"
+		ensureStart := time.Now()
 		if !h.ensureSessionUser(r.Context(), sess, forceFreshUser) {
+			ensureDuration = time.Since(ensureStart)
 			if requireAuth {
 				h.clearSessionCookie(w)
 				respondError(w, http.StatusUnauthorized, "user context unavailable")
 				return
 			}
 		} else {
+			ensureDuration = time.Since(ensureStart)
 			if match != nil && len(match.Route.Permissions) > 0 && !permission.HasAny(sess.User.Permissions, match.Route.Permissions...) {
 				respondError(w, http.StatusForbidden, "insufficient permissions")
 				return
@@ -1113,8 +1149,6 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	slowLogThreshold := time.Duration(h.cfg.SlowRequestLogThresholdMS) * time.Millisecond
-	slowLogEnabled := h.cfg.SlowRequestLogEnabled && slowLogThreshold > 0
 	upstreamStart := time.Now()
 	resp, err := client.Do(proxyReq)
 	upstreamDuration := time.Since(upstreamStart)
@@ -1151,7 +1185,26 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		copyEventStream(w, resp.Body)
 		return
 	}
-	io.Copy(w, resp.Body)
+	copyStart := time.Now()
+	bytesCopied, copyErr := io.Copy(w, resp.Body)
+	copyDuration := time.Since(copyStart)
+	totalDuration := time.Since(start)
+	if slowLogEnabled && totalDuration >= slowLogThreshold {
+		h.logger.Warn("slow proxy request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", resp.StatusCode,
+			"upstream", baseURL,
+			"read_body_ms", readDuration.Milliseconds(),
+			"session_ms", sessionDuration.Milliseconds(),
+			"ensure_user_ms", ensureDuration.Milliseconds(),
+			"upstream_ms", upstreamDuration.Milliseconds(),
+			"copy_ms", copyDuration.Milliseconds(),
+			"bytes", bytesCopied,
+			"total_ms", totalDuration.Milliseconds(),
+			"copy_err", copyErr,
+		)
+	}
 }
 
 func isEventStreamRequest(r *http.Request) bool {
