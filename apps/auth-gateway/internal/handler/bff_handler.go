@@ -437,7 +437,7 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 		respondError(w, http.StatusInternalServerError, "session creation failed")
 		return
 	}
-	h.logger.Info("session created successfully", "session_id", sess.ID, "user_id", userInfo.UserID)
+	h.logger.Info("session created successfully", "session_id", sess.ID, "user_id", userInfo.UserID, "auth_version", userInfo.AuthVersion)
 	h.setSessionCookie(w, sess.ID, ttl)
 	h.setDeviceCookie(w, deviceToken)
 	h.clearRememberMFACookie(w)
@@ -577,8 +577,9 @@ func (h *BFFHandler) cacheSessionUser(fallback *session.UserInfo, uc *iamclient.
 }
 
 func sessionUserCacheKeys(userID, subject string, authVersion int64) []string {
+	version := fmt.Sprintf("v%d", authVersion)
 	if authVersion <= 0 {
-		return nil
+		version = "legacy"
 	}
 	seen := map[string]struct{}{}
 	var keys []string
@@ -586,7 +587,7 @@ func sessionUserCacheKeys(userID, subject string, authVersion int64) []string {
 		if base == "" {
 			continue
 		}
-		key := fmt.Sprintf("%s:v%d", base, authVersion)
+		key := fmt.Sprintf("%s:%s", base, version)
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -940,6 +941,10 @@ func (h *BFFHandler) updateSession(ctx context.Context, sess *session.Session) {
 	}
 	if err := h.store.Update(ctx, sess, ttl); err != nil {
 		h.logger.Warn("update session failed", "session_id", sess.ID, "err", err)
+		return
+	}
+	if sess.User != nil {
+		h.logger.Debug("session user context refreshed", "session_id", sess.ID, "user_id", sess.User.UserID, "auth_version", sess.User.AuthVersion)
 	}
 }
 

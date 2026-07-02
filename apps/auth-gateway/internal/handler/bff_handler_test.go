@@ -111,3 +111,11 @@ func TestSessionUserCompleteRequiresStableIdentityAndAuthVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionUserCacheKeysAllowLegacyVersion(t *testing.T) {
+	got := sessionUserCacheKeys("u1", "s1", 0)
+	want := []string{"u1:legacy", "s1:legacy"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("legacy keys = %#v, want %#v", got, want)
+	}
+}
