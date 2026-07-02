@@ -38,3 +38,26 @@ func TestAllowedOAuthRedirectURI(t *testing.T) {
 		t.Fatal("unknown redirect URI should be denied")
 	}
 }
+
+func TestPKCEChallenge(t *testing.T) {
+	got := pkceChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
+	want := "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+	if got != want {
+		t.Fatalf("challenge = %q, want %q", got, want)
+	}
+}
+
+func TestSafeReturnTo(t *testing.T) {
+	tests := map[string]string{
+		"/finance?tab=1":             "/finance?tab=1",
+		"":                           "/",
+		"https://evil.example/steal": "/",
+		"//evil.example/steal":       "/",
+		"settings/appearance":        "/",
+	}
+	for input, want := range tests {
+		if got := safeReturnTo(input); got != want {
+			t.Fatalf("safeReturnTo(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

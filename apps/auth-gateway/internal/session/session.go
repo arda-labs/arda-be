@@ -67,6 +67,9 @@ type Store interface {
 	RevokeByUser(ctx context.Context, userID string, reason string) (int, error)
 	RevokeAllExcept(ctx context.Context, userID, currentSessionID string) (int, error)
 	CountActive(ctx context.Context, userID string) (int, error)
+
+	SetOAuthState(ctx context.Context, state, value string, ttl time.Duration) error
+	ConsumeOAuthState(ctx context.Context, state string) (string, error)
 }
 
 // NewID generates a UUID v7 session ID.
@@ -80,6 +83,7 @@ func NewID() string {
 type MemoryStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*sessionEntry
+	oauth    map[string]*oauthStateEntry
 	userIdx  map[string]map[string]bool // userID → set<sessionID>
 }
 
@@ -88,10 +92,16 @@ type sessionEntry struct {
 	expires time.Time
 }
 
+type oauthStateEntry struct {
+	value   string
+	expires time.Time
+}
+
 // NewMemoryStore creates an in-memory session store.
 func NewMemoryStore() *MemoryStore {
 	s := &MemoryStore{
 		sessions: make(map[string]*sessionEntry),
+		oauth:    make(map[string]*oauthStateEntry),
 		userIdx:  make(map[string]map[string]bool),
 	}
 	go s.cleanupLoop()
@@ -240,6 +250,24 @@ func (s *MemoryStore) CountActive(_ context.Context, userID string) (int, error)
 	return count, nil
 }
 
+func (s *MemoryStore) SetOAuthState(_ context.Context, state, value string, ttl time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.oauth[state] = &oauthStateEntry{value: value, expires: time.Now().Add(ttl)}
+	return nil
+}
+
+func (s *MemoryStore) ConsumeOAuthState(_ context.Context, state string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry := s.oauth[state]
+	delete(s.oauth, state)
+	if entry == nil || time.Now().After(entry.expires) {
+		return "", nil
+	}
+	return entry.value, nil
+}
+
 func (s *MemoryStore) cleanupLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -252,6 +280,11 @@ func (s *MemoryStore) cleanupLoop() {
 					delete(s.userIdx[entry.session.User.UserID], id)
 				}
 				delete(s.sessions, id)
+			}
+		}
+		for state, entry := range s.oauth {
+			if now.After(entry.expires) {
+				delete(s.oauth, state)
 			}
 		}
 		s.mu.Unlock()

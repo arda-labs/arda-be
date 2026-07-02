@@ -90,8 +90,8 @@ func Load() Config {
 		CookieSameSite:            "Lax",
 		HydraPublicURL:            "https://auth.arda.io.vn",
 		OAuthClientID:             "arda-shell",
-		OAuthRedirectURI:          "http://localhost:5000/callback",
-		OAuthRedirectURIs:         "https://arda.io.vn/callback,http://localhost:5000/callback",
+		OAuthRedirectURI:          "http://localhost:5000/api/auth/callback",
+		OAuthRedirectURIs:         "https://arda.io.vn/api/auth/callback,https://arda.io.vn/callback,http://localhost:5000/api/auth/callback,http://localhost:5000/callback",
 	}
 
 	// Try loading YAML

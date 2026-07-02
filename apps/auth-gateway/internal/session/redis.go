@@ -12,6 +12,7 @@ import (
 const (
 	keyPrefix     = "bff:session:"
 	userIdxPrefix = "bff:user_sessions:"
+	oauthPrefix   = "bff:oauth_state:"
 )
 
 // RedisStore implements Store backed by Redis.
@@ -178,4 +179,23 @@ func (s *RedisStore) RevokeAllExcept(ctx context.Context, userID, currentSession
 func (s *RedisStore) CountActive(ctx context.Context, userID string) (int, error) {
 	count, err := s.client.SCard(ctx, userIdxPrefix+userID).Result()
 	return int(count), err
+}
+
+func (s *RedisStore) SetOAuthState(ctx context.Context, state, value string, ttl time.Duration) error {
+	return s.client.Set(ctx, oauthPrefix+state, value, ttl).Err()
+}
+
+func (s *RedisStore) ConsumeOAuthState(ctx context.Context, state string) (string, error) {
+	key := oauthPrefix + state
+	value, err := s.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := s.client.Del(ctx, key).Err(); err != nil {
+		return "", err
+	}
+	return value, nil
 }

@@ -30,11 +30,13 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler,
 	// Hydra bridge
 	mux.HandleFunc("/api/auth/login", method("GET", bffHandler.Login))
 	mux.HandleFunc("/api/auth/consent", method("GET", bffHandler.Consent))
+	mux.HandleFunc("/api/auth/start", method("GET", bffHandler.StartOAuth))
 	mux.HandleFunc("/api/auth/kratos/accept-login", method("POST", bffHandler.AcceptKratosLogin))
 	mux.HandleFunc("/api/auth/accept-consent", method("POST", bffHandler.AcceptConsent))
 
-	// Token exchange (direct with Hydra)
-	mux.HandleFunc("/api/auth/callback", method("POST", bffHandler.ExchangeCode))
+	// Token exchange (direct with Hydra). GET is the BFF-owned browser redirect;
+	// POST remains for local/backward-compatible SPA callback flows.
+	mux.HandleFunc("/api/auth/callback", bffHandler.Callback)
 
 	// Kratos proxy
 	mux.HandleFunc("/api/kratos/whoami", bffHandler.KratosWhoami)

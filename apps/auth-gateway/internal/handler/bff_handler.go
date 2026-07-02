@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -28,6 +29,7 @@ const (
 	deviceCookieName      = "arda_did"
 	deviceCookieMaxAge    = 365 * 24 * 60 * 60
 	rememberMFACookieName = "arda_rmf"
+	oauthStateMaxAge      = 10 * 60
 )
 
 type BFFHandler struct {
@@ -123,6 +125,12 @@ type hydraTokenResponse struct {
 	IDToken      string `json:"id_token"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
+}
+
+type oauthStateCookie struct {
+	State        string `json:"state"`
+	CodeVerifier string `json:"code_verifier"`
+	ReturnTo     string `json:"return_to"`
 }
 
 func (h *BFFHandler) AcceptKratosLogin(w http.ResponseWriter, r *http.Request) {
@@ -240,7 +248,47 @@ func (h *BFFHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BFFHandler) Consent(w http.ResponseWriter, r *http.Request) {
-	h.redirectToAuthUI(w, r, "consent", "consent_challenge")
+	challenge := r.URL.Query().Get("consent_challenge")
+	if challenge == "" {
+		respondError(w, http.StatusBadRequest, "missing consent_challenge")
+		return
+	}
+	redirectURL, ok := h.acceptHydraConsentURL(w, r, challenge, true)
+	if !ok {
+		return
+	}
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
+func (h *BFFHandler) StartOAuth(w http.ResponseWriter, r *http.Request) {
+	state := randomURLToken()
+	verifier := randomURLToken()
+	if state == "" || verifier == "" {
+		respondError(w, http.StatusInternalServerError, "oauth state generation failed")
+		return
+	}
+	returnTo := safeReturnTo(r.URL.Query().Get("return_to"))
+	stateValue, _ := json.Marshal(oauthStateCookie{
+		State:        state,
+		CodeVerifier: verifier,
+		ReturnTo:     returnTo,
+	})
+	if err := h.store.SetOAuthState(r.Context(), state, string(stateValue), time.Duration(oauthStateMaxAge)*time.Second); err != nil {
+		h.logger.Error("store oauth state failed", "err", err)
+		respondError(w, http.StatusInternalServerError, "oauth state storage failed")
+		return
+	}
+	params := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {h.cfg.OAuthClientID},
+		"redirect_uri":          {h.cfg.OAuthRedirectURI},
+		"scope":                 {"openid email offline_access"},
+		"state":                 {state},
+		"code_challenge":        {pkceChallenge(verifier)},
+		"code_challenge_method": {"S256"},
+	}
+	target := strings.TrimSuffix(h.cfg.HydraPublicURL, "/") + "/oauth2/auth?" + params.Encode()
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 func (h *BFFHandler) redirectToAuthUI(w http.ResponseWriter, r *http.Request, flow, challengeParam string) {
@@ -331,7 +379,19 @@ func (h *BFFHandler) acceptHydraLoginURL(w http.ResponseWriter, r *http.Request,
 func (h *BFFHandler) AcceptConsent(w http.ResponseWriter, r *http.Request) {
 	var req consentAcceptRequest
 	json.NewDecoder(r.Body).Decode(&req)
-	getURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/consent?consent_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(req.ConsentChallenge))
+	redirectURL, ok := h.acceptHydraConsentURL(w, r, req.ConsentChallenge, req.Remember)
+	if !ok {
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"redirect_url": redirectURL})
+}
+
+func (h *BFFHandler) acceptHydraConsentURL(w http.ResponseWriter, _ *http.Request, consentChallenge string, remember bool) (string, bool) {
+	if consentChallenge == "" {
+		respondError(w, http.StatusBadRequest, "missing consent_challenge")
+		return "", false
+	}
+	getURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/consent?consent_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(consentChallenge))
 	getResp, _ := h.httpClient.Get(getURL)
 	if getResp != nil {
 		defer getResp.Body.Close()
@@ -344,18 +404,18 @@ func (h *BFFHandler) AcceptConsent(w http.ResponseWriter, r *http.Request) {
 		rbody, _ := io.ReadAll(getResp.Body)
 		json.Unmarshal(rbody, &consentReq)
 	}
-	acceptURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/consent/accept?consent_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(req.ConsentChallenge))
-	ab, _ := json.Marshal(map[string]any{"grant_scope": consentReq.RequestedScope, "remember": req.Remember})
+	acceptURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/consent/accept?consent_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(consentChallenge))
+	ab, _ := json.Marshal(map[string]any{"grant_scope": consentReq.RequestedScope, "remember": remember})
 	resp, err := h.doPut(acceptURL, "application/json", bytes.NewReader(ab))
 	if err != nil {
 		respondError(w, http.StatusBadGateway, "accept consent failed")
-		return
+		return "", false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		respondError(w, resp.StatusCode, string(body))
-		return
+		return "", false
 	}
 	var result struct {
 		RedirectTo string `json:"redirect_to"`
@@ -363,9 +423,9 @@ func (h *BFFHandler) AcceptConsent(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	if result.RedirectTo == "" {
 		respondError(w, http.StatusBadGateway, "accept consent returned empty redirect_to")
-		return
+		return "", false
 	}
-	respondJSON(w, http.StatusOK, map[string]string{"redirect_url": result.RedirectTo})
+	return result.RedirectTo, true
 }
 
 type tokenExchangeRequest struct {
@@ -373,6 +433,58 @@ type tokenExchangeRequest struct {
 	CodeVerifier string `json:"code_verifier"`
 	State        string `json:"state"`
 	RedirectURI  string `json:"redirect_uri"`
+}
+
+func (h *BFFHandler) Callback(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.OAuthCallback(w, r)
+	case http.MethodPost:
+		h.ExchangeCode(w, r)
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *BFFHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
+	if errText := r.URL.Query().Get("error"); errText != "" {
+		target := "/login?error=" + url.QueryEscape(firstNonEmpty(r.URL.Query().Get("error_description"), errText))
+		http.Redirect(w, r, target, http.StatusFound)
+		return
+	}
+	callbackState := r.URL.Query().Get("state")
+	if callbackState == "" {
+		http.Redirect(w, r, "/login?error=invalid_state", http.StatusFound)
+		return
+	}
+	stateValue, err := h.store.ConsumeOAuthState(r.Context(), callbackState)
+	if err != nil {
+		h.logger.Error("consume oauth state failed", "err", err)
+		respondError(w, http.StatusInternalServerError, "oauth state unavailable")
+		return
+	}
+	var stateCookie oauthStateCookie
+	if stateValue == "" || json.Unmarshal([]byte(stateValue), &stateCookie) != nil || stateCookie.State == "" || stateCookie.CodeVerifier == "" {
+		http.Redirect(w, r, "/login?error=invalid_state", http.StatusFound)
+		return
+	}
+	if callbackState != stateCookie.State {
+		http.Redirect(w, r, "/login?error=invalid_state", http.StatusFound)
+		return
+	}
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Redirect(w, r, "/login?error=missing_code", http.StatusFound)
+		return
+	}
+	tokenData, ok := h.exchangeHydraCode(w, r, code, stateCookie.CodeVerifier, h.cfg.OAuthRedirectURI)
+	if !ok {
+		return
+	}
+	if _, ok := h.establishBFFSession(w, r, tokenData); !ok {
+		return
+	}
+	http.Redirect(w, r, safeReturnTo(stateCookie.ReturnTo), http.StatusFound)
 }
 
 func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
@@ -394,16 +506,28 @@ func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "redirect_uri is not allowed")
 		return
 	}
-	h.logger.Debug("exchanging authorization code", "code", req.Code, "redirect_uri", redirectURI)
+	tokenData, ok := h.exchangeHydraCode(w, r, req.Code, req.CodeVerifier, redirectURI)
+	if !ok {
+		return
+	}
+	h.createBFFSession(w, r, tokenData)
+}
+
+func (h *BFFHandler) exchangeHydraCode(w http.ResponseWriter, r *http.Request, code, codeVerifier, redirectURI string) (*hydraTokenResponse, bool) {
+	if code == "" || codeVerifier == "" {
+		respondError(w, http.StatusBadRequest, "missing oauth code or verifier")
+		return nil, false
+	}
+	h.logger.Debug("exchanging authorization code", "code", code, "redirect_uri", redirectURI)
 	tokenURL := fmt.Sprintf("%s/oauth2/token", strings.TrimSuffix(h.cfg.HydraPublicURL, "/"))
-	data := url.Values{"grant_type": {"authorization_code"}, "code": {req.Code}, "redirect_uri": {redirectURI}, "client_id": {h.cfg.OAuthClientID}, "code_verifier": {req.CodeVerifier}}
+	data := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI}, "client_id": {h.cfg.OAuthClientID}, "code_verifier": {codeVerifier}}
 	tokenReq, _ := http.NewRequest("POST", tokenURL, strings.NewReader(data.Encode()))
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := h.httpClient.Do(tokenReq)
 	if err != nil {
 		h.logger.Error("token exchange request failed", "err", err, "hydra_url", tokenURL)
 		respondError(w, http.StatusBadGateway, "token exchange failed")
-		return
+		return nil, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -412,16 +536,16 @@ func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 			"redirect_uri", redirectURI, "client_id", h.cfg.OAuthClientID,
 			"hydra_response", string(bodyBytes))
 		respondError(w, resp.StatusCode, "token exchange failed: "+string(bodyBytes))
-		return
+		return nil, false
 	}
 	var tokenData hydraTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenData); err != nil {
 		h.logger.Error("failed to decode token response", "err", err)
 		respondError(w, http.StatusInternalServerError, "failed to decode token response")
-		return
+		return nil, false
 	}
 	h.logger.Debug("token response decoded successfully", "expires_in", tokenData.ExpiresIn)
-	h.createBFFSession(w, r, &tokenData)
+	return &tokenData, true
 }
 
 func (h *BFFHandler) devExchangeCode(w http.ResponseWriter, r *http.Request) {
@@ -458,6 +582,12 @@ func (h *BFFHandler) devExchangeCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, tokenData *hydraTokenResponse) {
+	if userInfo, ok := h.establishBFFSession(w, r, tokenData); ok {
+		respondJSON(w, http.StatusOK, map[string]any{"user": userInfo})
+	}
+}
+
+func (h *BFFHandler) establishBFFSession(w http.ResponseWriter, r *http.Request, tokenData *hydraTokenResponse) (*session.UserInfo, bool) {
 	userInfo := &session.UserInfo{}
 	if tokenData.IDToken != "" {
 		parts := strings.Split(tokenData.IDToken, ".")
@@ -488,7 +618,7 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 	if !ok || userInfo.UserID == "" {
 		h.logger.Error("user context resolution failed", "subject", userInfo.Subject)
 		respondError(w, http.StatusBadGateway, "user context unavailable")
-		return
+		return nil, false
 	}
 	h.logger.Debug("user context resolved successfully", "user_id", userInfo.UserID, "username", userInfo.Username)
 	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
@@ -515,13 +645,13 @@ func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, to
 			_ = h.iamClient.RevokeSession(r.Context(), sess.IAMSessionID)
 		}
 		respondError(w, http.StatusInternalServerError, "session creation failed")
-		return
+		return nil, false
 	}
 	h.logger.Info("session created successfully", "session_id", sess.ID, "user_id", userInfo.UserID, "auth_version", userInfo.AuthVersion)
 	h.setSessionCookie(w, sess.ID, ttl)
 	h.setDeviceCookie(w, deviceToken)
 	h.clearRememberMFACookie(w)
-	respondJSON(w, http.StatusOK, map[string]any{"user": userInfo})
+	return userInfo, true
 }
 
 func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.UserInfo, useCache bool) (*session.UserInfo, bool) {
@@ -1517,6 +1647,39 @@ func generateDeviceToken() string {
 		return session.NewID()
 	}
 	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
+func randomURLToken() string {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
+func pkceChallenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func safeReturnTo(value string) string {
+	if value == "" {
+		return "/"
+	}
+	u, err := url.Parse(value)
+	if err != nil || u.IsAbs() || u.Host != "" || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") {
+		return "/"
+	}
+	return value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func looksLikeUUID(value string) bool {
