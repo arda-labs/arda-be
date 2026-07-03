@@ -58,6 +58,7 @@ func TestTaskPath(t *testing.T) {
 		{name: "complete", path: "/api/workflow/tasks/123/complete", wantKey: 123, wantAction: "complete"},
 		{name: "bad key", path: "/api/workflow/tasks/nope/complete"},
 		{name: "too shallow", path: "/api/workflow/tasks/123"},
+		{name: "claim route", path: "/api/workflow/tasks/claim"},
 		{name: "too deep", path: "/api/workflow/tasks/123/complete/extra"},
 	}
 
