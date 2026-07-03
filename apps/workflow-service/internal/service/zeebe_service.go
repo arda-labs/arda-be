@@ -133,7 +133,7 @@ func (s *ZeebeService) ActivateTasks(ctx context.Context, jobType, workerName st
 		MaxJobsToActivate(maxJobs).
 		WorkerName(workerName).
 		Timeout(30*time.Minute).
-		FetchVariables("caseId", "caseCode", "customerId", "customerName", "riskLevel", "reviewDecision", "riskDecision").
+		FetchVariables(taskFetchVariables...).
 		Send(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("activate jobs: %w", err)
@@ -141,23 +141,27 @@ func (s *ZeebeService) ActivateTasks(ctx context.Context, jobType, workerName st
 
 	tasks := make([]WorkflowTask, 0, len(jobs))
 	for _, job := range jobs {
-		variables, _ := job.GetVariablesAsMap()
-		headers, _ := job.GetCustomHeadersAsMap()
-		tasks = append(tasks, WorkflowTask{
-			JobKey:             job.GetKey(),
-			Type:               job.GetType(),
-			ElementID:          job.GetElementId(),
-			ProcessInstanceKey: job.GetProcessInstanceKey(),
-			CaseID:             strVar(variables, "caseId"),
-			CaseCode:           strVar(variables, "caseCode"),
-			CustomerID:         strVar(variables, "customerId"),
-			CustomerName:       strVar(variables, "customerName"),
-			CandidateRole:      headers["candidateRole"],
-			FormKey:            headers["formKey"],
-			Variables:          variables,
-		})
+		tasks = append(tasks, workflowTaskFromJob(job))
 	}
 	return tasks, nil
+}
+
+func (s *ZeebeService) ClaimNextTask(ctx context.Context, jobType, workerName string) (*WorkflowTask, error) {
+	jobs, err := s.client.NewActivateJobsCommand().
+		JobType(jobType).
+		MaxJobsToActivate(1).
+		WorkerName(workerName).
+		Timeout(30*time.Minute).
+		FetchVariables(taskFetchVariables...).
+		Send(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("claim task: %w", err)
+	}
+	if len(jobs) == 0 {
+		return nil, fmt.Errorf("no task available for job type %q", jobType)
+	}
+	task := workflowTaskFromJob(jobs[0])
+	return &task, nil
 }
 
 func (s *ZeebeService) CompleteTask(ctx context.Context, jobKey int64, variables map[string]any) error {
@@ -179,6 +183,46 @@ func (s *ZeebeService) NewJobWorker(jobType string, handler func(client worker.J
 		JobType(jobType).
 		Handler(handler).
 		Open()
+}
+
+var taskFetchVariables = []string{
+	"caseId",
+	"caseCode",
+	"customerId",
+	"customerName",
+	"riskLevel",
+	"reviewDecision",
+	"riskDecision",
+	"domainService",
+	"primaryObjectType",
+	"primaryObjectId",
+}
+
+func workflowTaskFromJob(job entities.Job) WorkflowTask {
+	variables, _ := job.GetVariablesAsMap()
+	headers, _ := job.GetCustomHeadersAsMap()
+	return WorkflowTask{
+		JobKey:             job.GetKey(),
+		Type:               job.GetType(),
+		ElementID:          job.GetElementId(),
+		ProcessInstanceKey: job.GetProcessInstanceKey(),
+		CaseID:             strVar(variables, "caseId"),
+		CaseCode:           strVar(variables, "caseCode"),
+		CustomerID:         firstString(strVar(variables, "customerId"), strVar(variables, "primaryObjectId")),
+		CustomerName:       strVar(variables, "customerName"),
+		CandidateRole:      headers["candidateRole"],
+		FormKey:            headers["formKey"],
+		Variables:          variables,
+	}
+}
+
+func firstString(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func strVar(values map[string]any, key string) string {

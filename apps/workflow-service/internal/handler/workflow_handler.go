@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -635,10 +636,6 @@ func (h *WorkflowHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if h.zeebeSvc == nil {
-		http.Error(w, "Zeebe service is not configured", http.StatusServiceUnavailable)
-		return
-	}
 	role := r.URL.Query().Get("role")
 	jobType := taskTypeForRequest(role, r.URL.Query().Get("task_type"))
 	if jobType == "" {
@@ -646,18 +643,85 @@ func (h *WorkflowHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	tasks, err := h.zeebeSvc.ActivateTasks(r.Context(), jobType, "arda-workflow-inbox", int32(limit))
+	tasks, err := h.listTaskCandidates(r.Context(), role, jobType, limit)
 	if err != nil {
-		http.Error(w, "Failed to activate tasks: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "Failed to query task candidates: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	for _, task := range tasks {
-		if err := h.caseRepo.MarkCaseAtStep(r.Context(), task.ProcessInstanceKey, task.ElementID, task.CandidateRole); err != nil {
-			http.Error(w, "Failed to update task step: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": tasks})
+}
+
+func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.zeebeSvc == nil {
+		http.Error(w, "Zeebe service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Role     string `json:"role"`
+		TaskType string `json:"taskType"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	jobType := taskTypeForRequest(req.Role, req.TaskType)
+	if jobType == "" {
+		http.Error(w, "Unsupported task role or taskType", http.StatusBadRequest)
+		return
+	}
+	task, err := h.zeebeSvc.ClaimNextTask(r.Context(), jobType, "arda-workflow-inbox")
+	if err != nil {
+		http.Error(w, "No task available: "+err.Error(), http.StatusNotFound)
+		return
+	}
+	if err := h.caseRepo.MarkCaseAtStep(r.Context(), task.ProcessInstanceKey, task.ElementID, task.CandidateRole); err != nil {
+		http.Error(w, "Failed to update task step: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, task)
+}
+
+func (h *WorkflowHandler) listTaskCandidates(ctx context.Context, role string, jobType string, limit int) ([]service.WorkflowTask, error) {
+	cases, err := h.caseRepo.ListCases(ctx, repository.CaseListFilter{
+		CandidateRole: role,
+		Limit:         limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]service.WorkflowTask, 0, len(cases))
+	for _, item := range cases {
+		if item.Status != repository.CaseStatusSubmitted && item.Status != repository.CaseStatusInReview {
+			continue
+		}
+		processInstanceKey := int64(0)
+		if item.ProcessInstanceKey != nil {
+			processInstanceKey = *item.ProcessInstanceKey
+		}
+		out = append(out, service.WorkflowTask{
+			Type:               jobType,
+			ElementID:          item.CurrentStep,
+			ProcessInstanceKey: processInstanceKey,
+			CaseID:             item.ID,
+			CaseCode:           item.CaseCode,
+			CustomerID:         item.PrimaryObjectID,
+			CustomerName:       item.Title,
+			CandidateRole:      role,
+			Variables: map[string]any{
+				"caseId":            item.ID,
+				"caseCode":          item.CaseCode,
+				"caseType":          item.CaseType,
+				"domainService":     item.DomainService,
+				"primaryObjectType": item.PrimaryObjectType,
+				"primaryObjectId":   item.PrimaryObjectID,
+			},
+		})
+	}
+	return out, nil
 }
 
 func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
