@@ -61,6 +61,12 @@ routes:
     permissions:
       - mdm.read
 
+  - id: platform-public-branding
+    path: /api/platform/public/branding
+    methods: [GET]
+    auth: false
+    risk: public
+
   - id: platform-read
     path: /api/platform/**
     methods: [GET]

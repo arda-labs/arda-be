@@ -13,6 +13,14 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 	mux.HandleFunc("/health/live", health("ok"))
 	mux.HandleFunc("/health/ready", health("ready"))
 
+	mux.HandleFunc("/api/platform/public/branding", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		platformHandler.GetPublicBranding(w, r)
+	})
+
 	mux.HandleFunc("/api/platform/parameters", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
