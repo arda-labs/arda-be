@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -25,6 +26,52 @@ func NewPlatformHandler(svc *service.PlatformService) *PlatformHandler {
 func (h *PlatformHandler) ListParameters(w http.ResponseWriter, r *http.Request) {
 	items, err := h.svc.ListParameters(r.Context(), r.URL.Query().Get("tenant_id"), r.URL.Query().Get("scope_type"), r.URL.Query().Get("scope_id"))
 	writeResult(w, items, err)
+}
+
+func (h *PlatformHandler) GetPublicBranding(w http.ResponseWriter, r *http.Request) {
+	item, err := h.svc.ResolveParameter(r.Context(), "", "system.settings", nil)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeResult(w, json.RawMessage(`{}`), nil)
+		return
+	}
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	writeResult(w, publicBrandingPayload(item.Value), nil)
+}
+
+func publicBrandingPayload(value string) json.RawMessage {
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(value), &settings); err != nil {
+		return json.RawMessage(`{}`)
+	}
+	out := make(map[string]any, 12)
+	for _, key := range []string{
+		"appName",
+		"shortName",
+		"organizationName",
+		"supportEmail",
+		"supportPhone",
+		"helpUrl",
+		"loginLogoUrl",
+		"dashboardLogoUrl",
+		"faviconUrl",
+		"loginBackgroundUrl",
+		"loginBackgroundEnabled",
+		"loginWelcomeTitle",
+		"loginWelcomeSubtitle",
+	} {
+		if value, ok := settings[key]; ok {
+			out[key] = value
+		}
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return data
 }
 
 func (h *PlatformHandler) UpsertParameter(w http.ResponseWriter, r *http.Request) {
