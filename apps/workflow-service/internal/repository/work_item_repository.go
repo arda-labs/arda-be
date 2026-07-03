@@ -33,6 +33,7 @@ type WorkItem struct {
 	Summary            string     `json:"summary"`
 	Status             string     `json:"status"`
 	TransactionStatus  string     `json:"transactionStatus"`
+	CreatedBy          string     `json:"createdBy"`
 	CandidateRole      string     `json:"candidateRole"`
 	CandidateGroupID   string     `json:"candidateGroupId,omitempty"`
 	CandidateOrgUnitID string     `json:"candidateOrgUnitId,omitempty"`
@@ -317,7 +318,7 @@ func workItemSelectSQL() string {
 		SELECT
 			wt.id, bc.id, bc.case_code, bc.case_type, bc.primary_object_type, bc.primary_object_id,
 			bc.process_instance_key, wt.job_key, wt.task_type, wt.step_code,
-			wt.title, wt.description, wt.status, bc.status,
+			wt.title, wt.description, wt.status, bc.status, bc.created_by,
 			wt.candidate_role, wt.candidate_group_id, wt.candidate_org_unit_id,
 			wt.assigned_to, wt.assigned_at, wt.claim_expires_at,
 			COALESCE(wt.sla_due_at, bc.sla_due_at), wt.created_at, wt.updated_at
@@ -333,7 +334,7 @@ func scanWorkItem(s scanner) (WorkItem, error) {
 	err := s.Scan(
 		&item.ID, &item.CaseID, &item.CaseCode, &item.CaseType, &item.PrimaryObjectType, &item.PrimaryObjectID,
 		&processInstanceKey, &jobKey, &item.TaskType, &item.StepCode,
-		&item.Title, &item.Description, &item.Status, &item.TransactionStatus,
+		&item.Title, &item.Description, &item.Status, &item.TransactionStatus, &item.CreatedBy,
 		&item.CandidateRole, &item.CandidateGroupID, &item.CandidateOrgUnitID,
 		&item.AssignedTo, &assignedAt, &claimExpiresAt,
 		&slaDueAt, &item.CreatedAt, &item.UpdatedAt,
