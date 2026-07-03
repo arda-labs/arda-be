@@ -630,6 +630,70 @@ func (h *WorkflowHandler) Cases(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *WorkflowHandler) Tasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.zeebeSvc == nil {
+		http.Error(w, "Zeebe service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	role := r.URL.Query().Get("role")
+	jobType := taskTypeForRequest(role, r.URL.Query().Get("task_type"))
+	if jobType == "" {
+		http.Error(w, "Unsupported task role or task_type", http.StatusBadRequest)
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	tasks, err := h.zeebeSvc.ActivateTasks(r.Context(), jobType, "arda-workflow-inbox", int32(limit))
+	if err != nil {
+		http.Error(w, "Failed to activate tasks: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	for _, task := range tasks {
+		if err := h.caseRepo.MarkCaseAtStep(r.Context(), task.ProcessInstanceKey, task.ElementID, task.CandidateRole); err != nil {
+			http.Error(w, "Failed to update task step: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": tasks})
+}
+
+func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
+	jobKey, action := taskPath(r.URL.Path)
+	if jobKey == 0 || action != "complete" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.zeebeSvc == nil {
+		http.Error(w, "Zeebe service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		ProcessInstanceKey int64          `json:"processInstanceKey"`
+		ElementID          string         `json:"elementId"`
+		Variables          map[string]any `json:"variables"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, req.Variables); err != nil {
+		http.Error(w, "Failed to complete task: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if err := h.caseRepo.MarkCaseStepCompleted(r.Context(), req.ProcessInstanceKey, req.ElementID); err != nil {
+		http.Error(w, "Failed to update completed task step: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "completed"})
+}
+
 func (h *WorkflowHandler) CaseByID(w http.ResponseWriter, r *http.Request) {
 	id, action := casePath(r.URL.Path)
 	if id == "" {
@@ -648,6 +712,48 @@ func (h *WorkflowHandler) CaseByID(w http.ResponseWriter, r *http.Request) {
 		h.claimCase(w, r, id)
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+func taskTypeForRole(role string) string {
+	switch role {
+	case "CUSTOMER_CHECKER":
+		return "workflow.customer_checker_review"
+	case "CUSTOMER_RISK_CHECKER":
+		return "workflow.customer_risk_review"
+	case "CUSTOMER_MAKER":
+		return "workflow.customer_maker_revise"
+	default:
+		return ""
+	}
+}
+
+func taskTypeForRequest(role string, taskType string) string {
+	if taskType != "" {
+		for _, allowed := range taskTypesForRole(role) {
+			if taskType == allowed {
+				return taskType
+			}
+		}
+		return ""
+	}
+	return taskTypeForRole(role)
+}
+
+func taskTypesForRole(role string) []string {
+	switch role {
+	case "CUSTOMER_CHECKER":
+		return []string{"workflow.customer_checker_review"}
+	case "CUSTOMER_RISK_CHECKER":
+		return []string{"workflow.customer_risk_review"}
+	case "CUSTOMER_MAKER":
+		return []string{"workflow.customer_maker_revise"}
+	case "FINANCE_TXN_MAKER":
+		return []string{"workflow.finance_incoming_classify", "workflow.finance_outgoing_verify"}
+	case "FINANCE_TXN_CHECKER":
+		return []string{"workflow.finance_incoming_approve", "workflow.finance_outgoing_approve"}
+	default:
+		return nil
 	}
 }
 
@@ -707,7 +813,8 @@ func (h *WorkflowHandler) caseTimeline(w http.ResponseWriter, r *http.Request, i
 }
 
 type caseActorRequest struct {
-	Actor string `json:"actor"`
+	Actor     string         `json:"actor"`
+	Variables map[string]any `json:"variables"`
 }
 
 func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id string) {
@@ -750,6 +857,12 @@ func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id 
 		"domainService":     bc.DomainService,
 		"primaryObjectType": bc.PrimaryObjectType,
 		"primaryObjectId":   bc.PrimaryObjectID,
+	}
+	if bc.PrimaryObjectType == "CUSTOMER" {
+		variables["customerId"] = bc.PrimaryObjectID
+	}
+	for key, value := range req.Variables {
+		variables[key] = value
 	}
 	processKey, err := h.zeebeSvc.StartWorkflow(r.Context(), *bc.BpmnProcessID, variables)
 	if err != nil {
@@ -798,6 +911,23 @@ func casePath(path string) (string, string) {
 		return parts[0], parts[1]
 	}
 	return "", ""
+}
+
+func taskPath(path string) (int64, string) {
+	const prefix = "/api/workflow/tasks/"
+	rest := strings.Trim(strings.TrimPrefix(path, prefix), "/")
+	if rest == "" || rest == path {
+		return 0, ""
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) != 2 {
+		return 0, ""
+	}
+	jobKey, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, ""
+	}
+	return jobKey, parts[1]
 }
 
 func caseTypePath(path string) (string, string) {

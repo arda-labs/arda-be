@@ -105,6 +105,38 @@ func (r *ProcessDefinitionRepository) Create(ctx context.Context, in ProcessDefi
 	return &item, err
 }
 
+func (r *ProcessDefinitionRepository) UpsertBuiltIn(ctx context.Context, in ProcessDefinitionImport, deploymentKey int64) (*ProcessDefinition, error) {
+	bpmnProcessID, err := validateProcessDefinitionImport(in, true)
+	if err != nil {
+		return nil, err
+	}
+	id, err := newID()
+	if err != nil {
+		return nil, err
+	}
+
+	row := r.db.QueryRowContext(ctx, `
+		INSERT INTO workflow_process_definitions (
+			id, process_code, name, bpmn_process_id, resource_name, xml_content,
+			deployment_key, status, deployed_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE', CURRENT_TIMESTAMP)
+		ON CONFLICT (process_code) DO UPDATE
+		SET name = EXCLUDED.name,
+		    bpmn_process_id = EXCLUDED.bpmn_process_id,
+		    resource_name = EXCLUDED.resource_name,
+		    xml_content = EXCLUDED.xml_content,
+		    deployment_key = EXCLUDED.deployment_key,
+		    status = 'ACTIVE',
+		    deployed_at = CURRENT_TIMESTAMP,
+		    updated_at = CURRENT_TIMESTAMP
+		RETURNING id, process_code, name, bpmn_process_id, version, resource_name, xml_content,
+		          deployment_key, status, deployed_at, created_at, updated_at
+	`, id, in.ProcessCode, in.Name, bpmnProcessID, in.ResourceName, in.XMLContent, deploymentKey)
+	item, err := scanProcessDefinition(row)
+	return &item, err
+}
+
 func (r *ProcessDefinitionRepository) Update(ctx context.Context, id string, in ProcessDefinitionImport) (*ProcessDefinition, error) {
 	if id == "" {
 		return nil, errors.New("id is required")

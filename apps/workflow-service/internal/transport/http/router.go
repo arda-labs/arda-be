@@ -46,6 +46,8 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 	mux.HandleFunc("/api/workflow/assignment-rules/", wfHandler.AssignmentRuleByID)
 	mux.HandleFunc("/api/workflow/delegations", wfHandler.Delegations)
 	mux.HandleFunc("/api/workflow/delegations/", wfHandler.DelegationByID)
+	mux.HandleFunc("/api/workflow/tasks", wfHandler.Tasks)
+	mux.HandleFunc("/api/workflow/tasks/", wfHandler.TaskByID)
 	mux.HandleFunc("/api/workflow/cases", wfHandler.Cases)
 	mux.HandleFunc("/api/workflow/cases/", wfHandler.CaseByID)
 

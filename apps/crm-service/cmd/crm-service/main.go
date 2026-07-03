@@ -69,6 +69,18 @@ func main() {
 	crmWorkers := worker.NewCRMWorkers(customerRepo)
 
 	// Start Workers
+	worker0 := zeebeClient.NewJobWorker().JobType("crm.mark_customer_submitted").Handler(crmWorkers.MarkSubmittedHandler).Open()
+	defer worker0.Close()
+
+	workerDuplicate := zeebeClient.NewJobWorker().JobType("crm.check_customer_duplicate").Handler(crmWorkers.CheckDuplicateHandler).Open()
+	defer workerDuplicate.Close()
+
+	workerChanges := zeebeClient.NewJobWorker().JobType("crm.request_customer_changes").Handler(crmWorkers.RequestChangesHandler).Open()
+	defer workerChanges.Close()
+
+	workerReject := zeebeClient.NewJobWorker().JobType("crm.reject_customer").Handler(crmWorkers.RejectCustomerHandler).Open()
+	defer workerReject.Close()
+
 	worker1 := zeebeClient.NewJobWorker().JobType("crm.create_customer").Handler(crmWorkers.CreateCustomerHandler).Open()
 	defer worker1.Close()
 

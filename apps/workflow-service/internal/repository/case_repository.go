@@ -420,6 +420,34 @@ func (r *CaseRepository) ClaimCase(ctx context.Context, id string, actor string)
 	return &bc, nil
 }
 
+func (r *CaseRepository) MarkCaseAtStep(ctx context.Context, processInstanceKey int64, stepID string, candidateRole string) error {
+	if processInstanceKey == 0 || stepID == "" {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE business_cases
+		SET status = CASE WHEN status = $2 THEN $3 ELSE status END,
+		    current_step = $4,
+		    candidate_role = NULLIF($5, ''),
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE process_instance_key = $1
+	`, processInstanceKey, CaseStatusSubmitted, CaseStatusInReview, stepID, candidateRole)
+	return err
+}
+
+func (r *CaseRepository) MarkCaseStepCompleted(ctx context.Context, processInstanceKey int64, stepID string) error {
+	if processInstanceKey == 0 || stepID == "" {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE business_cases
+		SET current_step = $2,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE process_instance_key = $1 AND current_step = $2
+	`, processInstanceKey, stepID)
+	return err
+}
+
 func (r *CaseRepository) ListTimeline(ctx context.Context, caseID string) ([]TimelineEvent, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, case_id, event_type, from_status, to_status, actor, note, data::text, created_at

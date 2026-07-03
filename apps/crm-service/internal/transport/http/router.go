@@ -23,7 +23,8 @@ func NewRouter(customerHandler *handler.CustomerHandler) http.Handler {
 
 	// CRM APIs
 	mux.HandleFunc("/api/v1/customers", customerHandler.CreateCustomer)
-	mux.HandleFunc("/api/crm/customers", customerHandler.CreateCustomer)
+	mux.HandleFunc("/api/crm/customers", customerHandler.Customers)
+	mux.HandleFunc("/api/crm/customers/", customerHandler.CustomerByID)
 
 	return mux
 }

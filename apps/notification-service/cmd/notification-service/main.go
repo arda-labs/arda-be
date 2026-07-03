@@ -99,6 +99,9 @@ func main() {
 	worker3 := zeebeClient.NewJobWorker().JobType("notification.push").Handler(notificationWorkers.SendPushHandler).Open()
 	defer worker3.Close()
 
+	workerCustomerResult := zeebeClient.NewJobWorker().JobType("notification.customer_registration_result").Handler(notificationWorkers.CustomerRegistrationResultHandler).Open()
+	defer workerCustomerResult.Close()
+
 	logger.Info("Notification job workers registered and listening")
 
 	// Router and HTTP Server

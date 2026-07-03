@@ -12,6 +12,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/arda-labs/arda/apps/workflow-service/internal/bootstrap"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/config"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/handler"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/migration"
@@ -61,6 +62,25 @@ func main() {
 	mappingRepo := repository.NewMappingRepository(db)
 	caseRepo := repository.NewCaseRepository(db)
 	processDefinitionRepo := repository.NewProcessDefinitionRepository(db)
+
+	for _, process := range bootstrap.BuiltInProcesses() {
+		key, err := zeebeSvc.DeployWorkflow(context.Background(), process.ResourceName, process.Content)
+		if err != nil {
+			logger.Error("Failed to deploy built-in workflow", "resource", process.ResourceName, "err", err)
+			os.Exit(1)
+		}
+		if _, err := processDefinitionRepo.UpsertBuiltIn(context.Background(), repository.ProcessDefinitionImport{
+			ProcessCode:  process.ProcessCode,
+			Name:         process.Name,
+			ResourceName: process.ResourceName,
+			XMLContent:   string(process.Content),
+			Status:       "ACTIVE",
+		}, key); err != nil {
+			logger.Error("Failed to seed built-in workflow definition", "resource", process.ResourceName, "err", err)
+			os.Exit(1)
+		}
+		logger.Info("Built-in workflow deployed", "resource", process.ResourceName, "processDefinitionKey", key)
+	}
 
 	// Handlers
 	wfHandler := handler.NewWorkflowHandler(zeebeSvc, mappingRepo, caseRepo, processDefinitionRepo)

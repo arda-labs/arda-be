@@ -94,6 +94,24 @@ func (w *NotificationWorkers) SendPushHandler(client worker.JobClient, job entit
 	}
 }
 
+func (w *NotificationWorkers) CustomerRegistrationResultHandler(client worker.JobClient, job entities.Job) {
+	key := job.GetKey()
+	variables, err := job.GetVariablesAsMap()
+	if err != nil {
+		w.failJob(client, job, "Invalid variables format: "+err.Error())
+		return
+	}
+	customerID, _ := variables["customerId"].(string)
+	status, _ := variables["customerStatus"].(string)
+	slog.Info("notification.customer_registration_result accepted; provider dispatch is not configured yet",
+		"customerId", customerID,
+		"customerStatus", status,
+	)
+	if _, err := client.NewCompleteJobCommand().JobKey(key).Send(context.Background()); err != nil {
+		slog.Error("Failed to complete job", "jobKey", key, "err", err)
+	}
+}
+
 func (w *NotificationWorkers) failJob(client worker.JobClient, job entities.Job, reason string) {
 	ctx := context.Background()
 	_, err := client.NewFailJobCommand().

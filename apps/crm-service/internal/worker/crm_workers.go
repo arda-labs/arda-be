@@ -18,130 +18,106 @@ func NewCRMWorkers(customerRepo *repository.CustomerRepository) *CRMWorkers {
 	return &CRMWorkers{customerRepo: customerRepo}
 }
 
-func (w *CRMWorkers) CreateCustomerHandler(client worker.JobClient, job entities.Job) {
-	key := job.GetKey()
-	slog.Info("Worker crm.create_customer activated", "jobKey", key)
+func (w *CRMWorkers) MarkSubmittedHandler(client worker.JobClient, job entities.Job) {
+	w.updateStatus(client, job, "SUBMITTED", map[string]any{"customerStatus": "SUBMITTED"})
+}
 
-	variables, err := job.GetVariablesAsMap()
-	if err != nil {
-		slog.Error("Failed to parse variables", "err", err)
-		w.failJob(client, job, "Invalid variables format: "+err.Error())
+func (w *CRMWorkers) CheckDuplicateHandler(client worker.JobClient, job entities.Job) {
+	customerID, ok := w.customerID(client, job)
+	if !ok {
 		return
 	}
-
-	customerId, _ := variables["customerId"].(string)
-	if customerId == "" {
-		slog.Error("Missing customerId in job variables")
-		w.failJob(client, job, "Missing customerId")
-		return
-	}
-
-	// Update DB status to CREATED
-	ctx := context.Background()
-	err = w.customerRepo.UpdateStatus(ctx, customerId, "CREATED")
+	duplicateFound, err := w.customerRepo.HasDuplicateIdentity(context.Background(), customerID)
 	if err != nil {
-		slog.Error("Failed to update customer status to CREATED", "customerId", customerId, "err", err)
 		w.failJob(client, job, "DB Error: "+err.Error())
 		return
 	}
+	w.completeJob(client, job, map[string]any{"duplicateFound": duplicateFound})
+}
 
-	slog.Info("Customer created in CRM database", "customerId", customerId)
+func (w *CRMWorkers) RequestChangesHandler(client worker.JobClient, job entities.Job) {
+	w.updateStatus(client, job, "NEEDS_CHANGES", map[string]any{"customerStatus": "NEEDS_CHANGES"})
+}
 
-	// Complete the job, passing updated variables if needed
-	_, err = client.NewCompleteJobCommand().JobKey(key).Send(ctx)
-	if err != nil {
-		slog.Error("Failed to complete job", "jobKey", key, "err", err)
-	}
+func (w *CRMWorkers) RejectCustomerHandler(client worker.JobClient, job entities.Job) {
+	w.updateStatus(client, job, "REJECTED", map[string]any{"customerStatus": "REJECTED"})
+}
+
+func (w *CRMWorkers) CreateCustomerHandler(client worker.JobClient, job entities.Job) {
+	w.updateStatus(client, job, "CREATED", map[string]any{"customerStatus": "CREATED"})
 }
 
 func (w *CRMWorkers) UpdateCustomerHandler(client worker.JobClient, job entities.Job) {
-	key := job.GetKey()
-	slog.Info("Worker crm.update_customer activated", "jobKey", key)
-
-	variables, err := job.GetVariablesAsMap()
-	if err != nil {
-		slog.Error("Failed to parse variables", "err", err)
-		w.failJob(client, job, "Invalid variables format: "+err.Error())
-		return
-	}
-
-	customerId, _ := variables["customerId"].(string)
-	if customerId == "" {
-		slog.Error("Missing customerId in job variables")
-		w.failJob(client, job, "Missing customerId")
-		return
-	}
-
-	// Update DB status to UPDATED
-	ctx := context.Background()
-	err = w.customerRepo.UpdateStatus(ctx, customerId, "UPDATED")
-	if err != nil {
-		slog.Error("Failed to update customer status to UPDATED", "customerId", customerId, "err", err)
-		w.failJob(client, job, "DB Error: "+err.Error())
-		return
-	}
-
-	slog.Info("Customer updated in CRM database", "customerId", customerId)
-
-	_, err = client.NewCompleteJobCommand().JobKey(key).Send(ctx)
-	if err != nil {
-		slog.Error("Failed to complete job", "jobKey", key, "err", err)
-	}
+	w.updateStatus(client, job, "UPDATED", map[string]any{"customerStatus": "UPDATED"})
 }
 
 func (w *CRMWorkers) ApproveCustomerHandler(client worker.JobClient, job entities.Job) {
-	key := job.GetKey()
-	slog.Info("Worker crm.approve_customer activated", "jobKey", key)
+	w.updateStatus(client, job, "APPROVED", map[string]any{
+		"approvalStatus": "APPROVED",
+		"customerStatus": "APPROVED",
+	})
+}
 
-	variables, err := job.GetVariablesAsMap()
-	if err != nil {
-		slog.Error("Failed to parse variables", "err", err)
-		w.failJob(client, job, "Invalid variables format: "+err.Error())
+func (w *CRMWorkers) updateStatus(client worker.JobClient, job entities.Job, status string, result map[string]any) {
+	customerID, ok := w.customerID(client, job)
+	if !ok {
 		return
 	}
-
-	customerId, _ := variables["customerId"].(string)
-	if customerId == "" {
-		slog.Error("Missing customerId in job variables")
-		w.failJob(client, job, "Missing customerId")
-		return
-	}
-
-	// Update DB status to APPROVED
-	ctx := context.Background()
-	err = w.customerRepo.UpdateStatus(ctx, customerId, "APPROVED")
-	if err != nil {
-		slog.Error("Failed to update customer status to APPROVED", "customerId", customerId, "err", err)
+	if err := w.customerRepo.UpdateStatus(context.Background(), customerID, status); err != nil {
+		slog.Error("Failed to update customer status", "customerId", customerID, "status", status, "err", err)
 		w.failJob(client, job, "DB Error: "+err.Error())
 		return
 	}
+	slog.Info("Customer status updated", "customerId", customerID, "status", status)
+	w.completeJob(client, job, result)
+}
 
-	slog.Info("Customer approved in CRM database", "customerId", customerId)
-
-	// Build response payload showing approval confirmation
-	resultMap := map[string]any{
-		"approvalStatus": "APPROVED",
-		"approvedAt":     job.GetElementId(), // just metadata helper
-	}
-
-	cmd, err := client.NewCompleteJobCommand().JobKey(key).VariablesFromMap(resultMap)
+func (w *CRMWorkers) customerID(client worker.JobClient, job entities.Job) (string, bool) {
+	variables, err := job.GetVariablesAsMap()
 	if err != nil {
-		slog.Error("Failed to set variables on complete job command", "err", err)
-		w.failJob(client, job, "Set variables error: "+err.Error())
+		w.failJob(client, job, "Invalid variables format: "+err.Error())
+		return "", false
+	}
+	customerID, _ := variables["customerId"].(string)
+	if customerID == "" {
+		customerID, _ = variables["primaryObjectId"].(string)
+	}
+	if customerID == "" {
+		w.failJob(client, job, "Missing customerId")
+		return "", false
+	}
+	return customerID, true
+}
+
+func (w *CRMWorkers) completeJob(client worker.JobClient, job entities.Job, result map[string]any) {
+	ctx := context.Background()
+	cmd := client.NewCompleteJobCommand().JobKey(job.GetKey())
+	if len(result) > 0 {
+		withVars, err := cmd.VariablesFromMap(result)
+		if err != nil {
+			w.failJob(client, job, "Set variables error: "+err.Error())
+			return
+		}
+		_, err = withVars.Send(ctx)
+		if err != nil {
+			slog.Error("Failed to complete job", "jobKey", job.GetKey(), "err", err)
+		}
 		return
 	}
-
-	_, err = cmd.Send(ctx)
-	if err != nil {
-		slog.Error("Failed to complete job", "jobKey", key, "err", err)
+	if _, err := cmd.Send(ctx); err != nil {
+		slog.Error("Failed to complete job", "jobKey", job.GetKey(), "err", err)
 	}
 }
 
 func (w *CRMWorkers) failJob(client worker.JobClient, job entities.Job, reason string) {
 	ctx := context.Background()
+	retries := job.GetRetries() - 1
+	if retries < 0 {
+		retries = 0
+	}
 	_, err := client.NewFailJobCommand().
 		JobKey(job.GetKey()).
-		Retries(job.GetRetries() - 1).
+		Retries(retries).
 		ErrorMessage(reason).
 		Send(ctx)
 	if err != nil {
