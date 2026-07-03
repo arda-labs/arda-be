@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
@@ -631,6 +632,107 @@ func (h *WorkflowHandler) Cases(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := h.seedWorkItems(r.Context(), r.URL.Query().Get("direction")); err != nil {
+		http.Error(w, "Failed to prepare work items: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	items, err := h.caseRepo.ListWorkItems(r.Context(), workItemFilter(r))
+	if err != nil {
+		http.Error(w, "Failed to query work items: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := h.applyWorkItemPermissions(r.Context(), r, items); err != nil {
+		http.Error(w, "Failed to resolve task permissions: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := h.seedWorkItems(r.Context(), r.URL.Query().Get("direction")); err != nil {
+		http.Error(w, "Failed to prepare work items: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	filter := workItemFilter(r)
+	filter.Limit = 200
+	items, err := h.caseRepo.ListWorkItems(r.Context(), filter)
+	if err != nil {
+		http.Error(w, "Failed to query work item summary: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"nodes": workItemSummary(items)})
+}
+
+func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
+	id, action := workItemPath(r.URL.Path)
+	if id == "" || action != "claim" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	userID := currentUserID(r)
+	if userID == "" {
+		http.Error(w, "missing X-User-Id", http.StatusUnauthorized)
+		return
+	}
+	item, err := h.caseRepo.GetWorkItem(r.Context(), id, userID)
+	if err != nil {
+		http.Error(w, "Failed to query work item: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if item == nil {
+		http.Error(w, "Work item not found", http.StatusNotFound)
+		return
+	}
+	ok, err := h.caseRepo.UserCanClaimRole(r.Context(), userID, currentUserGroups(r), item.CandidateRole)
+	if err != nil {
+		http.Error(w, "Failed to verify claim permission: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !ok && item.AssignedTo != userID {
+		http.Error(w, "User is not in candidate role/group for this task", http.StatusForbidden)
+		return
+	}
+	if item.JobKey == nil && h.zeebeSvc != nil {
+		task, err := h.zeebeSvc.ClaimNextTask(r.Context(), item.TaskType, "arda-workflow-work-items")
+		if err == nil {
+			_, _ = h.caseRepo.UpsertWorkItem(r.Context(), repository.WorkItemSeed{
+				CaseID:             item.CaseID,
+				ProcessInstanceKey: int64Ptr(task.ProcessInstanceKey),
+				JobKey:             int64Ptr(task.JobKey),
+				TaskType:           task.Type,
+				StepCode:           task.ElementID,
+				CandidateRole:      firstString(task.CandidateRole, item.CandidateRole),
+				SLADueAt:           item.SLADueAt,
+				Title:              item.Title,
+				Description:        item.Description,
+			})
+		}
+	}
+	claimed, err := h.caseRepo.ClaimWorkItem(r.Context(), id, userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if claimed == nil {
+		http.Error(w, "Work item not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workItem": claimed, "claimedBy": userID, "claimedAt": time.Now()})
+}
+
 func (h *WorkflowHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -711,6 +813,7 @@ func (h *WorkflowHandler) listTaskCandidates(ctx context.Context, role string, j
 			CustomerID:         item.PrimaryObjectID,
 			CustomerName:       item.Title,
 			CandidateRole:      role,
+			SLADueAt:           item.SLADueAt,
 			Variables: map[string]any{
 				"caseId":            item.ID,
 				"caseCode":          item.CaseCode,
@@ -722,6 +825,137 @@ func (h *WorkflowHandler) listTaskCandidates(ctx context.Context, role string, j
 		})
 	}
 	return out, nil
+}
+
+func (h *WorkflowHandler) seedWorkItems(ctx context.Context, direction string) error {
+	for _, caseType := range caseTypesForWorkItemDirection(direction) {
+		cases, err := h.caseRepo.ListCases(ctx, repository.CaseListFilter{
+			CaseType: caseType,
+			Limit:    200,
+		})
+		if err != nil {
+			return err
+		}
+		for _, item := range cases {
+			if item.Status != repository.CaseStatusSubmitted && item.Status != repository.CaseStatusInReview {
+				continue
+			}
+			seed, ok := workItemSeedFromCase(item)
+			if !ok {
+				continue
+			}
+			if _, err := h.caseRepo.UpsertWorkItem(ctx, seed); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func workItemSeedFromCase(item repository.BusinessCase) (repository.WorkItemSeed, bool) {
+	stepCode := item.CurrentStep
+	if stepCode == "" || stepCode == "submitted" {
+		stepCode = defaultStepForCaseType(item.CaseType)
+	}
+	taskType := taskTypeForCaseStep(item.CaseType, stepCode)
+	if taskType == "" {
+		return repository.WorkItemSeed{}, false
+	}
+	role := ""
+	if item.CandidateRole != nil {
+		role = *item.CandidateRole
+	}
+	if role == "" {
+		role = roleForTaskType(taskType)
+	}
+	return repository.WorkItemSeed{
+		CaseID:             item.ID,
+		ProcessInstanceKey: item.ProcessInstanceKey,
+		TaskType:           taskType,
+		StepCode:           stepCode,
+		CandidateRole:      role,
+		SLADueAt:           item.SLADueAt,
+		Title:              taskLabelForType(taskType),
+		Description:        item.Title,
+	}, true
+}
+
+func workItemFilter(r *http.Request) repository.WorkItemFilter {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	return repository.WorkItemFilter{
+		Direction:         strings.ToUpper(q.Get("direction")),
+		From:              parseDate(q.Get("from"), q.Get("fromDate")),
+		To:                parseDate(q.Get("to"), q.Get("toDate")),
+		Accounting:        strings.ToUpper(q.Get("accounting")),
+		SLAStatus:         strings.ToUpper(firstString(q.Get("slaStatus"), q.Get("sla_status"))),
+		TransactionStatus: strings.ToUpper(firstString(q.Get("transactionStatus"), q.Get("status"))),
+		Node:              firstString(q.Get("node"), q.Get("step_code"), q.Get("currentStep")),
+		UserID:            currentUserID(r),
+		Limit:             limit,
+	}
+}
+
+func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.Request, items []repository.WorkItem) error {
+	userID := currentUserID(r)
+	groups := currentUserGroups(r)
+	for i := range items {
+		if items[i].AssignedTo != "" {
+			items[i].CanClaim = false
+			items[i].CanOpen = items[i].AssignedTo == userID
+			if !items[i].CanOpen {
+				items[i].ClaimBlockedReason = "Task đang được xử lý bởi " + items[i].AssignedTo
+			}
+			continue
+		}
+		ok, err := h.caseRepo.UserCanClaimRole(ctx, userID, groups, items[i].CandidateRole)
+		if err != nil {
+			return err
+		}
+		items[i].CanClaim = ok
+		items[i].CanOpen = ok
+		if !ok {
+			items[i].ClaimBlockedReason = "Bạn không thuộc nhóm được phân công"
+		}
+	}
+	return nil
+}
+
+func workItemSummary(items []repository.WorkItem) []repository.WorkItemSummaryNode {
+	nodesByStep := map[string]*repository.WorkItemSummaryNode{}
+	root := repository.WorkItemSummaryNode{ID: "ALL", Label: "Tất cả việc được phép nhận"}
+	my := repository.WorkItemSummaryNode{ID: "MINE", Label: "Việc của tôi"}
+	overdue := repository.WorkItemSummaryNode{ID: "SLA_BREACHED", Label: "Quá hạn SLA"}
+
+	for _, item := range items {
+		root.Count++
+		if item.AssignedTo != "" {
+			my.Count++
+		}
+		if item.SLAStatus == "BREACHED" {
+			root.Overdue++
+			overdue.Count++
+			overdue.Overdue++
+		}
+		node := nodesByStep[item.StepCode]
+		if node == nil {
+			node = &repository.WorkItemSummaryNode{
+				ID:    item.StepCode,
+				Label: taskLabelForType(item.TaskType),
+			}
+			nodesByStep[item.StepCode] = node
+		}
+		node.Count++
+		if item.SLAStatus == "BREACHED" {
+			node.Overdue++
+		}
+	}
+
+	out := []repository.WorkItemSummaryNode{root, my, overdue}
+	for _, node := range nodesByStep {
+		out = append(out, *node)
+	}
+	return out
 }
 
 func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
@@ -749,6 +983,10 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, req.Variables); err != nil {
 		http.Error(w, "Failed to complete task: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if err := h.caseRepo.CompleteWorkItemByJob(r.Context(), jobKey); err != nil {
+		http.Error(w, "Failed to update work item: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if err := h.caseRepo.MarkCaseStepCompleted(r.Context(), req.ProcessInstanceKey, req.ElementID); err != nil {
@@ -1026,6 +1264,22 @@ func processDefinitionPath(path string) (string, string) {
 	return "", ""
 }
 
+func workItemPath(path string) (string, string) {
+	const prefix = "/api/workflow/work-items/"
+	rest := strings.Trim(strings.TrimPrefix(path, prefix), "/")
+	if rest == "" || rest == path {
+		return "", ""
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "", ""
+}
+
 func parseProcessDefinitionImport(r *http.Request) (repository.ProcessDefinitionImport, error) {
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		return repository.ProcessDefinitionImport{}, err
@@ -1063,6 +1317,149 @@ func safeFilename(name string) string {
 		return "process.bpmn"
 	}
 	return name
+}
+
+func parseDate(values ...string) *time.Time {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+			parsed, err := time.Parse(layout, value)
+			if err == nil {
+				return &parsed
+			}
+		}
+	}
+	return nil
+}
+
+func currentUserID(r *http.Request) string {
+	return firstString(
+		strings.TrimSpace(r.Header.Get("X-User-Id")),
+		strings.TrimSpace(r.Header.Get("X-User-Subject")),
+	)
+}
+
+func currentUserGroups(r *http.Request) []string {
+	raw := firstString(r.Header.Get("X-User-Groups"), r.Header.Get("X-Groups"))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func firstString(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
+}
+
+func caseTypesForWorkItemDirection(direction string) []string {
+	switch strings.ToUpper(direction) {
+	case "INCOMING":
+		return []string{"CUSTOMER_REGISTRATION", "FINANCE_INCOMING_TRANSACTION"}
+	case "OUTGOING":
+		return []string{"FINANCE_OUTGOING_TRANSACTION"}
+	default:
+		return []string{"CUSTOMER_REGISTRATION", "FINANCE_INCOMING_TRANSACTION", "FINANCE_OUTGOING_TRANSACTION"}
+	}
+}
+
+func defaultStepForCaseType(caseType string) string {
+	switch caseType {
+	case "CUSTOMER_REGISTRATION":
+		return "Activity_CheckerReview"
+	case "FINANCE_INCOMING_TRANSACTION":
+		return "classify-account"
+	case "FINANCE_OUTGOING_TRANSACTION":
+		return "verify-beneficiary"
+	default:
+		return "submitted"
+	}
+}
+
+func taskTypeForCaseStep(caseType string, stepCode string) string {
+	switch stepCode {
+	case "Activity_CheckerReview":
+		return "workflow.customer_checker_review"
+	case "Activity_RiskReview":
+		return "workflow.customer_risk_review"
+	case "Activity_MakerRevise":
+		return "workflow.customer_maker_revise"
+	case "classify-account":
+		return "workflow.finance_incoming_classify"
+	case "approve-journal":
+		return "workflow.finance_incoming_approve"
+	case "verify-beneficiary":
+		return "workflow.finance_outgoing_verify"
+	case "approve-outgoing":
+		return "workflow.finance_outgoing_approve"
+	}
+	if caseType == "FINANCE_INCOMING_TRANSACTION" {
+		return "workflow.finance_incoming_classify"
+	}
+	if caseType == "FINANCE_OUTGOING_TRANSACTION" {
+		return "workflow.finance_outgoing_verify"
+	}
+	if caseType == "CUSTOMER_REGISTRATION" {
+		return "workflow.customer_checker_review"
+	}
+	return ""
+}
+
+func roleForTaskType(taskType string) string {
+	switch taskType {
+	case "workflow.customer_checker_review":
+		return "CUSTOMER_CHECKER"
+	case "workflow.customer_risk_review":
+		return "CUSTOMER_RISK_CHECKER"
+	case "workflow.customer_maker_revise":
+		return "CUSTOMER_MAKER"
+	case "workflow.finance_incoming_classify", "workflow.finance_outgoing_verify":
+		return "FINANCE_TXN_MAKER"
+	case "workflow.finance_incoming_approve", "workflow.finance_outgoing_approve":
+		return "FINANCE_TXN_CHECKER"
+	default:
+		return ""
+	}
+}
+
+func taskLabelForType(taskType string) string {
+	switch taskType {
+	case "workflow.customer_checker_review":
+		return "Kiểm soát hồ sơ khách hàng"
+	case "workflow.customer_risk_review":
+		return "Rà soát rủi ro khách hàng"
+	case "workflow.customer_maker_revise":
+		return "Maker bổ sung hồ sơ"
+	case "workflow.finance_incoming_classify":
+		return "Phân loại giao dịch đến"
+	case "workflow.finance_incoming_approve":
+		return "Duyệt giao dịch đến"
+	case "workflow.finance_outgoing_verify":
+		return "Kiểm tra giao dịch đi"
+	case "workflow.finance_outgoing_approve":
+		return "Duyệt giao dịch đi"
+	default:
+		return taskType
+	}
 }
 
 func writeListOrError(w http.ResponseWriter, key string, items any, err error) {

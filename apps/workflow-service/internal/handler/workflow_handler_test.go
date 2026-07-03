@@ -72,6 +72,29 @@ func TestTaskPath(t *testing.T) {
 	}
 }
 
+func TestWorkItemPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		wantID     string
+		wantAction string
+	}{
+		{name: "claim", path: "/api/workflow/work-items/task-1/claim", wantID: "task-1", wantAction: "claim"},
+		{name: "detail", path: "/api/workflow/work-items/task-1", wantID: "task-1"},
+		{name: "collection", path: "/api/workflow/work-items"},
+		{name: "too deep", path: "/api/workflow/work-items/task-1/claim/extra"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, action := workItemPath(tt.path)
+			if id != tt.wantID || action != tt.wantAction {
+				t.Fatalf("workItemPath() = (%q, %q), want (%q, %q)", id, action, tt.wantID, tt.wantAction)
+			}
+		})
+	}
+}
+
 func TestTaskTypeForRequest(t *testing.T) {
 	if got := taskTypeForRequest("FINANCE_TXN_MAKER", "workflow.finance_incoming_classify"); got != "workflow.finance_incoming_classify" {
 		t.Fatalf("explicit task type = %q, want workflow.finance_incoming_classify", got)
@@ -84,5 +107,17 @@ func TestTaskTypeForRequest(t *testing.T) {
 	}
 	if got := taskTypeForRequest("UNKNOWN", ""); got != "" {
 		t.Fatalf("unknown task type = %q, want empty", got)
+	}
+}
+
+func TestTaskTypeForCaseStep(t *testing.T) {
+	if got := taskTypeForCaseStep("FINANCE_INCOMING_TRANSACTION", "classify-account"); got != "workflow.finance_incoming_classify" {
+		t.Fatalf("incoming classify task type = %q", got)
+	}
+	if got := taskTypeForCaseStep("FINANCE_OUTGOING_TRANSACTION", "verify-beneficiary"); got != "workflow.finance_outgoing_verify" {
+		t.Fatalf("outgoing verify task type = %q", got)
+	}
+	if got := taskTypeForCaseStep("CUSTOMER_REGISTRATION", "Activity_MakerRevise"); got != "workflow.customer_maker_revise" {
+		t.Fatalf("customer revise task type = %q", got)
 	}
 }

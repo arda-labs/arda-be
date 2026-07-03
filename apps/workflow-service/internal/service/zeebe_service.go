@@ -27,6 +27,7 @@ type WorkflowTask struct {
 	CustomerName       string         `json:"customerName"`
 	CandidateRole      string         `json:"candidateRole"`
 	FormKey            string         `json:"formKey"`
+	SLADueAt           *time.Time     `json:"slaDueAt,omitempty"`
 	Variables          map[string]any `json:"variables"`
 }
 
@@ -132,7 +133,7 @@ func (s *ZeebeService) ActivateTasks(ctx context.Context, jobType, workerName st
 		JobType(jobType).
 		MaxJobsToActivate(maxJobs).
 		WorkerName(workerName).
-		Timeout(30*time.Minute).
+		Timeout(30 * time.Minute).
 		FetchVariables(taskFetchVariables...).
 		Send(ctx)
 	if err != nil {
@@ -151,7 +152,7 @@ func (s *ZeebeService) ClaimNextTask(ctx context.Context, jobType, workerName st
 		JobType(jobType).
 		MaxJobsToActivate(1).
 		WorkerName(workerName).
-		Timeout(30*time.Minute).
+		Timeout(30 * time.Minute).
 		FetchVariables(taskFetchVariables...).
 		Send(ctx)
 	if err != nil {
