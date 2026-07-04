@@ -62,8 +62,8 @@ func (s *PlatformService) UpsertLookupValue(ctx context.Context, categoryCode st
 	return s.repo.UpsertLookupValue(ctx, categoryCode, item)
 }
 
-func (s *PlatformService) ListOrganizations(ctx context.Context, tenantID string) ([]domain.Organization, error) {
-	return s.repo.ListOrganizations(ctx, tenantID)
+func (s *PlatformService) ListOrganizations(ctx context.Context, params repository.ListOrganizationsParams) ([]domain.Organization, int, error) {
+	return s.repo.ListOrganizations(ctx, params)
 }
 
 func (s *PlatformService) CreateOrganization(ctx context.Context, item domain.Organization) (domain.Organization, error) {

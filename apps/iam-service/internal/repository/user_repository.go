@@ -291,12 +291,27 @@ func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
 
 // AssignRole assigns a role to a user.
 func (r *UserRepository) AssignRole(ctx context.Context, userID, roleID string) error {
-	_, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO iam_user_roles (user_id, role_id)
 		VALUES ($1, $2)
 		ON CONFLICT DO NOTHING
-	`, userID, roleID)
-	if err != nil {
+	`, userID, roleID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO iam_role_assignments (principal_type, principal_id, role_id, scope_type)
+		VALUES ('USER', $1, $2, 'global')
+		ON CONFLICT DO NOTHING
+	`, userID, roleID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return r.BumpAuthVersion(ctx, userID)
@@ -304,10 +319,28 @@ func (r *UserRepository) AssignRole(ctx context.Context, userID, roleID string) 
 
 // UnassignRole removes a role from a user.
 func (r *UserRepository) UnassignRole(ctx context.Context, userID, roleID string) error {
-	_, err := r.db.ExecContext(ctx, `
-		DELETE FROM iam_user_roles WHERE user_id = $1 AND role_id = $2
-	`, userID, roleID)
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM iam_user_roles WHERE user_id = $1 AND role_id = $2
+	`, userID, roleID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM iam_role_assignments
+		WHERE principal_type = 'USER'
+		  AND principal_id = $1
+		  AND role_id = $2
+		  AND scope_type = 'global'
+		  AND scope_id IS NULL
+	`, userID, roleID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return r.BumpAuthVersion(ctx, userID)
@@ -318,9 +351,28 @@ func (r *UserRepository) UserHasRoleCode(ctx context.Context, userID, roleCode s
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
-			FROM iam_user_roles ur
-			JOIN iam_roles r ON r.id = ur.role_id
-			WHERE ur.user_id = $1 AND r.code = $2
+			FROM iam_roles r
+			WHERE r.code = $2
+			  AND r.id IN (
+				SELECT ra.role_id
+				FROM iam_role_assignments ra
+				WHERE ra.principal_type = 'USER'
+				  AND ra.principal_id = $1
+				  AND ra.status = 'ACTIVE'
+				  AND (ra.effective_from IS NULL OR ra.effective_from <= now())
+				  AND (ra.effective_to IS NULL OR ra.effective_to > now())
+				UNION
+				SELECT ra.role_id
+				FROM iam_role_assignments ra
+				JOIN iam_group_members gm ON gm.group_id = ra.principal_id
+				JOIN iam_groups g ON g.id = gm.group_id
+				WHERE ra.principal_type = 'GROUP'
+				  AND gm.user_id = $1
+				  AND g.status = 'ACTIVE'
+				  AND ra.status = 'ACTIVE'
+				  AND (ra.effective_from IS NULL OR ra.effective_from <= now())
+				  AND (ra.effective_to IS NULL OR ra.effective_to > now())
+			  )
 		)
 	`, userID, roleCode).Scan(&exists)
 	if err != nil {
@@ -332,11 +384,30 @@ func (r *UserRepository) UserHasRoleCode(ctx context.Context, userID, roleCode s
 func (r *UserRepository) CountActiveUsersWithRoleCode(ctx context.Context, roleCode string) (int, error) {
 	var count int
 	err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
+		SELECT COUNT(DISTINCT u.id)
 		FROM iam_users u
-		JOIN iam_user_roles ur ON ur.user_id = u.id
-		JOIN iam_roles r ON r.id = ur.role_id
-		WHERE r.code = $1 AND u.status = 'ACTIVE'
+		JOIN iam_roles r ON r.code = $1
+		WHERE u.status = 'ACTIVE'
+		  AND r.id IN (
+			SELECT ra.role_id
+			FROM iam_role_assignments ra
+			WHERE ra.principal_type = 'USER'
+			  AND ra.principal_id = u.id
+			  AND ra.status = 'ACTIVE'
+			  AND (ra.effective_from IS NULL OR ra.effective_from <= now())
+			  AND (ra.effective_to IS NULL OR ra.effective_to > now())
+			UNION
+			SELECT ra.role_id
+			FROM iam_role_assignments ra
+			JOIN iam_group_members gm ON gm.group_id = ra.principal_id
+			JOIN iam_groups g ON g.id = gm.group_id
+			WHERE ra.principal_type = 'GROUP'
+			  AND gm.user_id = u.id
+			  AND g.status = 'ACTIVE'
+			  AND ra.status = 'ACTIVE'
+			  AND (ra.effective_from IS NULL OR ra.effective_from <= now())
+			  AND (ra.effective_to IS NULL OR ra.effective_to > now())
+		  )
 	`, roleCode).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count active users by role: %w", err)
@@ -374,7 +445,14 @@ func (r *UserRepository) BumpAuthVersionByRole(ctx context.Context, roleID strin
 		SET auth_version = auth_version + 1,
 		    updated_at = now()
 		WHERE id IN (
-			SELECT user_id FROM iam_user_roles WHERE role_id = $1
+			SELECT principal_id
+			FROM iam_role_assignments
+			WHERE principal_type = 'USER' AND role_id = $1
+			UNION
+			SELECT gm.user_id
+			FROM iam_role_assignments ra
+			JOIN iam_group_members gm ON gm.group_id = ra.principal_id
+			WHERE ra.principal_type = 'GROUP' AND ra.role_id = $1
 		)
 	`, roleID)
 	if err != nil {
@@ -391,16 +469,113 @@ func (r *UserRepository) BumpAuthVersionByPermission(ctx context.Context, permis
 		SET auth_version = auth_version + 1,
 		    updated_at = now()
 		WHERE id IN (
-			SELECT ur.user_id
-			FROM iam_user_roles ur
-			JOIN iam_role_permissions rp ON rp.role_id = ur.role_id
-			WHERE rp.permission_id = $1
+			SELECT ra.principal_id
+			FROM iam_role_assignments ra
+			JOIN iam_role_permissions rp ON rp.role_id = ra.role_id
+			WHERE ra.principal_type = 'USER'
+			  AND rp.permission_id = $1
+			UNION
+			SELECT gm.user_id
+			FROM iam_role_assignments ra
+			JOIN iam_group_members gm ON gm.group_id = ra.principal_id
+			JOIN iam_role_permissions rp ON rp.role_id = ra.role_id
+			WHERE ra.principal_type = 'GROUP'
+			  AND rp.permission_id = $1
 		)
 	`, permissionID)
 	if err != nil {
 		return fmt.Errorf("bump auth version by permission: %w", err)
 	}
 	return nil
+}
+
+func (r *UserRepository) BumpAuthVersionByGroup(ctx context.Context, groupID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE iam_users
+		SET auth_version = auth_version + 1,
+		    updated_at = now()
+		WHERE id IN (
+			SELECT user_id
+			FROM iam_group_members
+			WHERE group_id = $1
+		)
+	`, groupID)
+	if err != nil {
+		return fmt.Errorf("bump auth version by group: %w", err)
+	}
+	return nil
+}
+
+func (r *UserRepository) BumpAuthVersionByGroupRole(ctx context.Context, groupID, roleID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE iam_users
+		SET auth_version = auth_version + 1,
+		    updated_at = now()
+		WHERE id IN (
+			SELECT gm.user_id
+			FROM iam_group_members gm
+			JOIN iam_role_assignments ra ON ra.principal_id = gm.group_id
+			WHERE gm.group_id = $1
+			  AND ra.principal_type = 'GROUP'
+			  AND ra.role_id = $2
+		)
+	`, groupID, roleID)
+	if err != nil {
+		return fmt.Errorf("bump auth version by group role: %w", err)
+	}
+	return nil
+}
+
+func (r *UserRepository) BackfillRoleAssignments(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO iam_role_assignments (principal_type, principal_id, role_id, scope_type)
+		SELECT 'USER', user_id, role_id, 'global'
+		FROM iam_user_roles
+		ON CONFLICT DO NOTHING
+	`)
+	if err != nil {
+		return fmt.Errorf("backfill role assignments: %w", err)
+	}
+	return nil
+}
+
+func (r *UserRepository) BackfillUserRoles(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO iam_user_roles (user_id, role_id)
+		SELECT principal_id, role_id
+		FROM iam_role_assignments
+		WHERE principal_type = 'USER'
+		  AND scope_type = 'global'
+		  AND scope_id IS NULL
+		ON CONFLICT DO NOTHING
+	`)
+	if err != nil {
+		return fmt.Errorf("backfill user roles: %w", err)
+	}
+	return nil
+}
+
+func (r *UserRepository) activeRoleIDsForUserSQL() string {
+	return `
+		SELECT ra.role_id
+		FROM iam_role_assignments ra
+		WHERE ra.principal_type = 'USER'
+		  AND ra.principal_id = $1
+		  AND ra.status = 'ACTIVE'
+		  AND (ra.effective_from IS NULL OR ra.effective_from <= now())
+		  AND (ra.effective_to IS NULL OR ra.effective_to > now())
+		UNION
+		SELECT ra.role_id
+		FROM iam_role_assignments ra
+		JOIN iam_group_members gm ON gm.group_id = ra.principal_id
+		JOIN iam_groups g ON g.id = gm.group_id
+		WHERE ra.principal_type = 'GROUP'
+		  AND gm.user_id = $1
+		  AND g.status = 'ACTIVE'
+		  AND ra.status = 'ACTIVE'
+		  AND (ra.effective_from IS NULL OR ra.effective_from <= now())
+		  AND (ra.effective_to IS NULL OR ra.effective_to > now())
+	`
 }
 
 // GetUserBySubject loads a user by external subject (OIDC sub).
@@ -648,12 +823,12 @@ func (r *UserRepository) AuditKratosIdentityConsistency(ctx context.Context) ([]
 
 // GetUserRoles returns all roles assigned to a user.
 func (r *UserRepository) GetUserRoles(ctx context.Context, userID string) ([]domain.Role, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT r.id, r.code, r.name
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT DISTINCT r.id, r.code, r.name, r.status, COALESCE(r.tenant_id, ''), r.created_at, r.updated_at
 		FROM iam_roles r
-		JOIN iam_user_roles ur ON ur.role_id = r.id
-		WHERE ur.user_id = $1
-	`, userID)
+		WHERE r.id IN (%s)
+		ORDER BY r.code
+	`, r.activeRoleIDsForUserSQL()), userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user roles: %w", err)
 	}
@@ -662,7 +837,7 @@ func (r *UserRepository) GetUserRoles(ctx context.Context, userID string) ([]dom
 	var roles []domain.Role
 	for rows.Next() {
 		var role domain.Role
-		if err := rows.Scan(&role.ID, &role.Code, &role.Name); err != nil {
+		if err := rows.Scan(&role.ID, &role.Code, &role.Name, &role.Status, &role.TenantID, &role.CreatedAt, &role.UpdatedAt); err != nil {
 			return nil, err
 		}
 		roles = append(roles, role)
@@ -676,11 +851,30 @@ func (r *UserRepository) GetUserRoleCodesByUserIDs(ctx context.Context, userIDs 
 		return result, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT ur.user_id, r.code
-		FROM iam_user_roles ur
-		JOIN iam_roles r ON r.id = ur.role_id
-		WHERE ur.user_id = ANY($1)
-		ORDER BY ur.user_id, r.code
+		WITH effective_roles AS (
+			SELECT ra.principal_id AS user_id, ra.role_id
+			FROM iam_role_assignments ra
+			WHERE ra.principal_type = 'USER'
+			  AND ra.principal_id = ANY($1)
+			  AND ra.status = 'ACTIVE'
+			  AND (ra.effective_from IS NULL OR ra.effective_from <= now())
+			  AND (ra.effective_to IS NULL OR ra.effective_to > now())
+			UNION
+			SELECT gm.user_id, ra.role_id
+			FROM iam_role_assignments ra
+			JOIN iam_group_members gm ON gm.group_id = ra.principal_id
+			JOIN iam_groups g ON g.id = gm.group_id
+			WHERE ra.principal_type = 'GROUP'
+			  AND gm.user_id = ANY($1)
+			  AND g.status = 'ACTIVE'
+			  AND ra.status = 'ACTIVE'
+			  AND (ra.effective_from IS NULL OR ra.effective_from <= now())
+			  AND (ra.effective_to IS NULL OR ra.effective_to > now())
+		)
+		SELECT DISTINCT er.user_id, r.code
+		FROM effective_roles er
+		JOIN iam_roles r ON r.id = er.role_id
+		ORDER BY er.user_id, r.code
 	`, pq.Array(userIDs))
 	if err != nil {
 		return nil, fmt.Errorf("get user role codes by user ids: %w", err)
@@ -697,15 +891,45 @@ func (r *UserRepository) GetUserRoleCodesByUserIDs(ctx context.Context, userIDs 
 	return result, rows.Err()
 }
 
+func (r *UserRepository) GetDirectUserRoleCodesByUserIDs(ctx context.Context, userIDs []string) (map[string][]string, error) {
+	result := make(map[string][]string, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT ra.principal_id, r.code
+		FROM iam_role_assignments ra
+		JOIN iam_roles r ON r.id = ra.role_id
+		WHERE ra.principal_type = 'USER'
+		  AND ra.principal_id = ANY($1)
+		  AND ra.scope_type = 'global'
+		  AND ra.scope_id IS NULL
+		ORDER BY ra.principal_id, r.code
+	`, pq.Array(userIDs))
+	if err != nil {
+		return nil, fmt.Errorf("get direct user role codes by user ids: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID, roleCode string
+		if err := rows.Scan(&userID, &roleCode); err != nil {
+			return nil, err
+		}
+		result[userID] = append(result[userID], roleCode)
+	}
+	return result, rows.Err()
+}
+
 // GetUserPermissions returns all permissions granted to a user through their roles.
 func (r *UserRepository) GetUserPermissions(ctx context.Context, userID string) ([]domain.Permission, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT p.id, p.code, p.name, p.module_code, p.resource_code, p.operation_code
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT DISTINCT p.id, p.code, p.name, p.module_code, p.resource_code, p.operation_code
 		FROM iam_permissions p
 		JOIN iam_role_permissions rp ON rp.permission_id = p.id
-		JOIN iam_user_roles ur ON ur.role_id = rp.role_id
-		WHERE ur.user_id = $1
-	`, userID)
+		WHERE rp.role_id IN (%s)
+		ORDER BY p.code
+	`, r.activeRoleIDsForUserSQL()), userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user permissions: %w", err)
 	}

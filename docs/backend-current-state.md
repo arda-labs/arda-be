@@ -1,6 +1,6 @@
 # Backend Current State
 
-Last updated: 2026-07-03
+Last updated: 2026-07-04
 
 ## Overview
 
@@ -139,6 +139,8 @@ Write APIs for accounting configuration should wait until rule ownership, valida
 
 `workflow-service` targets Zeebe 8.5 through the Zeebe Gateway and owns Arda workflow facade data. It does not own domain business rules.
 
+Target boundary: only `workflow-service` should connect to Zeebe. Domain services should submit cases and receive workflow commands through gRPC, while async side effects should use NATS.
+
 Current workflow areas:
 
 - case type and process config registry
@@ -166,6 +168,7 @@ Known workflow gaps:
 - incident/retry/suspend/resume APIs backed by Zeebe runtime state
 - documents, notes, audit-write, SLA event, and shared workflow timeline APIs
 - real Zeebe workers calling domain services over gRPC
+- workflow worker command contracts for CRM/HRM/Finance domain callbacks
 
 ## Platform Service State
 

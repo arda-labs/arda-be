@@ -4,18 +4,17 @@ import (
 	"context"
 	"log/slog"
 
+	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
-
-	"github.com/arda-labs/arda/apps/crm-service/internal/repository"
 )
 
 type CRMWorkers struct {
-	customerRepo *repository.CustomerRepository
+	crmClient *crmclient.Client
 }
 
-func NewCRMWorkers(customerRepo *repository.CustomerRepository) *CRMWorkers {
-	return &CRMWorkers{customerRepo: customerRepo}
+func NewCRMWorkers(crmClient *crmclient.Client) *CRMWorkers {
+	return &CRMWorkers{crmClient: crmClient}
 }
 
 func (w *CRMWorkers) MarkSubmittedHandler(client worker.JobClient, job entities.Job) {
@@ -27,9 +26,9 @@ func (w *CRMWorkers) CheckDuplicateHandler(client worker.JobClient, job entities
 	if !ok {
 		return
 	}
-	duplicateFound, err := w.customerRepo.HasDuplicateIdentity(context.Background(), customerID)
+	duplicateFound, err := w.crmClient.CheckDuplicateIdentity(context.Background(), customerID)
 	if err != nil {
-		w.failJob(client, job, "DB Error: "+err.Error())
+		w.failJob(client, job, "CRM Error: "+err.Error())
 		return
 	}
 	w.completeJob(client, job, map[string]any{"duplicateFound": duplicateFound})
@@ -63,12 +62,11 @@ func (w *CRMWorkers) updateStatus(client worker.JobClient, job entities.Job, sta
 	if !ok {
 		return
 	}
-	if err := w.customerRepo.UpdateStatus(context.Background(), customerID, status); err != nil {
-		slog.Error("Failed to update customer status", "customerId", customerID, "status", status, "err", err)
-		w.failJob(client, job, "DB Error: "+err.Error())
+	if err := w.crmClient.UpdateCustomerStatus(context.Background(), customerID, status); err != nil {
+		w.failJob(client, job, "CRM Error: "+err.Error())
 		return
 	}
-	slog.Info("Customer status updated", "customerId", customerID, "status", status)
+	slog.Info("workflow CRM job updated customer status", "customerId", customerID, "status", status)
 	w.completeJob(client, job, result)
 }
 
@@ -90,7 +88,6 @@ func (w *CRMWorkers) customerID(client worker.JobClient, job entities.Job) (stri
 }
 
 func (w *CRMWorkers) completeJob(client worker.JobClient, job entities.Job, result map[string]any) {
-	ctx := context.Background()
 	cmd := client.NewCompleteJobCommand().JobKey(job.GetKey())
 	if len(result) > 0 {
 		withVars, err := cmd.VariablesFromMap(result)
@@ -98,19 +95,18 @@ func (w *CRMWorkers) completeJob(client worker.JobClient, job entities.Job, resu
 			w.failJob(client, job, "Set variables error: "+err.Error())
 			return
 		}
-		_, err = withVars.Send(ctx)
+		_, err = withVars.Send(context.Background())
 		if err != nil {
-			slog.Error("Failed to complete job", "jobKey", job.GetKey(), "err", err)
+			slog.Error("Failed to complete CRM job", "jobKey", job.GetKey(), "err", err)
 		}
 		return
 	}
-	if _, err := cmd.Send(ctx); err != nil {
-		slog.Error("Failed to complete job", "jobKey", job.GetKey(), "err", err)
+	if _, err := cmd.Send(context.Background()); err != nil {
+		slog.Error("Failed to complete CRM job", "jobKey", job.GetKey(), "err", err)
 	}
 }
 
 func (w *CRMWorkers) failJob(client worker.JobClient, job entities.Job, reason string) {
-	ctx := context.Background()
 	retries := job.GetRetries() - 1
 	if retries < 0 {
 		retries = 0
@@ -119,8 +115,8 @@ func (w *CRMWorkers) failJob(client worker.JobClient, job entities.Job, reason s
 		JobKey(job.GetKey()).
 		Retries(retries).
 		ErrorMessage(reason).
-		Send(ctx)
+		Send(context.Background())
 	if err != nil {
-		slog.Error("Failed to fail job", "jobKey", job.GetKey(), "err", err)
+		slog.Error("Failed to fail CRM job", "jobKey", job.GetKey(), "err", err)
 	}
 }

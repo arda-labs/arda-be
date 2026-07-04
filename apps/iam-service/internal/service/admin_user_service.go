@@ -90,7 +90,7 @@ func (s *AdminUserService) ListUsers(ctx context.Context, params repository.List
 	for _, u := range users {
 		userIDs = append(userIDs, u.ID)
 	}
-	rolesByUserID, err := s.userRepo.GetUserRoleCodesByUserIDs(ctx, userIDs)
+	rolesByUserID, err := s.userRepo.GetDirectUserRoleCodesByUserIDs(ctx, userIDs)
 	if err != nil {
 		return nil, 0, fmt.Errorf("get user roles: %w", err)
 	}

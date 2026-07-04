@@ -2,5 +2,4 @@ app_name: notification-service
 http_addr: 0.0.0.0:8095
 log_level: info
 database_dsn: "postgres://arda_noti:123456@192.168.100.201:30432/noti?sslmode=disable"
-zeebe_addr: 192.168.100.201:30650
 nats_url: "nats://192.168.100.201:30222,nats://192.168.100.202:30222,nats://192.168.100.203:30222"

@@ -8,6 +8,14 @@ Workflow/BPM service for Arda.
 
 It must not own finance, customer, or accounting business rules.
 
+## Service Boundary
+
+`workflow-service` is the only backend service that should connect to Zeebe.
+
+Domain services submit cases through workflow gRPC commands and expose their own domain gRPC commands for workflow workers. Async side effects such as inbox notifications and projections should be published through NATS.
+
+`zeebe_addr` belongs here, not in CRM/HRM/Finance/Notification.
+
 ## Current API Surface
 
 Runtime compatibility APIs:

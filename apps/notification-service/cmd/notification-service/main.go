@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/camunda/zeebe/clients/go/v8/pkg/zbc"
 	_ "github.com/lib/pq"
 	"github.com/nats-io/nats.go"
 
@@ -74,35 +73,6 @@ func main() {
 			logger.Info("Notification outbox publisher started", "nats_url", cfg.NATSURL)
 		}
 	}
-
-	// Zeebe Client & Job Workers
-	zeebeClient, err := zbc.NewClient(&zbc.ClientConfig{
-		GatewayAddress:         cfg.ZeebeAddr,
-		UsePlaintextConnection: true,
-	})
-	if err != nil {
-		logger.Error("Failed to connect to Zeebe gateway", "err", err)
-		os.Exit(1)
-	}
-	defer zeebeClient.Close()
-	logger.Info("Connected to Zeebe gateway", "addr", cfg.ZeebeAddr)
-
-	notificationWorkers := worker.NewNotificationWorkers()
-
-	// Start Workers
-	worker1 := zeebeClient.NewJobWorker().JobType("notification.email").Handler(notificationWorkers.SendEmailHandler).Open()
-	defer worker1.Close()
-
-	worker2 := zeebeClient.NewJobWorker().JobType("notification.sms").Handler(notificationWorkers.SendSMSHandler).Open()
-	defer worker2.Close()
-
-	worker3 := zeebeClient.NewJobWorker().JobType("notification.push").Handler(notificationWorkers.SendPushHandler).Open()
-	defer worker3.Close()
-
-	workerCustomerResult := zeebeClient.NewJobWorker().JobType("notification.customer_registration_result").Handler(notificationWorkers.CustomerRegistrationResultHandler).Open()
-	defer workerCustomerResult.Close()
-
-	logger.Info("Notification job workers registered and listening")
 
 	// Router and HTTP Server
 	srv := &http.Server{

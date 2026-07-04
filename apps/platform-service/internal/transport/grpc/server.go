@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
+	"github.com/arda-labs/arda/apps/platform-service/internal/repository"
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
 	platformv1 "github.com/arda-labs/arda/libs/go/arda-proto/platform/v1"
 	"google.golang.org/grpc/codes"
@@ -114,10 +115,14 @@ func (s *PlatformServer) UpsertLookupValue(ctx context.Context, req *platformv1.
 }
 
 func (s *PlatformServer) ListOrganizations(ctx context.Context, req *platformv1.ListOrganizationsRequest) (*platformv1.ListOrganizationsResponse, error) {
-	items, err := s.svc.ListOrganizations(ctx, req.GetTenantId())
+	items, total, err := s.svc.ListOrganizations(ctx, repository.ListOrganizationsParams{
+		TenantID: req.GetTenantId(),
+		Unpaged:  true,
+	})
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	_ = total
 	resp := &platformv1.ListOrganizationsResponse{Organizations: make([]*platformv1.Organization, 0, len(items))}
 	for _, item := range items {
 		resp.Organizations = append(resp.Organizations, organizationToProto(item))

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
 )
@@ -209,26 +210,96 @@ func (r *PlatformRepository) UpsertLookupValue(ctx context.Context, categoryCode
 	return item, err
 }
 
-func (r *PlatformRepository) ListOrganizations(ctx context.Context, tenantID string) ([]domain.Organization, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, tenant_id, parent_id, code, name, admin_unit_code, address, is_active, created_at, updated_at
-		FROM plt_organizations
-		WHERE ($1 = '' OR tenant_id = $1)
-		ORDER BY parent_id NULLS FIRST, code`, tenantID)
+func (r *PlatformRepository) ListOrganizations(ctx context.Context, params ListOrganizationsParams) ([]domain.Organization, int, error) {
+	where := []string{"($1 = '' OR o.tenant_id = $1)"}
+	args := []any{params.TenantID}
+	argN := 2
+
+	if params.Query != "" {
+		where = append(where, fmt.Sprintf("(o.name ILIKE $%d OR o.code ILIKE $%d)", argN, argN))
+		args = append(args, "%"+params.Query+"%")
+		argN++
+	}
+	if params.IsActive != nil {
+		where = append(where, fmt.Sprintf("o.is_active = $%d", argN))
+		args = append(args, *params.IsActive)
+		argN++
+	}
+	whereClause := strings.Join(where, " AND ")
+
+	sortColumn := pickOrganizationSort(params.Sort)
+	order := "ASC"
+	if strings.EqualFold(params.Order, "desc") {
+		order = "DESC"
+	}
+	orderBy := fmt.Sprintf("%s %s", sortColumn, order)
+	if params.Unpaged && strings.TrimSpace(params.Sort) == "" {
+		orderBy = "o.parent_id NULLS FIRST, o.code ASC"
+	}
+
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM plt_organizations o WHERE %s`, whereClause)
+	var total int
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	listQuery := fmt.Sprintf(`
+		SELECT o.id, o.tenant_id, o.parent_id, p.name, o.code, o.name, o.admin_unit_code, o.address, o.is_active, o.created_at, o.updated_at
+		FROM plt_organizations o
+		LEFT JOIN plt_organizations p ON p.id = o.parent_id
+		WHERE %s
+		ORDER BY %s`, whereClause, orderBy)
+
+	listArgs := append([]any{}, args...)
+	if !params.Unpaged {
+		listQuery += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argN, argN+1)
+		listArgs = append(listArgs, params.PerPage, params.Offset)
+	}
+
+	rows, err := r.db.QueryContext(ctx, listQuery, listArgs...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
 	items := make([]domain.Organization, 0)
 	for rows.Next() {
 		var item domain.Organization
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
+		if err := rows.Scan(
+			&item.ID, &item.TenantID, &item.ParentID, &item.ParentName,
+			&item.Code, &item.Name, &item.AdminUnitCode, &item.Address, &item.IsActive,
+			&item.CreatedAt, &item.UpdatedAt,
+		); err != nil {
+			return nil, 0, err
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	return items, total, rows.Err()
+}
+
+type ListOrganizationsParams struct {
+	TenantID string
+	Page     int
+	PerPage  int
+	Offset   int
+	Query    string
+	IsActive *bool
+	Sort     string
+	Order    string
+	Unpaged  bool
+}
+
+func pickOrganizationSort(field string) string {
+	switch strings.TrimSpace(field) {
+	case "name":
+		return "o.name"
+	case "is_active":
+		return "o.is_active"
+	case "created_at":
+		return "o.created_at"
+	default:
+		return "o.code"
+	}
 }
 
 func (r *PlatformRepository) CreateOrganization(ctx context.Context, item domain.Organization) (domain.Organization, error) {

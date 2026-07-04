@@ -8,22 +8,22 @@ import (
 )
 
 type Config struct {
-	AppName            string `yaml:"app_name"`
-	HTTPAddr           string `yaml:"http_addr"`
-	LogLevel           string `yaml:"log_level"`
-	DatabaseDSN        string `yaml:"database_dsn"`
-	ZeebeAddr          string `yaml:"zeebe_addr"`
-	WorkflowServiceURL string `yaml:"workflow_service_url"`
+	AppName          string `yaml:"app_name"`
+	HTTPAddr         string `yaml:"http_addr"`
+	GRPCAddr         string `yaml:"grpc_addr"`
+	LogLevel         string `yaml:"log_level"`
+	DatabaseDSN      string `yaml:"database_dsn"`
+	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr"`
 }
 
 func Load() Config {
 	cfg := Config{
-		AppName:            "crm-service",
-		HTTPAddr:           "0.0.0.0:8094",
-		LogLevel:           "info",
-		DatabaseDSN:        "postgres://postgres:postgres@localhost:5432/crm?sslmode=disable",
-		ZeebeAddr:          "192.168.100.201:30650",
-		WorkflowServiceURL: "http://workflow-service:8080",
+		AppName:          "crm-service",
+		HTTPAddr:         "0.0.0.0:8094",
+		GRPCAddr:         "0.0.0.0:9094",
+		LogLevel:         "info",
+		DatabaseDSN:      "postgres://postgres:postgres@localhost:5432/crm?sslmode=disable",
+		WorkflowGRPCAddr: "localhost:9093",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -38,10 +38,10 @@ func Load() Config {
 
 	envStr("APP_NAME", &cfg.AppName)
 	envStr("HTTP_ADDR", &cfg.HTTPAddr)
+	envStr("GRPC_ADDR", &cfg.GRPCAddr)
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
-	envStr("ZEEBE_ADDR", &cfg.ZeebeAddr)
-	envStr("WORKFLOW_SERVICE_URL", &cfg.WorkflowServiceURL)
+	envStr("WORKFLOW_GRPC_ADDR", &cfg.WorkflowGRPCAddr)
 
 	return cfg
 }
@@ -63,10 +63,10 @@ func (c *Config) loadYAML(path string) bool {
 	}
 	set("app_name", &c.AppName)
 	set("http_addr", &c.HTTPAddr)
+	set("grpc_addr", &c.GRPCAddr)
 	set("log_level", &c.LogLevel)
 	set("database_dsn", &c.DatabaseDSN)
-	set("zeebe_addr", &c.ZeebeAddr)
-	set("workflow_service_url", &c.WorkflowServiceURL)
+	set("workflow_grpc_addr", &c.WorkflowGRPCAddr)
 	return true
 }
 

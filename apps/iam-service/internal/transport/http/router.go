@@ -70,6 +70,53 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	})
 	mux.HandleFunc("/api/admin/users/{userId}/roles", method("POST", adminHandler.AssignUserRole))
 	mux.HandleFunc("/api/admin/users/{userId}/roles/{roleId}", method("DELETE", adminHandler.UnassignUserRole))
+	mux.HandleFunc("/api/admin/users/{id}/groups", method("GET", adminHandler.ListUserGroups))
+
+	// Admin API - Group management
+	mux.HandleFunc("/api/admin/groups", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			adminHandler.ListGroups(w, r)
+		case http.MethodPost:
+			adminHandler.CreateGroup(w, r)
+		default:
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/admin/groups/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			adminHandler.GetGroup(w, r)
+		case http.MethodPut:
+			adminHandler.UpdateGroup(w, r)
+		case http.MethodDelete:
+			adminHandler.DeleteGroup(w, r)
+		default:
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/admin/groups/{id}/members", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			adminHandler.ListGroupMembers(w, r)
+		case http.MethodPost:
+			adminHandler.AddGroupMember(w, r)
+		default:
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/admin/groups/{id}/members/{userId}", method("DELETE", adminHandler.RemoveGroupMember))
+	mux.HandleFunc("/api/admin/groups/{id}/roles", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			adminHandler.ListGroupRoles(w, r)
+		case http.MethodPost:
+			adminHandler.AssignGroupRole(w, r)
+		default:
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/admin/groups/{id}/roles/{roleId}", method("DELETE", adminHandler.UnassignGroupRole))
 
 	// ── Admin API — Role management ──
 	mux.HandleFunc("/api/admin/roles", func(w http.ResponseWriter, r *http.Request) {

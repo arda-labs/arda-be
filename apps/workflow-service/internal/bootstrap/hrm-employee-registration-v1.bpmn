@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_HRMEmployeeRegistrationV1" targetNamespace="https://arda.io.vn/bpmn/hrm" exporter="Arda" exporterVersion="1.0">
+  <bpmn:process id="hrm-employee-registration-v1" name="Dang ky nhan su" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_Submitted" name="Gui dang ky">
+      <bpmn:outgoing>Flow_Start_Review</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:serviceTask id="Activity_HRMReview" name="Kiem tra ho so nhan su">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="workflow.hrm_registration_review" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="candidateRole" value="HRM_REGISTRATION_REVIEWER" />
+          <zeebe:header key="formKey" value="hrm-registration-review" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_Review</bpmn:incoming>
+      <bpmn:outgoing>Flow_Review_Approve</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Activity_HRMApprove" name="Phe duyet tiep nhan nhan su">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="workflow.hrm_registration_approve" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="candidateRole" value="HRM_REGISTRATION_APPROVER" />
+          <zeebe:header key="formKey" value="hrm-registration-approve" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Review_Approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approve_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_Approved" name="Hoan tat">
+      <bpmn:incoming>Flow_Approve_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="Flow_Start_Review" sourceRef="StartEvent_Submitted" targetRef="Activity_HRMReview" />
+    <bpmn:sequenceFlow id="Flow_Review_Approve" sourceRef="Activity_HRMReview" targetRef="Activity_HRMApprove" />
+    <bpmn:sequenceFlow id="Flow_Approve_End" sourceRef="Activity_HRMApprove" targetRef="EndEvent_Approved" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_HRMEmployeeRegistrationV1">
+    <bpmndi:BPMNPlane id="BPMNPlane_HRMEmployeeRegistrationV1" bpmnElement="hrm-employee-registration-v1">
+      <bpmndi:BPMNShape id="Shape_StartEvent_Submitted" bpmnElement="StartEvent_Submitted"><dc:Bounds x="120" y="180" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Activity_HRMReview" bpmnElement="Activity_HRMReview"><dc:Bounds x="220" y="158" width="160" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Activity_HRMApprove" bpmnElement="Activity_HRMApprove"><dc:Bounds x="460" y="158" width="160" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_EndEvent_Approved" bpmnElement="EndEvent_Approved"><dc:Bounds x="700" y="180" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_Start_Review" bpmnElement="Flow_Start_Review"><di:waypoint x="156" y="198" /><di:waypoint x="220" y="198" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Review_Approve" bpmnElement="Flow_Review_Approve"><di:waypoint x="380" y="198" /><di:waypoint x="460" y="198" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Approve_End" bpmnElement="Flow_Approve_End"><di:waypoint x="620" y="198" /><di:waypoint x="700" y="198" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

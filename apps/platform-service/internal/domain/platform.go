@@ -53,6 +53,7 @@ type Organization struct {
 	ID            string    `json:"id"`
 	TenantID      string    `json:"tenant_id"`
 	ParentID      *string   `json:"parent_id,omitempty"`
+	ParentName    *string   `json:"parent_name,omitempty"`
 	Code          string    `json:"code"`
 	Name          string    `json:"name"`
 	AdminUnitCode *string   `json:"admin_unit_code,omitempty"`

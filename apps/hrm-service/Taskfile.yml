@@ -1,0 +1,22 @@
+version: '3'
+
+tasks:
+  build:
+    cmds:
+      - go build -o bin/hrm-service ./cmd/hrm-service
+
+  run:
+    cmds:
+      - go run ./cmd/hrm-service
+
+  test:
+    cmds:
+      - go test ./...
+
+  lint:
+    cmds:
+      - go vet ./...
+
+  docker:
+    cmds:
+      - docker build -t hrm-service:latest .

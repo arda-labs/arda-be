@@ -32,6 +32,7 @@ type Config struct {
 	MediaServiceURL           string `yaml:"media_service_url"`
 	WorkflowServiceURL        string `yaml:"workflow_service_url"`
 	CRMServiceURL             string `yaml:"crm_service_url"`
+	HRMServiceURL             string `yaml:"hrm_service_url"`
 	NotificationURL           string `yaml:"notification_service_url"`
 	MDMServiceURL             string `yaml:"mdm_service_url"`
 	ProxyBackendURL           string `yaml:"proxy_backend_url"`
@@ -80,6 +81,7 @@ func Load() Config {
 		MediaServiceURL:           "http://localhost:8092",
 		WorkflowServiceURL:        "http://localhost:8093",
 		CRMServiceURL:             "http://localhost:8094",
+		HRMServiceURL:             "http://localhost:8097",
 		NotificationURL:           "http://localhost:8095",
 		MDMServiceURL:             "http://localhost:8096",
 		PolicyFile:                "configs/policy.yaml",
@@ -126,6 +128,7 @@ func Load() Config {
 	envStr("MEDIA_SERVICE_URL", &cfg.MediaServiceURL)
 	envStr("WORKFLOW_SERVICE_URL", &cfg.WorkflowServiceURL)
 	envStr("CRM_SERVICE_URL", &cfg.CRMServiceURL)
+	envStr("HRM_SERVICE_URL", &cfg.HRMServiceURL)
 	envStr("NOTIFICATION_SERVICE_URL", &cfg.NotificationURL)
 	envStr("MDM_SERVICE_URL", &cfg.MDMServiceURL)
 	envStr("PROXY_BACKEND_URL", &cfg.ProxyBackendURL)
@@ -188,6 +191,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("media_service_url", &c.MediaServiceURL)
 	setStr("workflow_service_url", &c.WorkflowServiceURL)
 	setStr("crm_service_url", &c.CRMServiceURL)
+	setStr("hrm_service_url", &c.HRMServiceURL)
 	setStr("notification_service_url", &c.NotificationURL)
 	setStr("mdm_service_url", &c.MDMServiceURL)
 	setStr("proxy_backend_url", &c.ProxyBackendURL)

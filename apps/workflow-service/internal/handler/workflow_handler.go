@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 
 type WorkflowHandler struct {
 	zeebeSvc          *service.ZeebeService
+	workflowCmd       *service.WorkflowCommandService
 	mappingRepo       *repository.MappingRepository
 	caseRepo          *repository.CaseRepository
 	processDefinition *repository.ProcessDefinitionRepository
@@ -25,6 +27,7 @@ type WorkflowHandler struct {
 func NewWorkflowHandler(zeebeSvc *service.ZeebeService, mappingRepo *repository.MappingRepository, caseRepo *repository.CaseRepository, processDefinition *repository.ProcessDefinitionRepository) *WorkflowHandler {
 	return &WorkflowHandler{
 		zeebeSvc:          zeebeSvc,
+		workflowCmd:       service.NewWorkflowCommandService(caseRepo, zeebeSvc),
 		mappingRepo:       mappingRepo,
 		caseRepo:          caseRepo,
 		processDefinition: processDefinition,
@@ -696,11 +699,7 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Work item not found", http.StatusNotFound)
 		return
 	}
-	ok, err := h.caseRepo.UserCanClaimRole(r.Context(), userID, currentUserGroups(r), item.CandidateRole)
-	if err != nil {
-		http.Error(w, "Failed to verify claim permission: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
+	ok := userCanClaimCandidateRole(r, item.CandidateRole)
 	if !ok && item.AssignedTo != userID {
 		http.Error(w, "User is not in candidate role/group for this task", http.StatusForbidden)
 		return
@@ -898,7 +897,6 @@ func workItemFilter(r *http.Request) repository.WorkItemFilter {
 
 func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.Request, items []repository.WorkItem) error {
 	userID := currentUserID(r)
-	groups := currentUserGroups(r)
 	for i := range items {
 		if items[i].AssignedTo != "" {
 			items[i].CanClaim = false
@@ -908,10 +906,7 @@ func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.
 			}
 			continue
 		}
-		ok, err := h.caseRepo.UserCanClaimRole(ctx, userID, groups, items[i].CandidateRole)
-		if err != nil {
-			return err
-		}
+		ok := userCanClaimCandidateRole(r, items[i].CandidateRole)
 		items[i].CanClaim = ok
 		items[i].CanOpen = ok
 		if !ok {
@@ -1084,7 +1079,7 @@ func (h *WorkflowHandler) createCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bc, err := h.caseRepo.CreateCase(r.Context(), req)
+	bc, err := h.workflowCmd.CreateCase(r.Context(), req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1126,55 +1121,16 @@ func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 
-	bc, err := h.caseRepo.GetCase(r.Context(), id)
+	updated, err := h.workflowCmd.SubmitCase(r.Context(), id, service.SubmitCaseInput{
+		Actor:     req.Actor,
+		Variables: req.Variables,
+	})
 	if err != nil {
-		http.Error(w, "Failed to query case: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if bc == nil {
-		http.Error(w, "Case not found", http.StatusNotFound)
-		return
-	}
-	if bc.BpmnProcessID == nil {
-		http.Error(w, "Case has no BPMN process configured", http.StatusBadRequest)
-		return
-	}
-	if bc.Status != repository.CaseStatusDraft {
-		http.Error(w, "Case status must be DRAFT", http.StatusBadRequest)
-		return
-	}
-	if h.zeebeSvc == nil {
-		http.Error(w, "Zeebe service is not configured", http.StatusServiceUnavailable)
-		return
-	}
-	if req.Actor == "" {
-		req.Actor = bc.CreatedBy
-	}
-
-	variables := map[string]any{
-		"caseId":            bc.ID,
-		"caseType":          bc.CaseType,
-		"caseCode":          bc.CaseCode,
-		"tenantId":          bc.TenantID,
-		"domainService":     bc.DomainService,
-		"primaryObjectType": bc.PrimaryObjectType,
-		"primaryObjectId":   bc.PrimaryObjectID,
-	}
-	if bc.PrimaryObjectType == "CUSTOMER" {
-		variables["customerId"] = bc.PrimaryObjectID
-	}
-	for key, value := range req.Variables {
-		variables[key] = value
-	}
-	processKey, err := h.zeebeSvc.StartWorkflow(r.Context(), *bc.BpmnProcessID, variables)
-	if err != nil {
-		http.Error(w, "Failed to start workflow: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	updated, err := h.caseRepo.SubmitCase(r.Context(), id, req.Actor, processKey)
-	if err != nil {
-		http.Error(w, "Workflow started but case submit failed: "+err.Error(), http.StatusInternalServerError)
+		if errors.Is(err, repository.ErrNotFound) {
+			http.Error(w, "Case not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
@@ -1358,6 +1314,49 @@ func currentUserGroups(r *http.Request) []string {
 	return out
 }
 
+func userCanClaimCandidateRole(r *http.Request, candidateRole string) bool {
+	candidateRole = strings.TrimSpace(candidateRole)
+	if candidateRole == "" {
+		return false
+	}
+	if hasToken(currentUserRoles(r), candidateRole) || hasToken(currentUserPermissions(r), candidateRole) {
+		return true
+	}
+	return hasToken(currentUserPermissions(r), "superadmin") || hasToken(currentUserRoles(r), "SUPER_ADMIN")
+}
+
+func currentUserRoles(r *http.Request) []string {
+	return splitHeaderTokens(firstString(r.Header.Get("X-Roles"), r.Header.Get("X-User-Roles")))
+}
+
+func currentUserPermissions(r *http.Request) []string {
+	return splitHeaderTokens(firstString(r.Header.Get("X-Permissions"), r.Header.Get("X-User-Permissions")))
+}
+
+func splitHeaderTokens(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func hasToken(tokens []string, want string) bool {
+	for _, token := range tokens {
+		if strings.EqualFold(token, want) {
+			return true
+		}
+	}
+	return false
+}
+
 func firstString(values ...string) string {
 	for _, value := range values {
 		if value != "" {
@@ -1374,11 +1373,11 @@ func int64Ptr(value int64) *int64 {
 func caseTypesForWorkItemDirection(direction string) []string {
 	switch strings.ToUpper(direction) {
 	case "INCOMING":
-		return []string{"CUSTOMER_REGISTRATION", "FINANCE_INCOMING_TRANSACTION"}
+		return []string{"CUSTOMER_REGISTRATION", "FINANCE_INCOMING_TRANSACTION", "HRM_EMPLOYEE_REGISTRATION"}
 	case "OUTGOING":
 		return []string{"FINANCE_OUTGOING_TRANSACTION"}
 	default:
-		return []string{"CUSTOMER_REGISTRATION", "FINANCE_INCOMING_TRANSACTION", "FINANCE_OUTGOING_TRANSACTION"}
+		return []string{"CUSTOMER_REGISTRATION", "FINANCE_INCOMING_TRANSACTION", "FINANCE_OUTGOING_TRANSACTION", "HRM_EMPLOYEE_REGISTRATION"}
 	}
 }
 
@@ -1390,6 +1389,8 @@ func defaultStepForCaseType(caseType string) string {
 		return "classify-account"
 	case "FINANCE_OUTGOING_TRANSACTION":
 		return "verify-beneficiary"
+	case "HRM_EMPLOYEE_REGISTRATION":
+		return "Activity_HRMReview"
 	default:
 		return "submitted"
 	}
@@ -1411,6 +1412,10 @@ func taskTypeForCaseStep(caseType string, stepCode string) string {
 		return "workflow.finance_outgoing_verify"
 	case "approve-outgoing":
 		return "workflow.finance_outgoing_approve"
+	case "Activity_HRMReview":
+		return "workflow.hrm_registration_review"
+	case "Activity_HRMApprove":
+		return "workflow.hrm_registration_approve"
 	}
 	if caseType == "FINANCE_INCOMING_TRANSACTION" {
 		return "workflow.finance_incoming_classify"
@@ -1420,6 +1425,9 @@ func taskTypeForCaseStep(caseType string, stepCode string) string {
 	}
 	if caseType == "CUSTOMER_REGISTRATION" {
 		return "workflow.customer_checker_review"
+	}
+	if caseType == "HRM_EMPLOYEE_REGISTRATION" {
+		return "workflow.hrm_registration_review"
 	}
 	return ""
 }
@@ -1436,6 +1444,10 @@ func roleForTaskType(taskType string) string {
 		return "FINANCE_TXN_MAKER"
 	case "workflow.finance_incoming_approve", "workflow.finance_outgoing_approve":
 		return "FINANCE_TXN_CHECKER"
+	case "workflow.hrm_registration_review":
+		return "HRM_REGISTRATION_REVIEWER"
+	case "workflow.hrm_registration_approve":
+		return "HRM_REGISTRATION_APPROVER"
 	default:
 		return ""
 	}
@@ -1457,6 +1469,10 @@ func taskLabelForType(taskType string) string {
 		return "Kiểm tra giao dịch đi"
 	case "workflow.finance_outgoing_approve":
 		return "Duyệt giao dịch đi"
+	case "workflow.hrm_registration_review":
+		return "Kiem tra ho so nhan su"
+	case "workflow.hrm_registration_approve":
+		return "Phe duyet tiep nhan nhan su"
 	default:
 		return taskType
 	}

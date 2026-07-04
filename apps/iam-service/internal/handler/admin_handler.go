@@ -17,21 +17,23 @@ import (
 
 // AdminHandler manages users, roles, permissions.
 type AdminHandler struct {
-	userRepo *repository.UserRepository
-	roleRepo *repository.RoleRepository
-	userSvc  *service.AdminUserService
-	audit    *audit.Logger
-	logger   *slog.Logger
+	userRepo  *repository.UserRepository
+	roleRepo  *repository.RoleRepository
+	groupRepo *repository.GroupRepository
+	userSvc   *service.AdminUserService
+	audit     *audit.Logger
+	logger    *slog.Logger
 }
 
 // NewAdminHandler creates an admin handler.
-func NewAdminHandler(userRepo *repository.UserRepository, roleRepo *repository.RoleRepository, userSvc *service.AdminUserService, auditLogger *audit.Logger) *AdminHandler {
+func NewAdminHandler(userRepo *repository.UserRepository, roleRepo *repository.RoleRepository, groupRepo *repository.GroupRepository, userSvc *service.AdminUserService, auditLogger *audit.Logger) *AdminHandler {
 	return &AdminHandler{
-		userRepo: userRepo,
-		roleRepo: roleRepo,
-		userSvc:  userSvc,
-		audit:    auditLogger,
-		logger:   slog.Default(),
+		userRepo:  userRepo,
+		roleRepo:  roleRepo,
+		groupRepo: groupRepo,
+		userSvc:   userSvc,
+		audit:     auditLogger,
+		logger:    slog.Default(),
 	}
 }
 
@@ -491,6 +493,302 @@ func (h *AdminHandler) ListUserRoles(w http.ResponseWriter, r *http.Request) {
 
 // ── Role CRUD ──
 
+func (h *AdminHandler) ListUserGroups(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("id")
+	if userID == "" {
+		respondError(w, http.StatusBadRequest, "missing user id")
+		return
+	}
+	groups, err := h.groupRepo.ListUserGroups(r.Context(), userID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"groups": groups})
+}
+
+func (h *AdminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+	if size < 1 || size > 100 {
+		size = 10
+	}
+	groups, total, err := h.groupRepo.List(r.Context(), repository.ListGroupsParams{
+		Page: page, Size: size,
+		TenantID: r.URL.Query().Get("tenantId"),
+		Status:   r.URL.Query().Get("status"),
+		Search:   r.URL.Query().Get("search"),
+	})
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	totalPages := (total + size - 1) / size
+	respondJSON(w, http.StatusOK, map[string]any{
+		"groups": groups, "total": total, "page": page, "size": size, "totalPages": totalPages,
+	})
+}
+
+func (h *AdminHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "missing group id")
+		return
+	}
+	group, err := h.groupRepo.GetByID(r.Context(), id)
+	if err != nil || group == nil {
+		respondError(w, http.StatusNotFound, "group not found")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"group": group})
+}
+
+func (h *AdminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Code        string `json:"code"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Status      string `json:"status"`
+		TenantID    string `json:"tenantId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Code == "" || req.Name == "" {
+		respondError(w, http.StatusBadRequest, "code and name required")
+		return
+	}
+	if req.Status == "" {
+		req.Status = "ACTIVE"
+	}
+	if req.Status != "ACTIVE" && req.Status != "DISABLED" {
+		respondError(w, http.StatusBadRequest, "status must be ACTIVE or DISABLED")
+		return
+	}
+	if req.TenantID == "" {
+		req.TenantID = "default"
+	}
+	group := &domain.Group{
+		Code: req.Code, Name: req.Name, Description: req.Description,
+		Status: req.Status, TenantID: req.TenantID,
+	}
+	if err := h.groupRepo.Create(r.Context(), group); err != nil {
+		respondError(w, http.StatusConflict, "group code may already exist: "+err.Error())
+		return
+	}
+	h.auditAdmin(r, "admin.group.create", "create", "group", "success", map[string]any{"group_id": group.ID, "code": group.Code})
+	respondJSON(w, http.StatusCreated, group)
+}
+
+func (h *AdminHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "missing group id")
+		return
+	}
+	group, err := h.groupRepo.GetByID(r.Context(), id)
+	if err != nil || group == nil {
+		respondError(w, http.StatusNotFound, "group not found")
+		return
+	}
+	var req struct {
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
+		Status      *string `json:"status"`
+		TenantID    *string `json:"tenantId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Name != nil {
+		group.Name = *req.Name
+	}
+	if req.Description != nil {
+		group.Description = *req.Description
+	}
+	if req.Status != nil {
+		if *req.Status != "ACTIVE" && *req.Status != "DISABLED" {
+			respondError(w, http.StatusBadRequest, "status must be ACTIVE or DISABLED")
+			return
+		}
+		group.Status = *req.Status
+	}
+	if req.TenantID != nil {
+		group.TenantID = *req.TenantID
+	}
+	if err := h.groupRepo.Update(r.Context(), group); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := h.userRepo.BumpAuthVersionByGroup(r.Context(), id); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.auditAdmin(r, "admin.group.update", "update", "group", "success", map[string]any{"group_id": id, "code": group.Code})
+	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+func (h *AdminHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "missing group id")
+		return
+	}
+	group, err := h.groupRepo.GetByID(r.Context(), id)
+	if err != nil || group == nil {
+		respondError(w, http.StatusNotFound, "group not found")
+		return
+	}
+	if group.IsSystem || h.groupHasSuperAdminRole(w, r, id) {
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminRoleProtected, "")
+		return
+	}
+	if err := h.userRepo.BumpAuthVersionByGroup(r.Context(), id); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := h.groupRepo.Delete(r.Context(), id); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.auditAdmin(r, "admin.group.delete", "delete", "group", "success", map[string]any{"group_id": id, "code": group.Code})
+	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (h *AdminHandler) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("id")
+	if groupID == "" {
+		respondError(w, http.StatusBadRequest, "missing group id")
+		return
+	}
+	members, err := h.groupRepo.ListMembers(r.Context(), groupID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"members": members})
+}
+
+func (h *AdminHandler) AddGroupMember(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("id")
+	var req struct {
+		UserID string `json:"user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if groupID == "" || req.UserID == "" {
+		respondError(w, http.StatusBadRequest, "group id and user_id required")
+		return
+	}
+	if err := h.groupRepo.AddMember(r.Context(), groupID, req.UserID, r.Header.Get("X-User-Id")); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := h.userRepo.BumpAuthVersion(r.Context(), req.UserID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.auditAdmin(r, "admin.group.add_member", "add_member", "group", "success", map[string]any{"group_id": groupID, "user_id": req.UserID})
+	respondJSON(w, http.StatusOK, map[string]string{"status": "added"})
+}
+
+func (h *AdminHandler) RemoveGroupMember(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("id")
+	userID := r.PathValue("userId")
+	if groupID == "" || userID == "" {
+		respondError(w, http.StatusBadRequest, "missing group id or user id")
+		return
+	}
+	if h.groupHasSuperAdminRole(w, r, groupID) {
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminRoleProtected, "")
+		return
+	}
+	if err := h.groupRepo.RemoveMember(r.Context(), groupID, userID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := h.userRepo.BumpAuthVersion(r.Context(), userID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.auditAdmin(r, "admin.group.remove_member", "remove_member", "group", "success", map[string]any{"group_id": groupID, "user_id": userID})
+	respondJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+}
+
+func (h *AdminHandler) ListGroupRoles(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("id")
+	if groupID == "" {
+		respondError(w, http.StatusBadRequest, "missing group id")
+		return
+	}
+	roles, err := h.groupRepo.ListRoles(r.Context(), groupID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"roles": roles})
+}
+
+func (h *AdminHandler) AssignGroupRole(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("id")
+	var req struct {
+		RoleID string `json:"role_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if groupID == "" || req.RoleID == "" {
+		respondError(w, http.StatusBadRequest, "group id and role_id required")
+		return
+	}
+	if err := h.groupRepo.AssignRole(r.Context(), groupID, req.RoleID, r.Header.Get("X-User-Id")); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := h.userRepo.BumpAuthVersionByGroup(r.Context(), groupID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.auditAdmin(r, "admin.group.assign_role", "assign_role", "group", "success", map[string]any{"group_id": groupID, "role_id": req.RoleID})
+	respondJSON(w, http.StatusOK, map[string]string{"status": "assigned"})
+}
+
+func (h *AdminHandler) UnassignGroupRole(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("id")
+	roleID := r.PathValue("roleId")
+	if groupID == "" || roleID == "" {
+		respondError(w, http.StatusBadRequest, "missing group id or role id")
+		return
+	}
+	role, err := h.roleRepo.GetByID(r.Context(), roleID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if role != nil && role.Code == system.SuperAdminRoleCode {
+		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminRoleProtected, "")
+		return
+	}
+	if err := h.groupRepo.UnassignRole(r.Context(), groupID, roleID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := h.userRepo.BumpAuthVersionByGroup(r.Context(), groupID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.auditAdmin(r, "admin.group.unassign_role", "unassign_role", "group", "success", map[string]any{"group_id": groupID, "role_id": roleID})
+	respondJSON(w, http.StatusOK, map[string]string{"status": "unassigned"})
+}
+
 func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page < 1 {
@@ -835,6 +1133,20 @@ func (h *AdminHandler) isProtectedSuperAdminPermissionRemoval(w http.ResponseWri
 	if perm.Code == system.SuperAdminPermissionCode {
 		respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeSuperAdminPermissionProtected, "")
 		return true
+	}
+	return false
+}
+
+func (h *AdminHandler) groupHasSuperAdminRole(w http.ResponseWriter, r *http.Request, groupID string) bool {
+	roles, err := h.groupRepo.ListRoles(r.Context(), groupID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return true
+	}
+	for _, role := range roles {
+		if role.Code == system.SuperAdminRoleCode {
+			return true
+		}
 	}
 	return false
 }

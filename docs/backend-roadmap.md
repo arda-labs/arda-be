@@ -1,6 +1,6 @@
 # Backend Roadmap
 
-Last updated: 2026-06-27
+Last updated: 2026-07-04
 
 Root long-term plan:
 
@@ -10,6 +10,7 @@ Root long-term plan:
 - [Multilingual Platform & i18n Strategy](../../docs/roadmap/11-i18n-multilingual-platform.md)
 - [Current k3s Cluster Inventory](../../docs/infra/current-k3s-cluster.md)
 - [BPMN Direction: Camunda 8.8+ / Wait for 8.10](../../docs/architecture/bpmn-camunda8.md)
+- [Workflow Boundary Refactor Plan](../../docs/planning/workflow-boundary-refactor.md)
 
 ## Direction
 
@@ -124,6 +125,26 @@ Milestone 3:
 
 - Add IAM gRPC internal API for user context and permission checks
 - Move auth-gateway internal IAM calls from ad hoc HTTP client to generated gRPC client
+
+## Workflow Boundary Refactor
+
+Target rule:
+
+```txt
+Only workflow-service talks to Zeebe.
+Domain services talk to workflow-service by gRPC.
+Domain and workflow side effects are published through NATS.
+```
+
+Near-term phases:
+
+1. Add `workflow.v1` proto for case/task commands.
+2. Move CRM/HRM workflow submit calls from ad hoc HTTP to workflow gRPC.
+3. Move Zeebe workers currently hosted by domain services into `workflow-service`.
+4. Make workflow workers call domain services through domain gRPC commands.
+5. Publish workflow/domain side effects through NATS for notification, audit, and projections.
+
+`zeebe_addr` belongs in `workflow-service` only.
 
 ## Cross-Cutting Standards
 

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package arda.crm.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/crm/v1;crmv1";
+
+service CustomerCommandService {
+  rpc UpdateCustomerStatus(UpdateCustomerStatusRequest) returns (UpdateCustomerStatusResponse);
+  rpc CheckDuplicateIdentity(CheckDuplicateIdentityRequest) returns (CheckDuplicateIdentityResponse);
+}
+
+message UpdateCustomerStatusRequest {
+  string customer_id = 1;
+  string status = 2;
+}
+
+message UpdateCustomerStatusResponse {
+  bool ok = 1;
+}
+
+message CheckDuplicateIdentityRequest {
+  string customer_id = 1;
+}
+
+message CheckDuplicateIdentityResponse {
+  bool duplicate_found = 1;
+}

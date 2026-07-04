@@ -19,6 +19,8 @@ const (
 	CaseStatusCompleted = "COMPLETED"
 )
 
+var ErrNotFound = errors.New("not found")
+
 type CaseType struct {
 	CaseType           string     `json:"caseType"`
 	BusinessArea       string     `json:"businessArea"`

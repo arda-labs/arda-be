@@ -53,6 +53,38 @@ routes:
     permissions:
       - iam.user.manage
 
+  - id: admin-groups-read
+    path: /api/admin/groups/**
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - iam.group.read
+
+  - id: admin-groups-write
+    path: /api/admin/groups/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - iam.group.manage
+
+  - id: admin-groups-root-read
+    path: /api/admin/groups
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - iam.group.read
+
+  - id: admin-groups-root-write
+    path: /api/admin/groups
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - iam.group.manage
+
   - id: mdm-read
     path: /api/mdm/**
     methods: [GET]
@@ -90,3 +122,19 @@ routes:
     risk: low
     permissions:
       - crm.customer.read
+
+  - id: hrm-read
+    path: /api/hrm/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - hrm.read
+
+  - id: hrm-write
+    path: /api/hrm/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+    permissions:
+      - hrm.manage

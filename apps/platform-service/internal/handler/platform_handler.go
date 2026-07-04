@@ -10,8 +10,10 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
+	"github.com/arda-labs/arda/apps/platform-service/internal/repository"
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardamedia "github.com/arda-labs/arda/libs/go/arda-media"
 )
 
@@ -131,8 +133,39 @@ func (h *PlatformHandler) CreateLookupValue(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *PlatformHandler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
-	items, err := h.svc.ListOrganizations(r.Context(), r.URL.Query().Get("tenant_id"))
-	writeResult(w, items, err)
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	tenantID := r.URL.Query().Get("tenant_id")
+
+	var isActive *bool
+	if raw := strings.TrimSpace(r.URL.Query().Get("is_active")); raw == "true" || raw == "false" {
+		value := raw == "true"
+		isActive = &value
+	}
+
+	unpaged := listQuery.All || listQuery.View == "tree" || listQuery.View == "options"
+	items, total, err := h.svc.ListOrganizations(r.Context(), repository.ListOrganizationsParams{
+		TenantID: tenantID,
+		Page:     listQuery.Page,
+		PerPage:  listQuery.PerPage,
+		Offset:   listQuery.Offset(),
+		Query:    listQuery.Q,
+		IsActive: isActive,
+		Sort:     listQuery.Sort,
+		Order:    listQuery.Order,
+		Unpaged:  unpaged,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	perPage := listQuery.PerPage
+	if unpaged {
+		perPage = len(items)
+		if perPage == 0 {
+			perPage = total
+		}
+	}
+	ardahttp.WriteList(w, r, listQuery.Page, perPage, total, items)
 }
 
 func (h *PlatformHandler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
@@ -459,19 +492,43 @@ func extractPublicID(fileURL string) string {
 }
 
 func writeResult(w http.ResponseWriter, data any, err error) {
+	writeResultWithRequest(w, nil, data, err)
+}
+
+func writeResultWithRequest(w http.ResponseWriter, r *http.Request, data any, err error) {
 	if err != nil {
-		var appErr *ardaerrors.Error
-		if errors.As(err, &appErr) {
-			writeErrorCode(w, http.StatusBadRequest, appErr.Code, appErr.Message)
-			return
-		}
-		writeErrorCode(w, http.StatusInternalServerError, "common.error.internal", err.Error())
+		writeServiceError(w, r, err)
+		return
+	}
+	if r != nil {
+		ardahttp.WriteJSON(w, r, http.StatusOK, data)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		http.Error(w, `{"error":"encode response"}`, http.StatusInternalServerError)
 	}
+}
+
+func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
+	var appErr *ardaerrors.Error
+	if errors.As(err, &appErr) {
+		status := http.StatusBadRequest
+		if appErr.Code == ardaerrors.CodeNotFound {
+			status = http.StatusNotFound
+		}
+		if r != nil {
+			ardahttp.WriteAppError(w, r, status, appErr)
+			return
+		}
+		writeErrorCode(w, status, appErr.Code, appErr.Message)
+		return
+	}
+	if r != nil {
+		ardahttp.WriteErrorCode(w, r, http.StatusInternalServerError, ardaerrors.CodeInternal, err.Error())
+		return
+	}
+	writeErrorCode(w, http.StatusInternalServerError, "common.error.internal", err.Error())
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

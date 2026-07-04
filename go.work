@@ -4,6 +4,7 @@ use (
 	./apps/auth-gateway
 	./apps/crm-service
 	./apps/finance-service
+	./apps/hrm-service
 	./apps/iam-service
 	./apps/mdm-service
 	./apps/media-service
@@ -21,3 +22,5 @@ use (
 	./tools/arda-cli
 	./tools/mock-token
 )
+
+replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20260420184626-e10c466a9529

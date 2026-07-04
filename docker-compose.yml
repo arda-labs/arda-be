@@ -61,6 +61,8 @@ services:
       LOG_LEVEL: debug
       IAM_SERVICE_URL: http://iam-service:8080
       IAM_CONTEXT_CACHE_TTL_SECONDS: 60
+      HRM_SERVICE_URL: http://hrm-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
       TOKEN_STRATEGY: jwks
       JWKS_URL: https://auth.arda.io.vn/.well-known/jwks.json
       INTROSPECTION_URL: https://auth.arda.io.vn/oauth2/introspect
@@ -74,6 +76,8 @@ services:
       - .env
     depends_on:
       - iam-service
+      - hrm-service
+      - notification-service
 
   mock-token:
     build:
@@ -100,8 +104,11 @@ services:
       LOG_LEVEL: info
       DATABASE_DSN: postgres://arda_workflow:123456@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/workflow?sslmode=${IAM_DATABASE_SSLMODE:-disable}
       ZEEBE_ADDR: ${ZEEBE_ADDR:-192.168.100.201:30650}
+      GRPC_ADDR: 0.0.0.0:9090
+      CRM_GRPC_ADDR: crm-service:9090
     ports:
       - "8093:8080"
+      - "9093:9090"
     env_file:
       - .env
 
@@ -113,10 +120,27 @@ services:
       HTTP_ADDR: 0.0.0.0:8080
       LOG_LEVEL: info
       DATABASE_DSN: postgres://arda_crm:123456@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/crm?sslmode=${IAM_DATABASE_SSLMODE:-disable}
-      ZEEBE_ADDR: ${ZEEBE_ADDR:-192.168.100.201:30650}
-      WORKFLOW_SERVICE_URL: http://workflow-service:8080
+      GRPC_ADDR: 0.0.0.0:9090
+      WORKFLOW_GRPC_ADDR: workflow-service:9090
     ports:
       - "8094:8080"
+      - "9094:9090"
+    env_file:
+      - .env
+    depends_on:
+      - workflow-service
+
+  hrm-service:
+    build:
+      context: ./apps/hrm-service
+    environment:
+      APP_NAME: hrm-service
+      HTTP_ADDR: 0.0.0.0:8080
+      LOG_LEVEL: info
+      DATABASE_DSN: postgres://arda_hrm:123456@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/hrm?sslmode=${IAM_DATABASE_SSLMODE:-disable}
+      WORKFLOW_GRPC_ADDR: workflow-service:9090
+    ports:
+      - "8097:8080"
     env_file:
       - .env
     depends_on:
@@ -129,7 +153,7 @@ services:
       APP_NAME: notification-service
       HTTP_ADDR: 0.0.0.0:8080
       LOG_LEVEL: info
-      ZEEBE_ADDR: ${ZEEBE_ADDR:-192.168.100.201:30650}
+      DATABASE_DSN: postgres://arda_notification:123456@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/notification?sslmode=${IAM_DATABASE_SSLMODE:-disable}
       NATS_URL: ${NATS_URL:-}
     ports:
       - "8095:8080"

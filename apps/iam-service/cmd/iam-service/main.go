@@ -69,6 +69,7 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	auditRepo := repository.NewAuditRepository(db)
 	roleRepo := repository.NewRoleRepository(db)
+	groupRepo := repository.NewGroupRepository(db)
 	sessionRepo := repository.NewSessionRepository(db)
 	mfaRepo := repository.NewMFARepository(db)
 
@@ -133,7 +134,7 @@ func main() {
 	authHandler := handler.NewAuthHandler(orchestrator, userHandler)
 	policyHandler := handler.NewPolicyHandler(policyEnf)
 	adminUserSvc := service.NewAdminUserService(userRepo, roleRepo, identitySvc)
-	adminHandler := handler.NewAdminHandler(userRepo, roleRepo, adminUserSvc, auditLogger)
+	adminHandler := handler.NewAdminHandler(userRepo, roleRepo, groupRepo, adminUserSvc, auditLogger)
 	sessionHandler := handler.NewSessionHandler(sessionSvc, auditLogger)
 	mfaHandler := handler.NewMFAHandler(mfaSvc)
 	auditHandler := handler.NewAuditHandler(auditSvc)

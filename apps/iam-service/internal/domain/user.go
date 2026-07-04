@@ -57,6 +57,33 @@ type Permission struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type Group struct {
+	ID          string    `json:"id"`
+	Code        string    `json:"code"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Status      string    `json:"status"`
+	TenantID    string    `json:"tenantId"`
+	IsSystem    bool      `json:"isSystem"`
+	MemberCount int       `json:"memberCount"`
+	RoleCount   int       `json:"roleCount"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+type RoleAssignment struct {
+	ID            string    `json:"id"`
+	PrincipalType string    `json:"principalType"`
+	PrincipalID   string    `json:"principalId"`
+	RoleID        string    `json:"roleId"`
+	RoleCode      string    `json:"roleCode,omitempty"`
+	RoleName      string    `json:"roleName,omitempty"`
+	ScopeType     string    `json:"scopeType"`
+	ScopeID       string    `json:"scopeId,omitempty"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+
 // Organization represents a tenant/org.
 type Organization struct {
 	ID   string

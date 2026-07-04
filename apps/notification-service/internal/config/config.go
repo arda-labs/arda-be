@@ -12,7 +12,6 @@ type Config struct {
 	HTTPAddr    string `yaml:"http_addr"`
 	LogLevel    string `yaml:"log_level"`
 	DatabaseDSN string `yaml:"database_dsn"`
-	ZeebeAddr   string `yaml:"zeebe_addr"`
 	NATSURL     string `yaml:"nats_url"`
 }
 
@@ -22,7 +21,6 @@ func Load() Config {
 		HTTPAddr:    "0.0.0.0:8095",
 		LogLevel:    "info",
 		DatabaseDSN: "postgres://postgres:postgres@localhost:5432/notification?sslmode=disable",
-		ZeebeAddr:   "192.168.100.201:30650",
 		NATSURL:     "",
 	}
 
@@ -40,7 +38,6 @@ func Load() Config {
 	envStr("HTTP_ADDR", &cfg.HTTPAddr)
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
-	envStr("ZEEBE_ADDR", &cfg.ZeebeAddr)
 	envStr("NATS_URL", &cfg.NATSURL)
 	envStr("NOTIFICATION_NATS_URL", &cfg.NATSURL)
 
@@ -66,7 +63,6 @@ func (c *Config) loadYAML(path string) bool {
 	set("http_addr", &c.HTTPAddr)
 	set("log_level", &c.LogLevel)
 	set("database_dsn", &c.DatabaseDSN)
-	set("zeebe_addr", &c.ZeebeAddr)
 	set("nats_url", &c.NATSURL)
 	return true
 }

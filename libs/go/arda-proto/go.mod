@@ -13,3 +13,7 @@ require (
 	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260420184626-e10c466a9529 // indirect
 )
+
+exclude google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
+
+exclude google.golang.org/genproto v0.0.0-20200513103714-09dca8ec2884

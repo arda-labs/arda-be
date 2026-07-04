@@ -107,6 +107,17 @@ func ensureSuperAdminUser(ctx context.Context, db *sql.DB, opts SuperAdminOption
 	if err != nil {
 		return fmt.Errorf("assign superadmin role: %w", err)
 	}
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO iam_role_assignments (principal_type, principal_id, role_id, scope_type)
+		SELECT 'USER', u.id, r.id, 'global'
+		FROM iam_users u
+		JOIN iam_roles r ON r.code = $2
+		WHERE u.username = $1
+		ON CONFLICT DO NOTHING
+	`, system.SuperAdminUsername, system.SuperAdminRoleCode)
+	if err != nil {
+		return fmt.Errorf("assign superadmin role assignment: %w", err)
+	}
 
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO iam_user_organizations (user_id, organization_id)
@@ -134,6 +145,17 @@ func ensureDevAdminSuperAdmin(ctx context.Context, db *sql.DB) error {
 	`, system.SuperAdminRoleCode)
 	if err != nil {
 		return fmt.Errorf("assign dev admin superadmin role: %w", err)
+	}
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO iam_role_assignments (principal_type, principal_id, role_id, scope_type)
+		SELECT 'USER', u.id, r.id, 'global'
+		FROM iam_users u
+		JOIN iam_roles r ON r.code = $1
+		WHERE u.username = 'admin' OR u.email = 'admin@arda.local'
+		ON CONFLICT DO NOTHING
+	`, system.SuperAdminRoleCode)
+	if err != nil {
+		return fmt.Errorf("assign dev admin superadmin role assignment: %w", err)
 	}
 
 	rows, _ := result.RowsAffected()

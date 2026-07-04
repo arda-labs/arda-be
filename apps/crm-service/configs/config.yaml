@@ -1,6 +1,6 @@
 app_name: crm-service
 http_addr: 0.0.0.0:8094
+grpc_addr: 0.0.0.0:9094
 log_level: info
 database_dsn: "postgres://arda_crm:123456@192.168.100.201:30432/crm?sslmode=disable"
-zeebe_addr: 192.168.100.201:30650
-workflow_service_url: "http://localhost:8093"
+workflow_grpc_addr: "localhost:9093"

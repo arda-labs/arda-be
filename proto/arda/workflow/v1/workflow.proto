@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package arda.workflow.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1;workflowv1";
+
+service WorkflowCommandService {
+  rpc CreateCase(CreateCaseRequest) returns (BusinessCase);
+  rpc SubmitCase(SubmitCaseRequest) returns (BusinessCase);
+}
+
+message BusinessCase {
+  string id = 1;
+  string tenant_id = 2;
+  string case_type = 3;
+  string case_code = 4;
+  string title = 5;
+  string primary_object_type = 6;
+  string primary_object_id = 7;
+  string domain_service = 8;
+  string status = 9;
+  string current_step = 10;
+  string priority = 11;
+  string created_by = 12;
+  string assigned_to = 13;
+  string candidate_role = 14;
+  string sla_policy_id = 15;
+  google.protobuf.Timestamp sla_due_at = 16;
+  int64 process_instance_key = 17;
+  string bpmn_process_id = 18;
+  int32 bpmn_version = 19;
+  google.protobuf.Timestamp created_at = 20;
+  google.protobuf.Timestamp updated_at = 21;
+  google.protobuf.Timestamp completed_at = 22;
+}
+
+message CreateCaseRequest {
+  string tenant_id = 1;
+  string case_type = 2;
+  string case_code = 3;
+  string title = 4;
+  string primary_object_type = 5;
+  string primary_object_id = 6;
+  string domain_service = 7;
+  string priority = 8;
+  string created_by = 9;
+  string idempotency_key = 10;
+}
+
+message SubmitCaseRequest {
+  string case_id = 1;
+  string actor = 2;
+  google.protobuf.Struct variables = 3;
+  string idempotency_key = 4;
+}

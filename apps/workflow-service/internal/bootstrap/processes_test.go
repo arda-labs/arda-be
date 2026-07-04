@@ -9,14 +9,20 @@ import (
 
 func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 	processes := bootstrap.BuiltInProcesses()
-	if len(processes) != 1 {
-		t.Fatalf("BuiltInProcesses() len = %d, want 1", len(processes))
+	want := map[string]string{
+		"CUSTOMER_REGISTRATION":     "customer-registration-v1",
+		"HRM_EMPLOYEE_REGISTRATION": "hrm-employee-registration-v1",
 	}
-	got, err := repository.ExtractBPMNProcessID(processes[0].Content)
-	if err != nil {
-		t.Fatalf("ExtractBPMNProcessID() error = %v", err)
+	if len(processes) != len(want) {
+		t.Fatalf("BuiltInProcesses() len = %d, want %d", len(processes), len(want))
 	}
-	if got != "customer-registration-v1" {
-		t.Fatalf("process id = %q, want customer-registration-v1", got)
+	for _, process := range processes {
+		got, err := repository.ExtractBPMNProcessID(process.Content)
+		if err != nil {
+			t.Fatalf("ExtractBPMNProcessID(%s) error = %v", process.ProcessCode, err)
+		}
+		if got != want[process.ProcessCode] {
+			t.Fatalf("process id for %s = %q, want %q", process.ProcessCode, got, want[process.ProcessCode])
+		}
 	}
 }

@@ -1,26 +1,25 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/crm-service/internal/repository"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 )
 
 type CustomerHandler struct {
-	customerRepo       *repository.CustomerRepository
-	workflowServiceURL string
+	customerRepo   *repository.CustomerRepository
+	workflowClient *workflowclient.Client
 }
 
-func NewCustomerHandler(customerRepo *repository.CustomerRepository, workflowServiceURL string) *CustomerHandler {
+func NewCustomerHandler(customerRepo *repository.CustomerRepository, workflowClient *workflowclient.Client) *CustomerHandler {
 	return &CustomerHandler{
-		customerRepo:       customerRepo,
-		workflowServiceURL: workflowServiceURL,
+		customerRepo:   customerRepo,
+		workflowClient: workflowClient,
 	}
 }
 
@@ -139,41 +138,36 @@ func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.Customer) error {
-	if h.workflowServiceURL == "" {
-		return fmt.Errorf("workflow service url is not configured")
+	if h.workflowClient == nil {
+		return fmt.Errorf("workflow client is not configured")
 	}
-	caseReq := map[string]any{
-		"tenantId":          "default",
-		"caseType":          "CUSTOMER_REGISTRATION",
-		"title":             fmt.Sprintf("Dang ky khach hang %s - %s", item.ID, item.Name),
-		"primaryObjectType": "CUSTOMER",
-		"primaryObjectId":   item.ID,
-		"domainService":     "crm-service",
-		"priority":          "NORMAL",
-		"createdBy":         r.Header.Get("X-User-Id"),
+	actor := r.Header.Get("X-User-Id")
+	if actor == "" {
+		actor = "crm-maker"
 	}
-	if caseReq["createdBy"] == "" {
-		caseReq["createdBy"] = "crm-maker"
-	}
-	createdCase, err := postJSON[struct {
-		ID string `json:"id"`
-	}](r, h.workflowServiceURL+"/api/workflow/cases", caseReq)
+	createdCase, err := h.workflowClient.CreateCase(r.Context(), workflowclient.CaseCreate{
+		TenantID:          "default",
+		CaseType:          "CUSTOMER_REGISTRATION",
+		Title:             fmt.Sprintf("Dang ky khach hang %s - %s", item.ID, item.Name),
+		PrimaryObjectType: "CUSTOMER",
+		PrimaryObjectID:   item.ID,
+		DomainService:     "crm-service",
+		Priority:          "NORMAL",
+		CreatedBy:         actor,
+	})
 	if err != nil {
 		return err
 	}
-	if createdCase.ID == "" {
+	if createdCase.GetId() == "" {
 		return fmt.Errorf("workflow case id is empty")
 	}
-	_, err = postJSON[map[string]any](r, h.workflowServiceURL+"/api/workflow/cases/"+createdCase.ID+"/submit", map[string]any{
-		"actor": caseReq["createdBy"],
-		"variables": map[string]any{
-			"customerId":     item.ID,
-			"customerName":   item.Name,
-			"customerEmail":  item.Email,
-			"identityNo":     item.IdentityNo,
-			"riskLevel":      item.RiskLevel,
-			"customerStatus": item.Status,
-		},
+	_, err = h.workflowClient.SubmitCase(r.Context(), createdCase.GetId(), actor, map[string]any{
+		"customerId":     item.ID,
+		"customerName":   item.Name,
+		"customerEmail":  item.Email,
+		"identityNo":     item.IdentityNo,
+		"riskLevel":      item.RiskLevel,
+		"customerStatus": item.Status,
 	})
 	return err
 }
@@ -221,31 +215,4 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
-}
-
-func postJSON[T any](r *http.Request, url string, payload any) (T, error) {
-	var out T
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return out, err
-	}
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return out, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return out, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		message := strings.TrimSpace(string(body))
-		if message == "" {
-			message = http.StatusText(resp.StatusCode)
-		}
-		return out, fmt.Errorf("workflow returned status %d: %s", resp.StatusCode, message)
-	}
-	return out, json.NewDecoder(resp.Body).Decode(&out)
 }

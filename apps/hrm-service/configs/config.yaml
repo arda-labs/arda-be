@@ -1,0 +1,5 @@
+app_name: hrm-service
+http_addr: 0.0.0.0:8097
+log_level: info
+database_dsn: "postgres://arda_hrm:123456@192.168.100.201:30432/hrm?sslmode=disable"
+workflow_grpc_addr: "localhost:9093"

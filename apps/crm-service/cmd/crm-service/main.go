@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,15 +13,19 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/camunda/zeebe/clients/go/v8/pkg/zbc"
-
 	"github.com/arda-labs/arda/apps/crm-service/internal/config"
 	"github.com/arda-labs/arda/apps/crm-service/internal/handler"
 	"github.com/arda-labs/arda/apps/crm-service/internal/migration"
 	"github.com/arda-labs/arda/apps/crm-service/internal/repository"
+	grpcserver "github.com/arda-labs/arda/apps/crm-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/crm-service/internal/transport/http"
-	"github.com/arda-labs/arda/apps/crm-service/internal/worker"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
+	crmv1 "github.com/arda-labs/arda/libs/go/arda-proto/crm/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
@@ -54,46 +59,34 @@ func main() {
 	// Repositories
 	customerRepo := repository.NewCustomerRepository(db)
 
-	// Zeebe Client & Job Workers
-	zeebeClient, err := zbc.NewClient(&zbc.ClientConfig{
-		GatewayAddress:         cfg.ZeebeAddr,
-		UsePlaintextConnection: true,
-	})
+	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(interceptors.UnaryServerLogging(logger)))
+	crmv1.RegisterCustomerCommandServiceServer(grpcSrv, grpcserver.NewCustomerCommandServer(customerRepo))
+	healthSrv := health.NewServer()
+	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
+	go func() {
+		lis, err := net.Listen("tcp", cfg.GRPCAddr)
+		if err != nil {
+			logger.Error("grpc listen", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("grpc server started", "name", cfg.AppName, "addr", cfg.GRPCAddr)
+		if err := grpcSrv.Serve(lis); err != nil {
+			logger.Error("grpc server error", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	workflowClient, err := workflowclient.Dial(context.Background(), cfg.WorkflowGRPCAddr, cfg.AppName, logger)
 	if err != nil {
-		logger.Error("Failed to connect to Zeebe gateway", "err", err)
+		logger.Error("workflow grpc unavailable", "addr", cfg.WorkflowGRPCAddr, "err", err)
 		os.Exit(1)
 	}
-	defer zeebeClient.Close()
-	logger.Info("Connected to Zeebe gateway", "addr", cfg.ZeebeAddr)
-
-	crmWorkers := worker.NewCRMWorkers(customerRepo)
-
-	// Start Workers
-	worker0 := zeebeClient.NewJobWorker().JobType("crm.mark_customer_submitted").Handler(crmWorkers.MarkSubmittedHandler).Open()
-	defer worker0.Close()
-
-	workerDuplicate := zeebeClient.NewJobWorker().JobType("crm.check_customer_duplicate").Handler(crmWorkers.CheckDuplicateHandler).Open()
-	defer workerDuplicate.Close()
-
-	workerChanges := zeebeClient.NewJobWorker().JobType("crm.request_customer_changes").Handler(crmWorkers.RequestChangesHandler).Open()
-	defer workerChanges.Close()
-
-	workerReject := zeebeClient.NewJobWorker().JobType("crm.reject_customer").Handler(crmWorkers.RejectCustomerHandler).Open()
-	defer workerReject.Close()
-
-	worker1 := zeebeClient.NewJobWorker().JobType("crm.create_customer").Handler(crmWorkers.CreateCustomerHandler).Open()
-	defer worker1.Close()
-
-	worker2 := zeebeClient.NewJobWorker().JobType("crm.update_customer").Handler(crmWorkers.UpdateCustomerHandler).Open()
-	defer worker2.Close()
-
-	worker3 := zeebeClient.NewJobWorker().JobType("crm.approve_customer").Handler(crmWorkers.ApproveCustomerHandler).Open()
-	defer worker3.Close()
-
-	logger.Info("CRM job workers registered and listening")
+	defer workflowClient.Close()
+	logger.Info("workflow grpc configured", "addr", cfg.WorkflowGRPCAddr)
 
 	// Handlers
-	customerHandler := handler.NewCustomerHandler(customerRepo, cfg.WorkflowServiceURL)
+	customerHandler := handler.NewCustomerHandler(customerRepo, workflowClient)
 
 	// Router and HTTP Server
 	srv := &http.Server{
@@ -117,6 +110,7 @@ func main() {
 	<-quit
 
 	logger.Info("Shutting down service", "name", cfg.AppName)
+	grpcSrv.GracefulStop()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
