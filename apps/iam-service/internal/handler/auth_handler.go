@@ -22,41 +22,41 @@ func NewAuthHandler(orch *auth.Orchestrator, user *UserHandler) *AuthHandler {
 func (h *AuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 	loginChallenge := r.URL.Query().Get("login_challenge")
 	if loginChallenge == "" {
-		respondError(w, http.StatusBadRequest, "missing login_challenge")
+		respondError(w, r, http.StatusBadRequest, "missing login_challenge")
 		return
 	}
 
 	data, err := h.orch.GetLoginPageData(r.Context(), loginChallenge)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, data)
+	respondJSON(w, r, http.StatusOK, data)
 }
 
 // LoginExternal initiates an external SSO login.
 func (h *AuthHandler) LoginExternal(w http.ResponseWriter, r *http.Request) {
 	var req auth.ExternalLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondError(w, r, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	result, err := h.orch.InitiateExternalLogin(r.Context(), &req)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, result)
+	respondJSON(w, r, http.StatusOK, result)
 }
 
 // CallbackProvider handles the callback from an external IdP (OIDC/SAML).
 func (h *AuthHandler) CallbackProvider(w http.ResponseWriter, r *http.Request) {
 	providerID := r.PathValue("provider_id")
 	if providerID == "" {
-		respondError(w, http.StatusBadRequest, "missing provider_id")
+		respondError(w, r, http.StatusBadRequest, "missing provider_id")
 		return
 	}
 
@@ -69,7 +69,7 @@ func (h *AuthHandler) CallbackProvider(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.orch.HandleExternalCallback(r.Context(), providerID, params)
 	if err != nil {
-		respondError(w, http.StatusUnauthorized, err.Error())
+		respondError(w, r, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -80,17 +80,17 @@ func (h *AuthHandler) CallbackProvider(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) CallbackToken(w http.ResponseWriter, r *http.Request) {
 	var req auth.TokenExchangeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondError(w, r, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	result, err := h.orch.ExchangeCode(r.Context(), &req)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, result)
+	respondJSON(w, r, http.StatusOK, result)
 }
 
 // Refresh handles token refresh.
@@ -99,28 +99,28 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		RefreshToken string `json:"refresh_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondError(w, r, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	if req.RefreshToken == "" {
-		respondError(w, http.StatusBadRequest, "missing refresh_token")
+		respondError(w, r, http.StatusBadRequest, "missing refresh_token")
 		return
 	}
 
 	result, err := h.orch.RefreshToken(r.Context(), req.RefreshToken)
 	if err != nil {
-		respondError(w, http.StatusUnauthorized, err.Error())
+		respondError(w, r, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, result)
+	respondJSON(w, r, http.StatusOK, result)
 }
 
 // ListProviders returns all enabled providers.
 func (h *AuthHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
 	p := h.orch.ListProviders()
-	respondJSON(w, http.StatusOK, map[string]any{"providers": p})
+	respondJSON(w, r, http.StatusOK, map[string]any{"providers": p})
 }
 
 // Consent auto-accepts consent for internal trusted clients.
@@ -129,20 +129,20 @@ func (h *AuthHandler) Consent(w http.ResponseWriter, r *http.Request) {
 		ConsentChallenge string `json:"consent_challenge"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondError(w, r, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	if req.ConsentChallenge == "" {
-		respondError(w, http.StatusBadRequest, "missing consent_challenge")
+		respondError(w, r, http.StatusBadRequest, "missing consent_challenge")
 		return
 	}
 
 	redirectTo, err := h.orch.HandleConsent(r.Context(), req.ConsentChallenge)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"redirect_url": redirectTo})
+	respondJSON(w, r, http.StatusOK, map[string]string{"redirect_url": redirectTo})
 }

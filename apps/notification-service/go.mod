@@ -4,7 +4,9 @@ go 1.26
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-auth v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/lib/pq v1.12.3
 	github.com/nats-io/nats.go v1.52.0
 	github.com/pressly/goose/v3 v3.27.1
@@ -13,7 +15,11 @@ require (
 
 replace github.com/arda-labs/arda/libs/go/arda-auth => ../../libs/go/arda-auth
 
+replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
+
 replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events
+
+replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0

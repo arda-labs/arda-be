@@ -31,17 +31,17 @@ func (h *PolicyHandler) Enforce(w http.ResponseWriter, r *http.Request) {
 		Env     map[string]any `json:"env"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondError(w, r, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	ok, err := h.enf.Enforce(req.Subject, req.Object, req.Action, req.Env)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	respondJSON(w, r, http.StatusOK, map[string]any{
 		"allowed": ok,
 	})
 }
@@ -49,7 +49,7 @@ func (h *PolicyHandler) Enforce(w http.ResponseWriter, r *http.Request) {
 // ListPolicies returns all policies.
 func (h *PolicyHandler) ListPolicies(w http.ResponseWriter, r *http.Request) {
 	// Not implemented — in production, read from Casbin adapter
-	respondJSON(w, http.StatusOK, map[string]any{
+	respondJSON(w, r, http.StatusOK, map[string]any{
 		"policies": []any{},
 	})
 }
@@ -63,7 +63,7 @@ func (h *PolicyHandler) AddPolicy(w http.ResponseWriter, r *http.Request) {
 		Effect  string `json:"eft"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondError(w, r, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
@@ -73,11 +73,11 @@ func (h *PolicyHandler) AddPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.enf.AddPolicy(req.Subject, req.Object, req.Action, eff); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{"status": "added"})
+	respondJSON(w, r, http.StatusOK, map[string]any{"status": "added"})
 }
 
 // RemovePolicy removes a policy rule.
@@ -89,14 +89,14 @@ func (h *PolicyHandler) RemovePolicy(w http.ResponseWriter, r *http.Request) {
 		Effect  string `json:"eft"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		respondError(w, r, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	if err := h.enf.RemovePolicy(req.Subject, req.Object, req.Action, req.Effect); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{"status": "removed"})
+	respondJSON(w, r, http.StatusOK, map[string]any{"status": "removed"})
 }

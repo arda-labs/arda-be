@@ -3,7 +3,9 @@ module github.com/arda-labs/arda/apps/workflow-service
 go 1.26
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
 	github.com/camunda/zeebe/clients/go/v8 v8.5.5
 	github.com/lib/pq v1.10.9
@@ -12,6 +14,10 @@ require (
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc
+
+replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
+
+replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0

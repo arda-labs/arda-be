@@ -24,7 +24,7 @@ func NewMFAHandler(svc *service.MFAService) *MFAHandler {
 func (h *MFAHandler) GenerateSecret(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-Id")
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 
@@ -33,11 +33,11 @@ func (h *MFAHandler) GenerateSecret(w http.ResponseWriter, r *http.Request) {
 
 	secret, err := h.svc.GenerateSecret(r.Context(), userID, username, email)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	respondJSON(w, r, http.StatusOK, map[string]any{
 		"secret":      secret.Secret,
 		"otpauth_url": secret.OTPAuth,
 	})
@@ -48,7 +48,7 @@ func (h *MFAHandler) GenerateSecret(w http.ResponseWriter, r *http.Request) {
 func (h *MFAHandler) VerifyEnroll(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-Id")
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 
@@ -56,21 +56,21 @@ func (h *MFAHandler) VerifyEnroll(w http.ResponseWriter, r *http.Request) {
 		Code string `json:"code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid body")
+		respondError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
 	if req.Code == "" {
-		respondError(w, http.StatusBadRequest, "code required")
+		respondError(w, r, http.StatusBadRequest, "code required")
 		return
 	}
 
 	backupCodes, err := h.svc.VerifyAndEnroll(r.Context(), userID, req.Code)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	respondJSON(w, r, http.StatusOK, map[string]any{
 		"status":       "enrolled",
 		"backup_codes": backupCodes,
 	})
@@ -83,17 +83,17 @@ func (h *MFAHandler) VerifyEnroll(w http.ResponseWriter, r *http.Request) {
 func (h *MFAHandler) MFAStatus(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-Id")
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 
 	settings, err := h.svc.GetSettings(r.Context(), userID)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	respondJSON(w, r, http.StatusOK, map[string]any{
 		"is_enrolled": settings != nil && settings.IsEnrolled,
 		"method": func() string {
 			if settings != nil {
@@ -111,16 +111,16 @@ func (h *MFAHandler) MFAStatus(w http.ResponseWriter, r *http.Request) {
 func (h *MFAHandler) ResetMyMFA(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-Id")
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 
 	if err := h.svc.ResetMFA(r.Context(), userID); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "reset"})
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "reset"})
 }
 
 // AdminResetMFA resets MFA enrollment for a user (admin only).
@@ -128,62 +128,66 @@ func (h *MFAHandler) ResetMyMFA(w http.ResponseWriter, r *http.Request) {
 func (h *MFAHandler) AdminResetMFA(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("id")
 	if userID == "" {
-		respondError(w, http.StatusBadRequest, "missing user id")
+		respondError(w, r, http.StatusBadRequest, "missing user id")
 		return
 	}
 
 	if err := h.svc.ResetMFA(r.Context(), userID); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "reset"})
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "reset"})
 }
 
 // VerifyCode verifies a TOTP code for the current MFA flow.
 // POST /api/iam/me/mfa/verify
 func (h *MFAHandler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		UserID string `json:"userId"`
-		Code   string `json:"code"`
+		UserID       string `json:"user_id"`
+		UserIDLegacy string `json:"userId"`
+		Code         string `json:"code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid body")
+		respondError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if req.UserID == "" || req.Code == "" {
-		respondError(w, http.StatusBadRequest, "userId and code required")
-		return
-	}
-
-	if err := h.svc.VerifyCode(r.Context(), req.UserID, req.Code); err != nil {
-		respondError(w, http.StatusUnauthorized, err.Error())
+	userID := firstNonEmpty(req.UserID, req.UserIDLegacy)
+	if userID == "" || req.Code == "" {
+		respondError(w, r, http.StatusBadRequest, "user_id and code required")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "verified", "mfaToken": req.UserID + "_mfa_ok"})
+	if err := h.svc.VerifyCode(r.Context(), userID, req.Code); err != nil {
+		respondError(w, r, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "verified", "mfaToken": userID + "_mfa_ok"})
 }
 
 // VerifyBackupCode verifies a backup code for the current MFA flow.
 // POST /api/iam/me/mfa/backup
 func (h *MFAHandler) VerifyBackupCode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		UserID string `json:"userId"`
-		Code   string `json:"backup_code"`
+		UserID       string `json:"user_id"`
+		UserIDLegacy string `json:"userId"`
+		Code         string `json:"backup_code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid body")
+		respondError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if req.UserID == "" || req.Code == "" {
-		respondError(w, http.StatusBadRequest, "userId and backup_code required")
-		return
-	}
-
-	if err := h.svc.VerifyBackupCode(r.Context(), req.UserID, req.Code); err != nil {
-		respondError(w, http.StatusUnauthorized, err.Error())
+	userID := firstNonEmpty(req.UserID, req.UserIDLegacy)
+	if userID == "" || req.Code == "" {
+		respondError(w, r, http.StatusBadRequest, "user_id and backup_code required")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "verified", "mfaToken": req.UserID + "_mfa_ok"})
+	if err := h.svc.VerifyBackupCode(r.Context(), userID, req.Code); err != nil {
+		respondError(w, r, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "verified", "mfaToken": userID + "_mfa_ok"})
 }

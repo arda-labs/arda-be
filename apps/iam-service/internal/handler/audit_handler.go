@@ -2,11 +2,12 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // AuditHandler exposes audit query and management endpoints.
@@ -22,20 +23,18 @@ func NewAuditHandler(svc *service.AuditService) *AuditHandler {
 // Query returns paginated audit logs.
 // GET /api/admin/audit
 func (h *AuditHandler) Query(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
-	if size < 1 || size > 500 {
-		size = 10
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	page := listQuery.Page
+	perPage := listQuery.PerPage
+	if perPage > 500 {
+		perPage = 500
 	}
 
 	eventTypes := r.URL.Query()["event_type"]
 	subject := r.URL.Query().Get("subject")
 	result := r.URL.Query().Get("result")
-	tenantID := r.URL.Query().Get("tenantId")
-	sort := r.URL.Query().Get("sort")
+	tenantID := firstNonEmpty(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId"))
+	sort := firstNonEmpty(listQuery.Sort, r.URL.Query().Get("sort"))
 
 	var from, to time.Time
 	if f := r.URL.Query().Get("from"); f != "" {
@@ -53,22 +52,15 @@ func (h *AuditHandler) Query(w http.ResponseWriter, r *http.Request) {
 		From:       from,
 		To:         to,
 		Page:       page,
-		Size:       size,
+		Size:       perPage,
 		Sort:       sort,
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondRequestError(w, r, http.StatusInternalServerError, ardaerrors.CodeInternal, err.Error())
 		return
 	}
 
-	totalPages := (total + size - 1) / size
-	respondJSON(w, http.StatusOK, map[string]any{
-		"events":     events,
-		"total":      total,
-		"page":       page,
-		"size":       size,
-		"totalPages": totalPages,
-	})
+	ardahttp.WriteList(w, r, listQuery.Page, listQuery.PerPage, total, events)
 }
 
 // Stats returns audit statistics.
@@ -94,11 +86,11 @@ func (h *AuditHandler) Stats(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.svc.Stats(r.Context(), from, to)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, stats)
+	respondJSON(w, r, http.StatusOK, stats)
 }
 
 // Verify checks hash chain integrity.
@@ -124,9 +116,9 @@ func (h *AuditHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.svc.VerifyChain(r.Context(), from, to)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, result)
+	respondJSON(w, r, http.StatusOK, result)
 }

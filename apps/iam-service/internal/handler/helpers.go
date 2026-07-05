@@ -1,38 +1,81 @@
 package handler
 
 import (
-	"encoding/json"
 	"net"
 	"net/http"
 	"strings"
 
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
-// respondJSON writes a JSON response.
-func respondJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+func respondJSON(w http.ResponseWriter, r *http.Request, status int, data any) {
+	ardahttp.WriteJSON(w, r, status, data)
 }
 
-// respondError writes a JSON error response.
-func respondError(w http.ResponseWriter, status int, msg string) {
-	respondErrorCode(w, status, ardaerrors.CodeForStatus(status), msg)
+func respondJSONWithRequest(w http.ResponseWriter, r *http.Request, status int, data any) {
+	ardahttp.WriteJSON(w, r, status, data)
 }
 
-func respondErrorCode(w http.ResponseWriter, status int, code, msg string) {
-	err := ardaerrors.New(code, msg)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ardaerrors.Response{Error: *err})
+func respondError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	respondRequestError(w, r, status, errorCodeFor(status, msg), msg)
+}
+
+func respondErrorCode(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	respondRequestError(w, r, status, code, msg)
+}
+
+func respondRequestError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	ardahttp.WriteErrorCode(w, r, status, code, msg)
 }
 
 func respondRequestErrorCode(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
-	err := ardaerrors.New(code, msg).WithRequestID(r.Header.Get("X-Request-Id"))
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ardaerrors.Response{Error: *err})
+	respondRequestError(w, r, status, code, msg)
+}
+
+func errorCodeFor(status int, msg string) string {
+	code := ardaerrors.CodeForStatus(status)
+	lower := strings.ToLower(msg)
+	switch {
+	case status == http.StatusBadRequest && strings.Contains(lower, "json"):
+		return ardaerrors.CodeInvalidJSON
+	case status == http.StatusBadRequest && strings.Contains(lower, "required"):
+		return ardaerrors.CodeRequired
+	case status == http.StatusNotFound:
+		return ardaerrors.CodeNotFound
+	case status == http.StatusConflict:
+		return ardaerrors.CodeConflict
+	case status == http.StatusUnauthorized:
+		return ardaerrors.CodeUnauthorized
+	case status == http.StatusForbidden:
+		return ardaerrors.CodeForbidden
+	default:
+		return code
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func parseAdminListQuery(r *http.Request) ardahttp.ListQuery {
+	return ardahttp.ParseListQuery(r.URL.Query())
+}
+
+func listSortOrder(listQuery ardahttp.ListQuery) string {
+	if strings.EqualFold(listQuery.Order, "asc") {
+		return "ASC"
+	}
+	return "DESC"
+}
+
+func respondAdminList[T any](w http.ResponseWriter, r *http.Request, items []T, total, page, perPage int) {
+	ardahttp.WriteList(w, r, page, perPage, total, items)
 }
 
 // extractIP extracts the client IP from request headers or remote address.

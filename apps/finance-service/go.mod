@@ -3,6 +3,8 @@ module github.com/arda-labs/arda/apps/finance-service
 go 1.26
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/lib/pq v1.12.3
 	github.com/pressly/goose/v3 v3.27.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -21,5 +23,9 @@ require (
 	golang.org/x/sys v0.46.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
+
+replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
+
+replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
 
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres

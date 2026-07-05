@@ -41,9 +41,9 @@ type Role struct {
 	Code      string    `json:"code"`
 	Name      string    `json:"name"`
 	Status    string    `json:"status"`
-	TenantID  string    `json:"tenantId"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	TenantID  string    `json:"tenant_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Permission represents a granular permission.
@@ -54,7 +54,7 @@ type Permission struct {
 	Module    string    `json:"module"`
 	Resource  string    `json:"resource"`
 	Operation string    `json:"operation"`
-	CreatedAt time.Time `json:"createdAt"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Group struct {
@@ -63,25 +63,25 @@ type Group struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
 	Status      string    `json:"status"`
-	TenantID    string    `json:"tenantId"`
-	IsSystem    bool      `json:"isSystem"`
-	MemberCount int       `json:"memberCount"`
-	RoleCount   int       `json:"roleCount"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	TenantID    string    `json:"tenant_id"`
+	IsSystem    bool      `json:"is_system"`
+	MemberCount int       `json:"member_count"`
+	RoleCount   int       `json:"role_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type RoleAssignment struct {
 	ID            string    `json:"id"`
-	PrincipalType string    `json:"principalType"`
-	PrincipalID   string    `json:"principalId"`
-	RoleID        string    `json:"roleId"`
-	RoleCode      string    `json:"roleCode,omitempty"`
-	RoleName      string    `json:"roleName,omitempty"`
-	ScopeType     string    `json:"scopeType"`
-	ScopeID       string    `json:"scopeId,omitempty"`
+	PrincipalType string    `json:"principal_type"`
+	PrincipalID   string    `json:"principal_id"`
+	RoleID        string    `json:"role_id"`
+	RoleCode      string    `json:"role_code,omitempty"`
+	RoleName      string    `json:"role_name,omitempty"`
+	ScopeType     string    `json:"scope_type"`
+	ScopeID       string    `json:"scope_id,omitempty"`
 	Status        string    `json:"status"`
-	CreatedAt     time.Time `json:"createdAt"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // Organization represents a tenant/org.
@@ -139,14 +139,14 @@ type IdentityMapping struct {
 type AuthEvent struct {
 	ID          string         `json:"id"`
 	Timestamp   time.Time      `json:"timestamp"`
-	EventType   string         `json:"eventType"`
+	EventType   string         `json:"event_type"`
 	Subject     string         `json:"subject"`
 	Action      string         `json:"action"`
 	Resource    string         `json:"resource"`
 	Result      string         `json:"result"` // success, failure, denied
 	Details     map[string]any `json:"details"`
-	ClientIP    string         `json:"clientIp"`
-	UserAgent   string         `json:"userAgent"`
-	RequestID   string         `json:"requestId"`
-	ServiceName string         `json:"serviceName"`
+	ClientIP    string         `json:"client_ip"`
+	UserAgent   string         `json:"user_agent"`
+	RequestID   string         `json:"request_id"`
+	ServiceName string         `json:"service_name"`
 }

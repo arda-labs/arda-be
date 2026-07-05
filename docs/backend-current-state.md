@@ -239,6 +239,28 @@ Reference context:
 - Two-level local government model after administrative reorganization.
 - 34 provincial-level units and 3,321 commune-level units after the 2025 reorganization.
 
+## HTTP API contract (2026-07)
+
+Gold standard: `platform-service` + `libs/go/arda-http` + `libs/go/arda-errors`. Contract: `docs/conventions/http-api.md`, `docs/conventions/api-errors.md`.
+
+Migrated to standard list + errors (phase 2 complete — no legacy list keys):
+
+- `auth-gateway` — echo `X-Request-Id` + `X-Trace-Id` on proxied responses
+- `platform-service` — reference implementation
+- `hrm-service`, `crm-service`, `finance-service`, `iam-service` (incl. audit), `workflow-service`, `notification-service`, `media-service`
+
+BE query params: `page`, `per_page`, `q`, `sort`, `order` only (legacy `size`/`search` removed phase 3).
+
+IAM handlers: all `respondError`/`respondJSON` pass `*http.Request` for `request_id` + stable error codes.
+
+IAM admin API (phase 4): single-resource JSON **snake_case** for users, groups, roles, permissions, audit events. `UserContext` / BFF session payloads remain camelCase.
+
+Phase 5: `arda-http.WriteJSON` / `WriteList` inject optional `meta` (`request_id`, `trace_id`, `timestamp`) into JSON bodies. IAM public session endpoints (`/api/iam/me/sessions`, devices, config; admin user sessions) use snake_case wire format.
+
+Phase 6: internal IAM session APIs (`/internal/iam/sessions`) snake_case + arda-errors; auth-gateway `iamclient` updated. MFA verify accepts `user_id`. `UserContext` / BFF remain camelCase.
+
+Remaining: optional FE surfacing of `meta`; i18n for `iam.session.limit_reached`.
+
 ## Verification State
 
 Verified:
