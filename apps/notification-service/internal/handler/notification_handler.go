@@ -72,10 +72,7 @@ func (h *NotificationHandler) ListInbox(w http.ResponseWriter, r *http.Request) 
 	for _, item := range items {
 		out = append(out, inboxItemJSON(item))
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"items":         out,
-		"notifications": out,
-	})
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": out})
 }
 
 func (h *NotificationHandler) UnreadCount(w http.ResponseWriter, r *http.Request) {

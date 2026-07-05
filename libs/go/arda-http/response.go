@@ -11,6 +11,8 @@ import (
 )
 
 const HeaderRequestID = "X-Request-Id"
+const HeaderTraceID = "X-Trace-Id"
+const HeaderTraceParent = "traceparent"
 
 // RequestID returns the correlation id from the request or generates one.
 func RequestID(r *http.Request) string {
@@ -25,6 +27,25 @@ func RequestID(r *http.Request) string {
 	return uuid.NewString()
 }
 
+// TraceID returns W3C trace id from X-Trace-Id or traceparent.
+func TraceID(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if id := strings.TrimSpace(r.Header.Get(HeaderTraceID)); id != "" {
+		return id
+	}
+	tp := strings.TrimSpace(r.Header.Get(HeaderTraceParent))
+	if tp == "" {
+		return ""
+	}
+	parts := strings.Split(tp, "-")
+	if len(parts) >= 2 && len(parts[1]) == 32 {
+		return parts[1]
+	}
+	return ""
+}
+
 // SetCorrelationHeaders echoes request id on the response.
 func SetCorrelationHeaders(w http.ResponseWriter, requestID string) {
 	if requestID == "" {
@@ -33,10 +54,18 @@ func SetCorrelationHeaders(w http.ResponseWriter, requestID string) {
 	w.Header().Set(HeaderRequestID, requestID)
 }
 
-// WriteJSON writes a JSON response with correlation headers.
-func WriteJSON(w http.ResponseWriter, r *http.Request, status int, data any) {
+// SetRequestCorrelation echoes request and trace ids from the incoming request.
+func SetRequestCorrelation(w http.ResponseWriter, r *http.Request) {
 	requestID := RequestID(r)
 	SetCorrelationHeaders(w, requestID)
+	if traceID := TraceID(r); traceID != "" {
+		w.Header().Set(HeaderTraceID, traceID)
+	}
+}
+
+// WriteJSON writes a JSON response with correlation headers.
+func WriteJSON(w http.ResponseWriter, r *http.Request, status int, data any) {
+	SetRequestCorrelation(w, r)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
@@ -50,7 +79,7 @@ func WriteAppError(w http.ResponseWriter, r *http.Request, status int, err *arda
 	if err.RequestID == "" {
 		err = err.WithRequestID(RequestID(r))
 	}
-	SetCorrelationHeaders(w, err.RequestID)
+	SetRequestCorrelation(w, r)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(ardaerrors.Response{Error: *err})

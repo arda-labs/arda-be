@@ -21,33 +21,18 @@ func respondError(w http.ResponseWriter, r *http.Request, status int, msg string
 	ardahttp.WriteErrorCode(w, r, status, code, msg)
 }
 
-func respondPaged(w http.ResponseWriter, r *http.Request, txns []domain.Transaction, total, page, size int) {
-	if txns == nil {
-		txns = []domain.Transaction{}
-	}
-	totalPages := 0
-	if size > 0 {
-		totalPages = (total + size - 1) / size
-	}
-	// Standard list shape + legacy keys during migration.
-	ardahttp.WriteJSON(w, r, http.StatusOK, map[string]any{
-		"items":        txns,
-		"transactions": txns,
-		"total":        total,
-		"page":         page,
-		"per_page":     size,
-		"size":         size,
-		"totalPages":   totalPages,
-	})
+func respondPaged(w http.ResponseWriter, r *http.Request, txns []domain.Transaction, total, page, perPage int) {
+	ardahttp.WriteList(w, r, page, perPage, total, txns)
 }
 
-func respondList(w http.ResponseWriter, r *http.Request, key string, data any, err error) {
+func respondUnpagedList(w http.ResponseWriter, r *http.Request, items any) {
+	respondJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+func respondList(w http.ResponseWriter, r *http.Request, data any, err error) {
 	if err != nil {
 		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondJSON(w, r, http.StatusOK, map[string]any{
-		"items": data,
-		key:     data,
-	})
+	respondUnpagedList(w, r, data)
 }

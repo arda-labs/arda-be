@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/domain"
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 	"github.com/arda-labs/arda/apps/finance-service/internal/service"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // FinanceHandler exposes finance API endpoints.
@@ -206,14 +206,9 @@ func (h *FinanceHandler) ListTransactions(w http.ResponseWriter, r *http.Request
 		tenantID = "default"
 	}
 	status := r.URL.Query().Get("status")
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
-	if size < 1 || size > 100 {
-		size = 10
-	}
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	page := listQuery.Page
+	perPage := listQuery.PerPage
 	var from, to time.Time
 	if f := r.URL.Query().Get("from"); f != "" {
 		from, _ = time.Parse(time.RFC3339, f)
@@ -222,16 +217,13 @@ func (h *FinanceHandler) ListTransactions(w http.ResponseWriter, r *http.Request
 		to, _ = time.Parse(time.RFC3339, t)
 	}
 
-	txns, total, err := h.svc.ListTransactions(r.Context(), tenantID, status, from, to, page, size)
+	txns, total, err := h.svc.ListTransactions(r.Context(), tenantID, status, from, to, page, perPage)
 	if err != nil {
 		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	totalPages := (total + size - 1) / size
-	respondJSON(w, r, http.StatusOK, map[string]any{
-		"transactions": txns, "total": total, "page": page, "size": size, "totalPages": totalPages,
-	})
+	respondPaged(w, r, txns, total, page, perPage)
 }
 
 func (h *FinanceHandler) SearchTransactions(w http.ResponseWriter, r *http.Request) {
@@ -411,27 +403,27 @@ func (h *FinanceHandler) TrialBalance(w http.ResponseWriter, r *http.Request) {
 
 func (h *FinanceHandler) ListProcessConfigs(w http.ResponseWriter, r *http.Request) {
 	items, err := h.configSvc.ListProcessConfigs(r.Context(), tenantIDFrom(r))
-	respondList(w, r, "processConfigs", items, err)
+	respondList(w, r, items, err)
 }
 
 func (h *FinanceHandler) ListAccountClassifications(w http.ResponseWriter, r *http.Request) {
 	items, err := h.configSvc.ListAccountClassifications(r.Context(), tenantIDFrom(r))
-	respondList(w, r, "accountClassifications", items, err)
+	respondList(w, r, items, err)
 }
 
 func (h *FinanceHandler) ListJournalDefinitions(w http.ResponseWriter, r *http.Request) {
 	items, err := h.configSvc.ListJournalDefinitions(r.Context(), tenantIDFrom(r))
-	respondList(w, r, "journalDefinitions", items, err)
+	respondList(w, r, items, err)
 }
 
 func (h *FinanceHandler) ListRegulatoryAccounts(w http.ResponseWriter, r *http.Request) {
 	items, err := h.configSvc.ListRegulatoryAccounts(r.Context(), tenantIDFrom(r))
-	respondList(w, r, "regulatoryAccounts", items, err)
+	respondList(w, r, items, err)
 }
 
 func (h *FinanceHandler) ListInternalAccounts(w http.ResponseWriter, r *http.Request) {
 	items, err := h.configSvc.ListInternalAccounts(r.Context(), tenantIDFrom(r))
-	respondList(w, r, "internalAccounts", items, err)
+	respondList(w, r, items, err)
 }
 
 func tenantIDFrom(r *http.Request) string {
@@ -454,15 +446,8 @@ func userIDFrom(r *http.Request) string {
 }
 
 func pageSizeFrom(r *http.Request) (int, int) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
-	if size < 1 || size > 100 {
-		size = 10
-	}
-	return page, size
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	return listQuery.Page, listQuery.PerPage
 }
 
 func dateRangeFrom(r *http.Request) (time.Time, time.Time) {

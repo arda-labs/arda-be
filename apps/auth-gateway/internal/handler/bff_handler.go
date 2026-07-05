@@ -1368,6 +1368,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	slowLogEnabled, slowLogThreshold := h.slowLogSettings()
 	requestID := ardahttp.RequestID(r)
+	traceID := ardahttp.TraceID(r)
 	r.Header.Set(ardahttp.HeaderRequestID, requestID)
 	baseURL := h.upstreamBaseURL(r.URL.Path)
 	target := baseURL + r.URL.Path
@@ -1385,6 +1386,9 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	proxyReq.Header.Set(ardahttp.HeaderRequestID, requestID)
+	if traceID != "" {
+		proxyReq.Header.Set(ardahttp.HeaderTraceID, traceID)
+	}
 	stripAuthContextHeaders(proxyReq.Header)
 	var match *policy.MatchResult
 	if h.policy != nil {
@@ -1493,7 +1497,9 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if w.Header().Get(ardahttp.HeaderRequestID) == "" {
-		ardahttp.SetCorrelationHeaders(w, requestID)
+		ardahttp.SetRequestCorrelation(w, r)
+	} else if traceID != "" && w.Header().Get(ardahttp.HeaderTraceID) == "" {
+		w.Header().Set(ardahttp.HeaderTraceID, traceID)
 	}
 	w.WriteHeader(resp.StatusCode)
 	if isEventStreamRequest(r) {

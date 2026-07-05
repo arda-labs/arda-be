@@ -243,15 +243,15 @@ Reference context:
 
 Gold standard: `platform-service` + `libs/go/arda-http` + `libs/go/arda-errors`. Contract: `docs/conventions/http-api.md`, `docs/conventions/api-errors.md`.
 
-Migrated to `arda-errors` + list `items` (with legacy aliases where noted):
+Migrated to standard list + errors (phase 2 complete — no legacy list keys):
 
-- `auth-gateway` — echo `X-Request-Id` on proxied responses
+- `auth-gateway` — echo `X-Request-Id` + `X-Trace-Id` on proxied responses
 - `platform-service` — reference implementation
-- `hrm-service`, `crm-service`, `finance-service` (list alias `transactions`/`size`)
-- `iam-service` — admin list endpoints: `items` + alias `users`/`groups`/`roles`/`permissions`/`members`
-- `workflow-service`, `notification-service` (alias `notifications`), `media-service`
+- `hrm-service`, `crm-service`, `finance-service`, `iam-service` (incl. audit), `workflow-service`, `notification-service`, `media-service`
 
-Remaining legacy: IAM camelCase fields on some resources; finance list alias; IAM non-list handlers still mix `respondError` string messages on some paths.
+BE still accepts legacy **query** aliases (`size`, `search`, `sortField`) via `ParseListQuery`; responses are `{ items, page, per_page, total }` only.
+
+Remaining: IAM camelCase on single-resource JSON; some IAM handlers use string `respondError` on non-list paths.
 
 ## Verification State
 

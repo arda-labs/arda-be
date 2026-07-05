@@ -58,16 +58,6 @@ type userListItem struct {
 	CreatedAt        string   `json:"createdAt"`
 }
 
-type userListResponse struct {
-	Items      []userListItem `json:"items"`
-	Users      []userListItem `json:"users"`
-	Total      int            `json:"total"`
-	Page       int            `json:"page"`
-	PerPage    int            `json:"per_page"`
-	Size       int            `json:"size"`
-	TotalPages int            `json:"totalPages"`
-}
-
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	page, perPage, search := parseAdminListQuery(r)
 	status := r.URL.Query().Get("status")
@@ -90,10 +80,6 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalPages := 0
-	if perPage > 0 {
-		totalPages = (total + perPage - 1) / perPage
-	}
 	items := make([]userListItem, 0, len(users))
 	for _, u := range users {
 		items = append(items, userListItem{
@@ -106,10 +92,7 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondJSONWithRequest(w, r, http.StatusOK, userListResponse{
-		Items: items, Users: items, Total: total, Page: page,
-		PerPage: perPage, Size: perPage, TotalPages: totalPages,
-	})
+	respondAdminList(w, r, items, total, page, perPage)
 }
 
 func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
@@ -515,7 +498,7 @@ func (h *AdminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondAdminList(w, r, "groups", groups, total, page, perPage)
+	respondAdminList(w, r, groups, total, page, perPage)
 }
 
 func (h *AdminHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
@@ -669,10 +652,7 @@ func (h *AdminHandler) ListGroupMembers(w http.ResponseWriter, r *http.Request) 
 			CreatedAt:        u.CreatedAt.Format(time.RFC3339),
 		})
 	}
-	respondJSONWithRequest(w, r, http.StatusOK, map[string]any{
-		"items":   items,
-		"members": items,
-	})
+	respondJSONWithRequest(w, r, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *AdminHandler) AddGroupMember(w http.ResponseWriter, r *http.Request) {
@@ -801,7 +781,7 @@ func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondAdminList(w, r, "roles", roles, total, page, perPage)
+	respondAdminList(w, r, roles, total, page, perPage)
 }
 
 func (h *AdminHandler) GetRole(w http.ResponseWriter, r *http.Request) {
@@ -980,7 +960,7 @@ func (h *AdminHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondAdminList(w, r, "permissions", perms, total, page, perPage)
+	respondAdminList(w, r, perms, total, page, perPage)
 }
 
 func (h *AdminHandler) CreatePermission(w http.ResponseWriter, r *http.Request) {

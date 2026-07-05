@@ -3,7 +3,6 @@ package handler
 import (
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
@@ -45,34 +44,11 @@ func firstNonEmpty(values ...string) string {
 
 func parseAdminListQuery(r *http.Request) (page, perPage int, search string) {
 	listQuery := ardahttp.ParseListQuery(r.URL.Query())
-	page = listQuery.Page
-	perPage = listQuery.PerPage
-	if raw := r.URL.Query().Get("size"); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
-			perPage = n
-		}
-	}
-	if perPage > 100 {
-		perPage = 100
-	}
-	search = firstNonEmpty(listQuery.Q, r.URL.Query().Get("search"))
-	return page, perPage, search
+	return listQuery.Page, listQuery.PerPage, listQuery.Q
 }
 
-func respondAdminList(w http.ResponseWriter, r *http.Request, legacyKey string, items any, total, page, perPage int) {
-	totalPages := 0
-	if perPage > 0 {
-		totalPages = (total + perPage - 1) / perPage
-	}
-	respondJSONWithRequest(w, r, http.StatusOK, map[string]any{
-		"items":      items,
-		legacyKey:    items,
-		"total":      total,
-		"page":       page,
-		"per_page":   perPage,
-		"size":       perPage,
-		"totalPages": totalPages,
-	})
+func respondAdminList[T any](w http.ResponseWriter, r *http.Request, items []T, total, page, perPage int) {
+	ardahttp.WriteList(w, r, page, perPage, total, items)
 }
 
 // extractIP extracts the client IP from request headers or remote address.

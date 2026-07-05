@@ -58,28 +58,9 @@ func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
 	ardahttp.WriteList(w, r, page, perPage, total, items)
 }
 
-func writeLegacyList(w http.ResponseWriter, r *http.Request, legacyKey string, items any, total, page, perPage int) {
-	if items == nil {
-		items = []any{}
-	}
-	if perPage == 0 {
-		perPage = 1
-	}
-	totalPages := (total + perPage - 1) / perPage
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"items":      items,
-		legacyKey:    items,
-		"total":      total,
-		"page":       page,
-		"per_page":   perPage,
-		"size":       perPage,
-		"totalPages": totalPages,
-	})
-}
-
 func writeRawJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	ardahttp.SetCorrelationHeaders(w, ardahttp.RequestID(r))
+	ardahttp.SetRequestCorrelation(w, r)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }

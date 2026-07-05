@@ -299,7 +299,7 @@ func (h *WorkflowHandler) SLAPolicies(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListSLAPolicies(r.Context())
-		writeListOrError(w, r, "slaPolicies", items, err)
+		writeListOrError(w, r, items, err)
 	case http.MethodPost:
 		var req repository.SLAPolicy
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -336,7 +336,7 @@ func (h *WorkflowHandler) DescriptionTemplates(w http.ResponseWriter, r *http.Re
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListDescriptionTemplates(r.Context())
-		writeListOrError(w, r, "descriptionTemplates", items, err)
+		writeListOrError(w, r, items, err)
 	case http.MethodPost:
 		var req repository.DescriptionTemplate
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -373,7 +373,7 @@ func (h *WorkflowHandler) ProcessRoles(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListProcessRoles(r.Context())
-		writeListOrError(w, r, "processRoles", items, err)
+		writeListOrError(w, r, items, err)
 	case http.MethodPost:
 		var req repository.ProcessRole
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -391,7 +391,7 @@ func (h *WorkflowHandler) ProcessDefinitions(w http.ResponseWriter, r *http.Requ
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.processDefinition.List(r.Context())
-		writeListOrError(w, r, "processDefinitions", items, err)
+		writeListOrError(w, r, items, err)
 	case http.MethodPost:
 		in, err := parseProcessDefinitionImport(r)
 		if err != nil {
@@ -491,7 +491,7 @@ func (h *WorkflowHandler) RoleCatalog(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListWorkflowRoleCatalog(r.Context())
-		writeListOrError(w, r, "roleCatalog", items, err)
+		writeListOrError(w, r, items, err)
 	case http.MethodPost:
 		var req repository.WorkflowRoleCatalog
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -528,7 +528,7 @@ func (h *WorkflowHandler) RoleMemberships(w http.ResponseWriter, r *http.Request
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListWorkflowRoleMemberships(r.Context())
-		writeListOrError(w, r, "roleMemberships", items, err)
+		writeListOrError(w, r, items, err)
 	case http.MethodPost:
 		var req repository.WorkflowRoleMembership
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -565,7 +565,7 @@ func (h *WorkflowHandler) AssignmentRules(w http.ResponseWriter, r *http.Request
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListWorkflowAssignmentRules(r.Context())
-		writeListOrError(w, r, "assignmentRules", items, err)
+		writeListOrError(w, r, items, err)
 	case http.MethodPost:
 		var req repository.WorkflowAssignmentRule
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -602,7 +602,7 @@ func (h *WorkflowHandler) Delegations(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListWorkflowDelegations(r.Context())
-		writeListOrError(w, r, "delegations", items, err)
+		writeListOrError(w, r, items, err)
 	case http.MethodPost:
 		var req repository.WorkflowDelegation
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1962,15 +1962,15 @@ func makerCheckerSODRelaxed() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("WORKFLOW_RELAX_MAKER_CHECKER_SOD")), "true")
 }
 
-func writeListOrError(w http.ResponseWriter, r *http.Request, key string, items any, err error) {
+func writeListOrError(w http.ResponseWriter, r *http.Request, items any, err error) {
 	if err != nil {
 		writeAPIError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"items": items,
-		key:     items,
-	})
+	if items == nil {
+		items = []any{}
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
 }
 
 func writeMutationOrError(w http.ResponseWriter, r *http.Request, item any, err error) {

@@ -2,11 +2,11 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // AuditHandler exposes audit query and management endpoints.
@@ -22,20 +22,18 @@ func NewAuditHandler(svc *service.AuditService) *AuditHandler {
 // Query returns paginated audit logs.
 // GET /api/admin/audit
 func (h *AuditHandler) Query(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
-	if size < 1 || size > 500 {
-		size = 10
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	page := listQuery.Page
+	perPage := listQuery.PerPage
+	if perPage > 500 {
+		perPage = 500
 	}
 
 	eventTypes := r.URL.Query()["event_type"]
 	subject := r.URL.Query().Get("subject")
 	result := r.URL.Query().Get("result")
 	tenantID := r.URL.Query().Get("tenantId")
-	sort := r.URL.Query().Get("sort")
+	sort := firstNonEmpty(listQuery.Sort, r.URL.Query().Get("sort"))
 
 	var from, to time.Time
 	if f := r.URL.Query().Get("from"); f != "" {
@@ -53,7 +51,7 @@ func (h *AuditHandler) Query(w http.ResponseWriter, r *http.Request) {
 		From:       from,
 		To:         to,
 		Page:       page,
-		Size:       size,
+		Size:       perPage,
 		Sort:       sort,
 	})
 	if err != nil {
@@ -61,14 +59,7 @@ func (h *AuditHandler) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalPages := (total + size - 1) / size
-	respondJSON(w, http.StatusOK, map[string]any{
-		"events":     events,
-		"total":      total,
-		"page":       page,
-		"size":       size,
-		"totalPages": totalPages,
-	})
+	ardahttp.WriteList(w, r, page, perPage, total, events)
 }
 
 // Stats returns audit statistics.
