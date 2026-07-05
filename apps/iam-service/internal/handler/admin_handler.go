@@ -671,7 +671,19 @@ func (h *AdminHandler) ListGroupMembers(w http.ResponseWriter, r *http.Request) 
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]any{"members": members})
+	items := make([]userListItem, 0, len(members))
+	for _, u := range members {
+		items = append(items, userListItem{
+			ID: u.ID, Username: u.Username, Email: u.Email,
+			Name: u.DisplayName, Status: u.Status, Source: u.Source,
+			Nickname: u.Nickname, FirstName: u.FirstName, LastName: u.LastName,
+			Gender: u.Gender, Country: u.Country, Address: u.Address, Position: u.Position,
+			KratosIdentityID: u.KratosIdentityID,
+			TenantID:         u.TenantID,
+			CreatedAt:        u.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"members": items})
 }
 
 func (h *AdminHandler) AddGroupMember(w http.ResponseWriter, r *http.Request) {
