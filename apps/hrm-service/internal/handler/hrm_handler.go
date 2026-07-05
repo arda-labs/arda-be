@@ -1,15 +1,14 @@
 package handler
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/arda-labs/arda/apps/hrm-service/internal/domain"
 	"github.com/arda-labs/arda/apps/hrm-service/internal/repository"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 )
 
 type HRMHandler struct {
@@ -23,7 +22,11 @@ func NewHRMHandler(repo *repository.HRMRepository, workflowClient *workflowclien
 
 func (h *HRMHandler) ListPositions(w http.ResponseWriter, r *http.Request) {
 	items, err := h.repo.ListPositions(r.Context(), r.URL.Query().Get("status"), r.URL.Query().Get("q"))
-	writeResult(w, items, err)
+	if err != nil {
+		writeResult(w, r, nil, err)
+		return
+	}
+	writeListAll(w, r, items)
 }
 
 func (h *HRMHandler) CreatePosition(w http.ResponseWriter, r *http.Request) {
@@ -32,11 +35,11 @@ func (h *HRMHandler) CreatePosition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Code == "" || req.Name == "" {
-		writeError(w, http.StatusBadRequest, "code and name are required")
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "code and name are required")
 		return
 	}
 	item, err := h.repo.CreatePosition(r.Context(), req)
-	writeResult(w, item, err)
+	writeResult(w, r, item, err)
 }
 
 func (h *HRMHandler) UpdatePosition(w http.ResponseWriter, r *http.Request) {
@@ -46,20 +49,24 @@ func (h *HRMHandler) UpdatePosition(w http.ResponseWriter, r *http.Request) {
 	}
 	req.ID = r.PathValue("id")
 	if req.ID == "" || req.Code == "" || req.Name == "" {
-		writeError(w, http.StatusBadRequest, "id, code and name are required")
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "id, code and name are required")
 		return
 	}
 	item, err := h.repo.UpdatePosition(r.Context(), req)
-	writeResult(w, item, err)
+	writeResult(w, r, item, err)
 }
 
 func (h *HRMHandler) DeletePosition(w http.ResponseWriter, r *http.Request) {
-	writeResult(w, map[string]bool{"ok": true}, h.repo.DeletePosition(r.Context(), r.PathValue("id")))
+	writeResult(w, r, map[string]bool{"ok": true}, h.repo.DeletePosition(r.Context(), r.PathValue("id")))
 }
 
 func (h *HRMHandler) ListJobTitles(w http.ResponseWriter, r *http.Request) {
 	items, err := h.repo.ListJobTitles(r.Context(), r.URL.Query().Get("q"))
-	writeResult(w, items, err)
+	if err != nil {
+		writeResult(w, r, nil, err)
+		return
+	}
+	writeListAll(w, r, items)
 }
 
 func (h *HRMHandler) CreateJobTitle(w http.ResponseWriter, r *http.Request) {
@@ -68,11 +75,11 @@ func (h *HRMHandler) CreateJobTitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Code == "" || req.Name == "" {
-		writeError(w, http.StatusBadRequest, "code and name are required")
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "code and name are required")
 		return
 	}
 	item, err := h.repo.CreateJobTitle(r.Context(), req)
-	writeResult(w, item, err)
+	writeResult(w, r, item, err)
 }
 
 func (h *HRMHandler) UpdateJobTitle(w http.ResponseWriter, r *http.Request) {
@@ -82,20 +89,24 @@ func (h *HRMHandler) UpdateJobTitle(w http.ResponseWriter, r *http.Request) {
 	}
 	req.ID = r.PathValue("id")
 	if req.ID == "" || req.Code == "" || req.Name == "" {
-		writeError(w, http.StatusBadRequest, "id, code and name are required")
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "id, code and name are required")
 		return
 	}
 	item, err := h.repo.UpdateJobTitle(r.Context(), req)
-	writeResult(w, item, err)
+	writeResult(w, r, item, err)
 }
 
 func (h *HRMHandler) DeleteJobTitle(w http.ResponseWriter, r *http.Request) {
-	writeResult(w, map[string]bool{"ok": true}, h.repo.DeleteJobTitle(r.Context(), r.PathValue("id")))
+	writeResult(w, r, map[string]bool{"ok": true}, h.repo.DeleteJobTitle(r.Context(), r.PathValue("id")))
 }
 
 func (h *HRMHandler) ListOrgUnits(w http.ResponseWriter, r *http.Request) {
 	items, err := h.repo.ListOrgUnits(r.Context(), r.URL.Query().Get("organization_id"), r.URL.Query().Get("status"), r.URL.Query().Get("q"))
-	writeResult(w, items, err)
+	if err != nil {
+		writeResult(w, r, nil, err)
+		return
+	}
+	writeListAll(w, r, items)
 }
 
 func (h *HRMHandler) CreateOrgUnit(w http.ResponseWriter, r *http.Request) {
@@ -104,11 +115,11 @@ func (h *HRMHandler) CreateOrgUnit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Code == "" || req.OrganizationID == "" || req.Name == "" || req.OrgLevel == "" || req.DepartmentType == "" {
-		writeError(w, http.StatusBadRequest, "code, organization_id, name, org_level and department_type are required")
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "code, organization_id, name, org_level and department_type are required")
 		return
 	}
 	item, err := h.repo.CreateOrgUnit(r.Context(), req)
-	writeResult(w, item, err)
+	writeResult(w, r, item, err)
 }
 
 func (h *HRMHandler) UpdateOrgUnit(w http.ResponseWriter, r *http.Request) {
@@ -118,25 +129,33 @@ func (h *HRMHandler) UpdateOrgUnit(w http.ResponseWriter, r *http.Request) {
 	}
 	req.ID = r.PathValue("id")
 	if req.ID == "" || req.Code == "" || req.OrganizationID == "" || req.Name == "" || req.OrgLevel == "" || req.DepartmentType == "" {
-		writeError(w, http.StatusBadRequest, "id, code, organization_id, name, org_level and department_type are required")
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "id, code, organization_id, name, org_level and department_type are required")
 		return
 	}
 	item, err := h.repo.UpdateOrgUnit(r.Context(), req)
-	writeResult(w, item, err)
+	writeResult(w, r, item, err)
 }
 
 func (h *HRMHandler) DeleteOrgUnit(w http.ResponseWriter, r *http.Request) {
-	writeResult(w, map[string]bool{"ok": true}, h.repo.DeleteOrgUnit(r.Context(), r.PathValue("id")))
+	writeResult(w, r, map[string]bool{"ok": true}, h.repo.DeleteOrgUnit(r.Context(), r.PathValue("id")))
 }
 
 func (h *HRMHandler) ListEmployees(w http.ResponseWriter, r *http.Request) {
 	items, err := h.repo.ListEmployees(r.Context(), r.URL.Query().Get("q"))
-	writeResult(w, items, err)
+	if err != nil {
+		writeResult(w, r, nil, err)
+		return
+	}
+	writeListAll(w, r, items)
 }
 
 func (h *HRMHandler) ListEmployeeRegistrations(w http.ResponseWriter, r *http.Request) {
 	items, err := h.repo.ListEmployeeRegistrations(r.Context(), r.URL.Query().Get("status"))
-	writeResult(w, items, err)
+	if err != nil {
+		writeResult(w, r, nil, err)
+		return
+	}
+	writeListAll(w, r, items)
 }
 
 func (h *HRMHandler) CreateEmployeeRegistration(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +175,7 @@ func (h *HRMHandler) CreateEmployeeRegistration(w http.ResponseWriter, r *http.R
 		Payload:          payload,
 		CreatedBy:        headerPtr(r, "X-User-Id"),
 	})
-	writeResult(w, item, err)
+	writeResult(w, r, item, err)
 }
 
 func (h *HRMHandler) UpdateEmployeeRegistration(w http.ResponseWriter, r *http.Request) {
@@ -171,7 +190,7 @@ func (h *HRMHandler) UpdateEmployeeRegistration(w http.ResponseWriter, r *http.R
 		payload = "{}"
 	}
 	item, err := h.repo.UpdateEmployeeRegistration(r.Context(), r.PathValue("id"), payload)
-	writeResult(w, item, err)
+	writeResult(w, r, item, err)
 }
 
 func (h *HRMHandler) SubmitEmployeeRegistration(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +200,7 @@ func (h *HRMHandler) SubmitEmployeeRegistration(w http.ResponseWriter, r *http.R
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	existing, err := h.repo.GetEmployeeRegistration(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeResult(w, existing, err)
+		writeResult(w, r, existing, err)
 		return
 	}
 	if req.WorkflowCaseID == "" && existing.WorkflowCaseID != nil {
@@ -190,13 +209,13 @@ func (h *HRMHandler) SubmitEmployeeRegistration(w http.ResponseWriter, r *http.R
 	if req.WorkflowCaseID == "" {
 		caseID, err := h.submitWorkflowCase(r, r.PathValue("id"))
 		if err != nil {
-			writeError(w, http.StatusBadGateway, "failed to submit workflow case: "+err.Error())
+			writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to submit workflow case: "+err.Error())
 			return
 		}
 		req.WorkflowCaseID = caseID
 	}
 	item, err := h.repo.SubmitEmployeeRegistration(r.Context(), r.PathValue("id"), req.WorkflowCaseID)
-	writeResult(w, item, err)
+	writeResult(w, r, item, err)
 }
 
 func (h *HRMHandler) submitWorkflowCase(r *http.Request, registrationID string) (string, error) {
@@ -232,39 +251,10 @@ func (h *HRMHandler) submitWorkflowCase(r *http.Request, registrationID string) 
 	return createdCase.GetId(), nil
 }
 
-func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
-		return false
-	}
-	return true
-}
-
 func headerPtr(r *http.Request, key string) *string {
 	v := r.Header.Get(key)
 	if v == "" {
 		return nil
 	}
 	return &v
-}
-
-func writeResult(w http.ResponseWriter, value any, err error) {
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(value); err != nil {
-		http.Error(w, `{"error":"encode response"}`, http.StatusInternalServerError)
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

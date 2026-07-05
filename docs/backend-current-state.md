@@ -239,6 +239,20 @@ Reference context:
 - Two-level local government model after administrative reorganization.
 - 34 provincial-level units and 3,321 commune-level units after the 2025 reorganization.
 
+## HTTP API contract (2026-07)
+
+Gold standard: `platform-service` + `libs/go/arda-http` + `libs/go/arda-errors`. Contract: `docs/conventions/http-api.md`, `docs/conventions/api-errors.md`.
+
+Migrated to `arda-errors` + list `items` (with legacy aliases where noted):
+
+- `auth-gateway` — echo `X-Request-Id` on proxied responses
+- `platform-service` — reference implementation
+- `hrm-service`, `crm-service`, `finance-service` (list alias `transactions`/`size`)
+- `iam-service` — admin list endpoints: `items` + alias `users`/`groups`/`roles`/`permissions`/`members`
+- `workflow-service`, `notification-service` (alias `notifications`), `media-service`
+
+Remaining legacy: IAM camelCase fields on some resources; finance list alias; IAM non-list handlers still mix `respondError` string messages on some paths.
+
 ## Verification State
 
 Verified:

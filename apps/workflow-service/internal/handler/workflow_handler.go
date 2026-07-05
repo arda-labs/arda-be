@@ -47,32 +47,32 @@ func NewWorkflowHandler(
 
 func (h *WorkflowHandler) Deploy(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	err := r.ParseMultipartForm(10 << 20) // 10MB
 	if err != nil {
-		http.Error(w, "Failed to parse form: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Failed to parse form: "+err.Error())
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		http.Error(w, "Missing file: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Missing file: "+err.Error())
 		return
 	}
 	defer file.Close()
 
 	content, err := io.ReadAll(file)
 	if err != nil {
-		http.Error(w, "Failed to read file: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to read file: "+err.Error())
 		return
 	}
 
 	key, err := h.zeebeSvc.DeployWorkflow(r.Context(), header.Filename, content)
 	if err != nil {
-		writeDeployError(w, err)
+		writeDeployError(w, r, err)
 		return
 	}
 
@@ -92,18 +92,18 @@ type StartRequest struct {
 
 func (h *WorkflowHandler) Start(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	var req StartRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
 	if req.BpmnProcessID == "" {
-		http.Error(w, "bpmnProcessId is required", http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "bpmnProcessId is required")
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *WorkflowHandler) Start(w http.ResponseWriter, r *http.Request) {
 
 	key, err := h.zeebeSvc.StartWorkflow(r.Context(), req.BpmnProcessID, req.Variables)
 	if err != nil {
-		http.Error(w, "Failed to start workflow: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to start workflow: "+err.Error())
 		return
 	}
 
@@ -125,7 +125,7 @@ func (h *WorkflowHandler) Start(w http.ResponseWriter, r *http.Request) {
 		err = h.mappingRepo.SaveMapping(r.Context(), req.BusinessKey, key, req.BpmnProcessID, "ACTIVE")
 		if err != nil {
 			// Log error but proceed
-			http.Error(w, "Workflow started but failed to save mapping: "+err.Error(), http.StatusInternalServerError)
+			writeAPIError(w, r, http.StatusInternalServerError, "Workflow started but failed to save mapping: "+err.Error())
 			return
 		}
 	}
@@ -147,24 +147,24 @@ type MessageRequest struct {
 
 func (h *WorkflowHandler) PublishMessage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	var req MessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
 	if req.MessageName == "" || req.CorrelationKey == "" {
-		http.Error(w, "messageName and correlationKey are required", http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "messageName and correlationKey are required")
 		return
 	}
 
 	_, err := h.zeebeSvc.PublishMessage(r.Context(), req.MessageName, req.CorrelationKey, req.MessageID, req.Variables)
 	if err != nil {
-		http.Error(w, "Failed to publish message: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to publish message: "+err.Error())
 		return
 	}
 
@@ -176,26 +176,26 @@ func (h *WorkflowHandler) PublishMessage(w http.ResponseWriter, r *http.Request)
 
 func (h *WorkflowHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) < 2 {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid path")
 		return
 	}
 
 	instanceKeyStr := parts[len(parts)-2]
 	instanceKey, err := strconv.ParseInt(instanceKeyStr, 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid instance key: "+instanceKeyStr, http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid instance key: "+instanceKeyStr)
 		return
 	}
 
 	err = h.zeebeSvc.CancelWorkflow(r.Context(), instanceKey)
 	if err != nil {
-		http.Error(w, "Failed to cancel workflow: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to cancel workflow: "+err.Error())
 		return
 	}
 
@@ -208,25 +208,25 @@ func (h *WorkflowHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 
 func (h *WorkflowHandler) GetMapping(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) < 2 {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid path")
 		return
 	}
 
 	businessKey := parts[len(parts)-1]
 	mapping, err := h.mappingRepo.GetMapping(r.Context(), businessKey)
 	if err != nil {
-		http.Error(w, "Failed to query mapping: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query mapping: "+err.Error())
 		return
 	}
 
 	if mapping == nil {
-		http.Error(w, "Mapping not found", http.StatusNotFound)
+		writeAPIError(w, r, http.StatusNotFound, "Mapping not found")
 		return
 	}
 
@@ -239,20 +239,20 @@ func (h *WorkflowHandler) CaseTypes(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		caseTypes, err := h.caseRepo.ListCaseTypes(r.Context())
 		if err != nil {
-			http.Error(w, "Failed to query case types: "+err.Error(), http.StatusInternalServerError)
+			writeAPIError(w, r, http.StatusInternalServerError, "Failed to query case types: "+err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, caseTypes)
+		writeJSON(w, r, http.StatusOK, caseTypes)
 	case http.MethodPost:
 		var req repository.CaseTypeUpsert
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
 		item, err := h.caseRepo.CreateCaseType(r.Context(), req)
-		writeMutationOrError(w, item, err)
+		writeMutationOrError(w, r, item, err)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
@@ -263,53 +263,53 @@ func (h *WorkflowHandler) CaseTypeByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPut || (action != "" && action != "process-config") {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	if action == "process-config" {
 		var req repository.ProcessConfigUpdate
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
 		item, err := h.caseRepo.UpdateProcessConfig(r.Context(), caseType, req)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
 		if item == nil {
-			http.Error(w, "Case type not found", http.StatusNotFound)
+			writeAPIError(w, r, http.StatusNotFound, "Case type not found")
 			return
 		}
-		writeJSON(w, http.StatusOK, item)
+		writeJSON(w, r, http.StatusOK, item)
 		return
 	}
 
 	var req repository.CaseTypeUpsert
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 	item, err := h.caseRepo.UpdateCaseType(r.Context(), caseType, req)
-	writeUpdateOrError(w, item, err, "Case type not found")
+	writeUpdateOrError(w, r, item, err, "Case type not found")
 }
 
 func (h *WorkflowHandler) SLAPolicies(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListSLAPolicies(r.Context())
-		writeListOrError(w, "slaPolicies", items, err)
+		writeListOrError(w, r, "slaPolicies", items, err)
 	case http.MethodPost:
 		var req repository.SLAPolicy
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
 		item, err := h.caseRepo.CreateSLAPolicy(r.Context(), req)
-		writeMutationOrError(w, item, err)
+		writeMutationOrError(w, r, item, err)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
@@ -320,33 +320,33 @@ func (h *WorkflowHandler) SLAPolicyByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if r.Method != http.MethodPut {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var req repository.SLAPolicy
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 	item, err := h.caseRepo.UpdateSLAPolicy(r.Context(), id, req)
-	writeUpdateOrError(w, item, err, "SLA policy not found")
+	writeUpdateOrError(w, r, item, err, "SLA policy not found")
 }
 
 func (h *WorkflowHandler) DescriptionTemplates(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListDescriptionTemplates(r.Context())
-		writeListOrError(w, "descriptionTemplates", items, err)
+		writeListOrError(w, r, "descriptionTemplates", items, err)
 	case http.MethodPost:
 		var req repository.DescriptionTemplate
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
 		item, err := h.caseRepo.CreateDescriptionTemplate(r.Context(), req)
-		writeMutationOrError(w, item, err)
+		writeMutationOrError(w, r, item, err)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
@@ -357,33 +357,33 @@ func (h *WorkflowHandler) DescriptionTemplateByID(w http.ResponseWriter, r *http
 		return
 	}
 	if r.Method != http.MethodPut {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var req repository.DescriptionTemplate
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 	item, err := h.caseRepo.UpdateDescriptionTemplate(r.Context(), id, req)
-	writeUpdateOrError(w, item, err, "Description template not found")
+	writeUpdateOrError(w, r, item, err, "Description template not found")
 }
 
 func (h *WorkflowHandler) ProcessRoles(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListProcessRoles(r.Context())
-		writeListOrError(w, "processRoles", items, err)
+		writeListOrError(w, r, "processRoles", items, err)
 	case http.MethodPost:
 		var req repository.ProcessRole
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
 		item, err := h.caseRepo.CreateProcessRole(r.Context(), req)
-		writeMutationOrError(w, item, err)
+		writeMutationOrError(w, r, item, err)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
@@ -391,17 +391,17 @@ func (h *WorkflowHandler) ProcessDefinitions(w http.ResponseWriter, r *http.Requ
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.processDefinition.List(r.Context())
-		writeListOrError(w, "processDefinitions", items, err)
+		writeListOrError(w, r, "processDefinitions", items, err)
 	case http.MethodPost:
 		in, err := parseProcessDefinitionImport(r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
 		item, err := h.processDefinition.Create(r.Context(), in)
-		writeMutationOrError(w, item, err)
+		writeMutationOrError(w, r, item, err)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
@@ -416,22 +416,22 @@ func (h *WorkflowHandler) ProcessDefinitionByID(w http.ResponseWriter, r *http.R
 	case r.Method == http.MethodPut && action == "":
 		in, err := parseProcessDefinitionImport(r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
 		item, err := h.processDefinition.Update(r.Context(), id, in)
-		writeUpdateOrError(w, item, err, "Process definition not found")
+		writeUpdateOrError(w, r, item, err, "Process definition not found")
 	case r.Method == http.MethodDelete && action == "":
 		deleted, err := h.processDefinition.Delete(r.Context(), id)
-		writeDeleteOrError(w, deleted, err, "Process definition not found")
+		writeDeleteOrError(w, r, deleted, err, "Process definition not found")
 	case r.Method == http.MethodGet && action == "xml":
 		item, err := h.processDefinition.Get(r.Context(), id)
 		if err != nil {
-			http.Error(w, "Failed to query process definition: "+err.Error(), http.StatusInternalServerError)
+			writeAPIError(w, r, http.StatusInternalServerError, "Failed to query process definition: "+err.Error())
 			return
 		}
 		if item == nil {
-			http.Error(w, "Process definition not found", http.StatusNotFound)
+			writeAPIError(w, r, http.StatusNotFound, "Process definition not found")
 			return
 		}
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -446,26 +446,26 @@ func (h *WorkflowHandler) ProcessDefinitionByID(w http.ResponseWriter, r *http.R
 
 func (h *WorkflowHandler) deployProcessDefinition(w http.ResponseWriter, r *http.Request, id string) {
 	if h.zeebeSvc == nil {
-		http.Error(w, "Zeebe service is not configured", http.StatusServiceUnavailable)
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
 	}
 	item, err := h.processDefinition.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Failed to query process definition: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query process definition: "+err.Error())
 		return
 	}
 	if item == nil {
-		http.Error(w, "Process definition not found", http.StatusNotFound)
+		writeAPIError(w, r, http.StatusNotFound, "Process definition not found")
 		return
 	}
 
 	key, err := h.zeebeSvc.DeployWorkflow(r.Context(), item.ResourceName, []byte(item.XMLContent))
 	if err != nil {
-		writeDeployError(w, err)
+		writeDeployError(w, r, err)
 		return
 	}
 	deployed, err := h.processDefinition.MarkDeployed(r.Context(), id, key)
-	writeUpdateOrError(w, deployed, err, "Process definition not found")
+	writeUpdateOrError(w, r, deployed, err, "Process definition not found")
 }
 
 func (h *WorkflowHandler) ProcessRoleByID(w http.ResponseWriter, r *http.Request) {
@@ -475,33 +475,33 @@ func (h *WorkflowHandler) ProcessRoleByID(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if r.Method != http.MethodPut {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var req repository.ProcessRole
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 	item, err := h.caseRepo.UpdateProcessRole(r.Context(), id, req)
-	writeUpdateOrError(w, item, err, "Process role not found")
+	writeUpdateOrError(w, r, item, err, "Process role not found")
 }
 
 func (h *WorkflowHandler) RoleCatalog(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListWorkflowRoleCatalog(r.Context())
-		writeListOrError(w, "roleCatalog", items, err)
+		writeListOrError(w, r, "roleCatalog", items, err)
 	case http.MethodPost:
 		var req repository.WorkflowRoleCatalog
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
 		item, err := h.caseRepo.CreateWorkflowRoleCatalog(r.Context(), req)
-		writeMutationOrError(w, item, err)
+		writeMutationOrError(w, r, item, err)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
@@ -512,33 +512,33 @@ func (h *WorkflowHandler) RoleCatalogByCode(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if r.Method != http.MethodPut {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var req repository.WorkflowRoleCatalog
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 	item, err := h.caseRepo.UpdateWorkflowRoleCatalog(r.Context(), roleCode, req)
-	writeUpdateOrError(w, item, err, "Workflow role not found")
+	writeUpdateOrError(w, r, item, err, "Workflow role not found")
 }
 
 func (h *WorkflowHandler) RoleMemberships(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListWorkflowRoleMemberships(r.Context())
-		writeListOrError(w, "roleMemberships", items, err)
+		writeListOrError(w, r, "roleMemberships", items, err)
 	case http.MethodPost:
 		var req repository.WorkflowRoleMembership
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
 		item, err := h.caseRepo.CreateWorkflowRoleMembership(r.Context(), req)
-		writeMutationOrError(w, item, err)
+		writeMutationOrError(w, r, item, err)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
@@ -549,33 +549,33 @@ func (h *WorkflowHandler) RoleMembershipByID(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if r.Method != http.MethodPut {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var req repository.WorkflowRoleMembership
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 	item, err := h.caseRepo.UpdateWorkflowRoleMembership(r.Context(), id, req)
-	writeUpdateOrError(w, item, err, "Workflow role membership not found")
+	writeUpdateOrError(w, r, item, err, "Workflow role membership not found")
 }
 
 func (h *WorkflowHandler) AssignmentRules(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListWorkflowAssignmentRules(r.Context())
-		writeListOrError(w, "assignmentRules", items, err)
+		writeListOrError(w, r, "assignmentRules", items, err)
 	case http.MethodPost:
 		var req repository.WorkflowAssignmentRule
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
 		item, err := h.caseRepo.CreateWorkflowAssignmentRule(r.Context(), req)
-		writeMutationOrError(w, item, err)
+		writeMutationOrError(w, r, item, err)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
@@ -586,33 +586,33 @@ func (h *WorkflowHandler) AssignmentRuleByID(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if r.Method != http.MethodPut {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var req repository.WorkflowAssignmentRule
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 	item, err := h.caseRepo.UpdateWorkflowAssignmentRule(r.Context(), id, req)
-	writeUpdateOrError(w, item, err, "Workflow assignment rule not found")
+	writeUpdateOrError(w, r, item, err, "Workflow assignment rule not found")
 }
 
 func (h *WorkflowHandler) Delegations(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		items, err := h.caseRepo.ListWorkflowDelegations(r.Context())
-		writeListOrError(w, "delegations", items, err)
+		writeListOrError(w, r, "delegations", items, err)
 	case http.MethodPost:
 		var req repository.WorkflowDelegation
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
 		item, err := h.caseRepo.CreateWorkflowDelegation(r.Context(), req)
-		writeMutationOrError(w, item, err)
+		writeMutationOrError(w, r, item, err)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
@@ -623,38 +623,38 @@ func (h *WorkflowHandler) DelegationByID(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if r.Method != http.MethodPut {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var req repository.WorkflowDelegation
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 	item, err := h.caseRepo.UpdateWorkflowDelegation(r.Context(), id, req)
-	writeUpdateOrError(w, item, err, "Workflow delegation not found")
+	writeUpdateOrError(w, r, item, err, "Workflow delegation not found")
 }
 
 func (h *WorkflowHandler) HealthReady(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	payload := map[string]any{"status": "ready"}
 	if h.zeebeSvc == nil {
 		payload["zeebe"] = "not_configured"
-		writeJSON(w, http.StatusServiceUnavailable, payload)
+		writeJSON(w, r, http.StatusServiceUnavailable, payload)
 		return
 	}
 	if err := h.zeebeSvc.HealthCheck(r.Context()); err != nil {
 		payload["status"] = "degraded"
 		payload["zeebe"] = "unreachable"
 		payload["zeebeError"] = err.Error()
-		writeJSON(w, http.StatusServiceUnavailable, payload)
+		writeJSON(w, r, http.StatusServiceUnavailable, payload)
 		return
 	}
 	payload["zeebe"] = "ok"
-	writeJSON(w, http.StatusOK, payload)
+	writeJSON(w, r, http.StatusOK, payload)
 }
 
 func (h *WorkflowHandler) Cases(w http.ResponseWriter, r *http.Request) {
@@ -664,48 +664,48 @@ func (h *WorkflowHandler) Cases(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.createCase(w, r)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
 func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	if err := h.seedWorkItems(r.Context(), r.URL.Query().Get("direction")); err != nil {
-		http.Error(w, "Failed to prepare work items: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to prepare work items: "+err.Error())
 		return
 	}
 	items, err := h.caseRepo.ListWorkItems(r.Context(), workItemFilter(r))
 	if err != nil {
-		http.Error(w, "Failed to query work items: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work items: "+err.Error())
 		return
 	}
 	if err := h.applyWorkItemPermissions(r.Context(), r, items); err != nil {
-		http.Error(w, "Failed to resolve task permissions: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve task permissions: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	if err := h.seedWorkItems(r.Context(), r.URL.Query().Get("direction")); err != nil {
-		http.Error(w, "Failed to prepare work items: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to prepare work items: "+err.Error())
 		return
 	}
 	filter := workItemFilter(r)
 	filter.Limit = 200
 	items, err := h.caseRepo.ListWorkItems(r.Context(), filter)
 	if err != nil {
-		http.Error(w, "Failed to query work item summary: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work item summary: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"nodes": workItemSummary(items, currentUserID(r))})
+	writeJSON(w, r, http.StatusOK, map[string]any{"nodes": workItemSummary(items, currentUserID(r))})
 }
 
 func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
@@ -715,30 +715,30 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	userID := currentUserID(r)
 	if userID == "" {
-		http.Error(w, "missing X-User-Id", http.StatusUnauthorized)
+		writeAPIError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	item, err := h.caseRepo.GetWorkItem(r.Context(), id, userID)
 	if err != nil {
-		http.Error(w, "Failed to query work item: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work item: "+err.Error())
 		return
 	}
 	if item == nil {
-		http.Error(w, "Work item not found", http.StatusNotFound)
+		writeAPIError(w, r, http.StatusNotFound, "Work item not found")
 		return
 	}
 	ok, err := h.canClaimCandidateRole(r.Context(), r, item.CandidateRole)
 	if err != nil {
-		http.Error(w, "Failed to resolve claim permission: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve claim permission: "+err.Error())
 		return
 	}
 	if !ok && item.AssignedTo != userID {
-		http.Error(w, "User is not in candidate role/group for this task", http.StatusForbidden)
+		writeAPIError(w, r, http.StatusForbidden, "User is not in candidate role/group for this task")
 		return
 	}
 	if item.JobKey == nil && h.zeebeSvc != nil {
@@ -817,43 +817,43 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 	}
 	claimed, err := h.caseRepo.ClaimWorkItem(r.Context(), id, userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		writeAPIError(w, r, http.StatusConflict, err.Error())
 		return
 	}
 	if claimed == nil {
-		http.Error(w, "Work item not found", http.StatusNotFound)
+		writeAPIError(w, r, http.StatusNotFound, "Work item not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"workItem": claimed, "claimedBy": userID, "claimedAt": time.Now()})
+	writeJSON(w, r, http.StatusOK, map[string]any{"workItem": claimed, "claimedBy": userID, "claimedAt": time.Now()})
 }
 
 func (h *WorkflowHandler) Tasks(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	role := r.URL.Query().Get("role")
 	jobType := taskTypeForRequest(role, r.URL.Query().Get("task_type"))
 	if jobType == "" {
-		http.Error(w, "Unsupported task role or task_type", http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Unsupported task role or task_type")
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	tasks, err := h.listTaskCandidates(r.Context(), role, jobType, limit)
 	if err != nil {
-		http.Error(w, "Failed to query task candidates: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query task candidates: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": tasks})
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": tasks})
 }
 
 func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	if h.zeebeSvc == nil {
-		http.Error(w, "Zeebe service is not configured", http.StatusServiceUnavailable)
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
 	}
 	var req struct {
@@ -864,12 +864,12 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		ElementID          string    `json:"elementId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 	jobType := taskTypeForRequest(req.Role, req.TaskType)
 	if jobType == "" && req.ProcessInstanceKey.Int64() == 0 && strings.TrimSpace(req.CaseID) == "" {
-		http.Error(w, "Unsupported task role or taskType", http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Unsupported task role or taskType")
 		return
 	}
 	filter := service.TaskClaimFilter{
@@ -894,7 +894,7 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 			"processInstanceKey", filter.ProcessInstanceKey,
 			"err", err,
 		)
-		http.Error(w, "Failed to resolve work task: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve work task: "+err.Error())
 		return
 	} else if task != nil {
 		slog.Info("workflow task claim served from cache",
@@ -904,7 +904,7 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 			"processInstanceKey", task.ProcessInstanceKey,
 			"stepCode", task.ElementID,
 		)
-		writeJSON(w, http.StatusOK, task)
+		writeJSON(w, r, http.StatusOK, task)
 		return
 	}
 
@@ -927,7 +927,7 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 			"duration_ms", time.Since(startedAt).Milliseconds(),
 			"err", err,
 		)
-		writeJSON(w, status, map[string]any{
+		writeJSON(w, r, status, map[string]any{
 			"error": claimUnavailableMessage(r.Context(), h.caseRepo, h.userTaskBroker, filter, jobType, err),
 		})
 		return
@@ -943,11 +943,11 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		"duration_ms", time.Since(startedAt).Milliseconds(),
 	)
 	if err := h.caseRepo.MarkCaseAtStep(r.Context(), task.ProcessInstanceKey, task.ElementID, task.CandidateRole); err != nil {
-		http.Error(w, "Failed to update task step: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to update task step: "+err.Error())
 		return
 	}
 	h.persistInboxClaim(r.Context(), *task)
-	writeJSON(w, http.StatusOK, task)
+	writeJSON(w, r, http.StatusOK, task)
 }
 
 func workItemToWorkflowTask(item repository.WorkItem) service.WorkflowTask {
@@ -1162,11 +1162,11 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	if h.zeebeSvc == nil {
-		http.Error(w, "Zeebe service is not configured", http.StatusServiceUnavailable)
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
 	}
 	var req struct {
@@ -1175,7 +1175,7 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		Variables          map[string]any   `json:"variables"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 	actor := strings.TrimSpace(r.Header.Get("X-User-Id"))
@@ -1190,7 +1190,7 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 			"elementId", req.ElementID,
 			"err", err,
 		)
-		http.Error(w, err.Error(), http.StatusForbidden)
+		writeAPIError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
 	slog.Info("workflow task complete requested",
@@ -1214,15 +1214,15 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 			"elementId", req.ElementID,
 			"err", err,
 		)
-		http.Error(w, "Failed to complete task: "+err.Error(), http.StatusBadGateway)
+		writeAPIError(w, r, http.StatusBadGateway, "Failed to complete task: "+err.Error())
 		return
 	}
 	if err := h.caseRepo.CompleteWorkItemByJob(r.Context(), jobKey); err != nil {
-		http.Error(w, "Failed to update work item: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to update work item: "+err.Error())
 		return
 	}
 	if err := h.caseRepo.MarkCaseStepCompleted(r.Context(), req.ProcessInstanceKey.Int64(), req.ElementID); err != nil {
-		http.Error(w, "Failed to update completed task step: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to update completed task step: "+err.Error())
 		return
 	}
 	slog.Info("workflow task complete succeeded",
@@ -1231,7 +1231,7 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		"processInstanceKey", req.ProcessInstanceKey.Int64(),
 		"elementId", req.ElementID,
 	)
-	writeJSON(w, http.StatusOK, map[string]any{"status": "completed"})
+	writeJSON(w, r, http.StatusOK, map[string]any{"status": "completed"})
 }
 
 func (h *WorkflowHandler) ProcessInstanceByKey(w http.ResponseWriter, r *http.Request) {
@@ -1246,7 +1246,7 @@ func (h *WorkflowHandler) ProcessInstanceByKey(w http.ResponseWriter, r *http.Re
 	case r.Method == http.MethodPost && action == "retry-service-jobs":
 		processInstanceKey, err := strconv.ParseInt(strings.TrimSpace(keyText), 10, 64)
 		if err != nil || processInstanceKey <= 0 {
-			http.Error(w, "Invalid process instance key", http.StatusBadRequest)
+			writeAPIError(w, r, http.StatusBadRequest, "Invalid process instance key")
 			return
 		}
 		h.retryProcessServiceJobs(w, r, processInstanceKey)
@@ -1272,11 +1272,11 @@ func (h *WorkflowHandler) JobByKey(w http.ResponseWriter, r *http.Request) {
 func (h *WorkflowHandler) processInstanceRuntime(w http.ResponseWriter, r *http.Request, keyText string) {
 	processInstanceKey, err := strconv.ParseInt(strings.TrimSpace(keyText), 10, 64)
 	if err != nil || processInstanceKey <= 0 {
-		http.Error(w, "Invalid process instance key", http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid process instance key")
 		return
 	}
 	if h.zeebeSvc == nil {
-		http.Error(w, "Zeebe service is not configured", http.StatusServiceUnavailable)
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
 	}
 
@@ -1294,14 +1294,14 @@ func (h *WorkflowHandler) processInstanceRuntime(w http.ResponseWriter, r *http.
 
 	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(runtimeCtx, processInstanceKey)
 	if err != nil {
-		http.Error(w, "Failed to query case: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query case: "+err.Error())
 		return
 	}
 
 	var activeWorkTask any
 	if bc != nil {
 		if pending, err := h.caseRepo.FindActiveWorkTask(runtimeCtx, bc.ID, processInstanceKey); err != nil {
-			http.Error(w, "Failed to query work task: "+err.Error(), http.StatusInternalServerError)
+			writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work task: "+err.Error())
 			return
 		} else if pending != nil {
 			activeWorkTask = pending
@@ -1353,7 +1353,7 @@ func (h *WorkflowHandler) processInstanceRuntime(w http.ResponseWriter, r *http.
 	}
 	activeElementID := activeElementID(bc, pendingJobs, incidents)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, r, http.StatusOK, map[string]any{
 		"processInstanceKey": strconv.FormatInt(processInstanceKey, 10),
 		"zeebeStatus":        zeebeStatus,
 		"activeElementId":    activeElementID,
@@ -1443,47 +1443,47 @@ func (h *WorkflowHandler) listCases(w http.ResponseWriter, r *http.Request) {
 		Limit:         limit,
 	})
 	if err != nil {
-		http.Error(w, "Failed to query cases: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query cases: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, cases)
+	writeJSON(w, r, http.StatusOK, cases)
 }
 
 func (h *WorkflowHandler) createCase(w http.ResponseWriter, r *http.Request) {
 	var req repository.CaseCreate
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
 	bc, err := h.workflowCmd.CreateCase(r.Context(), req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, bc)
+	writeJSON(w, r, http.StatusCreated, bc)
 }
 
 func (h *WorkflowHandler) getCase(w http.ResponseWriter, r *http.Request, id string) {
 	bc, err := h.caseRepo.GetCase(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Failed to query case: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query case: "+err.Error())
 		return
 	}
 	if bc == nil {
-		http.Error(w, "Case not found", http.StatusNotFound)
+		writeAPIError(w, r, http.StatusNotFound, "Case not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, bc)
+	writeJSON(w, r, http.StatusOK, bc)
 }
 
 func (h *WorkflowHandler) caseTimeline(w http.ResponseWriter, r *http.Request, id string) {
 	events, err := h.caseRepo.ListTimeline(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Failed to query timeline: "+err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query timeline: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, events)
+	writeJSON(w, r, http.StatusOK, events)
 }
 
 type caseActorRequest struct {
@@ -1494,7 +1494,7 @@ type caseActorRequest struct {
 func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id string) {
 	var req caseActorRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -1504,32 +1504,32 @@ func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id 
 	})
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			http.Error(w, "Case not found", http.StatusNotFound)
+			writeAPIError(w, r, http.StatusNotFound, "Case not found")
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, r, http.StatusOK, updated)
 }
 
 func (h *WorkflowHandler) claimCase(w http.ResponseWriter, r *http.Request, id string) {
 	var req caseActorRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
 	bc, err := h.caseRepo.ClaimCase(r.Context(), id, req.Actor)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if bc == nil {
-		http.Error(w, "Case not found", http.StatusNotFound)
+		writeAPIError(w, r, http.StatusNotFound, "Case not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, bc)
+	writeJSON(w, r, http.StatusOK, bc)
 }
 
 func processInstancePath(path string) (string, string) {
@@ -1933,34 +1933,6 @@ func taskLabelForType(taskType string) string {
 	}
 }
 
-func writeListOrError(w http.ResponseWriter, key string, items any, err error) {
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{key: items})
-}
-
-func writeMutationOrError(w http.ResponseWriter, item any, err error) {
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, http.StatusCreated, item)
-}
-
-func writeUpdateOrError(w http.ResponseWriter, item any, err error, notFound string) {
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if item == nil {
-		http.Error(w, notFound, http.StatusNotFound)
-		return
-	}
-	writeJSON(w, http.StatusOK, item)
-}
-
 var checkerTaskSteps = map[string]struct{}{
 	"Activity_CheckerReview": {},
 	"Activity_RiskReview":    {},
@@ -1990,28 +1962,53 @@ func makerCheckerSODRelaxed() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("WORKFLOW_RELAX_MAKER_CHECKER_SOD")), "true")
 }
 
-func writeDeleteOrError(w http.ResponseWriter, deleted bool, err error, notFound string) {
+func writeListOrError(w http.ResponseWriter, r *http.Request, key string, items any, err error) {
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{
+		"items": items,
+		key:     items,
+	})
+}
+
+func writeMutationOrError(w http.ResponseWriter, r *http.Request, item any, err error) {
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, item)
+}
+
+func writeUpdateOrError(w http.ResponseWriter, r *http.Request, item any, err error, notFound string) {
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	if item == nil {
+		writeAPIError(w, r, http.StatusNotFound, notFound)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, item)
+}
+
+func writeDeleteOrError(w http.ResponseWriter, r *http.Request, deleted bool, err error, notFound string) {
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !deleted {
-		http.Error(w, notFound, http.StatusNotFound)
+		writeAPIError(w, r, http.StatusNotFound, notFound)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeDeployError(w http.ResponseWriter, err error) {
+func writeDeployError(w http.ResponseWriter, r *http.Request, err error) {
 	statusCode := http.StatusInternalServerError
 	if status.Code(err) == codes.InvalidArgument {
 		statusCode = http.StatusBadRequest
 	}
-	http.Error(w, "Failed to deploy: "+err.Error(), statusCode)
+	writeAPIError(w, r, statusCode, "Failed to deploy: "+err.Error())
 }

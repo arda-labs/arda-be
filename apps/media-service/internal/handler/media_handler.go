@@ -27,28 +27,28 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(contentType, "application/json") {
 		var req domain.InitUploadRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
+			writeError(w, r, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
 			return
 		}
 		applyRequestContext(r, &req)
 
 		resp, err := h.service.InitUpload(r.Context(), req)
 		if err != nil {
-			writeServiceError(w, err)
+			writeServiceError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusCreated, resp)
+		writeJSON(w, r, http.StatusCreated, resp)
 		return
 	}
 
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, "media.upload.invalid_form", "Failed to parse multipart form")
+		writeError(w, r, http.StatusBadRequest, "media.upload.invalid_form", "Failed to parse multipart form")
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "media.upload.missing_file", "File is required")
+		writeError(w, r, http.StatusBadRequest, "media.upload.missing_file", "File is required")
 		return
 	}
 	defer file.Close()
@@ -65,11 +65,11 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.service.UploadFile(r.Context(), req, file)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(w, r, err)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	writeJSON(w, r, http.StatusCreated, map[string]any{
 		"public_id":  resp.PublicID,
 		"file_name":  resp.OriginalFilename,
 		"mime_type":  resp.ContentType,
@@ -99,14 +99,14 @@ func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request, publicID s
 	if err != nil {
 		fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s media_id=%s action=delete ip=%s ua=%s result=failed error=%v\n",
 			userID, tenantID, orgID, publicID, ip, userAgent, err)
-		writeServiceError(w, err)
+		writeServiceError(w, r, err)
 		return
 	}
 
 	fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s media_id=%s action=delete ip=%s ua=%s result=success\n",
 		userID, tenantID, orgID, publicID, ip, userAgent)
 
-	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
+	writeJSON(w, r, http.StatusOK, map[string]any{"status": "deleted"})
 }
 
 func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, publicID string, download bool) {
@@ -114,7 +114,7 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 	ctx := r.Context()
 	file, err := h.service.GetFileByPublicID(ctx, publicID)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(w, r, err)
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 		userID, tenantID, orgID, file.ID, action, ip, userAgent)
 
 	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded && file.Status != domain.StatusTemp && file.Status != domain.StatusAttached {
-		writeError(w, http.StatusConflict, "media.file.not_ready", "File is not ready")
+		writeError(w, r, http.StatusConflict, "media.file.not_ready", "File is not ready")
 		return
 	}
 
@@ -141,7 +141,7 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 		stream, err := h.service.GetObjectStream(ctx, file)
 		if err != nil {
 			slog.Error("failed to get stream", "err", err)
-			writeError(w, http.StatusInternalServerError, "media.stream.failed", "Failed to stream file")
+			writeError(w, r, http.StatusInternalServerError, "media.stream.failed", "Failed to stream file")
 			return
 		}
 		defer stream.Close()
@@ -167,7 +167,7 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 	} else {
 		redirectURL, err := h.service.GetContentRedirectURLByPublicID(ctx, publicID, download)
 		if err != nil {
-			writeServiceError(w, err)
+			writeServiceError(w, r, err)
 			return
 		}
 		w.Header().Set("Cache-Control", "private, max-age=30")
@@ -179,7 +179,7 @@ func (h *MediaHandler) Attach(w http.ResponseWriter, r *http.Request) {
 	slog.Info("incoming attach request", "method", r.Method)
 	var req domain.AttachRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
+		writeError(w, r, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
 		return
 	}
 
@@ -193,11 +193,11 @@ func (h *MediaHandler) Attach(w http.ResponseWriter, r *http.Request) {
 
 	err := h.service.AttachFiles(r.Context(), req.PublicIDs, tenantID, orgID, userID, req.OwnerType, req.OwnerID)
 	if err != nil {
-		writeServiceError(w, err)
+		writeServiceError(w, r, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"status": "attached"})
+	writeJSON(w, r, http.StatusOK, map[string]any{"status": "attached"})
 }
 
 func applyRequestContext(r *http.Request, req *domain.InitUploadRequest) {
@@ -224,32 +224,16 @@ func firstHeader(r *http.Request, names ...string) string {
 	return ""
 }
 
-func writeServiceError(w http.ResponseWriter, err error) {
+func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	slog.Error("media service error", "err", err)
 	switch {
 	case errors.Is(err, service.ErrInvalidInput):
-		writeError(w, http.StatusBadRequest, "validation.invalid_input", err.Error())
+		writeError(w, r, http.StatusBadRequest, "validation.invalid_input", err.Error())
 	case errors.Is(err, service.ErrNotFound):
-		writeError(w, http.StatusNotFound, "media.file.not_found", "Media file not found")
+		writeError(w, r, http.StatusNotFound, "media.file.not_found", "Media file not found")
 	case errors.Is(err, service.ErrNotReady):
-		writeError(w, http.StatusConflict, "media.file.not_ready", "Media file is not ready")
+		writeError(w, r, http.StatusConflict, "media.file.not_ready", "Media file is not ready")
 	default:
-		writeError(w, http.StatusInternalServerError, "common.error.internal", "Internal server error")
+		writeError(w, r, http.StatusInternalServerError, "common.error.internal", "Internal server error")
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	slog.Warn("returning client error", "status", status, "code", code, "message", message)
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
-	})
 }

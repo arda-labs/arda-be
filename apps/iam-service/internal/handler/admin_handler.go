@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/audit"
@@ -60,31 +59,25 @@ type userListItem struct {
 }
 
 type userListResponse struct {
+	Items      []userListItem `json:"items"`
 	Users      []userListItem `json:"users"`
 	Total      int            `json:"total"`
 	Page       int            `json:"page"`
+	PerPage    int            `json:"per_page"`
 	Size       int            `json:"size"`
 	TotalPages int            `json:"totalPages"`
 }
 
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
-	if size < 1 || size > 100 {
-		size = 10
-	}
+	page, perPage, search := parseAdminListQuery(r)
 	status := r.URL.Query().Get("status")
-	search := r.URL.Query().Get("search")
 	tenantID := r.URL.Query().Get("tenantId")
-	sortField := r.URL.Query().Get("sortField")
-	sortOrder := r.URL.Query().Get("sortOrder")
+	sortField := firstNonEmpty(r.URL.Query().Get("sort"), r.URL.Query().Get("sortField"))
+	sortOrder := firstNonEmpty(r.URL.Query().Get("order"), r.URL.Query().Get("sortOrder"))
 
 	users, total, err := h.userSvc.ListUsers(r.Context(), repository.ListUsersParams{
 		Page:      page,
-		Size:      size,
+		Size:      perPage,
 		Status:    status,
 		Search:    search,
 		TenantID:  tenantID,
@@ -93,11 +86,14 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		h.logger.Error("list users", "err", err)
-		respondError(w, http.StatusInternalServerError, "list users failed")
+		respondRequestError(w, r, http.StatusInternalServerError, ardaerrors.CodeInternal, "list users failed")
 		return
 	}
 
-	totalPages := (total + size - 1) / size
+	totalPages := 0
+	if perPage > 0 {
+		totalPages = (total + perPage - 1) / perPage
+	}
 	items := make([]userListItem, 0, len(users))
 	for _, u := range users {
 		items = append(items, userListItem{
@@ -110,9 +106,9 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondJSON(w, http.StatusOK, userListResponse{
-		Users: items, Total: total, Page: page,
-		Size: size, TotalPages: totalPages,
+	respondJSONWithRequest(w, r, http.StatusOK, userListResponse{
+		Items: items, Users: items, Total: total, Page: page,
+		PerPage: perPage, Size: perPage, TotalPages: totalPages,
 	})
 }
 
@@ -508,28 +504,18 @@ func (h *AdminHandler) ListUserGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
-	if size < 1 || size > 100 {
-		size = 10
-	}
+	page, perPage, search := parseAdminListQuery(r)
 	groups, total, err := h.groupRepo.List(r.Context(), repository.ListGroupsParams{
-		Page: page, Size: size,
+		Page: page, Size: perPage,
 		TenantID: r.URL.Query().Get("tenantId"),
 		Status:   r.URL.Query().Get("status"),
-		Search:   r.URL.Query().Get("search"),
+		Search:   search,
 	})
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	totalPages := (total + size - 1) / size
-	respondJSON(w, http.StatusOK, map[string]any{
-		"groups": groups, "total": total, "page": page, "size": size, "totalPages": totalPages,
-	})
+	respondAdminList(w, r, "groups", groups, total, page, perPage)
 }
 
 func (h *AdminHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
@@ -683,7 +669,10 @@ func (h *AdminHandler) ListGroupMembers(w http.ResponseWriter, r *http.Request) 
 			CreatedAt:        u.CreatedAt.Format(time.RFC3339),
 		})
 	}
-	respondJSON(w, http.StatusOK, map[string]any{"members": items})
+	respondJSONWithRequest(w, r, http.StatusOK, map[string]any{
+		"items":   items,
+		"members": items,
+	})
 }
 
 func (h *AdminHandler) AddGroupMember(w http.ResponseWriter, r *http.Request) {
@@ -802,29 +791,17 @@ func (h *AdminHandler) UnassignGroupRole(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
-	if size < 1 || size > 100 {
-		size = 10
-	}
+	page, perPage, search := parseAdminListQuery(r)
 	tenantID := r.URL.Query().Get("tenantId")
-	search := r.URL.Query().Get("search")
 
 	roles, total, err := h.roleRepo.List(r.Context(), repository.ListRolesParams{
-		Page: page, Size: size, TenantID: tenantID, Search: search,
+		Page: page, Size: perPage, TenantID: tenantID, Search: search,
 	})
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	totalPages := (total + size - 1) / size
-	respondJSON(w, http.StatusOK, map[string]any{
-		"roles": roles, "total": total, "page": page, "size": size, "totalPages": totalPages,
-	})
+	respondAdminList(w, r, "roles", roles, total, page, perPage)
 }
 
 func (h *AdminHandler) GetRole(w http.ResponseWriter, r *http.Request) {
@@ -993,28 +970,17 @@ func (h *AdminHandler) ListRolePermissions(w http.ResponseWriter, r *http.Reques
 // ── Permission CRUD ──
 
 func (h *AdminHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
-	if size < 1 || size > 100 {
-		size = 10
-	}
+	page, perPage, _ := parseAdminListQuery(r)
 	mod := r.URL.Query().Get("module")
 
 	perms, total, err := h.roleRepo.ListPermissions(r.Context(), repository.ListPermissionsParams{
-		Page: page, Size: size, Module: mod,
+		Page: page, Size: perPage, Module: mod,
 	})
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	totalPages := (total + size - 1) / size
-	respondJSON(w, http.StatusOK, map[string]any{
-		"permissions": perms, "total": total, "page": page, "size": size, "totalPages": totalPages,
-	})
+	respondAdminList(w, r, "permissions", perms, total, page, perPage)
 }
 
 func (h *AdminHandler) CreatePermission(w http.ResponseWriter, r *http.Request) {

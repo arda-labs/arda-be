@@ -23,6 +23,7 @@ import (
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/policy"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/session"
 	"github.com/arda-labs/arda/libs/go/arda-auth/permission"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 const (
@@ -1366,6 +1367,8 @@ func (h *BFFHandler) refreshSessionAuthTime(w http.ResponseWriter, ctx context.C
 func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	slowLogEnabled, slowLogThreshold := h.slowLogSettings()
+	requestID := ardahttp.RequestID(r)
+	r.Header.Set(ardahttp.HeaderRequestID, requestID)
 	baseURL := h.upstreamBaseURL(r.URL.Path)
 	target := baseURL + r.URL.Path
 	if r.URL.RawQuery != "" {
@@ -1381,6 +1384,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			proxyReq.Header.Add(k, v)
 		}
 	}
+	proxyReq.Header.Set(ardahttp.HeaderRequestID, requestID)
 	stripAuthContextHeaders(proxyReq.Header)
 	var match *policy.MatchResult
 	if h.policy != nil {
@@ -1487,6 +1491,9 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		for _, v := range vs {
 			w.Header().Add(k, v)
 		}
+	}
+	if w.Header().Get(ardahttp.HeaderRequestID) == "" {
+		ardahttp.SetCorrelationHeaders(w, requestID)
 	}
 	w.WriteHeader(resp.StatusCode)
 	if isEventStreamRequest(r) {

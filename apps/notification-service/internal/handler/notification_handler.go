@@ -22,17 +22,17 @@ func NewNotificationHandler(svc *service.NotificationService) *NotificationHandl
 func (h *NotificationHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var in service.AcceptInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		writeError(w, r, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
 	n, err := h.svc.Accept(r.Context(), in)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	writeJSON(w, r, http.StatusAccepted, map[string]any{
 		"notification_id": n.PublicID,
 		"status":          n.Status,
 	})
@@ -42,15 +42,15 @@ func (h *NotificationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	n, err := h.svc.GetByPublicID(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if n == nil {
-		writeError(w, http.StatusNotFound, "notification not found")
+		writeError(w, r, http.StatusNotFound, "notification not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, r, http.StatusOK, map[string]any{
 		"notification_id": n.PublicID,
 		"tenant_id":       n.TenantID,
 		"template_key":    n.TemplateKey,
@@ -65,54 +65,57 @@ func (h *NotificationHandler) ListInbox(w http.ResponseWriter, r *http.Request) 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	items, err := h.svc.ListInbox(r.Context(), tenantID, userID, limit)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeError(w, r, http.StatusUnauthorized, err.Error())
 		return
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		out = append(out, inboxItemJSON(item))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"notifications": out})
+	writeJSON(w, r, http.StatusOK, map[string]any{
+		"items":         out,
+		"notifications": out,
+	})
 }
 
 func (h *NotificationHandler) UnreadCount(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID := requestUser(r)
 	count, err := h.svc.UnreadCount(r.Context(), tenantID, userID)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeError(w, r, http.StatusUnauthorized, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"count": count})
+	writeJSON(w, r, http.StatusOK, map[string]any{"count": count})
 }
 
 func (h *NotificationHandler) MarkRead(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID := requestUser(r)
 	if err := h.svc.MarkRead(r.Context(), tenantID, userID, r.PathValue("id")); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *NotificationHandler) MarkAllRead(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID := requestUser(r)
 	if err := h.svc.MarkAllRead(r.Context(), tenantID, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID := requestUser(r)
 	count, err := h.svc.UnreadCount(r.Context(), tenantID, userID)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeError(w, r, http.StatusUnauthorized, err.Error())
 		return
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming is not supported")
+		writeError(w, r, http.StatusInternalServerError, "streaming is not supported")
 		return
 	}
 
@@ -135,16 +138,6 @@ func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
 }
 
 func writeSSE(w http.ResponseWriter, event string, v any) {

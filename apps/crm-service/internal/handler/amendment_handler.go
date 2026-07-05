@@ -8,6 +8,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/crm-service/internal/repository"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 )
 
 type AmendmentHandler struct {
@@ -79,119 +80,119 @@ func (h *AmendmentHandler) CustomerAmendmentByID(w http.ResponseWriter, r *http.
 func (h *AmendmentHandler) startAdjustment(w http.ResponseWriter, r *http.Request, customerID string) {
 	customer, err := h.customerInScope(r, customerID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		writeError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
 	if customer.Status != "ACTIVE" {
-		http.Error(w, "Customer must be ACTIVE to start adjustment", http.StatusConflict)
+		writeErrorCode(w, r, http.StatusConflict, ardaerrors.CodeConflict, "customer must be ACTIVE to start adjustment")
 		return
 	}
 	pending, err := h.amendmentRepo.HasPending(r.Context(), customerID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, err)
 		return
 	}
 	if pending {
-		http.Error(w, "Customer already has a pending amendment", http.StatusConflict)
+		writeErrorCode(w, r, http.StatusConflict, ardaerrors.CodeConflict, "customer already has a pending amendment")
 		return
 	}
 
 	caseID, err := h.createAdjustmentCase(r, customer)
 	if err != nil {
-		http.Error(w, "Failed to create workflow case: "+err.Error(), http.StatusBadGateway)
+		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to create workflow case: "+err.Error())
 		return
 	}
 	amendment, err := h.amendmentRepo.CreateDraft(r.Context(), customerID, caseID)
 	if err != nil {
-		http.Error(w, "Failed to create amendment: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, fmt.Errorf("failed to create amendment: %w", err))
 		return
 	}
-	writeJSON(w, http.StatusCreated, amendment)
+	writeJSON(w, r, http.StatusCreated, amendment)
 }
 
 func (h *AmendmentHandler) getCurrentAmendment(w http.ResponseWriter, r *http.Request, customerID string) {
 	if _, err := h.customerInScope(r, customerID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		writeError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
 	amendment, err := h.amendmentRepo.GetPendingByCustomer(r.Context(), customerID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, amendment)
+	writeJSON(w, r, http.StatusOK, amendment)
 }
 
 func (h *AmendmentHandler) updateAmendment(w http.ResponseWriter, r *http.Request, customerID, amendmentID string) {
 	if _, err := h.customerInScope(r, customerID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		writeError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
 	amendment, err := h.amendmentRepo.Get(r.Context(), amendmentID)
 	if err != nil || amendment == nil || amendment.CustomerID != customerID {
-		http.Error(w, "Amendment not found", http.StatusNotFound)
+		writeError(w, r, http.StatusNotFound, "amendment not found")
 		return
 	}
 	var req repository.AmendmentUpsert
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "invalid request body")
 		return
 	}
 	updated, err := h.amendmentRepo.UpdateDraft(r.Context(), amendmentID, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, r, http.StatusOK, updated)
 }
 
 func (h *AmendmentHandler) submitAmendment(w http.ResponseWriter, r *http.Request, customerID, amendmentID string) {
 	customer, err := h.customerInScope(r, customerID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		writeError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
 	amendment, err := h.amendmentRepo.Get(r.Context(), amendmentID)
 	if err != nil || amendment == nil || amendment.CustomerID != customerID {
-		http.Error(w, "Amendment not found", http.StatusNotFound)
+		writeError(w, r, http.StatusNotFound, "amendment not found")
 		return
 	}
 	if amendment.WorkflowCaseID == "" {
-		http.Error(w, "Amendment has no workflow case", http.StatusBadRequest)
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "amendment has no workflow case")
 		return
 	}
 	actor := actorFromRequest(r)
 	if err := h.submitAdjustmentCase(r, amendment.WorkflowCaseID, customer, actor); err != nil {
-		http.Error(w, "Failed to submit workflow case: "+err.Error(), http.StatusBadGateway)
+		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to submit workflow case: "+err.Error())
 		return
 	}
 	updated, err := h.amendmentRepo.Submit(r.Context(), amendmentID, actor, repository.CustomerSnapshot(customer))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, r, http.StatusOK, updated)
 }
 
 func (h *AmendmentHandler) cancelAmendment(w http.ResponseWriter, r *http.Request, customerID, amendmentID string) {
 	if _, err := h.customerInScope(r, customerID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		writeError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
 	amendment, err := h.amendmentRepo.Get(r.Context(), amendmentID)
 	if err != nil || amendment == nil || amendment.CustomerID != customerID {
-		http.Error(w, "Amendment not found", http.StatusNotFound)
+		writeError(w, r, http.StatusNotFound, "amendment not found")
 		return
 	}
 	if amendment.Status != "DRAFT" {
-		http.Error(w, "Only draft amendments can be cancelled", http.StatusConflict)
+		writeErrorCode(w, r, http.StatusConflict, ardaerrors.CodeConflict, "only draft amendments can be cancelled")
 		return
 	}
 	if err := h.amendmentRepo.CancelDraft(r.Context(), amendmentID, customerID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled"})
+	writeJSON(w, r, http.StatusOK, map[string]any{"status": "cancelled"})
 }
 
 func (h *AmendmentHandler) createAdjustmentCase(r *http.Request, customer *repository.Customer) (string, error) {

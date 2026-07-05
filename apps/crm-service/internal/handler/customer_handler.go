@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/crm-service/internal/repository"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 type CustomerHandler struct {
@@ -30,7 +31,7 @@ func (h *CustomerHandler) Customers(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.saveCustomer(w, r)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w, r)
 	}
 }
 
@@ -65,46 +66,48 @@ func (h *CustomerHandler) CreateCustomer(w http.ResponseWriter, r *http.Request)
 
 func (h *CustomerHandler) listCustomers(w http.ResponseWriter, r *http.Request) {
 	scope := ScopeFromRequest(r)
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	limit := listQuery.PerPage
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := parsePositiveInt(raw); err == nil {
+			limit = n
+		}
+	}
 	items, err := h.customerRepo.ListCustomers(r.Context(), repository.CustomerListFilter{
 		TenantID:     scope.TenantID,
 		OrgIDs:       scope.OrgIDs,
 		CustomerType: r.URL.Query().Get("customerType"),
 		Status:       r.URL.Query().Get("status"),
 		RiskOnly:     r.URL.Query().Get("riskOnly") == "true",
-		Q:            r.URL.Query().Get("q"),
+		Q:            firstNonEmpty(listQuery.Q, r.URL.Query().Get("q")),
 		Limit:        limit,
 	})
 	if err != nil {
-		http.Error(w, "Failed to query customers: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, fmt.Errorf("failed to query customers: %w", err))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeListAll(w, r, items)
 }
 
 func (h *CustomerHandler) getCustomer(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
 	item, err := h.customerRepo.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Failed to query customer: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
 		return
 	}
-	if item == nil {
-		http.Error(w, "Customer not found", http.StatusNotFound)
+	if item == nil || !scope.AllowsOrg(item.OrgID) {
+		writeError(w, r, http.StatusNotFound, "customer not found")
 		return
 	}
-	if !scope.AllowsOrg(item.OrgID) {
-		http.Error(w, "Customer not found", http.StatusNotFound)
-		return
-	}
-	writeJSON(w, http.StatusOK, item)
+	writeJSON(w, r, http.StatusOK, item)
 }
 
 func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
 	scope := ScopeFromRequest(r)
 	var req repository.CustomerUpsert
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "invalid request body")
 		return
 	}
 	if id, _ := customerPath(r.URL.Path); id != "" {
@@ -119,73 +122,73 @@ func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := h.customerRepo.UpsertCustomer(r.Context(), req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, item)
+	writeJSON(w, r, http.StatusOK, item)
 }
 
 func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
 	item, err := h.customerRepo.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Failed to query customer: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
 		return
 	}
 	if item == nil || !scope.AllowsOrg(item.OrgID) {
-		http.Error(w, "Customer not found", http.StatusNotFound)
+		writeError(w, r, http.StatusNotFound, "customer not found")
 		return
 	}
 	if item.Status != "DRAFT" && item.Status != "NEEDS_CHANGES" {
-		http.Error(w, "Customer status must be DRAFT or NEEDS_CHANGES", http.StatusBadRequest)
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "customer status must be DRAFT or NEEDS_CHANGES")
 		return
 	}
 	if item.Status == "NEEDS_CHANGES" && item.WorkflowCaseID != "" {
-		http.Error(w, "Complete the maker revise task in workflow before resubmitting", http.StatusConflict)
+		writeErrorCode(w, r, http.StatusConflict, ardaerrors.CodeConflict, "complete the maker revise task in workflow before resubmitting")
 		return
 	}
 	caseID, err := h.submitWorkflowCase(r, item)
 	if err != nil {
-		http.Error(w, "Failed to submit workflow case: "+err.Error(), http.StatusBadGateway)
+		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to submit workflow case: "+err.Error())
 		return
 	}
 	if err := h.customerRepo.UpdateSubmitted(r.Context(), id, caseID); err != nil {
-		http.Error(w, "Failed to submit customer: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, fmt.Errorf("failed to submit customer: %w", err))
 		return
 	}
 	updated, err := h.customerRepo.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Failed to query customer: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
 		return
 	}
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, r, http.StatusOK, updated)
 }
 
 func (h *CustomerHandler) cancelCustomer(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
 	item, err := h.customerRepo.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Failed to query customer: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
 		return
 	}
 	if item == nil || !scope.AllowsOrg(item.OrgID) {
-		http.Error(w, "Customer not found", http.StatusNotFound)
+		writeError(w, r, http.StatusNotFound, "customer not found")
 		return
 	}
 	if err := h.customerRepo.CancelDraft(r.Context(), id); err != nil {
 		if strings.Contains(err.Error(), "cannot be cancelled") {
-			http.Error(w, err.Error(), http.StatusConflict)
+			writeError(w, r, http.StatusConflict, err.Error())
 			return
 		}
-		http.Error(w, "Failed to cancel customer: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, fmt.Errorf("failed to cancel customer: %w", err))
 		return
 	}
 	updated, err := h.customerRepo.Get(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Failed to query customer: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
 		return
 	}
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, r, http.StatusOK, updated)
 }
 
 func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.Customer) (string, error) {
@@ -235,24 +238,24 @@ func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.C
 func (h *CustomerHandler) listRelationships(w http.ResponseWriter, r *http.Request, id string) {
 	items, err := h.customerRepo.ListRelationships(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Failed to query relationships: "+err.Error(), http.StatusInternalServerError)
+		writeServiceError(w, r, fmt.Errorf("failed to query relationships: %w", err))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeListAll(w, r, items)
 }
 
 func (h *CustomerHandler) createRelationship(w http.ResponseWriter, r *http.Request, id string) {
 	var req repository.CustomerRelationshipCreate
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "invalid request body")
 		return
 	}
 	item, err := h.customerRepo.CreateRelationship(r.Context(), id, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, item)
+	writeJSON(w, r, http.StatusCreated, item)
 }
 
 func customerPath(path string) (string, string) {
@@ -271,8 +274,20 @@ func customerPath(path string) (string, string) {
 	return "", ""
 }
 
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+func parsePositiveInt(raw string) (int, error) {
+	var n int
+	_, err := fmt.Sscanf(raw, "%d", &n)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("invalid int")
+	}
+	return n, nil
 }

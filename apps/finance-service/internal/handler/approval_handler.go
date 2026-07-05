@@ -27,11 +27,11 @@ func (h *ApprovalHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Note        string `json:"note"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid body")
+		respondError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
 	if req.RefID == "" || req.RequestType == "" {
-		respondError(w, http.StatusBadRequest, "refId and requestType required")
+		respondError(w, r, http.StatusBadRequest, "refId and requestType required")
 		return
 	}
 
@@ -46,11 +46,11 @@ func (h *ApprovalHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.svc.CreateApproval(r.Context(), tenantID, req.RequestType, req.RefID, makerID, req.Note, req.Amount)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, result)
+	respondJSON(w, r, http.StatusCreated, result)
 }
 
 // ListPending returns pending approvals for a level.
@@ -67,11 +67,11 @@ func (h *ApprovalHandler) ListPending(w http.ResponseWriter, r *http.Request) {
 
 	requests, err := h.svc.ListPending(r.Context(), tenantID, level)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{"approvals": requests})
+	respondJSON(w, r, http.StatusOK, map[string]any{"approvals": requests})
 }
 
 // Approve approves a pending request.
@@ -79,7 +79,7 @@ func (h *ApprovalHandler) ListPending(w http.ResponseWriter, r *http.Request) {
 func (h *ApprovalHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing id")
+		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
 
@@ -95,11 +95,11 @@ func (h *ApprovalHandler) Approve(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.svc.Approve(r.Context(), id, checkerID, req.Note)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, result)
+	respondJSON(w, r, http.StatusOK, result)
 }
 
 // Reject rejects a pending request.
@@ -107,7 +107,7 @@ func (h *ApprovalHandler) Approve(w http.ResponseWriter, r *http.Request) {
 func (h *ApprovalHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing id")
+		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
 
@@ -123,11 +123,11 @@ func (h *ApprovalHandler) Reject(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.svc.Reject(r.Context(), id, checkerID, req.Note)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, result)
+	respondJSON(w, r, http.StatusOK, result)
 }
 
 // Cancel cancels a pending request (maker only).
@@ -135,7 +135,7 @@ func (h *ApprovalHandler) Reject(w http.ResponseWriter, r *http.Request) {
 func (h *ApprovalHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing id")
+		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
 
@@ -146,11 +146,11 @@ func (h *ApprovalHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.svc.Cancel(r.Context(), id, userID)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, result)
+	respondJSON(w, r, http.StatusOK, result)
 }
 
 // Get returns approval detail.
@@ -158,15 +158,15 @@ func (h *ApprovalHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 func (h *ApprovalHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing id")
+		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
 
 	result, err := h.svc.GetApproval(r.Context(), id)
 	if err != nil {
-		respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, result)
+	respondJSON(w, r, http.StatusOK, result)
 }

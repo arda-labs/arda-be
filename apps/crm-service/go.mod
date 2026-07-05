@@ -3,7 +3,9 @@ module github.com/arda-labs/arda/apps/crm-service
 go 1.26
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
 	github.com/lib/pq v1.10.9
 	github.com/pressly/goose/v3 v3.21.1
@@ -11,6 +13,10 @@ require (
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc
+
+replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
+
+replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
 
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 

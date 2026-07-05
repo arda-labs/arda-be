@@ -1,38 +1,78 @@
 package handler
 
 import (
-	"encoding/json"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
-// respondJSON writes a JSON response.
 func respondJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	respondJSONWithRequest(w, nil, status, data)
 }
 
-// respondError writes a JSON error response.
+func respondJSONWithRequest(w http.ResponseWriter, r *http.Request, status int, data any) {
+	ardahttp.WriteJSON(w, r, status, data)
+}
+
 func respondError(w http.ResponseWriter, status int, msg string) {
-	respondErrorCode(w, status, ardaerrors.CodeForStatus(status), msg)
+	respondRequestError(w, nil, status, ardaerrors.CodeForStatus(status), msg)
 }
 
 func respondErrorCode(w http.ResponseWriter, status int, code, msg string) {
-	err := ardaerrors.New(code, msg)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ardaerrors.Response{Error: *err})
+	respondRequestError(w, nil, status, code, msg)
+}
+
+func respondRequestError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	ardahttp.WriteErrorCode(w, r, status, code, msg)
 }
 
 func respondRequestErrorCode(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
-	err := ardaerrors.New(code, msg).WithRequestID(r.Header.Get("X-Request-Id"))
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ardaerrors.Response{Error: *err})
+	respondRequestError(w, r, status, code, msg)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func parseAdminListQuery(r *http.Request) (page, perPage int, search string) {
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	page = listQuery.Page
+	perPage = listQuery.PerPage
+	if raw := r.URL.Query().Get("size"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			perPage = n
+		}
+	}
+	if perPage > 100 {
+		perPage = 100
+	}
+	search = firstNonEmpty(listQuery.Q, r.URL.Query().Get("search"))
+	return page, perPage, search
+}
+
+func respondAdminList(w http.ResponseWriter, r *http.Request, legacyKey string, items any, total, page, perPage int) {
+	totalPages := 0
+	if perPage > 0 {
+		totalPages = (total + perPage - 1) / perPage
+	}
+	respondJSONWithRequest(w, r, http.StatusOK, map[string]any{
+		"items":      items,
+		legacyKey:    items,
+		"total":      total,
+		"page":       page,
+		"per_page":   perPage,
+		"size":       perPage,
+		"totalPages": totalPages,
+	})
 }
 
 // extractIP extracts the client IP from request headers or remote address.

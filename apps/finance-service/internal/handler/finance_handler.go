@@ -33,10 +33,10 @@ func (h *FinanceHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	}
 	accounts, err := h.svc.ListAccounts(r.Context(), tenantID)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]any{"accounts": accounts})
+	respondJSON(w, r, http.StatusOK, map[string]any{"accounts": accounts})
 }
 
 func (h *FinanceHandler) CreateAccount(w http.ResponseWriter, r *http.Request) {
@@ -49,11 +49,11 @@ func (h *FinanceHandler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		ParentID      string `json:"parentId,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid body")
+		respondError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
 	if req.Code == "" || req.Name == "" || req.Type == "" || req.NormalBalance == "" {
-		respondError(w, http.StatusBadRequest, "code, name, type, normalBalance required")
+		respondError(w, r, http.StatusBadRequest, "code, name, type, normalBalance required")
 		return
 	}
 
@@ -75,27 +75,27 @@ func (h *FinanceHandler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 
 	created, err := h.svc.CreateAccount(r.Context(), acct)
 	if err != nil {
-		respondError(w, http.StatusConflict, err.Error())
+		respondError(w, r, http.StatusConflict, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusCreated, created)
+	respondJSON(w, r, http.StatusCreated, created)
 }
 
 func (h *FinanceHandler) GetAccount(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing id")
+		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
 	acct, err := h.svc.GetAccount(r.Context(), id)
 	if err != nil || acct == nil {
-		respondError(w, http.StatusNotFound, "account not found")
+		respondError(w, r, http.StatusNotFound, "account not found")
 		return
 	}
 
 	balance, _ := h.svc.GetAccountBalance(r.Context(), id)
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	respondJSON(w, r, http.StatusOK, map[string]any{
 		"account": acct,
 		"balance": balance,
 	})
@@ -104,15 +104,15 @@ func (h *FinanceHandler) GetAccount(w http.ResponseWriter, r *http.Request) {
 func (h *FinanceHandler) GetAccountBalance(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing id")
+		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
 	balance, err := h.svc.GetAccountBalance(r.Context(), id)
 	if err != nil {
-		respondError(w, http.StatusNotFound, "account not found")
+		respondError(w, r, http.StatusNotFound, "account not found")
 		return
 	}
-	respondJSON(w, http.StatusOK, balance)
+	respondJSON(w, r, http.StatusOK, balance)
 }
 
 // ── Transactions ──
@@ -133,11 +133,11 @@ func (h *FinanceHandler) CreateTransaction(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid body")
+		respondError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
 	if req.TxnType == "" || len(req.Entries) == 0 {
-		respondError(w, http.StatusBadRequest, "txnType and entries required")
+		respondError(w, r, http.StatusBadRequest, "txnType and entries required")
 		return
 	}
 
@@ -179,25 +179,25 @@ func (h *FinanceHandler) CreateTransaction(w http.ResponseWriter, r *http.Reques
 
 	result, err := h.svc.PostTransaction(r.Context(), txn)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, result)
+	respondJSON(w, r, http.StatusCreated, result)
 }
 
 func (h *FinanceHandler) GetTransaction(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing id")
+		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
 	txn, err := h.svc.GetTransaction(r.Context(), id)
 	if err != nil || txn == nil {
-		respondError(w, http.StatusNotFound, "transaction not found")
+		respondError(w, r, http.StatusNotFound, "transaction not found")
 		return
 	}
-	respondJSON(w, http.StatusOK, txn)
+	respondJSON(w, r, http.StatusOK, txn)
 }
 
 func (h *FinanceHandler) ListTransactions(w http.ResponseWriter, r *http.Request) {
@@ -224,12 +224,12 @@ func (h *FinanceHandler) ListTransactions(w http.ResponseWriter, r *http.Request
 
 	txns, total, err := h.svc.ListTransactions(r.Context(), tenantID, status, from, to, page, size)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	totalPages := (total + size - 1) / size
-	respondJSON(w, http.StatusOK, map[string]any{
+	respondJSON(w, r, http.StatusOK, map[string]any{
 		"transactions": txns, "total": total, "page": page, "size": size, "totalPages": totalPages,
 	})
 }
@@ -250,10 +250,10 @@ func (h *FinanceHandler) SearchTransactions(w http.ResponseWriter, r *http.Reque
 		Size:      size,
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondPaged(w, txns, total, page, size)
+	respondPaged(w, r, txns, total, page, size)
 }
 
 func (h *FinanceHandler) ListIncomingTransactions(w http.ResponseWriter, r *http.Request) {
@@ -275,15 +275,15 @@ func (h *FinanceHandler) CreateOutgoingTransaction(w http.ResponseWriter, r *htt
 func (h *FinanceHandler) GetOperationTransaction(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing id")
+		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
 	txn, err := h.ops.Get(r.Context(), id)
 	if err != nil || txn == nil {
-		respondError(w, http.StatusNotFound, "transaction not found")
+		respondError(w, r, http.StatusNotFound, "transaction not found")
 		return
 	}
-	respondJSON(w, http.StatusOK, txn)
+	respondJSON(w, r, http.StatusOK, txn)
 }
 
 func (h *FinanceHandler) listOperationTransactions(w http.ResponseWriter, r *http.Request, direction string) {
@@ -301,10 +301,10 @@ func (h *FinanceHandler) listOperationTransactions(w http.ResponseWriter, r *htt
 		Size:      size,
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondPaged(w, txns, total, page, size)
+	respondPaged(w, r, txns, total, page, size)
 }
 
 func (h *FinanceHandler) createOperationTransaction(w http.ResponseWriter, r *http.Request, create func(context.Context, string, service.OperationCreateRequest) (*domain.Transaction, error)) {
@@ -321,7 +321,7 @@ func (h *FinanceHandler) createOperationTransaction(w http.ResponseWriter, r *ht
 		Priority            string `json:"priority"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid body")
+		respondError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
 	key := req.IdempotencyKey
@@ -342,16 +342,16 @@ func (h *FinanceHandler) createOperationTransaction(w http.ResponseWriter, r *ht
 		CreatedBy:           userIDFrom(r),
 	})
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusCreated, txn)
+	respondJSON(w, r, http.StatusCreated, txn)
 }
 
 func (h *FinanceHandler) ReverseTransaction(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing id")
+		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
 
@@ -370,11 +370,11 @@ func (h *FinanceHandler) ReverseTransaction(w http.ResponseWriter, r *http.Reque
 
 	result, err := h.svc.ReverseTransaction(r.Context(), id, req.Reason, userID)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, result)
+	respondJSON(w, r, http.StatusCreated, result)
 }
 
 // ── Trial Balance ──
@@ -386,7 +386,7 @@ func (h *FinanceHandler) TrialBalance(w http.ResponseWriter, r *http.Request) {
 	}
 	accounts, err := h.svc.ListAccounts(r.Context(), tenantID)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -401,7 +401,7 @@ func (h *FinanceHandler) TrialBalance(w http.ResponseWriter, r *http.Request) {
 		entries = append(entries, tbEntry{Account: &a, Balance: b})
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	respondJSON(w, r, http.StatusOK, map[string]any{
 		"tenantId": tenantID,
 		"entries":  entries,
 	})
@@ -411,27 +411,27 @@ func (h *FinanceHandler) TrialBalance(w http.ResponseWriter, r *http.Request) {
 
 func (h *FinanceHandler) ListProcessConfigs(w http.ResponseWriter, r *http.Request) {
 	items, err := h.configSvc.ListProcessConfigs(r.Context(), tenantIDFrom(r))
-	respondList(w, "processConfigs", items, err)
+	respondList(w, r, "processConfigs", items, err)
 }
 
 func (h *FinanceHandler) ListAccountClassifications(w http.ResponseWriter, r *http.Request) {
 	items, err := h.configSvc.ListAccountClassifications(r.Context(), tenantIDFrom(r))
-	respondList(w, "accountClassifications", items, err)
+	respondList(w, r, "accountClassifications", items, err)
 }
 
 func (h *FinanceHandler) ListJournalDefinitions(w http.ResponseWriter, r *http.Request) {
 	items, err := h.configSvc.ListJournalDefinitions(r.Context(), tenantIDFrom(r))
-	respondList(w, "journalDefinitions", items, err)
+	respondList(w, r, "journalDefinitions", items, err)
 }
 
 func (h *FinanceHandler) ListRegulatoryAccounts(w http.ResponseWriter, r *http.Request) {
 	items, err := h.configSvc.ListRegulatoryAccounts(r.Context(), tenantIDFrom(r))
-	respondList(w, "regulatoryAccounts", items, err)
+	respondList(w, r, "regulatoryAccounts", items, err)
 }
 
 func (h *FinanceHandler) ListInternalAccounts(w http.ResponseWriter, r *http.Request) {
 	items, err := h.configSvc.ListInternalAccounts(r.Context(), tenantIDFrom(r))
-	respondList(w, "internalAccounts", items, err)
+	respondList(w, r, "internalAccounts", items, err)
 }
 
 func tenantIDFrom(r *http.Request) string {
@@ -474,29 +474,4 @@ func dateRangeFrom(r *http.Request) (time.Time, time.Time) {
 		to, _ = time.Parse(time.RFC3339, t)
 	}
 	return from, to
-}
-
-func respondPaged(w http.ResponseWriter, txns []domain.Transaction, total, page, size int) {
-	totalPages := (total + size - 1) / size
-	respondJSON(w, http.StatusOK, map[string]any{
-		"transactions": txns, "total": total, "page": page, "size": size, "totalPages": totalPages,
-	})
-}
-
-func respondList(w http.ResponseWriter, key string, data any, err error) {
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	respondJSON(w, http.StatusOK, map[string]any{key: data})
-}
-
-func respondJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func respondError(w http.ResponseWriter, status int, msg string) {
-	respondJSON(w, status, map[string]string{"error": msg})
 }
