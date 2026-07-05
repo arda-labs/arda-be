@@ -9,20 +9,20 @@ import (
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
-func respondJSON(w http.ResponseWriter, status int, data any) {
-	respondJSONWithRequest(w, nil, status, data)
+func respondJSON(w http.ResponseWriter, r *http.Request, status int, data any) {
+	ardahttp.WriteJSON(w, r, status, data)
 }
 
 func respondJSONWithRequest(w http.ResponseWriter, r *http.Request, status int, data any) {
 	ardahttp.WriteJSON(w, r, status, data)
 }
 
-func respondError(w http.ResponseWriter, status int, msg string) {
-	respondRequestError(w, nil, status, ardaerrors.CodeForStatus(status), msg)
+func respondError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	respondRequestError(w, r, status, errorCodeFor(status, msg), msg)
 }
 
-func respondErrorCode(w http.ResponseWriter, status int, code, msg string) {
-	respondRequestError(w, nil, status, code, msg)
+func respondErrorCode(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	respondRequestError(w, r, status, code, msg)
 }
 
 func respondRequestError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
@@ -31,6 +31,27 @@ func respondRequestError(w http.ResponseWriter, r *http.Request, status int, cod
 
 func respondRequestErrorCode(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
 	respondRequestError(w, r, status, code, msg)
+}
+
+func errorCodeFor(status int, msg string) string {
+	code := ardaerrors.CodeForStatus(status)
+	lower := strings.ToLower(msg)
+	switch {
+	case status == http.StatusBadRequest && strings.Contains(lower, "json"):
+		return ardaerrors.CodeInvalidJSON
+	case status == http.StatusBadRequest && strings.Contains(lower, "required"):
+		return ardaerrors.CodeRequired
+	case status == http.StatusNotFound:
+		return ardaerrors.CodeNotFound
+	case status == http.StatusConflict:
+		return ardaerrors.CodeConflict
+	case status == http.StatusUnauthorized:
+		return ardaerrors.CodeUnauthorized
+	case status == http.StatusForbidden:
+		return ardaerrors.CodeForbidden
+	default:
+		return code
+	}
 }
 
 func firstNonEmpty(values ...string) string {
@@ -42,9 +63,15 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func parseAdminListQuery(r *http.Request) (page, perPage int, search string) {
-	listQuery := ardahttp.ParseListQuery(r.URL.Query())
-	return listQuery.Page, listQuery.PerPage, listQuery.Q
+func parseAdminListQuery(r *http.Request) ardahttp.ListQuery {
+	return ardahttp.ParseListQuery(r.URL.Query())
+}
+
+func listSortOrder(listQuery ardahttp.ListQuery) string {
+	if strings.EqualFold(listQuery.Order, "asc") {
+		return "ASC"
+	}
+	return "DESC"
 }
 
 func respondAdminList[T any](w http.ResponseWriter, r *http.Request, items []T, total, page, perPage int) {

@@ -25,14 +25,14 @@ func NewSessionHandler(svc *service.SessionService, auditLogger *audit.Logger) *
 func (h *SessionHandler) ListMySessions(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-Id")
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 
 	sessions, err := h.svc.ListSessionDetails(r.Context(), userID)
 	if err != nil {
 		h.svc.Logger().Error("ListSessionDetails failed", "user_id", userID, "err", err)
-		respondError(w, http.StatusInternalServerError, "list sessions failed")
+		respondError(w, r, http.StatusInternalServerError, "list sessions failed")
 		return
 	}
 
@@ -58,7 +58,7 @@ func (h *SessionHandler) ListMySessions(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	respondJSON(w, r, http.StatusOK, map[string]any{
 		"sessions":         resp,
 		"currentSessionId": currentSessionID,
 	})
@@ -69,18 +69,18 @@ func (h *SessionHandler) ListMySessions(w http.ResponseWriter, r *http.Request) 
 func (h *SessionHandler) RevokeMySession(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-Id")
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 
 	sessionID := r.PathValue("id")
 	if sessionID == "" {
-		respondError(w, http.StatusBadRequest, "missing session id")
+		respondError(w, r, http.StatusBadRequest, "missing session id")
 		return
 	}
 
 	if err := h.svc.RevokeSession(r.Context(), sessionID, userID, "user_revoked"); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	h.auditSession(r, "session_revoked", userID, "revoke", "success", map[string]any{
@@ -88,7 +88,7 @@ func (h *SessionHandler) RevokeMySession(w http.ResponseWriter, r *http.Request)
 		"reason":     "user_revoked",
 	})
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
 // RevokeMyOtherSessions revokes all sessions except current.
@@ -96,19 +96,19 @@ func (h *SessionHandler) RevokeMySession(w http.ResponseWriter, r *http.Request)
 func (h *SessionHandler) RevokeMyOtherSessions(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-Id")
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 
 	keepID := r.URL.Query().Get("keep")
 	if keepID == "" {
-		respondError(w, http.StatusBadRequest, "missing ?keep= parameter")
+		respondError(w, r, http.StatusBadRequest, "missing ?keep= parameter")
 		return
 	}
 
 	n, err := h.svc.RevokeAllExcept(r.Context(), userID, keepID, "user_revoked_others")
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.auditSession(r, "session_revoked", userID, "revoke_others", "success", map[string]any{
@@ -117,7 +117,7 @@ func (h *SessionHandler) RevokeMyOtherSessions(w http.ResponseWriter, r *http.Re
 		"reason":          "user_revoked_others",
 	})
 
-	respondJSON(w, http.StatusOK, map[string]any{"status": "revoked", "count": n})
+	respondJSON(w, r, http.StatusOK, map[string]any{"status": "revoked", "count": n})
 }
 
 // ListMyDevices returns current user's devices.
@@ -125,13 +125,13 @@ func (h *SessionHandler) RevokeMyOtherSessions(w http.ResponseWriter, r *http.Re
 func (h *SessionHandler) ListMyDevices(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-Id")
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 
 	devices, err := h.svc.ListDevices(r.Context(), userID)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "list devices failed")
+		respondError(w, r, http.StatusInternalServerError, "list devices failed")
 		return
 	}
 
@@ -152,7 +152,7 @@ func (h *SessionHandler) ListMyDevices(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{"devices": resp})
+	respondJSON(w, r, http.StatusOK, map[string]any{"devices": resp})
 }
 
 // DeleteMyDevice removes a device (and revokes its sessions).
@@ -160,22 +160,22 @@ func (h *SessionHandler) ListMyDevices(w http.ResponseWriter, r *http.Request) {
 func (h *SessionHandler) DeleteMyDevice(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-Id")
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 
 	deviceID := r.PathValue("id")
 	if deviceID == "" {
-		respondError(w, http.StatusBadRequest, "missing device id")
+		respondError(w, r, http.StatusBadRequest, "missing device id")
 		return
 	}
 
 	if err := h.svc.DeleteDevice(r.Context(), deviceID, userID); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // TrustMyDevice marks a device as trusted (for MFA skip).
@@ -183,29 +183,29 @@ func (h *SessionHandler) DeleteMyDevice(w http.ResponseWriter, r *http.Request) 
 func (h *SessionHandler) TrustMyDevice(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-Id")
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 
 	deviceID := r.PathValue("id")
 	if deviceID == "" {
-		respondError(w, http.StatusBadRequest, "missing device id")
+		respondError(w, r, http.StatusBadRequest, "missing device id")
 		return
 	}
 
 	if err := h.svc.TrustDevice(r.Context(), deviceID, userID, true); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "trusted"})
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "trusted"})
 }
 
 // SessionConfig returns the session policy config.
 // GET /api/iam/session/config
 func (h *SessionHandler) SessionConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := h.svc.GetConfig()
-	respondJSON(w, http.StatusOK, cfg)
+	respondJSON(w, r, http.StatusOK, cfg)
 }
 
 type internalCreateSessionRequest struct {
@@ -230,11 +230,11 @@ type internalCreateSessionRequest struct {
 func (h *SessionHandler) InternalCreateSession(w http.ResponseWriter, r *http.Request) {
 	var req internalCreateSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		respondJSON(w, r, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if req.UserID == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "userId required"})
+		respondJSON(w, r, http.StatusBadRequest, map[string]string{"error": "userId required"})
 		return
 	}
 
@@ -255,7 +255,7 @@ func (h *SessionHandler) InternalCreateSession(w http.ResponseWriter, r *http.Re
 		req.HydraSessionID, req.AccessTokenJTI, req.RefreshTokenJTI,
 		req.IPAddress, req.UserAgent)
 	if err != nil {
-		respondJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+		respondJSON(w, r, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 		return
 	}
 	h.auditSession(r, "session_created", req.UserID, "create", "success", map[string]any{
@@ -263,7 +263,7 @@ func (h *SessionHandler) InternalCreateSession(w http.ResponseWriter, r *http.Re
 		"device_id":  deviceID,
 	})
 
-	respondJSON(w, http.StatusCreated, map[string]any{
+	respondJSON(w, r, http.StatusCreated, map[string]any{
 		"sessionId": sess.ID,
 		"deviceId":  deviceID,
 		"expiresAt": sess.ExpiresAt,
@@ -275,12 +275,12 @@ func (h *SessionHandler) InternalCreateSession(w http.ResponseWriter, r *http.Re
 func (h *SessionHandler) InternalRevokeSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	if sessionID == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "missing session id"})
+		respondJSON(w, r, http.StatusBadRequest, map[string]string{"error": "missing session id"})
 		return
 	}
 
 	if err := h.svc.ForceRevokeSession(r.Context(), sessionID, "logout"); err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respondJSON(w, r, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	h.auditSession(r, "session_revoked", sessionID, "logout", "success", map[string]any{
@@ -288,7 +288,7 @@ func (h *SessionHandler) InternalRevokeSession(w http.ResponseWriter, r *http.Re
 		"reason":     "logout",
 	})
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
 // InternalListSessionByUser is called by auth-gateway to list sessions for user.
@@ -296,17 +296,17 @@ func (h *SessionHandler) InternalRevokeSession(w http.ResponseWriter, r *http.Re
 func (h *SessionHandler) InternalListSessionByUser(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("userId")
 	if userID == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "userId required"})
+		respondJSON(w, r, http.StatusBadRequest, map[string]string{"error": "userId required"})
 		return
 	}
 
 	sessions, err := h.svc.ListSessions(r.Context(), userID)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "list failed"})
+		respondJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "list failed"})
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
+	respondJSON(w, r, http.StatusOK, map[string]any{"sessions": sessions})
 }
 
 // AdminListUserSessions returns all sessions for a user (admin only).
@@ -314,17 +314,17 @@ func (h *SessionHandler) InternalListSessionByUser(w http.ResponseWriter, r *htt
 func (h *SessionHandler) AdminListUserSessions(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("id")
 	if userID == "" {
-		respondError(w, http.StatusBadRequest, "missing user id")
+		respondError(w, r, http.StatusBadRequest, "missing user id")
 		return
 	}
 
 	sessions, err := h.svc.ListSessionDetails(r.Context(), userID)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "list sessions failed")
+		respondError(w, r, http.StatusInternalServerError, "list sessions failed")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
+	respondJSON(w, r, http.StatusOK, map[string]any{"sessions": sessions})
 }
 
 // AdminRevokeUserSessions revokes all sessions for a user (admin only).
@@ -332,7 +332,7 @@ func (h *SessionHandler) AdminListUserSessions(w http.ResponseWriter, r *http.Re
 func (h *SessionHandler) AdminRevokeUserSessions(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("id")
 	if userID == "" {
-		respondError(w, http.StatusBadRequest, "missing user id")
+		respondError(w, r, http.StatusBadRequest, "missing user id")
 		return
 	}
 
@@ -343,7 +343,7 @@ func (h *SessionHandler) AdminRevokeUserSessions(w http.ResponseWriter, r *http.
 
 	n, err := h.svc.RevokeAllSessions(r.Context(), userID, reason)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.auditSession(r, "session_revoked", userID, "admin_revoke", "success", map[string]any{
@@ -352,7 +352,7 @@ func (h *SessionHandler) AdminRevokeUserSessions(w http.ResponseWriter, r *http.
 		"reason":         reason,
 	})
 
-	respondJSON(w, http.StatusOK, map[string]any{"status": "revoked", "count": n})
+	respondJSON(w, r, http.StatusOK, map[string]any{"status": "revoked", "count": n})
 }
 
 func (h *SessionHandler) auditSession(r *http.Request, eventType, subject, action, result string, details map[string]any) {

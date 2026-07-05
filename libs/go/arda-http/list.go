@@ -47,22 +47,6 @@ func ParseListQuery(values url.Values) ListQuery {
 		q.PerPage = MaxUnpaginated
 		q.Page = 1
 	}
-	if values.Get(QueryPerPage) == "" {
-		if raw := strings.TrimSpace(values.Get("size")); raw != "" {
-			q.PerPage = parsePositiveInt(raw, DefaultPerPage)
-		}
-	}
-	if q.Q == "" {
-		q.Q = strings.TrimSpace(values.Get("search"))
-	}
-	if q.Sort == "" {
-		q.Sort = strings.TrimSpace(values.Get("sortField"))
-	}
-	if values.Get(QueryOrder) == "" {
-		if raw := strings.TrimSpace(values.Get("sortOrder")); raw != "" {
-			q.Order = normalizeOrder(raw)
-		}
-	}
 	if q.PerPage > MaxPerPage && !q.All && q.View == "" {
 		q.PerPage = MaxPerPage
 	}

@@ -249,9 +249,11 @@ Migrated to standard list + errors (phase 2 complete — no legacy list keys):
 - `platform-service` — reference implementation
 - `hrm-service`, `crm-service`, `finance-service`, `iam-service` (incl. audit), `workflow-service`, `notification-service`, `media-service`
 
-BE still accepts legacy **query** aliases (`size`, `search`, `sortField`) via `ParseListQuery`; responses are `{ items, page, per_page, total }` only.
+BE query params: `page`, `per_page`, `q`, `sort`, `order` only (legacy `size`/`search` removed phase 3).
 
-Remaining: IAM camelCase on single-resource JSON; some IAM handlers use string `respondError` on non-list paths.
+IAM handlers: all `respondError`/`respondJSON` pass `*http.Request` for `request_id` + stable error codes.
+
+Remaining: IAM camelCase on single-resource JSON; optional snake_case migration.
 
 ## Verification State
 

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -55,11 +56,11 @@ func (h *AuditHandler) Query(w http.ResponseWriter, r *http.Request) {
 		Sort:       sort,
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondRequestError(w, r, http.StatusInternalServerError, ardaerrors.CodeInternal, err.Error())
 		return
 	}
 
-	ardahttp.WriteList(w, r, page, perPage, total, events)
+	ardahttp.WriteList(w, r, listQuery.Page, listQuery.PerPage, total, events)
 }
 
 // Stats returns audit statistics.
@@ -85,11 +86,11 @@ func (h *AuditHandler) Stats(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.svc.Stats(r.Context(), from, to)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, stats)
+	respondJSON(w, r, http.StatusOK, stats)
 }
 
 // Verify checks hash chain integrity.
@@ -115,9 +116,9 @@ func (h *AuditHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.svc.VerifyChain(r.Context(), from, to)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, result)
+	respondJSON(w, r, http.StatusOK, result)
 }

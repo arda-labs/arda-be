@@ -25,44 +25,44 @@ func NewUserHandler(svc *service.UserService) *UserHandler {
 func (h *UserHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
-	h.getContextByID(w, r.Context(), userID)
+	h.getContextByID(w, r, r.Context(), userID)
 }
 
 // GetBySubject returns a user context by external subject.
 func (h *UserHandler) GetBySubject(w http.ResponseWriter, r *http.Request) {
 	sub := r.PathValue("subject")
 	if sub == "" {
-		respondError(w, http.StatusBadRequest, "missing subject")
+		respondError(w, r, http.StatusBadRequest, "missing subject")
 		return
 	}
-	h.getContextBySubject(w, r.Context(), sub)
+	h.getContextBySubject(w, r, r.Context(), sub)
 }
 
 // GetContextByID returns a user context by internal UUID.
 func (h *UserHandler) GetContextByID(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		respondError(w, http.StatusBadRequest, "missing id")
+		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
-	h.getContextByID(w, r.Context(), id)
+	h.getContextByID(w, r, r.Context(), id)
 }
 
 func (h *UserHandler) GetContextByKratosIdentityID(w http.ResponseWriter, r *http.Request) {
 	identityID := r.PathValue("identityId")
 	if identityID == "" {
-		respondError(w, http.StatusBadRequest, "missing identity id")
+		respondError(w, r, http.StatusBadRequest, "missing identity id")
 		return
 	}
 	userCtx, err := h.svc.GetUserContextByKratosIdentityID(r.Context(), identityID)
 	if err != nil {
-		respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, userCtx)
+	respondJSON(w, r, http.StatusOK, userCtx)
 }
 
 func (h *UserHandler) ResolveOrLinkKratosIdentity(w http.ResponseWriter, r *http.Request) {
@@ -72,20 +72,20 @@ func (h *UserHandler) ResolveOrLinkKratosIdentity(w http.ResponseWriter, r *http
 		Name       string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid json")
+		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	identityID := strings.TrimSpace(req.IdentityID)
 	if identityID == "" {
-		respondError(w, http.StatusBadRequest, "identityId is required")
+		respondError(w, r, http.StatusBadRequest, "identityId is required")
 		return
 	}
 	userCtx, err := h.svc.ResolveOrLinkKratosIdentity(r.Context(), identityID, strings.TrimSpace(req.Email), strings.TrimSpace(req.Name))
 	if err != nil {
-		respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, userCtx)
+	respondJSON(w, r, http.StatusOK, userCtx)
 }
 
 func (h *UserHandler) ResolveOrLinkIdentity(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +97,7 @@ func (h *UserHandler) ResolveOrLinkIdentity(w http.ResponseWriter, r *http.Reque
 		EmailVerified bool   `json:"emailVerified"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid json")
+		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	userCtx, err := h.svc.ResolveOrLinkIdentity(
@@ -109,16 +109,16 @@ func (h *UserHandler) ResolveOrLinkIdentity(w http.ResponseWriter, r *http.Reque
 		req.EmailVerified,
 	)
 	if err != nil {
-		respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, userCtx)
+	respondJSON(w, r, http.StatusOK, userCtx)
 }
 
 func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	var req struct {
@@ -126,12 +126,12 @@ func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 		PictureURL   string `json:"picture_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid json")
+		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	ctx, err := h.svc.UpdateUserAvatar(r.Context(), userID, strings.TrimSpace(req.AvatarFileID), strings.TrimSpace(req.PictureURL))
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -142,13 +142,13 @@ func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondJSON(w, http.StatusOK, ctx)
+	respondJSON(w, r, http.StatusOK, ctx)
 }
 
 func (h *UserHandler) UpdateMyCover(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	var req struct {
@@ -156,12 +156,12 @@ func (h *UserHandler) UpdateMyCover(w http.ResponseWriter, r *http.Request) {
 		CoverImageURL string `json:"cover_image_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid json")
+		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	ctx, err := h.svc.UpdateUserCover(r.Context(), userID, strings.TrimSpace(req.CoverFileID), strings.TrimSpace(req.CoverImageURL))
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -172,13 +172,13 @@ func (h *UserHandler) UpdateMyCover(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondJSON(w, http.StatusOK, ctx)
+	respondJSON(w, r, http.StatusOK, ctx)
 }
 
 func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	var req struct {
@@ -199,7 +199,7 @@ func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		Bio           string `json:"bio"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid json")
+		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	ctx, err := h.svc.UpdateUserProfile(r.Context(), userID,
@@ -220,77 +220,77 @@ func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		strings.TrimSpace(req.Bio),
 	)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, ctx)
+	respondJSON(w, r, http.StatusOK, ctx)
 }
 
-func (h *UserHandler) getContextBySubject(w http.ResponseWriter, ctx context.Context, subject string) {
+func (h *UserHandler) getContextBySubject(w http.ResponseWriter, r *http.Request, ctx context.Context, subject string) {
 	userCtx, err := h.svc.GetUserContextBySubject(ctx, subject)
 	if err != nil {
-		respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, userCtx)
+	respondJSON(w, r, http.StatusOK, userCtx)
 }
 
-func (h *UserHandler) getContextByID(w http.ResponseWriter, ctx context.Context, id string) {
+func (h *UserHandler) getContextByID(w http.ResponseWriter, r *http.Request, ctx context.Context, id string) {
 	userCtx, err := h.svc.GetUserContextByID(ctx, id)
 	if err != nil {
-		respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, userCtx)
+	respondJSON(w, r, http.StatusOK, userCtx)
 }
 
 func (h *UserHandler) UpdateMyEmail(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	var req struct {
 		Email string `json:"email"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid json")
+		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	newEmail := strings.TrimSpace(req.Email)
 	if newEmail == "" {
-		respondError(w, http.StatusBadRequest, "email is required")
+		respondError(w, r, http.StatusBadRequest, "email is required")
 		return
 	}
 	ctx, err := h.svc.UpdateUserEmail(r.Context(), userID, newEmail)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, ctx)
+	respondJSON(w, r, http.StatusOK, ctx)
 }
 
 func (h *UserHandler) UpdateMyPassword(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, http.StatusUnauthorized, "missing X-User-Id")
+		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	var req struct {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid json")
+		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	newPassword := strings.TrimSpace(req.Password)
 	if newPassword == "" {
-		respondError(w, http.StatusBadRequest, "password is required")
+		respondError(w, r, http.StatusBadRequest, "password is required")
 		return
 	}
 	if err := h.svc.UpdateUserPassword(r.Context(), userID, newPassword); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "updated"})
 }
