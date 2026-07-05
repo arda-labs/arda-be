@@ -266,7 +266,7 @@ const data = await api.get<ListResponse<Organization>>(
 4. **IAM list endpoints** — `items` + `per_page` (giữ alias `size` deprecated một đợt nếu cần).
 6. **FE** — `ListResponse<T>`, `buildListSearchParams`, pages đọc `.items`.
 
-Phase 4 (done): IAM admin single-resource JSON snake_case; FE maps to camelCase types in `api.ts`. Phase 5 (done): `meta` in JSON body; IAM session/admin session endpoints snake_case. Phase 6 (done): internal IAM session API snake_case + arda-errors; auth-gateway iamclient aligned; MFA verify `user_id`. Internal UserContext remains camelCase.
+Phase 4 (done): IAM admin single-resource JSON snake_case; FE maps to camelCase types in `api.ts`. Phase 5 (done): `meta` in JSON body; IAM session/admin session endpoints snake_case. Phase 6 (done): internal IAM session API snake_case + arda-errors; auth-gateway iamclient aligned; MFA verify `user_id`. Phase 7 (done): internal identity resolve request snake_case; `iam` i18n namespace. **Browser boundary:** `UserContext`, BFF session, `/api/auth/me` stay camelCase.
 
 ---
 
