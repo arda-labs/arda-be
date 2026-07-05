@@ -66,18 +66,14 @@ func (h *UserHandler) GetContextByKratosIdentityID(w http.ResponseWriter, r *htt
 }
 
 func (h *UserHandler) ResolveOrLinkKratosIdentity(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		IdentityID string `json:"identityId"`
-		Email      string `json:"email"`
-		Name       string `json:"name"`
-	}
+	var req resolveKratosIdentityRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
-	identityID := strings.TrimSpace(req.IdentityID)
+	identityID := req.identityID()
 	if identityID == "" {
-		respondError(w, r, http.StatusBadRequest, "identityId is required")
+		respondError(w, r, http.StatusBadRequest, "identity_id is required")
 		return
 	}
 	userCtx, err := h.svc.ResolveOrLinkKratosIdentity(r.Context(), identityID, strings.TrimSpace(req.Email), strings.TrimSpace(req.Name))
@@ -89,24 +85,18 @@ func (h *UserHandler) ResolveOrLinkKratosIdentity(w http.ResponseWriter, r *http
 }
 
 func (h *UserHandler) ResolveOrLinkIdentity(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		ProviderID    string `json:"providerId"`
-		ExternalID    string `json:"externalId"`
-		Email         string `json:"email"`
-		Name          string `json:"name"`
-		EmailVerified bool   `json:"emailVerified"`
-	}
+	var req resolveIdentityRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	userCtx, err := h.svc.ResolveOrLinkIdentity(
 		r.Context(),
-		strings.TrimSpace(req.ProviderID),
-		strings.TrimSpace(req.ExternalID),
+		req.providerID(),
+		req.externalID(),
 		strings.TrimSpace(req.Email),
 		strings.TrimSpace(req.Name),
-		req.EmailVerified,
+		req.emailVerified(),
 	)
 	if err != nil {
 		respondError(w, r, http.StatusNotFound, err.Error())

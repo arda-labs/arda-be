@@ -140,9 +140,9 @@ func (c *Client) GetUserByKratosIdentityID(ctx context.Context, identityID strin
 
 func (c *Client) ResolveOrLinkKratosIdentity(ctx context.Context, identityID, email, name string) (*UserContext, error) {
 	body, err := json.Marshal(map[string]string{
-		"identityId": identityID,
-		"email":      email,
-		"name":       name,
+		"identity_id": identityID,
+		"email":       email,
+		"name":        name,
 	})
 	if err != nil {
 		return nil, err
@@ -158,11 +158,11 @@ func (c *Client) ResolveOrLinkKratosIdentity(ctx context.Context, identityID, em
 
 func (c *Client) ResolveOrLinkIdentity(ctx context.Context, providerID, externalID, email, name string, emailVerified bool) (*UserContext, error) {
 	body, err := json.Marshal(map[string]any{
-		"providerId":    providerID,
-		"externalId":    externalID,
-		"email":         email,
-		"name":          name,
-		"emailVerified": emailVerified,
+		"provider_id":    providerID,
+		"external_id":    externalID,
+		"email":          email,
+		"name":           name,
+		"email_verified": emailVerified,
 	})
 	if err != nil {
 		return nil, err

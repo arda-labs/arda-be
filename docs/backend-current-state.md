@@ -257,9 +257,11 @@ IAM admin API (phase 4): single-resource JSON **snake_case** for users, groups, 
 
 Phase 5: `arda-http.WriteJSON` / `WriteList` inject optional `meta` (`request_id`, `trace_id`, `timestamp`) into JSON bodies. IAM public session endpoints (`/api/iam/me/sessions`, devices, config; admin user sessions) use snake_case wire format.
 
-Phase 6: internal IAM session APIs (`/internal/iam/sessions`) snake_case + arda-errors; auth-gateway `iamclient` updated. MFA verify accepts `user_id`. `UserContext` / BFF remain camelCase.
+Phase 6: internal IAM session APIs (`/internal/iam/sessions`) snake_case + arda-errors; auth-gateway `iamclient` updated. MFA verify accepts `user_id`. `UserContext` / BFF remain camelCase (browser boundary).
 
-Remaining: optional FE surfacing of `meta`; i18n for `iam.session.limit_reached`.
+Phase 7: internal identity link APIs (`resolve-kratos-identity`, `resolve-identity`) request snake_case + gateway client; IAM API error i18n namespace (`iam.json`).
+
+Remaining: `UserContext` / BFF `/api/auth/me` camelCase by design; optional smoke/e2e after deploy.
 
 ## Verification State
 
