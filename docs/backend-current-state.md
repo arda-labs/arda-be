@@ -253,7 +253,9 @@ BE query params: `page`, `per_page`, `q`, `sort`, `order` only (legacy `size`/`s
 
 IAM handlers: all `respondError`/`respondJSON` pass `*http.Request` for `request_id` + stable error codes.
 
-Remaining: IAM camelCase on single-resource JSON; optional snake_case migration.
+IAM admin API (phase 4): single-resource JSON **snake_case** for users, groups, roles, permissions, audit events. `UserContext` / BFF session payloads remain camelCase.
+
+Remaining: IAM session/admin endpoints camelCase; optional `meta.timestamp` on responses.
 
 ## Verification State
 

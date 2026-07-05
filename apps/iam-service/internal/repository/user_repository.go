@@ -96,7 +96,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, params ListUsersParams) 
 			sortCol = "email"
 		case "status":
 			sortCol = "status"
-		case "createdAt":
+		case "createdAt", "created_at":
 			sortCol = "created_at"
 		}
 	}

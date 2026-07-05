@@ -38,30 +38,11 @@ func NewAdminHandler(userRepo *repository.UserRepository, roleRepo *repository.R
 
 // ── User CRUD ──
 
-type userListItem struct {
-	ID               string   `json:"id"`
-	Username         string   `json:"username"`
-	Email            string   `json:"email"`
-	Name             string   `json:"name"`
-	Nickname         string   `json:"nickname"`
-	FirstName        string   `json:"firstName"`
-	LastName         string   `json:"lastName"`
-	Gender           string   `json:"gender"`
-	Country          string   `json:"country"`
-	Address          string   `json:"address"`
-	Position         string   `json:"position"`
-	Status           string   `json:"status"`
-	Source           string   `json:"source"`
-	KratosIdentityID string   `json:"kratosIdentityId"`
-	Roles            []string `json:"roles"`
-	TenantID         string   `json:"tenantId"`
-	CreatedAt        string   `json:"createdAt"`
-}
 
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	listQuery := parseAdminListQuery(r)
 	status := r.URL.Query().Get("status")
-	tenantID := r.URL.Query().Get("tenantId")
+	tenantID := firstNonEmpty(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId"))
 
 	users, total, err := h.userSvc.ListUsers(r.Context(), repository.ListUsersParams{
 		Page:      listQuery.Page,
@@ -78,16 +59,16 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := make([]userListItem, 0, len(users))
+	items := make([]adminUserItemJSON, 0, len(users))
 	for _, u := range users {
-		items = append(items, userListItem{
+		items = append(items, toAdminUserItemJSON(adminUserListFields{
 			ID: u.ID, Username: u.Username, Email: u.Email,
 			Name: u.Name, Status: u.Status, Source: u.Source,
 			Nickname: u.Nickname, FirstName: u.FirstName, LastName: u.LastName,
 			Gender: u.Gender, Country: u.Country, Address: u.Address, Position: u.Position,
 			KratosIdentityID: u.KratosIdentityID, Roles: u.Roles,
 			TenantID: u.TenantID, CreatedAt: u.CreatedAt.Format(time.RFC3339),
-		})
+		}))
 	}
 
 	respondAdminList(w, r, items, total, listQuery.Page, listQuery.PerPage)
@@ -105,33 +86,7 @@ func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusNotFound, "user not found")
 		return
 	}
-	u := detail.User
-
-	respondJSON(w, r, http.StatusOK, map[string]any{
-		"id": u.ID, "username": u.Username, "email": u.Email,
-		"name": u.DisplayName, "status": u.Status, "tenantId": u.TenantID,
-		"nickname": u.Nickname, "firstName": u.FirstName, "lastName": u.LastName,
-		"gender": u.Gender, "country": u.Country, "address": u.Address, "position": u.Position,
-		"source": u.Source, "kratosIdentityId": u.KratosIdentityID, "roles": detail.Roles,
-		"createdAt": u.CreatedAt.Format(time.RFC3339),
-		"updatedAt": u.UpdatedAt.Format(time.RFC3339),
-	})
-}
-
-type createUserRequest struct {
-	Username  string   `json:"username"`
-	Email     string   `json:"email"`
-	Password  string   `json:"password"`
-	Name      string   `json:"name"`
-	Nickname  string   `json:"nickname"`
-	FirstName string   `json:"firstName"`
-	LastName  string   `json:"lastName"`
-	Gender    string   `json:"gender"`
-	Country   string   `json:"country"`
-	Address   string   `json:"address"`
-	Position  string   `json:"position"`
-	TenantID  string   `json:"tenantId"`
-	RoleIDs   []string `json:"role_ids,omitempty"`
+	respondJSON(w, r, http.StatusOK, toAdminUserDetailJSON(detail.User, detail.Roles))
 }
 
 func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -176,26 +131,7 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		"tenant_id":      created.TenantID,
 	})
 
-	respondJSON(w, r, http.StatusCreated, map[string]any{
-		"id": created.ID, "username": created.Username,
-		"email": created.Email, "name": created.DisplayName,
-		"status": created.Status,
-	})
-}
-
-type updateUserRequest struct {
-	Username  *string `json:"username,omitempty"`
-	Email     *string `json:"email,omitempty"`
-	Name      *string `json:"name,omitempty"`
-	Nickname  *string `json:"nickname,omitempty"`
-	FirstName *string `json:"firstName,omitempty"`
-	LastName  *string `json:"lastName,omitempty"`
-	Gender    *string `json:"gender,omitempty"`
-	Country   *string `json:"country,omitempty"`
-	Address   *string `json:"address,omitempty"`
-	Position  *string `json:"position,omitempty"`
-	Status    *string `json:"status,omitempty"`
-	TenantID  *string `json:"tenantId,omitempty"`
+	respondJSON(w, r, http.StatusCreated, toAdminUserDetailJSON(created, nil))
 }
 
 func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -372,9 +308,7 @@ func (h *AdminHandler) ProvisionUserIdentity(w http.ResponseWriter, r *http.Requ
 		respondError(w, r, http.StatusBadRequest, "missing user id")
 		return
 	}
-	var req struct {
-		TemporaryPassword string `json:"temporaryPassword"`
-	}
+	var req provisionIdentityRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid request body")
 		return
@@ -395,8 +329,8 @@ func (h *AdminHandler) ProvisionUserIdentity(w http.ResponseWriter, r *http.Requ
 		"tenant_id":          u.TenantID,
 	})
 	respondJSON(w, r, http.StatusOK, map[string]string{
-		"status":           "provisioned",
-		"kratosIdentityId": identityID,
+		"status":             "provisioned",
+		"kratos_identity_id": identityID,
 	})
 }
 
@@ -488,7 +422,7 @@ func (h *AdminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	listQuery := parseAdminListQuery(r)
 	groups, total, err := h.groupRepo.List(r.Context(), repository.ListGroupsParams{
 		Page: listQuery.Page, Size: listQuery.PerPage,
-		TenantID: r.URL.Query().Get("tenantId"),
+		TenantID: firstNonEmpty(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId")),
 		Status:   r.URL.Query().Get("status"),
 		Search:   listQuery.Q,
 	})
@@ -519,7 +453,7 @@ func (h *AdminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 		Status      string `json:"status"`
-		TenantID    string `json:"tenantId"`
+		TenantID    string `json:"tenant_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid body")
@@ -566,7 +500,7 @@ func (h *AdminHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		Name        *string `json:"name"`
 		Description *string `json:"description"`
 		Status      *string `json:"status"`
-		TenantID    *string `json:"tenantId"`
+		TenantID    *string `json:"tenant_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid body")
@@ -638,9 +572,9 @@ func (h *AdminHandler) ListGroupMembers(w http.ResponseWriter, r *http.Request) 
 		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	items := make([]userListItem, 0, len(members))
+	items := make([]adminUserItemJSON, 0, len(members))
 	for _, u := range members {
-		items = append(items, userListItem{
+		items = append(items, toAdminUserItemJSON(adminUserListFields{
 			ID: u.ID, Username: u.Username, Email: u.Email,
 			Name: u.DisplayName, Status: u.Status, Source: u.Source,
 			Nickname: u.Nickname, FirstName: u.FirstName, LastName: u.LastName,
@@ -648,7 +582,7 @@ func (h *AdminHandler) ListGroupMembers(w http.ResponseWriter, r *http.Request) 
 			KratosIdentityID: u.KratosIdentityID,
 			TenantID:         u.TenantID,
 			CreatedAt:        u.CreatedAt.Format(time.RFC3339),
-		})
+		}))
 	}
 	respondJSONWithRequest(w, r, http.StatusOK, map[string]any{"items": items})
 }
@@ -770,7 +704,7 @@ func (h *AdminHandler) UnassignGroupRole(w http.ResponseWriter, r *http.Request)
 
 func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 	listQuery := parseAdminListQuery(r)
-	tenantID := r.URL.Query().Get("tenantId")
+	tenantID := firstNonEmpty(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId"))
 
 	roles, total, err := h.roleRepo.List(r.Context(), repository.ListRolesParams{
 		Page: listQuery.Page, Size: listQuery.PerPage, TenantID: tenantID, Search: listQuery.Q,
@@ -801,7 +735,7 @@ func (h *AdminHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code     string `json:"code"`
 		Name     string `json:"name"`
-		TenantID string `json:"tenantId"`
+		TenantID string `json:"tenant_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid body")

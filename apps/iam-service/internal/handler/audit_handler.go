@@ -33,7 +33,7 @@ func (h *AuditHandler) Query(w http.ResponseWriter, r *http.Request) {
 	eventTypes := r.URL.Query()["event_type"]
 	subject := r.URL.Query().Get("subject")
 	result := r.URL.Query().Get("result")
-	tenantID := r.URL.Query().Get("tenantId")
+	tenantID := firstNonEmpty(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId"))
 	sort := firstNonEmpty(listQuery.Sort, r.URL.Query().Get("sort"))
 
 	var from, to time.Time
