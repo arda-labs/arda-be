@@ -32,17 +32,17 @@ func (r *TransactionRepository) Create(ctx context.Context, txn *domain.Transact
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO fin_transactions (
 			tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
-			txn_date, status, amount, currency, description, source_ref,
+			txn_date, status, amount, currency, description, source_ref, reversed_transaction_id,
 			counterparty_name, counterparty_account, current_step, priority,
 			created_by, approved_by, metadata
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		RETURNING id, posted_at, created_at
 	`, txn.TenantID, nullStr(txn.IdempotencyKey), txn.TxnType, nullStr(string(txn.Direction)),
 		nullStr(txn.CaseType), nullStr(txn.OperationName), txn.TxnDate, string(txn.Status),
 		nullStr(txn.Amount), nullStr(txn.Currency), txn.Description, txn.SourceRef,
-		nullStr(txn.CounterpartyName), nullStr(txn.CounterpartyAccount), nullStr(txn.CurrentStep),
-		nullStr(txn.Priority), txn.CreatedBy, nullStr(txn.ApprovedBy), meta)
+		nullUUID(txn.ReversedTransactionID), nullStr(txn.CounterpartyName), nullStr(txn.CounterpartyAccount),
+		nullStr(txn.CurrentStep), nullStr(txn.Priority), txn.CreatedBy, nullStr(txn.ApprovedBy), meta)
 
 	return row.Scan(&txn.ID, &txn.PostedAt, &txn.CreatedAt)
 }
@@ -51,7 +51,7 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*domain
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
 		       txn_date, posted_at, status, amount, currency, description, source_ref,
-		       counterparty_name, counterparty_account, current_step, priority,
+		       reversed_transaction_id, counterparty_name, counterparty_account, current_step, priority,
 		       created_by, approved_by, metadata, created_at
 		FROM fin_transactions WHERE id = $1
 	`, id)
@@ -62,7 +62,7 @@ func (r *TransactionRepository) GetByIdempotencyKey(ctx context.Context, key str
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
 		       txn_date, posted_at, status, amount, currency, description, source_ref,
-		       counterparty_name, counterparty_account, current_step, priority,
+		       reversed_transaction_id, counterparty_name, counterparty_account, current_step, priority,
 		       created_by, approved_by, metadata, created_at
 		FROM fin_transactions WHERE idempotency_key = $1
 	`, key)
@@ -106,7 +106,7 @@ func (r *TransactionRepository) List(ctx context.Context, tenantID string, statu
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
 		       txn_date, posted_at, status, amount, currency, description, source_ref,
-		       counterparty_name, counterparty_account, current_step, priority,
+		       reversed_transaction_id, counterparty_name, counterparty_account, current_step, priority,
 		       created_by, approved_by, metadata, created_at
 		FROM fin_transactions WHERE %s ORDER BY posted_at DESC LIMIT $%d OFFSET $%d
 	`, wc, idx, idx+1)
@@ -203,7 +203,7 @@ func (r *TransactionRepository) Search(ctx context.Context, f TransactionSearchF
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
 		       txn_date, posted_at, status, amount, currency, description, source_ref,
-		       counterparty_name, counterparty_account, current_step, priority,
+		       reversed_transaction_id, counterparty_name, counterparty_account, current_step, priority,
 		       created_by, approved_by, metadata, created_at
 		FROM fin_transactions WHERE %s ORDER BY posted_at DESC LIMIT $%d OFFSET $%d
 	`, wc, idx, idx+1)
@@ -325,10 +325,11 @@ func scanTransactionRow(scanner interface{ Scan(dest ...any) error }, t *domain.
 	var direction, caseType, operationName sql.NullString
 	var amount, currency sql.NullString
 	var counterpartyName, counterpartyAccount, currentStep, priority sql.NullString
+	var reversedTransactionID sql.NullString
 
 	err := scanner.Scan(&t.ID, &t.TenantID, &idKey, &t.TxnType, &direction,
 		&caseType, &operationName, &t.TxnDate, &t.PostedAt, &t.Status,
-		&amount, &currency, &t.Description, &t.SourceRef, &counterpartyName,
+		&amount, &currency, &t.Description, &t.SourceRef, &reversedTransactionID, &counterpartyName,
 		&counterpartyAccount, &currentStep, &priority, &t.CreatedBy,
 		&approvedBy, &meta, &t.CreatedAt)
 	if err != nil {
@@ -348,6 +349,7 @@ func scanTransactionRow(scanner interface{ Scan(dest ...any) error }, t *domain.
 	t.CurrentStep = currentStep.String
 	t.Priority = priority.String
 	t.ApprovedBy = approvedBy.String
+	t.ReversedTransactionID = reversedTransactionID.String
 	if meta.Valid {
 		json.Unmarshal([]byte(meta.String), &t.Metadata)
 	}

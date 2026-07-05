@@ -99,14 +99,15 @@ func TestIAMLookupIDsOnlyReturnsUniqueUUIDs(t *testing.T) {
 }
 
 func TestSessionUserCompleteRequiresStableIdentityAndAuthVersion(t *testing.T) {
-	if sessionUserComplete(&session.UserInfo{UserID: "u1", Subject: "s1", AuthVersion: 2}) != true {
-		t.Fatal("expected user with id, subject, and auth version to be complete")
+	if sessionUserComplete(&session.UserInfo{UserID: "u1", Subject: "s1", AuthVersion: 2, GroupIDs: []string{}}) != true {
+		t.Fatal("expected user with id, subject, auth version, and group ids to be complete")
 	}
 	for name, user := range map[string]*session.UserInfo{
-		"nil":          nil,
-		"missing id":   {Subject: "s1", AuthVersion: 2},
-		"missing sub":  {UserID: "u1", AuthVersion: 2},
-		"zero version": {UserID: "u1", Subject: "s1"},
+		"nil":              nil,
+		"missing id":       {Subject: "s1", AuthVersion: 2, GroupIDs: []string{}},
+		"missing sub":      {UserID: "u1", AuthVersion: 2, GroupIDs: []string{}},
+		"zero version":     {UserID: "u1", Subject: "s1", GroupIDs: []string{}},
+		"missing group ids": {UserID: "u1", Subject: "s1", AuthVersion: 2},
 	} {
 		if sessionUserComplete(user) {
 			t.Fatalf("%s user should be incomplete", name)

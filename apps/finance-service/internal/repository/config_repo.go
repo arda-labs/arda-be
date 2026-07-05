@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/domain"
 )
@@ -83,8 +85,7 @@ func (r *ConfigRepository) ListAccountClassifications(ctx context.Context, tenan
 
 func (r *ConfigRepository) ListJournalDefinitions(ctx context.Context, tenantID string) ([]domain.JournalDefinition, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, tenant_id, code, name, txn_type, direction, debit_account_code,
-		       credit_account_code, amount_source, description_template, status
+		SELECT id, tenant_id, code, name, txn_type, direction, status
 		FROM fin_journal_definitions
 		WHERE tenant_id = $1
 		ORDER BY direction, txn_type, code
@@ -95,13 +96,71 @@ func (r *ConfigRepository) ListJournalDefinitions(ctx context.Context, tenantID 
 	defer rows.Close()
 
 	var items []domain.JournalDefinition
+	var ids []string
 	for rows.Next() {
 		var item domain.JournalDefinition
-		var descriptionTemplate sql.NullString
 		if err := rows.Scan(&item.ID, &item.TenantID, &item.Code, &item.Name,
-			&item.TxnType, &item.Direction, &item.DebitAccountCode,
-			&item.CreditAccountCode, &item.AmountSource, &descriptionTemplate,
-			&item.Status); err != nil {
+			&item.TxnType, &item.Direction, &item.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+		ids = append(ids, item.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	linesByDef, err := r.listJournalLinesByDefinitionIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].Lines = linesByDef[items[i].ID]
+	}
+	return items, nil
+}
+
+func (r *ConfigRepository) FindJournalDefinition(ctx context.Context, tenantID, direction, txnType string) (*domain.JournalDefinition, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, code, name, txn_type, direction, status
+		FROM fin_journal_definitions
+		WHERE tenant_id = $1 AND direction = $2 AND txn_type = $3 AND status = 'ACTIVE'
+		ORDER BY code
+		LIMIT 1
+	`, tenantID, direction, txnType)
+
+	var item domain.JournalDefinition
+	if err := row.Scan(&item.ID, &item.TenantID, &item.Code, &item.Name,
+		&item.TxnType, &item.Direction, &item.Status); err != nil {
+		return nil, err
+	}
+	lines, err := r.ListJournalLines(ctx, item.ID)
+	if err != nil {
+		return nil, err
+	}
+	item.Lines = lines
+	return &item, nil
+}
+
+func (r *ConfigRepository) ListJournalLines(ctx context.Context, journalDefinitionID string) ([]domain.JournalLine, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, journal_definition_id, line_seq, entry_type, account_resolution_type,
+		       account_ref, amount_source, description_template, status
+		FROM fin_journal_lines
+		WHERE journal_definition_id = $1 AND status = 'ACTIVE'
+		ORDER BY line_seq
+	`, journalDefinitionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []domain.JournalLine
+	for rows.Next() {
+		var item domain.JournalLine
+		var descriptionTemplate sql.NullString
+		if err := rows.Scan(&item.ID, &item.JournalDefinitionID, &item.LineSeq, &item.EntryType,
+			&item.AccountResolutionType, &item.AccountRef, &item.AmountSource,
+			&descriptionTemplate, &item.Status); err != nil {
 			return nil, err
 		}
 		item.DescriptionTemplate = descriptionTemplate.String
@@ -110,26 +169,41 @@ func (r *ConfigRepository) ListJournalDefinitions(ctx context.Context, tenantID 
 	return items, rows.Err()
 }
 
-func (r *ConfigRepository) FindJournalDefinition(ctx context.Context, tenantID, direction, txnType string) (*domain.JournalDefinition, error) {
-	row := r.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, code, name, txn_type, direction, debit_account_code,
-		       credit_account_code, amount_source, description_template, status
-		FROM fin_journal_definitions
-		WHERE tenant_id = $1 AND direction = $2 AND txn_type = $3 AND status = 'ACTIVE'
-		ORDER BY code
-		LIMIT 1
-	`, tenantID, direction, txnType)
-
-	var item domain.JournalDefinition
-	var descriptionTemplate sql.NullString
-	if err := row.Scan(&item.ID, &item.TenantID, &item.Code, &item.Name,
-		&item.TxnType, &item.Direction, &item.DebitAccountCode,
-		&item.CreditAccountCode, &item.AmountSource, &descriptionTemplate,
-		&item.Status); err != nil {
+func (r *ConfigRepository) listJournalLinesByDefinitionIDs(ctx context.Context, ids []string) (map[string][]domain.JournalLine, error) {
+	out := map[string][]domain.JournalLine{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, journal_definition_id, line_seq, entry_type, account_resolution_type,
+		       account_ref, amount_source, description_template, status
+		FROM fin_journal_lines
+		WHERE journal_definition_id IN (`+strings.Join(placeholders, ",")+`) AND status = 'ACTIVE'
+		ORDER BY journal_definition_id, line_seq
+	`, args...)
+	if err != nil {
 		return nil, err
 	}
-	item.DescriptionTemplate = descriptionTemplate.String
-	return &item, nil
+	defer rows.Close()
+
+	for rows.Next() {
+		var item domain.JournalLine
+		var descriptionTemplate sql.NullString
+		if err := rows.Scan(&item.ID, &item.JournalDefinitionID, &item.LineSeq, &item.EntryType,
+			&item.AccountResolutionType, &item.AccountRef, &item.AmountSource,
+			&descriptionTemplate, &item.Status); err != nil {
+			return nil, err
+		}
+		item.DescriptionTemplate = descriptionTemplate.String
+		out[item.JournalDefinitionID] = append(out[item.JournalDefinitionID], item)
+	}
+	return out, rows.Err()
 }
 
 func (r *ConfigRepository) ListRegulatoryAccounts(ctx context.Context, tenantID string) ([]domain.NamedAccountMapping, error) {

@@ -821,6 +821,32 @@ func (r *UserRepository) AuditKratosIdentityConsistency(ctx context.Context) ([]
 	return issues, nil
 }
 
+// GetUserGroupIDs returns IAM group UUIDs the user belongs to.
+func (r *UserRepository) GetUserGroupIDs(ctx context.Context, userID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT gm.group_id
+		FROM iam_group_members gm
+		JOIN iam_groups g ON g.id = gm.group_id
+		WHERE gm.user_id = $1
+		  AND g.status = 'ACTIVE'
+		ORDER BY g.code
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user group ids: %w", err)
+	}
+	defer rows.Close()
+
+	var groupIDs []string
+	for rows.Next() {
+		var groupID string
+		if err := rows.Scan(&groupID); err != nil {
+			return nil, err
+		}
+		groupIDs = append(groupIDs, groupID)
+	}
+	return groupIDs, rows.Err()
+}
+
 // GetUserRoles returns all roles assigned to a user.
 func (r *UserRepository) GetUserRoles(ctx context.Context, userID string) ([]domain.Role, error) {
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
@@ -946,10 +972,10 @@ func (r *UserRepository) GetUserPermissions(ctx context.Context, userID string) 
 	return perms, rows.Err()
 }
 
-// GetUserOrganizations returns organization codes a user belongs to.
+// GetUserOrganizations returns organization IDs a user belongs to.
 func (r *UserRepository) GetUserOrganizations(ctx context.Context, userID string) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT o.code
+		SELECT o.id::text
 		FROM iam_organizations o
 		JOIN iam_user_organizations uo ON uo.organization_id = o.id
 		WHERE uo.user_id = $1

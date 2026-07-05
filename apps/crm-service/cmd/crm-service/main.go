@@ -58,9 +58,10 @@ func main() {
 
 	// Repositories
 	customerRepo := repository.NewCustomerRepository(db)
+	amendmentRepo := repository.NewAmendmentRepository(db)
 
 	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(interceptors.UnaryServerLogging(logger)))
-	crmv1.RegisterCustomerCommandServiceServer(grpcSrv, grpcserver.NewCustomerCommandServer(customerRepo))
+	crmv1.RegisterCustomerCommandServiceServer(grpcSrv, grpcserver.NewCustomerCommandServer(customerRepo, amendmentRepo))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
@@ -87,11 +88,12 @@ func main() {
 
 	// Handlers
 	customerHandler := handler.NewCustomerHandler(customerRepo, workflowClient)
+	amendmentHandler := handler.NewAmendmentHandler(customerRepo, amendmentRepo, workflowClient)
 
 	// Router and HTTP Server
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(customerHandler),
+		Handler:      transport.NewRouter(customerHandler, amendmentHandler),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

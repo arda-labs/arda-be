@@ -236,6 +236,13 @@ func (r *HRMRepository) CreateEmployeeRegistration(ctx context.Context, item dom
 	if item.ID == "" {
 		item.ID = newID("empreg")
 	}
+	if item.RegistrationCode == "" {
+		code, err := r.nextRegistrationCode(ctx)
+		if err != nil {
+			return item, err
+		}
+		item.RegistrationCode = code
+	}
 	if item.Status == "" {
 		item.Status = "draft"
 	}
@@ -257,6 +264,21 @@ func (r *HRMRepository) GetEmployeeRegistration(ctx context.Context, id string) 
 		SELECT id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at
 		FROM hrm_employee_registrations
 		WHERE id = $1`, id,
+	).Scan(&item.ID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt)
+	return item, err
+}
+
+func (r *HRMRepository) UpdateEmployeeRegistration(ctx context.Context, id, payload string) (domain.EmployeeRegistration, error) {
+	if payload == "" {
+		payload = "{}"
+	}
+	var item domain.EmployeeRegistration
+	err := r.db.QueryRowContext(ctx, `
+		UPDATE hrm_employee_registrations
+		SET payload = $2::jsonb, updated_at = now()
+		WHERE id = $1 AND status = 'draft'
+		RETURNING id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at`,
+		id, payload,
 	).Scan(&item.ID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }

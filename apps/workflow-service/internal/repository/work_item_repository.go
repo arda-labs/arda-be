@@ -3,8 +3,10 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -50,6 +52,47 @@ type WorkItem struct {
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
+func (item WorkItem) MarshalJSON() ([]byte, error) {
+	payload := map[string]any{
+		"id":                 item.ID,
+		"caseId":             item.CaseID,
+		"caseCode":           item.CaseCode,
+		"caseType":           item.CaseType,
+		"direction":          item.Direction,
+		"primaryObjectType":  item.PrimaryObjectType,
+		"primaryObjectId":    item.PrimaryObjectID,
+		"taskType":           item.TaskType,
+		"stepCode":           item.StepCode,
+		"title":              item.Title,
+		"description":        item.Description,
+		"summary":            item.Summary,
+		"status":             item.Status,
+		"transactionStatus":  item.TransactionStatus,
+		"createdBy":          item.CreatedBy,
+		"candidateRole":      item.CandidateRole,
+		"candidateGroupId":   item.CandidateGroupID,
+		"candidateOrgUnitId": item.CandidateOrgUnitID,
+		"assignedTo":         item.AssignedTo,
+		"assignedAt":         item.AssignedAt,
+		"claimExpiresAt":     item.ClaimExpiresAt,
+		"slaDueAt":           item.SLADueAt,
+		"slaStatus":          item.SLAStatus,
+		"canClaim":           item.CanClaim,
+		"canOpen":            item.CanOpen,
+		"canReassign":        item.CanReassign,
+		"claimBlockedReason": item.ClaimBlockedReason,
+		"createdAt":          item.CreatedAt,
+		"updatedAt":          item.UpdatedAt,
+	}
+	if item.ProcessInstanceKey != nil {
+		payload["processInstanceKey"] = strconv.FormatInt(*item.ProcessInstanceKey, 10)
+	}
+	if item.JobKey != nil {
+		payload["jobKey"] = strconv.FormatInt(*item.JobKey, 10)
+	}
+	return json.Marshal(payload)
+}
+
 type WorkItemFilter struct {
 	Direction         string
 	From              *time.Time
@@ -59,6 +102,7 @@ type WorkItemFilter struct {
 	TransactionStatus string
 	Node              string
 	UserID            string
+	CreatedBy         string
 	Limit             int
 }
 
@@ -129,28 +173,121 @@ func (r *CaseRepository) GetWorkItem(ctx context.Context, id string, userID stri
 	if err != nil {
 		return nil, err
 	}
-	item.decorate(userID)
+	item.decorate(userID, "")
+	return &item, nil
+}
+
+func (r *CaseRepository) FindActiveWorkTask(ctx context.Context, caseID string, processInstanceKey int64) (*WorkItem, error) {
+	if caseID == "" && processInstanceKey <= 0 {
+		return nil, nil
+	}
+	where := []string{
+		"wt.status IN ('READY', 'CLAIMED')",
+		"wt.job_key IS NOT NULL",
+	}
+	args := []any{}
+	if caseID != "" {
+		args = append(args, caseID)
+		where = append(where, fmt.Sprintf("wt.case_id = $%d", len(args)))
+	}
+	if processInstanceKey > 0 {
+		args = append(args, processInstanceKey)
+		where = append(where, fmt.Sprintf("bc.process_instance_key = $%d", len(args)))
+	}
+	row := r.db.QueryRowContext(ctx, workItemSelectSQL()+`
+		WHERE `+strings.Join(where, " AND ")+`
+		ORDER BY wt.updated_at DESC
+		LIMIT 1
+	`, args...)
+	item, err := scanWorkItem(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	item.decorate("", "INCOMING")
 	return &item, nil
 }
 
 func (r *CaseRepository) ListWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
+	switch strings.ToUpper(strings.TrimSpace(f.Direction)) {
+	case "OUTGOING":
+		return r.listOutgoingWorkItems(ctx, f)
+	case "ALL":
+		return r.listSearchWorkItems(ctx, f)
+	default:
+		return r.listIncomingWorkItems(ctx, f)
+	}
+}
+
+func (r *CaseRepository) listIncomingWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
+	where := []string{
+		"bc.status <> 'DRAFT'",
+		"wt.status IN ('READY', 'CLAIMED')",
+		"bc.status NOT IN ('COMPLETED', 'CANCELLED', 'REJECTED')",
+		"bc.case_type IN ('CUSTOMER_REGISTRATION', 'CUSTOMER_ADJUSTMENT', 'FINANCE_INCOMING_TRANSACTION', 'HRM_EMPLOYEE_REGISTRATION')",
+	}
+	return r.queryWorkItems(ctx, f, where, "INCOMING", false)
+}
+
+func (r *CaseRepository) listOutgoingWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
+	financeWhere := []string{
+		"bc.status <> 'DRAFT'",
+		"wt.status IN ('READY', 'CLAIMED')",
+		"bc.status NOT IN ('COMPLETED', 'CANCELLED', 'REJECTED')",
+		"bc.case_type = 'FINANCE_OUTGOING_TRANSACTION'",
+	}
+	finance, err := r.queryWorkItems(ctx, f, financeWhere, "OUTGOING", false)
+	if err != nil {
+		return nil, err
+	}
+	maker, err := r.listMakerOutgoingWorkItems(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	return dedupeWorkItemsByCase(append(finance, maker...)), nil
+}
+
+func (r *CaseRepository) listMakerOutgoingWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
+	if strings.TrimSpace(f.UserID) == "" {
+		return nil, nil
+	}
+	makerFilter := f
+	makerFilter.CreatedBy = f.UserID
+	where := []string{
+		"bc.status <> 'DRAFT'",
+		"bc.status IN ('SUBMITTED', 'IN_REVIEW', 'PENDING_APPROVAL')",
+		"bc.status NOT IN ('COMPLETED', 'CANCELLED', 'REJECTED')",
+		"bc.case_type IN ('CUSTOMER_REGISTRATION', 'CUSTOMER_ADJUSTMENT', 'HRM_EMPLOYEE_REGISTRATION')",
+	}
+	return r.queryWorkItems(ctx, makerFilter, where, "OUTGOING", true)
+}
+
+func (r *CaseRepository) listSearchWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
+	where := []string{"bc.status <> 'DRAFT'"}
+	return r.queryWorkItems(ctx, f, where, "ALL", true)
+}
+
+func (r *CaseRepository) queryWorkItems(
+	ctx context.Context,
+	f WorkItemFilter,
+	baseWhere []string,
+	queueDirection string,
+	distinctByCase bool,
+) ([]WorkItem, error) {
 	if f.Limit <= 0 || f.Limit > 200 {
 		f.Limit = 100
 	}
 
-	where := []string{"bc.status <> 'DRAFT'"}
+	where := append([]string{}, baseWhere...)
 	args := []any{}
 	add := func(sql string, v any) {
 		args = append(args, v)
 		where = append(where, fmt.Sprintf(sql, len(args)))
 	}
-	if f.Direction != "" && f.Direction != "ALL" {
-		switch f.Direction {
-		case "INCOMING":
-			where = append(where, "bc.case_type IN ('CUSTOMER_REGISTRATION', 'FINANCE_INCOMING_TRANSACTION')")
-		case "OUTGOING":
-			where = append(where, "bc.case_type = 'FINANCE_OUTGOING_TRANSACTION'")
-		}
+	if strings.TrimSpace(f.CreatedBy) != "" {
+		add("bc.created_by = $%d", f.CreatedBy)
 	}
 	if f.From != nil {
 		add("bc.created_at >= $%d", *f.From)
@@ -162,7 +299,9 @@ func (r *CaseRepository) ListWorkItems(ctx context.Context, f WorkItemFilter) ([
 		add("bc.status = $%d", f.TransactionStatus)
 	}
 	if f.Node != "" && f.Node != "ALL" {
-		add("(wt.step_code = $%d OR bc.current_step = $%d)", f.Node)
+		args = append(args, f.Node, f.Node)
+		n := len(args)
+		where = append(where, fmt.Sprintf("(wt.step_code = $%d OR bc.current_step = $%d)", n-1, n))
 	}
 	if f.SLAStatus != "" && f.SLAStatus != "ALL" {
 		switch f.SLAStatus {
@@ -172,7 +311,6 @@ func (r *CaseRepository) ListWorkItems(ctx context.Context, f WorkItemFilter) ([
 			where = append(where, "COALESCE(wt.sla_due_at, bc.sla_due_at) < CURRENT_TIMESTAMP")
 		}
 	}
-	// ponytail: accounting is approximated until finance-service exposes posted/not-posted state on workflow cases.
 	if f.Accounting == "POSTED" {
 		where = append(where, "bc.status = 'COMPLETED'")
 	}
@@ -181,10 +319,33 @@ func (r *CaseRepository) ListWorkItems(ctx context.Context, f WorkItemFilter) ([
 	}
 
 	args = append(args, f.Limit)
-	rows, err := r.db.QueryContext(ctx, workItemSelectSQL()+`
-		WHERE `+strings.Join(where, " AND ")+`
+	limitPos := len(args)
+	sql := workItemSelectSQL() + `
+		WHERE ` + strings.Join(where, " AND ")
+	if distinctByCase {
+		sql = `
+			SELECT * FROM (
+				SELECT DISTINCT ON (bc.id)
+					wt.id, bc.id, bc.case_code, bc.case_type, bc.primary_object_type, bc.primary_object_id,
+					bc.process_instance_key, wt.job_key, wt.task_type, wt.step_code,
+					wt.title, wt.description, wt.status, bc.status, bc.created_by,
+					wt.candidate_role, wt.candidate_group_id, wt.candidate_org_unit_id,
+					wt.assigned_to, wt.assigned_at, wt.claim_expires_at,
+					COALESCE(wt.sla_due_at, bc.sla_due_at), wt.created_at, wt.updated_at
+				FROM workflow_tasks wt
+				JOIN business_cases bc ON bc.id = wt.case_id
+				WHERE ` + strings.Join(where, " AND ") + `
+				ORDER BY bc.id, wt.updated_at DESC
+			) latest
+			ORDER BY latest.updated_at DESC
+			LIMIT $` + fmt.Sprint(limitPos)
+	} else {
+		sql += `
 		ORDER BY COALESCE(wt.sla_due_at, bc.sla_due_at) NULLS LAST, bc.updated_at DESC
-		LIMIT $`+fmt.Sprint(len(args)), args...)
+		LIMIT $` + fmt.Sprint(limitPos)
+	}
+
+	rows, err := r.db.QueryContext(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -196,10 +357,23 @@ func (r *CaseRepository) ListWorkItems(ctx context.Context, f WorkItemFilter) ([
 		if err != nil {
 			return nil, err
 		}
-		item.decorate(f.UserID)
+		item.decorate(f.UserID, queueDirection)
 		out = append(out, item)
 	}
 	return out, rows.Err()
+}
+
+func dedupeWorkItemsByCase(items []WorkItem) []WorkItem {
+	seen := make(map[string]struct{}, len(items))
+	out := make([]WorkItem, 0, len(items))
+	for _, item := range items {
+		if _, ok := seen[item.CaseID]; ok {
+			continue
+		}
+		seen[item.CaseID] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }
 
 func (r *CaseRepository) ClaimWorkItem(ctx context.Context, id string, actor string) (*WorkItem, error) {
@@ -357,8 +531,11 @@ func scanWorkItem(s scanner) (WorkItem, error) {
 	return item, err
 }
 
-func (item *WorkItem) decorate(userID string) {
+func (item *WorkItem) decorate(userID, queueDirection string) {
 	item.Direction = directionForCaseType(item.CaseType)
+	if queueDirection == "OUTGOING" && userID != "" && item.CreatedBy == userID && isMakerTrackCaseType(item.CaseType) {
+		item.Direction = "OUTGOING"
+	}
 	item.SLAStatus = slaStatus(item.SLADueAt)
 	if item.Title == "" {
 		item.Title = taskTitle(item.TaskType, item.StepCode)
@@ -367,6 +544,13 @@ func (item *WorkItem) decorate(userID string) {
 		item.Description = taskDescription(item.TaskType, item.CaseCode)
 	}
 	item.Summary = item.Description
+
+	if queueDirection == "OUTGOING" && userID != "" && item.CreatedBy == userID && isMakerTrackCaseType(item.CaseType) {
+		item.CanOpen = true
+		item.CanClaim = false
+		return
+	}
+
 	item.CanOpen = item.AssignedTo == "" || item.AssignedTo == userID
 	item.CanClaim = item.Status == TaskStatusReady && item.AssignedTo == ""
 	if item.AssignedTo != "" && item.AssignedTo != userID {
@@ -375,6 +559,15 @@ func (item *WorkItem) decorate(userID string) {
 	if item.Status == TaskStatusCompleted || item.Status == TaskStatusCancelled {
 		item.CanClaim = false
 		item.CanOpen = false
+	}
+}
+
+func isMakerTrackCaseType(caseType string) bool {
+	switch caseType {
+	case "CUSTOMER_REGISTRATION", "CUSTOMER_ADJUSTMENT", "HRM_EMPLOYEE_REGISTRATION":
+		return true
+	default:
+		return false
 	}
 }
 

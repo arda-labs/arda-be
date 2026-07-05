@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
+	"github.com/arda-labs/arda/apps/workflow-service/internal/worker"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -22,15 +25,23 @@ type WorkflowHandler struct {
 	mappingRepo       *repository.MappingRepository
 	caseRepo          *repository.CaseRepository
 	processDefinition *repository.ProcessDefinitionRepository
+	userTaskBroker    *worker.UserTaskBroker
 }
 
-func NewWorkflowHandler(zeebeSvc *service.ZeebeService, mappingRepo *repository.MappingRepository, caseRepo *repository.CaseRepository, processDefinition *repository.ProcessDefinitionRepository) *WorkflowHandler {
+func NewWorkflowHandler(
+	zeebeSvc *service.ZeebeService,
+	mappingRepo *repository.MappingRepository,
+	caseRepo *repository.CaseRepository,
+	processDefinition *repository.ProcessDefinitionRepository,
+	userTaskBroker *worker.UserTaskBroker,
+) *WorkflowHandler {
 	return &WorkflowHandler{
 		zeebeSvc:          zeebeSvc,
 		workflowCmd:       service.NewWorkflowCommandService(caseRepo, zeebeSvc),
 		mappingRepo:       mappingRepo,
 		caseRepo:          caseRepo,
 		processDefinition: processDefinition,
+		userTaskBroker:    userTaskBroker,
 	}
 }
 
@@ -624,6 +635,28 @@ func (h *WorkflowHandler) DelegationByID(w http.ResponseWriter, r *http.Request)
 	writeUpdateOrError(w, item, err, "Workflow delegation not found")
 }
 
+func (h *WorkflowHandler) HealthReady(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	payload := map[string]any{"status": "ready"}
+	if h.zeebeSvc == nil {
+		payload["zeebe"] = "not_configured"
+		writeJSON(w, http.StatusServiceUnavailable, payload)
+		return
+	}
+	if err := h.zeebeSvc.HealthCheck(r.Context()); err != nil {
+		payload["status"] = "degraded"
+		payload["zeebe"] = "unreachable"
+		payload["zeebeError"] = err.Error()
+		writeJSON(w, http.StatusServiceUnavailable, payload)
+		return
+	}
+	payload["zeebe"] = "ok"
+	writeJSON(w, http.StatusOK, payload)
+}
+
 func (h *WorkflowHandler) Cases(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -672,7 +705,7 @@ func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Failed to query work item summary: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"nodes": workItemSummary(items)})
+	writeJSON(w, http.StatusOK, map[string]any{"nodes": workItemSummary(items, currentUserID(r))})
 }
 
 func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
@@ -699,14 +732,42 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Work item not found", http.StatusNotFound)
 		return
 	}
-	ok := userCanClaimCandidateRole(r, item.CandidateRole)
+	ok, err := h.canClaimCandidateRole(r.Context(), r, item.CandidateRole)
+	if err != nil {
+		http.Error(w, "Failed to resolve claim permission: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if !ok && item.AssignedTo != userID {
 		http.Error(w, "User is not in candidate role/group for this task", http.StatusForbidden)
 		return
 	}
 	if item.JobKey == nil && h.zeebeSvc != nil {
-		task, err := h.zeebeSvc.ClaimNextTask(r.Context(), item.TaskType, "arda-workflow-work-items")
-		if err == nil {
+		filter := taskClaimFilterForWorkItem(r.Context(), h.caseRepo, item)
+		filter.ElementID = ""
+		role := strings.TrimSpace(item.CandidateRole)
+		if role == "" {
+			role = roleForTaskType(item.TaskType)
+		}
+		jobType := strings.TrimSpace(item.TaskType)
+		if jobType == "" {
+			jobType = taskTypeForRequest(role, "")
+		}
+		slog.Info("work item claim resolving zeebe task",
+			"workItemId", id,
+			"userId", userID,
+			"caseId", item.CaseID,
+			"role", role,
+			"taskType", item.TaskType,
+			"stepCode", item.StepCode,
+			"processInstanceKey", filter.ProcessInstanceKey,
+		)
+		if task, source, err := h.tryCachedClaimTask(r.Context(), jobType, filter); err == nil && task != nil {
+			slog.Info("work item claim bound cached task",
+				"workItemId", id,
+				"source", source,
+				"jobKey", task.JobKey,
+				"processInstanceKey", task.ProcessInstanceKey,
+			)
 			_, _ = h.caseRepo.UpsertWorkItem(r.Context(), repository.WorkItemSeed{
 				CaseID:             item.CaseID,
 				ProcessInstanceKey: int64Ptr(task.ProcessInstanceKey),
@@ -718,6 +779,40 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 				Title:              item.Title,
 				Description:        item.Description,
 			})
+		} else {
+			claimCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+			task, err := h.zeebeSvc.ResolveInboxTask(claimCtx, role, filter)
+			cancel()
+			if err == nil {
+				slog.Info("work item claim bound zeebe task",
+					"workItemId", id,
+					"jobKey", task.JobKey,
+					"processInstanceKey", task.ProcessInstanceKey,
+					"elementId", task.ElementID,
+					"jobType", task.Type,
+				)
+				_, _ = h.caseRepo.UpsertWorkItem(r.Context(), repository.WorkItemSeed{
+					CaseID:             item.CaseID,
+					ProcessInstanceKey: int64Ptr(task.ProcessInstanceKey),
+					JobKey:             int64Ptr(task.JobKey),
+					TaskType:           task.Type,
+					StepCode:           task.ElementID,
+					CandidateRole:      firstString(task.CandidateRole, item.CandidateRole),
+					SLADueAt:           item.SLADueAt,
+					Title:              item.Title,
+					Description:        item.Description,
+				})
+				_ = h.caseRepo.MarkCaseAtStep(r.Context(), task.ProcessInstanceKey, task.ElementID, task.CandidateRole)
+			} else {
+				slog.Warn("work item claim could not bind zeebe task",
+					"workItemId", id,
+					"caseId", item.CaseID,
+					"role", role,
+					"processInstanceKey", filter.ProcessInstanceKey,
+					"err", err,
+					"hint", claimUnavailableMessage(r.Context(), h.caseRepo, h.userTaskBroker, filter, jobType, err),
+				)
+			}
 		}
 	}
 	claimed, err := h.caseRepo.ClaimWorkItem(r.Context(), id, userID)
@@ -762,28 +857,132 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Role     string `json:"role"`
-		TaskType string `json:"taskType"`
+		Role               string    `json:"role"`
+		TaskType           string    `json:"taskType"`
+		ProcessInstanceKey flexInt64 `json:"processInstanceKey"`
+		CaseID             string    `json:"caseId"`
+		ElementID          string    `json:"elementId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	jobType := taskTypeForRequest(req.Role, req.TaskType)
-	if jobType == "" {
+	if jobType == "" && req.ProcessInstanceKey.Int64() == 0 && strings.TrimSpace(req.CaseID) == "" {
 		http.Error(w, "Unsupported task role or taskType", http.StatusBadRequest)
 		return
 	}
-	task, err := h.zeebeSvc.ClaimNextTask(r.Context(), jobType, "arda-workflow-inbox")
-	if err != nil {
-		http.Error(w, "No task available: "+err.Error(), http.StatusNotFound)
+	filter := service.TaskClaimFilter{
+		ProcessInstanceKey: req.ProcessInstanceKey.Int64(),
+		CaseID:             strings.TrimSpace(req.CaseID),
+		ElementID:          strings.TrimSpace(req.ElementID),
+	}
+	actor := currentUserID(r)
+	slog.Info("workflow task claim requested",
+		"actor", actor,
+		"role", req.Role,
+		"taskType", req.TaskType,
+		"resolvedJobType", jobType,
+		"caseId", filter.CaseID,
+		"elementId", filter.ElementID,
+		"processInstanceKey", filter.ProcessInstanceKey,
+	)
+
+	if task, source, err := h.tryCachedClaimTask(r.Context(), jobType, filter); err != nil {
+		slog.Error("workflow task claim failed resolving cached work task",
+			"caseId", filter.CaseID,
+			"processInstanceKey", filter.ProcessInstanceKey,
+			"err", err,
+		)
+		http.Error(w, "Failed to resolve work task: "+err.Error(), http.StatusInternalServerError)
+		return
+	} else if task != nil {
+		slog.Info("workflow task claim served from cache",
+			"source", source,
+			"caseId", task.CaseID,
+			"jobKey", task.JobKey,
+			"processInstanceKey", task.ProcessInstanceKey,
+			"stepCode", task.ElementID,
+		)
+		writeJSON(w, http.StatusOK, task)
 		return
 	}
+
+	claimCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	startedAt := time.Now()
+	task, err := h.zeebeSvc.ResolveInboxTask(claimCtx, req.Role, filter)
+	if err != nil {
+		status := http.StatusNotFound
+		if errors.Is(err, context.DeadlineExceeded) {
+			status = http.StatusGatewayTimeout
+		}
+		slog.Warn("workflow task claim unavailable",
+			"actor", actor,
+			"role", req.Role,
+			"caseId", filter.CaseID,
+			"elementId", filter.ElementID,
+			"processInstanceKey", filter.ProcessInstanceKey,
+			"status", status,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"err", err,
+		)
+		writeJSON(w, status, map[string]any{
+			"error": claimUnavailableMessage(r.Context(), h.caseRepo, h.userTaskBroker, filter, jobType, err),
+		})
+		return
+	}
+	slog.Info("workflow task claim succeeded",
+		"actor", actor,
+		"role", req.Role,
+		"jobKey", task.JobKey,
+		"jobType", task.Type,
+		"elementId", task.ElementID,
+		"caseId", task.CaseID,
+		"processInstanceKey", task.ProcessInstanceKey,
+		"duration_ms", time.Since(startedAt).Milliseconds(),
+	)
 	if err := h.caseRepo.MarkCaseAtStep(r.Context(), task.ProcessInstanceKey, task.ElementID, task.CandidateRole); err != nil {
 		http.Error(w, "Failed to update task step: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	h.persistInboxClaim(r.Context(), *task)
 	writeJSON(w, http.StatusOK, task)
+}
+
+func workItemToWorkflowTask(item repository.WorkItem) service.WorkflowTask {
+	task := service.WorkflowTask{
+		CaseID:        item.CaseID,
+		CaseCode:      item.CaseCode,
+		CustomerID:    item.PrimaryObjectID,
+		CustomerName:  item.Title,
+		CandidateRole: item.CandidateRole,
+		Type:          item.TaskType,
+		ElementID:     item.StepCode,
+	}
+	if item.JobKey != nil {
+		task.JobKey = *item.JobKey
+	}
+	if item.ProcessInstanceKey != nil {
+		task.ProcessInstanceKey = *item.ProcessInstanceKey
+	}
+	return task
+}
+
+func (h *WorkflowHandler) persistInboxClaim(ctx context.Context, task service.WorkflowTask) {
+	if strings.TrimSpace(task.CaseID) == "" {
+		return
+	}
+	_, _ = h.caseRepo.UpsertWorkItem(ctx, repository.WorkItemSeed{
+		CaseID:             task.CaseID,
+		ProcessInstanceKey: int64Ptr(task.ProcessInstanceKey),
+		JobKey:             int64Ptr(task.JobKey),
+		TaskType:           task.Type,
+		StepCode:           task.ElementID,
+		CandidateRole:      task.CandidateRole,
+		Title:              taskLabelForType(task.Type),
+		Description:        task.CustomerName,
+	})
 }
 
 func (h *WorkflowHandler) listTaskCandidates(ctx context.Context, role string, jobType string, limit int) ([]service.WorkflowTask, error) {
@@ -906,7 +1105,10 @@ func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.
 			}
 			continue
 		}
-		ok := userCanClaimCandidateRole(r, items[i].CandidateRole)
+		ok, err := h.canClaimCandidateRole(r.Context(), r, items[i].CandidateRole)
+		if err != nil {
+			return err
+		}
 		items[i].CanClaim = ok
 		items[i].CanOpen = ok
 		if !ok {
@@ -916,7 +1118,7 @@ func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.
 	return nil
 }
 
-func workItemSummary(items []repository.WorkItem) []repository.WorkItemSummaryNode {
+func workItemSummary(items []repository.WorkItem, userID string) []repository.WorkItemSummaryNode {
 	nodesByStep := map[string]*repository.WorkItemSummaryNode{}
 	root := repository.WorkItemSummaryNode{ID: "ALL", Label: "Tất cả việc được phép nhận"}
 	my := repository.WorkItemSummaryNode{ID: "MINE", Label: "Việc của tôi"}
@@ -924,7 +1126,7 @@ func workItemSummary(items []repository.WorkItem) []repository.WorkItemSummaryNo
 
 	for _, item := range items {
 		root.Count++
-		if item.AssignedTo != "" {
+		if item.AssignedTo != "" && item.AssignedTo == userID {
 			my.Count++
 		}
 		if item.SLAStatus == "BREACHED" {
@@ -968,15 +1170,50 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ProcessInstanceKey int64          `json:"processInstanceKey"`
-		ElementID          string         `json:"elementId"`
-		Variables          map[string]any `json:"variables"`
+		ProcessInstanceKey flexInt64        `json:"processInstanceKey"`
+		ElementID          string           `json:"elementId"`
+		Variables          map[string]any   `json:"variables"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, req.Variables); err != nil {
+	actor := strings.TrimSpace(r.Header.Get("X-User-Id"))
+	if actor == "" {
+		actor = strings.TrimSpace(r.Header.Get("X-User-Email"))
+	}
+	if err := h.enforceMakerChecker(r, req.ProcessInstanceKey.Int64(), req.ElementID, actor); err != nil {
+		slog.Warn("workflow task complete forbidden",
+			"actor", actor,
+			"jobKey", jobKey,
+			"processInstanceKey", req.ProcessInstanceKey.Int64(),
+			"elementId", req.ElementID,
+			"err", err,
+		)
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	slog.Info("workflow task complete requested",
+		"actor", actor,
+		"jobKey", jobKey,
+		"processInstanceKey", req.ProcessInstanceKey.Int64(),
+		"elementId", req.ElementID,
+	)
+	if h.userTaskBroker != nil && h.userTaskBroker.SignalComplete(jobKey, req.Variables) {
+		slog.Info("workflow task complete delegated to user task worker",
+			"actor", actor,
+			"jobKey", jobKey,
+			"processInstanceKey", req.ProcessInstanceKey.Int64(),
+			"elementId", req.ElementID,
+		)
+	} else if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, req.Variables); err != nil {
+		slog.Error("workflow task complete failed in zeebe",
+			"actor", actor,
+			"jobKey", jobKey,
+			"processInstanceKey", req.ProcessInstanceKey.Int64(),
+			"elementId", req.ElementID,
+			"err", err,
+		)
 		http.Error(w, "Failed to complete task: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -984,11 +1221,151 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to update work item: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := h.caseRepo.MarkCaseStepCompleted(r.Context(), req.ProcessInstanceKey, req.ElementID); err != nil {
+	if err := h.caseRepo.MarkCaseStepCompleted(r.Context(), req.ProcessInstanceKey.Int64(), req.ElementID); err != nil {
 		http.Error(w, "Failed to update completed task step: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	slog.Info("workflow task complete succeeded",
+		"actor", actor,
+		"jobKey", jobKey,
+		"processInstanceKey", req.ProcessInstanceKey.Int64(),
+		"elementId", req.ElementID,
+	)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "completed"})
+}
+
+func (h *WorkflowHandler) ProcessInstanceByKey(w http.ResponseWriter, r *http.Request) {
+	keyText, action := processInstancePath(r.URL.Path)
+	if keyText == "" {
+		http.NotFound(w, r)
+		return
+	}
+	switch {
+	case r.Method == http.MethodGet && action == "runtime":
+		h.processInstanceRuntime(w, r, keyText)
+	case r.Method == http.MethodPost && action == "retry-service-jobs":
+		processInstanceKey, err := strconv.ParseInt(strings.TrimSpace(keyText), 10, 64)
+		if err != nil || processInstanceKey <= 0 {
+			http.Error(w, "Invalid process instance key", http.StatusBadRequest)
+			return
+		}
+		h.retryProcessServiceJobs(w, r, processInstanceKey)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (h *WorkflowHandler) JobByKey(w http.ResponseWriter, r *http.Request) {
+	jobKey, action := jobPath(r.URL.Path)
+	if jobKey == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	switch {
+	case r.Method == http.MethodPost && action == "retry":
+		h.retryJob(w, r, jobKey)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (h *WorkflowHandler) processInstanceRuntime(w http.ResponseWriter, r *http.Request, keyText string) {
+	processInstanceKey, err := strconv.ParseInt(strings.TrimSpace(keyText), 10, 64)
+	if err != nil || processInstanceKey <= 0 {
+		http.Error(w, "Invalid process instance key", http.StatusBadRequest)
+		return
+	}
+	if h.zeebeSvc == nil {
+		http.Error(w, "Zeebe service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	runtimeCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	zeebeStatus := "ok"
+	if err := h.zeebeSvc.HealthCheck(runtimeCtx); err != nil {
+		zeebeStatus = "unreachable"
+		slog.Warn("process runtime zeebe health failed",
+			"processInstanceKey", processInstanceKey,
+			"err", err,
+		)
+	}
+
+	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(runtimeCtx, processInstanceKey)
+	if err != nil {
+		http.Error(w, "Failed to query case: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var activeWorkTask any
+	if bc != nil {
+		if pending, err := h.caseRepo.FindActiveWorkTask(runtimeCtx, bc.ID, processInstanceKey); err != nil {
+			http.Error(w, "Failed to query work task: "+err.Error(), http.StatusInternalServerError)
+			return
+		} else if pending != nil {
+			activeWorkTask = pending
+		}
+	}
+
+	var pendingJobs []service.ProcessJobSnapshot
+	var jobsErr string
+	if zeebeStatus == "ok" {
+		scanCtx, scanCancel := context.WithTimeout(r.Context(), 8*time.Second)
+		caseType := ""
+		currentStep := ""
+		if bc != nil {
+			caseType = bc.CaseType
+			currentStep = bc.CurrentStep
+		}
+		jobs, err := h.zeebeSvc.FindProcessJobsForCase(scanCtx, processInstanceKey, caseType, currentStep)
+		scanCancel()
+		if len(jobs) > 0 {
+			pendingJobs = jobs
+		}
+		if err != nil {
+			jobsErr = err.Error()
+			slog.Warn("process runtime pending jobs scan failed",
+				"processInstanceKey", processInstanceKey,
+				"caseType", caseType,
+				"currentStep", currentStep,
+				"jobsFound", len(pendingJobs),
+				"err", err,
+			)
+		}
+	}
+	if pendingJobs == nil {
+		pendingJobs = []service.ProcessJobSnapshot{}
+	}
+
+	var timeline []repository.TimelineEvent
+	if bc != nil {
+		if events, err := h.caseRepo.ListTimeline(runtimeCtx, bc.ID); err == nil {
+			timeline = events
+		}
+	}
+	if timeline == nil {
+		timeline = []repository.TimelineEvent{}
+	}
+	incidents := incidentsFromTimeline(timeline)
+	if incidents == nil {
+		incidents = []service.ProcessIncidentSnapshot{}
+	}
+	activeElementID := activeElementID(bc, pendingJobs, incidents)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"processInstanceKey": strconv.FormatInt(processInstanceKey, 10),
+		"zeebeStatus":        zeebeStatus,
+		"activeElementId":    activeElementID,
+		"case":               bc,
+		"activeWorkTask":     activeWorkTask,
+		"pendingJobs":        pendingJobs,
+		"incidents":          incidents,
+		"pendingJobsError":   jobsErr,
+		"timeline":           timeline,
+		"hint":               runtimeHint(bc, pendingJobs, zeebeStatus),
+		"workerNote":         "CRM/notification workers chạy trong workflow-service — xem log workflow-service, không phải crm-service HTTP.",
+	})
 }
 
 func (h *WorkflowHandler) CaseByID(w http.ResponseWriter, r *http.Request) {
@@ -1155,6 +1532,43 @@ func (h *WorkflowHandler) claimCase(w http.ResponseWriter, r *http.Request, id s
 	writeJSON(w, http.StatusOK, bc)
 }
 
+func processInstancePath(path string) (string, string) {
+	const prefix = "/api/workflow/process-instances/"
+	rest := strings.Trim(strings.TrimPrefix(path, prefix), "/")
+	if rest == "" || rest == path {
+		return "", ""
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "", ""
+}
+
+func runtimeHint(bc *repository.BusinessCase, jobs []service.ProcessJobSnapshot, zeebeStatus string) string {
+	if zeebeStatus != "ok" {
+		return "Không kết nối được Zeebe gateway — kiểm tra zeebe_addr và mạng tới broker."
+	}
+	if bc == nil {
+		return "Không tìm thấy business case trong DB cho process instance này."
+	}
+	step := strings.TrimSpace(bc.CurrentStep)
+	if step == "" || step == "submitted" {
+		return "DB vẫn ghi bước \"submitted\" — workflow có thể mới start hoặc CRM worker chưa chạy (mark_submitted → check_duplicate). Xem log workflow-service: workflow CRM job received. Nếu không có log, job service task trên Zeebe chưa được worker nhận hoặc đang bị lock."
+	}
+	if len(jobs) == 0 {
+		return "Zeebe không quét được job pending cho process này (hoặc scan timeout). DB ghi bước \"" + bc.CurrentStep + "\". Process có thể giữa hai bước, đã hoàn tất, hoặc job đang bị worker khác giữ."
+	}
+	job := jobs[0]
+	if strings.HasPrefix(job.JobType, "crm.") {
+		return "Process đang chờ service task " + job.JobType + " tại " + job.ElementID + ". Worker CRM chạy trong workflow-service — nếu không thấy log workflow CRM job received thì job chưa được broker phân phối hoặc đang bị lock."
+	}
+	if strings.HasPrefix(job.JobType, "workflow.") {
+		return "Có user task " + job.JobType + " tại " + job.ElementID + " (job " + strconv.FormatInt(job.JobKey, 10) + "). Thử Nhận & mở từ workbench hoặc claim qua API."
+	}
+	return "Job đang chờ: " + job.JobType + " tại " + job.ElementID
+}
+
 func casePath(path string) (string, string) {
 	const prefix = "/api/workflow/cases/"
 	rest := strings.Trim(strings.TrimPrefix(path, prefix), "/")
@@ -1299,7 +1713,7 @@ func currentUserID(r *http.Request) string {
 }
 
 func currentUserGroups(r *http.Request) []string {
-	raw := firstString(r.Header.Get("X-User-Groups"), r.Header.Get("X-Groups"))
+	raw := firstString(r.Header.Get("X-User-Group-Ids"), r.Header.Get("X-User-Groups"), r.Header.Get("X-Groups"))
 	if raw == "" {
 		return nil
 	}
@@ -1314,15 +1728,40 @@ func currentUserGroups(r *http.Request) []string {
 	return out
 }
 
+func isSuperadminActor(r *http.Request) bool {
+	return hasToken(currentUserPermissions(r), "superadmin") || hasToken(currentUserRoles(r), "SUPER_ADMIN")
+}
+
+func (h *WorkflowHandler) canClaimCandidateRole(ctx context.Context, r *http.Request, candidateRole string) (bool, error) {
+	candidateRole = strings.TrimSpace(candidateRole)
+	if candidateRole == "" {
+		return false, nil
+	}
+	if isSuperadminActor(r) {
+		return true, nil
+	}
+	if hasToken(currentUserRoles(r), candidateRole) || hasToken(currentUserPermissions(r), candidateRole) {
+		return true, nil
+	}
+	userID := currentUserID(r)
+	if userID == "" {
+		return false, nil
+	}
+	return h.caseRepo.UserCanClaimRole(ctx, userID, currentUserGroups(r), candidateRole)
+}
+
 func userCanClaimCandidateRole(r *http.Request, candidateRole string) bool {
 	candidateRole = strings.TrimSpace(candidateRole)
 	if candidateRole == "" {
 		return false
 	}
+	if isSuperadminActor(r) {
+		return true
+	}
 	if hasToken(currentUserRoles(r), candidateRole) || hasToken(currentUserPermissions(r), candidateRole) {
 		return true
 	}
-	return hasToken(currentUserPermissions(r), "superadmin") || hasToken(currentUserRoles(r), "SUPER_ADMIN")
+	return false
 }
 
 func currentUserRoles(r *http.Request) []string {
@@ -1366,6 +1805,22 @@ func firstString(values ...string) string {
 	return ""
 }
 
+func taskClaimFilterForWorkItem(ctx context.Context, caseRepo *repository.CaseRepository, item *repository.WorkItem) service.TaskClaimFilter {
+	filter := service.TaskClaimFilter{
+		CaseID:    item.CaseID,
+		ElementID: item.StepCode,
+	}
+	if item.ProcessInstanceKey != nil {
+		filter.ProcessInstanceKey = *item.ProcessInstanceKey
+		return filter
+	}
+	bc, err := caseRepo.GetCase(ctx, item.CaseID)
+	if err == nil && bc != nil && bc.ProcessInstanceKey != nil {
+		filter.ProcessInstanceKey = *bc.ProcessInstanceKey
+	}
+	return filter
+}
+
 func int64Ptr(value int64) *int64 {
 	return &value
 }
@@ -1373,11 +1828,11 @@ func int64Ptr(value int64) *int64 {
 func caseTypesForWorkItemDirection(direction string) []string {
 	switch strings.ToUpper(direction) {
 	case "INCOMING":
-		return []string{"CUSTOMER_REGISTRATION", "FINANCE_INCOMING_TRANSACTION", "HRM_EMPLOYEE_REGISTRATION"}
+		return []string{"CUSTOMER_REGISTRATION", "CUSTOMER_ADJUSTMENT", "FINANCE_INCOMING_TRANSACTION", "HRM_EMPLOYEE_REGISTRATION"}
 	case "OUTGOING":
 		return []string{"FINANCE_OUTGOING_TRANSACTION"}
 	default:
-		return []string{"CUSTOMER_REGISTRATION", "FINANCE_INCOMING_TRANSACTION", "FINANCE_OUTGOING_TRANSACTION", "HRM_EMPLOYEE_REGISTRATION"}
+		return []string{"CUSTOMER_REGISTRATION", "CUSTOMER_ADJUSTMENT", "FINANCE_INCOMING_TRANSACTION", "FINANCE_OUTGOING_TRANSACTION", "HRM_EMPLOYEE_REGISTRATION"}
 	}
 }
 
@@ -1504,6 +1959,35 @@ func writeUpdateOrError(w http.ResponseWriter, item any, err error, notFound str
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
+}
+
+var checkerTaskSteps = map[string]struct{}{
+	"Activity_CheckerReview": {},
+	"Activity_RiskReview":    {},
+}
+
+func (h *WorkflowHandler) enforceMakerChecker(r *http.Request, processInstanceKey int64, elementID, actor string) error {
+	if processInstanceKey == 0 || elementID == "" || actor == "" {
+		return nil
+	}
+	if _, ok := checkerTaskSteps[elementID]; !ok {
+		return nil
+	}
+	if isSuperadminActor(r) || makerCheckerSODRelaxed() {
+		return nil
+	}
+	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), processInstanceKey)
+	if err != nil || bc == nil {
+		return nil
+	}
+	if bc.CreatedBy != "" && bc.CreatedBy == actor {
+		return errors.New("maker cannot complete checker task — hồ sơ do chính bạn tạo/trình (tách nhiệm maker-checker). Đăng nhập user CUSTOMER_CHECKER khác, hoặc dev: WORKFLOW_RELAX_MAKER_CHECKER_SOD=true / superadmin")
+	}
+	return nil
+}
+
+func makerCheckerSODRelaxed() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("WORKFLOW_RELAX_MAKER_CHECKER_SOD")), "true")
 }
 
 func writeDeleteOrError(w http.ResponseWriter, deleted bool, err error, notFound string) {

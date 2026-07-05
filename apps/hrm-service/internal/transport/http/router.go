@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/hrm-service/internal/handler"
 )
@@ -95,6 +96,17 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 			hrm.ListEmployeeRegistrations(w, r)
 		case http.MethodPost:
 			hrm.CreateEmployeeRegistration(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+	})
+	mux.HandleFunc("/api/hrm/employee-registrations/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/submit") {
+			return
+		}
+		switch r.Method {
+		case http.MethodPut:
+			hrm.UpdateEmployeeRegistration(w, r)
 		default:
 			methodNotAllowed(w)
 		}

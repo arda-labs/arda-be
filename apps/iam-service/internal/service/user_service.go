@@ -190,6 +190,14 @@ func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*dom
 		return nil, err
 	}
 
+	groupIDs, err := s.repo.GetUserGroupIDs(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	if groupIDs == nil {
+		groupIDs = []string{}
+	}
+
 	authVersion, err := s.repo.GetAuthVersion(ctx, user.ID)
 	if err != nil {
 		return nil, err
@@ -225,6 +233,7 @@ func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*dom
 		CoverFileID:   user.CoverFileID,
 		TenantID:      user.TenantID,
 		OrgIDs:        orgs,
+		GroupIDs:      groupIDs,
 		Roles:         roleCodes,
 		Permissions:   permCodes,
 		AuthVersion:   authVersion,

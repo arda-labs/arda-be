@@ -79,6 +79,7 @@ type Transaction struct {
 	Currency            string               `json:"currency,omitempty"`
 	Description         string               `json:"description,omitempty"`
 	SourceRef           string               `json:"sourceRef,omitempty"`
+	ReversedTransactionID string             `json:"reversedTransactionId,omitempty"`
 	CounterpartyName    string               `json:"counterpartyName,omitempty"`
 	CounterpartyAccount string               `json:"counterpartyAccount,omitempty"`
 	CurrentStep         string               `json:"currentStep,omitempty"`
@@ -146,18 +147,29 @@ type AccountClassification struct {
 	Status                string `json:"status"`
 }
 
+type JournalLine struct {
+	ID                      string `json:"id"`
+	JournalDefinitionID     string `json:"journalDefinitionId"`
+	LineSeq                 int    `json:"lineSeq"`
+	EntryType               string `json:"entryType"`
+	AccountResolutionType   string `json:"accountResolutionType"`
+	AccountRef              string `json:"accountRef"`
+	AmountSource            string `json:"amountSource"`
+	DescriptionTemplate     string `json:"descriptionTemplate,omitempty"`
+	Status                  string `json:"status"`
+}
+
 type JournalDefinition struct {
-	ID                  string `json:"id"`
-	TenantID            string `json:"tenantId"`
-	Code                string `json:"code"`
-	Name                string `json:"name"`
-	TxnType             string `json:"txnType"`
-	Direction           string `json:"direction"`
-	DebitAccountCode    string `json:"debitAccountCode"`
-	CreditAccountCode   string `json:"creditAccountCode"`
-	AmountSource        string `json:"amountSource"`
-	DescriptionTemplate string `json:"descriptionTemplate,omitempty"`
-	Status              string `json:"status"`
+	ID                  string        `json:"id"`
+	TenantID            string        `json:"tenantId"`
+	Code                string        `json:"code"`
+	Name                string        `json:"name"`
+	TxnType             string        `json:"txnType"`
+	Direction           string        `json:"direction"`
+	AmountSource        string        `json:"amountSource,omitempty"`
+	DescriptionTemplate string        `json:"descriptionTemplate,omitempty"`
+	Status              string        `json:"status"`
+	Lines               []JournalLine `json:"lines,omitempty"`
 }
 
 type NamedAccountMapping struct {

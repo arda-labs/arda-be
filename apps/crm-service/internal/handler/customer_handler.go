@@ -48,6 +48,8 @@ func (h *CustomerHandler) CustomerByID(w http.ResponseWriter, r *http.Request) {
 		h.saveCustomer(w, r)
 	case r.Method == http.MethodPost && action == "submit":
 		h.submitCustomer(w, r, id)
+	case r.Method == http.MethodPost && action == "cancel":
+		h.cancelCustomer(w, r, id)
 	case r.Method == http.MethodGet && action == "relationships":
 		h.listRelationships(w, r, id)
 	case r.Method == http.MethodPost && action == "relationships":
@@ -62,8 +64,11 @@ func (h *CustomerHandler) CreateCustomer(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *CustomerHandler) listCustomers(w http.ResponseWriter, r *http.Request) {
+	scope := ScopeFromRequest(r)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	items, err := h.customerRepo.ListCustomers(r.Context(), repository.CustomerListFilter{
+		TenantID:     scope.TenantID,
+		OrgIDs:       scope.OrgIDs,
 		CustomerType: r.URL.Query().Get("customerType"),
 		Status:       r.URL.Query().Get("status"),
 		RiskOnly:     r.URL.Query().Get("riskOnly") == "true",
@@ -78,6 +83,7 @@ func (h *CustomerHandler) listCustomers(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *CustomerHandler) getCustomer(w http.ResponseWriter, r *http.Request, id string) {
+	scope := ScopeFromRequest(r)
 	item, err := h.customerRepo.Get(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Failed to query customer: "+err.Error(), http.StatusInternalServerError)
@@ -87,10 +93,15 @@ func (h *CustomerHandler) getCustomer(w http.ResponseWriter, r *http.Request, id
 		http.Error(w, "Customer not found", http.StatusNotFound)
 		return
 	}
+	if !scope.AllowsOrg(item.OrgID) {
+		http.Error(w, "Customer not found", http.StatusNotFound)
+		return
+	}
 	writeJSON(w, http.StatusOK, item)
 }
 
 func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
+	scope := ScopeFromRequest(r)
 	var req repository.CustomerUpsert
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
@@ -98,6 +109,13 @@ func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 	if id, _ := customerPath(r.URL.Path); id != "" {
 		req.ID = id
+	}
+	req.TenantID = scope.TenantID
+	if req.ID == "" {
+		req.OrgID = scope.ResolveOrgID()
+		if req.OrgID == "" && len(scope.OrgIDs) > 0 {
+			req.OrgID = scope.OrgIDs[0]
+		}
 	}
 	item, err := h.customerRepo.UpsertCustomer(r.Context(), req)
 	if err != nil {
@@ -108,24 +126,30 @@ func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request, id string) {
+	scope := ScopeFromRequest(r)
 	item, err := h.customerRepo.Get(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Failed to query customer: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if item == nil {
+	if item == nil || !scope.AllowsOrg(item.OrgID) {
 		http.Error(w, "Customer not found", http.StatusNotFound)
 		return
 	}
-	if item.Status != "DRAFT" {
-		http.Error(w, "Customer status must be DRAFT", http.StatusBadRequest)
+	if item.Status != "DRAFT" && item.Status != "NEEDS_CHANGES" {
+		http.Error(w, "Customer status must be DRAFT or NEEDS_CHANGES", http.StatusBadRequest)
 		return
 	}
-	if err := h.submitWorkflowCase(r, item); err != nil {
+	if item.Status == "NEEDS_CHANGES" && item.WorkflowCaseID != "" {
+		http.Error(w, "Complete the maker revise task in workflow before resubmitting", http.StatusConflict)
+		return
+	}
+	caseID, err := h.submitWorkflowCase(r, item)
+	if err != nil {
 		http.Error(w, "Failed to submit workflow case: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	if err := h.customerRepo.UpdateStatus(r.Context(), id, "SUBMITTED"); err != nil {
+	if err := h.customerRepo.UpdateSubmitted(r.Context(), id, caseID); err != nil {
 		http.Error(w, "Failed to submit customer: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -137,18 +161,50 @@ func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, updated)
 }
 
-func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.Customer) error {
+func (h *CustomerHandler) cancelCustomer(w http.ResponseWriter, r *http.Request, id string) {
+	scope := ScopeFromRequest(r)
+	item, err := h.customerRepo.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, "Failed to query customer: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if item == nil || !scope.AllowsOrg(item.OrgID) {
+		http.Error(w, "Customer not found", http.StatusNotFound)
+		return
+	}
+	if err := h.customerRepo.CancelDraft(r.Context(), id); err != nil {
+		if strings.Contains(err.Error(), "cannot be cancelled") {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, "Failed to cancel customer: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	updated, err := h.customerRepo.Get(r.Context(), id)
+	if err != nil {
+		http.Error(w, "Failed to query customer: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.Customer) (string, error) {
 	if h.workflowClient == nil {
-		return fmt.Errorf("workflow client is not configured")
+		return "", fmt.Errorf("workflow client is not configured")
 	}
 	actor := r.Header.Get("X-User-Id")
 	if actor == "" {
 		actor = "crm-maker"
 	}
+	displayCode := item.CustomerCode
+	if displayCode == "" {
+		displayCode = item.ID
+	}
 	createdCase, err := h.workflowClient.CreateCase(r.Context(), workflowclient.CaseCreate{
-		TenantID:          "default",
+		TenantID:          item.TenantID,
 		CaseType:          "CUSTOMER_REGISTRATION",
-		Title:             fmt.Sprintf("Dang ky khach hang %s - %s", item.ID, item.Name),
+		CaseCode:          displayCode,
+		Title:             fmt.Sprintf("Đăng ký khách hàng %s - %s", displayCode, item.Name),
 		PrimaryObjectType: "CUSTOMER",
 		PrimaryObjectID:   item.ID,
 		DomainService:     "crm-service",
@@ -156,20 +212,24 @@ func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.C
 		CreatedBy:         actor,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	if createdCase.GetId() == "" {
-		return fmt.Errorf("workflow case id is empty")
+		return "", fmt.Errorf("workflow case id is empty")
 	}
 	_, err = h.workflowClient.SubmitCase(r.Context(), createdCase.GetId(), actor, map[string]any{
 		"customerId":     item.ID,
+		"customerCode":   displayCode,
 		"customerName":   item.Name,
 		"customerEmail":  item.Email,
 		"identityNo":     item.IdentityNo,
 		"riskLevel":      item.RiskLevel,
-		"customerStatus": item.Status,
+		"customerStatus": "SUBMITTED",
 	})
-	return err
+	if err != nil {
+		return "", err
+	}
+	return createdCase.GetId(), nil
 }
 
 func (h *CustomerHandler) listRelationships(w http.ResponseWriter, r *http.Request, id string) {

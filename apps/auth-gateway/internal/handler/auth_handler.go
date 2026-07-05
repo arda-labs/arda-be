@@ -97,6 +97,12 @@ func (h *AuthHandler) injectHeaders(w http.ResponseWriter, ctx *iamclient.UserCo
 	w.Header().Set("X-User-Email", ctx.Email)
 	w.Header().Set("X-Nickname", ctx.Nickname)
 	w.Header().Set("X-Tenant-Id", ctx.TenantID)
+	if len(ctx.OrgIDs) > 0 {
+		w.Header().Set("X-User-Org-Ids", strings.Join(ctx.OrgIDs, ","))
+	}
+	if len(ctx.GroupIDs) > 0 {
+		w.Header().Set("X-User-Group-Ids", strings.Join(ctx.GroupIDs, ","))
+	}
 	w.Header().Set("X-Roles", strings.Join(ctx.Roles, ","))
 	w.Header().Set("X-Permissions", strings.Join(ctx.Permissions, ","))
 	w.Header().Set("X-Auth-Version", fmt.Sprintf("%d", ctx.AuthVersion))

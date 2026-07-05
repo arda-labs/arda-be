@@ -11,6 +11,7 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 	processes := bootstrap.BuiltInProcesses()
 	want := map[string]string{
 		"CUSTOMER_REGISTRATION":     "customer-registration-v1",
+		"CUSTOMER_ADJUSTMENT":       "customer-adjustment-v1",
 		"HRM_EMPLOYEE_REGISTRATION": "hrm-employee-registration-v1",
 	}
 	if len(processes) != len(want) {

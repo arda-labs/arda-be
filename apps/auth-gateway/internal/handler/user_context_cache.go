@@ -65,6 +65,7 @@ func cloneUserContext(ctx *iamclient.UserContext) *iamclient.UserContext {
 	}
 	cloned := *ctx
 	cloned.OrgIDs = append([]string(nil), ctx.OrgIDs...)
+	cloned.GroupIDs = append([]string(nil), ctx.GroupIDs...)
 	cloned.Roles = append([]string(nil), ctx.Roles...)
 	cloned.Permissions = append([]string(nil), ctx.Permissions...)
 	return &cloned

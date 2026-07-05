@@ -15,11 +15,7 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
-	mux.HandleFunc("/health/ready", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ready"}`))
-	})
+	mux.HandleFunc("/health/ready", wfHandler.HealthReady)
 
 	// Workflow APIs
 	mux.HandleFunc("/api/v1/workflows/deploy", wfHandler.Deploy)
@@ -49,6 +45,8 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 	mux.HandleFunc("/api/workflow/work-items", wfHandler.WorkItems)
 	mux.HandleFunc("/api/workflow/work-items/summary", wfHandler.WorkItemSummary)
 	mux.HandleFunc("/api/workflow/work-items/", wfHandler.WorkItemByID)
+	mux.HandleFunc("/api/workflow/process-instances/", wfHandler.ProcessInstanceByKey)
+	mux.HandleFunc("/api/workflow/jobs/", wfHandler.JobByKey)
 	mux.HandleFunc("/api/workflow/tasks", wfHandler.Tasks)
 	mux.HandleFunc("/api/workflow/tasks/claim", wfHandler.ClaimTask)
 	mux.HandleFunc("/api/workflow/tasks/", wfHandler.TaskByID)

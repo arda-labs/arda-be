@@ -5,3 +5,5 @@ log_level: info
 database_dsn: "postgres://arda_workflow:123456@192.168.100.201:30432/workflow?sslmode=disable"
 zeebe_addr: 192.168.100.201:30650
 crm_grpc_addr: "localhost:9094"
+# Dev only: allow same user to complete checker/risk after submitting as maker
+# relax_maker_checker_sod: true

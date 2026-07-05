@@ -26,6 +26,7 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
+	zeebeworker "github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -99,7 +100,7 @@ func main() {
 	defer crmClient.Close()
 	logger.Info("crm grpc configured", "addr", cfg.CRMGRPCAddr)
 
-	crmWorkers := worker.NewCRMWorkers(crmClient)
+	crmWorkers := worker.NewCRMWorkers(crmClient, caseRepo)
 	crmMarkSubmittedWorker := zeebeSvc.NewJobWorker("crm.mark_customer_submitted", crmWorkers.MarkSubmittedHandler)
 	defer crmMarkSubmittedWorker.Close()
 	crmCheckDuplicateWorker := zeebeSvc.NewJobWorker("crm.check_customer_duplicate", crmWorkers.CheckDuplicateHandler)
@@ -115,6 +116,19 @@ func main() {
 	crmApproveWorker := zeebeSvc.NewJobWorker("crm.approve_customer", crmWorkers.ApproveCustomerHandler)
 	defer crmApproveWorker.Close()
 	logger.Info("workflow CRM job workers registered")
+
+	userTaskBroker := worker.NewUserTaskBroker()
+	userTaskWorkers := worker.NewUserTaskWorkers(caseRepo, userTaskBroker)
+	var userTaskJobWorkers []zeebeworker.JobWorker
+	for _, jobType := range worker.UserTaskJobTypes {
+		userTaskJobWorkers = append(userTaskJobWorkers, zeebeSvc.NewUserTaskJobWorker(jobType, userTaskWorkers.Handler))
+	}
+	defer func() {
+		for _, jobWorker := range userTaskJobWorkers {
+			jobWorker.Close()
+		}
+	}()
+	logger.Info("workflow user task workers registered", "count", len(userTaskJobWorkers))
 
 	notificationWorkers := worker.NewNotificationWorkers()
 	notificationEmailWorker := zeebeSvc.NewJobWorker("notification.email", notificationWorkers.SendEmailHandler)
@@ -148,14 +162,14 @@ func main() {
 		}
 	}()
 
-	wfHandler := handler.NewWorkflowHandler(zeebeSvc, mappingRepo, caseRepo, processDefinitionRepo)
+	wfHandler := handler.NewWorkflowHandler(zeebeSvc, mappingRepo, caseRepo, processDefinitionRepo, userTaskBroker)
 
 	// Router and HTTP Server
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
 		Handler:      transport.NewRouter(wfHandler),
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 45 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 

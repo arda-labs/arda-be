@@ -688,7 +688,8 @@ func sessionUserComplete(user *session.UserInfo) bool {
 	return user != nil &&
 		strings.TrimSpace(user.UserID) != "" &&
 		strings.TrimSpace(user.Subject) != "" &&
-		user.AuthVersion > 0
+		user.AuthVersion > 0 &&
+		user.GroupIDs != nil
 }
 
 func (h *BFFHandler) ensureSessionUser(ctx context.Context, sess *session.Session, forceFresh bool) bool {
@@ -859,6 +860,7 @@ func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *
 		CoverFileID:  uc.CoverFileID,
 		TenantID:     uc.TenantID,
 		OrgIDs:       uc.OrgIDs,
+		GroupIDs:     append([]string(nil), uc.GroupIDs...),
 		Roles:        uc.Roles,
 		Permissions:  uc.Permissions,
 		AuthVersion:  uc.AuthVersion,
@@ -1280,35 +1282,85 @@ func (h *BFFHandler) StepUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Code string `json:"code"`
+		Code    string `json:"code"`
+		Confirm bool   `json:"confirm"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if strings.TrimSpace(req.Code) == "" {
-		respondError(w, http.StatusBadRequest, "code is required")
+	mfaEnrolled := h.userMFAEnrolled(r.Context(), sess.User.UserID)
+	if mfaEnrolled {
+		if strings.TrimSpace(req.Code) == "" {
+			respondError(w, http.StatusBadRequest, "code is required")
+			return
+		}
+		if err := h.verifyMFA(r.Context(), sess.User.UserID, strings.TrimSpace(req.Code)); err != nil {
+			respondError(w, http.StatusUnauthorized, "invalid MFA code")
+			return
+		}
+	} else if !req.Confirm {
+		respondError(w, http.StatusBadRequest, "confirmation required")
 		return
 	}
-	if err := h.verifyMFA(r.Context(), sess.User.UserID, strings.TrimSpace(req.Code)); err != nil {
-		respondError(w, http.StatusUnauthorized, "invalid MFA code")
-		return
-	}
-	sess.AuthTime = time.Now()
-	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
-	if ttl <= 0 {
-		ttl = 24 * time.Hour
-	}
-	if err := h.store.Refresh(r.Context(), sessionID, sess, ttl); err != nil {
+	if err := h.refreshSessionAuthTime(w, r.Context(), sessionID, sess); err != nil {
 		respondError(w, http.StatusInternalServerError, "refresh session failed")
 		return
 	}
-	h.setSessionCookie(w, sess.ID, ttl)
 	respondJSON(w, http.StatusOK, map[string]any{
 		"status":       "verified",
 		"stepUpUntil":  sess.AuthTime.Add(time.Duration(h.cfg.RecentAuthWindow) * time.Second).Format(time.RFC3339),
 		"validSeconds": h.cfg.RecentAuthWindow,
 	})
+}
+
+func (h *BFFHandler) RecentAuthStatus(w http.ResponseWriter, r *http.Request) {
+	sessionID := h.readSessionCookie(r)
+	if sessionID == "" {
+		respondError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	sess, _ := h.store.Get(r.Context(), sessionID)
+	if sess == nil {
+		h.clearSessionCookie(w)
+		respondError(w, http.StatusUnauthorized, "session expired")
+		return
+	}
+	recentOk := h.cfg.RecentAuthWindow <= 0 ||
+		(!sess.AuthTime.IsZero() &&
+			time.Since(sess.AuthTime) <= time.Duration(h.cfg.RecentAuthWindow)*time.Second)
+	resp := map[string]any{
+		"recentAuthOk": recentOk,
+		"validSeconds": h.cfg.RecentAuthWindow,
+	}
+	if !sess.AuthTime.IsZero() && h.cfg.RecentAuthWindow > 0 {
+		resp["stepUpUntil"] = sess.AuthTime.Add(time.Duration(h.cfg.RecentAuthWindow) * time.Second).Format(time.RFC3339)
+	}
+	respondJSON(w, http.StatusOK, resp)
+}
+
+func (h *BFFHandler) userMFAEnrolled(ctx context.Context, userID string) bool {
+	if h.iamClient == nil || userID == "" {
+		return true
+	}
+	status, err := h.iamClient.GetMFAStatus(ctx, userID)
+	if err != nil || status == nil {
+		return true
+	}
+	return status.IsEnrolled
+}
+
+func (h *BFFHandler) refreshSessionAuthTime(w http.ResponseWriter, ctx context.Context, sessionID string, sess *session.Session) error {
+	sess.AuthTime = time.Now()
+	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	if err := h.store.Refresh(ctx, sessionID, sess, ttl); err != nil {
+		return err
+	}
+	h.setSessionCookie(w, sess.ID, ttl)
+	return nil
 }
 
 func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
@@ -1376,6 +1428,15 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			proxyReq.Header.Set("X-User-Email", sess.User.Email)
 			proxyReq.Header.Set("X-Nickname", sess.User.Nickname)
 			proxyReq.Header.Set("X-Tenant-Id", sess.User.TenantID)
+			if len(sess.User.OrgIDs) > 0 {
+				proxyReq.Header.Set("X-User-Org-Ids", strings.Join(sess.User.OrgIDs, ","))
+			}
+			if len(sess.User.GroupIDs) > 0 {
+				proxyReq.Header.Set("X-User-Group-Ids", strings.Join(sess.User.GroupIDs, ","))
+			}
+			if activeOrg := strings.TrimSpace(r.Header.Get("X-Org-Id")); activeOrg != "" {
+				proxyReq.Header.Set("X-Org-Id", activeOrg)
+			}
 			proxyReq.Header.Set("X-Roles", strings.Join(sess.User.Roles, ","))
 			proxyReq.Header.Set("X-Permissions", strings.Join(sess.User.Permissions, ","))
 			proxyReq.Header.Set("X-Auth-Version", fmt.Sprintf("%d", sess.User.AuthVersion))
@@ -1402,21 +1463,19 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	resp, err := client.Do(proxyReq)
 	upstreamDuration := time.Since(upstreamStart)
 	if err != nil {
+		h.logger.Error("upstream proxy failed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"upstream", baseURL,
+			"duration_ms", upstreamDuration.Milliseconds(),
+			"err", err,
+		)
 		respondError(w, http.StatusBadGateway, "upstream error")
-		if slowLogEnabled && upstreamDuration >= slowLogThreshold {
-			h.logger.Warn("slow upstream request",
-				"method", r.Method,
-				"path", r.URL.Path,
-				"upstream", baseURL,
-				"duration_ms", upstreamDuration.Milliseconds(),
-				"err", err,
-			)
-		}
 		return
 	}
 	defer resp.Body.Close()
-	if slowLogEnabled && upstreamDuration >= slowLogThreshold {
-		h.logger.Warn("slow upstream request",
+	if resp.StatusCode >= 500 || (strings.HasPrefix(r.URL.Path, "/api/workflow/") && resp.StatusCode >= 400) {
+		h.logger.Warn("upstream proxy returned error status",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"upstream", baseURL,
@@ -1526,6 +1585,7 @@ func stripAuthContextHeaders(header http.Header) {
 		"X-Tenant-Id",
 		"X-Roles",
 		"X-Permissions",
+		"X-User-Group-Ids",
 		"X-Session-Id",
 		"X-Auth-Version",
 		"X-Auth-Time",

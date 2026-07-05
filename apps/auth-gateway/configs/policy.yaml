@@ -123,6 +123,14 @@ routes:
     permissions:
       - crm.customer.read
 
+  - id: crm-customer-write
+    path: /api/crm/customers/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+    permissions:
+      - crm.customer.manage
+
   - id: hrm-read
     path: /api/hrm/**
     methods: [GET]

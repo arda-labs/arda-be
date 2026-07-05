@@ -151,6 +151,10 @@ func (s *LedgerService) ReverseTransaction(ctx context.Context, originalID, reas
 		return nil, err
 	}
 
+	if original.Status != domain.TxnPosted {
+		return nil, fmt.Errorf("only posted transactions can be reversed")
+	}
+
 	reversalEntries := make([]domain.LedgerEntry, len(entries))
 	for i, e := range entries {
 		reversalType := domain.EntryCredit
@@ -167,15 +171,15 @@ func (s *LedgerService) ReverseTransaction(ctx context.Context, originalID, reas
 	}
 
 	rev := &domain.Transaction{
-		TenantID:    original.TenantID,
-		TxnType:     original.TxnType + "_REVERSAL",
-		TxnDate:     time.Now().Format("2006-01-02"),
-		Status:      domain.TxnPosted,
-		Description: fmt.Sprintf("Reversal of %s: %s", originalID, reason),
-		SourceRef:   originalID,
-		CreatedBy:   userID,
-		Metadata:    map[string]any{"reversal_reason": reason},
-		Entries:     reversalEntries,
+		TenantID:              original.TenantID,
+		TxnType:               original.TxnType + "_REVERSAL",
+		TxnDate:               time.Now().Format("2006-01-02"),
+		Status:                domain.TxnPosted,
+		Description:           fmt.Sprintf("Reversal of %s: %s", originalID, reason),
+		ReversedTransactionID: originalID,
+		CreatedBy:             userID,
+		Metadata:              map[string]any{"reversal_reason": reason},
+		Entries:               reversalEntries,
 	}
 
 	result, err := s.PostTransaction(ctx, rev)

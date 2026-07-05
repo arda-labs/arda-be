@@ -49,6 +49,7 @@ type UserInfo struct {
 	CoverFileID  string   `json:"coverFileId,omitempty"`
 	TenantID     string   `json:"tenantId,omitempty"`
 	OrgIDs       []string `json:"orgIds,omitempty"`
+	GroupIDs     []string `json:"groupIds,omitempty"`
 	Roles        []string `json:"roles"`
 	Permissions  []string `json:"permissions"`
 	AuthVersion  int64    `json:"authVersion"`
@@ -318,6 +319,7 @@ func (u *UserInfo) MarshalJSON() ([]byte, error) {
 		"coverFileId":  u.CoverFileID,
 		"tenantId":     u.TenantID,
 		"orgIds":       u.OrgIDs,
+		"groupIds":     u.GroupIDs,
 		"roles":        u.Roles,
 		"permissions":  u.Permissions,
 		"authVersion":  u.AuthVersion,

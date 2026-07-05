@@ -31,6 +31,7 @@ type UserContext struct {
 	CoverFileID   string   `json:"coverFileId,omitempty"`
 	TenantID      string   `json:"tenantId"`
 	OrgIDs        []string `json:"orgIds"`
+	GroupIDs      []string `json:"groupIds"`
 	Roles         []string `json:"roles"`
 	Permissions   []string `json:"permissions"`
 	AuthVersion   int64    `json:"authVersion"`

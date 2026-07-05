@@ -220,7 +220,11 @@ func (r *CaseRepository) CreateCase(ctx context.Context, in CaseCreate) (*Busine
 		in.Priority = "NORMAL"
 	}
 	if in.CaseCode == "" {
-		in.CaseCode = fmt.Sprintf("%s-%s", in.CaseType, time.Now().UTC().Format("20060102150405"))
+		code, err := r.nextCaseCode(ctx, in.CaseType)
+		if err != nil {
+			return nil, err
+		}
+		in.CaseCode = code
 	}
 
 	ct, err := r.GetCaseType(ctx, in.CaseType)
@@ -447,6 +451,54 @@ func (r *CaseRepository) MarkCaseStepCompleted(ctx context.Context, processInsta
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE process_instance_key = $1 AND current_step = $2
 	`, processInstanceKey, stepID)
+	return err
+}
+
+func (r *CaseRepository) FinishCase(ctx context.Context, processInstanceKey int64, finalStatus string) error {
+	if processInstanceKey == 0 {
+		return nil
+	}
+	if finalStatus == "" {
+		finalStatus = CaseStatusCompleted
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE business_cases
+		SET status = $2, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		WHERE process_instance_key = $1 AND completed_at IS NULL
+	`, processInstanceKey, finalStatus)
+	return err
+}
+
+func (r *CaseRepository) GetCaseByProcessInstanceKey(ctx context.Context, processInstanceKey int64) (*BusinessCase, error) {
+	if processInstanceKey == 0 {
+		return nil, nil
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
+		       domain_service, status, current_step, priority, created_by, assigned_to,
+		       candidate_role, sla_policy_id, sla_due_at, process_instance_key,
+		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
+		FROM business_cases
+		WHERE process_instance_key = $1
+	`, processInstanceKey)
+	bc, err := scanBusinessCase(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &bc, nil
+}
+
+func (r *CaseRepository) AddTimelineEvent(ctx context.Context, caseID, eventType, note string) error {
+	if caseID == "" || eventType == "" {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO case_timeline_events (case_id, event_type, note)
+		VALUES ($1, $2, $3)
+	`, caseID, eventType, note)
 	return err
 }
 

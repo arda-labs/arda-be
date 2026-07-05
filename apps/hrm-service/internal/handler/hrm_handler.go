@@ -147,10 +147,6 @@ func (h *HRMHandler) CreateEmployeeRegistration(w http.ResponseWriter, r *http.R
 	if !decode(w, r, &req) {
 		return
 	}
-	if req.RegistrationCode == "" {
-		writeError(w, http.StatusBadRequest, "registration_code is required")
-		return
-	}
 	payload := string(req.Payload)
 	if payload == "" {
 		payload = "{}"
@@ -160,6 +156,21 @@ func (h *HRMHandler) CreateEmployeeRegistration(w http.ResponseWriter, r *http.R
 		Payload:          payload,
 		CreatedBy:        headerPtr(r, "X-User-Id"),
 	})
+	writeResult(w, item, err)
+}
+
+func (h *HRMHandler) UpdateEmployeeRegistration(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Payload json.RawMessage `json:"payload"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	payload := string(req.Payload)
+	if payload == "" {
+		payload = "{}"
+	}
+	item, err := h.repo.UpdateEmployeeRegistration(r.Context(), r.PathValue("id"), payload)
 	writeResult(w, item, err)
 }
 

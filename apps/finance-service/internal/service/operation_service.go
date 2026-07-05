@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/domain"
@@ -120,26 +121,126 @@ func (s *FinanceOperationService) journalPreview(ctx context.Context, tenantID, 
 	if err != nil {
 		return nil, err
 	}
-
-	debit, err := s.accountRepo.GetByTenantCode(ctx, tenantID, def.DebitAccountCode)
-	if err != nil {
-		return nil, fmt.Errorf("debit account %s not found: %w", def.DebitAccountCode, err)
-	}
-	credit, err := s.accountRepo.GetByTenantCode(ctx, tenantID, def.CreditAccountCode)
-	if err != nil {
-		return nil, fmt.Errorf("credit account %s not found: %w", def.CreditAccountCode, err)
-	}
-	if !debit.IsActive || !credit.IsActive {
-		return nil, fmt.Errorf("journal definition uses inactive account")
-	}
-	if description == "" {
-		description = def.Name
+	if len(def.Lines) == 0 {
+		return nil, fmt.Errorf("journal definition %s has no lines", def.Code)
 	}
 
-	return []domain.LedgerEntry{
-		{AccountID: debit.ID, AccountCode: debit.Code, EntryType: domain.EntryDebit, Amount: amount, Currency: currency, Description: description},
-		{AccountID: credit.ID, AccountCode: credit.Code, EntryType: domain.EntryCredit, Amount: amount, Currency: currency, Description: description},
-	}, nil
+	lineDescription := description
+	if lineDescription == "" {
+		lineDescription = def.Name
+	}
+
+	entries := make([]domain.LedgerEntry, 0, len(def.Lines))
+	var debitTotal, creditTotal float64
+	for _, line := range def.Lines {
+		accountCode, err := s.resolveJournalAccountRef(ctx, tenantID, direction, txnType, line)
+		if err != nil {
+			return nil, err
+		}
+		account, err := s.accountRepo.GetByTenantCode(ctx, tenantID, accountCode)
+		if err != nil {
+			return nil, fmt.Errorf("journal line %d account %s not found: %w", line.LineSeq, accountCode, err)
+		}
+		if !account.IsActive {
+			return nil, fmt.Errorf("journal line %d uses inactive account %s", line.LineSeq, accountCode)
+		}
+		lineAmount, err := resolveJournalAmount(line.AmountSource, amount)
+		if err != nil {
+			return nil, err
+		}
+		desc := lineDescription
+		if line.DescriptionTemplate != "" {
+			desc = line.DescriptionTemplate
+		}
+		entryType := domain.EntryType(strings.ToUpper(line.EntryType))
+		if entryType != domain.EntryDebit && entryType != domain.EntryCredit {
+			return nil, fmt.Errorf("journal line %d has invalid entry type %s", line.LineSeq, line.EntryType)
+		}
+		entries = append(entries, domain.LedgerEntry{
+			AccountID:   account.ID,
+			AccountCode: account.Code,
+			EntryType:   entryType,
+			Amount:      lineAmount,
+			Currency:    currency,
+			Description: desc,
+		})
+		if entryType == domain.EntryDebit {
+			debitTotal += parseAmount(lineAmount)
+		} else {
+			creditTotal += parseAmount(lineAmount)
+		}
+	}
+	if debitTotal != creditTotal {
+		return nil, fmt.Errorf("journal preview is unbalanced: debit=%.6f credit=%.6f", debitTotal, creditTotal)
+	}
+	return entries, nil
+}
+
+func (s *FinanceOperationService) resolveJournalAccountRef(ctx context.Context, tenantID, direction, txnType string, line domain.JournalLine) (string, error) {
+	ref := strings.TrimSpace(line.AccountRef)
+	switch strings.ToUpper(line.AccountResolutionType) {
+	case "", "FIXED_CODE":
+		if ref == "" {
+			return "", fmt.Errorf("journal line %d missing account_ref", line.LineSeq)
+		}
+		return ref, nil
+	case "CLASSIFICATION":
+		items, err := s.configRepo.ListAccountClassifications(ctx, tenantID)
+		if err != nil {
+			return "", err
+		}
+		for _, item := range items {
+			if item.Code == ref && strings.EqualFold(item.Direction, direction) {
+				if item.TxnType != "" && txnType != "" && !strings.EqualFold(item.TxnType, txnType) {
+					continue
+				}
+				return item.AccountCode, nil
+			}
+		}
+		return "", fmt.Errorf("classification %s not found for %s %s", ref, direction, txnType)
+	case "REGULATORY":
+		items, err := s.configRepo.ListRegulatoryAccounts(ctx, tenantID)
+		if err != nil {
+			return "", err
+		}
+		for _, item := range items {
+			if item.Code == ref {
+				return item.AccountCode, nil
+			}
+		}
+		return "", fmt.Errorf("regulatory account %s not found", ref)
+	case "INTERNAL":
+		items, err := s.configRepo.ListInternalAccounts(ctx, tenantID)
+		if err != nil {
+			return "", err
+		}
+		for _, item := range items {
+			if item.Code == ref {
+				return item.AccountCode, nil
+			}
+		}
+		return "", fmt.Errorf("internal account %s not found", ref)
+	default:
+		return "", fmt.Errorf("unsupported account resolution %s on line %d", line.AccountResolutionType, line.LineSeq)
+	}
+}
+
+func resolveJournalAmount(source, txnAmount string) (string, error) {
+	switch strings.ToUpper(source) {
+	case "", "TRANSACTION_AMOUNT":
+		if strings.TrimSpace(txnAmount) == "" {
+			return "", fmt.Errorf("transaction amount required")
+		}
+		return strings.TrimSpace(txnAmount), nil
+	default:
+		return "", fmt.Errorf("unsupported amount source %s", source)
+	}
+}
+
+func parseAmount(value string) float64 {
+	var out float64
+	_, _ = fmt.Sscan(value, &out)
+	return out
 }
 
 func (s *FinanceOperationService) Search(ctx context.Context, f repository.TransactionSearchFilter) ([]domain.Transaction, int, error) {
