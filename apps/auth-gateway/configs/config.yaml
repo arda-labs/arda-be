@@ -32,9 +32,7 @@ oauth_client_id: "arda-shell"
 oauth_redirect_uri: "http://localhost:5000/api/auth/callback"
 oauth_redirect_uris: "https://arda.io.vn/api/auth/callback,https://arda.io.vn/callback,http://localhost:5000/api/auth/callback,http://localhost:5000/callback"
 
-# redis_url: "redis://default:wuMtEVTgJAUgvsoRI4mSbwYB69h9pSc4@192.168.100.201:30380"
-# redis_url: "redis://default:wuMtEVTgJAUgvsoRI4mSbwYB69h9pSc4@192.168.100.201:30381"
-redis_url: ""
+redis_url: "redis://default:Pkz1%2F8t3mVkXZKt%2F4IBg3U3nqtzFYZs%2FK%2Fvhnt0C6C4%3D@192.168.100.201:30379"
 session_cookie_name: arda_sid
 session_cookie_domain: ""
 session_ttl_seconds: 86400
