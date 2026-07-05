@@ -37,30 +37,14 @@ func (h *SessionHandler) ListMySessions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	currentSessionID := r.Header.Get("X-Session-Id")
-	resp := make([]map[string]any, 0, len(sessions))
+	resp := make([]sessionItemJSON, 0, len(sessions))
 	for _, s := range sessions {
-		resp = append(resp, map[string]any{
-			"id":           s.ID,
-			"deviceId":     s.DeviceID,
-			"deviceName":   s.DeviceName,
-			"deviceType":   s.DeviceType,
-			"os":           s.OS,
-			"browser":      s.Browser,
-			"isTrusted":    s.IsTrusted,
-			"trustedUntil": s.TrustedUntil,
-			"ipAddress":    s.IPAddress,
-			"userAgent":    s.UserAgent,
-			"createdAt":    s.CreatedAt,
-			"lastSeenAt":   s.LastSeenAt,
-			"expiresAt":    s.ExpiresAt,
-			"isActive":     s.IsActive,
-			"isCurrent":    currentSessionID != "" && s.ID == currentSessionID,
-		})
+		resp = append(resp, toSessionItemJSON(s, currentSessionID != "" && s.ID == currentSessionID))
 	}
 
 	respondJSON(w, r, http.StatusOK, map[string]any{
-		"sessions":         resp,
-		"currentSessionId": currentSessionID,
+		"sessions":           resp,
+		"current_session_id": currentSessionID,
 	})
 }
 
@@ -135,20 +119,13 @@ func (h *SessionHandler) ListMyDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := make([]map[string]any, 0, len(devices))
+	resp := make([]deviceItemJSON, 0, len(devices))
 	for _, d := range devices {
-		resp = append(resp, map[string]any{
-			"id":           d.ID,
-			"userId":       d.UserID,
-			"deviceName":   d.DeviceName,
-			"deviceType":   d.DeviceType,
-			"os":           d.OS,
-			"browser":      d.Browser,
-			"fingerprint":  d.Fingerprint,
-			"isTrusted":    d.IsTrusted,
-			"trustedUntil": d.TrustedUntil,
-			"firstSeenAt":  d.FirstSeenAt,
-			"lastSeenAt":   d.LastSeenAt,
+		resp = append(resp, deviceItemJSON{
+			ID: d.ID, UserID: d.UserID, DeviceName: d.DeviceName, DeviceType: d.DeviceType,
+			OS: d.OS, Browser: d.Browser, Fingerprint: d.Fingerprint,
+			IsTrusted: d.IsTrusted, TrustedUntil: d.TrustedUntil,
+			FirstSeenAt: d.FirstSeenAt, LastSeenAt: d.LastSeenAt,
 		})
 	}
 
@@ -324,7 +301,11 @@ func (h *SessionHandler) AdminListUserSessions(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	respondJSON(w, r, http.StatusOK, map[string]any{"sessions": sessions})
+	items := make([]sessionItemJSON, 0, len(sessions))
+	for _, s := range sessions {
+		items = append(items, toSessionItemJSON(s, false))
+	}
+	respondJSON(w, r, http.StatusOK, map[string]any{"sessions": items})
 }
 
 // AdminRevokeUserSessions revokes all sessions for a user (admin only).

@@ -255,7 +255,9 @@ IAM handlers: all `respondError`/`respondJSON` pass `*http.Request` for `request
 
 IAM admin API (phase 4): single-resource JSON **snake_case** for users, groups, roles, permissions, audit events. `UserContext` / BFF session payloads remain camelCase.
 
-Remaining: IAM session/admin endpoints camelCase; optional `meta.timestamp` on responses.
+Phase 5: `arda-http.WriteJSON` / `WriteList` inject optional `meta` (`request_id`, `trace_id`, `timestamp`) into JSON bodies. IAM public session endpoints (`/api/iam/me/sessions`, devices, config; admin user sessions) use snake_case wire format.
+
+Remaining: internal IAM session APIs (auth-gateway); optional FE `meta` typing.
 
 ## Verification State
 

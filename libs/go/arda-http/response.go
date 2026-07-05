@@ -63,12 +63,12 @@ func SetRequestCorrelation(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// WriteJSON writes a JSON response with correlation headers.
+// WriteJSON writes a JSON response with correlation headers and response meta.
 func WriteJSON(w http.ResponseWriter, r *http.Request, status int, data any) {
 	SetRequestCorrelation(w, r)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(withResponseMeta(r, data))
 }
 
 // WriteAppError writes an arda-errors envelope with request_id.

@@ -35,12 +35,12 @@ var DefaultSessionConfig = SessionConfig{
 
 type SessionDetails struct {
 	domain.Session
-	DeviceName   string     `json:"deviceName,omitempty"`
-	DeviceType   string     `json:"deviceType,omitempty"`
-	OS           string     `json:"os,omitempty"`
-	Browser      string     `json:"browser,omitempty"`
-	IsTrusted    bool       `json:"isTrusted"`
-	TrustedUntil *time.Time `json:"trustedUntil,omitempty"`
+	DeviceName   string     `json:"-"`
+	DeviceType   string     `json:"-"`
+	OS           string     `json:"-"`
+	Browser      string     `json:"-"`
+	IsTrusted    bool       `json:"-"`
+	TrustedUntil *time.Time `json:"-"`
 }
 
 // SessionService handles session business logic.
@@ -378,9 +378,9 @@ func (s *SessionService) IsDeviceTrusted(device *domain.Device) bool {
 // Session config for auth-gateway
 
 type SessionConfigDTO struct {
-	MaxConcurrent int    `json:"maxConcurrent"`
-	MaxDevices    int    `json:"maxDevices"`
-	SessionTTL    string `json:"sessionTtl"`
+	MaxConcurrent int    `json:"max_concurrent"`
+	MaxDevices    int    `json:"max_devices"`
+	SessionTTL    string `json:"session_ttl"`
 }
 
 func (s *SessionService) GetConfig() SessionConfigDTO {
