@@ -25,6 +25,7 @@ const (
 	CodeSuperAdminSystemUserProtected = "iam.superadmin.system_user_protected"
 	CodeSuperAdminRoleProtected       = "iam.superadmin.role_protected"
 	CodeSuperAdminPermissionProtected = "iam.superadmin.permission_protected"
+	CodeSessionLimitReached           = "iam.session.limit_reached"
 )
 
 type Error struct {
@@ -111,6 +112,8 @@ func MessageForCode(code string) string {
 		return "System superadmin role is protected"
 	case CodeSuperAdminPermissionProtected:
 		return "System superadmin permission is protected"
+	case CodeSessionLimitReached:
+		return "Maximum concurrent sessions reached"
 	default:
 		return "Something went wrong"
 	}

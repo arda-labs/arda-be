@@ -144,46 +144,50 @@ func (h *MFAHandler) AdminResetMFA(w http.ResponseWriter, r *http.Request) {
 // POST /api/iam/me/mfa/verify
 func (h *MFAHandler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		UserID string `json:"userId"`
-		Code   string `json:"code"`
+		UserID       string `json:"user_id"`
+		UserIDLegacy string `json:"userId"`
+		Code         string `json:"code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if req.UserID == "" || req.Code == "" {
-		respondError(w, r, http.StatusBadRequest, "userId and code required")
+	userID := firstNonEmpty(req.UserID, req.UserIDLegacy)
+	if userID == "" || req.Code == "" {
+		respondError(w, r, http.StatusBadRequest, "user_id and code required")
 		return
 	}
 
-	if err := h.svc.VerifyCode(r.Context(), req.UserID, req.Code); err != nil {
+	if err := h.svc.VerifyCode(r.Context(), userID, req.Code); err != nil {
 		respondError(w, r, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	respondJSON(w, r, http.StatusOK, map[string]string{"status": "verified", "mfaToken": req.UserID + "_mfa_ok"})
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "verified", "mfaToken": userID + "_mfa_ok"})
 }
 
 // VerifyBackupCode verifies a backup code for the current MFA flow.
 // POST /api/iam/me/mfa/backup
 func (h *MFAHandler) VerifyBackupCode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		UserID string `json:"userId"`
-		Code   string `json:"backup_code"`
+		UserID       string `json:"user_id"`
+		UserIDLegacy string `json:"userId"`
+		Code         string `json:"backup_code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if req.UserID == "" || req.Code == "" {
-		respondError(w, r, http.StatusBadRequest, "userId and backup_code required")
+	userID := firstNonEmpty(req.UserID, req.UserIDLegacy)
+	if userID == "" || req.Code == "" {
+		respondError(w, r, http.StatusBadRequest, "user_id and backup_code required")
 		return
 	}
 
-	if err := h.svc.VerifyBackupCode(r.Context(), req.UserID, req.Code); err != nil {
+	if err := h.svc.VerifyBackupCode(r.Context(), userID, req.Code); err != nil {
 		respondError(w, r, http.StatusUnauthorized, err.Error())
 		return
 	}
 
-	respondJSON(w, r, http.StatusOK, map[string]string{"status": "verified", "mfaToken": req.UserID + "_mfa_ok"})
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "verified", "mfaToken": userID + "_mfa_ok"})
 }

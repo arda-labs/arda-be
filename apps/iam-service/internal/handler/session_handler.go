@@ -3,7 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	"github.com/arda-labs/arda/apps/iam-service/internal/audit"
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
@@ -185,33 +187,16 @@ func (h *SessionHandler) SessionConfig(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, r, http.StatusOK, cfg)
 }
 
-type internalCreateSessionRequest struct {
-	UserID          string `json:"userId"`
-	HydraSessionID  string `json:"hydraSessionId"`
-	AccessTokenJTI  string `json:"jti"`
-	RefreshTokenJTI string `json:"refreshJti"`
-	IPAddress       string `json:"ip"`
-	UserAgent       string `json:"userAgent"`
-	DeviceName      string `json:"deviceName"`
-	DeviceType      string `json:"deviceType"`
-	OS              string `json:"os"`
-	Browser         string `json:"browser"`
-	Fingerprint     string `json:"fingerprint"`
-	DeviceToken     string `json:"deviceToken"`
-	TrustForMFA     bool   `json:"trustForMfa"`
-	DeviceID        string `json:"deviceId,omitempty"`
-}
-
 // InternalCreateSession is called by auth-gateway after login to create IAM session record.
 // POST /internal/iam/sessions
 func (h *SessionHandler) InternalCreateSession(w http.ResponseWriter, r *http.Request) {
 	var req internalCreateSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, r, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		respondError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
 	if req.UserID == "" {
-		respondJSON(w, r, http.StatusBadRequest, map[string]string{"error": "userId required"})
+		respondErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "user_id required")
 		return
 	}
 
@@ -232,7 +217,11 @@ func (h *SessionHandler) InternalCreateSession(w http.ResponseWriter, r *http.Re
 		req.HydraSessionID, req.AccessTokenJTI, req.RefreshTokenJTI,
 		req.IPAddress, req.UserAgent)
 	if err != nil {
-		respondJSON(w, r, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+		if strings.Contains(strings.ToLower(err.Error()), "maximum concurrent sessions") {
+			respondErrorCode(w, r, http.StatusTooManyRequests, ardaerrors.CodeSessionLimitReached, err.Error())
+			return
+		}
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.auditSession(r, "session_created", req.UserID, "create", "success", map[string]any{
@@ -240,10 +229,10 @@ func (h *SessionHandler) InternalCreateSession(w http.ResponseWriter, r *http.Re
 		"device_id":  deviceID,
 	})
 
-	respondJSON(w, r, http.StatusCreated, map[string]any{
-		"sessionId": sess.ID,
-		"deviceId":  deviceID,
-		"expiresAt": sess.ExpiresAt,
+	respondJSON(w, r, http.StatusCreated, internalCreateSessionResponse{
+		SessionID: sess.ID,
+		DeviceID:  deviceID,
+		ExpiresAt: sess.ExpiresAt,
 	})
 }
 
@@ -252,12 +241,12 @@ func (h *SessionHandler) InternalCreateSession(w http.ResponseWriter, r *http.Re
 func (h *SessionHandler) InternalRevokeSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	if sessionID == "" {
-		respondJSON(w, r, http.StatusBadRequest, map[string]string{"error": "missing session id"})
+		respondErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "missing session id")
 		return
 	}
 
 	if err := h.svc.ForceRevokeSession(r.Context(), sessionID, "logout"); err != nil {
-		respondJSON(w, r, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	h.auditSession(r, "session_revoked", sessionID, "logout", "success", map[string]any{
@@ -269,21 +258,25 @@ func (h *SessionHandler) InternalRevokeSession(w http.ResponseWriter, r *http.Re
 }
 
 // InternalListSessionByUser is called by auth-gateway to list sessions for user.
-// GET /internal/iam/sessions?userId=xxx
+// GET /internal/iam/sessions?user_id=xxx
 func (h *SessionHandler) InternalListSessionByUser(w http.ResponseWriter, r *http.Request) {
-	userID := r.URL.Query().Get("userId")
+	userID := firstNonEmpty(r.URL.Query().Get("user_id"), r.URL.Query().Get("userId"))
 	if userID == "" {
-		respondJSON(w, r, http.StatusBadRequest, map[string]string{"error": "userId required"})
+		respondErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "user_id required")
 		return
 	}
 
 	sessions, err := h.svc.ListSessions(r.Context(), userID)
 	if err != nil {
-		respondJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "list failed"})
+		respondError(w, r, http.StatusInternalServerError, "list failed")
 		return
 	}
 
-	respondJSON(w, r, http.StatusOK, map[string]any{"sessions": sessions})
+	items := make([]internalSessionItemJSON, 0, len(sessions))
+	for _, s := range sessions {
+		items = append(items, toInternalSessionItemJSON(s))
+	}
+	respondJSON(w, r, http.StatusOK, map[string]any{"sessions": items})
 }
 
 // AdminListUserSessions returns all sessions for a user (admin only).

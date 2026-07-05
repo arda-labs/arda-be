@@ -39,26 +39,26 @@ type UserContext struct {
 
 // CreateSessionRequest is sent to IAM internal API to create a session record.
 type CreateSessionRequest struct {
-	UserID          string `json:"userId"`
-	HydraSessionID  string `json:"hydraSessionId"`
+	UserID          string `json:"user_id"`
+	HydraSessionID  string `json:"hydra_session_id"`
 	AccessTokenJTI  string `json:"jti"`
-	RefreshTokenJTI string `json:"refreshJti"`
+	RefreshTokenJTI string `json:"refresh_jti"`
 	IPAddress       string `json:"ip"`
-	UserAgent       string `json:"userAgent"`
-	DeviceName      string `json:"deviceName"`
-	DeviceType      string `json:"deviceType"`
+	UserAgent       string `json:"user_agent"`
+	DeviceName      string `json:"device_name"`
+	DeviceType      string `json:"device_type"`
 	OS              string `json:"os"`
 	Browser         string `json:"browser"`
 	Fingerprint     string `json:"fingerprint"`
-	DeviceToken     string `json:"deviceToken"`
-	TrustForMFA     bool   `json:"trustForMfa"`
+	DeviceToken     string `json:"device_token"`
+	TrustForMFA     bool   `json:"trust_for_mfa"`
 }
 
 // CreateSessionResponse is the response from IAM internal session creation.
 type CreateSessionResponse struct {
-	SessionID string    `json:"sessionId"`
-	DeviceID  string    `json:"deviceId"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	SessionID string    `json:"session_id"`
+	DeviceID  string    `json:"device_id"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 type MFAStatus struct {
@@ -216,10 +216,17 @@ func (c *Client) CreateSession(ctx context.Context, req *CreateSessionRequest) (
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		var errResp struct {
-			Error string `json:"error"`
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
 		}
-		json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("session limit reached: %s", errResp.Error)
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		msg := errResp.Error.Message
+		if msg == "" {
+			msg = "session limit reached"
+		}
+		return nil, fmt.Errorf("session limit reached: %s", msg)
 	}
 	if resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("create session returned status %d", resp.StatusCode)
@@ -275,7 +282,7 @@ func (c *Client) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, e
 }
 
 func (c *Client) VerifyMFA(ctx context.Context, userID, code string) error {
-	body, err := json.Marshal(map[string]string{"userId": userID, "code": code})
+	body, err := json.Marshal(map[string]string{"user_id": userID, "code": code})
 	if err != nil {
 		return err
 	}

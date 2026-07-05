@@ -257,7 +257,9 @@ IAM admin API (phase 4): single-resource JSON **snake_case** for users, groups, 
 
 Phase 5: `arda-http.WriteJSON` / `WriteList` inject optional `meta` (`request_id`, `trace_id`, `timestamp`) into JSON bodies. IAM public session endpoints (`/api/iam/me/sessions`, devices, config; admin user sessions) use snake_case wire format.
 
-Remaining: internal IAM session APIs (auth-gateway); optional FE `meta` typing.
+Phase 6: internal IAM session APIs (`/internal/iam/sessions`) snake_case + arda-errors; auth-gateway `iamclient` updated. MFA verify accepts `user_id`. `UserContext` / BFF remain camelCase.
+
+Remaining: optional FE surfacing of `meta`; i18n for `iam.session.limit_reached`.
 
 ## Verification State
 
