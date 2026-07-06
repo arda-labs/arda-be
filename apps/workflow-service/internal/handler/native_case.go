@@ -8,6 +8,14 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 )
 
+// CaseUsesNativeInbox reports whether inbox rows for this case come from the v2 user task projector.
+func CaseUsesNativeInbox(bc *repository.BusinessCase) bool {
+	if bc == nil || bc.BpmnProcessID == nil {
+		return false
+	}
+	return strings.Contains(*bc.BpmnProcessID, "-v2")
+}
+
 func (h *WorkflowHandler) usesNativeUserTaskRuntime(ctx context.Context, filter service.TaskClaimFilter) bool {
 	if service.IsNativeUserTaskElement(strings.TrimSpace(filter.ElementID)) {
 		return true

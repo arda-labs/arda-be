@@ -1,6 +1,10 @@
 package handler
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
+)
 
 func TestCasePath(t *testing.T) {
 	tests := []struct {
@@ -119,5 +123,35 @@ func TestTaskTypeForCaseStep(t *testing.T) {
 	}
 	if got := taskTypeForCaseStep("CUSTOMER_REGISTRATION", "Activity_MakerRevise"); got != "workflow.customer_maker_revise" {
 		t.Fatalf("customer revise task type = %q", got)
+	}
+	if got := taskTypeForCaseStep("CUSTOMER_REGISTRATION", "UT_MakerRevise"); got != "" {
+		t.Fatalf("native maker step should not map to v1 job type, got %q", got)
+	}
+}
+
+func TestWorkItemSeedFromCaseSkipsV2(t *testing.T) {
+	bpmnV2 := "crm-customer-registration-v2"
+	_, ok := workItemSeedFromCase(repository.BusinessCase{
+		CaseType:      "CUSTOMER_REGISTRATION",
+		BpmnProcessID: &bpmnV2,
+		CurrentStep:   "UT_MakerRevise",
+		Status:        repository.CaseStatusInReview,
+	})
+	if ok {
+		t.Fatal("expected v2 case to skip legacy work item seed")
+	}
+
+	bpmnV1 := "customer-registration-v1"
+	seed, ok := workItemSeedFromCase(repository.BusinessCase{
+		CaseType:      "CUSTOMER_REGISTRATION",
+		BpmnProcessID: &bpmnV1,
+		CurrentStep:   "Activity_MakerRevise",
+		Status:        repository.CaseStatusInReview,
+	})
+	if !ok {
+		t.Fatal("expected v1 case to seed work item")
+	}
+	if seed.TaskType != "workflow.customer_maker_revise" || seed.StepCode != "Activity_MakerRevise" {
+		t.Fatalf("seed = %+v", seed)
 	}
 }

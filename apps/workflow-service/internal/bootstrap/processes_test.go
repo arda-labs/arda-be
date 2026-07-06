@@ -11,7 +11,6 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 	processes := bootstrap.BuiltInProcesses()
 	want := map[string]string{
 		"CUSTOMER_REGISTRATION":     "crm-customer-registration-v2",
-		"CUSTOMER_REGISTRATION_V1":  "customer-registration-v1",
 		"CUSTOMER_ADJUSTMENT":       "customer-adjustment-v1",
 		"HRM_EMPLOYEE_REGISTRATION": "hrm-employee-registration-v1",
 	}

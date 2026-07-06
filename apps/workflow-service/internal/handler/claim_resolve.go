@@ -21,7 +21,7 @@ func (h *WorkflowHandler) tryCachedClaimTask(
 		task := workItemToWorkflowTask(*pending)
 		return &task, "cached_work_task", nil
 	}
-	if h.userTaskBroker != nil {
+	if h.userTaskBroker != nil && !h.usesNativeUserTaskRuntime(ctx, filter) {
 		if parked := h.userTaskBroker.FindParked(filter.ProcessInstanceKey, jobType); parked != nil && parkedClaimMatches(filter, *parked) {
 			task := parkedUserTaskToWorkflow(*parked)
 			h.persistInboxClaim(ctx, task)

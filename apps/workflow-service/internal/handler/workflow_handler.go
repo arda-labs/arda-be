@@ -1095,6 +1095,9 @@ func (h *WorkflowHandler) seedWorkItems(ctx context.Context, direction string) e
 }
 
 func workItemSeedFromCase(item repository.BusinessCase) (repository.WorkItemSeed, bool) {
+	if CaseUsesNativeInbox(&item) {
+		return repository.WorkItemSeed{}, false
+	}
 	stepCode := item.CurrentStep
 	if stepCode == "" || stepCode == "submitted" {
 		stepCode = defaultStepForCaseType(item.CaseType)
@@ -1243,14 +1246,7 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		"processInstanceKey", req.ProcessInstanceKey.Int64(),
 		"elementId", req.ElementID,
 	)
-	if h.userTaskBroker != nil && h.userTaskBroker.SignalComplete(jobKey, req.Variables) {
-		slog.Info("workflow task complete delegated to user task worker",
-			"actor", actor,
-			"jobKey", jobKey,
-			"processInstanceKey", req.ProcessInstanceKey.Int64(),
-			"elementId", req.ElementID,
-		)
-	} else if h.shouldUseNativeUserTaskComplete(r.Context(), req.ElementID, req.ProcessInstanceKey.Int64()) {
+	if h.shouldUseNativeUserTaskComplete(r.Context(), req.ElementID, req.ProcessInstanceKey.Int64()) {
 		if err := h.completeNativeUserTask(r.Context(), jobKey, req.ElementID, req.Variables, req.ProcessInstanceKey.Int64()); err != nil {
 			slog.Error("workflow native user task complete failed",
 				"actor", actor,
@@ -1262,6 +1258,13 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, r, http.StatusBadGateway, "Failed to complete user task: "+err.Error())
 			return
 		}
+	} else if h.userTaskBroker != nil && h.userTaskBroker.SignalComplete(jobKey, req.Variables) {
+		slog.Info("workflow task complete delegated to user task worker",
+			"actor", actor,
+			"jobKey", jobKey,
+			"processInstanceKey", req.ProcessInstanceKey.Int64(),
+			"elementId", req.ElementID,
+		)
 	} else if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, req.Variables); err != nil {
 		slog.Error("workflow task complete failed in zeebe",
 			"actor", actor,
@@ -1908,6 +1911,9 @@ func defaultStepForCaseType(caseType string) string {
 }
 
 func taskTypeForCaseStep(caseType string, stepCode string) string {
+	if caseType == "CUSTOMER_REGISTRATION" && service.IsNativeUserTaskElement(stepCode) {
+		return ""
+	}
 	switch stepCode {
 	case "Activity_CheckerReview", "UT_CheckerReview":
 		return "workflow.customer_checker_review"

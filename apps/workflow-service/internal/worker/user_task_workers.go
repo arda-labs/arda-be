@@ -10,6 +10,8 @@ import (
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 )
 
+// UserTaskJobTypes are v1 service-task inbox jobs (parked worker pattern).
+// workflow.customer_* serves CUSTOMER_ADJUSTMENT; CUSTOMER_REGISTRATION uses native user tasks (v2).
 var UserTaskJobTypes = []string{
 	"workflow.customer_checker_review",
 	"workflow.customer_maker_revise",
