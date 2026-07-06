@@ -319,11 +319,11 @@ func elementIDToJobType(elementID string) string {
 		return "crm.mark_customer_submitted"
 	case "Activity_CheckDuplicate":
 		return "crm.check_customer_duplicate"
-	case "Activity_CheckerReview":
+	case "Activity_CheckerReview", "UT_CheckerReview":
 		return "workflow.customer_checker_review"
 	case "Activity_RequestChanges":
 		return "crm.request_customer_changes"
-	case "Activity_MakerRevise":
+	case "Activity_MakerRevise", "UT_MakerRevise":
 		return "workflow.customer_maker_revise"
 	case "Activity_RejectCustomer":
 		return "crm.reject_customer"

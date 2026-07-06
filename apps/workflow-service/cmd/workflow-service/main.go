@@ -134,9 +134,18 @@ func main() {
 	if tasklistAddr == "" {
 		tasklistAddr = service.DeriveZeebeTasklistAddr(restAddr)
 	}
-	zeebeRest := service.NewZeebeRestClient(restAddr, tasklistAddr)
+	esURL := cfg.ZeebeESURL
+	if esURL == "" {
+		esURL = service.DeriveZeebeESAddr(cfg.ZeebeAddr)
+	}
+	esIndex := service.NewZeebeUserTaskIndex(esURL)
+	zeebeRest := service.NewZeebeRestClient(restAddr, tasklistAddr, esIndex)
 	if zeebeRest != nil && zeebeRest.Enabled() {
-		logger.Info("zeebe REST client configured", "restAddr", restAddr, "tasklistAddr", tasklistAddr)
+		if esIndex != nil && esIndex.Enabled() {
+			logger.Info("zeebe REST + elasticsearch user task index configured", "restAddr", restAddr, "esURL", esURL)
+		} else {
+			logger.Warn("zeebe REST configured but ZEEBE_ES_URL missing — v2 native user tasks cannot be discovered")
+		}
 	} else {
 		logger.Warn("zeebe REST client not configured — native user tasks (v2) require ZEEBE_REST_ADDR")
 	}
@@ -156,8 +165,8 @@ func main() {
 
 	syncCtx, syncCancel := context.WithCancel(context.Background())
 	defer syncCancel()
-	if userTaskSync := worker.NewUserTaskSync(zeebeRest, caseRepo); userTaskSync != nil {
-		go userTaskSync.Run(syncCtx)
+	if projector := worker.NewUserTaskProjector(zeebeRest, caseRepo); projector != nil {
+		go projector.Run(syncCtx)
 	}
 
 	notificationWorkers := worker.NewNotificationWorkers()

@@ -101,17 +101,13 @@ func (h *WorkflowHandler) shouldUseNativeUserTaskComplete(ctx context.Context, e
 	if !service.IsNativeUserTaskElement(normalized) {
 		return false
 	}
-	if strings.HasPrefix(strings.TrimSpace(elementID), "UT_") {
-		return true
-	}
 	if h.caseRepo == nil || processInstanceKey == 0 {
 		return false
 	}
-	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(ctx, processInstanceKey)
-	if err != nil || bc == nil || bc.BpmnProcessID == nil {
-		return false
-	}
-	return strings.Contains(*bc.BpmnProcessID, "-v2")
+	return h.usesNativeUserTaskRuntime(ctx, service.TaskClaimFilter{
+		ProcessInstanceKey: processInstanceKey,
+		ElementID:          elementID,
+	})
 }
 
 func firstCandidateGroup(groups []string) string {

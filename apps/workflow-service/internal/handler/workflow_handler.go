@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -750,7 +751,9 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 	}
 	if item.JobKey == nil && h.zeebeSvc != nil {
 		filter := taskClaimFilterForWorkItem(r.Context(), h.caseRepo, item)
-		filter.ElementID = ""
+		if filter.ElementID == "" && strings.TrimSpace(item.StepCode) != "" {
+			filter.ElementID = strings.TrimSpace(item.StepCode)
+		}
 		role := strings.TrimSpace(item.CandidateRole)
 		if role == "" {
 			role = roleForTaskType(item.TaskType)
@@ -788,9 +791,22 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 			})
 		} else {
 			claimCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-			task, err := h.zeebeSvc.ResolveInboxTask(claimCtx, role, filter)
+			var task *service.WorkflowTask
+			var err error
+			if native, nativeErr := h.tryNativeUserTaskClaim(claimCtx, filter, filter.ElementID, userID); nativeErr != nil {
+				slog.Warn("work item claim native user task failed",
+					"workItemId", id,
+					"caseId", item.CaseID,
+					"err", nativeErr,
+				)
+			} else if native != nil {
+				task = native
+			}
+			if task == nil && !h.usesNativeUserTaskRuntime(r.Context(), filter) {
+				task, err = h.zeebeSvc.ResolveInboxTask(claimCtx, role, filter)
+			}
 			cancel()
-			if err == nil {
+			if err == nil && task != nil {
 				slog.Info("work item claim bound zeebe task",
 					"workItemId", id,
 					"jobKey", task.JobKey,
@@ -920,8 +936,22 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	if task, err := h.tryNativeUserTaskClaim(claimCtx, filter, filter.ElementID, actor); err != nil {
 		slog.Warn("native user task claim failed", "err", err)
+		if h.usesNativeUserTaskRuntime(r.Context(), filter) {
+			writeJSON(w, r, http.StatusBadGateway, map[string]any{
+				"error": nativeClaimUnavailableMessage(filter, err),
+			})
+			return
+		}
 	} else if task != nil {
+		h.persistInboxClaim(r.Context(), *task)
 		writeJSON(w, r, http.StatusOK, task)
+		return
+	}
+
+	if h.usesNativeUserTaskRuntime(r.Context(), filter) {
+		writeJSON(w, r, http.StatusNotFound, map[string]any{
+			"error": nativeClaimUnavailableMessage(filter, fmt.Errorf("no active native user task for element %q", filter.ElementID)),
+		})
 		return
 	}
 
@@ -1865,7 +1895,7 @@ func caseTypesForWorkItemDirection(direction string) []string {
 func defaultStepForCaseType(caseType string) string {
 	switch caseType {
 	case "CUSTOMER_REGISTRATION":
-		return "Activity_CheckerReview"
+		return "UT_CheckerReview"
 	case "FINANCE_INCOMING_TRANSACTION":
 		return "classify-account"
 	case "FINANCE_OUTGOING_TRANSACTION":

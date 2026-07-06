@@ -53,7 +53,7 @@ func (w *CRMRegisterWorkers) ValidateHandler(client worker.JobClient, job entiti
 	if err := w.completeJob(client, job, nil); err != nil {
 		return
 	}
-	w.projection.AfterServiceTaskCompleted(context.Background(), job.GetProcessInstanceKey(), "UT_CheckerReview", "CUSTOMER_CHECKER")
+	w.projection.AfterServiceTaskCompleted(context.Background(), job.GetProcessInstanceKey(), "ST_Validate", "")
 }
 
 func (w *CRMRegisterWorkers) ExecuteHandler(client worker.JobClient, job entities.Job) {

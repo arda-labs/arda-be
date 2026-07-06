@@ -10,48 +10,49 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 )
 
-// UserTaskSync polls Zeebe REST for native user tasks on active cases and projects work items.
-type UserTaskSync struct {
+// UserTaskProjector is the single writer for native user task work items on v2 processes.
+// It reads Zeebe USER_TASK exporter records from Elasticsearch (Camunda 8.5 without Tasklist).
+type UserTaskProjector struct {
 	rest       *service.ZeebeRestClient
 	caseRepo   *repository.CaseRepository
 	projection *CaseProjection
 	interval   time.Duration
 }
 
-func NewUserTaskSync(rest *service.ZeebeRestClient, caseRepo *repository.CaseRepository) *UserTaskSync {
+func NewUserTaskProjector(rest *service.ZeebeRestClient, caseRepo *repository.CaseRepository) *UserTaskProjector {
 	if rest == nil || !rest.Enabled() {
 		return nil
 	}
-	return &UserTaskSync{
+	return &UserTaskProjector{
 		rest:       rest,
 		caseRepo:   caseRepo,
 		projection: NewCaseProjection(caseRepo),
-		interval:   5 * time.Second,
+		interval:   2 * time.Second,
 	}
 }
 
-func (s *UserTaskSync) Run(ctx context.Context) {
-	if s == nil || s.rest == nil || !s.rest.Enabled() {
+func (p *UserTaskProjector) Run(ctx context.Context) {
+	if p == nil || p.rest == nil || !p.rest.Enabled() {
 		return
 	}
-	ticker := time.NewTicker(s.interval)
+	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
-	slog.Info("user task sync started", "interval", s.interval.String())
+	slog.Info("user task projector started", "interval", p.interval.String())
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("user task sync stopped")
+			slog.Info("user task projector stopped")
 			return
 		case <-ticker.C:
-			s.syncOnce(ctx)
+			p.projectOnce(ctx)
 		}
 	}
 }
 
-func (s *UserTaskSync) syncOnce(ctx context.Context) {
-	cases, err := s.caseRepo.ListActiveCasesWithProcess(ctx, 100)
+func (p *UserTaskProjector) projectOnce(ctx context.Context) {
+	cases, err := p.caseRepo.ListActiveCasesWithProcess(ctx, 100)
 	if err != nil {
-		slog.Warn("user task sync: list active cases failed", "err", err)
+		slog.Warn("user task projector: list active cases failed", "err", err)
 		return
 	}
 	for _, bc := range cases {
@@ -61,9 +62,9 @@ func (s *UserTaskSync) syncOnce(ctx context.Context) {
 		if bc.BpmnProcessID == nil || !strings.Contains(*bc.BpmnProcessID, "-v2") {
 			continue
 		}
-		tasks, err := s.rest.SearchUserTasks(ctx, *bc.ProcessInstanceKey, "CREATED")
+		tasks, err := p.rest.SearchUserTasks(ctx, *bc.ProcessInstanceKey, "CREATED")
 		if err != nil {
-			slog.Warn("user task sync: search failed",
+			slog.Debug("user task projector: search skipped",
 				"caseId", bc.ID,
 				"processInstanceKey", *bc.ProcessInstanceKey,
 				"err", err,
@@ -78,7 +79,7 @@ func (s *UserTaskSync) syncOnce(ctx context.Context) {
 			title := userTaskTitle(ut.ElementID)
 			key := ut.UserTaskKey
 			pik := ut.ProcessInstanceKey
-			s.projection.UpsertUserTaskWorkItem(ctx, repository.WorkItemSeed{
+			p.projection.UpsertUserTaskWorkItem(ctx, repository.WorkItemSeed{
 				CaseID:             bc.ID,
 				ProcessInstanceKey: &pik,
 				JobKey:             &key,
