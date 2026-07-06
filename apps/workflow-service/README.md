@@ -108,7 +108,7 @@ go test ./...
 - Human steps: native `bpmn:userTask` — claim/complete via **Zeebe gateway REST** (`ZEEBE_REST_ADDR`)
 - User task discovery: **Zeebe Elasticsearch exporter** (`ZEEBE_ES_URL`) — required on Camunda 8.5 without Tasklist
 - Inbox projection: `UserTaskProjector` only (`task_type=zeebe.userTask`); legacy `seedWorkItems` is skipped for `-v2` processes
-- `customer-registration-v1` is no longer deployed; `CUSTOMER_ADJUSTMENT` still uses v1 service-task workers
+- v1 service-task user flows are not deployed. New CRM cases use native `bpmn:userTask`; HRM/Finance must add v2 BPMN before enabling BPM submit.
 
 From the backend workspace root, run service-specific tests instead of `go test ./...`; the root uses `go.work` and is not itself a Go module.
 

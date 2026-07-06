@@ -26,7 +26,6 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
-	zeebeworker "github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -100,7 +99,7 @@ func main() {
 	defer crmClient.Close()
 	logger.Info("crm grpc configured", "addr", cfg.CRMGRPCAddr)
 
-	// CRM v1 job workers — CUSTOMER_ADJUSTMENT and legacy flows only (not registration v2).
+	// CRM v1 job workers — legacy flows only (not CRM native user-task v2 processes).
 	crmWorkers := worker.NewCRMWorkers(crmClient, caseRepo)
 	crmRequestChangesWorker := zeebeSvc.NewJobWorker("crm.request_customer_changes", crmWorkers.RequestChangesHandler)
 	defer crmRequestChangesWorker.Close()
@@ -143,19 +142,6 @@ func main() {
 		logger.Warn("zeebe REST client not configured — native user tasks (v2) require ZEEBE_REST_ADDR")
 	}
 
-	userTaskBroker := worker.NewUserTaskBroker()
-	userTaskWorkers := worker.NewUserTaskWorkers(caseRepo, userTaskBroker)
-	var userTaskJobWorkers []zeebeworker.JobWorker
-	for _, jobType := range worker.UserTaskJobTypes {
-		userTaskJobWorkers = append(userTaskJobWorkers, zeebeSvc.NewUserTaskJobWorker(jobType, userTaskWorkers.Handler))
-	}
-	defer func() {
-		for _, jobWorker := range userTaskJobWorkers {
-			jobWorker.Close()
-		}
-	}()
-	logger.Info("workflow user task workers registered (v1 legacy)", "count", len(userTaskJobWorkers))
-
 	syncCtx, syncCancel := context.WithCancel(context.Background())
 	defer syncCancel()
 	if projector := worker.NewUserTaskProjector(zeebeRest, caseRepo); projector != nil {
@@ -194,7 +180,7 @@ func main() {
 		}
 	}()
 
-	wfHandler := handler.NewWorkflowHandler(zeebeSvc, zeebeRest, crmClient, mappingRepo, caseRepo, processDefinitionRepo, userTaskBroker)
+	wfHandler := handler.NewWorkflowHandler(zeebeSvc, zeebeRest, crmClient, mappingRepo, caseRepo, processDefinitionRepo)
 
 	// Router and HTTP Server
 	srv := &http.Server{

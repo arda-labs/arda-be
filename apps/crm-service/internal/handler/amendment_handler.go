@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/crm-service/internal/repository"
-	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 )
 
 type AmendmentHandler struct {
@@ -219,10 +219,8 @@ func (h *AmendmentHandler) createAdjustmentCase(r *http.Request, customer *repos
 
 func (h *AmendmentHandler) submitAdjustmentCase(r *http.Request, caseID string, customer *repository.Customer, actor string) error {
 	_, err := h.workflowClient.SubmitCase(r.Context(), caseID, actor, map[string]any{
-		"customerId":   customer.ID,
-		"customerCode": customer.CustomerCode,
-		"customerName": customer.Name,
-		"adjustment":   true,
+		"customerId": customer.ID,
+		"adjustment": true,
 	})
 	return err
 }

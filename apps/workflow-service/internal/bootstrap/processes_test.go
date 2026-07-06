@@ -10,9 +10,8 @@ import (
 func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 	processes := bootstrap.BuiltInProcesses()
 	want := map[string]string{
-		"CUSTOMER_REGISTRATION":     "crm-customer-registration-v2",
-		"CUSTOMER_ADJUSTMENT":       "customer-adjustment-v1",
-		"HRM_EMPLOYEE_REGISTRATION": "hrm-employee-registration-v1",
+		"CUSTOMER_REGISTRATION": "crm-customer-registration-v2",
+		"CUSTOMER_ADJUSTMENT":   "customer-adjustment-v2",
 	}
 	if len(processes) != len(want) {
 		t.Fatalf("BuiltInProcesses() len = %d, want %d", len(processes), len(want))

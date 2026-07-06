@@ -5,11 +5,8 @@ import _ "embed"
 //go:embed crm-customer-registration-v2.bpmn
 var crmCustomerRegistrationV2 []byte
 
-//go:embed customer-adjustment-v1.bpmn
-var customerAdjustmentV1 []byte
-
-//go:embed hrm-employee-registration-v1.bpmn
-var hrmEmployeeRegistrationV1 []byte
+//go:embed customer-adjustment-v2.bpmn
+var customerAdjustmentV2 []byte
 
 type Process struct {
 	ProcessCode  string
@@ -29,14 +26,8 @@ func BuiltInProcesses() []Process {
 		{
 			ProcessCode:  "CUSTOMER_ADJUSTMENT",
 			Name:         "Điều chỉnh hồ sơ khách hàng",
-			ResourceName: "customer-adjustment-v1.bpmn",
-			Content:      customerAdjustmentV1,
-		},
-		{
-			ProcessCode:  "HRM_EMPLOYEE_REGISTRATION",
-			Name:         "Dang ky nhan su",
-			ResourceName: "hrm-employee-registration-v1.bpmn",
-			Content:      hrmEmployeeRegistrationV1,
+			ResourceName: "customer-adjustment-v2.bpmn",
+			Content:      customerAdjustmentV2,
 		},
 	}
 }

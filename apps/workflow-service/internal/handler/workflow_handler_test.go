@@ -100,36 +100,15 @@ func TestWorkItemPath(t *testing.T) {
 }
 
 func TestTaskTypeForRequest(t *testing.T) {
-	if got := taskTypeForRequest("FINANCE_TXN_MAKER", "workflow.finance_incoming_classify"); got != "workflow.finance_incoming_classify" {
-		t.Fatalf("explicit task type = %q, want workflow.finance_incoming_classify", got)
+	if got := taskTypeForRequest("CUSTOMER_CHECKER", ""); got != "" {
+		t.Fatalf("legacy task type = %q, want empty", got)
 	}
-	if got := taskTypeForRequest("FINANCE_TXN_MAKER", "workflow.finance_incoming_approve"); got != "" {
-		t.Fatalf("disallowed task type = %q, want empty", got)
-	}
-	if got := taskTypeForRequest("CUSTOMER_CHECKER", ""); got != "workflow.customer_checker_review" {
-		t.Fatalf("role task type = %q, want workflow.customer_checker_review", got)
-	}
-	if got := taskTypeForRequest("UNKNOWN", ""); got != "" {
-		t.Fatalf("unknown task type = %q, want empty", got)
+	if got := taskTypeForRequest("FINANCE_TXN_MAKER", "workflow.finance_incoming_classify"); got != "" {
+		t.Fatalf("legacy explicit task type = %q, want empty", got)
 	}
 }
 
-func TestTaskTypeForCaseStep(t *testing.T) {
-	if got := taskTypeForCaseStep("FINANCE_INCOMING_TRANSACTION", "classify-account"); got != "workflow.finance_incoming_classify" {
-		t.Fatalf("incoming classify task type = %q", got)
-	}
-	if got := taskTypeForCaseStep("FINANCE_OUTGOING_TRANSACTION", "verify-beneficiary"); got != "workflow.finance_outgoing_verify" {
-		t.Fatalf("outgoing verify task type = %q", got)
-	}
-	if got := taskTypeForCaseStep("CUSTOMER_REGISTRATION", "Activity_MakerRevise"); got != "workflow.customer_maker_revise" {
-		t.Fatalf("customer revise task type = %q", got)
-	}
-	if got := taskTypeForCaseStep("CUSTOMER_REGISTRATION", "UT_MakerRevise"); got != "" {
-		t.Fatalf("native maker step should not map to v1 job type, got %q", got)
-	}
-}
-
-func TestWorkItemSeedFromCaseSkipsV2(t *testing.T) {
+func TestWorkItemSeedFromCaseSkipsLegacy(t *testing.T) {
 	bpmnV2 := "crm-customer-registration-v2"
 	_, ok := workItemSeedFromCase(repository.BusinessCase{
 		CaseType:      "CUSTOMER_REGISTRATION",
@@ -141,17 +120,14 @@ func TestWorkItemSeedFromCaseSkipsV2(t *testing.T) {
 		t.Fatal("expected v2 case to skip legacy work item seed")
 	}
 
-	bpmnV1 := "customer-registration-v1"
-	seed, ok := workItemSeedFromCase(repository.BusinessCase{
+	legacyProcess := "legacy-process"
+	_, ok = workItemSeedFromCase(repository.BusinessCase{
 		CaseType:      "CUSTOMER_REGISTRATION",
-		BpmnProcessID: &bpmnV1,
+		BpmnProcessID: &legacyProcess,
 		CurrentStep:   "Activity_MakerRevise",
 		Status:        repository.CaseStatusInReview,
 	})
-	if !ok {
-		t.Fatal("expected v1 case to seed work item")
-	}
-	if seed.TaskType != "workflow.customer_maker_revise" || seed.StepCode != "Activity_MakerRevise" {
-		t.Fatalf("seed = %+v", seed)
+	if ok {
+		t.Fatal("expected v1 case to skip legacy work item seed")
 	}
 }

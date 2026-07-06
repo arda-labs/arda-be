@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/crm-service/internal/repository"
-	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
@@ -221,13 +221,8 @@ func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.C
 		return "", fmt.Errorf("workflow case id is empty")
 	}
 	_, err = h.workflowClient.SubmitCase(r.Context(), createdCase.GetId(), actor, map[string]any{
-		"customerId":     item.ID,
-		"customerCode":   displayCode,
-		"customerName":   item.Name,
-		"customerEmail":  item.Email,
-		"identityNo":     item.IdentityNo,
-		"riskLevel":      item.RiskLevel,
-		"customerStatus": "SUBMITTED",
+		"customerId": item.ID,
+		"riskLevel":  item.RiskLevel,
 	})
 	if err != nil {
 		return "", err

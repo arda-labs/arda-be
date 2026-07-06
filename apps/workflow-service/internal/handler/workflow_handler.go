@@ -15,7 +15,6 @@ import (
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
-	"github.com/arda-labs/arda/apps/workflow-service/internal/worker"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,7 +28,6 @@ type WorkflowHandler struct {
 	mappingRepo       *repository.MappingRepository
 	caseRepo          *repository.CaseRepository
 	processDefinition *repository.ProcessDefinitionRepository
-	userTaskBroker    *worker.UserTaskBroker
 }
 
 func NewWorkflowHandler(
@@ -39,7 +37,6 @@ func NewWorkflowHandler(
 	mappingRepo *repository.MappingRepository,
 	caseRepo *repository.CaseRepository,
 	processDefinition *repository.ProcessDefinitionRepository,
-	userTaskBroker *worker.UserTaskBroker,
 ) *WorkflowHandler {
 	return &WorkflowHandler{
 		zeebeSvc:          zeebeSvc,
@@ -49,7 +46,6 @@ func NewWorkflowHandler(
 		mappingRepo:       mappingRepo,
 		caseRepo:          caseRepo,
 		processDefinition: processDefinition,
-		userTaskBroker:    userTaskBroker,
 	}
 }
 
@@ -802,10 +798,10 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 			} else if native != nil {
 				task = native
 			}
-			if task == nil && !h.usesNativeUserTaskRuntime(r.Context(), filter) {
-				task, err = h.zeebeSvc.ResolveInboxTask(claimCtx, role, filter)
-			}
 			cancel()
+			if task == nil && err == nil {
+				err = fmt.Errorf("legacy parked user-task runtime has been removed; migrate this process to native BPMN userTask")
+			}
 			if err == nil && task != nil {
 				slog.Info("work item claim bound zeebe task",
 					"workItemId", id,
@@ -833,7 +829,7 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 					"role", role,
 					"processInstanceKey", filter.ProcessInstanceKey,
 					"err", err,
-					"hint", claimUnavailableMessage(r.Context(), h.caseRepo, h.userTaskBroker, filter, jobType, err),
+					"hint", claimUnavailableMessage(r.Context(), h.caseRepo, filter, jobType, err),
 				)
 			}
 		}
@@ -955,43 +951,17 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := h.zeebeSvc.ResolveInboxTask(claimCtx, req.Role, filter)
-	if err != nil {
-		status := http.StatusNotFound
-		if errors.Is(err, context.DeadlineExceeded) {
-			status = http.StatusGatewayTimeout
-		}
-		slog.Warn("workflow task claim unavailable",
-			"actor", actor,
-			"role", req.Role,
-			"caseId", filter.CaseID,
-			"elementId", filter.ElementID,
-			"processInstanceKey", filter.ProcessInstanceKey,
-			"status", status,
-			"duration_ms", time.Since(startedAt).Milliseconds(),
-			"err", err,
-		)
-		writeJSON(w, r, status, map[string]any{
-			"error": claimUnavailableMessage(r.Context(), h.caseRepo, h.userTaskBroker, filter, jobType, err),
-		})
-		return
-	}
-	slog.Info("workflow task claim succeeded",
+	err := fmt.Errorf("legacy parked user-task runtime has been removed; migrate this process to native BPMN userTask")
+	slog.Warn("workflow task claim unavailable",
 		"actor", actor,
 		"role", req.Role,
-		"jobKey", task.JobKey,
-		"jobType", task.Type,
-		"elementId", task.ElementID,
-		"caseId", task.CaseID,
-		"processInstanceKey", task.ProcessInstanceKey,
+		"processInstanceKey", filter.ProcessInstanceKey,
 		"duration_ms", time.Since(startedAt).Milliseconds(),
+		"err", err,
 	)
-	if err := h.caseRepo.MarkCaseAtStep(r.Context(), task.ProcessInstanceKey, task.ElementID, task.CandidateRole); err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to update task step: "+err.Error())
-		return
-	}
-	h.persistInboxClaim(r.Context(), *task)
-	writeJSON(w, r, http.StatusOK, task)
+	writeJSON(w, r, http.StatusGone, map[string]any{
+		"error": claimUnavailableMessage(r.Context(), h.caseRepo, filter, jobType, err),
+	})
 }
 
 func workItemToWorkflowTask(item repository.WorkItem) service.WorkflowTask {
@@ -999,7 +969,6 @@ func workItemToWorkflowTask(item repository.WorkItem) service.WorkflowTask {
 		CaseID:        item.CaseID,
 		CaseCode:      item.CaseCode,
 		CustomerID:    item.PrimaryObjectID,
-		CustomerName:  item.Title,
 		CandidateRole: item.CandidateRole,
 		Type:          item.TaskType,
 		ElementID:     item.StepCode,
@@ -1025,7 +994,6 @@ func (h *WorkflowHandler) persistInboxClaim(ctx context.Context, task service.Wo
 		StepCode:           task.ElementID,
 		CandidateRole:      task.CandidateRole,
 		Title:              taskLabelForType(task.Type),
-		Description:        task.CustomerName,
 	})
 }
 
@@ -1053,7 +1021,6 @@ func (h *WorkflowHandler) listTaskCandidates(ctx context.Context, role string, j
 			CaseID:             item.ID,
 			CaseCode:           item.CaseCode,
 			CustomerID:         item.PrimaryObjectID,
-			CustomerName:       item.Title,
 			CandidateRole:      role,
 			SLADueAt:           item.SLADueAt,
 			Variables: map[string]any{
@@ -1095,34 +1062,7 @@ func (h *WorkflowHandler) seedWorkItems(ctx context.Context, direction string) e
 }
 
 func workItemSeedFromCase(item repository.BusinessCase) (repository.WorkItemSeed, bool) {
-	if CaseUsesNativeInbox(&item) {
-		return repository.WorkItemSeed{}, false
-	}
-	stepCode := item.CurrentStep
-	if stepCode == "" || stepCode == "submitted" {
-		stepCode = defaultStepForCaseType(item.CaseType)
-	}
-	taskType := taskTypeForCaseStep(item.CaseType, stepCode)
-	if taskType == "" {
-		return repository.WorkItemSeed{}, false
-	}
-	role := ""
-	if item.CandidateRole != nil {
-		role = *item.CandidateRole
-	}
-	if role == "" {
-		role = roleForTaskType(taskType)
-	}
-	return repository.WorkItemSeed{
-		CaseID:             item.ID,
-		ProcessInstanceKey: item.ProcessInstanceKey,
-		TaskType:           taskType,
-		StepCode:           stepCode,
-		CandidateRole:      role,
-		SLADueAt:           item.SLADueAt,
-		Title:              taskLabelForType(taskType),
-		Description:        item.Title,
-	}, true
+	return repository.WorkItemSeed{}, false
 }
 
 func workItemFilter(r *http.Request) repository.WorkItemFilter {
@@ -1217,9 +1157,9 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ProcessInstanceKey flexInt64        `json:"processInstanceKey"`
-		ElementID          string           `json:"elementId"`
-		Variables          map[string]any   `json:"variables"`
+		ProcessInstanceKey flexInt64      `json:"processInstanceKey"`
+		ElementID          string         `json:"elementId"`
+		Variables          map[string]any `json:"variables"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
@@ -1258,13 +1198,6 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, r, http.StatusBadGateway, "Failed to complete user task: "+err.Error())
 			return
 		}
-	} else if h.userTaskBroker != nil && h.userTaskBroker.SignalComplete(jobKey, req.Variables) {
-		slog.Info("workflow task complete delegated to user task worker",
-			"actor", actor,
-			"jobKey", jobKey,
-			"processInstanceKey", req.ProcessInstanceKey.Int64(),
-			"elementId", req.ElementID,
-		)
 	} else if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, req.Variables); err != nil {
 		slog.Error("workflow task complete failed in zeebe",
 			"actor", actor,
@@ -1448,46 +1381,8 @@ func (h *WorkflowHandler) CaseByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func taskTypeForRole(role string) string {
-	switch role {
-	case "CUSTOMER_CHECKER":
-		return "workflow.customer_checker_review"
-	case "CUSTOMER_RISK_CHECKER":
-		return "workflow.customer_risk_review"
-	case "CUSTOMER_MAKER":
-		return "workflow.customer_maker_revise"
-	default:
-		return ""
-	}
-}
-
 func taskTypeForRequest(role string, taskType string) string {
-	if taskType != "" {
-		for _, allowed := range taskTypesForRole(role) {
-			if taskType == allowed {
-				return taskType
-			}
-		}
-		return ""
-	}
-	return taskTypeForRole(role)
-}
-
-func taskTypesForRole(role string) []string {
-	switch role {
-	case "CUSTOMER_CHECKER":
-		return []string{"workflow.customer_checker_review"}
-	case "CUSTOMER_RISK_CHECKER":
-		return []string{"workflow.customer_risk_review"}
-	case "CUSTOMER_MAKER":
-		return []string{"workflow.customer_maker_revise"}
-	case "FINANCE_TXN_MAKER":
-		return []string{"workflow.finance_incoming_classify", "workflow.finance_outgoing_verify"}
-	case "FINANCE_TXN_CHECKER":
-		return []string{"workflow.finance_incoming_approve", "workflow.finance_outgoing_approve"}
-	default:
-		return nil
-	}
+	return ""
 }
 
 func (h *WorkflowHandler) listCases(w http.ResponseWriter, r *http.Request) {
@@ -1908,45 +1803,6 @@ func defaultStepForCaseType(caseType string) string {
 	default:
 		return "submitted"
 	}
-}
-
-func taskTypeForCaseStep(caseType string, stepCode string) string {
-	if caseType == "CUSTOMER_REGISTRATION" && service.IsNativeUserTaskElement(stepCode) {
-		return ""
-	}
-	switch stepCode {
-	case "Activity_CheckerReview", "UT_CheckerReview":
-		return "workflow.customer_checker_review"
-	case "Activity_RiskReview":
-		return "workflow.customer_risk_review"
-	case "Activity_MakerRevise", "UT_MakerRevise":
-		return "workflow.customer_maker_revise"
-	case "classify-account":
-		return "workflow.finance_incoming_classify"
-	case "approve-journal":
-		return "workflow.finance_incoming_approve"
-	case "verify-beneficiary":
-		return "workflow.finance_outgoing_verify"
-	case "approve-outgoing":
-		return "workflow.finance_outgoing_approve"
-	case "Activity_HRMReview":
-		return "workflow.hrm_registration_review"
-	case "Activity_HRMApprove":
-		return "workflow.hrm_registration_approve"
-	}
-	if caseType == "FINANCE_INCOMING_TRANSACTION" {
-		return "workflow.finance_incoming_classify"
-	}
-	if caseType == "FINANCE_OUTGOING_TRANSACTION" {
-		return "workflow.finance_outgoing_verify"
-	}
-	if caseType == "CUSTOMER_REGISTRATION" {
-		return "workflow.customer_checker_review"
-	}
-	if caseType == "HRM_EMPLOYEE_REGISTRATION" {
-		return "workflow.hrm_registration_review"
-	}
-	return ""
 }
 
 func roleForTaskType(taskType string) string {

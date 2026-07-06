@@ -624,16 +624,6 @@ func (s *ZeebeService) NewJobWorker(jobType string, handler func(client worker.J
 		Open()
 }
 
-func (s *ZeebeService) NewUserTaskJobWorker(jobType string, handler func(client worker.JobClient, job entities.Job)) worker.JobWorker {
-	return s.client.NewJobWorker().
-		JobType(jobType).
-		Handler(handler).
-		Name("arda-workflow-user-task").
-		Timeout(30 * time.Minute).
-		MaxJobsActive(64).
-		Open()
-}
-
 var taskFetchVariables = []string{
 	"caseId",
 	"caseCode",
