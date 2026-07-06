@@ -13,8 +13,10 @@ type Config struct {
 	GRPCAddr    string `yaml:"grpc_addr"`
 	LogLevel    string `yaml:"log_level"`
 	DatabaseDSN string `yaml:"database_dsn"`
-	ZeebeAddr   string `yaml:"zeebe_addr"`
-	CRMGRPCAddr string `yaml:"crm_grpc_addr"`
+	ZeebeAddr         string `yaml:"zeebe_addr"`
+	ZeebeRestAddr     string `yaml:"zeebe_rest_addr"`
+	ZeebeTasklistAddr string `yaml:"zeebe_tasklist_addr"`
+	CRMGRPCAddr       string `yaml:"crm_grpc_addr"`
 }
 
 func Load() Config {
@@ -44,6 +46,8 @@ func Load() Config {
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("ZEEBE_ADDR", &cfg.ZeebeAddr)
+	envStr("ZEEBE_REST_ADDR", &cfg.ZeebeRestAddr)
+	envStr("ZEEBE_TASKLIST_ADDR", &cfg.ZeebeTasklistAddr)
 	envStr("CRM_GRPC_ADDR", &cfg.CRMGRPCAddr)
 
 	return cfg
@@ -70,6 +74,8 @@ func (c *Config) loadYAML(path string) bool {
 	set("log_level", &c.LogLevel)
 	set("database_dsn", &c.DatabaseDSN)
 	set("zeebe_addr", &c.ZeebeAddr)
+	set("zeebe_rest_addr", &c.ZeebeRestAddr)
+	set("zeebe_tasklist_addr", &c.ZeebeTasklistAddr)
 	set("crm_grpc_addr", &c.CRMGRPCAddr)
 	return true
 }

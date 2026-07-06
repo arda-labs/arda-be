@@ -9,7 +9,7 @@ Root long-term plan:
 - [Dev Runtime Infrastructure, k3s, Redis, DB, and NATS](../../docs/roadmap/10-dev-runtime-infra.md)
 - [Multilingual Platform & i18n Strategy](../../docs/roadmap/11-i18n-multilingual-platform.md)
 - [Current k3s Cluster Inventory](../../docs/infra/current-k3s-cluster.md)
-- [BPMN Direction: Camunda 8.8+ / Wait for 8.10](../../docs/architecture/bpmn-camunda8.md)
+- [BPMN on Camunda 8 — Modeling & Runtime Contract](../../docs/architecture/bpmn-camunda8.md)
 - [Workflow Boundary Refactor Plan](../../docs/planning/workflow-boundary-refactor.md)
 
 ## Direction

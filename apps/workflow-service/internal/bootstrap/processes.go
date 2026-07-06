@@ -2,6 +2,9 @@ package bootstrap
 
 import _ "embed"
 
+//go:embed crm-customer-registration-v2.bpmn
+var crmCustomerRegistrationV2 []byte
+
 //go:embed customer-registration-v1.bpmn
 var customerRegistrationV1 []byte
 
@@ -23,6 +26,12 @@ func BuiltInProcesses() []Process {
 		{
 			ProcessCode:  "CUSTOMER_REGISTRATION",
 			Name:         "Đăng ký khách hàng hội viên",
+			ResourceName: "crm-customer-registration-v2.bpmn",
+			Content:      crmCustomerRegistrationV2,
+		},
+		{
+			ProcessCode:  "CUSTOMER_REGISTRATION_V1",
+			Name:         "Đăng ký khách hàng hội viên (legacy v1)",
 			ResourceName: "customer-registration-v1.bpmn",
 			Content:      customerRegistrationV1,
 		},

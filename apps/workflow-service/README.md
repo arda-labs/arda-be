@@ -101,6 +101,13 @@ From this service directory:
 go test ./...
 ```
 
+### CRM registration v2 (Camunda 8 native user tasks)
+
+- BPMN: `internal/bootstrap/crm-customer-registration-v2.bpmn` (`crm-customer-registration-v2`)
+- Service jobs: `crm.customer.register.validate|execute|cancel`
+- Human steps: `bpmn:userTask` completed via **Zeebe gateway REST** (`ZEEBE_REST_ADDR`, default `{zeebe-host}:8088`)
+- v1 legacy process remains deployed for in-flight instances (`customer-registration-v1`)
+
 From the backend workspace root, run service-specific tests instead of `go test ./...`; the root uses `go.work` and is not itself a Go module.
 
 ## Known Gaps

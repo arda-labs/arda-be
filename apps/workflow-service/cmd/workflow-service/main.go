@@ -115,7 +115,31 @@ func main() {
 	defer crmUpdateWorker.Close()
 	crmApproveWorker := zeebeSvc.NewJobWorker("crm.approve_customer", crmWorkers.ApproveCustomerHandler)
 	defer crmApproveWorker.Close()
-	logger.Info("workflow CRM job workers registered")
+	logger.Info("workflow CRM job workers registered (v1)")
+
+	crmRegisterWorkers := worker.NewCRMRegisterWorkers(crmClient, caseRepo)
+	crmRegisterValidateWorker := zeebeSvc.NewJobWorker(worker.JobCRMRegisterValidate, crmRegisterWorkers.ValidateHandler)
+	defer crmRegisterValidateWorker.Close()
+	crmRegisterExecuteWorker := zeebeSvc.NewJobWorker(worker.JobCRMRegisterExecute, crmRegisterWorkers.ExecuteHandler)
+	defer crmRegisterExecuteWorker.Close()
+	crmRegisterCancelWorker := zeebeSvc.NewJobWorker(worker.JobCRMRegisterCancel, crmRegisterWorkers.CancelHandler)
+	defer crmRegisterCancelWorker.Close()
+	logger.Info("workflow CRM register v2 job workers registered")
+
+	restAddr := cfg.ZeebeRestAddr
+	if restAddr == "" {
+		restAddr = service.DeriveZeebeRestAddr(cfg.ZeebeAddr)
+	}
+	tasklistAddr := cfg.ZeebeTasklistAddr
+	if tasklistAddr == "" {
+		tasklistAddr = service.DeriveZeebeTasklistAddr(restAddr)
+	}
+	zeebeRest := service.NewZeebeRestClient(restAddr, tasklistAddr)
+	if zeebeRest != nil && zeebeRest.Enabled() {
+		logger.Info("zeebe REST client configured", "restAddr", restAddr, "tasklistAddr", tasklistAddr)
+	} else {
+		logger.Warn("zeebe REST client not configured — native user tasks (v2) require ZEEBE_REST_ADDR")
+	}
 
 	userTaskBroker := worker.NewUserTaskBroker()
 	userTaskWorkers := worker.NewUserTaskWorkers(caseRepo, userTaskBroker)
@@ -128,7 +152,13 @@ func main() {
 			jobWorker.Close()
 		}
 	}()
-	logger.Info("workflow user task workers registered", "count", len(userTaskJobWorkers))
+	logger.Info("workflow user task workers registered (v1 legacy)", "count", len(userTaskJobWorkers))
+
+	syncCtx, syncCancel := context.WithCancel(context.Background())
+	defer syncCancel()
+	if userTaskSync := worker.NewUserTaskSync(zeebeRest, caseRepo); userTaskSync != nil {
+		go userTaskSync.Run(syncCtx)
+	}
 
 	notificationWorkers := worker.NewNotificationWorkers()
 	notificationEmailWorker := zeebeSvc.NewJobWorker("notification.email", notificationWorkers.SendEmailHandler)
@@ -162,7 +192,7 @@ func main() {
 		}
 	}()
 
-	wfHandler := handler.NewWorkflowHandler(zeebeSvc, mappingRepo, caseRepo, processDefinitionRepo, userTaskBroker)
+	wfHandler := handler.NewWorkflowHandler(zeebeSvc, zeebeRest, crmClient, mappingRepo, caseRepo, processDefinitionRepo, userTaskBroker)
 
 	// Router and HTTP Server
 	srv := &http.Server{

@@ -15,12 +15,15 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/worker"
+	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type WorkflowHandler struct {
 	zeebeSvc          *service.ZeebeService
+	zeebeRest         *service.ZeebeRestClient
+	crmClient         *crmclient.Client
 	workflowCmd       *service.WorkflowCommandService
 	mappingRepo       *repository.MappingRepository
 	caseRepo          *repository.CaseRepository
@@ -30,6 +33,8 @@ type WorkflowHandler struct {
 
 func NewWorkflowHandler(
 	zeebeSvc *service.ZeebeService,
+	zeebeRest *service.ZeebeRestClient,
+	crmClient *crmclient.Client,
 	mappingRepo *repository.MappingRepository,
 	caseRepo *repository.CaseRepository,
 	processDefinition *repository.ProcessDefinitionRepository,
@@ -37,6 +42,8 @@ func NewWorkflowHandler(
 ) *WorkflowHandler {
 	return &WorkflowHandler{
 		zeebeSvc:          zeebeSvc,
+		zeebeRest:         zeebeRest,
+		crmClient:         crmClient,
 		workflowCmd:       service.NewWorkflowCommandService(caseRepo, zeebeSvc),
 		mappingRepo:       mappingRepo,
 		caseRepo:          caseRepo,
@@ -911,6 +918,13 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 	claimCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	startedAt := time.Now()
+	if task, err := h.tryNativeUserTaskClaim(claimCtx, filter, filter.ElementID, actor); err != nil {
+		slog.Warn("native user task claim failed", "err", err)
+	} else if task != nil {
+		writeJSON(w, r, http.StatusOK, task)
+		return
+	}
+
 	task, err := h.zeebeSvc.ResolveInboxTask(claimCtx, req.Role, filter)
 	if err != nil {
 		status := http.StatusNotFound
@@ -1206,6 +1220,18 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 			"processInstanceKey", req.ProcessInstanceKey.Int64(),
 			"elementId", req.ElementID,
 		)
+	} else if h.shouldUseNativeUserTaskComplete(r.Context(), req.ElementID, req.ProcessInstanceKey.Int64()) {
+		if err := h.completeNativeUserTask(r.Context(), jobKey, req.ElementID, req.Variables, req.ProcessInstanceKey.Int64()); err != nil {
+			slog.Error("workflow native user task complete failed",
+				"actor", actor,
+				"jobKey", jobKey,
+				"processInstanceKey", req.ProcessInstanceKey.Int64(),
+				"elementId", req.ElementID,
+				"err", err,
+			)
+			writeAPIError(w, r, http.StatusBadGateway, "Failed to complete user task: "+err.Error())
+			return
+		}
 	} else if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, req.Variables); err != nil {
 		slog.Error("workflow task complete failed in zeebe",
 			"actor", actor,
@@ -1853,11 +1879,11 @@ func defaultStepForCaseType(caseType string) string {
 
 func taskTypeForCaseStep(caseType string, stepCode string) string {
 	switch stepCode {
-	case "Activity_CheckerReview":
+	case "Activity_CheckerReview", "UT_CheckerReview":
 		return "workflow.customer_checker_review"
 	case "Activity_RiskReview":
 		return "workflow.customer_risk_review"
-	case "Activity_MakerRevise":
+	case "Activity_MakerRevise", "UT_MakerRevise":
 		return "workflow.customer_maker_revise"
 	case "classify-account":
 		return "workflow.finance_incoming_classify"

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
@@ -81,9 +82,10 @@ func claimUnavailableMessage(ctx context.Context, caseRepo *repository.CaseRepos
 
 func isUserTaskStep(step string) bool {
 	switch step {
-	case "Activity_CheckerReview", "Activity_MakerRevise", "Activity_RiskReview":
+	case "Activity_CheckerReview", "Activity_MakerRevise", "Activity_RiskReview",
+		"UT_CheckerReview", "UT_MakerRevise":
 		return true
 	default:
-		return false
+		return strings.HasPrefix(strings.TrimSpace(step), "UT_")
 	}
 }

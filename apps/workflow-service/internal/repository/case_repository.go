@@ -525,6 +525,38 @@ func (r *CaseRepository) ListTimeline(ctx context.Context, caseID string) ([]Tim
 	return out, rows.Err()
 }
 
+// ListActiveCasesWithProcess returns in-flight cases that have a Zeebe process instance.
+func (r *CaseRepository) ListActiveCasesWithProcess(ctx context.Context, limit int) ([]BusinessCase, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
+		       domain_service, status, current_step, priority, created_by, assigned_to,
+		       candidate_role, sla_policy_id, sla_due_at, process_instance_key,
+		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
+		FROM business_cases
+		WHERE process_instance_key IS NOT NULL
+		  AND completed_at IS NULL
+		  AND status IN ($1, $2)
+		ORDER BY updated_at DESC
+		LIMIT $3
+	`, CaseStatusSubmitted, CaseStatusInReview, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []BusinessCase
+	for rows.Next() {
+		bc, err := scanBusinessCase(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, bc)
+	}
+	return out, rows.Err()
+}
+
 func validateCreate(in CaseCreate) error {
 	switch {
 	case in.TenantID == "":
