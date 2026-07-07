@@ -23,6 +23,7 @@ import (
 	transport "github.com/arda-labs/arda/apps/workflow-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/worker"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
+	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
@@ -98,6 +99,16 @@ func main() {
 	}
 	defer crmClient.Close()
 	logger.Info("crm grpc configured", "addr", cfg.CRMGRPCAddr)
+
+	iamClient, err := iamclient.Dial(context.Background(), cfg.IAMGRPCAddr, cfg.AppName)
+	if err != nil {
+		logger.Error("iam grpc unavailable", "addr", cfg.IAMGRPCAddr, "err", err)
+		os.Exit(1)
+	}
+	defer iamClient.Close()
+	logger.Info("iam grpc configured", "addr", cfg.IAMGRPCAddr)
+
+	caseRepo.SetIAMClient(&iamAdapter{client: iamClient})
 
 	// CRM v1 job workers — legacy flows only (not CRM native user-task v2 processes).
 	crmWorkers := worker.NewCRMWorkers(crmClient, caseRepo)
@@ -211,6 +222,27 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("Server shutdown error", "err", err)
 	}
+}
+
+type iamAdapter struct {
+	client *iamclient.Client
+}
+
+func (a *iamAdapter) GetUserBatch(ctx context.Context, userIDs []string) (map[string]repository.UserLookupInfo, error) {
+	raw, err := a.client.GetUserBatch(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]repository.UserLookupInfo, len(raw))
+	for k, v := range raw {
+		result[k] = repository.UserLookupInfo{
+			ID:        v.ID,
+			Name:      v.Name,
+			Email:     v.Email,
+			AvatarURL: v.AvatarURL,
+		}
+	}
+	return result, nil
 }
 
 func parseLogLevel(level string) slog.Level {

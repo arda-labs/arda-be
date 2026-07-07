@@ -110,11 +110,27 @@ type TimelineEvent struct {
 }
 
 type CaseRepository struct {
-	db *sql.DB
+	db       *sql.DB
+	iamClient UserLookupClient
+}
+
+type UserLookupClient interface {
+	GetUserBatch(ctx context.Context, userIDs []string) (map[string]UserLookupInfo, error)
+}
+
+type UserLookupInfo struct {
+	ID        string
+	Name      string
+	Email     string
+	AvatarURL string
 }
 
 func NewCaseRepository(db *sql.DB) *CaseRepository {
 	return &CaseRepository{db: db}
+}
+
+func (r *CaseRepository) SetIAMClient(client UserLookupClient) {
+	r.iamClient = client
 }
 
 func (r *CaseRepository) ListCaseTypes(ctx context.Context) ([]CaseType, error) {

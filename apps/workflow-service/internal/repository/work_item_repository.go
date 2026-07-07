@@ -36,10 +36,14 @@ type WorkItem struct {
 	Status             string     `json:"status"`
 	TransactionStatus  string     `json:"transactionStatus"`
 	CreatedBy          string     `json:"createdBy"`
+	CreatedByName      string     `json:"createdByName,omitempty"`
+	CreatedByAvatar    string     `json:"createdByAvatar,omitempty"`
 	CandidateRole      string     `json:"candidateRole"`
 	CandidateGroupID   string     `json:"candidateGroupId,omitempty"`
 	CandidateOrgUnitID string     `json:"candidateOrgUnitId,omitempty"`
 	AssignedTo         string     `json:"assignedTo,omitempty"`
+	AssignedToName     string     `json:"assignedToName,omitempty"`
+	AssignedToAvatar   string     `json:"assignedToAvatar,omitempty"`
 	AssignedAt         *time.Time `json:"assignedAt,omitempty"`
 	ClaimExpiresAt     *time.Time `json:"claimExpiresAt,omitempty"`
 	SLADueAt           *time.Time `json:"slaDueAt,omitempty"`
@@ -69,10 +73,14 @@ func (item WorkItem) MarshalJSON() ([]byte, error) {
 		"status":             item.Status,
 		"transactionStatus":  item.TransactionStatus,
 		"createdBy":          item.CreatedBy,
+		"createdByName":      item.CreatedByName,
+		"createdByAvatar":    item.CreatedByAvatar,
 		"candidateRole":      item.CandidateRole,
 		"candidateGroupId":   item.CandidateGroupID,
 		"candidateOrgUnitId": item.CandidateOrgUnitID,
 		"assignedTo":         item.AssignedTo,
+		"assignedToName":     item.AssignedToName,
+		"assignedToAvatar":   item.AssignedToAvatar,
 		"assignedAt":         item.AssignedAt,
 		"claimExpiresAt":     item.ClaimExpiresAt,
 		"slaDueAt":           item.SLADueAt,
@@ -211,57 +219,42 @@ func (r *CaseRepository) FindActiveWorkTask(ctx context.Context, caseID string, 
 }
 
 func (r *CaseRepository) ListWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
+	var items []WorkItem
+	var err error
 	switch strings.ToUpper(strings.TrimSpace(f.Direction)) {
 	case "OUTGOING":
-		return r.listOutgoingWorkItems(ctx, f)
+		items, err = r.listOutgoingWorkItems(ctx, f)
 	case "ALL":
-		return r.listSearchWorkItems(ctx, f)
+		items, err = r.listSearchWorkItems(ctx, f)
 	default:
-		return r.listIncomingWorkItems(ctx, f)
+		items, err = r.listIncomingWorkItems(ctx, f)
 	}
+	if err != nil {
+		return nil, err
+	}
+	r.enrichWorkItemUsers(ctx, items)
+	return items, nil
 }
 
 func (r *CaseRepository) listIncomingWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
 	where := []string{
-		"bc.status <> 'DRAFT'",
 		"wt.status IN ('READY', 'CLAIMED')",
-		"bc.status NOT IN ('COMPLETED', 'CANCELLED', 'REJECTED')",
-		"bc.case_type IN ('CUSTOMER_REGISTRATION', 'CUSTOMER_ADJUSTMENT', 'FINANCE_INCOMING_TRANSACTION', 'HRM_EMPLOYEE_REGISTRATION')",
+		"bc.status NOT IN ('DRAFT', 'COMPLETED', 'CANCELLED', 'REJECTED')",
 	}
 	return r.queryWorkItems(ctx, f, where, "INCOMING", false)
 }
 
 func (r *CaseRepository) listOutgoingWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
-	financeWhere := []string{
-		"bc.status <> 'DRAFT'",
-		"wt.status IN ('READY', 'CLAIMED')",
-		"bc.status NOT IN ('COMPLETED', 'CANCELLED', 'REJECTED')",
-		"bc.case_type = 'FINANCE_OUTGOING_TRANSACTION'",
-	}
-	finance, err := r.queryWorkItems(ctx, f, financeWhere, "OUTGOING", false)
-	if err != nil {
-		return nil, err
-	}
-	maker, err := r.listMakerOutgoingWorkItems(ctx, f)
-	if err != nil {
-		return nil, err
-	}
-	return dedupeWorkItemsByCase(append(finance, maker...)), nil
-}
-
-func (r *CaseRepository) listMakerOutgoingWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
 	if strings.TrimSpace(f.UserID) == "" {
 		return nil, nil
 	}
-	makerFilter := f
-	makerFilter.CreatedBy = f.UserID
+	outFilter := f
+	outFilter.CreatedBy = f.UserID
 	where := []string{
-		"bc.status <> 'DRAFT'",
-		"bc.status IN ('SUBMITTED', 'IN_REVIEW', 'PENDING_APPROVAL')",
-		"bc.status NOT IN ('COMPLETED', 'CANCELLED', 'REJECTED')",
-		"bc.case_type IN ('CUSTOMER_REGISTRATION', 'CUSTOMER_ADJUSTMENT', 'HRM_EMPLOYEE_REGISTRATION')",
+		"bc.created_by = $|",
+		"bc.status NOT IN ('DRAFT', 'COMPLETED', 'CANCELLED', 'REJECTED')",
 	}
-	return r.queryWorkItems(ctx, makerFilter, where, "OUTGOING", true)
+	return r.queryWorkItems(ctx, outFilter, where, "OUTGOING", true)
 }
 
 func (r *CaseRepository) listSearchWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
@@ -545,6 +538,10 @@ func (item *WorkItem) decorate(userID, queueDirection string) {
 	}
 	item.Summary = item.Description
 
+	// Populate display name from user ID / email
+	item.AssignedToName = displayName(item.AssignedTo)
+	item.CreatedByName = displayName(item.CreatedBy)
+
 	if queueDirection == "OUTGOING" && userID != "" && item.CreatedBy == userID && isMakerTrackCaseType(item.CaseType) {
 		item.CanOpen = true
 		item.CanClaim = false
@@ -568,6 +565,52 @@ func isMakerTrackCaseType(caseType string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func displayName(id string) string {
+	if id == "" {
+		return ""
+	}
+	if idx := strings.Index(id, "@"); idx > 0 {
+		return id[:idx]
+	}
+	return id
+}
+
+func (r *CaseRepository) enrichWorkItemUsers(ctx context.Context, items []WorkItem) {
+	if r.iamClient == nil || len(items) == 0 {
+		return
+	}
+	ids := make(map[string]struct{})
+	for _, item := range items {
+		if item.AssignedTo != "" {
+			ids[item.AssignedTo] = struct{}{}
+		}
+		if item.CreatedBy != "" {
+			ids[item.CreatedBy] = struct{}{}
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	userIDs := make([]string, 0, len(ids))
+	for id := range ids {
+		userIDs = append(userIDs, id)
+	}
+	users, err := r.iamClient.GetUserBatch(ctx, userIDs)
+	if err != nil {
+		return
+	}
+	for i, item := range items {
+		if u, ok := users[item.AssignedTo]; ok {
+			items[i].AssignedToName = u.Name
+			items[i].AssignedToAvatar = u.AvatarURL
+		}
+		if u, ok := users[item.CreatedBy]; ok {
+			items[i].CreatedByName = u.Name
+			items[i].CreatedByAvatar = u.AvatarURL
+		}
 	}
 }
 

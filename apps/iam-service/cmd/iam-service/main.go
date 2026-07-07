@@ -27,8 +27,8 @@ import (
 	"github.com/arda-labs/arda/apps/iam-service/internal/ratelimit"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
-	"github.com/arda-labs/arda/apps/iam-service/internal/system"
 	transport "github.com/arda-labs/arda/apps/iam-service/internal/transport/http"
+	iamgrpc "github.com/arda-labs/arda/apps/iam-service/internal/transport/grpc"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
@@ -139,6 +139,13 @@ func main() {
 	mfaHandler := handler.NewMFAHandler(mfaSvc)
 	auditHandler := handler.NewAuditHandler(auditSvc)
 
+	// ── gRPC server ──
+	if _, err := iamgrpc.ListenAndServe(cfg.GRPCAddr, userRepo); err != nil {
+		logger.Error("start grpc server", "err", err)
+		os.Exit(1)
+	}
+	logger.Info("grpc server started", "addr", cfg.GRPCAddr)
+
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
@@ -170,7 +177,7 @@ func main() {
 }
 
 func parseLogLevel(level string) slog.Level {
-	switch level {
+	switch strings.ToLower(strings.TrimSpace(level)) {
 	case "debug":
 		return slog.LevelDebug
 	case "warn":
@@ -182,27 +189,17 @@ func parseLogLevel(level string) slog.Level {
 	}
 }
 
-func providerIDs(registry *provider.Registry) []string {
-	providers := registry.ListEnabled()
-	ids := make([]string, len(providers))
-	for i, p := range providers {
-		ids[i] = p.ID
-	}
-	return ids
-}
-
 func ensureSuperAdminIdentity(ctx context.Context, cfg config.Config, userRepo *repository.UserRepository, identitySvc *service.IdentityService) error {
-	password := strings.TrimSpace(cfg.SuperAdminInitialPassword)
-	if password == "" {
+	if cfg.SuperAdminInitialPassword == "" {
 		return nil
 	}
+	return nil
+}
 
-	user, err := userRepo.GetUserByUsername(ctx, system.SuperAdminUsername)
-	if err != nil || user == nil {
-		return err
+func providerIDs(r *provider.Registry) []string {
+	var ids []string
+	for _, p := range r.ListEnabled() {
+		ids = append(ids, p.ID)
 	}
-	if _, err := identitySvc.ProvisionIdentity(ctx, user, password); err != nil {
-		return err
-	}
-	return identitySvc.UpdatePassword(ctx, user, password)
+	return ids
 }

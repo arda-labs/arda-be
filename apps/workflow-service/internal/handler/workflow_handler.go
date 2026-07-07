@@ -690,6 +690,17 @@ func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve task permissions: "+err.Error())
 		return
 	}
+	// Incoming: filter only items user can claim or is assigned to
+	dir := strings.ToUpper(r.URL.Query().Get("direction"))
+	if dir == "" || dir == "INCOMING" {
+		filtered := items[:0]
+		for _, item := range items {
+			if item.CanClaim || item.CanOpen {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
 	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
 }
 

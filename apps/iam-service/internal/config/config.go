@@ -11,6 +11,7 @@ import (
 type Config struct {
 	AppName  string `yaml:"app_name"`
 	HTTPAddr string `yaml:"http_addr"`
+	GRPCAddr string `yaml:"grpc_addr"`
 	LogLevel string `yaml:"log_level"`
 
 	DatabaseDSN string `yaml:"database_dsn"`
@@ -36,6 +37,7 @@ func Load() Config {
 	cfg := Config{
 		AppName:  "iam-service",
 		HTTPAddr: "0.0.0.0:8080",
+		GRPCAddr: "0.0.0.0:9095",
 		LogLevel: "info",
 
 		DatabaseDSN: "postgres://postgres:postgres@localhost:5432/iam?sslmode=disable",
@@ -65,6 +67,7 @@ func Load() Config {
 
 	envStr("APP_NAME", &cfg.AppName)
 	envStr("HTTP_ADDR", &cfg.HTTPAddr)
+	envStr("GRPC_ADDR", &cfg.GRPCAddr)
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("HYDRA_ADMIN_URL", &cfg.HydraAdminURL)

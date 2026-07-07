@@ -18,6 +18,7 @@ type Config struct {
 	ZeebeTasklistAddr string `yaml:"zeebe_tasklist_addr"`
 	ZeebeESURL        string `yaml:"zeebe_es_url"`
 	CRMGRPCAddr       string `yaml:"crm_grpc_addr"`
+	IAMGRPCAddr       string `yaml:"iam_grpc_addr"`
 }
 
 func Load() Config {
@@ -51,6 +52,7 @@ func Load() Config {
 	envStr("ZEEBE_TASKLIST_ADDR", &cfg.ZeebeTasklistAddr)
 	envStr("ZEEBE_ES_URL", &cfg.ZeebeESURL)
 	envStr("CRM_GRPC_ADDR", &cfg.CRMGRPCAddr)
+	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
 
 	return cfg
 }
@@ -80,6 +82,7 @@ func (c *Config) loadYAML(path string) bool {
 	set("zeebe_tasklist_addr", &c.ZeebeTasklistAddr)
 	set("zeebe_es_url", &c.ZeebeESURL)
 	set("crm_grpc_addr", &c.CRMGRPCAddr)
+	set("iam_grpc_addr", &c.IAMGRPCAddr)
 	return true
 }
 

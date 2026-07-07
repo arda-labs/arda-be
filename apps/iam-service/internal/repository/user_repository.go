@@ -614,6 +614,38 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 	return r.scanUser(row)
 }
 
+func (r *UserRepository) GetUsersByIDs(ctx context.Context, ids []string) ([]domain.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
+		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
+		       COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
+		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       created_at, updated_at
+		FROM iam_users
+		WHERE id = ANY($1)
+	`, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("get users by ids: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.User
+	for rows.Next() {
+		var u domain.User
+		if err := scanUserRow(rows, &u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 func (r *UserRepository) GetUserByKratosIdentityID(ctx context.Context, identityID string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
