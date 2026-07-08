@@ -19,78 +19,84 @@ const (
 )
 
 type WorkItem struct {
-	ID                 string     `json:"id"`
-	CaseID             string     `json:"caseId"`
-	CaseCode           string     `json:"caseCode"`
-	CaseType           string     `json:"caseType"`
-	Direction          string     `json:"direction"`
-	PrimaryObjectType  string     `json:"primaryObjectType"`
-	PrimaryObjectID    string     `json:"primaryObjectId"`
-	ProcessInstanceKey *int64     `json:"processInstanceKey,omitempty"`
-	JobKey             *int64     `json:"jobKey,omitempty"`
-	TaskType           string     `json:"taskType"`
-	StepCode           string     `json:"stepCode"`
-	Title              string     `json:"title"`
-	Description        string     `json:"description"`
-	Summary            string     `json:"summary"`
-	Status             string     `json:"status"`
-	TransactionStatus  string     `json:"transactionStatus"`
-	CreatedBy          string     `json:"createdBy"`
-	CreatedByName      string     `json:"createdByName,omitempty"`
-	CreatedByAvatar    string     `json:"createdByAvatar,omitempty"`
-	CandidateRole      string     `json:"candidateRole"`
-	CandidateGroupID   string     `json:"candidateGroupId,omitempty"`
-	CandidateOrgUnitID string     `json:"candidateOrgUnitId,omitempty"`
-	AssignedTo         string     `json:"assignedTo,omitempty"`
-	AssignedToName     string     `json:"assignedToName,omitempty"`
-	AssignedToAvatar   string     `json:"assignedToAvatar,omitempty"`
-	AssignedAt         *time.Time `json:"assignedAt,omitempty"`
-	ClaimExpiresAt     *time.Time `json:"claimExpiresAt,omitempty"`
-	SLADueAt           *time.Time `json:"slaDueAt,omitempty"`
-	SLAStatus          string     `json:"slaStatus"`
-	CanClaim           bool       `json:"canClaim"`
-	CanOpen            bool       `json:"canOpen"`
-	CanReassign        bool       `json:"canReassign"`
-	ClaimBlockedReason string     `json:"claimBlockedReason,omitempty"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
+	ID                       string     `json:"id"`
+	CaseID                   string     `json:"caseId"`
+	CaseCode                 string     `json:"caseCode"`
+	CaseType                 string     `json:"caseType"`
+	Direction                string     `json:"direction"`
+	PrimaryObjectType        string     `json:"primaryObjectType"`
+	PrimaryObjectID          string     `json:"primaryObjectId"`
+	ProcessInstanceKey       *int64     `json:"processInstanceKey,omitempty"`
+	JobKey                   *int64     `json:"jobKey,omitempty"`
+	TaskType                 string     `json:"taskType"`
+	StepCode                 string     `json:"stepCode"`
+	Title                    string     `json:"title"`
+	Description              string     `json:"description"`
+	Summary                  string     `json:"summary"`
+	Status                   string     `json:"status"`
+	TransactionStatus        string     `json:"transactionStatus"`
+	CreatedBy                string     `json:"createdBy"`
+	CreatedByName            string     `json:"createdByName,omitempty"`
+	CreatedByAvatar          string     `json:"createdByAvatar,omitempty"`
+	CandidateRole            string     `json:"candidateRole"`
+	CandidateGroupID         string     `json:"candidateGroupId,omitempty"`
+	CandidateOrgUnitID       string     `json:"candidateOrgUnitId,omitempty"`
+	AssignedTo               string     `json:"assignedTo,omitempty"`
+	AssignedToName           string     `json:"assignedToName,omitempty"`
+	AssignedToAvatar         string     `json:"assignedToAvatar,omitempty"`
+	PreviousAssignedTo       string     `json:"previousAssignedTo,omitempty"`
+	PreviousAssignedToName   string     `json:"previousAssignedToName,omitempty"`
+	PreviousAssignedToAvatar string     `json:"previousAssignedToAvatar,omitempty"`
+	AssignedAt               *time.Time `json:"assignedAt,omitempty"`
+	ClaimExpiresAt           *time.Time `json:"claimExpiresAt,omitempty"`
+	SLADueAt                 *time.Time `json:"slaDueAt,omitempty"`
+	SLAStatus                string     `json:"slaStatus"`
+	CanClaim                 bool       `json:"canClaim"`
+	CanOpen                  bool       `json:"canOpen"`
+	CanReassign              bool       `json:"canReassign"`
+	ClaimBlockedReason       string     `json:"claimBlockedReason,omitempty"`
+	CreatedAt                time.Time  `json:"createdAt"`
+	UpdatedAt                time.Time  `json:"updatedAt"`
 }
 
 func (item WorkItem) MarshalJSON() ([]byte, error) {
 	payload := map[string]any{
-		"id":                 item.ID,
-		"caseId":             item.CaseID,
-		"caseCode":           item.CaseCode,
-		"caseType":           item.CaseType,
-		"direction":          item.Direction,
-		"primaryObjectType":  item.PrimaryObjectType,
-		"primaryObjectId":    item.PrimaryObjectID,
-		"taskType":           item.TaskType,
-		"stepCode":           item.StepCode,
-		"title":              item.Title,
-		"description":        item.Description,
-		"summary":            item.Summary,
-		"status":             item.Status,
-		"transactionStatus":  item.TransactionStatus,
-		"createdBy":          item.CreatedBy,
-		"createdByName":      item.CreatedByName,
-		"createdByAvatar":    item.CreatedByAvatar,
-		"candidateRole":      item.CandidateRole,
-		"candidateGroupId":   item.CandidateGroupID,
-		"candidateOrgUnitId": item.CandidateOrgUnitID,
-		"assignedTo":         item.AssignedTo,
-		"assignedToName":     item.AssignedToName,
-		"assignedToAvatar":   item.AssignedToAvatar,
-		"assignedAt":         item.AssignedAt,
-		"claimExpiresAt":     item.ClaimExpiresAt,
-		"slaDueAt":           item.SLADueAt,
-		"slaStatus":          item.SLAStatus,
-		"canClaim":           item.CanClaim,
-		"canOpen":            item.CanOpen,
-		"canReassign":        item.CanReassign,
-		"claimBlockedReason": item.ClaimBlockedReason,
-		"createdAt":          item.CreatedAt,
-		"updatedAt":          item.UpdatedAt,
+		"id":                       item.ID,
+		"caseId":                   item.CaseID,
+		"caseCode":                 item.CaseCode,
+		"caseType":                 item.CaseType,
+		"direction":                item.Direction,
+		"primaryObjectType":        item.PrimaryObjectType,
+		"primaryObjectId":          item.PrimaryObjectID,
+		"taskType":                 item.TaskType,
+		"stepCode":                 item.StepCode,
+		"title":                    item.Title,
+		"description":              item.Description,
+		"summary":                  item.Summary,
+		"status":                   item.Status,
+		"transactionStatus":        item.TransactionStatus,
+		"createdBy":                item.CreatedBy,
+		"createdByName":            item.CreatedByName,
+		"createdByAvatar":          item.CreatedByAvatar,
+		"candidateRole":            item.CandidateRole,
+		"candidateGroupId":         item.CandidateGroupID,
+		"candidateOrgUnitId":       item.CandidateOrgUnitID,
+		"assignedTo":               item.AssignedTo,
+		"assignedToName":           item.AssignedToName,
+		"assignedToAvatar":         item.AssignedToAvatar,
+		"previousAssignedTo":       item.PreviousAssignedTo,
+		"previousAssignedToName":   item.PreviousAssignedToName,
+		"previousAssignedToAvatar": item.PreviousAssignedToAvatar,
+		"assignedAt":               item.AssignedAt,
+		"claimExpiresAt":           item.ClaimExpiresAt,
+		"slaDueAt":                 item.SLADueAt,
+		"slaStatus":                item.SLAStatus,
+		"canClaim":                 item.CanClaim,
+		"canOpen":                  item.CanOpen,
+		"canReassign":              item.CanReassign,
+		"claimBlockedReason":       item.ClaimBlockedReason,
+		"createdAt":                item.CreatedAt,
+		"updatedAt":                item.UpdatedAt,
 	}
 	if item.ProcessInstanceKey != nil {
 		payload["processInstanceKey"] = strconv.FormatInt(*item.ProcessInstanceKey, 10)
@@ -387,6 +393,16 @@ func (r *CaseRepository) queryWorkItems(
 					wt.title, wt.description, wt.status, bc.status, bc.created_by,
 					wt.candidate_role, wt.candidate_group_id, wt.candidate_org_unit_id,
 					wt.assigned_to, wt.assigned_at, wt.claim_expires_at,
+					COALESCE((
+						SELECT prev.assigned_to
+						FROM workflow_tasks prev
+						WHERE prev.case_id = wt.case_id
+						  AND prev.id <> wt.id
+						  AND prev.status = 'COMPLETED'
+						  AND prev.assigned_to <> ''
+						ORDER BY prev.updated_at DESC
+						LIMIT 1
+					), '') AS previous_assigned_to,
 					COALESCE(wt.sla_due_at, bc.sla_due_at), wt.created_at, wt.updated_at
 				FROM workflow_tasks wt
 				JOIN business_cases bc ON bc.id = wt.case_id
@@ -551,6 +567,16 @@ func workItemSelectSQL() string {
 			wt.title, wt.description, wt.status, bc.status, bc.created_by,
 			wt.candidate_role, wt.candidate_group_id, wt.candidate_org_unit_id,
 			wt.assigned_to, wt.assigned_at, wt.claim_expires_at,
+			COALESCE((
+				SELECT prev.assigned_to
+				FROM workflow_tasks prev
+				WHERE prev.case_id = wt.case_id
+				  AND prev.id <> wt.id
+				  AND prev.status = 'COMPLETED'
+				  AND prev.assigned_to <> ''
+				ORDER BY prev.updated_at DESC
+				LIMIT 1
+			), '') AS previous_assigned_to,
 			COALESCE(wt.sla_due_at, bc.sla_due_at), wt.created_at, wt.updated_at
 		FROM workflow_tasks wt
 		JOIN business_cases bc ON bc.id = wt.case_id
@@ -567,6 +593,7 @@ func scanWorkItem(s scanner) (WorkItem, error) {
 		&item.Title, &item.Description, &item.Status, &item.TransactionStatus, &item.CreatedBy,
 		&item.CandidateRole, &item.CandidateGroupID, &item.CandidateOrgUnitID,
 		&item.AssignedTo, &assignedAt, &claimExpiresAt,
+		&item.PreviousAssignedTo,
 		&slaDueAt, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if processInstanceKey.Valid {
@@ -603,6 +630,7 @@ func (item *WorkItem) decorate(userID, queueDirection string) {
 
 	// Populate display name from user ID / email
 	item.AssignedToName = displayName(item.AssignedTo)
+	item.PreviousAssignedToName = displayName(item.PreviousAssignedTo)
 	item.CreatedByName = displayName(item.CreatedBy)
 
 	if queueDirection == "OUTGOING" && userID != "" && item.CreatedBy == userID && isMakerTrackCaseType(item.CaseType) {
@@ -653,6 +681,9 @@ func (r *CaseRepository) enrichWorkItemUsers(ctx context.Context, items []WorkIt
 		if item.CreatedBy != "" {
 			ids[item.CreatedBy] = struct{}{}
 		}
+		if item.PreviousAssignedTo != "" {
+			ids[item.PreviousAssignedTo] = struct{}{}
+		}
 	}
 	if len(ids) == 0 {
 		return
@@ -673,6 +704,10 @@ func (r *CaseRepository) enrichWorkItemUsers(ctx context.Context, items []WorkIt
 		if u, ok := users[item.CreatedBy]; ok {
 			items[i].CreatedByName = u.Name
 			items[i].CreatedByAvatar = u.AvatarURL
+		}
+		if u, ok := users[item.PreviousAssignedTo]; ok {
+			items[i].PreviousAssignedToName = u.Name
+			items[i].PreviousAssignedToAvatar = u.AvatarURL
 		}
 	}
 }
