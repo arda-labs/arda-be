@@ -3,15 +3,14 @@
   <bpmn:error id="Error_ValidationFailed" name="VALIDATION_FAILED" errorCode="VALIDATION_FAILED" />
 
   <bpmn:process id="crm-customer-registration-v2" name="Đăng ký khách hàng hội viên (v2)" isExecutable="true">
-    <bpmn:startEvent id="Start_Submitted" name="Đã gửi duyệt">
-      <bpmn:outgoing>Flow_Start_Validate</bpmn:outgoing>
+    <bpmn:startEvent id="Start_Submitted" name="Đã khởi tạo">
+      <bpmn:outgoing>Flow_Start_MakerRevise</bpmn:outgoing>
     </bpmn:startEvent>
 
     <bpmn:serviceTask id="ST_Validate" name="Kiểm tra hồ sơ">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="crm.customer.register.validate" retries="3" />
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_Start_Validate</bpmn:incoming>
       <bpmn:incoming>Flow_MakerRevise_Validate</bpmn:incoming>
       <bpmn:outgoing>Flow_Validate_Checker</bpmn:outgoing>
     </bpmn:serviceTask>
@@ -47,6 +46,7 @@
           <zeebe:header key="stepCode" value="maker_revise" />
         </zeebe:taskHeaders>
       </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_MakerRevise</bpmn:incoming>
       <bpmn:incoming>Flow_Decision_Supplement</bpmn:incoming>
       <bpmn:incoming>Flow_ValidateError_MakerRevise</bpmn:incoming>
       <bpmn:outgoing>Flow_MakerRevise_Validate</bpmn:outgoing>
@@ -76,7 +76,7 @@
       <bpmn:incoming>Flow_Cancel_End</bpmn:incoming>
     </bpmn:endEvent>
 
-    <bpmn:sequenceFlow id="Flow_Start_Validate" sourceRef="Start_Submitted" targetRef="ST_Validate" />
+    <bpmn:sequenceFlow id="Flow_Start_MakerRevise" sourceRef="Start_Submitted" targetRef="UT_MakerRevise" />
     <bpmn:sequenceFlow id="Flow_Validate_Checker" sourceRef="ST_Validate" targetRef="UT_CheckerReview" />
     <bpmn:sequenceFlow id="Flow_ValidateError_MakerRevise" sourceRef="Err_Validate" targetRef="UT_MakerRevise" />
     <bpmn:sequenceFlow id="Flow_Checker_Decision" sourceRef="UT_CheckerReview" targetRef="GW_Decision" />
@@ -106,7 +106,7 @@
       <bpmndi:BPMNShape id="Shape_End_Approved" bpmnElement="End_Approved"><dc:Bounds x="940" y="180" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_Rejected" bpmnElement="End_Rejected"><dc:Bounds x="940" y="52" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Err_Validate" bpmnElement="Err_Validate"><dc:Bounds x="292" y="120" width="36" height="36" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Edge_Flow_Start_Validate" bpmnElement="Flow_Start_Validate"><di:waypoint x="156" y="198" /><di:waypoint x="210" y="198" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Start_MakerRevise" bpmnElement="Flow_Start_MakerRevise"><di:waypoint x="156" y="198" /><di:waypoint x="156" y="360" /><di:waypoint x="580" y="360" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Validate_Checker" bpmnElement="Flow_Validate_Checker"><di:waypoint x="350" y="198" /><di:waypoint x="400" y="198" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Checker_Decision" bpmnElement="Flow_Checker_Decision"><di:waypoint x="560" y="198" /><di:waypoint x="620" y="198" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Decision_Approve" bpmnElement="Flow_Decision_Approve"><di:waypoint x="670" y="198" /><di:waypoint x="730" y="198" /></bpmndi:BPMNEdge>

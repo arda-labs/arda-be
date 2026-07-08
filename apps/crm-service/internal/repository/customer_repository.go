@@ -21,21 +21,21 @@ type Customer struct {
 	CustomerCode   string         `json:"customerCode"`
 	WorkflowCaseID string         `json:"workflowCaseId,omitempty"`
 	CustomerType   string         `json:"customerType"`
-	Name         string         `json:"name"`
-	Email        string         `json:"email"`
-	Status       string         `json:"status"`
-	Mobile       string         `json:"mobile"`
-	IdentityNo   string         `json:"identityNo"`
-	Address      string         `json:"address"`
-	Segment      string         `json:"segment"`
-	Rank         string         `json:"rank"`
-	RiskLevel    string         `json:"riskLevel"`
-	GeneralInfo  map[string]any `json:"generalInfo"`
-	PersonalInfo map[string]any `json:"personalInfo"`
-	BusinessInfo map[string]any `json:"businessInfo"`
-	ExtendedInfo map[string]any `json:"extendedInfo"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	UpdatedAt    time.Time      `json:"updatedAt"`
+	Name           string         `json:"name"`
+	Email          string         `json:"email"`
+	Status         string         `json:"status"`
+	Mobile         string         `json:"mobile"`
+	IdentityNo     string         `json:"identityNo"`
+	Address        string         `json:"address"`
+	Segment        string         `json:"segment"`
+	Rank           string         `json:"rank"`
+	RiskLevel      string         `json:"riskLevel"`
+	GeneralInfo    map[string]any `json:"generalInfo"`
+	PersonalInfo   map[string]any `json:"personalInfo"`
+	BusinessInfo   map[string]any `json:"businessInfo"`
+	ExtendedInfo   map[string]any `json:"extendedInfo"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
 type CustomerUpsert struct {
@@ -196,7 +196,7 @@ func (r *CustomerRepository) UpsertCustomer(ctx context.Context, in CustomerUpse
 	var existing *Customer
 	if in.ID != "" {
 		var err error
-	existing, err := r.Get(ctx, in.ID)
+		existing, err := r.Get(ctx, in.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -274,10 +274,10 @@ func (r *CustomerRepository) UpsertCustomer(ctx context.Context, in CustomerUpse
 	return scanCustomer(row)
 }
 
-func (r *CustomerRepository) UpdateSubmitted(ctx context.Context, id, workflowCaseID string) error {
+func (r *CustomerRepository) AttachWorkflowCase(ctx context.Context, id, workflowCaseID string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE customers
-		SET status = 'SUBMITTED', workflow_case_id = $2, updated_at = CURRENT_TIMESTAMP
+		SET workflow_case_id = $2, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
 	`, id, workflowCaseID)
 	return err

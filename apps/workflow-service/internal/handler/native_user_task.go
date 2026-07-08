@@ -79,7 +79,7 @@ func (h *WorkflowHandler) applyNativeUserTaskSideEffects(ctx context.Context, el
 	if decision == "" {
 		decision, _ = variables["approvalResult"].(string)
 	}
-	if elementID != "UT_CheckerReview" || decision != "REQUEST_CHANGES" {
+	if elementID != "UT_CheckerReview" && elementID != "UT_MakerRevise" {
 		return nil
 	}
 	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(ctx, processInstanceKey)
@@ -90,7 +90,13 @@ func (h *WorkflowHandler) applyNativeUserTaskSideEffects(ctx context.Context, el
 	if customerID == "" {
 		return nil
 	}
-	return h.crmClient.UpdateCustomerStatus(ctx, customerID, "NEEDS_CHANGES")
+	if elementID == "UT_MakerRevise" {
+		return h.crmClient.UpdateCustomerStatus(ctx, customerID, "SUBMITTED")
+	}
+	if decision == "REQUEST_CHANGES" {
+		return h.crmClient.UpdateCustomerStatus(ctx, customerID, "NEEDS_CHANGES")
+	}
+	return nil
 }
 
 func (h *WorkflowHandler) shouldUseNativeUserTaskComplete(ctx context.Context, elementID string, processInstanceKey int64) bool {

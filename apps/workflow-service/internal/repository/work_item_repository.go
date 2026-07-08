@@ -166,6 +166,22 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 			candidate_role = COALESCE(NULLIF(EXCLUDED.candidate_role, ''), workflow_tasks.candidate_role),
 			candidate_group_id = COALESCE(NULLIF(EXCLUDED.candidate_group_id, ''), workflow_tasks.candidate_group_id),
 			candidate_org_unit_id = COALESCE(NULLIF(EXCLUDED.candidate_org_unit_id, ''), workflow_tasks.candidate_org_unit_id),
+			status = CASE
+				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN EXCLUDED.status
+				ELSE workflow_tasks.status
+			END,
+			assigned_to = CASE
+				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN ''
+				ELSE workflow_tasks.assigned_to
+			END,
+			assigned_at = CASE
+				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN NULL
+				ELSE workflow_tasks.assigned_at
+			END,
+			claim_expires_at = CASE
+				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN NULL
+				ELSE workflow_tasks.claim_expires_at
+			END,
 			sla_due_at = COALESCE(EXCLUDED.sla_due_at, workflow_tasks.sla_due_at),
 			updated_at = CURRENT_TIMESTAMP
 		RETURNING id
@@ -330,6 +346,7 @@ func (r *CaseRepository) queryWorkItems(
 		where = append(where, fmt.Sprintf(sql, len(args)))
 	}
 	if strings.TrimSpace(f.CreatedBy) != "" {
+		add("bc.created_by = $%d", f.CreatedBy)
 	}
 	if f.To != nil {
 		add("bc.created_at < $%d", f.To.AddDate(0, 0, 1))

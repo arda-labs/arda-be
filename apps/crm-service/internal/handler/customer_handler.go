@@ -143,6 +143,10 @@ func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request,
 		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "customer status must be DRAFT or NEEDS_CHANGES")
 		return
 	}
+	if item.Status == "DRAFT" && item.WorkflowCaseID != "" {
+		writeErrorCode(w, r, http.StatusConflict, ardaerrors.CodeConflict, "customer already has a workflow case; open the maker task from incoming transactions")
+		return
+	}
 	if item.Status == "NEEDS_CHANGES" && item.WorkflowCaseID != "" {
 		writeErrorCode(w, r, http.StatusConflict, ardaerrors.CodeConflict, "complete the maker revise task in workflow before resubmitting")
 		return
@@ -152,7 +156,7 @@ func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request,
 		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to submit workflow case: "+err.Error())
 		return
 	}
-	if err := h.customerRepo.UpdateSubmitted(r.Context(), id, caseID); err != nil {
+	if err := h.customerRepo.AttachWorkflowCase(r.Context(), id, caseID); err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to submit customer: %w", err))
 		return
 	}

@@ -1,6 +1,7 @@
 package bootstrap_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/bootstrap"
@@ -24,5 +25,24 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 		if got != want[process.ProcessCode] {
 			t.Fatalf("process id for %s = %q, want %q", process.ProcessCode, got, want[process.ProcessCode])
 		}
+	}
+}
+
+func TestCustomerRegistrationStartsWithMakerRevise(t *testing.T) {
+	var content string
+	for _, process := range bootstrap.BuiltInProcesses() {
+		if process.ProcessCode == "CUSTOMER_REGISTRATION" {
+			content = string(process.Content)
+			break
+		}
+	}
+	if content == "" {
+		t.Fatal("CUSTOMER_REGISTRATION process not found")
+	}
+	if !strings.Contains(content, `sourceRef="Start_Submitted" targetRef="UT_MakerRevise"`) {
+		t.Fatal("customer registration must start at maker revise task")
+	}
+	if strings.Contains(content, `sourceRef="Start_Submitted" targetRef="ST_Validate"`) {
+		t.Fatal("customer registration must not go directly from start to validation")
 	}
 }
