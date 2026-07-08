@@ -725,7 +725,28 @@ func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request
 
 func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 	id, action := workItemPath(r.URL.Path)
-	if id == "" || action != "claim" {
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if action == "" {
+		if r.Method != http.MethodGet {
+			writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		item, err := h.caseRepo.GetWorkItem(r.Context(), id, currentUserID(r))
+		if err != nil {
+			writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work item: "+err.Error())
+			return
+		}
+		if item == nil {
+			writeAPIError(w, r, http.StatusNotFound, "Work item not found")
+			return
+		}
+		writeJSON(w, r, http.StatusOK, item)
+		return
+	}
+	if action != "claim" {
 		http.NotFound(w, r)
 		return
 	}
