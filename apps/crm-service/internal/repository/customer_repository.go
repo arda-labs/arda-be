@@ -203,7 +203,9 @@ func (r *CustomerRepository) UpsertCustomer(ctx context.Context, in CustomerUpse
 		if existing == nil {
 			return nil, errors.New("customer not found")
 		}
-		if existing.Status != "DRAFT" && existing.Status != "NEEDS_CHANGES" {
+		if existing.Status != "DRAFT" &&
+			existing.Status != "NEEDS_CHANGES" &&
+			!(existing.Status == "SUBMITTED" && existing.WorkflowCaseID != "") {
 			return nil, errors.New("customer cannot be edited in current status")
 		}
 	}
@@ -254,7 +256,7 @@ func (r *CustomerRepository) UpsertCustomer(ctx context.Context, in CustomerUpse
 			customer_type = EXCLUDED.customer_type,
 			name = EXCLUDED.name,
 			email = EXCLUDED.email,
-			status = EXCLUDED.status,
+			status = customers.status,
 			mobile = EXCLUDED.mobile,
 			identity_no = EXCLUDED.identity_no,
 			address = EXCLUDED.address,
