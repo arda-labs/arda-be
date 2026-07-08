@@ -20,7 +20,7 @@
       <bpmn:errorEventDefinition errorRef="Error_ValidationFailed" />
     </bpmn:boundaryEvent>
 
-    <bpmn:userTask id="UT_CheckerReview" name="Kiểm soát hồ sơ khách hàng">
+    <bpmn:userTask id="UT_CheckerReview" name="Phê duyệt hồ sơ khách hàng">
       <bpmn:extensionElements>
         <zeebe:userTask />
         <zeebe:assignmentDefinition candidateGroups="CUSTOMER_CHECKER" />
@@ -32,14 +32,14 @@
       <bpmn:outgoing>Flow_Checker_Decision</bpmn:outgoing>
     </bpmn:userTask>
 
-    <bpmn:exclusiveGateway id="GW_Decision" name="Kết quả kiểm soát" default="Flow_Decision_Supplement">
+    <bpmn:exclusiveGateway id="GW_Decision" name="Kết quả phê duyệt" default="Flow_Decision_Supplement">
       <bpmn:incoming>Flow_Checker_Decision</bpmn:incoming>
       <bpmn:outgoing>Flow_Decision_Approve</bpmn:outgoing>
       <bpmn:outgoing>Flow_Decision_Reject</bpmn:outgoing>
       <bpmn:outgoing>Flow_Decision_Supplement</bpmn:outgoing>
     </bpmn:exclusiveGateway>
 
-    <bpmn:userTask id="UT_MakerRevise" name="Maker bổ sung hồ sơ">
+    <bpmn:userTask id="UT_MakerRevise" name="Chỉnh sửa hồ sơ">
       <bpmn:extensionElements>
         <zeebe:userTask />
         <zeebe:assignmentDefinition candidateGroups="CUSTOMER_MAKER" />
@@ -86,7 +86,7 @@
     <bpmn:sequenceFlow id="Flow_Decision_Reject" name="Từ chối" sourceRef="GW_Decision" targetRef="ST_Cancel">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "REJECT"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
-    <bpmn:sequenceFlow id="Flow_Decision_Supplement" name="Bổ sung" sourceRef="GW_Decision" targetRef="UT_MakerRevise">
+    <bpmn:sequenceFlow id="Flow_Decision_Supplement" name="Yêu cầu chỉnh sửa" sourceRef="GW_Decision" targetRef="UT_MakerRevise">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "REQUEST_CHANGES"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_MakerRevise_Validate" sourceRef="UT_MakerRevise" targetRef="ST_Validate" />

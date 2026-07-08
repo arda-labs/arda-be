@@ -1,4 +1,4 @@
-﻿package repository
+package repository
 
 import (
 	"context"
@@ -140,6 +140,13 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 	if seed.CaseID == "" || seed.TaskType == "" || seed.StepCode == "" {
 		return nil, errors.New("caseId, taskType and stepCode are required")
 	}
+	if seed.SLADueAt == nil {
+		dueAt, err := r.workItemSLADueAt(ctx, seed.CaseID, seed.StepCode)
+		if err != nil {
+			return nil, err
+		}
+		seed.SLADueAt = dueAt
+	}
 	id, err := newID()
 	if err != nil {
 		return nil, err
@@ -170,6 +177,49 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 		return nil, err
 	}
 	return r.GetWorkItem(ctx, workItemID, "")
+}
+
+func (r *CaseRepository) workItemSLADueAt(ctx context.Context, caseID string, stepCode string) (*time.Time, error) {
+	var dueAt sql.NullTime
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(
+			(
+				SELECT CASE stp.duration_unit
+					WHEN 'MINUTE' THEN CURRENT_TIMESTAMP + (stp.duration_value * INTERVAL '1 minute')
+					WHEN 'HOUR' THEN CURRENT_TIMESTAMP + (stp.duration_value * INTERVAL '1 hour')
+				END
+				FROM business_cases bc
+				JOIN business_sla_task_policies stp ON stp.sla_policy_id = bc.sla_policy_id
+				WHERE bc.id = $1
+				  AND stp.step_code = $2
+				  AND stp.status = 'ACTIVE'
+				  AND stp.effective_from <= CURRENT_TIMESTAMP
+				  AND (stp.effective_to IS NULL OR stp.effective_to > CURRENT_TIMESTAMP)
+				ORDER BY stp.sort_order
+				LIMIT 1
+			),
+			(
+				SELECT CURRENT_TIMESTAMP + (sp.due_in_hours * INTERVAL '1 hour')
+				FROM business_cases bc
+				JOIN business_sla_policies sp ON sp.id = bc.sla_policy_id
+				WHERE bc.id = $1
+				  AND sp.status = 'ACTIVE'
+				  AND sp.effective_from <= CURRENT_TIMESTAMP
+				  AND (sp.effective_to IS NULL OR sp.effective_to > CURRENT_TIMESTAMP)
+				LIMIT 1
+			)
+		)
+	`, caseID, stepCode).Scan(&dueAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !dueAt.Valid {
+		return nil, nil
+	}
+	return &dueAt.Time, nil
 }
 
 func (r *CaseRepository) GetWorkItem(ctx context.Context, id string, userID string) (*WorkItem, error) {
@@ -629,9 +679,9 @@ func slaStatus(dueAt *time.Time) string {
 
 func taskTitle(taskType string, stepCode string) string {
 	labels := map[string]string{
-		"workflow.customer_checker_review":   "Kiểm soát hồ sơ khách hàng",
+		"workflow.customer_checker_review":   "Phê duyệt hồ sơ khách hàng",
 		"workflow.customer_risk_review":      "Rà soát rủi ro khách hàng",
-		"workflow.customer_maker_revise":     "Maker bổ sung hồ sơ",
+		"workflow.customer_maker_revise":     "Chỉnh sửa hồ sơ",
 		"workflow.finance_incoming_classify": "Phân loại giao dịch đến",
 		"workflow.finance_incoming_approve":  "Duyệt giao dịch đến",
 		"workflow.finance_outgoing_verify":   "Kiểm tra giao dịch đi",
@@ -653,11 +703,11 @@ func taskDescription(taskType string, caseCode string) string {
 	}
 	switch taskType {
 	case "workflow.customer_checker_review":
-		return "Kiểm soát thông tin định danh, hồ sơ đính kèm và quyết định bước tiếp theo cho " + subject + "."
+		return "Phê duyệt thông tin định danh, hồ sơ đính kèm và quyết định bước tiếp theo cho " + subject + "."
 	case "workflow.customer_risk_review":
 		return "Đánh giá mức rủi ro và đưa quyết định rủi ro cho " + subject + "."
 	case "workflow.customer_maker_revise":
-		return "Bổ sung hoặc chỉnh sửa hồ sơ theo yêu cầu kiểm soát cho " + subject + "."
+		return "Chỉnh sửa hồ sơ theo yêu cầu phê duyệt cho " + subject + "."
 	case "workflow.finance_incoming_classify":
 		return "Phân loại giao dịch đến và chuẩn bị thông tin hạch toán cho " + subject + "."
 	case "workflow.finance_incoming_approve":

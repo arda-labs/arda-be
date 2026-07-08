@@ -103,9 +103,9 @@ func firstCandidateGroup(groups []string) string {
 func userTaskTitle(elementID string) string {
 	switch elementID {
 	case "UT_CheckerReview":
-		return "Kiểm soát hồ sơ khách hàng"
+		return "Phê duyệt hồ sơ khách hàng"
 	case "UT_MakerRevise":
-		return "Maker bổ sung hồ sơ"
+		return "Chỉnh sửa hồ sơ"
 	default:
 		return elementID
 	}

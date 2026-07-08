@@ -5,7 +5,7 @@
       <bpmn:outgoing>Flow_Start_CheckerReview</bpmn:outgoing>
     </bpmn:startEvent>
 
-    <bpmn:userTask id="UT_CheckerReview" name="Kiem soat dieu chinh ho so">
+    <bpmn:userTask id="UT_CheckerReview" name="Phe duyet dieu chinh ho so">
       <bpmn:extensionElements>
         <zeebe:userTask />
         <zeebe:assignmentDefinition candidateGroups="CUSTOMER_CHECKER" />
@@ -18,14 +18,14 @@
       <bpmn:outgoing>Flow_Review_DecisionGateway</bpmn:outgoing>
     </bpmn:userTask>
 
-    <bpmn:exclusiveGateway id="GW_CheckerDecision" name="Quyet dinh kiem soat" default="Flow_Decision_RequestChanges">
+    <bpmn:exclusiveGateway id="GW_CheckerDecision" name="Ket qua phe duyet" default="Flow_Decision_RequestChanges">
       <bpmn:incoming>Flow_Review_DecisionGateway</bpmn:incoming>
       <bpmn:outgoing>Flow_Decision_RequestChanges</bpmn:outgoing>
       <bpmn:outgoing>Flow_Decision_Reject</bpmn:outgoing>
       <bpmn:outgoing>Flow_Decision_Approve</bpmn:outgoing>
     </bpmn:exclusiveGateway>
 
-    <bpmn:userTask id="UT_MakerRevise" name="Maker bo sung dieu chinh">
+    <bpmn:userTask id="UT_MakerRevise" name="Chinh sua dieu chinh">
       <bpmn:extensionElements>
         <zeebe:userTask />
         <zeebe:assignmentDefinition candidateGroups="CUSTOMER_MAKER" />
@@ -63,7 +63,7 @@
 
     <bpmn:sequenceFlow id="Flow_Start_CheckerReview" sourceRef="Start_Submitted" targetRef="UT_CheckerReview" />
     <bpmn:sequenceFlow id="Flow_Review_DecisionGateway" sourceRef="UT_CheckerReview" targetRef="GW_CheckerDecision" />
-    <bpmn:sequenceFlow id="Flow_Decision_RequestChanges" name="Bo sung" sourceRef="GW_CheckerDecision" targetRef="UT_MakerRevise">
+    <bpmn:sequenceFlow id="Flow_Decision_RequestChanges" name="Yeu cau chinh sua" sourceRef="GW_CheckerDecision" targetRef="UT_MakerRevise">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "REQUEST_CHANGES"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_Decision_Reject" name="Tu choi" sourceRef="GW_CheckerDecision" targetRef="ST_RejectAdjustment">
