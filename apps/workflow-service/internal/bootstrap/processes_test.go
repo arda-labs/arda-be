@@ -29,20 +29,32 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 }
 
 func TestCustomerRegistrationStartsWithMakerRevise(t *testing.T) {
-	var content string
-	for _, process := range bootstrap.BuiltInProcesses() {
-		if process.ProcessCode == "CUSTOMER_REGISTRATION" {
-			content = string(process.Content)
-			break
-		}
-	}
-	if content == "" {
-		t.Fatal("CUSTOMER_REGISTRATION process not found")
-	}
+	content := builtInProcessContent(t, "CUSTOMER_REGISTRATION")
 	if !strings.Contains(content, `sourceRef="Start_Submitted" targetRef="UT_MakerRevise"`) {
 		t.Fatal("customer registration must start at maker revise task")
 	}
 	if strings.Contains(content, `sourceRef="Start_Submitted" targetRef="ST_Validate"`) {
 		t.Fatal("customer registration must not go directly from start to validation")
 	}
+}
+
+func TestCustomerAdjustmentStartsWithMakerRevise(t *testing.T) {
+	content := builtInProcessContent(t, "CUSTOMER_ADJUSTMENT")
+	if !strings.Contains(content, `sourceRef="Start_Submitted" targetRef="UT_MakerRevise"`) {
+		t.Fatal("customer adjustment must start at maker revise task")
+	}
+	if strings.Contains(content, `sourceRef="Start_Submitted" targetRef="UT_CheckerReview"`) {
+		t.Fatal("customer adjustment must not go directly from start to checker review")
+	}
+}
+
+func builtInProcessContent(t *testing.T, processCode string) string {
+	t.Helper()
+	for _, process := range bootstrap.BuiltInProcesses() {
+		if process.ProcessCode == processCode {
+			return string(process.Content)
+		}
+	}
+	t.Fatalf("%s process not found", processCode)
+	return ""
 }

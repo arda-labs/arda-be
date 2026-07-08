@@ -2,7 +2,7 @@
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_CustomerAdjustmentV2" targetNamespace="https://arda.io.vn/bpmn/customer" exporter="Arda" exporterVersion="2.0">
   <bpmn:process id="customer-adjustment-v2" name="Dieu chinh ho so khach hang (v2)" isExecutable="true">
     <bpmn:startEvent id="Start_Submitted" name="Gui dieu chinh">
-      <bpmn:outgoing>Flow_Start_CheckerReview</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Start_MakerRevise</bpmn:outgoing>
     </bpmn:startEvent>
 
     <bpmn:userTask id="UT_CheckerReview" name="Phe duyet dieu chinh ho so">
@@ -13,7 +13,6 @@
           <zeebe:header key="stepCode" value="checker_review" />
         </zeebe:taskHeaders>
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_Start_CheckerReview</bpmn:incoming>
       <bpmn:incoming>Flow_RevisionBack_Review</bpmn:incoming>
       <bpmn:outgoing>Flow_Review_DecisionGateway</bpmn:outgoing>
     </bpmn:userTask>
@@ -33,6 +32,7 @@
           <zeebe:header key="stepCode" value="maker_revise" />
         </zeebe:taskHeaders>
       </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_MakerRevise</bpmn:incoming>
       <bpmn:incoming>Flow_Decision_RequestChanges</bpmn:incoming>
       <bpmn:outgoing>Flow_RevisionBack_Review</bpmn:outgoing>
     </bpmn:userTask>
@@ -61,7 +61,7 @@
       <bpmn:incoming>Flow_Reject_End</bpmn:incoming>
     </bpmn:endEvent>
 
-    <bpmn:sequenceFlow id="Flow_Start_CheckerReview" sourceRef="Start_Submitted" targetRef="UT_CheckerReview" />
+    <bpmn:sequenceFlow id="Flow_Start_MakerRevise" sourceRef="Start_Submitted" targetRef="UT_MakerRevise" />
     <bpmn:sequenceFlow id="Flow_Review_DecisionGateway" sourceRef="UT_CheckerReview" targetRef="GW_CheckerDecision" />
     <bpmn:sequenceFlow id="Flow_Decision_RequestChanges" name="Yeu cau chinh sua" sourceRef="GW_CheckerDecision" targetRef="UT_MakerRevise">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "REQUEST_CHANGES"</bpmn:conditionExpression>
@@ -87,7 +87,7 @@
       <bpmndi:BPMNShape id="Shape_ST_ApplyAdjustment" bpmnElement="ST_ApplyAdjustment"><dc:Bounds x="590" y="260" width="180" height="80" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_Applied" bpmnElement="End_Applied"><dc:Bounds x="840" y="282" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_Rejected" bpmnElement="End_Rejected"><dc:Bounds x="840" y="62" width="36" height="36" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Edge_Flow_Start_CheckerReview" bpmnElement="Flow_Start_CheckerReview"><di:waypoint x="156" y="198" /><di:waypoint x="220" y="198" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Start_MakerRevise" bpmnElement="Flow_Start_MakerRevise"><di:waypoint x="156" y="198" /><di:waypoint x="156" y="370" /><di:waypoint x="220" y="370" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Review_DecisionGateway" bpmnElement="Flow_Review_DecisionGateway"><di:waypoint x="400" y="198" /><di:waypoint x="470" y="198" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Decision_RequestChanges" bpmnElement="Flow_Decision_RequestChanges"><di:waypoint x="495" y="223" /><di:waypoint x="495" y="370" /><di:waypoint x="400" y="370" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Decision_Reject" bpmnElement="Flow_Decision_Reject"><di:waypoint x="495" y="173" /><di:waypoint x="495" y="80" /><di:waypoint x="590" y="80" /></bpmndi:BPMNEdge>

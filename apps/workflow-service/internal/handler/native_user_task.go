@@ -91,6 +91,9 @@ func (h *WorkflowHandler) applyNativeUserTaskSideEffects(ctx context.Context, el
 		return nil
 	}
 	if elementID == "UT_MakerRevise" {
+		if bc.CaseType == "CUSTOMER_ADJUSTMENT" {
+			return nil
+		}
 		return h.crmClient.UpdateCustomerStatus(ctx, customerID, "SUBMITTED")
 	}
 	if decision == "REQUEST_CHANGES" {

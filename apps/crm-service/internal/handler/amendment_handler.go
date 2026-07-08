@@ -107,6 +107,11 @@ func (h *AmendmentHandler) startAdjustment(w http.ResponseWriter, r *http.Reques
 		writeServiceError(w, r, fmt.Errorf("failed to create amendment: %w", err))
 		return
 	}
+	if err := h.submitAdjustmentCase(r, caseID, customer, actorFromRequest(r)); err != nil {
+		_ = h.amendmentRepo.CancelDraft(r.Context(), amendment.ID, customerID)
+		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to submit workflow case: "+err.Error())
+		return
+	}
 	writeJSON(w, r, http.StatusCreated, amendment)
 }
 
@@ -162,7 +167,7 @@ func (h *AmendmentHandler) submitAmendment(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	actor := actorFromRequest(r)
-	if err := h.submitAdjustmentCase(r, amendment.WorkflowCaseID, customer, actor); err != nil {
+	if err := h.submitAdjustmentCase(r, amendment.WorkflowCaseID, customer, actor); err != nil && !isAlreadySubmittedWorkflowError(err) {
 		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to submit workflow case: "+err.Error())
 		return
 	}
@@ -172,6 +177,10 @@ func (h *AmendmentHandler) submitAmendment(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, r, http.StatusOK, updated)
+}
+
+func isAlreadySubmittedWorkflowError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "case status must be DRAFT")
 }
 
 func (h *AmendmentHandler) cancelAmendment(w http.ResponseWriter, r *http.Request, customerID, amendmentID string) {
