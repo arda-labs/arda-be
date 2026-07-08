@@ -1,4 +1,4 @@
-package repository
+﻿package repository
 
 import (
 	"context"
@@ -251,7 +251,7 @@ func (r *CaseRepository) listOutgoingWorkItems(ctx context.Context, f WorkItemFi
 	outFilter := f
 	outFilter.CreatedBy = f.UserID
 	where := []string{
-		"bc.created_by = $|",
+		"wt.status = 'COMPLETED'",
 		"bc.status NOT IN ('DRAFT', 'COMPLETED', 'CANCELLED', 'REJECTED')",
 	}
 	return r.queryWorkItems(ctx, outFilter, where, "OUTGOING", true)
@@ -280,10 +280,6 @@ func (r *CaseRepository) queryWorkItems(
 		where = append(where, fmt.Sprintf(sql, len(args)))
 	}
 	if strings.TrimSpace(f.CreatedBy) != "" {
-		add("bc.created_by = $%d", f.CreatedBy)
-	}
-	if f.From != nil {
-		add("bc.created_at >= $%d", *f.From)
 	}
 	if f.To != nil {
 		add("bc.created_at < $%d", f.To.AddDate(0, 0, 1))
