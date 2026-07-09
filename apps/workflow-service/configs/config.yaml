@@ -7,5 +7,6 @@ zeebe_addr: 192.168.100.201:30650
 crm_grpc_addr: "localhost:9094"
 iam_grpc_addr: "localhost:9095"
 zeebe_rest_addr: "http://192.168.100.201:30080"
+notification_service_url: "http://localhost:8095"
 # Dev only: allow same user to complete checker/risk after submitting as maker
 # relax_maker_checker_sod: true

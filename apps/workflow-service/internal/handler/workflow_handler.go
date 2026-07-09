@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/workflow-service/internal/notificationclient"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
@@ -21,13 +22,14 @@ import (
 )
 
 type WorkflowHandler struct {
-	zeebeSvc          *service.ZeebeService
-	zeebeRest         *service.ZeebeRestClient
-	crmClient         *crmclient.Client
-	workflowCmd       *service.WorkflowCommandService
-	mappingRepo       *repository.MappingRepository
-	caseRepo          *repository.CaseRepository
-	processDefinition *repository.ProcessDefinitionRepository
+	zeebeSvc           *service.ZeebeService
+	zeebeRest          *service.ZeebeRestClient
+	crmClient          *crmclient.Client
+	notificationClient *notificationclient.Client
+	workflowCmd        *service.WorkflowCommandService
+	mappingRepo        *repository.MappingRepository
+	caseRepo           *repository.CaseRepository
+	processDefinition  *repository.ProcessDefinitionRepository
 }
 
 func NewWorkflowHandler(
@@ -47,6 +49,10 @@ func NewWorkflowHandler(
 		caseRepo:          caseRepo,
 		processDefinition: processDefinition,
 	}
+}
+
+func (h *WorkflowHandler) SetNotificationClient(client *notificationclient.Client) {
+	h.notificationClient = client
 }
 
 func (h *WorkflowHandler) Deploy(w http.ResponseWriter, r *http.Request) {
@@ -1207,6 +1213,15 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 	if actor == "" {
 		actor = strings.TrimSpace(r.Header.Get("X-User-Email"))
 	}
+	elementID := normalizeUserTaskElementID(req.ElementID)
+	decision := reviewDecisionFromVariables(req.Variables)
+	comment := reviewCommentFromVariables(req.Variables)
+	if elementID == "UT_CheckerReview" {
+		if err := requireReviewComment(decision, comment); err != nil {
+			writeAPIError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	if err := h.enforceMakerChecker(r, req.ProcessInstanceKey.Int64(), req.ElementID, actor); err != nil {
 		slog.Warn("workflow task complete forbidden",
 			"actor", actor,
@@ -1256,6 +1271,16 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.seedEagerNextUserTask(r.Context(), req.ProcessInstanceKey.Int64(), req.ElementID, req.Variables)
+	if elementID == "UT_CheckerReview" && decision != "" {
+		var bc *repository.BusinessCase
+		if req.ProcessInstanceKey.Int64() > 0 {
+			bc, _ = h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), req.ProcessInstanceKey.Int64())
+		}
+		if bc != nil {
+			h.recordCheckerDecisionTimeline(r.Context(), bc.ID, decision, comment, actor)
+			h.notifyCheckerDecision(r.Context(), bc, jobKey, decision, comment)
+		}
+	}
 	slog.Info("workflow task complete succeeded",
 		"actor", actor,
 		"jobKey", jobKey,

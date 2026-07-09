@@ -17,6 +17,7 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/config"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/handler"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/migration"
+	"github.com/arda-labs/arda/apps/workflow-service/internal/notificationclient"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 	grpcserver "github.com/arda-labs/arda/apps/workflow-service/internal/transport/grpc"
@@ -192,6 +193,12 @@ func main() {
 	}()
 
 	wfHandler := handler.NewWorkflowHandler(zeebeSvc, zeebeRest, crmClient, mappingRepo, caseRepo, processDefinitionRepo)
+	if notiClient := notificationclient.New(cfg.NotificationServiceURL); notiClient != nil {
+		wfHandler.SetNotificationClient(notiClient)
+		logger.Info("notification client configured", "url", cfg.NotificationServiceURL)
+	} else {
+		logger.Warn("notification client disabled — NOTIFICATION_SERVICE_URL empty")
+	}
 
 	// Router and HTTP Server
 	srv := &http.Server{

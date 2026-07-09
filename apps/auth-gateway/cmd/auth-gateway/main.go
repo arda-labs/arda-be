@@ -74,12 +74,13 @@ func main() {
 	bffHandler := handler.NewBFFHandler(cfg, sessStore, iam, pol)
 
 	// ── HTTP server ──
+	// WriteTimeout must be 0 so SSE (/api/notifications/stream) is not cut after 10s.
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
 		Handler:      transport.NewRouter(authHandler, bffHandler, cfg),
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		WriteTimeout: 0,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {

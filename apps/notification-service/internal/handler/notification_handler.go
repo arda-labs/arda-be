@@ -124,15 +124,49 @@ func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	writeSSE(w, "unread_count", map[string]int{"count": count})
 	flusher.Flush()
 
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+	seen := map[string]struct{}{}
+	if items, err := h.svc.ListInbox(r.Context(), tenantID, userID, 20); err == nil {
+		for _, item := range items {
+			seen[item.PublicID] = struct{}{}
+		}
+	}
+
+	poll := time.NewTicker(2 * time.Second)
+	heartbeat := time.NewTicker(30 * time.Second)
+	defer poll.Stop()
+	defer heartbeat.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case <-ticker.C:
+		case <-heartbeat.C:
 			_, _ = w.Write([]byte(": heartbeat\n\n"))
 			flusher.Flush()
+		case <-poll.C:
+			items, err := h.svc.ListInbox(r.Context(), tenantID, userID, 20)
+			if err != nil {
+				continue
+			}
+			// Newest first — push oldest-unseen first so UI order feels natural.
+			var fresh []domain.InboxItem
+			for i := len(items) - 1; i >= 0; i-- {
+				item := items[i]
+				if _, ok := seen[item.PublicID]; ok {
+					continue
+				}
+				seen[item.PublicID] = struct{}{}
+				fresh = append(fresh, item)
+			}
+			for _, item := range fresh {
+				writeSSE(w, "notification", inboxItemJSON(item))
+			}
+			if len(fresh) > 0 {
+				if nextCount, err := h.svc.UnreadCount(r.Context(), tenantID, userID); err == nil {
+					writeSSE(w, "unread_count", map[string]int{"count": nextCount})
+				}
+				flusher.Flush()
+			}
 		}
 	}
 }
@@ -159,6 +193,9 @@ func inboxItemJSON(item domain.InboxItem) map[string]any {
 	var params map[string]any
 	if len(item.Params) > 0 {
 		_ = json.Unmarshal(item.Params, &params)
+	}
+	if params == nil {
+		params = map[string]any{}
 	}
 	out := map[string]any{
 		"id":        item.PublicID,

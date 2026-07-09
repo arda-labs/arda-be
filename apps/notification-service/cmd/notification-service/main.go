@@ -74,12 +74,12 @@ func main() {
 		}
 	}
 
-	// Router and HTTP Server
+	// Keep SSE streams open (inbox poll). Read header timeout only.
 	srv := &http.Server{
 		Addr:        cfg.HTTPAddr,
 		Handler:     transport.NewRouter(notificationHandler),
 		ReadTimeout: 10 * time.Second,
-		IdleTimeout: 60 * time.Second,
+		IdleTimeout: 120 * time.Second,
 	}
 
 	go func() {

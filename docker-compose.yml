@@ -106,6 +106,7 @@ services:
       ZEEBE_ADDR: ${ZEEBE_ADDR:-192.168.100.201:30650}
       GRPC_ADDR: 0.0.0.0:9090
       CRM_GRPC_ADDR: crm-service:9090
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
     ports:
       - "8093:8080"
       - "9093:9090"

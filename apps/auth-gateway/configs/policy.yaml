@@ -146,3 +146,15 @@ routes:
     risk: medium
     permissions:
       - hrm.manage
+
+  - id: notifications-read
+    path: /api/notifications/**
+    methods: [GET]
+    auth: true
+    risk: low
+
+  - id: notifications-write
+    path: /api/notifications/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: low
