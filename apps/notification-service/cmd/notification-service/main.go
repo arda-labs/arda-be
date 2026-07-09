@@ -17,6 +17,7 @@ import (
 	appevents "github.com/arda-labs/arda/apps/notification-service/internal/events"
 	"github.com/arda-labs/arda/apps/notification-service/internal/handler"
 	"github.com/arda-labs/arda/apps/notification-service/internal/migration"
+	"github.com/arda-labs/arda/apps/notification-service/internal/push"
 	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
 	"github.com/arda-labs/arda/apps/notification-service/internal/service"
 	transport "github.com/arda-labs/arda/apps/notification-service/internal/transport/http"
@@ -54,7 +55,13 @@ func main() {
 	}
 
 	notificationRepo := repository.NewNotificationRepository(db)
-	notificationService := service.NewNotificationService(notificationRepo)
+	pushSender := push.NewSender(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject)
+	if pushSender != nil {
+		logger.Info("web push enabled")
+	} else {
+		logger.Warn("web push disabled — set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY")
+	}
+	notificationService := service.NewNotificationService(notificationRepo, pushSender)
 	notificationHandler := handler.NewNotificationHandler(notificationService)
 
 	deliveryWorker := worker.NewDeliveryWorker(notificationRepo)

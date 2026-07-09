@@ -3,6 +3,7 @@ module github.com/arda-labs/arda/apps/notification-service
 go 1.26
 
 require (
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/arda-labs/arda/libs/go/arda-auth v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
@@ -11,6 +12,11 @@ require (
 	github.com/nats-io/nats.go v1.52.0
 	github.com/pressly/goose/v3 v3.27.1
 	gopkg.in/yaml.v3 v3.0.1
+)
+
+require (
+	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-auth => ../../libs/go/arda-auth

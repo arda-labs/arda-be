@@ -347,6 +347,75 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
+type PushSubscription struct {
+	ID        string
+	TenantID  string
+	UserID    string
+	Endpoint  string
+	P256dh    string
+	Auth      string
+	UserAgent string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (r *NotificationRepository) UpsertPushSubscription(ctx context.Context, item PushSubscription) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO noti_push_subscriptions (
+			tenant_id, user_id, endpoint, p256dh, auth, user_agent
+		) VALUES ($1,$2,$3,$4,$5,$6)
+		ON CONFLICT (endpoint) DO UPDATE SET
+			tenant_id = EXCLUDED.tenant_id,
+			user_id = EXCLUDED.user_id,
+			p256dh = EXCLUDED.p256dh,
+			auth = EXCLUDED.auth,
+			user_agent = EXCLUDED.user_agent,
+			updated_at = now()`,
+		item.TenantID, item.UserID, item.Endpoint, item.P256dh, item.Auth, item.UserAgent,
+	)
+	return err
+}
+
+func (r *NotificationRepository) DeletePushSubscription(ctx context.Context, tenantID, userID, endpoint string) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM noti_push_subscriptions
+		WHERE tenant_id = $1 AND user_id = $2 AND endpoint = $3`,
+		tenantID, userID, endpoint,
+	)
+	return err
+}
+
+func (r *NotificationRepository) ListPushSubscriptions(ctx context.Context, tenantID, userID string) ([]PushSubscription, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id::text, tenant_id, user_id, endpoint, p256dh, auth, user_agent, created_at, updated_at
+		FROM noti_push_subscriptions
+		WHERE tenant_id = $1 AND user_id = $2
+		ORDER BY updated_at DESC`, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]PushSubscription, 0)
+	for rows.Next() {
+		var item PushSubscription
+		if err := rows.Scan(
+			&item.ID, &item.TenantID, &item.UserID, &item.Endpoint, &item.P256dh, &item.Auth,
+			&item.UserAgent, &item.CreatedAt, &item.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *NotificationRepository) DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM noti_push_subscriptions WHERE endpoint = $1`, endpoint)
+	return err
+}
+
 func scanNotification(row scanner, n *domain.Notification) error {
 	return row.Scan(&n.ID, &n.PublicID, &n.TenantID, &n.SourceService, &n.SourceEventID,
 		&n.EventType, &n.Recipients, &n.Channels, &n.TemplateKey, &n.TemplateVersion,

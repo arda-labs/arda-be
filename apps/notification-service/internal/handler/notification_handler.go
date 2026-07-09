@@ -103,6 +103,45 @@ func (h *NotificationHandler) MarkAllRead(w http.ResponseWriter, r *http.Request
 	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (h *NotificationHandler) PushPublicKey(w http.ResponseWriter, r *http.Request) {
+	key := h.svc.VAPIDPublicKey()
+	if key == "" {
+		writeError(w, r, http.StatusServiceUnavailable, "web push is not configured")
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]string{"publicKey": key})
+}
+
+func (h *NotificationHandler) SubscribePush(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID := requestUser(r)
+	var in service.PushSubscribeInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.svc.SubscribePush(r.Context(), tenantID, userID, r.UserAgent(), in); err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *NotificationHandler) UnsubscribePush(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID := requestUser(r)
+	var in struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.svc.UnsubscribePush(r.Context(), tenantID, userID, in.Endpoint); err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID := requestUser(r)
 	count, err := h.svc.UnreadCount(r.Context(), tenantID, userID)

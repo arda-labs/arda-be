@@ -6,18 +6,22 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
+	"github.com/arda-labs/arda/apps/notification-service/internal/push"
 	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
 )
 
 type NotificationService struct {
-	repo *repository.NotificationRepository
+	repo       *repository.NotificationRepository
+	pushSender *push.Sender
 }
 
-func NewNotificationService(repo *repository.NotificationRepository) *NotificationService {
-	return &NotificationService{repo: repo}
+func NewNotificationService(repo *repository.NotificationRepository, pushSender *push.Sender) *NotificationService {
+	return &NotificationService{repo: repo, pushSender: pushSender}
 }
 
 type AcceptInput struct {
@@ -37,6 +41,14 @@ type AcceptInput struct {
 	BodyKey        string             `json:"body_key"`
 	Href           string             `json:"href"`
 	Params         map[string]any     `json:"params"`
+}
+
+type PushSubscribeInput struct {
+	Endpoint string `json:"endpoint"`
+	Keys     struct {
+		P256dh string `json:"p256dh"`
+		Auth   string `json:"auth"`
+	} `json:"keys"`
 }
 
 func (s *NotificationService) Accept(ctx context.Context, in AcceptInput) (*domain.Notification, error) {
@@ -119,7 +131,125 @@ func (s *NotificationService) Accept(ctx context.Context, in AcceptInput) (*doma
 		}
 	}
 
-	return s.repo.CreateNotification(ctx, n, deliveries, inboxItems)
+	created, err := s.repo.CreateNotification(ctx, n, deliveries, inboxItems)
+	if err != nil {
+		return nil, err
+	}
+
+	// Best-effort Web Push for in-app recipients (Chrome OS banner even when tab closed).
+	go s.dispatchWebPush(context.WithoutCancel(ctx), in, inboxItems)
+
+	return created, nil
+}
+
+func (s *NotificationService) dispatchWebPush(ctx context.Context, in AcceptInput, inboxItems []domain.InboxItem) {
+	if s.pushSender == nil || !s.pushSender.Enabled() || len(inboxItems) == 0 {
+		return
+	}
+	for _, item := range inboxItems {
+		subs, err := s.repo.ListPushSubscriptions(ctx, item.TenantID, item.UserID)
+		if err != nil {
+			slog.Warn("list push subscriptions failed", "userId", item.UserID, "err", err)
+			continue
+		}
+		title := renderPushText(item.TitleKey, in.Params)
+		body := renderPushText(item.BodyKey, in.Params)
+		for _, sub := range subs {
+			err := s.pushSender.Send(ctx, push.Subscription{
+				Endpoint: sub.Endpoint,
+				P256dh:   sub.P256dh,
+				Auth:     sub.Auth,
+			}, push.Payload{
+				Title: title,
+				Body:  body,
+				Href:  item.Href,
+				Tag:   item.PublicID,
+			})
+			if err != nil {
+				slog.Warn("web push send failed", "userId", item.UserID, "err", err)
+				_ = s.repo.DeletePushSubscriptionByEndpoint(ctx, sub.Endpoint)
+			}
+		}
+	}
+}
+
+func renderPushText(key string, params map[string]any) string {
+	key = strings.TrimSpace(key)
+	caseCode, _ := params["caseCode"].(string)
+	comment, _ := params["comment"].(string)
+	switch {
+	case strings.Contains(key, "request_changes.title"):
+		return "Hồ sơ cần chỉnh sửa"
+	case strings.Contains(key, "request_changes.body"):
+		if caseCode != "" && comment != "" {
+			return fmt.Sprintf("%s: %s", caseCode, comment)
+		}
+		if comment != "" {
+			return comment
+		}
+		return "Vui lòng bổ sung hồ sơ"
+	case strings.Contains(key, "rejected.title"):
+		return "Đăng ký khách hàng bị từ chối"
+	case strings.Contains(key, "rejected.body"):
+		if caseCode != "" && comment != "" {
+			return fmt.Sprintf("%s: %s", caseCode, comment)
+		}
+		if comment != "" {
+			return comment
+		}
+		return "Hồ sơ đã bị từ chối"
+	case strings.Contains(key, "approved.title"):
+		return "Đăng ký khách hàng đã được duyệt"
+	case strings.Contains(key, "approved.body"):
+		if caseCode != "" {
+			return caseCode + " đã kích hoạt"
+		}
+		return "Hồ sơ đã được kích hoạt"
+	default:
+		if comment != "" {
+			return comment
+		}
+		if caseCode != "" {
+			return caseCode
+		}
+		return "Thông báo Arda"
+	}
+}
+
+func (s *NotificationService) VAPIDPublicKey() string {
+	if s.pushSender == nil {
+		return ""
+	}
+	return s.pushSender.PublicKey()
+}
+
+func (s *NotificationService) SubscribePush(ctx context.Context, tenantID, userID, userAgent string, in PushSubscribeInput) error {
+	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
+	endpoint := strings.TrimSpace(in.Endpoint)
+	p256dh := strings.TrimSpace(in.Keys.P256dh)
+	auth := strings.TrimSpace(in.Keys.Auth)
+	if tenantID == "" || userID == "" {
+		return errors.New("user context is required")
+	}
+	if endpoint == "" || p256dh == "" || auth == "" {
+		return errors.New("endpoint and keys are required")
+	}
+	return s.repo.UpsertPushSubscription(ctx, repository.PushSubscription{
+		TenantID:  tenantID,
+		UserID:    userID,
+		Endpoint:  endpoint,
+		P256dh:    p256dh,
+		Auth:      auth,
+		UserAgent: strings.TrimSpace(userAgent),
+	})
+}
+
+func (s *NotificationService) UnsubscribePush(ctx context.Context, tenantID, userID, endpoint string) error {
+	tenantID, userID, endpoint = strings.TrimSpace(tenantID), strings.TrimSpace(userID), strings.TrimSpace(endpoint)
+	if tenantID == "" || userID == "" || endpoint == "" {
+		return errors.New("user context and endpoint are required")
+	}
+	return s.repo.DeletePushSubscription(ctx, tenantID, userID, endpoint)
 }
 
 func (s *NotificationService) GetByPublicID(ctx context.Context, publicID string) (*domain.Notification, error) {
