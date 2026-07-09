@@ -69,5 +69,8 @@ func (s *WorkflowCommandService) SubmitCase(ctx context.Context, id string, in S
 	if err != nil {
 		return nil, fmt.Errorf("workflow started but case submit failed: %w", err)
 	}
+	if task, ok := InitialUserTaskForCaseType(updated.CaseType); ok {
+		SeedEagerUserTask(ctx, s.caseRepo, updated, task)
+	}
 	return updated, nil
 }

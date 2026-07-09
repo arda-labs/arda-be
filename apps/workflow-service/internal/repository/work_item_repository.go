@@ -166,25 +166,32 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (case_id, task_type, step_code) DO UPDATE SET
 			process_instance_key = COALESCE(EXCLUDED.process_instance_key, workflow_tasks.process_instance_key),
-			job_key = COALESCE(EXCLUDED.job_key, workflow_tasks.job_key),
+			job_key = CASE
+				WHEN EXCLUDED.status = 'READY' AND workflow_tasks.status IN ('COMPLETED', 'CANCELLED') THEN EXCLUDED.job_key
+				ELSE COALESCE(EXCLUDED.job_key, workflow_tasks.job_key)
+			END,
 			title = COALESCE(NULLIF(EXCLUDED.title, ''), workflow_tasks.title),
 			description = COALESCE(NULLIF(EXCLUDED.description, ''), workflow_tasks.description),
 			candidate_role = COALESCE(NULLIF(EXCLUDED.candidate_role, ''), workflow_tasks.candidate_role),
 			candidate_group_id = COALESCE(NULLIF(EXCLUDED.candidate_group_id, ''), workflow_tasks.candidate_group_id),
 			candidate_org_unit_id = COALESCE(NULLIF(EXCLUDED.candidate_org_unit_id, ''), workflow_tasks.candidate_org_unit_id),
 			status = CASE
+				WHEN EXCLUDED.status = 'READY' AND workflow_tasks.status IN ('COMPLETED', 'CANCELLED') THEN 'READY'
 				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN EXCLUDED.status
 				ELSE workflow_tasks.status
 			END,
 			assigned_to = CASE
+				WHEN EXCLUDED.status = 'READY' AND workflow_tasks.status IN ('COMPLETED', 'CANCELLED') THEN ''
 				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN ''
 				ELSE workflow_tasks.assigned_to
 			END,
 			assigned_at = CASE
+				WHEN EXCLUDED.status = 'READY' AND workflow_tasks.status IN ('COMPLETED', 'CANCELLED') THEN NULL
 				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN NULL
 				ELSE workflow_tasks.assigned_at
 			END,
 			claim_expires_at = CASE
+				WHEN EXCLUDED.status = 'READY' AND workflow_tasks.status IN ('COMPLETED', 'CANCELLED') THEN NULL
 				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN NULL
 				ELSE workflow_tasks.claim_expires_at
 			END,
@@ -322,9 +329,16 @@ func (r *CaseRepository) listOutgoingWorkItems(ctx context.Context, f WorkItemFi
 	}
 	outFilter := f
 	outFilter.CreatedBy = f.UserID
+	// Theo dõi hồ sơ mình đã gửi: task hiện tại của case (distinct mới nhất).
+	// Loại UT_MakerRevise đang READY/CLAIMED — đó là việc inbox ở Giao dịch đến
+	// (bước đầu sau Khởi tạo / khi KS yêu cầu bổ sung), không phải giao dịch đi.
 	where := []string{
-		"wt.status = 'COMPLETED'",
+		"wt.status IN ('READY', 'CLAIMED', 'COMPLETED')",
 		"bc.status NOT IN ('DRAFT', 'COMPLETED', 'CANCELLED', 'REJECTED')",
+		`NOT (
+			wt.status IN ('READY', 'CLAIMED')
+			AND wt.step_code IN ('UT_MakerRevise', 'Activity_MakerRevise')
+		)`,
 	}
 	return r.queryWorkItems(ctx, outFilter, where, "OUTGOING", true)
 }
@@ -407,13 +421,13 @@ func (r *CaseRepository) queryWorkItems(
 				FROM workflow_tasks wt
 				JOIN business_cases bc ON bc.id = wt.case_id
 				WHERE ` + strings.Join(where, " AND ") + `
-				ORDER BY bc.id, wt.updated_at DESC
+				ORDER BY bc.id, wt.created_at DESC
 			) latest
-			ORDER BY latest.updated_at DESC
+			ORDER BY latest.created_at DESC
 			LIMIT $` + fmt.Sprint(limitPos)
 	} else {
 		sql += `
-		ORDER BY COALESCE(wt.sla_due_at, bc.sla_due_at) NULLS LAST, bc.updated_at DESC
+		ORDER BY wt.created_at DESC
 		LIMIT $` + fmt.Sprint(limitPos)
 	}
 
@@ -657,6 +671,12 @@ func isMakerTrackCaseType(caseType string) bool {
 	default:
 		return false
 	}
+}
+
+// IsMakerTrackCaseType reports case types where the creator tracks progress
+// on the outgoing workbench after submitting.
+func IsMakerTrackCaseType(caseType string) bool {
+	return isMakerTrackCaseType(caseType)
 }
 
 func displayName(id string) string {

@@ -690,7 +690,9 @@ func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve task permissions: "+err.Error())
 		return
 	}
-	// Incoming: filter only items user can claim or is assigned to
+	// Incoming only: filter to items user can claim or is assigned to.
+	// Search (ALL) and outgoing must not use this gate — otherwise search
+	// looks empty when the caller omitted/lost direction=ALL.
 	dir := strings.ToUpper(r.URL.Query().Get("direction"))
 	if dir == "" || dir == "INCOMING" {
 		filtered := items[:0]
@@ -1116,9 +1118,13 @@ func workItemFilter(r *http.Request) repository.WorkItemFilter {
 func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.Request, items []repository.WorkItem) error {
 	userID := currentUserID(r)
 	for i := range items {
+		makerTrack := userID != "" &&
+			items[i].CreatedBy == userID &&
+			repository.IsMakerTrackCaseType(items[i].CaseType)
+
 		if items[i].AssignedTo != "" {
 			items[i].CanClaim = false
-			items[i].CanOpen = items[i].AssignedTo == userID
+			items[i].CanOpen = items[i].AssignedTo == userID || makerTrack
 			if !items[i].CanOpen {
 				items[i].ClaimBlockedReason = "Task đang được xử lý bởi " + items[i].AssignedTo
 			}
@@ -1129,8 +1135,8 @@ func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.
 			return err
 		}
 		items[i].CanClaim = ok
-		items[i].CanOpen = ok
-		if !ok {
+		items[i].CanOpen = ok || makerTrack
+		if !ok && !makerTrack {
 			items[i].ClaimBlockedReason = "Bạn không thuộc nhóm được phân công"
 		}
 	}
@@ -1249,6 +1255,7 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to update completed task step: "+err.Error())
 		return
 	}
+	h.seedEagerNextUserTask(r.Context(), req.ProcessInstanceKey.Int64(), req.ElementID, req.Variables)
 	slog.Info("workflow task complete succeeded",
 		"actor", actor,
 		"jobKey", jobKey,
@@ -1789,6 +1796,24 @@ func firstString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func (h *WorkflowHandler) seedEagerNextUserTask(ctx context.Context, processInstanceKey int64, completedElementID string, variables map[string]any) {
+	if processInstanceKey == 0 || h.caseRepo == nil {
+		return
+	}
+	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(ctx, processInstanceKey)
+	if err != nil || bc == nil {
+		if err != nil {
+			slog.Warn("eager next task: load case failed", "processInstanceKey", processInstanceKey, "err", err)
+		}
+		return
+	}
+	task, ok := service.NextUserTaskAfterComplete(bc.CaseType, completedElementID, variables)
+	if !ok {
+		return
+	}
+	service.SeedEagerUserTask(ctx, h.caseRepo, bc, task)
 }
 
 func taskClaimFilterForWorkItem(ctx context.Context, caseRepo *repository.CaseRepository, item *repository.WorkItem) service.TaskClaimFilter {

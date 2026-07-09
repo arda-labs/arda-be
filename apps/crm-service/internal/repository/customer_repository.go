@@ -196,7 +196,7 @@ func (r *CustomerRepository) UpsertCustomer(ctx context.Context, in CustomerUpse
 	var existing *Customer
 	if in.ID != "" {
 		var err error
-		existing, err := r.Get(ctx, in.ID)
+		existing, err = r.Get(ctx, in.ID)
 		if err != nil {
 			return nil, err
 		}
