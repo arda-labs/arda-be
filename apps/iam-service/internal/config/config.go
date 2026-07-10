@@ -37,7 +37,7 @@ func Load() Config {
 	cfg := Config{
 		AppName:  "iam-service",
 		HTTPAddr: "0.0.0.0:8080",
-		GRPCAddr: "0.0.0.0:9095",
+		GRPCAddr: "0.0.0.0:9090",
 		LogLevel: "info",
 
 		DatabaseDSN: "postgres://postgres:postgres@localhost:5432/iam?sslmode=disable",

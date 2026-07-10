@@ -10,5 +10,5 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/bin/iam-service /app/iam-service
 COPY apps/iam-service/config /app/config
-EXPOSE 8080
+EXPOSE 8080 9090
 ENTRYPOINT ["/app/iam-service"]
