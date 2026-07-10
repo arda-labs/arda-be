@@ -728,7 +728,15 @@ func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work item summary: "+err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"nodes": workItemSummary(items, currentUserID(r))})
+	mineFilter := filter
+	mineFilter.Scope = "MINE"
+	mineItems, err := h.caseRepo.ListWorkItems(r.Context(), mineFilter)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work item summary: "+err.Error())
+		return
+	}
+	allItems := append(items, mineItems...)
+	writeJSON(w, r, http.StatusOK, map[string]any{"nodes": workItemSummary(allItems, currentUserID(r))})
 }
 
 func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {

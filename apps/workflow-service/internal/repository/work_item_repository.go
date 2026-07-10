@@ -512,7 +512,7 @@ func (r *CaseRepository) ClaimWorkItem(ctx context.Context, id string, actor str
 	if err != nil {
 		return nil, err
 	}
-	if status == TaskStatusCompleted || status == TaskStatusCancelled {
+	if status == TaskStatusCompleted || status == TaskStatusCancelled || status == TaskStatusRouting {
 		return nil, fmt.Errorf("task is %s", status)
 	}
 	if assignedTo != "" && assignedTo != actor {
