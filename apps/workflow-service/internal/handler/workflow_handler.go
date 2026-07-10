@@ -1116,6 +1116,7 @@ func workItemFilter(r *http.Request) repository.WorkItemFilter {
 		SLAStatus:         strings.ToUpper(firstString(q.Get("slaStatus"), q.Get("sla_status"))),
 		TransactionStatus: strings.ToUpper(firstString(q.Get("transactionStatus"), q.Get("status"))),
 		Node:              firstString(q.Get("node"), q.Get("step_code"), q.Get("currentStep")),
+		Scope:             strings.ToUpper(q.Get("scope")),
 		UserID:            currentUserID(r),
 		Limit:             limit,
 	}

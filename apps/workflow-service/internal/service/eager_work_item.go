@@ -33,23 +33,7 @@ func InitialUserTaskForCaseType(caseType string) (EagerUserTask, bool) {
 // asynchronous Zeebe projector discovers its native user-task record.
 func NextUserTaskAfterComplete(caseType, completedElementID string, variables map[string]any) (EagerUserTask, bool) {
 	switch caseType {
-	case "CUSTOMER_REGISTRATION":
-		switch normalizeEagerElementID(completedElementID) {
-		case "UT_CheckerReview":
-			decision, _ := variables["reviewDecision"].(string)
-			if decision == "" {
-				decision, _ = variables["approvalResult"].(string)
-			}
-			if decision != "REQUEST_CHANGES" {
-				return EagerUserTask{}, false
-			}
-			return EagerUserTask{
-				StepCode:      "UT_MakerRevise",
-				CandidateRole: "CUSTOMER_MAKER",
-				Title:         "Chỉnh sửa hồ sơ",
-			}, true
-		}
-	case "CUSTOMER_ADJUSTMENT":
+	case "CUSTOMER_REGISTRATION", "CUSTOMER_ADJUSTMENT":
 		switch normalizeEagerElementID(completedElementID) {
 		case "UT_MakerRevise":
 			return EagerUserTask{
@@ -111,15 +95,6 @@ func SeedEagerUserTask(ctx context.Context, caseRepo *repository.CaseRepository,
 			"err", err,
 		)
 		return
-	}
-	if bc.ProcessInstanceKey != nil {
-		if err := caseRepo.MarkCaseAtStep(ctx, *bc.ProcessInstanceKey, task.StepCode, task.CandidateRole); err != nil {
-			slog.Warn("eager mark case at step failed",
-				"caseId", bc.ID,
-				"stepCode", task.StepCode,
-				"err", err,
-			)
-		}
 	}
 	slog.Info("eager work item seeded",
 		"caseId", bc.ID,
