@@ -1,10 +1,31 @@
 package handler
 
 import (
+	"context"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 )
+
+func TestApplyWorkItemPermissionsRoutingIsNotActionable(t *testing.T) {
+	r := httptest.NewRequest("GET", "/api/workflow/work-items", nil)
+	r.Header.Set("X-User-Roles", "CUSTOMER_CHECKER")
+	items := []repository.WorkItem{{
+		Status:        repository.TaskStatusRouting,
+		CandidateRole: "CUSTOMER_CHECKER",
+	}}
+
+	if err := (&WorkflowHandler{}).applyWorkItemPermissions(context.Background(), r, items); err != nil {
+		t.Fatalf("apply permissions: %v", err)
+	}
+	if items[0].CanClaim || items[0].CanOpen {
+		t.Fatalf("routing task must stay non-actionable: canClaim=%v canOpen=%v", items[0].CanClaim, items[0].CanOpen)
+	}
+	if items[0].ClaimBlockedReason == "" {
+		t.Fatal("routing task must explain why it cannot be opened")
+	}
+}
 
 func TestCasePath(t *testing.T) {
 	tests := []struct {

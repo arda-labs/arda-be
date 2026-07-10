@@ -55,6 +55,7 @@ type WorkItem struct {
 	CanClaim                 bool       `json:"canClaim"`
 	CanOpen                  bool       `json:"canOpen"`
 	CanReassign              bool       `json:"canReassign"`
+	CanView                  bool       `json:"-"`
 	ClaimBlockedReason       string     `json:"claimBlockedReason,omitempty"`
 	CreatedAt                time.Time  `json:"createdAt"`
 	UpdatedAt                time.Time  `json:"updatedAt"`
@@ -119,7 +120,6 @@ type WorkItemFilter struct {
 	UserID            string
 	CreatedBy         string
 	AssignedTo        string
-	Scope             string
 	Limit             int
 }
 
@@ -333,18 +333,16 @@ func (r *CaseRepository) listIncomingWorkItems(ctx context.Context, f WorkItemFi
 	where := []string{
 		"bc.status NOT IN ('DRAFT', 'COMPLETED', 'CANCELLED', 'REJECTED')",
 	}
-	where = append(where, incomingWorkItemScopeWhere(f.Scope)...)
-	if strings.EqualFold(f.Scope, "MINE") {
-		f.AssignedTo = f.UserID
-	}
+	where = append(where, incomingWorkItemWhere()...)
 	return r.queryWorkItems(ctx, f, where, "INCOMING", false)
 }
 
-func incomingWorkItemScopeWhere(scope string) []string {
-	if strings.EqualFold(scope, "MINE") {
-		return []string{"wt.status = 'CLAIMED'", "wt.job_key IS NOT NULL"}
-	}
-	return []string{"wt.status = 'READY'", "wt.job_key IS NOT NULL", "wt.assigned_to = ''"}
+func incomingWorkItemWhere() []string {
+	return []string{`(
+		wt.status = 'ROUTING'
+		OR (wt.status = 'READY' AND wt.job_key IS NOT NULL AND wt.assigned_to = '')
+		OR (wt.status = 'CLAIMED' AND wt.job_key IS NOT NULL)
+	)`}
 }
 
 func (r *CaseRepository) listOutgoingWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
@@ -500,17 +498,21 @@ func (r *CaseRepository) ClaimWorkItem(ctx context.Context, id string, actor str
 	defer tx.Rollback()
 
 	var assignedTo, status string
+	var jobKey sql.NullInt64
 	err = tx.QueryRowContext(ctx, `
-		SELECT assigned_to, status
+		SELECT assigned_to, status, job_key
 		FROM workflow_tasks
 		WHERE id = $1
 		FOR UPDATE
-	`, id).Scan(&assignedTo, &status)
+	`, id).Scan(&assignedTo, &status, &jobKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if status != TaskStatusReady || !jobKey.Valid {
+		return nil, fmt.Errorf("task is not ready for claim")
 	}
 	if status == TaskStatusCompleted || status == TaskStatusCancelled {
 		return nil, fmt.Errorf("task is %s", status)
@@ -677,11 +679,13 @@ func (item *WorkItem) decorate(userID, queueDirection string) {
 	if queueDirection == "OUTGOING" && userID != "" && item.CreatedBy == userID && isMakerTrackCaseType(item.CaseType) {
 		item.CanOpen = true
 		item.CanClaim = false
+		item.CanView = true
 		return
 	}
 
 	item.CanOpen = item.AssignedTo == "" || item.AssignedTo == userID
 	item.CanClaim = item.Status == TaskStatusReady && item.AssignedTo == ""
+	item.CanView = item.CanOpen || item.CanClaim
 	if item.AssignedTo != "" && item.AssignedTo != userID {
 		item.ClaimBlockedReason = "Task đang được xử lý bởi " + item.AssignedTo
 	}

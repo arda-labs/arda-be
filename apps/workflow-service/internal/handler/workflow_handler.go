@@ -701,13 +701,7 @@ func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
 	// looks empty when the caller omitted/lost direction=ALL.
 	dir := strings.ToUpper(r.URL.Query().Get("direction"))
 	if dir == "" || dir == "INCOMING" {
-		filtered := items[:0]
-		for _, item := range items {
-			if item.CanClaim || item.CanOpen {
-				filtered = append(filtered, item)
-			}
-		}
-		items = filtered
+		items = visibleIncomingWorkItems(items)
 	}
 	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
 }
@@ -727,6 +721,14 @@ func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work item summary: "+err.Error())
 		return
+	}
+	if err := h.applyWorkItemPermissions(r.Context(), r, items); err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve task permissions: "+err.Error())
+		return
+	}
+	direction := strings.ToUpper(r.URL.Query().Get("direction"))
+	if direction == "" || direction == "INCOMING" {
+		items = visibleIncomingWorkItems(items)
 	}
 	writeJSON(w, r, http.StatusOK, map[string]any{"nodes": workItemSummary(items, currentUserID(r))})
 }
@@ -774,6 +776,10 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 	}
 	if item == nil {
 		writeAPIError(w, r, http.StatusNotFound, "Work item not found")
+		return
+	}
+	if item.Status != repository.TaskStatusReady || item.JobKey == nil {
+		writeAPIError(w, r, http.StatusConflict, "Task is still being prepared and cannot be claimed")
 		return
 	}
 	ok, err := h.canClaimCandidateRole(r.Context(), r, item.CandidateRole)
@@ -1116,7 +1122,6 @@ func workItemFilter(r *http.Request) repository.WorkItemFilter {
 		SLAStatus:         strings.ToUpper(firstString(q.Get("slaStatus"), q.Get("sla_status"))),
 		TransactionStatus: strings.ToUpper(firstString(q.Get("transactionStatus"), q.Get("status"))),
 		Node:              firstString(q.Get("node"), q.Get("step_code"), q.Get("currentStep")),
-		Scope:             strings.ToUpper(q.Get("scope")),
 		UserID:            currentUserID(r),
 		Limit:             limit,
 	}
@@ -1125,6 +1130,21 @@ func workItemFilter(r *http.Request) repository.WorkItemFilter {
 func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.Request, items []repository.WorkItem) error {
 	userID := currentUserID(r)
 	for i := range items {
+		if items[i].Status == repository.TaskStatusRouting {
+			visible, err := h.canClaimCandidateRole(ctx, r, items[i].CandidateRole)
+			if err != nil {
+				return err
+			}
+			items[i].CanView = visible
+			items[i].CanClaim = false
+			items[i].CanOpen = false
+			if visible {
+				items[i].ClaimBlockedReason = "Task đang được chuẩn bị"
+			} else {
+				items[i].ClaimBlockedReason = "Bạn không thuộc nhóm được phân công"
+			}
+			continue
+		}
 		makerTrack := userID != "" &&
 			items[i].CreatedBy == userID &&
 			repository.IsMakerTrackCaseType(items[i].CaseType)
@@ -1132,6 +1152,7 @@ func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.
 		if items[i].AssignedTo != "" {
 			items[i].CanClaim = false
 			items[i].CanOpen = items[i].AssignedTo == userID || makerTrack
+			items[i].CanView = items[i].CanOpen
 			if !items[i].CanOpen {
 				items[i].ClaimBlockedReason = "Task đang được xử lý bởi " + items[i].AssignedTo
 			}
@@ -1143,11 +1164,22 @@ func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.
 		}
 		items[i].CanClaim = ok
 		items[i].CanOpen = ok || makerTrack
+		items[i].CanView = items[i].CanClaim || items[i].CanOpen
 		if !ok && !makerTrack {
 			items[i].ClaimBlockedReason = "Bạn không thuộc nhóm được phân công"
 		}
 	}
 	return nil
+}
+
+func visibleIncomingWorkItems(items []repository.WorkItem) []repository.WorkItem {
+	visible := items[:0]
+	for _, item := range items {
+		if item.CanView {
+			visible = append(visible, item)
+		}
+	}
+	return visible
 }
 
 func workItemSummary(items []repository.WorkItem, userID string) []repository.WorkItemSummaryNode {

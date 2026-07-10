@@ -15,14 +15,17 @@ func TestWorkItemSeedStatusRequiresJobKeyForReady(t *testing.T) {
 	}
 }
 
-func TestIncomingWorkItemScopeRequiresReadyJobKey(t *testing.T) {
-	pool := strings.Join(incomingWorkItemScopeWhere("POOL"), " ")
-	if !strings.Contains(pool, "wt.status = 'READY'") || !strings.Contains(pool, "wt.job_key IS NOT NULL") {
-		t.Fatalf("pool scope must only return actionable tasks: %s", pool)
-	}
-	mine := strings.Join(incomingWorkItemScopeWhere("MINE"), " ")
-	if !strings.Contains(mine, "wt.status = 'CLAIMED'") {
-		t.Fatalf("mine scope must only return claimant tasks: %s", mine)
+func TestIncomingWorkItemsIncludeRoutingAndReadyOrClaimedTasks(t *testing.T) {
+	incoming := strings.Join(incomingWorkItemWhere(), " ")
+	for _, fragment := range []string{
+		"wt.status = 'ROUTING'",
+		"wt.status = 'READY'",
+		"wt.status = 'CLAIMED'",
+		"wt.job_key IS NOT NULL",
+	} {
+		if !strings.Contains(incoming, fragment) {
+			t.Fatalf("incoming list must include %q: %s", fragment, incoming)
+		}
 	}
 }
 
