@@ -1,6 +1,30 @@
 package repository
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestWorkItemSeedStatusRequiresJobKeyForReady(t *testing.T) {
+	if got := workItemSeedStatus(WorkItemSeed{}); got != TaskStatusRouting {
+		t.Fatalf("seed without job key = %s, want %s", got, TaskStatusRouting)
+	}
+	jobKey := int64(42)
+	if got := workItemSeedStatus(WorkItemSeed{JobKey: &jobKey}); got != TaskStatusReady {
+		t.Fatalf("seed with job key = %s, want %s", got, TaskStatusReady)
+	}
+}
+
+func TestIncomingWorkItemScopeRequiresReadyJobKey(t *testing.T) {
+	pool := strings.Join(incomingWorkItemScopeWhere("POOL"), " ")
+	if !strings.Contains(pool, "wt.status = 'READY'") || !strings.Contains(pool, "wt.job_key IS NOT NULL") {
+		t.Fatalf("pool scope must only return actionable tasks: %s", pool)
+	}
+	mine := strings.Join(incomingWorkItemScopeWhere("MINE"), " ")
+	if !strings.Contains(mine, "wt.status = 'CLAIMED'") {
+		t.Fatalf("mine scope must only return claimant tasks: %s", mine)
+	}
+}
 
 func TestDedupeWorkItemsByCase(t *testing.T) {
 	items := []WorkItem{
@@ -38,5 +62,17 @@ func TestWorkItemDecorateMakerOutgoing(t *testing.T) {
 	}
 	if !item.CanOpen || item.CanClaim {
 		t.Fatalf("maker outgoing should be view-only: canOpen=%v canClaim=%v", item.CanOpen, item.CanClaim)
+	}
+}
+
+func TestWorkItemDecorateMakerRoutingIsViewOnly(t *testing.T) {
+	item := WorkItem{
+		CaseType:  "CUSTOMER_REGISTRATION",
+		CreatedBy: "maker-1",
+		Status:    TaskStatusRouting,
+	}
+	item.decorate("maker-1", "OUTGOING")
+	if !item.CanOpen || item.CanClaim {
+		t.Fatalf("maker routing should be tracking only: canOpen=%v canClaim=%v", item.CanOpen, item.CanClaim)
 	}
 }

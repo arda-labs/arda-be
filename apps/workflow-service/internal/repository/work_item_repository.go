@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	TaskStatusRouting   = "ROUTING"
 	TaskStatusReady     = "READY"
 	TaskStatusClaimed   = "CLAIMED"
 	TaskStatusCompleted = "COMPLETED"
@@ -117,6 +118,8 @@ type WorkItemFilter struct {
 	Node              string
 	UserID            string
 	CreatedBy         string
+	AssignedTo        string
+	Scope             string
 	Limit             int
 }
 
@@ -140,6 +143,13 @@ type WorkItemSeed struct {
 	SLADueAt           *time.Time
 	Title              string
 	Description        string
+}
+
+func workItemSeedStatus(seed WorkItemSeed) string {
+	if seed.JobKey == nil {
+		return TaskStatusRouting
+	}
+	return TaskStatusReady
 }
 
 func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) (*WorkItem, error) {
@@ -174,6 +184,7 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 			candidate_org_unit_id = COALESCE(NULLIF(EXCLUDED.candidate_org_unit_id, ''), workflow_tasks.candidate_org_unit_id),
 			status = CASE
 				WHEN workflow_tasks.status = 'CLAIMED' THEN workflow_tasks.status
+				WHEN workflow_tasks.status = 'ROUTING' AND EXCLUDED.job_key IS NOT NULL THEN 'READY'
 				WHEN workflow_tasks.status IN ('COMPLETED', 'CANCELLED')
 					AND EXCLUDED.job_key IS NOT NULL
 					AND workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN 'READY'
@@ -201,7 +212,7 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 			updated_at = CURRENT_TIMESTAMP
 		RETURNING id
 	`, id, seed.CaseID, seed.ProcessInstanceKey, seed.JobKey, seed.TaskType, seed.StepCode,
-		seed.Title, seed.Description, TaskStatusReady, seed.CandidateRole, seed.CandidateGroupID,
+		seed.Title, seed.Description, workItemSeedStatus(seed), seed.CandidateRole, seed.CandidateGroupID,
 		seed.CandidateOrgUnitID, seed.SLADueAt)
 	var workItemID string
 	if err := row.Scan(&workItemID); err != nil {
@@ -273,6 +284,7 @@ func (r *CaseRepository) FindActiveWorkTask(ctx context.Context, caseID string, 
 	where := []string{
 		"wt.status IN ('READY', 'CLAIMED')",
 		"wt.job_key IS NOT NULL",
+		"wt.job_key IS NOT NULL",
 	}
 	args := []any{}
 	if caseID != "" {
@@ -319,10 +331,20 @@ func (r *CaseRepository) ListWorkItems(ctx context.Context, f WorkItemFilter) ([
 
 func (r *CaseRepository) listIncomingWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
 	where := []string{
-		"wt.status IN ('READY', 'CLAIMED')",
 		"bc.status NOT IN ('DRAFT', 'COMPLETED', 'CANCELLED', 'REJECTED')",
 	}
+	where = append(where, incomingWorkItemScopeWhere(f.Scope)...)
+	if strings.EqualFold(f.Scope, "MINE") {
+		f.AssignedTo = f.UserID
+	}
 	return r.queryWorkItems(ctx, f, where, "INCOMING", false)
+}
+
+func incomingWorkItemScopeWhere(scope string) []string {
+	if strings.EqualFold(scope, "MINE") {
+		return []string{"wt.status = 'CLAIMED'", "wt.job_key IS NOT NULL"}
+	}
+	return []string{"wt.status = 'READY'", "wt.job_key IS NOT NULL", "wt.assigned_to = ''"}
 }
 
 func (r *CaseRepository) listOutgoingWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
@@ -335,7 +357,7 @@ func (r *CaseRepository) listOutgoingWorkItems(ctx context.Context, f WorkItemFi
 	// Loại UT_MakerRevise đang READY/CLAIMED — đó là việc inbox ở Giao dịch đến
 	// (bước đầu sau Khởi tạo / khi KS yêu cầu bổ sung), không phải giao dịch đi.
 	where := []string{
-		"wt.status IN ('READY', 'CLAIMED', 'COMPLETED')",
+		"wt.status IN ('ROUTING', 'READY', 'CLAIMED', 'COMPLETED')",
 		"bc.status NOT IN ('DRAFT', 'COMPLETED', 'CANCELLED', 'REJECTED')",
 		`NOT (
 			wt.status IN ('READY', 'CLAIMED')
@@ -369,6 +391,9 @@ func (r *CaseRepository) queryWorkItems(
 	}
 	if strings.TrimSpace(f.CreatedBy) != "" {
 		add("bc.created_by = $%d", f.CreatedBy)
+	}
+	if strings.TrimSpace(f.AssignedTo) != "" {
+		add("wt.assigned_to = $%d", f.AssignedTo)
 	}
 	if f.To != nil {
 		add("bc.created_at < $%d", f.To.AddDate(0, 0, 1))

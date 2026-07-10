@@ -96,15 +96,6 @@ func SeedEagerUserTask(ctx context.Context, caseRepo *repository.CaseRepository,
 		)
 		return
 	}
-	if bc.ProcessInstanceKey != nil {
-		if err := caseRepo.MarkCaseAtStep(ctx, *bc.ProcessInstanceKey, task.StepCode, task.CandidateRole); err != nil {
-			slog.Warn("eager mark case at step failed",
-				"caseId", bc.ID,
-				"stepCode", task.StepCode,
-				"err", err,
-			)
-		}
-	}
 	slog.Info("eager work item seeded",
 		"caseId", bc.ID,
 		"caseType", bc.CaseType,
