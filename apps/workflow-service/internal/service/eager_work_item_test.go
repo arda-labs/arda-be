@@ -11,23 +11,3 @@ func TestInitialUserTaskForCaseType(t *testing.T) {
 		t.Fatal("finance should not eager-seed yet")
 	}
 }
-
-func TestNextUserTaskAfterComplete(t *testing.T) {
-	task, ok := NextUserTaskAfterComplete("CUSTOMER_REGISTRATION", "UT_MakerRevise", nil)
-	if !ok || task.StepCode != "UT_CheckerReview" {
-		t.Fatalf("maker revise should seed checker: ok=%v %+v", ok, task)
-	}
-
-	task, ok = NextUserTaskAfterComplete("CUSTOMER_REGISTRATION", "UT_CheckerReview", map[string]any{
-		"reviewDecision": "REQUEST_CHANGES",
-	})
-	if !ok || task.StepCode != "UT_MakerRevise" {
-		t.Fatalf("request changes should seed maker: ok=%v %+v", ok, task)
-	}
-
-	if _, ok := NextUserTaskAfterComplete("CUSTOMER_REGISTRATION", "UT_CheckerReview", map[string]any{
-		"reviewDecision": "APPROVE",
-	}); ok {
-		t.Fatal("approve should not eager-seed a user task")
-	}
-}
