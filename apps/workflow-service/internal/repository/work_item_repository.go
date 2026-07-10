@@ -166,33 +166,35 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (case_id, task_type, step_code) DO UPDATE SET
 			process_instance_key = COALESCE(EXCLUDED.process_instance_key, workflow_tasks.process_instance_key),
-			job_key = CASE
-				WHEN EXCLUDED.status = 'READY' AND workflow_tasks.status IN ('COMPLETED', 'CANCELLED') THEN EXCLUDED.job_key
-				ELSE COALESCE(EXCLUDED.job_key, workflow_tasks.job_key)
-			END,
+			job_key = COALESCE(EXCLUDED.job_key, workflow_tasks.job_key),
 			title = COALESCE(NULLIF(EXCLUDED.title, ''), workflow_tasks.title),
 			description = COALESCE(NULLIF(EXCLUDED.description, ''), workflow_tasks.description),
 			candidate_role = COALESCE(NULLIF(EXCLUDED.candidate_role, ''), workflow_tasks.candidate_role),
 			candidate_group_id = COALESCE(NULLIF(EXCLUDED.candidate_group_id, ''), workflow_tasks.candidate_group_id),
 			candidate_org_unit_id = COALESCE(NULLIF(EXCLUDED.candidate_org_unit_id, ''), workflow_tasks.candidate_org_unit_id),
 			status = CASE
-				WHEN EXCLUDED.status = 'READY' AND workflow_tasks.status IN ('COMPLETED', 'CANCELLED') THEN 'READY'
-				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN EXCLUDED.status
+				WHEN workflow_tasks.status = 'CLAIMED' THEN workflow_tasks.status
+				WHEN workflow_tasks.status IN ('COMPLETED', 'CANCELLED')
+					AND EXCLUDED.job_key IS NOT NULL
+					AND workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN 'READY'
 				ELSE workflow_tasks.status
 			END,
 			assigned_to = CASE
-				WHEN EXCLUDED.status = 'READY' AND workflow_tasks.status IN ('COMPLETED', 'CANCELLED') THEN ''
-				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN ''
+				WHEN workflow_tasks.status = 'CLAIMED' THEN workflow_tasks.assigned_to
+				WHEN EXCLUDED.job_key IS NOT NULL
+					AND workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN ''
 				ELSE workflow_tasks.assigned_to
 			END,
 			assigned_at = CASE
-				WHEN EXCLUDED.status = 'READY' AND workflow_tasks.status IN ('COMPLETED', 'CANCELLED') THEN NULL
-				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN NULL
+				WHEN workflow_tasks.status = 'CLAIMED' THEN workflow_tasks.assigned_at
+				WHEN EXCLUDED.job_key IS NOT NULL
+					AND workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN NULL
 				ELSE workflow_tasks.assigned_at
 			END,
 			claim_expires_at = CASE
-				WHEN EXCLUDED.status = 'READY' AND workflow_tasks.status IN ('COMPLETED', 'CANCELLED') THEN NULL
-				WHEN workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN NULL
+				WHEN workflow_tasks.status = 'CLAIMED' THEN workflow_tasks.claim_expires_at
+				WHEN EXCLUDED.job_key IS NOT NULL
+					AND workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN NULL
 				ELSE workflow_tasks.claim_expires_at
 			END,
 			sla_due_at = COALESCE(EXCLUDED.sla_due_at, workflow_tasks.sla_due_at),
