@@ -1270,6 +1270,7 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to update completed task step: "+err.Error())
 		return
 	}
+	h.seedEagerNextUserTask(r.Context(), req.ProcessInstanceKey.Int64(), req.ElementID, req.Variables)
 	if elementID == "UT_CheckerReview" && decision != "" {
 		var bc *repository.BusinessCase
 		if req.ProcessInstanceKey.Int64() > 0 {
@@ -1820,6 +1821,24 @@ func firstString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func (h *WorkflowHandler) seedEagerNextUserTask(ctx context.Context, processInstanceKey int64, completedElementID string, variables map[string]any) {
+	if processInstanceKey == 0 || h.caseRepo == nil {
+		return
+	}
+	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(ctx, processInstanceKey)
+	if err != nil || bc == nil {
+		if err != nil {
+			slog.Warn("eager next task: load case failed", "processInstanceKey", processInstanceKey, "err", err)
+		}
+		return
+	}
+	task, ok := service.NextUserTaskAfterComplete(bc.CaseType, completedElementID, variables)
+	if !ok {
+		return
+	}
+	service.SeedEagerUserTask(ctx, h.caseRepo, bc, task)
 }
 
 func taskClaimFilterForWorkItem(ctx context.Context, caseRepo *repository.CaseRepository, item *repository.WorkItem) service.TaskClaimFilter {
