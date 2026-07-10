@@ -33,7 +33,23 @@ func InitialUserTaskForCaseType(caseType string) (EagerUserTask, bool) {
 // asynchronous Zeebe projector discovers its native user-task record.
 func NextUserTaskAfterComplete(caseType, completedElementID string, variables map[string]any) (EagerUserTask, bool) {
 	switch caseType {
-	case "CUSTOMER_REGISTRATION", "CUSTOMER_ADJUSTMENT":
+	case "CUSTOMER_REGISTRATION":
+		switch normalizeEagerElementID(completedElementID) {
+		case "UT_CheckerReview":
+			decision, _ := variables["reviewDecision"].(string)
+			if decision == "" {
+				decision, _ = variables["approvalResult"].(string)
+			}
+			if decision != "REQUEST_CHANGES" {
+				return EagerUserTask{}, false
+			}
+			return EagerUserTask{
+				StepCode:      "UT_MakerRevise",
+				CandidateRole: "CUSTOMER_MAKER",
+				Title:         "Chỉnh sửa hồ sơ",
+			}, true
+		}
+	case "CUSTOMER_ADJUSTMENT":
 		switch normalizeEagerElementID(completedElementID) {
 		case "UT_MakerRevise":
 			return EagerUserTask{
