@@ -29,6 +29,47 @@ func InitialUserTaskForCaseType(caseType string) (EagerUserTask, bool) {
 	}
 }
 
+// NextUserTaskAfterComplete makes the next human task visible before the
+// asynchronous Zeebe projector discovers its native user-task record.
+func NextUserTaskAfterComplete(caseType, completedElementID string, variables map[string]any) (EagerUserTask, bool) {
+	switch caseType {
+	case "CUSTOMER_REGISTRATION", "CUSTOMER_ADJUSTMENT":
+		switch normalizeEagerElementID(completedElementID) {
+		case "UT_MakerRevise":
+			return EagerUserTask{
+				StepCode:      "UT_CheckerReview",
+				CandidateRole: "CUSTOMER_CHECKER",
+				Title:         "Phê duyệt hồ sơ khách hàng",
+			}, true
+		case "UT_CheckerReview":
+			decision, _ := variables["reviewDecision"].(string)
+			if decision == "" {
+				decision, _ = variables["approvalResult"].(string)
+			}
+			if decision != "REQUEST_CHANGES" {
+				return EagerUserTask{}, false
+			}
+			return EagerUserTask{
+				StepCode:      "UT_MakerRevise",
+				CandidateRole: "CUSTOMER_MAKER",
+				Title:         "Chỉnh sửa hồ sơ",
+			}, true
+		}
+	}
+	return EagerUserTask{}, false
+}
+
+func normalizeEagerElementID(elementID string) string {
+	switch elementID {
+	case "Activity_CheckerReview":
+		return "UT_CheckerReview"
+	case "Activity_MakerRevise":
+		return "UT_MakerRevise"
+	default:
+		return elementID
+	}
+}
+
 // SeedEagerUserTask upserts a READY work item so workbench lists update
 // immediately; UserTaskProjector later binds the real Zeebe userTaskKey.
 func SeedEagerUserTask(ctx context.Context, caseRepo *repository.CaseRepository, bc *repository.BusinessCase, task EagerUserTask) {
