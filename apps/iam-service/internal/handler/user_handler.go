@@ -119,17 +119,19 @@ func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
-	ctx, err := h.svc.UpdateUserAvatar(r.Context(), userID, strings.TrimSpace(req.AvatarFileID), strings.TrimSpace(req.PictureURL))
-	if err != nil {
-		respondError(w, r, http.StatusBadRequest, err.Error())
-		return
-	}
-
 	avatarID := strings.TrimSpace(req.AvatarFileID)
 	if avatarID != "" {
 		if err := ardamedia.NewClient().Attach(r.Context(), []string{avatarID}, "iam_user", userID, r); err != nil {
 			slog.Error("failed to attach avatar file", "file_id", avatarID, "err", err)
+			respondError(w, r, http.StatusBadGateway, "failed to attach avatar file")
+			return
 		}
+	}
+
+	ctx, err := h.svc.UpdateUserAvatar(r.Context(), userID, avatarID, strings.TrimSpace(req.PictureURL))
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	respondJSON(w, r, http.StatusOK, ctx)
@@ -149,17 +151,19 @@ func (h *UserHandler) UpdateMyCover(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
-	ctx, err := h.svc.UpdateUserCover(r.Context(), userID, strings.TrimSpace(req.CoverFileID), strings.TrimSpace(req.CoverImageURL))
-	if err != nil {
-		respondError(w, r, http.StatusBadRequest, err.Error())
-		return
-	}
-
 	coverID := strings.TrimSpace(req.CoverFileID)
 	if coverID != "" {
 		if err := ardamedia.NewClient().Attach(r.Context(), []string{coverID}, "iam_user_cover", userID, r); err != nil {
 			slog.Error("failed to attach cover file", "file_id", coverID, "err", err)
+			respondError(w, r, http.StatusBadGateway, "failed to attach cover file")
+			return
 		}
+	}
+
+	ctx, err := h.svc.UpdateUserCover(r.Context(), userID, coverID, strings.TrimSpace(req.CoverImageURL))
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	respondJSON(w, r, http.StatusOK, ctx)
