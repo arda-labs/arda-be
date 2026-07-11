@@ -9,8 +9,8 @@ storage_provider: garage-main
 storage_endpoint: "https://s3.arda.io.vn"
 storage_region: garage
 storage_bucket: media
-storage_access_key: "GK7bf2e3ca8c35e3bf358b757b"
-storage_secret_key: "92264dbff432a737a89c9a40e9f02eed84622e82f41305c9291a434cf2c604c1"
+storage_access_key: ""
+storage_secret_key: ""
 storage_force_path_style: true
 
 upload_max_size_mb: 100
