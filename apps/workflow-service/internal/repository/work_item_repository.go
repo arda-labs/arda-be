@@ -277,6 +277,32 @@ func (r *CaseRepository) GetWorkItem(ctx context.Context, id string, userID stri
 	return &item, nil
 }
 
+// FindPendingWorkTask finds the current work item for a case + step, even when
+// Zeebe has not yet assigned jobKey (status = ROUTING). Use for readiness checks
+// where the caller needs to know whether the task row exists at all, not whether
+// it is claimable yet.
+func (r *CaseRepository) FindPendingWorkItemByStep(ctx context.Context, caseID, stepCode string) (*WorkItem, error) {
+	if caseID == "" || stepCode == "" {
+		return nil, nil
+	}
+	row := r.db.QueryRowContext(ctx, workItemSelectSQL()+`
+		WHERE wt.case_id = $1
+		  AND wt.step_code = $2
+		  AND wt.status NOT IN ('COMPLETED', 'CANCELLED')
+		ORDER BY wt.updated_at DESC
+		LIMIT 1
+	`, caseID, stepCode)
+	item, err := scanWorkItem(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	item.decorate("", "")
+	return &item, nil
+}
+
 func (r *CaseRepository) FindActiveWorkTask(ctx context.Context, caseID string, processInstanceKey int64) (*WorkItem, error) {
 	if caseID == "" && processInstanceKey <= 0 {
 		return nil, nil

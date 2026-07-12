@@ -1469,6 +1469,8 @@ func (h *WorkflowHandler) CaseByID(w http.ResponseWriter, r *http.Request) {
 		h.getCase(w, r, id)
 	case r.Method == http.MethodGet && action == "timeline":
 		h.caseTimeline(w, r, id)
+	case r.Method == http.MethodGet && action == "task-readiness":
+		h.caseTaskReadiness(w, r, id)
 	case r.Method == http.MethodPost && action == "submit":
 		h.submitCase(w, r, id)
 	case r.Method == http.MethodPost && action == "claim":
@@ -1540,6 +1542,29 @@ func (h *WorkflowHandler) caseTimeline(w http.ResponseWriter, r *http.Request, i
 type caseActorRequest struct {
 	Actor     string         `json:"actor"`
 	Variables map[string]any `json:"variables"`
+}
+
+func (h *WorkflowHandler) caseTaskReadiness(w http.ResponseWriter, r *http.Request, id string) {
+	stepCode := r.URL.Query().Get("stepCode")
+	if stepCode == "" {
+		writeAPIError(w, r, http.StatusBadRequest, "stepCode query param is required")
+		return
+	}
+	item, err := h.caseRepo.FindPendingWorkItemByStep(r.Context(), id, stepCode)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work item: "+err.Error())
+		return
+	}
+	ready := false
+	status := "NOT_FOUND"
+	if item != nil {
+		status = string(item.Status)
+		ready = item.Status == repository.TaskStatusReady || item.Status == repository.TaskStatusClaimed
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{
+		"ready":  ready,
+		"status": status,
+	})
 }
 
 func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id string) {
