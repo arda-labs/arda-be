@@ -1130,24 +1130,27 @@ func workItemFilter(r *http.Request) repository.WorkItemFilter {
 func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.Request, items []repository.WorkItem) error {
 	userID := currentUserID(r)
 	for i := range items {
+		makerTrack := userID != "" &&
+			items[i].CreatedBy == userID &&
+			repository.IsMakerTrackCaseType(items[i].CaseType)
+
 		if items[i].Status == repository.TaskStatusRouting {
-			visible, err := h.canClaimCandidateRole(ctx, r, items[i].CandidateRole)
+			roleOK, err := h.canClaimCandidateRole(ctx, r, items[i].CandidateRole)
 			if err != nil {
 				return err
 			}
-			items[i].CanView = visible
+			items[i].CanView = roleOK || makerTrack
 			items[i].CanClaim = false
 			items[i].CanOpen = false
-			if visible {
+			if roleOK {
 				items[i].ClaimBlockedReason = "Task đang được chuẩn bị"
+			} else if makerTrack {
+				items[i].ClaimBlockedReason = "Task đang được chuẩn bị, vui lòng đợi trong giây lát"
 			} else {
 				items[i].ClaimBlockedReason = "Bạn không thuộc nhóm được phân công"
 			}
 			continue
 		}
-		makerTrack := userID != "" &&
-			items[i].CreatedBy == userID &&
-			repository.IsMakerTrackCaseType(items[i].CaseType)
 
 		if items[i].AssignedTo != "" {
 			items[i].CanClaim = false

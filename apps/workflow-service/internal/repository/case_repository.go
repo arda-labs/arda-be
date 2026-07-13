@@ -251,6 +251,15 @@ func (r *CaseRepository) CreateCase(ctx context.Context, in CaseCreate) (*Busine
 		return nil, fmt.Errorf("unknown caseType %q", in.CaseType)
 	}
 
+	// If a case with this caseCode already exists, return it (idempotent).
+	existing, err := r.CaseByCaseCode(ctx, in.CaseCode)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
 	id, err := newID()
 	if err != nil {
 		return nil, err
@@ -354,6 +363,25 @@ func (r *CaseRepository) GetCase(ctx context.Context, id string) (*BusinessCase,
 		FROM business_cases
 		WHERE id = $1
 	`, id)
+	bc, err := scanBusinessCase(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &bc, nil
+}
+
+func (r *CaseRepository) CaseByCaseCode(ctx context.Context, caseCode string) (*BusinessCase, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
+		       domain_service, status, current_step, priority, created_by, assigned_to,
+		       candidate_role, sla_policy_id, sla_due_at, process_instance_key,
+		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
+		FROM business_cases
+		WHERE case_code = $1
+	`, caseCode)
 	bc, err := scanBusinessCase(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

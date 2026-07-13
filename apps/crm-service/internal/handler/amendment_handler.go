@@ -107,7 +107,7 @@ func (h *AmendmentHandler) startAdjustment(w http.ResponseWriter, r *http.Reques
 		writeServiceError(w, r, fmt.Errorf("failed to create amendment: %w", err))
 		return
 	}
-	if err := h.submitAdjustmentCase(r, caseID, customer, actorFromRequest(r)); err != nil {
+	if err := h.submitAdjustmentCase(r, caseID, customer, actorFromRequest(r)); err != nil && !isAlreadySubmittedWorkflowError(err) {
 		_ = h.amendmentRepo.CancelDraft(r.Context(), amendment.ID, customerID)
 		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to submit workflow case: "+err.Error())
 		return
