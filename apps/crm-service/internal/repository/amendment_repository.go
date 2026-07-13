@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 type CustomerAmendment struct {
@@ -330,7 +332,7 @@ func scanAmendment(row interface {
 }) (*CustomerAmendment, error) {
 	var item CustomerAmendment
 	var beforeRaw, afterRaw []byte
-	var changed []string
+	var changed pq.StringArray
 	var appliedAt, rejectedAt sql.NullTime
 	var appliedBy, rejectedBy sql.NullString
 	if err := row.Scan(
