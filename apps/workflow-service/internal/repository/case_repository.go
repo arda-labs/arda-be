@@ -513,6 +513,18 @@ func (r *CaseRepository) FinishCase(ctx context.Context, processInstanceKey int6
 	return err
 }
 
+func (r *CaseRepository) SetCaseStatusByProcessKey(ctx context.Context, processInstanceKey int64, status string) error {
+	if processInstanceKey == 0 {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE business_cases
+		SET status = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE process_instance_key = $1
+	`, processInstanceKey, status)
+	return err
+}
+
 func (r *CaseRepository) GetCaseByProcessInstanceKey(ctx context.Context, processInstanceKey int64) (*BusinessCase, error) {
 	if processInstanceKey == 0 {
 		return nil, nil

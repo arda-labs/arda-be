@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/handler"
 )
@@ -52,6 +53,47 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 	mux.HandleFunc("/api/workflow/tasks/", wfHandler.TaskByID)
 	mux.HandleFunc("/api/workflow/cases", wfHandler.Cases)
 	mux.HandleFunc("/api/workflow/cases/", wfHandler.CaseByID)
+
+	// Operate APIs
+	mux.HandleFunc("/api/workflow/operate/process-definitions", wfHandler.OperateProcessDefinitions)
+	mux.HandleFunc("/api/workflow/operate/process-instances", wfHandler.OperateProcessInstances)
+	mux.HandleFunc("/api/workflow/operate/process-instances/", func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasSuffix(p, "/pause") {
+			wfHandler.OperatePauseInstance(w, r)
+		} else if strings.HasSuffix(p, "/resume") {
+			wfHandler.OperateResumeInstance(w, r)
+		} else if strings.HasSuffix(p, "/cancel") {
+			wfHandler.OperateCancelInstance(w, r)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	mux.HandleFunc("/api/workflow/operate/incidents", wfHandler.OperateIncidents)
+	mux.HandleFunc("/api/workflow/operate/incidents/", func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasSuffix(p, "/retry") {
+			wfHandler.OperateRetryIncident(w, r)
+		} else if strings.HasSuffix(p, "/resolve") {
+			wfHandler.OperateResolveIncident(w, r)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	mux.HandleFunc("/api/workflow/operate/jobs", wfHandler.OperateJobs)
+	mux.HandleFunc("/api/workflow/operate/jobs/", wfHandler.OperateUpdateJobRetries)
+	mux.HandleFunc("/api/workflow/operate/job-definitions", wfHandler.OperateJobDefinitions)
+	mux.HandleFunc("/api/workflow/operate/job-definitions/", func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasSuffix(p, "/suspend") {
+			wfHandler.OperateSuspendJobDef(w, r)
+		} else if strings.HasSuffix(p, "/activate") {
+			wfHandler.OperateActivateJobDef(w, r)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	mux.HandleFunc("/api/workflow/operate/element-stats", wfHandler.OperateElementStats)
 
 	// Dynamic paths
 	mux.HandleFunc("/api/v1/workflows/instances/", func(w http.ResponseWriter, r *http.Request) {
