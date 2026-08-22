@@ -65,7 +65,8 @@ type CustomerListFilter struct {
 	Status       string
 	RiskOnly     bool
 	Q            string
-	Limit        int
+	Page         int
+	PerPage      int
 }
 
 type CustomerRelationship struct {
@@ -115,9 +116,12 @@ func (r *CustomerRepository) Get(ctx context.Context, id string) (*Customer, err
 	return scanCustomer(row)
 }
 
-func (r *CustomerRepository) ListCustomers(ctx context.Context, f CustomerListFilter) ([]Customer, error) {
-	if f.Limit <= 0 || f.Limit > 200 {
-		f.Limit = 100
+func (r *CustomerRepository) ListCustomers(ctx context.Context, f CustomerListFilter) ([]Customer, int, error) {
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.PerPage <= 0 || f.PerPage > 100 {
+		f.PerPage = 100
 	}
 
 	where := []string{"1=1"}
@@ -155,13 +159,23 @@ func (r *CustomerRepository) ListCustomers(ctx context.Context, f CustomerListFi
 		)`, n-4, n-3, n-2, n-1, n))
 	}
 
-	args = append(args, f.Limit)
+	whereSQL := strings.Join(where, " AND ")
+	var total int
+	if err := r.db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM crm_customers WHERE "+whereSQL,
+		args...,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	args = append(args, f.PerPage, (f.Page-1)*f.PerPage)
 	rows, err := r.db.QueryContext(ctx, customerSelect()+`
-		WHERE `+strings.Join(where, " AND ")+`
+		WHERE `+whereSQL+`
 		ORDER BY updated_at DESC
-		LIMIT $`+fmt.Sprint(len(args)), args...)
+		LIMIT $`+fmt.Sprint(len(args)-1)+` OFFSET $`+fmt.Sprint(len(args)), args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -169,11 +183,11 @@ func (r *CustomerRepository) ListCustomers(ctx context.Context, f CustomerListFi
 	for rows.Next() {
 		item, err := scanCustomer(rows)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		items = append(items, *item)
 	}
-	return items, rows.Err()
+	return items, total, rows.Err()
 }
 
 func (r *CustomerRepository) UpsertCustomer(ctx context.Context, in CustomerUpsert) (*Customer, error) {

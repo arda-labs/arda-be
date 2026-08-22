@@ -67,13 +67,16 @@ func (h *CustomerHandler) CreateCustomer(w http.ResponseWriter, r *http.Request)
 func (h *CustomerHandler) listCustomers(w http.ResponseWriter, r *http.Request) {
 	scope := ScopeFromRequest(r)
 	listQuery := ardahttp.ParseListQuery(r.URL.Query())
-	limit := listQuery.PerPage
+	perPage := listQuery.PerPage
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		if n, err := parsePositiveInt(raw); err == nil {
-			limit = n
+			perPage = n
 		}
 	}
-	items, err := h.customerRepo.ListCustomers(r.Context(), repository.CustomerListFilter{
+	if perPage > ardahttp.MaxPerPage {
+		perPage = ardahttp.MaxPerPage
+	}
+	items, total, err := h.customerRepo.ListCustomers(r.Context(), repository.CustomerListFilter{
 		TenantID: scope.TenantID,
 		OrgIDs:   scope.OrgIDs,
 		CustomerType: firstNonEmpty(
@@ -83,13 +86,14 @@ func (h *CustomerHandler) listCustomers(w http.ResponseWriter, r *http.Request) 
 		Status:   r.URL.Query().Get("status"),
 		RiskOnly: firstNonEmpty(r.URL.Query().Get("risk_only"), r.URL.Query().Get("riskOnly")) == "true",
 		Q:        firstNonEmpty(listQuery.Q, r.URL.Query().Get("q")),
-		Limit:    limit,
+		Page:     listQuery.Page,
+		PerPage:  perPage,
 	})
 	if err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to query customers: %w", err))
 		return
 	}
-	writeListAll(w, r, items)
+	ardahttp.WriteList(w, r, listQuery.Page, perPage, total, items)
 }
 
 func (h *CustomerHandler) getCustomer(w http.ResponseWriter, r *http.Request, id string) {

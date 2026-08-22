@@ -23,6 +23,7 @@ import (
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/policy"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/session"
 	"github.com/arda-labs/arda/libs/go/arda-auth/permission"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
@@ -1875,5 +1876,21 @@ func respondJSON(w http.ResponseWriter, status int, data any) {
 }
 
 func respondError(w http.ResponseWriter, status int, msg string) {
-	respondJSON(w, status, map[string]string{"error": msg})
+	code := ardaerrors.CodeForStatus(status)
+	if isMachineErrorCode(msg) {
+		code = msg
+	}
+	ardahttp.WriteErrorCode(w, nil, status, code, msg)
+}
+
+func isMachineErrorCode(value string) bool {
+	if value == "" || strings.ContainsAny(value, " \t") {
+		return false
+	}
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && char != '.' && char != '_' {
+			return false
+		}
+	}
+	return strings.ContainsAny(value, "._")
 }
