@@ -59,7 +59,7 @@ respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeForbidden, ""
 
 ## Frontend mapping
 
-1. `@workspace/core/http/api-client` parses error body on non-2xx.
+1. `@workspace/api/client` parses error body on non-2xx.
 2. `ApiErrorLike` in `@workspace/i18n` carries `code`, `message`, `status`, `fields`.
 3. `translateApiError(error)` — looks up `code` in i18n resources, falls back to `message`.
 4. Mutations: `notify.error("Action failed", translateApiError(error))`.

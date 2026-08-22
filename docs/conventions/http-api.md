@@ -204,14 +204,15 @@ Shared library: **`libs/go/arda-http`**
 ```go
 import ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 
-listQuery := ardahttp.ParseListQuery(r.URL.Query())
-ardahttp.WriteList(w, r, listQuery.Page, listQuery.PerPage, total, items)
+listRequest, err := ardahttp.ParseListRequest(r.URL.Query(), listSpec)
+ardahttp.WriteList(w, r, listRequest.Page, listRequest.PerPage, total, items)
 ardahttp.WriteErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "…")
 ```
 
 | API | Mục đích |
 | --- | --- |
-| `ParseListQuery` | Đọc `page`, `per_page`, `sort`, `order`, `q`, `view`, `all` |
+| `ParseListRequest` / `ListSpec` | Validate pagination, sort, view và typed filters theo contract từng resource |
+| `ParseListQuery` | Parser legacy; không dùng cho endpoint list mới |
 | `WriteList` / `NewListResponse` | Body list chuẩn |
 | `WriteJSON` / `WriteAppError` / `WriteErrorCode` | JSON + `X-Request-Id` |
 | `RequestID` | Lấy/generate correlation id |
@@ -224,7 +225,7 @@ gRPC nội bộ: `arda.common.v1.PageRequest` / `PageResponse` — map `size` �
 
 ## 7. FE implementation (target)
 
-Shared package: **`@workspace/core/http/list-api`**
+Shared package: **`@workspace/api/list`**
 
 ```ts
 import {
@@ -232,7 +233,7 @@ import {
   listPageCount,
   sortToApiParams,
   type ListResponse,
-} from "@workspace/core/http/list-api"
+} from "@workspace/api/list"
 
 const data = await api.get<ListResponse<Organization>>(
   `/api/platform/organizations?${buildListSearchParams({ page, perPage, q, sort, order })}`
@@ -240,38 +241,88 @@ const data = await api.get<ListResponse<Organization>>(
 // pageCount = listPageCount(data.total, perPage)
 ```
 
-`@workspace/core/http/api-client` gửi `Accept-Language` + `X-Request-Id` mỗi request.
+`@workspace/api/client` gửi `Accept-Language` + `X-Request-Id` mỗi request.
 
 ### 7.1 Server list state
 
 Các trang list không tự fetch bằng cặp `useEffect` + `useCallback`. Dùng
-`useServerList` từ `@workspace/ui/admin-list/server-list`; TanStack Query quản lý
+`useServerList` từ `@workspace/admin-list/server-list`; TanStack Query quản lý
 cache, request dedupe, cancellation và giữ dữ liệu trang trước khi đổi page.
+`QueryProvider` thuộc `@workspace/query/provider`; phần table/list orchestration
+thuộc `@workspace/admin-list`, không nằm trong design system `@workspace/ui`.
 
 ```tsx
-const customers = useServerList({
-  queryKey: ["crm", "customers", "list"],
-  query: { page, perPage, q, sort, order, status },
+const customers = useServerDataTable({
+  ...customerListDefinition,
+  columns,
   queryFn: (query, { signal }) => crmApi.listCustomers(query, { signal }),
 })
 ```
 
+Table filter và advanced-search dùng cùng một schema URL → API:
+
+```tsx
+const customerListDefinition = defineServerList({
+  queryKey: ["crm", "customers", "list"],
+  queryConfig: {
+    defaultPageSize: 20,
+    sortableColumns: ["code", "name", "created_at"],
+    filters: [
+      { urlKey: "q", apiKey: "q", mode: "text" },
+      { urlKey: "name", apiKey: "q", mode: "text" },
+      { urlKey: "is_active", mode: "single", allowedValues: ["true", "false"] },
+      { urlKey: "status", mode: "multi", allowedValues: ["new", "approved"] },
+    ],
+  },
+})
+
+// Advanced form submit: ghi vào cùng URL state, tự reset page=1.
+setSearchParams((current) =>
+  applyServerListFilters(current, formValues, customerListDefinition.queryConfig)
+)
+```
+
+Backend dùng parser typed từ `arda-http`, không tự so sánh chuỗi ở handler:
+
+```go
+var customerListSpec = ardahttp.ListSpec{
+    DefaultPerPage: 20,
+    MaxPerPage:     100,
+    SortFields:     []string{"code", "name", "created_at"},
+    Filters: map[string]ardahttp.QueryFilterSpec{
+        "is_active": ardahttp.BoolFilter(),
+        "status":    ardahttp.CSVFilter(10, "new", "approved"),
+    },
+}
+
+request, err := ardahttp.ParseListRequest(r.URL.Query(), customerListSpec)
+isActive := request.Bool("is_active")
+statuses := request.Strings("status")
+```
+
+Giá trị filter sai contract trả `400 validation.invalid_input`; không âm thầm
+bỏ qua rồi trả dữ liệu không được lọc.
+
 Quy ước:
 
-1. Query key bắt đầu bằng `[domain, resource, variant]`; variant thường là
-   `list`, `tree`, `options` hoặc `detail`.
+1. Mỗi resource khai báo một `defineServerList`; query key bắt đầu bằng
+   `[domain, resource, variant]`, variant thường là `list`, `tree`, `options`
+   hoặc `detail`.
 2. Query key dùng query đã serialize ổn định, không dùng object identity làm
    dependency fetch.
 3. `list`, `tree` và `options` là cache độc lập. Chỉ enable khi UI thực sự cần;
    không tải lại reference/options khi đổi page của bảng.
-4. Search nhanh có debounce; advanced search tách `draftFilters` và
-   `appliedFilters`. Chỉ applied filters đi vào URL/query key và đổi filter phải
-   reset page về 1.
+4. Search trong table và search nâng cao phải khai báo trong cùng
+   `ServerListQueryConfig`. Search nhanh có debounce; advanced search tách
+   `draftFilters` và `appliedFilters`. Chỉ applied filters đi vào URL/query key
+   và `applyServerListFilters` reset page về 1.
 5. API client nhận `AbortSignal`; request cũ phải được hủy khi query đổi.
 6. Create/update/delete invalidate prefix `[domain, resource]`; chỉ query đang
    active tự refetch, query inactive được đánh dấu stale.
 7. `QueryClientProvider` đặt ở boundary của MFE. Khi chia cache toàn shell, cả
    provider và `@tanstack/react-query` phải là Module Federation singleton.
+8. Page server-side dùng `useServerDataTable`, không ghép riêng
+   `useServerListQuery` và `useDataTable`; tránh hai parser URL lệch nhau.
 
 Page vẫn sở hữu columns, form và nghiệp vụ. Không đưa CRUD/domain logic vào một
 generic table component.

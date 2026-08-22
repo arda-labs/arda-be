@@ -21,6 +21,17 @@ type PlatformHandler struct {
 	svc *service.PlatformService
 }
 
+var organizationListSpec = ardahttp.ListSpec{
+	DefaultPerPage: 20,
+	MaxPerPage:     ardahttp.MaxPerPage,
+	SortFields:     []string{"code", "name", "is_active", "created_at"},
+	Views:          []string{"tree", "options"},
+	AllowAll:       true,
+	Filters: map[string]ardahttp.QueryFilterSpec{
+		"is_active": ardahttp.BoolFilter(),
+	},
+}
+
 func NewPlatformHandler(svc *service.PlatformService) *PlatformHandler {
 	return &PlatformHandler{svc: svc}
 }
@@ -133,14 +144,13 @@ func (h *PlatformHandler) CreateLookupValue(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *PlatformHandler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
-	listQuery := ardahttp.ParseListQuery(r.URL.Query())
-	tenantID := r.URL.Query().Get("tenant_id")
-
-	var isActive *bool
-	if raw := strings.TrimSpace(r.URL.Query().Get("is_active")); raw == "true" || raw == "false" {
-		value := raw == "true"
-		isActive = &value
+	listRequest, err := ardahttp.ParseListRequest(r.URL.Query(), organizationListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
 	}
+	listQuery := listRequest.ListQuery
+	tenantID := r.URL.Query().Get("tenant_id")
 
 	unpaged := listQuery.All || listQuery.View == "tree" || listQuery.View == "options"
 	items, total, err := h.svc.ListOrganizations(r.Context(), repository.ListOrganizationsParams{
@@ -149,7 +159,7 @@ func (h *PlatformHandler) ListOrganizations(w http.ResponseWriter, r *http.Reque
 		PerPage:  listQuery.PerPage,
 		Offset:   listQuery.Offset(),
 		Query:    listQuery.Q,
-		IsActive: isActive,
+		IsActive: listRequest.Bool("is_active"),
 		Sort:     listQuery.Sort,
 		Order:    listQuery.Order,
 		Unpaged:  unpaged,
