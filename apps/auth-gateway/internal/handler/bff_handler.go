@@ -208,6 +208,17 @@ func (h *BFFHandler) AcceptKratosLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if strings.TrimSpace(req.MFACode) == "" {
+			deviceToken := h.readDeviceCookie(r)
+			mfaCheck, err := h.iamClient.CheckMFA(r.Context(), uc.UserID, deviceToken)
+			if err != nil {
+				h.logger.Warn("mfa device check failed", "user_id", uc.UserID, "err", err)
+				respondError(w, http.StatusBadGateway, "mfa device check unavailable")
+				return
+			}
+			if !mfaCheck.RequiresMFA {
+				h.acceptHydraLogin(w, r, req)
+				return
+			}
 			respondJSON(w, http.StatusOK, map[string]any{
 				"mfa_required": true,
 				"method":       status.Method,

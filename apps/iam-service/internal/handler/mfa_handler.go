@@ -104,6 +104,28 @@ func (h *MFAHandler) MFAStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// CheckMFA reports whether the current device must complete MFA during login.
+// POST /internal/iam/users/{id}/mfa/check
+func (h *MFAHandler) CheckMFA(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("id")
+	if userID == "" {
+		respondError(w, r, http.StatusBadRequest, "missing user id")
+		return
+	}
+
+	result, err := h.svc.CheckMFA(r.Context(), userID, r.Header.Get("X-Device-Token"))
+	if err != nil {
+		respondError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, r, http.StatusOK, map[string]any{
+		"requires_mfa": result.RequiresMFA,
+		"can_use_mfa":  result.CanUseMFA,
+		"methods":      result.Methods,
+	})
+}
+
 // ── Admin ──
 
 // ResetMyMFA removes MFA enrollment for the current user.

@@ -180,6 +180,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	mux.HandleFunc("/api/admin/audit/verify", method("GET", auditHandler.Verify))
 
 	// ── Internal API (service-to-service) ──
+	mux.HandleFunc("/internal/iam/users/{id}/mfa/check", method("POST", mfaHandler.CheckMFA))
 	mux.HandleFunc("/internal/iam/users/by-subject/{subject}", method("GET", userHandler.GetBySubject))
 	mux.HandleFunc("/internal/iam/users/by-id/{id}/context", method("GET", userHandler.GetContextByID))
 	mux.HandleFunc("/internal/iam/users/by-kratos-identity/{identityId}/context", method("GET", userHandler.GetContextByKratosIdentityID))

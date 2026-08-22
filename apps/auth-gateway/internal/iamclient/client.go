@@ -66,6 +66,12 @@ type MFAStatus struct {
 	Method     string `json:"method"`
 }
 
+type MFACheck struct {
+	RequiresMFA bool     `json:"requires_mfa"`
+	CanUseMFA   bool     `json:"can_use_mfa"`
+	Methods     []string `json:"methods"`
+}
+
 type MFASecret struct {
 	Secret     string `json:"secret"`
 	OTPAuthURL string `json:"otpauth_url"`
@@ -279,6 +285,29 @@ func (c *Client) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, e
 		return nil, fmt.Errorf("decode mfa status: %w", err)
 	}
 	return &status, nil
+}
+
+// CheckMFA determines whether a device is trusted for login MFA bypass.
+func (c *Client) CheckMFA(ctx context.Context, userID, deviceToken string) (*MFACheck, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/iam/users/"+url.PathEscape(userID)+"/mfa/check", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Device-Token", deviceToken)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mfa device check request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("mfa device check returned status %d", resp.StatusCode)
+	}
+	var result MFACheck
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode mfa device check: %w", err)
+	}
+	return &result, nil
 }
 
 func (c *Client) VerifyMFA(ctx context.Context, userID, code string) error {
