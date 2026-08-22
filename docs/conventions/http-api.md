@@ -242,6 +242,40 @@ const data = await api.get<ListResponse<Organization>>(
 
 `@workspace/core/http/api-client` gửi `Accept-Language` + `X-Request-Id` mỗi request.
 
+### 7.1 Server list state
+
+Các trang list không tự fetch bằng cặp `useEffect` + `useCallback`. Dùng
+`useServerList` từ `@workspace/ui/admin-list/server-list`; TanStack Query quản lý
+cache, request dedupe, cancellation và giữ dữ liệu trang trước khi đổi page.
+
+```tsx
+const customers = useServerList({
+  queryKey: ["crm", "customers", "list"],
+  query: { page, perPage, q, sort, order, status },
+  queryFn: (query, { signal }) => crmApi.listCustomers(query, { signal }),
+})
+```
+
+Quy ước:
+
+1. Query key bắt đầu bằng `[domain, resource, variant]`; variant thường là
+   `list`, `tree`, `options` hoặc `detail`.
+2. Query key dùng query đã serialize ổn định, không dùng object identity làm
+   dependency fetch.
+3. `list`, `tree` và `options` là cache độc lập. Chỉ enable khi UI thực sự cần;
+   không tải lại reference/options khi đổi page của bảng.
+4. Search nhanh có debounce; advanced search tách `draftFilters` và
+   `appliedFilters`. Chỉ applied filters đi vào URL/query key và đổi filter phải
+   reset page về 1.
+5. API client nhận `AbortSignal`; request cũ phải được hủy khi query đổi.
+6. Create/update/delete invalidate prefix `[domain, resource]`; chỉ query đang
+   active tự refetch, query inactive được đánh dấu stale.
+7. `QueryClientProvider` đặt ở boundary của MFE. Khi chia cache toàn shell, cả
+   provider và `@tanstack/react-query` phải là Module Federation singleton.
+
+Page vẫn sở hữu columns, form và nghiệp vụ. Không đưa CRUD/domain logic vào một
+generic table component.
+
 ---
 
 ## 8. Trạng thái hiện tại vs target
