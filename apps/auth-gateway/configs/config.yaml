@@ -14,6 +14,7 @@ introspection_client_secret: auth-gateway-secret
 
 iam_service_url: "http://localhost:8080"
 iam_context_cache_ttl_seconds: 60
+cors_allowed_origins: "https://arda.io.vn,http://localhost:5000"
 platform_service_url: "http://localhost:8091"
 finance_service_url: "http://localhost:8090"
 media_service_url: "http://localhost:8092"
@@ -30,7 +31,7 @@ hydra_admin_url: "http://192.168.100.201:30445"
 hydra_public_url: "https://auth.arda.io.vn"
 oauth_client_id: "arda-shell"
 oauth_redirect_uri: "http://localhost:5000/api/auth/callback"
-oauth_redirect_uris: "https://arda.io.vn/api/auth/callback,https://arda.io.vn/callback,http://localhost:5000/api/auth/callback,http://localhost:5000/callback"
+oauth_redirect_uris: "https://api.arda.io.vn/api/auth/callback,https://arda.io.vn/callback,http://localhost:5000/api/auth/callback,http://localhost:5000/callback"
 
 redis_url: "redis://default:Pkz1%2F8t3mVkXZKt%2F4IBg3U3nqtzFYZs%2FK%2Fvhnt0C6C4%3D@192.168.100.201:30379"
 session_cookie_name: arda_sid

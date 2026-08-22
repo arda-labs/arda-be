@@ -2,6 +2,10 @@
 
 `auth-gateway` is Arda's browser-facing auth edge and BFF.
 
+Production browser traffic reaches it at `https://api.arda.io.vn`. The
+frontend is a separate origin (`https://arda.io.vn`), so this service terminates
+credentialed CORS and handles `OPTIONS` preflight before route method checks.
+
 ## Responsibilities
 
 - Traefik forward-auth endpoint: `GET /auth/check`
@@ -29,6 +33,10 @@ Important behavior:
   flows. This avoids Kratos rejecting API flows as browser/CSRF requests.
 - `whoami` responses can be compressed and must be decoded before JSON parsing.
 - Gateway stores the internal IAM user ID in session user context.
+- `CORS_ALLOWED_ORIGINS` is a comma-separated exact allowlist. Production uses
+  `https://arda.io.vn`; wildcard origins are not valid with BFF cookies.
+- Session cookies stay host-only to the API hostname. OAuth callbacks must also
+  terminate on `api.arda.io.vn` so no parent-domain cookie is required.
 
 ## Main routes
 

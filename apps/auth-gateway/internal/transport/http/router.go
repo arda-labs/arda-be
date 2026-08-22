@@ -65,10 +65,46 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler,
 	// Generic proxy for /api/* to iam-service
 	mux.HandleFunc("/api/", bffHandler.Proxy)
 
+	var routed http.Handler = corsMiddleware(mux, cfg.CORSAllowedOrigins)
 	if !cfg.SlowRequestLogEnabled || cfg.SlowRequestLogThresholdMS <= 0 {
-		return mux
+		return routed
 	}
-	return slowRequestLogger(mux, slog.Default(), time.Duration(cfg.SlowRequestLogThresholdMS)*time.Millisecond)
+	return slowRequestLogger(routed, slog.Default(), time.Duration(cfg.SlowRequestLogThresholdMS)*time.Millisecond)
+}
+
+func corsMiddleware(next http.Handler, allowedOrigins string) http.Handler {
+	allowed := make(map[string]struct{})
+	for _, origin := range strings.Split(allowedOrigins, ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			allowed[origin] = struct{}{}
+		}
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if _, ok := allowed[origin]; !ok {
+			http.Error(w, "origin not allowed", http.StatusForbidden)
+			return
+		}
+
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Accept-Language, Authorization, Content-Type, X-Request-Id")
+		w.Header().Add("Vary", "Origin")
+		w.Header().Add("Vary", "Access-Control-Request-Method")
+		w.Header().Add("Vary", "Access-Control-Request-Headers")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func method(method string, next http.HandlerFunc) http.HandlerFunc {

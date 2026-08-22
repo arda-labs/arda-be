@@ -27,6 +27,7 @@ type Config struct {
 	IAMContextCacheTTL        int    `yaml:"iam_context_cache_ttl_seconds"`
 	SlowRequestLogEnabled     bool   `yaml:"slow_request_log_enabled"`
 	SlowRequestLogThresholdMS int    `yaml:"slow_request_log_threshold_ms"`
+	CORSAllowedOrigins        string `yaml:"cors_allowed_origins"`
 	PlatformServiceURL        string `yaml:"platform_service_url"`
 	FinanceServiceURL         string `yaml:"finance_service_url"`
 	MediaServiceURL           string `yaml:"media_service_url"`
@@ -76,6 +77,7 @@ func Load() Config {
 		IAMContextCacheTTL:        60,
 		SlowRequestLogEnabled:     false,
 		SlowRequestLogThresholdMS: 1000,
+		CORSAllowedOrigins:        "https://arda.io.vn,http://localhost:5000",
 		PlatformServiceURL:        "http://localhost:8091",
 		FinanceServiceURL:         "http://localhost:8090",
 		MediaServiceURL:           "http://localhost:8092",
@@ -93,7 +95,7 @@ func Load() Config {
 		HydraPublicURL:            "https://auth.arda.io.vn",
 		OAuthClientID:             "arda-shell",
 		OAuthRedirectURI:          "http://localhost:5000/api/auth/callback",
-		OAuthRedirectURIs:         "https://arda.io.vn/api/auth/callback,https://arda.io.vn/callback,http://localhost:5000/api/auth/callback,http://localhost:5000/callback",
+		OAuthRedirectURIs:         "https://api.arda.io.vn/api/auth/callback,https://arda.io.vn/callback,http://localhost:5000/api/auth/callback,http://localhost:5000/callback",
 	}
 
 	// Try loading YAML
@@ -123,6 +125,7 @@ func Load() Config {
 	envInt("IAM_CONTEXT_CACHE_TTL_SECONDS", &cfg.IAMContextCacheTTL)
 	envBool("SLOW_REQUEST_LOG_ENABLED", &cfg.SlowRequestLogEnabled)
 	envInt("SLOW_REQUEST_LOG_THRESHOLD_MS", &cfg.SlowRequestLogThresholdMS)
+	envStr("CORS_ALLOWED_ORIGINS", &cfg.CORSAllowedOrigins)
 	envStr("PLATFORM_SERVICE_URL", &cfg.PlatformServiceURL)
 	envStr("FINANCE_SERVICE_URL", &cfg.FinanceServiceURL)
 	envStr("MEDIA_SERVICE_URL", &cfg.MediaServiceURL)
@@ -186,6 +189,7 @@ func (c *Config) loadYAML(path string) bool {
 	if v, ok := m["slow_request_log_threshold_ms"].(int); ok {
 		c.SlowRequestLogThresholdMS = v
 	}
+	setStr("cors_allowed_origins", &c.CORSAllowedOrigins)
 	setStr("platform_service_url", &c.PlatformServiceURL)
 	setStr("finance_service_url", &c.FinanceServiceURL)
 	setStr("media_service_url", &c.MediaServiceURL)

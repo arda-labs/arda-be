@@ -1,6 +1,6 @@
 # Backend Current State
 
-Last updated: 2026-07-04
+Last updated: 2026-08-22
 
 ## Overview
 
@@ -28,10 +28,18 @@ Current services:
 
 ```txt
 Frontend
-  -> HTTP/JSON
-  -> Traefik or auth-gateway
+  -> https://api.arda.io.vn/api/*
+  -> Cloudflare Tunnel
+  -> auth-gateway
   -> service HTTP routes
 ```
+
+The MFE frontend remains on `https://arda.io.vn`, while browser API traffic uses
+the dedicated `api.arda.io.vn` origin. Auth Gateway owns exact-origin,
+credentialed CORS and preflight handling. Session cookies are host-only to the
+API hostname. A temporary no-script Cloudflare route keeps
+`arda.io.vn/api/*` available for older frontend builds without invoking the
+shell Worker.
 
 Traefik dynamic routing currently includes:
 
