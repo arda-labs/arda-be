@@ -66,6 +66,7 @@ jobs:
               { service: "workflow-service", image: "workflow-service", file: "apps/workflow-service/Dockerfile", paths: ["apps/workflow-service/"] },
               { service: "crm-service", image: "crm-service", file: "apps/crm-service/Dockerfile", paths: ["apps/crm-service/"] },
               { service: "notification-service", image: "notification-service", file: "apps/notification-service/Dockerfile", paths: ["apps/notification-service/"] },
+              { service: "hrm-service", image: "hrm-service", file: "apps/hrm-service/Dockerfile", paths: ["apps/hrm-service/"] },
             ];
             const sharedPrefixes = ["libs/go/"];
             const sharedFiles = ["go.work"];
