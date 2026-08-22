@@ -7,8 +7,9 @@ import (
 
 	"github.com/arda-labs/arda/apps/hrm-service/internal/domain"
 	"github.com/arda-labs/arda/apps/hrm-service/internal/repository"
-	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 type HRMHandler struct {
@@ -26,7 +27,7 @@ func (h *HRMHandler) ListPositions(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, nil, err)
 		return
 	}
-	writeListAll(w, r, items)
+	ardahttp.WriteUnpagedList(w, r, items)
 }
 
 func (h *HRMHandler) CreatePosition(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +67,7 @@ func (h *HRMHandler) ListJobTitles(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, nil, err)
 		return
 	}
-	writeListAll(w, r, items)
+	ardahttp.WriteUnpagedList(w, r, items)
 }
 
 func (h *HRMHandler) CreateJobTitle(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +107,7 @@ func (h *HRMHandler) ListOrgUnits(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, nil, err)
 		return
 	}
-	writeListAll(w, r, items)
+	ardahttp.WriteUnpagedList(w, r, items)
 }
 
 func (h *HRMHandler) CreateOrgUnit(w http.ResponseWriter, r *http.Request) {
@@ -146,7 +147,7 @@ func (h *HRMHandler) ListEmployees(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, nil, err)
 		return
 	}
-	writeListAll(w, r, items)
+	ardahttp.WriteUnpagedList(w, r, items)
 }
 
 func (h *HRMHandler) ListEmployeeRegistrations(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +156,7 @@ func (h *HRMHandler) ListEmployeeRegistrations(w http.ResponseWriter, r *http.Re
 		writeResult(w, r, nil, err)
 		return
 	}
-	writeListAll(w, r, items)
+	ardahttp.WriteUnpagedList(w, r, items)
 }
 
 func (h *HRMHandler) CreateEmployeeRegistration(w http.ResponseWriter, r *http.Request) {

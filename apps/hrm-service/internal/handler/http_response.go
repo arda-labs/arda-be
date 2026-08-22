@@ -22,18 +22,6 @@ func writeResult(w http.ResponseWriter, r *http.Request, value any, err error) {
 	ardahttp.WriteJSON(w, r, http.StatusOK, value)
 }
 
-func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
-	if items == nil {
-		items = []T{}
-	}
-	total := len(items)
-	perPage := total
-	if perPage == 0 {
-		perPage = 1
-	}
-	ardahttp.WriteList(w, r, 1, perPage, total, items)
-}
-
 func writeError(w http.ResponseWriter, r *http.Request, status int, message string) {
 	writeErrorCode(w, r, status, ardaerrors.CodeForStatus(status), message)
 }

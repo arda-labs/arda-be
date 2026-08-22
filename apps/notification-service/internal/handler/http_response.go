@@ -19,15 +19,3 @@ func writeError(w http.ResponseWriter, r *http.Request, status int, message stri
 	}
 	ardahttp.WriteErrorCode(w, r, status, code, message)
 }
-
-func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
-	if items == nil {
-		items = []T{}
-	}
-	total := len(items)
-	perPage := total
-	if perPage == 0 {
-		perPage = 1
-	}
-	ardahttp.WriteList(w, r, 1, perPage, total, items)
-}

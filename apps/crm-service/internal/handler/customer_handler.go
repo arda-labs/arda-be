@@ -74,13 +74,16 @@ func (h *CustomerHandler) listCustomers(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	items, err := h.customerRepo.ListCustomers(r.Context(), repository.CustomerListFilter{
-		TenantID:     scope.TenantID,
-		OrgIDs:       scope.OrgIDs,
-		CustomerType: r.URL.Query().Get("customerType"),
-		Status:       r.URL.Query().Get("status"),
-		RiskOnly:     r.URL.Query().Get("riskOnly") == "true",
-		Q:            firstNonEmpty(listQuery.Q, r.URL.Query().Get("q")),
-		Limit:        limit,
+		TenantID: scope.TenantID,
+		OrgIDs:   scope.OrgIDs,
+		CustomerType: firstNonEmpty(
+			r.URL.Query().Get("customer_type"),
+			r.URL.Query().Get("customerType"),
+		),
+		Status:   r.URL.Query().Get("status"),
+		RiskOnly: firstNonEmpty(r.URL.Query().Get("risk_only"), r.URL.Query().Get("riskOnly")) == "true",
+		Q:        firstNonEmpty(listQuery.Q, r.URL.Query().Get("q")),
+		Limit:    limit,
 	})
 	if err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to query customers: %w", err))

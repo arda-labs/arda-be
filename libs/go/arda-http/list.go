@@ -87,6 +87,19 @@ func WriteList[T any](w http.ResponseWriter, r *http.Request, page, perPage, tot
 	WriteJSON(w, r, http.StatusOK, NewListResponse(page, perPage, total, items))
 }
 
+// WriteUnpagedList writes a list response for lookup/reference endpoints that
+// intentionally return the complete result set in one response.
+func WriteUnpagedList[T any](w http.ResponseWriter, r *http.Request, items []T) {
+	if items == nil {
+		items = []T{}
+	}
+	perPage := len(items)
+	if perPage == 0 {
+		perPage = 1
+	}
+	WriteList(w, r, 1, perPage, len(items), items)
+}
+
 func parsePositiveInt(raw string, fallback int) int {
 	if raw == "" {
 		return fallback
