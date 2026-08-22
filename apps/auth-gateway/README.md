@@ -37,6 +37,8 @@ Important behavior:
   `https://arda.io.vn`; wildcard origins are not valid with BFF cookies.
 - Session cookies stay host-only to the API hostname. OAuth callbacks must also
   terminate on `api.arda.io.vn` so no parent-domain cookie is required.
+- Browser redirects after OAuth use `FRONTEND_ORIGIN` (production:
+  `https://arda.io.vn`) rather than the callback/API origin.
 
 ## Main routes
 

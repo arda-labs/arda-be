@@ -61,3 +61,14 @@ func TestSafeReturnTo(t *testing.T) {
 		}
 	}
 }
+
+func TestFrontendRedirectURL(t *testing.T) {
+	h := &BFFHandler{cfg: config.Config{FrontendOrigin: "https://arda.io.vn"}}
+
+	if got := h.frontendRedirectURL("/finance?tab=1"); got != "https://arda.io.vn/finance?tab=1" {
+		t.Fatalf("frontend redirect = %q", got)
+	}
+	if got := h.frontendRedirectURL("https://evil.example/steal"); got != "https://arda.io.vn/" {
+		t.Fatalf("unsafe frontend redirect = %q", got)
+	}
+}

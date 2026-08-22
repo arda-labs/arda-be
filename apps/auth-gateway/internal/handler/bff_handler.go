@@ -329,9 +329,10 @@ func (h *BFFHandler) redirectToAuthUI(w http.ResponseWriter, r *http.Request, fl
 		respondError(w, http.StatusBadRequest, "redirect_uri is not allowed")
 		return
 	}
-	origin, err := originFromURL(redirectURI)
+	origin, err := originFromURL(h.cfg.FrontendOrigin)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid redirect_uri")
+		h.logger.Error("invalid frontend origin", "frontend_origin", h.cfg.FrontendOrigin, "err", err)
+		respondError(w, http.StatusInternalServerError, "frontend origin is invalid")
 		return
 	}
 	target, _ := url.Parse(origin + "/" + flow)
@@ -468,13 +469,13 @@ func (h *BFFHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 func (h *BFFHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if errText := r.URL.Query().Get("error"); errText != "" {
-		target := "/login?error=" + url.QueryEscape(firstNonEmpty(r.URL.Query().Get("error_description"), errText))
+		target := h.frontendRedirectURL("/login?error=" + url.QueryEscape(firstNonEmpty(r.URL.Query().Get("error_description"), errText)))
 		http.Redirect(w, r, target, http.StatusFound)
 		return
 	}
 	callbackState := r.URL.Query().Get("state")
 	if callbackState == "" {
-		http.Redirect(w, r, "/login?error=invalid_state", http.StatusFound)
+		http.Redirect(w, r, h.frontendRedirectURL("/login?error=invalid_state"), http.StatusFound)
 		return
 	}
 	stateValue, err := h.store.ConsumeOAuthState(r.Context(), callbackState)
@@ -485,16 +486,16 @@ func (h *BFFHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	var stateCookie oauthStateCookie
 	if stateValue == "" || json.Unmarshal([]byte(stateValue), &stateCookie) != nil || stateCookie.State == "" || stateCookie.CodeVerifier == "" {
-		http.Redirect(w, r, "/login?error=invalid_state", http.StatusFound)
+		http.Redirect(w, r, h.frontendRedirectURL("/login?error=invalid_state"), http.StatusFound)
 		return
 	}
 	if callbackState != stateCookie.State {
-		http.Redirect(w, r, "/login?error=invalid_state", http.StatusFound)
+		http.Redirect(w, r, h.frontendRedirectURL("/login?error=invalid_state"), http.StatusFound)
 		return
 	}
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Redirect(w, r, "/login?error=missing_code", http.StatusFound)
+		http.Redirect(w, r, h.frontendRedirectURL("/login?error=missing_code"), http.StatusFound)
 		return
 	}
 	tokenData, ok := h.exchangeHydraCode(w, r, code, stateCookie.CodeVerifier, h.cfg.OAuthRedirectURI)
@@ -504,7 +505,7 @@ func (h *BFFHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.establishBFFSession(w, r, tokenData); !ok {
 		return
 	}
-	http.Redirect(w, r, safeReturnTo(stateCookie.ReturnTo), http.StatusFound)
+	http.Redirect(w, r, h.frontendRedirectURL(stateCookie.ReturnTo), http.StatusFound)
 }
 
 func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
@@ -1790,6 +1791,15 @@ func safeReturnTo(value string) string {
 		return "/"
 	}
 	return value
+}
+
+func (h *BFFHandler) frontendRedirectURL(returnTo string) string {
+	safePath := safeReturnTo(returnTo)
+	origin, err := originFromURL(h.cfg.FrontendOrigin)
+	if err != nil {
+		return safePath
+	}
+	return origin + safePath
 }
 
 func firstNonEmpty(values ...string) string {

@@ -15,6 +15,7 @@ introspection_client_secret: auth-gateway-secret
 iam_service_url: "http://localhost:8080"
 iam_context_cache_ttl_seconds: 60
 cors_allowed_origins: "https://arda.io.vn,http://localhost:5000"
+frontend_origin: "http://localhost:5000"
 platform_service_url: "http://localhost:8091"
 finance_service_url: "http://localhost:8090"
 media_service_url: "http://localhost:8092"
