@@ -14,7 +14,7 @@ Exit criteria:
 - an agreed first read-only use case and data classification;
 - no production DB, secret, ingress, or workload mutation.
 
-## Gate 1 — protocol and security spike (in progress)
+## Gate 1 — protocol and security spike (complete)
 
 The initial deterministic Go endpoint now exists at
 `arda-be/apps/ai-service` with no model credential, database, or tool. The
@@ -23,19 +23,19 @@ gateway has a policy/upstream route and the shell has a local-only
 remaining Gate 1 work is to run the stack together and exercise reconnect,
 cancellation, and error envelopes.
 
-Exit criteria: compatibility tests pass, no trust-header bypass exists, and
-stream metrics/log redaction are visible.
+Exit criteria met: compatibility tests pass, no trust-header bypass exists, and
+the gateway injects a separate short-lived workload identity for the AI service.
 
-## Gate 2 — persistence foundation
+## Gate 2 — persistence foundation (implemented; live rollout in progress)
 
-Provision the `ai` database/role through the existing GitOps/database process,
-then add additive Goose migrations for conversations, messages, runs, tool
-executions, approvals, sources, chunks, and feedback as approved. Do not enable
-`pgvector` until its specific gates pass.
+The `ai` database and `arda_ai` role are provisioned additively in the real
+CloudNativePG cluster. The service has additive Goose migrations for
+conversations, messages, runs, tool executions, approvals, sources, chunks,
+and feedback. `pgvector` remains disabled until its specific gates pass.
 
-Before production apply, capture a database backup/reference, verify storage
-headroom, apply on an isolated restore, and test representative read/write and
-retention behavior.
+Before enabling user traffic, verify storage headroom and representative
+read/write and retention behavior. The first live rollout keeps the endpoint
+deterministic and records no provider or tool data.
 
 ## Gate 3 — first read-only vertical slice
 
@@ -84,6 +84,7 @@ Stop rollout and disable the feature if any of these occurs:
 
 ## Current implementation boundary
 
-The documentation pass and Gate 1 protocol spike change no database, Kubernetes
-resource, secret, provider account, SSH host, or production deployment. The
-next implementation action is the gateway/MFE compatibility part of Gate 1.
+The current change adds only the service-owned persistence foundation and its
+GitOps wiring. It does not add a model provider, `pgvector`, mutation tool, RAG
+index, or production AI frontend route. The next implementation action is a
+read-only vertical slice with an approved provider and knowledge source.

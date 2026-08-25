@@ -4,6 +4,7 @@ Backend images are built by GitHub Actions and pushed to GHCR:
 
 ```text
 ghcr.io/arda-labs/arda-be/auth-gateway:<tag>
+ghcr.io/arda-labs/arda-be/ai-service:<tag>
 ghcr.io/arda-labs/arda-be/iam-service:<tag>
 ghcr.io/arda-labs/arda-be/platform-service:<tag>
 ghcr.io/arda-labs/arda-be/finance-service:<tag>

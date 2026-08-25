@@ -1,7 +1,7 @@
 # Arda AI phase
 
-Status: architecture and design review complete; Gate 1 protocol spike is in
-progress.
+Status: architecture and design review complete; Gate 2 persistence foundation
+is implemented and being rolled out to the real K3s cluster.
 
 This directory is the source of truth for the first AI phase across `arda-be`,
 `arda-mfe`, and `arda-infra`. The documents are intentionally written before
@@ -52,8 +52,9 @@ production workload change.
 
 - `arda-be` has Go services with service-owned PostgreSQL databases and Goose
   migrations. IAM owns users, tenants, permissions, MFA, and security audit.
-- `arda-be/apps/ai-service` now contains a deterministic, no-persistence AG-UI
-  protocol spike used only for contract tests.
+- `arda-be/apps/ai-service` contains the deterministic AG-UI boundary, Goose
+  migrations, tenant/actor-owned conversation persistence, replay protection,
+  and production workload identity verification. Model/tools remain disabled.
 - `arda-mfe/apps/shell` has a local-only `/ai-protocol-spike` page, enabled only
   with `VITE_AI_PROTOCOL_SPIKE=true`, and a dev proxy for `/api/ai`.
 - `arda-be` documents gateway-injected tenant/auth context and high-risk
@@ -65,8 +66,7 @@ production workload change.
 
 ## Explicitly not done
 
-At the time of this review there is no AI migration, `ai` database, `pgvector`
-extension, model credential, AI ingress, or AI frontend route in the
-repositories. The protocol spike is not a production AI service and must not be
-deployed as one. The next phase must add persistence and integrations
-additively, verifying each gate before moving on.
+The current rollout has no `pgvector` extension, model credential, AI ingress,
+or production frontend route. The deployed service is intentionally a
+persistent protocol boundary only; provider, RAG, tools, and HITL remain
+separate gates and are not enabled by this rollout.

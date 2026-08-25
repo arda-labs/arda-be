@@ -1,7 +1,8 @@
 # AI database design
 
-Status: proposed design for review. This document authorizes no database
-change until the approval gates in [rollout-plan.md](rollout-plan.md) pass.
+Status: approved for the Gate 2 persistence foundation. The migration is
+additive and intentionally excludes `pgvector`; later provider/RAG changes
+require their own review gates in [rollout-plan.md](rollout-plan.md).
 
 ## Ownership decision
 
@@ -17,7 +18,7 @@ tables. Store stable foreign IDs and resolve display data through contracts.
 
 ### `ai.conversations`
 
-`id uuid`, `tenant_id uuid`, `actor_user_id uuid`, `title`, `status`, `summary`,
+`id uuid`, `tenant_id varchar(64)`, `actor_user_id uuid`, `title`, `status`, `summary`,
 `created_at`, `updated_at`, `last_message_at`, and redaction-safe `metadata`.
 
 Indexes: `(tenant_id, actor_user_id, updated_at desc)` and status/time for
@@ -36,7 +37,7 @@ as unrestricted JSON only.
 
 ### `ai.runs`
 
-`id uuid`, `conversation_id uuid`, `tenant_id uuid`, `actor_user_id uuid`,
+`id uuid`, `conversation_id uuid`, `tenant_id varchar(64)`, `actor_user_id uuid`,
 `status`, `agent_id`, `protocol_version`, `provider`, `model_id`, `started_at`,
 `finished_at`, `last_event_sequence`, usage metadata, error code, and
 `idempotency_key`.
@@ -46,7 +47,7 @@ provider request/response bodies by default.
 
 ### `ai.tool_executions`
 
-`id uuid`, `run_id uuid`, `tool_name`, `tool_version`, `risk`, `status`,
+`id uuid`, `run_id uuid`, `tenant_id varchar(64)`, `tool_name`, `tool_version`, `risk`, `status`,
 `arguments_redacted`, `result_redacted`, `policy_decision`, `approval_id`,
 `idempotency_key`, `started_at`, `finished_at`, `error_code`.
 
@@ -55,7 +56,7 @@ replay detection without retaining sensitive arguments indefinitely.
 
 ### `ai.approvals`
 
-`id uuid`, `run_id uuid`, `tool_execution_id uuid`, `tenant_id uuid`,
+`id uuid`, `run_id uuid`, `tool_execution_id uuid`, `tenant_id varchar(64)`,
 `requester_user_id uuid`, `approver_user_id uuid`, `status`, `summary_redacted`,
 `resource_version`, `permission_version`, `expires_at`, `consumed_at`, and
 `created_at`.
@@ -64,13 +65,13 @@ Approval consumption must be a transactionally guarded state transition.
 
 ### `ai.knowledge_sources`
 
-`id uuid`, `tenant_id uuid nullable`, `scope`, `source_type`, `source_key`,
+`id uuid`, `tenant_id varchar(64) nullable`, `scope`, `source_type`, `source_key`,
 `title`, `owner`, `classification`, `status`, `version`, `checksum`,
 `effective_from`, `effective_to`, and timestamps.
 
 ### `ai.knowledge_chunks`
 
-`id uuid`, `source_id uuid`, `tenant_id uuid nullable`, `chunk_index`, `heading`,
+`id uuid`, `source_id uuid`, `tenant_id varchar(64) nullable`, `chunk_index`, `heading`,
 `content`, `content_checksum`, token count, ACL metadata, embedding set/model
 metadata, and timestamps.
 
@@ -79,7 +80,7 @@ dimension are selected. A text-search column may be added for hybrid retrieval.
 
 ### `ai.feedback`
 
-`id uuid`, `tenant_id uuid`, `actor_user_id uuid`, `conversation_id uuid`,
+`id uuid`, `tenant_id varchar(64)`, `actor_user_id uuid`, `conversation_id uuid`,
 `message_id uuid`, rating, reason, redacted comment, and `created_at`.
 
 ## PostgreSQL/pgvector gates

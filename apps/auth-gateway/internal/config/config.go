@@ -38,6 +38,7 @@ type Config struct {
 	NotificationURL           string `yaml:"notification_service_url"`
 	MDMServiceURL             string `yaml:"mdm_service_url"`
 	AIServiceURL              string `yaml:"ai_service_url"`
+	ServiceAuthSecret         string `yaml:"-"`
 	PolicyFile                string `yaml:"policy_file"`
 
 	RedisURL            string `yaml:"redis_url"`
@@ -134,6 +135,7 @@ func Load() Config {
 	envStr("NOTIFICATION_SERVICE_URL", &cfg.NotificationURL)
 	envStr("MDM_SERVICE_URL", &cfg.MDMServiceURL)
 	envStr("AI_SERVICE_URL", &cfg.AIServiceURL)
+	envStr("ARDA_SERVICE_AUTH_SECRET", &cfg.ServiceAuthSecret)
 	envStr("POLICY_FILE", &cfg.PolicyFile)
 	envStr("REDIS_URL", &cfg.RedisURL)
 	envStr("SESSION_STORE", &cfg.SessionStore)

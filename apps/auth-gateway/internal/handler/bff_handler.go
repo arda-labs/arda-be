@@ -24,6 +24,7 @@ import (
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/session"
 	"github.com/arda-labs/arda/libs/go/arda-auth/permission"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
@@ -1512,6 +1513,14 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	proxyReq.Header.Set(ardahttp.HeaderRequestID, requestID)
+	if strings.HasPrefix(r.URL.Path, "/api/ai/") {
+		serviceToken, err := identity.Issue(h.cfg.ServiceAuthSecret, "auth-gateway", "ai-service", time.Now(), time.Minute)
+		if err != nil {
+			respondRequestError(w, r, http.StatusBadGateway, "ai_service_identity_unavailable")
+			return
+		}
+		proxyReq.Header.Set(identity.MetadataKey, serviceToken)
+	}
 	if traceID != "" {
 		proxyReq.Header.Set(ardahttp.HeaderTraceID, traceID)
 	}

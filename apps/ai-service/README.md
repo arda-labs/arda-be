@@ -1,13 +1,13 @@
-# AI service protocol spike
+# AI service protocol boundary
 
-This is Gate 1 of the Arda AI rollout. It is intentionally a deterministic
-AG-UI-compatible HTTP/SSE endpoint with no database, model provider, tool, or
-production deployment.
+This is the first production boundary of the Arda AI rollout. It is a
+deterministic AG-UI-compatible HTTP/SSE endpoint with persistent conversations
+and runs, but no model provider, tool, RAG index, or mutation capability.
 
 Run locally:
 
 ```powershell
-go run ./cmd/ai-service
+AI_MODE=spike go run ./cmd/ai-service
 ```
 
 Endpoint: `POST /api/ai/agent`
@@ -18,8 +18,9 @@ the authenticated gateway in an environment where it is deployed; these headers
 are not a standalone authentication mechanism.
 
 The response is an AG-UI-style SSE stream with `RUN_STARTED`, text message
-events, and `RUN_FINISHED`. The implementation deliberately does not persist
-the request or echo user content.
+events, and `RUN_FINISHED`. In production mode `DATABASE_DSN` and
+`ARDA_SERVICE_AUTH_SECRET` are mandatory; migrations run at startup and the
+gateway supplies a separate short-lived workload identity.
 
 For the shell page, start the frontend with `VITE_AI_PROTOCOL_SPIKE=true` and
 run the gateway with `AI_SERVICE_URL=http://localhost:8098`. The gateway still

@@ -6,7 +6,7 @@ Go workspace for Arda backend services.
 
 | Service | Responsibility |
 | --- | --- |
-| `apps/ai-service` | AI protocol spike; orchestration and tools are not enabled yet |
+| `apps/ai-service` | AG-UI-compatible AI boundary with persistent runs; model/tools remain gated |
 | `apps/auth-gateway` | Auth edge/BFF, sessions, Kratos/Hydra proxy, forward-auth |
 | `apps/iam-service` | IAM, users, roles, permissions, MFA, audit |
 | `apps/finance-service` | Finance accounts, transactions, approvals, operation queues, accounting config reads |

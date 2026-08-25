@@ -2,13 +2,24 @@ package handler
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
+
+	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 )
 
 const assistantPermission = "ai.assistant.use"
+const protocolSpikeMessage = "Arda AI protocol spike is connected. No model or tool was invoked."
+
+type runStore interface {
+	Start(ctx context.Context, run repository.RunContext, userMessage string) error
+	Finish(ctx context.Context, run repository.RunContext, assistantMessage, status string) error
+}
 
 type runInput struct {
 	ThreadID string          `json:"threadId"`
@@ -31,11 +42,17 @@ type agentEvent struct {
 	Delta     string `json:"delta,omitempty"`
 }
 
-func NewRouter() http.Handler {
+func NewRouter(stores ...runStore) http.Handler {
+	var store runStore
+	if len(stores) > 0 {
+		store = stores[0]
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", health)
 	mux.HandleFunc("/health/ready", health)
-	mux.HandleFunc("/api/ai/agent", run)
+	mux.HandleFunc("/api/ai/agent", func(w http.ResponseWriter, r *http.Request) {
+		run(w, r, store)
+	})
 	return mux
 }
 
@@ -45,7 +62,7 @@ func health(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-func run(w http.ResponseWriter, r *http.Request) {
+func run(w http.ResponseWriter, r *http.Request, store runStore) {
 	if r.Method != http.MethodPost {
 		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
 		return
@@ -78,6 +95,28 @@ func run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userMessage := sanitizeTranscript(latestUserMessage(input.Messages))
+	runContext := repository.RunContext{
+		TenantID:       strings.TrimSpace(r.Header.Get("X-Tenant-Id")),
+		ActorUserID:    strings.TrimSpace(r.Header.Get("X-User-Id")),
+		ExternalThread: strings.TrimSpace(input.ThreadID),
+		ExternalRun:    strings.TrimSpace(input.RunID),
+	}
+	if store != nil {
+		if err := store.Start(r.Context(), runContext, userMessage); err != nil {
+			if errors.Is(err, repository.ErrRunAlreadyExists) {
+				problem(w, http.StatusConflict, "ai.run_replay")
+				return
+			}
+			problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+			return
+		}
+		if err := store.Finish(r.Context(), runContext, protocolSpikeMessage, "SUCCEEDED"); err != nil {
+			problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+			return
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -97,7 +136,7 @@ func run(w http.ResponseWriter, r *http.Request) {
 		ThreadID:  input.ThreadID,
 		RunID:     input.RunID,
 		MessageID: messageID,
-		Delta:     "Arda AI protocol spike is connected. No model or tool was invoked.",
+		Delta:     protocolSpikeMessage,
 	})
 	writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_END", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
 	writeEvent(writer, agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
@@ -121,6 +160,26 @@ func hasUserMessage(messages []inputMessage) bool {
 		}
 	}
 	return false
+}
+
+func latestUserMessage(messages []inputMessage) string {
+	for index := len(messages) - 1; index >= 0; index-- {
+		if messages[index].Role == "user" && strings.TrimSpace(messages[index].Content) != "" {
+			return messages[index].Content
+		}
+	}
+	return ""
+}
+
+var transcriptSecretPattern = regexp.MustCompile(`(?i)(bearer\s+[^\s,;]+|(?:authorization|arda_sid|arda_did)\s*[:=]\s*[^\s,;]+)`)
+
+func sanitizeTranscript(value string) string {
+	value = strings.TrimSpace(value)
+	value = transcriptSecretPattern.ReplaceAllString(value, "[REDACTED]")
+	if len(value) > 16*1024 {
+		return value[:16*1024]
+	}
+	return value
 }
 
 func writeEvent(writer *bufio.Writer, event agentEvent) {
