@@ -3,6 +3,7 @@ package http
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -39,6 +40,7 @@ func TestCORSMiddlewareAllowsConfiguredCredentialedOrigin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodOptions, "/api/auth/me", nil)
 	req.Header.Set("Origin", "https://arda.io.vn")
 	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	req.Header.Set("Access-Control-Request-Headers", "x-org-id, x-request-id")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -51,6 +53,12 @@ func TestCORSMiddlewareAllowsConfiguredCredentialedOrigin(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
 		t.Fatalf("allow credentials = %q", got)
+	}
+	allowHeaders := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers"))
+	for _, want := range []string{"x-org-id", "x-request-id", "idempotency-key"} {
+		if !strings.Contains(allowHeaders, want) {
+			t.Fatalf("allow headers = %q, missing %q", allowHeaders, want)
+		}
 	}
 }
 
