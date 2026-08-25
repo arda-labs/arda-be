@@ -62,7 +62,7 @@ func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal Appro
 	var runID, runStatus string
 	err = tx.QueryRowContext(ctx, `
 		SELECT id::text, status
-		FROM ai.runs
+		FROM public.ai_runs
 		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
 		FOR UPDATE
 	`, proposal.Run.TenantID, proposal.Run.ActorUserID, proposal.Run.ExternalRun).Scan(&runID, &runStatus)
@@ -80,8 +80,8 @@ func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal Appro
 	var existingArguments string
 	err = tx.QueryRowContext(ctx, `
 		SELECT a.id::text, a.status, a.expires_at, e.arguments_redacted::text
-		FROM ai.approvals a
-		JOIN ai.tool_executions e ON e.id = a.tool_execution_id
+		FROM public.ai_approvals a
+		JOIN public.ai_tool_executions e ON e.id = a.tool_execution_id
 		WHERE a.tenant_id = $1 AND a.requester_user_id = $2 AND a.run_id = $3
 		  AND e.idempotency_key = $4
 		FOR UPDATE
@@ -104,7 +104,7 @@ func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal Appro
 
 	var executionID string
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO ai.tool_executions
+		INSERT INTO public.ai_tool_executions
 			(run_id, tenant_id, actor_user_id, tool_name, tool_version, risk, status,
 			 arguments_redacted, policy_decision, idempotency_key, started_at)
 		VALUES ($1, $2, $3, $4, $5, $6, 'WAITING_APPROVAL', $7::jsonb,
@@ -119,7 +119,7 @@ func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal Appro
 
 	var record ApprovalRecord
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO ai.approvals
+		INSERT INTO public.ai_approvals
 			(run_id, tool_execution_id, tenant_id, requester_user_id, status,
 			 summary_redacted, resource_version, permission_version, expires_at)
 		VALUES ($1, $2, $3, $4, 'PENDING', $5::jsonb, NULLIF($6, ''), NULLIF($7, ''), $8)
@@ -131,7 +131,7 @@ func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal Appro
 		return ApprovalRecord{}, fmt.Errorf("persist AI approval: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE ai.runs SET status = 'WAITING_APPROVAL' WHERE id = $1
+		UPDATE public.ai_runs SET status = 'WAITING_APPROVAL' WHERE id = $1
 	`, runID); err != nil {
 		return ApprovalRecord{}, fmt.Errorf("pause AI run for approval: %w", err)
 	}
@@ -166,7 +166,7 @@ func (s *SQLRunStore) DecideApproval(ctx context.Context, tenantID, approvalID, 
 	err = tx.QueryRowContext(ctx, `
 		SELECT a.requester_user_id::text, a.tool_execution_id::text, a.run_id::text,
 		       a.status, a.expires_at
-		FROM ai.approvals a
+		FROM public.ai_approvals a
 		WHERE a.id = $1 AND a.tenant_id = $2
 		FOR UPDATE
 	`, approvalID, tenantID).Scan(&requesterID, &executionID, &runID, &status, &expiresAt)
@@ -183,7 +183,7 @@ func (s *SQLRunStore) DecideApproval(ctx context.Context, tenantID, approvalID, 
 		return ApprovalRecord{}, ErrApprovalState
 	}
 	if !expiresAt.After(time.Now().UTC()) {
-		_, _ = tx.ExecContext(ctx, `UPDATE ai.approvals SET status = 'EXPIRED' WHERE id = $1`, approvalID)
+		_, _ = tx.ExecContext(ctx, `UPDATE public.ai_approvals SET status = 'EXPIRED' WHERE id = $1`, approvalID)
 		return ApprovalRecord{}, ErrApprovalExpired
 	}
 	if decision != "approve" && decision != "reject" {
@@ -197,20 +197,20 @@ func (s *SQLRunStore) DecideApproval(ctx context.Context, tenantID, approvalID, 
 		toolStatus = "DENIED"
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE ai.approvals
+		UPDATE public.ai_approvals
 		SET status = $1, approver_user_id = $2
 		WHERE id = $3 AND status = 'PENDING'
 	`, newStatus, approverUserID, approvalID); err != nil {
 		return ApprovalRecord{}, fmt.Errorf("decide AI approval: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE ai.tool_executions SET status = $1 WHERE id = $2
+		UPDATE public.ai_tool_executions SET status = $1 WHERE id = $2
 	`, toolStatus, executionID); err != nil {
 		return ApprovalRecord{}, fmt.Errorf("update AI approval tool state: %w", err)
 	}
 	if decision == "reject" {
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE ai.runs SET status = 'FAILED', finished_at = now() WHERE id = $1
+			UPDATE public.ai_runs SET status = 'FAILED', finished_at = now() WHERE id = $1
 		`, runID); err != nil {
 			return ApprovalRecord{}, fmt.Errorf("finish rejected AI run: %w", err)
 		}

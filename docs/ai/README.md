@@ -20,9 +20,10 @@ production workload change.
   contract and authentication tests pass.
 - Start with read-only, tenant-scoped tools and cited knowledge answers.
   Mutations require server-side authorization, idempotency, and human approval.
-- Use a service-owned PostgreSQL database named `ai` and an `ai` schema inside
-  it, following Arda's service-owned database rule. Enable `pgvector` only
-  after the database design and embedding model/dimension are approved.
+- Use a service-owned PostgreSQL database named `ai`. Its application tables
+  live in `public` with an `ai_` prefix, matching existing Arda services;
+  `public.goose_db_version` remains migration metadata only. Enable `pgvector`
+  only after the database design and embedding model/dimension are approved.
 - Reuse IAM for identity and authorization decisions. AI records are not a
   replacement for IAM security audit records.
 

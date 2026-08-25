@@ -23,7 +23,7 @@ React MFE / Arda shell
        RAG retrieval with ACL filtering
        AI operational audit
        -> domain service APIs/gRPC, never domain tables
-       -> PostgreSQL database `ai`, schema `ai`
+       -> PostgreSQL database `ai`, public tables prefixed `ai_`
        -> approved model provider through egress policy
        -> NATS events for durable integration where needed
 ```

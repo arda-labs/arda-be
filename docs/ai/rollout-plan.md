@@ -10,7 +10,8 @@ Exit criteria:
 
 - no unresolved contradiction between service ownership, tenant context, tool
   policy, HITL, RAG ACLs, and database design;
-- explicit approval of `ai` database/schema ownership;
+- explicit approval of service-owned database `ai` and `public.ai_*` table
+  ownership;
 - an agreed first read-only use case and data classification;
 - no production DB, secret, ingress, or workload mutation.
 

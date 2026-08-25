@@ -55,13 +55,13 @@ func (s *SQLRunStore) Start(ctx context.Context, run RunContext, userMessage str
 	var conversationID string
 	err = tx.QueryRowContext(ctx, `
 		SELECT id::text
-		FROM ai.conversations
+		FROM public.ai_conversations
 		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_thread_id = $3
 		FOR UPDATE
 	`, run.TenantID, run.ActorUserID, run.ExternalThread).Scan(&conversationID)
 	if err == sql.ErrNoRows {
 		err = tx.QueryRowContext(ctx, `
-			INSERT INTO ai.conversations (tenant_id, actor_user_id, external_thread_id, last_message_at)
+			INSERT INTO public.ai_conversations (tenant_id, actor_user_id, external_thread_id, last_message_at)
 			VALUES ($1, $2, $3, now())
 			RETURNING id::text
 		`, run.TenantID, run.ActorUserID, run.ExternalThread).Scan(&conversationID)
@@ -72,7 +72,7 @@ func (s *SQLRunStore) Start(ctx context.Context, run RunContext, userMessage str
 
 	var internalRunID string
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO ai.runs
+		INSERT INTO public.ai_runs
 			(conversation_id, tenant_id, actor_user_id, external_run_id, status)
 		VALUES ($1, $2, $3, $4, 'RUNNING')
 		ON CONFLICT (tenant_id, external_run_id) DO NOTHING
@@ -89,7 +89,7 @@ func (s *SQLRunStore) Start(ctx context.Context, run RunContext, userMessage str
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE ai.conversations SET updated_at = now(), last_message_at = now() WHERE id = $1
+		UPDATE public.ai_conversations SET updated_at = now(), last_message_at = now() WHERE id = $1
 	`, conversationID); err != nil {
 		return fmt.Errorf("update AI conversation timestamp: %w", err)
 	}
@@ -117,14 +117,14 @@ func (s *SQLRunStore) Finish(ctx context.Context, run RunContext, assistantMessa
 	var internalRunID, conversationID string
 	if err := tx.QueryRowContext(ctx, `
 		SELECT id::text, conversation_id::text
-		FROM ai.runs
+		FROM public.ai_runs
 		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
 		FOR UPDATE
 	`, run.TenantID, run.ActorUserID, run.ExternalRun).Scan(&internalRunID, &conversationID); err != nil {
 		return fmt.Errorf("resolve AI run for finish: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE ai.runs
+		UPDATE public.ai_runs
 		SET status = $1, finished_at = now(), last_event_sequence = last_event_sequence + 1
 		WHERE id = $2
 	`, status, internalRunID); err != nil {
@@ -134,7 +134,7 @@ func (s *SQLRunStore) Finish(ctx context.Context, run RunContext, assistantMessa
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE ai.conversations SET updated_at = now(), last_message_at = now() WHERE id = $1
+		UPDATE public.ai_conversations SET updated_at = now(), last_message_at = now() WHERE id = $1
 	`, conversationID); err != nil {
 		return fmt.Errorf("update AI conversation after finish: %w", err)
 	}
@@ -150,10 +150,10 @@ func (s *SQLRunStore) StartTool(ctx context.Context, run RunContext, toolName st
 	}
 	var executionID string
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO ai.tool_executions
+		INSERT INTO public.ai_tool_executions
 			(run_id, tenant_id, actor_user_id, tool_name, tool_version, risk, status, arguments_redacted, policy_decision, started_at)
 		SELECT id, tenant_id, actor_user_id, $4, $5, $6, 'REQUESTED', $7::jsonb, $8, now()
-		FROM ai.runs
+		FROM public.ai_runs
 		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
 		RETURNING id::text
 	`, run.TenantID, run.ActorUserID, run.ExternalRun, toolName, toolVersion, risk, jsonObject(argumentsRedacted), policyDecision).Scan(&executionID)
@@ -168,7 +168,7 @@ func (s *SQLRunStore) FinishTool(ctx context.Context, executionID, status, resul
 		return fmt.Errorf("AI run store is not configured")
 	}
 	if _, err := s.db.ExecContext(ctx, `
-		UPDATE ai.tool_executions
+		UPDATE public.ai_tool_executions
 		SET status = $1, result_redacted = $2::jsonb, error_code = NULLIF($3, ''), finished_at = now()
 		WHERE id = $4
 	`, status, jsonObject(resultRedacted), errorCode, executionID); err != nil {
@@ -186,9 +186,9 @@ func jsonObject(value string) string {
 
 func insertMessage(ctx context.Context, tx *sql.Tx, conversationID, runID, role, content string) error {
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO ai.messages (conversation_id, run_id, sequence, role, content)
+		INSERT INTO public.ai_messages (conversation_id, run_id, sequence, role, content)
 		SELECT $1, $2, COALESCE(MAX(sequence), 0) + 1, $3, $4
-		FROM ai.messages
+		FROM public.ai_messages
 		WHERE conversation_id = $1
 	`, conversationID, runID, role, content); err != nil {
 		return fmt.Errorf("persist AI %s message: %w", role, err)

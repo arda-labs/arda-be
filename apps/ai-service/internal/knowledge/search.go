@@ -48,8 +48,8 @@ func (s *SQLSearcher) Search(ctx context.Context, tenantID, query string, limit 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.id::text, s.source_key, s.title, s.version, c.heading,
 		       left(c.content, 2400), s.source_type
-		FROM ai.knowledge_sources s
-		JOIN ai.knowledge_chunks c ON c.source_id = s.id
+		FROM public.ai_knowledge_sources s
+		JOIN public.ai_knowledge_chunks c ON c.source_id = s.id
 		WHERE s.status = 'PUBLISHED'
 		  AND (s.effective_from IS NULL OR s.effective_from <= now())
 		  AND (s.effective_to IS NULL OR s.effective_to > now())
