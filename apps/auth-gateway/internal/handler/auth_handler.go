@@ -82,7 +82,7 @@ func (h *AuthHandler) Check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(match.Route.Permissions) > 0 && !permission.HasAny(ctx.Permissions, match.Route.Permissions...) {
+	if len(match.Route.Permissions) > 0 && !ctx.IsGlobalAdmin && !permission.HasAny(ctx.Permissions, match.Route.Permissions...) {
 		h.logger.Warn("forbidden", "path", forwardedURI, "subject", claims.Subject, "route", match.Route.ID)
 		h.respondForbidden(w, r)
 		return
@@ -107,6 +107,11 @@ func (h *AuthHandler) injectHeaders(w http.ResponseWriter, ctx *iamclient.UserCo
 	}
 	w.Header().Set("X-Roles", strings.Join(ctx.Roles, ","))
 	w.Header().Set("X-Permissions", strings.Join(ctx.Permissions, ","))
+	w.Header().Set("X-Global-Roles", strings.Join(ctx.GlobalRoles, ","))
+	w.Header().Set("X-Global-Permissions", strings.Join(ctx.GlobalPermissions, ","))
+	if ctx.IsGlobalAdmin {
+		w.Header().Set("X-Global-Admin", "true")
+	}
 	w.Header().Set("X-Auth-Version", fmt.Sprintf("%d", ctx.AuthVersion))
 	w.Header().Set("X-Auth-Risk", risk)
 	w.Header().Set("X-Auth-Checked", "true")

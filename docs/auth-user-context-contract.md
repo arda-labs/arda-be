@@ -26,6 +26,9 @@ Services must not guess whether `X-User-Id` is an OAuth subject, username, email
 | `X-Tenant-Id` | yes for tenant-scoped requests | Active tenant id from the verified IAM membership context. It is injected by auth-gateway, never trusted from the browser. |
 | `X-Roles` | optional | Comma-separated role codes. |
 | `X-Permissions` | optional | Comma-separated permission codes. |
+| `X-Global-Roles` | internal only | Control-plane role codes from the reserved `system` scope. Never accepted from browser input. |
+| `X-Global-Permissions` | internal only | Control-plane permission codes. Never merged into `X-Permissions`. |
+| `X-Global-Admin` | internal only | Gateway assertion that the verified context has the global admin capability. |
 | `X-Auth-Version` | yes for user requests | IAM security stamp. It increases when user security, roles, or effective permissions change. |
 | `X-Auth-Time` | BFF session requests | Unix timestamp for the last primary authentication event, used for recent-auth checks. |
 | `X-Auth-Checked` | yes for protected routes | Set to `true` by auth-gateway after auth has been evaluated. |
@@ -40,6 +43,9 @@ x-user-email
 x-tenant-id
 x-roles
 x-permissions
+x-global-roles
+x-global-permissions
+x-global-admin
 x-auth-version
 x-auth-time
 x-auth-checked
@@ -118,6 +124,8 @@ iam_users.picture_url
 - Store `session.User.UserID` as internal IAM UUID only.
 - Store `session.User.Subject` as external/Ory/Hydra subject.
 - Forward `X-User-Id`, `X-User-Subject`, tenant, roles, and permissions on proxied API calls.
+- Forward global capability headers only after IAM resolution; never accept them
+  from browser input and never merge them into tenant permissions.
 - Store and forward the membership-validated `activeTenantId`; strip any
   browser-supplied `X-Tenant-Id` before forwarding.
 - Return the same normalized user context from `/api/auth/me`.

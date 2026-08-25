@@ -724,9 +724,9 @@ func sessionTenantContextComplete(user *session.UserInfo) bool {
 	// The reserved system scope is intentionally outside the business tenant
 	// registry and is used only by control-plane superadmins.
 	if strings.EqualFold(strings.TrimSpace(user.TenantID), "system") {
-		return true
+		return user.GlobalCapabilitiesLoaded
 	}
-	return user.TenantMemberships != nil
+	return user.TenantMemberships != nil && user.GlobalCapabilitiesLoaded
 }
 
 func (h *BFFHandler) ensureSessionUser(ctx context.Context, sess *session.Session, forceFresh bool) bool {
@@ -878,31 +878,35 @@ func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *
 		return fallback
 	}
 	info := &session.UserInfo{
-		UserID:                  uc.UserID,
-		Subject:                 uc.Subject,
-		Username:                uc.Username,
-		Email:                   uc.Email,
-		DisplayName:             uc.DisplayName,
-		Nickname:                uc.Nickname,
-		FirstName:               uc.FirstName,
-		LastName:                uc.LastName,
-		PhoneNumber:             uc.PhoneNumber,
-		Birthdate:               uc.Birthdate,
-		Gender:                  uc.Gender,
-		Address:                 uc.Address,
-		Country:                 uc.Country,
-		Picture:                 uc.PictureURL,
-		AvatarFileID:            uc.AvatarFileID,
-		CoverImage:              uc.CoverImageURL,
-		CoverFileID:             uc.CoverFileID,
-		TenantID:                uc.TenantID,
-		ActiveTenantID:          uc.ActiveTenantID,
-		TenantSelectionRequired: uc.TenantSelectionRequired,
-		OrgIDs:                  uc.OrgIDs,
-		GroupIDs:                append([]string(nil), uc.GroupIDs...),
-		Roles:                   uc.Roles,
-		Permissions:             uc.Permissions,
-		AuthVersion:             uc.AuthVersion,
+		UserID:                   uc.UserID,
+		Subject:                  uc.Subject,
+		Username:                 uc.Username,
+		Email:                    uc.Email,
+		DisplayName:              uc.DisplayName,
+		Nickname:                 uc.Nickname,
+		FirstName:                uc.FirstName,
+		LastName:                 uc.LastName,
+		PhoneNumber:              uc.PhoneNumber,
+		Birthdate:                uc.Birthdate,
+		Gender:                   uc.Gender,
+		Address:                  uc.Address,
+		Country:                  uc.Country,
+		Picture:                  uc.PictureURL,
+		AvatarFileID:             uc.AvatarFileID,
+		CoverImage:               uc.CoverImageURL,
+		CoverFileID:              uc.CoverFileID,
+		TenantID:                 uc.TenantID,
+		ActiveTenantID:           uc.ActiveTenantID,
+		TenantSelectionRequired:  uc.TenantSelectionRequired,
+		OrgIDs:                   uc.OrgIDs,
+		GroupIDs:                 append([]string(nil), uc.GroupIDs...),
+		Roles:                    uc.Roles,
+		Permissions:              uc.Permissions,
+		GlobalRoles:              uc.GlobalRoles,
+		GlobalPermissions:        uc.GlobalPermissions,
+		IsGlobalAdmin:            uc.IsGlobalAdmin,
+		GlobalCapabilitiesLoaded: uc.GlobalCapabilitiesLoaded,
+		AuthVersion:              uc.AuthVersion,
 	}
 	if len(uc.TenantMemberships) > 0 {
 		info.TenantMemberships = make([]session.TenantMembership, 0, len(uc.TenantMemberships))
@@ -1546,7 +1550,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			ensureDuration = time.Since(ensureStart)
-			if match != nil && len(match.Route.Permissions) > 0 && !permission.HasAny(sess.User.Permissions, match.Route.Permissions...) {
+			if match != nil && len(match.Route.Permissions) > 0 && !sess.User.IsGlobalAdmin && !permission.HasAny(sess.User.Permissions, match.Route.Permissions...) {
 				h.logProxyDenied(r, requestID, traceID, http.StatusForbidden, "insufficient_permissions", sess)
 				respondRequestError(w, r, http.StatusForbidden, "insufficient_permissions")
 				return
@@ -1577,6 +1581,11 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			}
 			proxyReq.Header.Set("X-Roles", strings.Join(sess.User.Roles, ","))
 			proxyReq.Header.Set("X-Permissions", strings.Join(sess.User.Permissions, ","))
+			proxyReq.Header.Set("X-Global-Roles", strings.Join(sess.User.GlobalRoles, ","))
+			proxyReq.Header.Set("X-Global-Permissions", strings.Join(sess.User.GlobalPermissions, ","))
+			if sess.User.IsGlobalAdmin {
+				proxyReq.Header.Set("X-Global-Admin", "true")
+			}
 			proxyReq.Header.Set("X-Auth-Version", fmt.Sprintf("%d", sess.User.AuthVersion))
 			if !sess.AuthTime.IsZero() {
 				proxyReq.Header.Set("X-Auth-Time", fmt.Sprintf("%d", sess.AuthTime.Unix()))
@@ -1759,6 +1768,9 @@ func stripAuthContextHeaders(header http.Header) {
 		"X-User-Org-Ids",
 		"X-Roles",
 		"X-Permissions",
+		"X-Global-Roles",
+		"X-Global-Permissions",
+		"X-Global-Admin",
 		"X-User-Group-Ids",
 		"X-Session-Id",
 		"X-Auth-Version",

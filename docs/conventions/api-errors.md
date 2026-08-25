@@ -2,7 +2,7 @@
 
 Workspace contract for HTTP error responses across Arda backend services and MFE clients.
 
-**Related:** [http-api.md](http-api.md) (list success shape, `X-Request-Id` headers), [i18n.md](i18n.md) (FE translation of `code`).
+**Related:** [http-api.md](http-api.md) (list success shape, `X-Request-Id` headers), [i18n.md](i18n.md) (FE translation of `code`), [problem details catalog](../problems/README.md).
 
 ## JSON shape (domain services — target standard)
 
@@ -38,6 +38,15 @@ Go types: `libs/go/arda-errors` — `ardaerrors.Error`, `ardaerrors.Response`.
 Add domain codes as `\<service\>.\<entity\>.\<reason>` (e.g. `iam.superadmin.last_active`).
 
 `ardaerrors.CodeForStatus(httpStatus)` maps status → default code when only status is known.
+
+## Problem details URLs
+
+Public HTTP errors use RFC-style problem details and a stable `type` URL. The
+URL is documentation, not a remote dependency required to handle the error.
+Keep `code`, HTTP status, and URL stable; put localized or changing text in
+`detail`/`message`. Do not include stack traces, tokens, SQL, or authorization
+policy internals. Add every new public problem to the [catalog](../problems/README.md)
+and add a CI check when the documentation site is available.
 
 ## Handler patterns (Go)
 

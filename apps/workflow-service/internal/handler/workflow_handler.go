@@ -1850,7 +1850,11 @@ func currentUserGroups(r *http.Request) []string {
 }
 
 func isSuperadminActor(r *http.Request) bool {
-	return hasToken(currentUserPermissions(r), "superadmin") || hasToken(currentUserRoles(r), "SUPER_ADMIN")
+	return hasToken(currentUserPermissions(r), "superadmin") ||
+		hasToken(currentUserRoles(r), "SUPER_ADMIN") ||
+		hasToken(splitHeaderTokens(r.Header.Get("X-Global-Permissions")), "superadmin") ||
+		hasToken(splitHeaderTokens(r.Header.Get("X-Global-Roles")), "SUPER_ADMIN") ||
+		strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Global-Admin")), "true")
 }
 
 func (h *WorkflowHandler) canClaimCandidateRole(ctx context.Context, r *http.Request, tenantID, candidateRole string) (bool, error) {

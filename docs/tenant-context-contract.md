@@ -71,7 +71,25 @@ session. The browser cannot set `X-Tenant-Id` directly.
 ```
 
 Roles, permissions, groups and organizations in the active context are scoped
-to `activeTenantId`.
+to `activeTenantId`. The context also exposes control-plane capabilities
+separately:
+
+```json
+{
+  "roles": ["TENANT_ADMIN"],
+  "permissions": ["iam.user.read"],
+  "globalRoles": ["SUPER_ADMIN"],
+  "globalPermissions": ["superadmin"],
+  "isGlobalAdmin": true,
+  "globalCapabilitiesLoaded": true
+}
+```
+
+Global capabilities are read from the reserved `system` scope and are never
+merged into tenant `roles` or `permissions`. Only the trusted auth-gateway may
+forward `X-Global-Roles`, `X-Global-Permissions`, and `X-Global-Admin` to an
+internal service. Domain services should continue to authorize ordinary data
+access from the active tenant context.
 
 ## Tenant administration
 

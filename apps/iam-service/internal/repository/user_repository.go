@@ -1002,6 +1002,17 @@ func (r *UserRepository) GetUserRolesScoped(ctx context.Context, userID, tenantI
 // GetUserRolesForTenant resolves effective roles for a membership-selected
 // tenant without relying on the legacy single-tenant column on iam_users.
 func (r *UserRepository) GetUserRolesForTenant(ctx context.Context, userID, tenantID string) ([]domain.Role, error) {
+	return r.getUserRolesForTenant(ctx, userID, tenantID, "get user roles for tenant")
+}
+
+// GetUserRolesForSystem resolves roles assigned in the reserved control-plane
+// scope. These roles are intentionally not merged into the active tenant
+// roles; gateways use them only for global authorization decisions.
+func (r *UserRepository) GetUserRolesForSystem(ctx context.Context, userID string) ([]domain.Role, error) {
+	return r.getUserRolesForTenant(ctx, userID, "system", "get user roles for system scope")
+}
+
+func (r *UserRepository) getUserRolesForTenant(ctx context.Context, userID, tenantID, operation string) ([]domain.Role, error) {
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT DISTINCT r.id, r.code, r.name, r.status, COALESCE(r.tenant_id, ''), r.created_at, r.updated_at
 		FROM iam_roles r
@@ -1009,7 +1020,7 @@ func (r *UserRepository) GetUserRolesForTenant(ctx context.Context, userID, tena
 		ORDER BY r.code
 	`, r.activeRoleIDsForUserSQL()), userID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("get user roles for tenant: %w", err)
+		return nil, fmt.Errorf("%s: %w", operation, err)
 	}
 	defer rows.Close()
 	var roles []domain.Role
@@ -1125,6 +1136,16 @@ func (r *UserRepository) GetUserPermissions(ctx context.Context, userID string) 
 }
 
 func (r *UserRepository) GetUserPermissionsForTenant(ctx context.Context, userID, tenantID string) ([]domain.Permission, error) {
+	return r.getUserPermissionsForTenant(ctx, userID, tenantID, "get user permissions for tenant")
+}
+
+// GetUserPermissionsForSystem resolves permissions granted by roles in the
+// reserved control-plane scope without widening tenant-scoped permissions.
+func (r *UserRepository) GetUserPermissionsForSystem(ctx context.Context, userID string) ([]domain.Permission, error) {
+	return r.getUserPermissionsForTenant(ctx, userID, "system", "get user permissions for system scope")
+}
+
+func (r *UserRepository) getUserPermissionsForTenant(ctx context.Context, userID, tenantID, operation string) ([]domain.Permission, error) {
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT DISTINCT p.id, p.code, p.name, p.module_code, p.resource_code, p.operation_code
 		FROM iam_permissions p
@@ -1134,7 +1155,7 @@ func (r *UserRepository) GetUserPermissionsForTenant(ctx context.Context, userID
 		ORDER BY p.code
 	`, r.activeRoleIDsForUserSQL()), userID, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("get user permissions for tenant: %w", err)
+		return nil, fmt.Errorf("%s: %w", operation, err)
 	}
 	defer rows.Close()
 	var perms []domain.Permission

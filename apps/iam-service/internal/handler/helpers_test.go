@@ -47,6 +47,13 @@ func TestValidateAdminTargetTenantRequiresVerifiedActor(t *testing.T) {
 			wantStatus: http.StatusOK,
 			wantOK:     true,
 		},
+		{
+			name:       "cross tenant with gateway global capability",
+			headers:    withHeader(verifiedAdminHeaders("tenant-a"), "X-Global-Admin", "true"),
+			tenant:     "tenant-b",
+			wantStatus: http.StatusOK,
+			wantOK:     true,
+		},
 	}
 
 	for _, tt := range tests {

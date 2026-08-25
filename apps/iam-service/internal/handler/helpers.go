@@ -94,7 +94,16 @@ func validateAdminTargetTenant(w http.ResponseWriter, r *http.Request, tenantID 
 }
 
 func hasGlobalAdminCapability(r *http.Request) bool {
-	for _, value := range []string{r.Header.Get("X-Roles"), r.Header.Get("X-Permissions")} {
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Global-Admin")), "true") {
+		return true
+	}
+	for _, value := range []string{
+		r.Header.Get("X-Global-Roles"),
+		r.Header.Get("X-Global-Permissions"),
+		// Keep these for direct internal-handler tests and trusted callers.
+		r.Header.Get("X-Roles"),
+		r.Header.Get("X-Permissions"),
+	} {
 		for _, item := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' }) {
 			if strings.EqualFold(strings.TrimSpace(item), "SUPER_ADMIN") || strings.EqualFold(strings.TrimSpace(item), "superadmin") {
 				return true

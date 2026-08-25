@@ -234,19 +234,33 @@ func (s *UserService) buildContextForTenant(ctx context.Context, user *domain.Us
 
 func (s *UserService) buildContextForTenantWithMemberships(ctx context.Context, user *domain.User, activeTenantID string, memberships []domain.TenantMembership) (*domain.UserContext, error) {
 	roles, err := s.repo.GetUserRoles(ctx, user.ID)
+	globalRoles := []domain.Role(nil)
 	if activeTenantID != "" && s.tenant != nil {
 		roles, err = s.repo.GetUserRolesForTenant(ctx, user.ID, activeTenantID)
 	}
 	if err != nil {
 		return nil, err
 	}
+	if s.tenant != nil {
+		globalRoles, err = s.repo.GetUserRolesForSystem(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	perms, err := s.repo.GetUserPermissions(ctx, user.ID)
+	globalPerms := []domain.Permission(nil)
 	if activeTenantID != "" && s.tenant != nil {
 		perms, err = s.repo.GetUserPermissionsForTenant(ctx, user.ID, activeTenantID)
 	}
 	if err != nil {
 		return nil, err
+	}
+	if s.tenant != nil {
+		globalPerms, err = s.repo.GetUserPermissionsForSystem(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	orgs, err := s.repo.GetUserOrganizations(ctx, user.ID)
@@ -282,40 +296,67 @@ func (s *UserService) buildContextForTenantWithMemberships(ctx context.Context, 
 	for i, p := range perms {
 		permCodes[i] = p.Code
 	}
+	globalRoleCodes := make([]string, len(globalRoles))
+	for i, r := range globalRoles {
+		globalRoleCodes[i] = r.Code
+	}
+	globalPermCodes := make([]string, len(globalPerms))
+	for i, p := range globalPerms {
+		globalPermCodes[i] = p.Code
+	}
+	isGlobalAdmin := false
+	for _, code := range globalRoleCodes {
+		if code == "SUPER_ADMIN" {
+			isGlobalAdmin = true
+			break
+		}
+	}
+	if !isGlobalAdmin {
+		for _, code := range globalPermCodes {
+			if code == "superadmin" {
+				isGlobalAdmin = true
+				break
+			}
+		}
+	}
 
 	return &domain.UserContext{
-		UserID:                  user.ID,
-		Subject:                 user.Subject,
-		Username:                user.Username,
-		Email:                   user.Email,
-		DisplayName:             user.DisplayName,
-		Nickname:                user.Nickname,
-		FirstName:               user.FirstName,
-		LastName:                user.LastName,
-		PhoneNumber:             user.PhoneNumber,
-		Birthdate:               user.Birthdate,
-		Gender:                  user.Gender,
-		Address:                 user.Address,
-		Country:                 user.Country,
-		PictureURL:              user.PictureURL,
-		AvatarFileID:            user.AvatarFileID,
-		CoverImageURL:           user.CoverImageURL,
-		CoverFileID:             user.CoverFileID,
-		TenantID:                activeTenantID,
-		ActiveTenantID:          activeTenantID,
-		TenantMemberships:       memberships,
-		TenantSelectionRequired: len(memberships) > 1 && activeTenantID == "",
-		OrgIDs:                  orgs,
-		GroupIDs:                groupIDs,
-		Roles:                   roleCodes,
-		Permissions:             permCodes,
-		AuthVersion:             authVersion,
-		Department:              user.Department,
-		Position:                user.Position,
-		EmployeeID:              user.EmployeeID,
-		ApprovalLevel:           user.ApprovalLevel,
-		DailyLimit:              user.DailyLimit,
-		Bio:                     user.Bio,
+		UserID:                   user.ID,
+		Subject:                  user.Subject,
+		Username:                 user.Username,
+		Email:                    user.Email,
+		DisplayName:              user.DisplayName,
+		Nickname:                 user.Nickname,
+		FirstName:                user.FirstName,
+		LastName:                 user.LastName,
+		PhoneNumber:              user.PhoneNumber,
+		Birthdate:                user.Birthdate,
+		Gender:                   user.Gender,
+		Address:                  user.Address,
+		Country:                  user.Country,
+		PictureURL:               user.PictureURL,
+		AvatarFileID:             user.AvatarFileID,
+		CoverImageURL:            user.CoverImageURL,
+		CoverFileID:              user.CoverFileID,
+		TenantID:                 activeTenantID,
+		ActiveTenantID:           activeTenantID,
+		TenantMemberships:        memberships,
+		TenantSelectionRequired:  len(memberships) > 1 && activeTenantID == "",
+		OrgIDs:                   orgs,
+		GroupIDs:                 groupIDs,
+		Roles:                    roleCodes,
+		Permissions:              permCodes,
+		GlobalRoles:              globalRoleCodes,
+		GlobalPermissions:        globalPermCodes,
+		IsGlobalAdmin:            isGlobalAdmin,
+		GlobalCapabilitiesLoaded: s.tenant != nil,
+		AuthVersion:              authVersion,
+		Department:               user.Department,
+		Position:                 user.Position,
+		EmployeeID:               user.EmployeeID,
+		ApprovalLevel:            user.ApprovalLevel,
+		DailyLimit:               user.DailyLimit,
+		Bio:                      user.Bio,
 	}, nil
 }
 

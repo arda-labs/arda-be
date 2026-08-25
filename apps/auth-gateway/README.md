@@ -71,6 +71,9 @@ Protected proxied requests receive:
 - `X-Tenant-Id`
 - `X-Roles`
 - `X-Permissions`
+- `X-Global-Roles`
+- `X-Global-Permissions`
+- `X-Global-Admin` (internal capability assertion)
 - `X-Auth-Version`
 - `X-Auth-Time`
 - `X-Auth-Checked: true`
