@@ -74,19 +74,24 @@ func (h *BFFHandler) slowLogSettings() (bool, time.Duration) {
 }
 
 func (h *BFFHandler) Ready(w http.ResponseWriter, r *http.Request) {
-	if h.iamClient != nil {
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
-		if err := h.iamClient.Ready(ctx); err != nil {
-			respondJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "iam": err.Error()})
-			return
-		}
+	if h.iamClient == nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "iam": "client_not_configured"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := h.iamClient.Ready(ctx); err != nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "iam": err.Error()})
+		return
 	}
 	respondJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-func (h *BFFHandler) doPut(url, contentType string, body io.Reader) (*http.Response, error) {
-	req, _ := http.NewRequest("PUT", url, body)
+func (h *BFFHandler) doPut(ctx context.Context, url, contentType string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, body)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("Content-Type", contentType)
 	return h.httpClient.Do(req)
 }
@@ -376,7 +381,7 @@ func (h *BFFHandler) acceptHydraLogin(w http.ResponseWriter, r *http.Request, re
 func (h *BFFHandler) acceptHydraLoginURL(w http.ResponseWriter, r *http.Request, req loginAcceptRequest, subject string) (string, bool) {
 	hydraURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/login/accept?login_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(req.LoginChallenge))
 	b, _ := json.Marshal(map[string]any{"subject": subject, "remember": req.Remember, "remember_for": req.RememberFor})
-	resp, err := h.doPut(hydraURL, "application/json", bytes.NewReader(b))
+	resp, err := h.doPut(r.Context(), hydraURL, "application/json", bytes.NewReader(b))
 	if err != nil {
 		respondError(w, http.StatusBadGateway, "accept login failed")
 		return "", false
@@ -400,7 +405,10 @@ func (h *BFFHandler) acceptHydraLoginURL(w http.ResponseWriter, r *http.Request,
 
 func (h *BFFHandler) AcceptConsent(w http.ResponseWriter, r *http.Request) {
 	var req consentAcceptRequest
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
 	redirectURL, ok := h.acceptHydraConsentURL(w, r, req.ConsentChallenge, req.Remember)
 	if !ok {
 		return
@@ -408,27 +416,48 @@ func (h *BFFHandler) AcceptConsent(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"redirect_url": redirectURL})
 }
 
-func (h *BFFHandler) acceptHydraConsentURL(w http.ResponseWriter, _ *http.Request, consentChallenge string, remember bool) (string, bool) {
+func (h *BFFHandler) acceptHydraConsentURL(w http.ResponseWriter, r *http.Request, consentChallenge string, remember bool) (string, bool) {
 	if consentChallenge == "" {
 		respondError(w, http.StatusBadRequest, "missing consent_challenge")
 		return "", false
 	}
 	getURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/consent?consent_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(consentChallenge))
-	getResp, _ := h.httpClient.Get(getURL)
-	if getResp != nil {
-		defer getResp.Body.Close()
+	getReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, getURL, nil)
+	if err != nil {
+		respondError(w, http.StatusBadGateway, "consent request unavailable")
+		return "", false
+	}
+	getResp, err := h.httpClient.Do(getReq)
+	if err != nil {
+		respondError(w, http.StatusBadGateway, "consent request unavailable")
+		return "", false
+	}
+	defer getResp.Body.Close()
+	if getResp.StatusCode >= http.StatusBadRequest {
+		respondError(w, http.StatusBadGateway, "consent request unavailable")
+		return "", false
 	}
 	var consentReq struct {
 		Subject        string   `json:"subject"`
 		RequestedScope []string `json:"requested_scope"`
 	}
-	if getResp != nil {
-		rbody, _ := io.ReadAll(getResp.Body)
-		json.Unmarshal(rbody, &consentReq)
+	if err := json.NewDecoder(getResp.Body).Decode(&consentReq); err != nil {
+		respondError(w, http.StatusBadGateway, "invalid consent request")
+		return "", false
 	}
 	acceptURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/consent/accept?consent_challenge=%s", h.cfg.HydraAdminURL, url.QueryEscape(consentChallenge))
-	ab, _ := json.Marshal(map[string]any{"grant_scope": consentReq.RequestedScope, "remember": remember})
-	resp, err := h.doPut(acceptURL, "application/json", bytes.NewReader(ab))
+	ab, err := json.Marshal(map[string]any{"grant_scope": consentReq.RequestedScope, "remember": remember})
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "consent request encoding failed")
+		return "", false
+	}
+	acceptReq, err := http.NewRequestWithContext(r.Context(), http.MethodPut, acceptURL, bytes.NewReader(ab))
+	if err != nil {
+		respondError(w, http.StatusBadGateway, "accept consent failed")
+		return "", false
+	}
+	acceptReq.Header.Set("Content-Type", "application/json")
+	resp, err := h.httpClient.Do(acceptReq)
 	if err != nil {
 		respondError(w, http.StatusBadGateway, "accept consent failed")
 		return "", false
@@ -442,7 +471,10 @@ func (h *BFFHandler) acceptHydraConsentURL(w http.ResponseWriter, _ *http.Reques
 	var result struct {
 		RedirectTo string `json:"redirect_to"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		respondError(w, http.StatusBadGateway, "invalid consent response")
+		return "", false
+	}
 	if result.RedirectTo == "" {
 		respondError(w, http.StatusBadGateway, "accept consent returned empty redirect_to")
 		return "", false
@@ -464,16 +496,11 @@ func (h *BFFHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.ExchangeCode(w, r)
 	default:
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		respondRequestError(w, r, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
 func (h *BFFHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
-	if errText := r.URL.Query().Get("error"); errText != "" {
-		target := h.frontendRedirectURL("/login?error=" + url.QueryEscape(firstNonEmpty(r.URL.Query().Get("error_description"), errText)))
-		http.Redirect(w, r, target, http.StatusFound)
-		return
-	}
 	callbackState := r.URL.Query().Get("state")
 	if callbackState == "" {
 		http.Redirect(w, r, h.frontendRedirectURL("/login?error=invalid_state"), http.StatusFound)
@@ -492,6 +519,11 @@ func (h *BFFHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if callbackState != stateCookie.State {
 		http.Redirect(w, r, h.frontendRedirectURL("/login?error=invalid_state"), http.StatusFound)
+		return
+	}
+	if errText := r.URL.Query().Get("error"); errText != "" {
+		target := h.frontendRedirectURL("/login?error=" + url.QueryEscape(firstNonEmpty(r.URL.Query().Get("error_description"), errText)))
+		http.Redirect(w, r, target, http.StatusFound)
 		return
 	}
 	code := r.URL.Query().Get("code")
@@ -516,8 +548,8 @@ func (h *BFFHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Code == "dev" {
-		h.devExchangeCode(w, r)
+	if strings.TrimSpace(req.Code) == "" || strings.TrimSpace(req.CodeVerifier) == "" {
+		respondError(w, http.StatusBadRequest, "missing oauth code or verifier")
 		return
 	}
 	redirectURI := req.RedirectURI
@@ -540,10 +572,14 @@ func (h *BFFHandler) exchangeHydraCode(w http.ResponseWriter, r *http.Request, c
 		respondError(w, http.StatusBadRequest, "missing oauth code or verifier")
 		return nil, false
 	}
-	h.logger.Debug("exchanging authorization code", "code", code, "redirect_uri", redirectURI)
+	h.logger.Debug("exchanging authorization code", "redirect_uri", redirectURI)
 	tokenURL := fmt.Sprintf("%s/oauth2/token", strings.TrimSuffix(h.cfg.HydraPublicURL, "/"))
 	data := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI}, "client_id": {h.cfg.OAuthClientID}, "code_verifier": {codeVerifier}}
-	tokenReq, _ := http.NewRequest("POST", tokenURL, strings.NewReader(data.Encode()))
+	tokenReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, tokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		respondError(w, http.StatusBadGateway, "token exchange failed")
+		return nil, false
+	}
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := h.httpClient.Do(tokenReq)
 	if err != nil {
@@ -553,11 +589,9 @@ func (h *BFFHandler) exchangeHydraCode(w http.ResponseWriter, r *http.Request, c
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
 		h.logger.Error("token exchange failed from hydra", "status", resp.StatusCode, "hydra_url", tokenURL,
-			"redirect_uri", redirectURI, "client_id", h.cfg.OAuthClientID,
-			"hydra_response", string(bodyBytes))
-		respondError(w, resp.StatusCode, "token exchange failed: "+string(bodyBytes))
+			"redirect_uri", redirectURI, "client_id", h.cfg.OAuthClientID)
+		respondError(w, resp.StatusCode, "token exchange failed")
 		return nil, false
 	}
 	var tokenData hydraTokenResponse
@@ -568,39 +602,6 @@ func (h *BFFHandler) exchangeHydraCode(w http.ResponseWriter, r *http.Request, c
 	}
 	h.logger.Debug("token response decoded successfully", "expires_in", tokenData.ExpiresIn)
 	return &tokenData, true
-}
-
-func (h *BFFHandler) devExchangeCode(w http.ResponseWriter, r *http.Request) {
-	userInfo, _ := h.resolveSessionUser(r.Context(), &session.UserInfo{UserID: "dev-user", Subject: "dev-user", Username: "admin", Email: "admin@arda.local"}, true)
-	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
-	now := time.Now()
-	sess := &session.Session{AccessToken: "dev-token", RefreshToken: "dev-token", ExpiresAt: now.Add(ttl), User: userInfo, IPAddress: extractIP(r), AuthTime: now}
-	deviceToken := h.readDeviceCookie(r)
-	if deviceToken == "" {
-		deviceToken = generateDeviceToken()
-	}
-	trustForMFA := h.readRememberMFACookie(r)
-	if h.iamClient != nil && userInfo.UserID != "" {
-		if tracked, err := h.trackSession(r, userInfo.UserID, deviceToken, trustForMFA); err != nil {
-			h.logger.Warn("session tracking failed", "err", err)
-		} else if tracked != nil {
-			sess.IAMSessionID = tracked.SessionID
-			sess.DeviceID = tracked.DeviceID
-			sess.DeviceName = tracked.DeviceName
-			sess.DeviceType = tracked.DeviceType
-		}
-	}
-	if err := h.store.Create(r.Context(), sess, ttl); err != nil {
-		if sess.IAMSessionID != "" && h.iamClient != nil {
-			_ = h.iamClient.RevokeSession(r.Context(), sess.IAMSessionID)
-		}
-		respondError(w, http.StatusInternalServerError, "session creation failed")
-		return
-	}
-	h.setSessionCookie(w, sess.ID, ttl)
-	h.setDeviceCookie(w, deviceToken)
-	h.clearRememberMFACookie(w)
-	respondJSON(w, http.StatusOK, map[string]any{"user": userInfo})
 }
 
 func (h *BFFHandler) createBFFSession(w http.ResponseWriter, r *http.Request, tokenData *hydraTokenResponse) {
@@ -651,16 +652,22 @@ func (h *BFFHandler) establishBFFSession(w http.ResponseWriter, r *http.Request,
 		deviceToken = generateDeviceToken()
 	}
 	trustForMFA := h.readRememberMFACookie(r)
-	if h.iamClient != nil && userInfo.UserID != "" {
-		if tracked, err := h.trackSession(r, userInfo.UserID, deviceToken, trustForMFA); err != nil {
-			h.logger.Warn("session tracking failed", "err", err)
-		} else if tracked != nil {
-			sess.IAMSessionID = tracked.SessionID
-			sess.DeviceID = tracked.DeviceID
-			sess.DeviceName = tracked.DeviceName
-			sess.DeviceType = tracked.DeviceType
-		}
+	if h.iamClient == nil || userInfo.UserID == "" {
+		respondError(w, http.StatusBadGateway, "session tracking is not configured")
+		return nil, false
 	}
+	tracked, err := h.trackSession(r, userInfo.UserID, deviceToken, trustForMFA)
+	if err != nil || tracked == nil {
+		if err != nil {
+			h.logger.Error("session tracking failed", "err", err)
+		}
+		respondError(w, http.StatusBadGateway, "session tracking failed")
+		return nil, false
+	}
+	sess.IAMSessionID = tracked.SessionID
+	sess.DeviceID = tracked.DeviceID
+	sess.DeviceName = tracked.DeviceName
+	sess.DeviceType = tracked.DeviceType
 	if err := h.store.Create(r.Context(), sess, ttl); err != nil {
 		h.logger.Error("failed to create session in store", "err", err)
 		if sess.IAMSessionID != "" && h.iamClient != nil {
@@ -676,12 +683,12 @@ func (h *BFFHandler) establishBFFSession(w http.ResponseWriter, r *http.Request,
 	return userInfo, true
 }
 
-func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.UserInfo, useCache bool) (*session.UserInfo, bool) {
+func (h *BFFHandler) resolveSessionUser(ctx context.Context, fallback *session.UserInfo, useCache bool) (*session.UserInfo, bool) {
 	if fallback == nil {
 		fallback = &session.UserInfo{}
 	}
 	if h.iamClient == nil {
-		return fallback, true
+		return nil, false
 	}
 
 	if fallback.UserID == "" && looksLikeUUID(fallback.Subject) {
@@ -695,7 +702,7 @@ func (h *BFFHandler) resolveSessionUser(_ context.Context, fallback *session.Use
 		}
 	}
 
-	return h.resolveSessionUserOnce(fallback)
+	return h.resolveSessionUserOnce(ctx, fallback)
 }
 
 func sessionUserComplete(user *session.UserInfo) bool {
@@ -725,10 +732,10 @@ func (h *BFFHandler) ensureSessionUser(ctx context.Context, sess *session.Sessio
 	return true
 }
 
-func (h *BFFHandler) resolveSessionUserOnce(fallback *session.UserInfo) (*session.UserInfo, bool) {
+func (h *BFFHandler) resolveSessionUserOnce(ctx context.Context, fallback *session.UserInfo) (*session.UserInfo, bool) {
 	key := sessionUserResolveKey(fallback)
 	if key == "" {
-		return h.resolveSessionUserUncached(fallback)
+		return h.resolveSessionUserUncached(ctx, fallback)
 	}
 
 	h.resolveMu.Lock()
@@ -742,7 +749,7 @@ func (h *BFFHandler) resolveSessionUserOnce(fallback *session.UserInfo) (*sessio
 	h.resolveInflight[key] = call
 	h.resolveMu.Unlock()
 
-	user, ok := h.resolveSessionUserUncached(fallback)
+	user, ok := h.resolveSessionUserUncached(ctx, fallback)
 	call.result = sessionUserResolveResult{user: user, ok: ok}
 
 	h.resolveMu.Lock()
@@ -752,8 +759,8 @@ func (h *BFFHandler) resolveSessionUserOnce(fallback *session.UserInfo) (*sessio
 	return user, ok
 }
 
-func (h *BFFHandler) resolveSessionUserUncached(fallback *session.UserInfo) (*session.UserInfo, bool) {
-	lookupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+func (h *BFFHandler) resolveSessionUserUncached(ctx context.Context, fallback *session.UserInfo) (*session.UserInfo, bool) {
+	lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	if fallback.Subject != "" && !looksLikeUUID(fallback.Subject) {
@@ -932,7 +939,7 @@ type trackedSession struct {
 }
 
 func (h *BFFHandler) trackSession(r *http.Request, userID, deviceToken string, trustForMFA bool) (*trackedSession, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	ua := r.UserAgent()
 	fp := iamclient.DeviceFingerprint{UserAgent: ua, IP: extractIP(r)}
@@ -1048,7 +1055,11 @@ func (h *BFFHandler) proxyToKratosWithOptions(w http.ResponseWriter, r *http.Req
 	target := fmt.Sprintf("%s/%s", strings.TrimSuffix(h.cfg.KratosPublicURL, "/"), strings.TrimPrefix(path, "/"))
 	body, _ := io.ReadAll(r.Body)
 	r.Body.Close()
-	proxyReq, _ := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
+	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
+	if err != nil {
+		respondError(w, http.StatusBadGateway, "kratos proxy request invalid")
+		return
+	}
 	proxyReq.Header = r.Header.Clone()
 	if stripBrowserHeaders {
 		// Kratos API flows reject browser AJAX requests with Origin/Sec-Fetch headers.
@@ -1080,7 +1091,10 @@ func (h *BFFHandler) proxyToKratosWithOptions(w http.ResponseWriter, r *http.Req
 
 func (h *BFFHandler) kratosWhoami(r *http.Request, sessionToken string) (*kratosWhoamiResponse, error) {
 	target := fmt.Sprintf("%s/%s", strings.TrimSuffix(h.cfg.KratosPublicURL, "/"), "sessions/whoami")
-	proxyReq, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
+	proxyReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
+	if err != nil {
+		return nil, fmt.Errorf("kratos whoami request invalid")
+	}
 	proxyReq.Header = r.Header.Clone()
 	proxyReq.Header.Set("Accept", "application/json")
 	proxyReq.Header.Del("Accept-Encoding")
@@ -1206,7 +1220,7 @@ func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	ensureDuration := time.Since(ensureStart)
 	writeStart := time.Now()
-	respondJSON(w, http.StatusOK, sess.User)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, sess.User)
 	writeDuration := time.Since(writeStart)
 	totalDuration := time.Since(start)
 	if slowLogEnabled && totalDuration >= slowLogThreshold {
@@ -1383,7 +1397,29 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	requestID := ardahttp.RequestID(r)
 	traceID := ardahttp.TraceID(r)
 	r.Header.Set(ardahttp.HeaderRequestID, requestID)
+	if h.policy == nil {
+		if h.logger != nil {
+			h.logger.Error("proxy policy is not configured", "path", r.URL.Path, "method", r.Method)
+		}
+		respondRequestError(w, r, http.StatusServiceUnavailable, "policy_unavailable")
+		return
+	}
+	match, err := h.policy.Match(r.URL.Path, r.Method)
+	if err != nil || match == nil || match.Route == nil {
+		if h.logger != nil {
+			h.logger.Warn("proxy route denied", "path", r.URL.Path, "method", r.Method, "reason", "no policy match")
+		}
+		respondRequestError(w, r, http.StatusNotFound, "route_not_found")
+		return
+	}
 	baseURL := h.upstreamBaseURL(r.URL.Path)
+	if strings.TrimSpace(baseURL) == "" {
+		if h.logger != nil {
+			h.logger.Error("proxy route has no configured upstream", "path", r.URL.Path)
+		}
+		respondRequestError(w, r, http.StatusServiceUnavailable, "upstream_not_configured")
+		return
+	}
 	target := baseURL + r.URL.Path
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
@@ -1392,7 +1428,11 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	r.Body.Close()
 	readDuration := time.Since(readStart)
-	proxyReq, _ := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
+	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
+	if err != nil {
+		respondRequestError(w, r, http.StatusBadGateway, "proxy_request_invalid")
+		return
+	}
 	for k, vs := range r.Header {
 		for _, v := range vs {
 			proxyReq.Header.Add(k, v)
@@ -1403,10 +1443,6 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		proxyReq.Header.Set(ardahttp.HeaderTraceID, traceID)
 	}
 	stripAuthContextHeaders(proxyReq.Header)
-	var match *policy.MatchResult
-	if h.policy != nil {
-		match, _ = h.policy.Match(r.URL.Path, r.Method)
-	}
 	sessionID := h.readSessionCookie(r)
 	var sess *session.Session
 	var sessionDuration time.Duration
@@ -1418,13 +1454,13 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	requireAuth := match == nil || match.RequireAuth
 	if requireAuth && sess == nil {
 		h.clearSessionCookie(w)
-		respondError(w, http.StatusUnauthorized, "not authenticated")
+		respondRequestError(w, r, http.StatusUnauthorized, "not_authenticated")
 		return
 	}
 	var ensureDuration time.Duration
 	if sess != nil {
 		if !h.recentAuthOK(r, sess) {
-			respondError(w, http.StatusForbidden, "recent_auth_required")
+			respondRequestError(w, r, http.StatusForbidden, "recent_auth_required")
 			return
 		}
 		forceFreshUser := match != nil && match.Route.Risk == "high"
@@ -1433,17 +1469,21 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			ensureDuration = time.Since(ensureStart)
 			if requireAuth {
 				h.clearSessionCookie(w)
-				respondError(w, http.StatusUnauthorized, "user context unavailable")
+				respondRequestError(w, r, http.StatusUnauthorized, "user_context_unavailable")
 				return
 			}
 		} else {
 			ensureDuration = time.Since(ensureStart)
 			if match != nil && len(match.Route.Permissions) > 0 && !permission.HasAny(sess.User.Permissions, match.Route.Permissions...) {
-				respondError(w, http.StatusForbidden, "insufficient permissions")
+				respondRequestError(w, r, http.StatusForbidden, "insufficient_permissions")
 				return
 			}
 			proxyReq.Header.Set("Authorization", "Bearer "+sess.AccessToken)
 			proxyReq.Header.Set("X-User-Id", sess.User.UserID)
+			// X-User-Id is the authenticated actor. Keep an explicit actor
+			// header for downstream audit/command code; target resources remain
+			// request-specific IDs and must never be inferred from this header.
+			proxyReq.Header.Set("X-Actor-User-Id", sess.User.UserID)
 			proxyReq.Header.Set("X-User-Subject", sess.User.Subject)
 			proxyReq.Header.Set("X-Username", sess.User.Username)
 			proxyReq.Header.Set("X-User-Email", sess.User.Email)
@@ -1456,6 +1496,10 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 				proxyReq.Header.Set("X-User-Group-Ids", strings.Join(sess.User.GroupIDs, ","))
 			}
 			if activeOrg := strings.TrimSpace(r.Header.Get("X-Org-Id")); activeOrg != "" {
+				if !containsString(sess.User.OrgIDs, activeOrg) {
+					respondRequestError(w, r, http.StatusForbidden, "organization_forbidden")
+					return
+				}
 				proxyReq.Header.Set("X-Org-Id", activeOrg)
 			}
 			proxyReq.Header.Set("X-Roles", strings.Join(sess.User.Roles, ","))
@@ -1491,7 +1535,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			"duration_ms", upstreamDuration.Milliseconds(),
 			"err", err,
 		)
-		respondError(w, http.StatusBadGateway, "upstream error")
+		respondRequestError(w, r, http.StatusBadGateway, "upstream_error")
 		return
 	}
 	defer resp.Body.Close()
@@ -1505,15 +1549,21 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 	for k, vs := range resp.Header {
+		// The public boundary owns correlation headers. Never let an upstream
+		// service replace the request ID/trace ID that the browser and gateway
+		// already use; doing so makes the response body/header impossible to
+		// correlate in logs and was the source of the previously observed
+		// request_id mismatch.
+		if strings.EqualFold(k, ardahttp.HeaderRequestID) ||
+			strings.EqualFold(k, ardahttp.HeaderTraceID) ||
+			strings.EqualFold(k, ardahttp.HeaderTraceParent) {
+			continue
+		}
 		for _, v := range vs {
 			w.Header().Add(k, v)
 		}
 	}
-	if w.Header().Get(ardahttp.HeaderRequestID) == "" {
-		ardahttp.SetRequestCorrelation(w, r)
-	} else if traceID != "" && w.Header().Get(ardahttp.HeaderTraceID) == "" {
-		w.Header().Set(ardahttp.HeaderTraceID, traceID)
-	}
+	ardahttp.SetRequestCorrelation(w, r)
 	w.WriteHeader(resp.StatusCode)
 	if isEventStreamRequest(r) {
 		copyEventStream(w, resp.Body)
@@ -1584,7 +1634,7 @@ func (h *BFFHandler) upstreamBaseURL(path string) string {
 			return route.url
 		}
 	}
-	return h.cfg.ProxyURL()
+	return ""
 }
 
 func (h *BFFHandler) recentAuthOK(r *http.Request, sess *session.Session) bool {
@@ -1604,11 +1654,15 @@ func (h *BFFHandler) recentAuthOK(r *http.Request, sess *session.Session) bool {
 func stripAuthContextHeaders(header http.Header) {
 	for _, key := range []string{
 		"X-User-Id",
+		"X-Actor-User-Id",
+		"X-Target-User-Id",
 		"X-User-Subject",
 		"X-Username",
 		"X-User-Email",
 		"X-Nickname",
 		"X-Tenant-Id",
+		"X-Org-Id",
+		"X-User-Org-Ids",
 		"X-Roles",
 		"X-Permissions",
 		"X-User-Group-Ids",
@@ -1870,17 +1924,45 @@ func originFromURL(rawURL string) (string, error) {
 }
 
 func respondJSON(w http.ResponseWriter, status int, data any) {
+	ardahttp.SetRequestCorrelation(w, responseRequest(w))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
 }
 
 func respondError(w http.ResponseWriter, status int, msg string) {
+	respondRequestError(w, responseRequest(w), status, msg)
+}
+
+// responseRequest preserves the request correlation initialized by the HTTP
+// middleware for helpers whose historical call sites only received a writer.
+// New handlers should pass the original request directly.
+func responseRequest(w http.ResponseWriter) *http.Request {
+	r := &http.Request{Header: make(http.Header)}
+	if requestID := strings.TrimSpace(w.Header().Get(ardahttp.HeaderRequestID)); requestID != "" {
+		r.Header.Set(ardahttp.HeaderRequestID, requestID)
+	}
+	if traceParent := strings.TrimSpace(w.Header().Get(ardahttp.HeaderTraceParent)); traceParent != "" {
+		r.Header.Set(ardahttp.HeaderTraceParent, traceParent)
+	}
+	return r
+}
+
+func respondRequestError(w http.ResponseWriter, r *http.Request, status int, msg string) {
 	code := ardaerrors.CodeForStatus(status)
 	if isMachineErrorCode(msg) {
 		code = msg
 	}
-	ardahttp.WriteErrorCode(w, nil, status, code, msg)
+	ardahttp.WriteProblem(w, r, status, ardaerrors.New(code, msg))
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func isMachineErrorCode(value string) bool {

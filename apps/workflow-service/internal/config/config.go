@@ -8,30 +8,30 @@ import (
 )
 
 type Config struct {
-	AppName     string `yaml:"app_name"`
-	HTTPAddr    string `yaml:"http_addr"`
-	GRPCAddr    string `yaml:"grpc_addr"`
-	LogLevel    string `yaml:"log_level"`
-	DatabaseDSN string `yaml:"database_dsn"`
-	ZeebeAddr         string `yaml:"zeebe_addr"`
-	ZeebeRestAddr     string `yaml:"zeebe_rest_addr"`
-	ZeebeTasklistAddr string `yaml:"zeebe_tasklist_addr"`
-	ZeebeESURL        string `yaml:"zeebe_es_url"`
-	CRMGRPCAddr             string `yaml:"crm_grpc_addr"`
-	IAMGRPCAddr             string `yaml:"iam_grpc_addr"`
-	NotificationServiceURL  string `yaml:"notification_service_url"`
+	AppName              string `yaml:"app_name"`
+	HTTPAddr             string `yaml:"http_addr"`
+	GRPCAddr             string `yaml:"grpc_addr"`
+	LogLevel             string `yaml:"log_level"`
+	DatabaseDSN          string `yaml:"database_dsn"`
+	ZeebeAddr            string `yaml:"zeebe_addr"`
+	ZeebeRestAddr        string `yaml:"zeebe_rest_addr"`
+	ZeebeTasklistAddr    string `yaml:"zeebe_tasklist_addr"`
+	ZeebeESURL           string `yaml:"zeebe_es_url"`
+	CRMGRPCAddr          string `yaml:"crm_grpc_addr"`
+	IAMGRPCAddr          string `yaml:"iam_grpc_addr"`
+	NotificationGRPCAddr string `yaml:"notification_grpc_addr"`
 }
 
 func Load() Config {
 	cfg := Config{
-		AppName:                "workflow-service",
-		HTTPAddr:               "0.0.0.0:8093",
-		GRPCAddr:               "0.0.0.0:9093",
-		LogLevel:               "info",
-		DatabaseDSN:            "postgres://postgres:postgres@localhost:5432/workflow?sslmode=disable",
-		ZeebeAddr:              "192.168.100.201:30650",
-		CRMGRPCAddr:            "localhost:9094",
-		NotificationServiceURL: "http://localhost:8095",
+		AppName:              "workflow-service",
+		HTTPAddr:             "0.0.0.0:8093",
+		GRPCAddr:             "0.0.0.0:9093",
+		LogLevel:             "info",
+		DatabaseDSN:          "",
+		ZeebeAddr:            "192.168.100.201:30650",
+		CRMGRPCAddr:          "localhost:9094",
+		NotificationGRPCAddr: "localhost:9095",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -55,7 +55,7 @@ func Load() Config {
 	envStr("ZEEBE_ES_URL", &cfg.ZeebeESURL)
 	envStr("CRM_GRPC_ADDR", &cfg.CRMGRPCAddr)
 	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
-	envStr("NOTIFICATION_SERVICE_URL", &cfg.NotificationServiceURL)
+	envStr("NOTIFICATION_GRPC_ADDR", &cfg.NotificationGRPCAddr)
 
 	return cfg
 }
@@ -86,7 +86,7 @@ func (c *Config) loadYAML(path string) bool {
 	set("zeebe_es_url", &c.ZeebeESURL)
 	set("crm_grpc_addr", &c.CRMGRPCAddr)
 	set("iam_grpc_addr", &c.IAMGRPCAddr)
-	set("notification_service_url", &c.NotificationServiceURL)
+	set("notification_grpc_addr", &c.NotificationGRPCAddr)
 	return true
 }
 

@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -43,10 +43,21 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 	if addr == "" {
 		return nil, errors.New("workflow grpc address is required")
 	}
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return nil, errors.New("workflow grpc service identity is not configured: " + err.Error())
+	}
+	transportCreds, err := identity.ClientTransportCredentials("workflow-service")
+	if err != nil {
+		return nil, errors.New("workflow grpc tls is not configured: " + err.Error())
+	}
 	conn, err := grpc.NewClient(
 		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{})),
+		grpc.WithTransportCredentials(transportCreds),
+		grpc.WithChainUnaryInterceptor(
+			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
+			interceptors.UnaryClientServiceAuth(secret, sourceService, "workflow-service"),
+		),
 	)
 	if err != nil {
 		return nil, err
@@ -87,7 +98,7 @@ func (c *Client) CreateCase(ctx context.Context, in CaseCreate) (*workflowv1.Bus
 	})
 }
 
-func (c *Client) SubmitCase(ctx context.Context, caseID, actor string, variables map[string]any) (*workflowv1.BusinessCase, error) {
+func (c *Client) SubmitCase(ctx context.Context, caseID, actor string, variables map[string]any, idempotencyKey string) (*workflowv1.BusinessCase, error) {
 	if c == nil {
 		return nil, errors.New("workflow client is nil")
 	}
@@ -102,8 +113,9 @@ func (c *Client) SubmitCase(ctx context.Context, caseID, actor string, variables
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	return c.api.SubmitCase(callCtx, &workflowv1.SubmitCaseRequest{
-		CaseId:    caseID,
-		Actor:     actor,
-		Variables: vars,
+		CaseId:         caseID,
+		Actor:          actor,
+		Variables:      vars,
+		IdempotencyKey: strings.TrimSpace(idempotencyKey),
 	})
 }

@@ -15,8 +15,14 @@ Runtime config is read from `configs/config.yaml` and environment variables. Do 
 Required local env example:
 
 ```env
-DATABASE_DSN=postgres://arda_media:123456@localhost:5432/media?sslmode=disable
-NATS_URL=nats://192.168.100.201:30222,nats://192.168.100.202:30222,nats://192.168.100.203:30222
+DATABASE_DSN=<database-dsn-from-local-secret>
+NATS_URL=nats://192.168.10.201:30222,nats://192.168.10.202:30222,nats://192.168.10.203:30222
+GRPC_ADDR=0.0.0.0:9092
+MEDIA_GRPC_ADDR=media-service:9092
+ARDA_SERVICE_AUTH_SECRET=<local-workload-secret>
+ARDA_GRPC_CA_FILE=<local-ca-file>
+ARDA_GRPC_CERT_FILE=<media-certificate-file>
+ARDA_GRPC_KEY_FILE=<media-or-caller-key-file>
 
 STORAGE_ENDPOINT=https://s3.arda.io.vn
 STORAGE_ACCESS_KEY=...
@@ -30,8 +36,14 @@ HTTP endpoints:
 
 ```txt
 POST /api/media/files/init-upload
-POST /api/media/files/{file_id}/complete-upload
-GET  /api/media/files/{file_id}
-GET  /api/media/files/{file_id}/download-url
+POST /api/media/files/{public_id}/complete-upload
+POST /api/media                 (multipart upload)
+GET  /api/media/{public_id}
+GET  /api/media/{public_id}/download
+DELETE /api/media/{public_id}
 ```
+
+Internal file attachment is gRPC-only through `MediaService.AttachFiles` and
+requires the shared mTLS plus signed workload identity contract. Callers must
+not use the public HTTP attach route as an internal service shortcut.
 

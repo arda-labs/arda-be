@@ -42,6 +42,7 @@ $ServiceEnv = @{
     HTTP_ADDR = "0.0.0.0:8093"
     GRPC_ADDR = "0.0.0.0:9093"
     CRM_GRPC_ADDR = "localhost:9094"
+    NOTIFICATION_GRPC_ADDR = "localhost:9095"
   }
   "crm-service" = @{
     HTTP_ADDR = "0.0.0.0:8094"
@@ -54,6 +55,7 @@ $ServiceEnv = @{
   }
   "notification-service" = @{
     HTTP_ADDR = "0.0.0.0:8095"
+    GRPC_ADDR = "0.0.0.0:9095"
   }
   "mdm-service" = @{
     HTTP_ADDR = "0.0.0.0:8096"

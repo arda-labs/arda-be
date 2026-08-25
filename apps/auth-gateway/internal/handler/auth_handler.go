@@ -12,6 +12,8 @@ import (
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/token"
 	"github.com/arda-labs/arda/libs/go/arda-auth/jwtverifier"
 	"github.com/arda-labs/arda/libs/go/arda-auth/permission"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // AuthHandler implements the ForwardAuth endpoint.
@@ -48,7 +50,7 @@ func (h *AuthHandler) Check(w http.ResponseWriter, r *http.Request) {
 	match, err := h.policy.Match(forwardedURI, forwardedMethod)
 	if err != nil {
 		h.logger.Warn("route denied", "path", forwardedURI, "method", forwardedMethod, "reason", "no policy match")
-		h.respondDenied(w, "route not allowed")
+		h.respondDenied(w, r, "route not allowed")
 		return
 	}
 
@@ -62,27 +64,27 @@ func (h *AuthHandler) Check(w http.ResponseWriter, r *http.Request) {
 	raw := jwtverifier.ExtractBearer(r.Header.Get("Authorization"))
 	if raw == "" {
 		h.logger.Warn("unauthorized", "path", forwardedURI, "reason", "missing token")
-		h.respondDenied(w, "missing authorization")
+		h.respondDenied(w, r, "missing authorization")
 		return
 	}
 
 	claims, err := h.verifier.Verify(r.Context(), raw)
 	if err != nil {
 		h.logger.Warn("unauthorized", "path", forwardedURI, "reason", err.Error())
-		h.respondDenied(w, "invalid token")
+		h.respondDenied(w, r, "invalid token")
 		return
 	}
 
 	ctx, err := h.resolveUserContext(r, claims.Subject, match.Route.Risk)
 	if err != nil {
 		h.logger.Warn("unauthorized", "path", forwardedURI, "subject", claims.Subject, "reason", err.Error())
-		h.respondDenied(w, "user context unavailable")
+		h.respondDenied(w, r, "user context unavailable")
 		return
 	}
 
 	if len(match.Route.Permissions) > 0 && !permission.HasAny(ctx.Permissions, match.Route.Permissions...) {
 		h.logger.Warn("forbidden", "path", forwardedURI, "subject", claims.Subject, "route", match.Route.ID)
-		h.respondForbidden(w)
+		h.respondForbidden(w, r)
 		return
 	}
 
@@ -136,14 +138,10 @@ func (h *AuthHandler) resolveUserContext(r *http.Request, subject, risk string) 
 	return nil, err
 }
 
-func (h *AuthHandler) respondDenied(w http.ResponseWriter, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusUnauthorized)
-	_, _ = w.Write([]byte(`{"error":"` + msg + `"}`))
+func (h *AuthHandler) respondDenied(w http.ResponseWriter, r *http.Request, msg string) {
+	ardahttp.WriteProblem(w, r, http.StatusUnauthorized, ardaerrors.New(ardaerrors.CodeUnauthorized, msg))
 }
 
-func (h *AuthHandler) respondForbidden(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusForbidden)
-	_, _ = w.Write([]byte(`{"error":"insufficient permissions"}`))
+func (h *AuthHandler) respondForbidden(w http.ResponseWriter, r *http.Request) {
+	ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "insufficient permissions"))
 }

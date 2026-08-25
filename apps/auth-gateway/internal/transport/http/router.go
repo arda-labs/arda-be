@@ -8,6 +8,8 @@ import (
 
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/config"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/handler"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // NewRouter wires auth-gateway HTTP routes.
@@ -87,7 +89,7 @@ func corsMiddleware(next http.Handler, allowedOrigins string) http.Handler {
 			return
 		}
 		if _, ok := allowed[origin]; !ok {
-			http.Error(w, "origin not allowed", http.StatusForbidden)
+			ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "origin not allowed"))
 			return
 		}
 
@@ -110,7 +112,7 @@ func corsMiddleware(next http.Handler, allowedOrigins string) http.Handler {
 func method(method string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != method {
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
 			return
 		}
 		next(w, r)

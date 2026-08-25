@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,8 +19,16 @@ import (
 	"github.com/arda-labs/arda/apps/media-service/internal/repository"
 	"github.com/arda-labs/arda/apps/media-service/internal/service"
 	"github.com/arda-labs/arda/apps/media-service/internal/storage"
+	grpcserver "github.com/arda-labs/arda/apps/media-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/media-service/internal/transport/http"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
+	mediav1 "github.com/arda-labs/arda/libs/go/arda-proto/media/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
@@ -65,6 +74,31 @@ func main() {
 	mediaSvc := service.NewMediaService(cfg, repo, provider)
 	mediaHandler := handler.NewMediaHandler(mediaSvc)
 
+	serviceSecret, err := identity.SecretFromEnv()
+	if err != nil {
+		logger.Error("service identity is not configured", "err", err)
+		os.Exit(1)
+	}
+	transportCreds, err := identity.ServerTransportCredentials()
+	if err != nil {
+		logger.Error("grpc tls is not configured", "err", err)
+		os.Exit(1)
+	}
+	grpcSrv := grpc.NewServer(
+		grpc.Creds(transportCreds),
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerServiceAuth(serviceSecret, "media-service", map[string]struct{}{
+				"iam-service":      {},
+				"platform-service": {},
+			}),
+			interceptors.UnaryServerLogging(logger),
+		),
+	)
+	mediav1.RegisterMediaServiceServer(grpcSrv, grpcserver.NewMediaServer(mediaSvc))
+	healthSrv := health.NewServer()
+	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
+
 	// Start background worker for cleaning expired temporary uploads
 	go func() {
 		ticker := time.NewTicker(time.Hour)
@@ -89,7 +123,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(mediaHandler),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(mediaHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -99,6 +133,19 @@ func main() {
 		logger.Info("http server started", "name", cfg.AppName, "addr", cfg.HTTPAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("http server error", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	go func() {
+		lis, err := net.Listen("tcp", cfg.GRPCAddr)
+		if err != nil {
+			logger.Error("grpc listen", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("grpc server started", "name", cfg.AppName, "addr", cfg.GRPCAddr)
+		if err := grpcSrv.Serve(lis); err != nil {
+			logger.Error("grpc server error", "err", err)
 			os.Exit(1)
 		}
 	}()
@@ -113,6 +160,7 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown error", "err", err)
 	}
+	grpcSrv.GracefulStop()
 }
 
 func parseLogLevel(level string) slog.Level {

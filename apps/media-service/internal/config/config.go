@@ -36,7 +36,7 @@ func Load() Config {
 		HTTPAddr:              "0.0.0.0:8092",
 		GRPCAddr:              "0.0.0.0:9092",
 		LogLevel:              "info",
-		DatabaseDSN:           "postgres://arda_media:123456@localhost:5432/media?sslmode=disable",
+		DatabaseDSN:           "",
 		NATSURL:               "",
 		StorageProvider:       "garage-main",
 		StorageEndpoint:       "",

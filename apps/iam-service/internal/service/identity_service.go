@@ -26,7 +26,7 @@ func (s *IdentityService) CreateIdentity(ctx context.Context, email, password, n
 	if s.kratos == nil {
 		return "", fmt.Errorf("kratos client is not configured")
 	}
-	identity, err := s.kratos.CreateIdentity(email, password, name)
+	identity, err := s.kratos.CreateIdentity(ctx, email, password, name)
 	if err != nil {
 		return "", err
 	}
@@ -84,7 +84,7 @@ func (s *IdentityService) UpdateEmail(ctx context.Context, user *domain.User, ne
 	if err != nil {
 		return nil, err
 	}
-	if err := s.kratos.UpdateIdentityEmail(identityID, newEmail, user.DisplayName); err != nil {
+	if err := s.kratos.UpdateIdentityEmail(ctx, identityID, newEmail, user.DisplayName); err != nil {
 		return nil, fmt.Errorf("update kratos identity email: %w", err)
 	}
 	updated, err := s.userRepo.UpdateUserEmail(ctx, user.ID, newEmail)
@@ -109,7 +109,7 @@ func (s *IdentityService) UpdatePassword(ctx context.Context, user *domain.User,
 	if err != nil {
 		return err
 	}
-	if err := s.kratos.UpdateIdentityPassword(identityID, newPassword); err != nil {
+	if err := s.kratos.UpdateIdentityPassword(ctx, identityID, newPassword); err != nil {
 		return err
 	}
 	return s.userRepo.BumpAuthVersion(ctx, user.ID)
@@ -128,7 +128,7 @@ func (s *IdentityService) ProvisionIdentity(ctx context.Context, user *domain.Us
 	identityID, err := s.CreateIdentity(ctx, user.Email, temporaryPassword, user.DisplayName)
 	createdIdentity := err == nil
 	if err != nil {
-		existing, findErr := s.kratos.FindIdentityByIdentifier(user.Email)
+		existing, findErr := s.kratos.FindIdentityByIdentifier(ctx, user.Email)
 		if findErr != nil || existing == nil {
 			return "", err
 		}
@@ -136,7 +136,7 @@ func (s *IdentityService) ProvisionIdentity(ctx context.Context, user *domain.Us
 	}
 	if err := s.LinkIdentity(ctx, user, identityID); err != nil {
 		if createdIdentity {
-			_ = s.kratos.DeleteIdentity(identityID)
+			_ = s.kratos.DeleteIdentity(ctx, identityID)
 		}
 		return "", err
 	}
@@ -151,5 +151,5 @@ func (s *IdentityService) DeleteIdentity(ctx context.Context, user *domain.User)
 	if err != nil {
 		return nil
 	}
-	return s.kratos.DeleteIdentity(identityID)
+	return s.kratos.DeleteIdentity(ctx, identityID)
 }

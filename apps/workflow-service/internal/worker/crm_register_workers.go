@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"net/url"
 
-	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
+	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 )
@@ -37,13 +37,13 @@ func (w *CRMRegisterWorkers) ValidateHandler(client worker.JobClient, job entiti
 	if !ok {
 		return
 	}
-	duplicateFound, err := w.crmClient.CheckDuplicateIdentity(context.Background(), customerID)
+	duplicateFound, err := w.crmClient.CheckDuplicateIdentity(crmJobContext(job), customerID)
 	if err != nil {
 		w.failJob(client, job, "CRM Error: "+err.Error())
 		return
 	}
 	if duplicateFound {
-		if err := w.crmClient.UpdateCustomerStatus(context.Background(), customerID, "NEEDS_CHANGES"); err != nil {
+		if err := w.crmClient.UpdateCustomerStatus(crmJobContext(job), customerID, "NEEDS_CHANGES"); err != nil {
 			w.failJob(client, job, "CRM Error: "+err.Error())
 			return
 		}
@@ -62,7 +62,7 @@ func (w *CRMRegisterWorkers) ExecuteHandler(client worker.JobClient, job entitie
 	if !ok {
 		return
 	}
-	if err := w.crmClient.UpdateCustomerStatus(context.Background(), customerID, "ACTIVE"); err != nil {
+	if err := w.crmClient.UpdateCustomerStatus(crmJobContext(job), customerID, "ACTIVE"); err != nil {
 		w.failJob(client, job, "CRM Error: "+err.Error())
 		return
 	}
@@ -82,7 +82,7 @@ func (w *CRMRegisterWorkers) CancelHandler(client worker.JobClient, job entities
 	if !ok {
 		return
 	}
-	if err := w.crmClient.UpdateCustomerStatus(context.Background(), customerID, "REJECTED"); err != nil {
+	if err := w.crmClient.UpdateCustomerStatus(crmJobContext(job), customerID, "REJECTED"); err != nil {
 		w.failJob(client, job, "CRM Error: "+err.Error())
 		return
 	}
@@ -205,7 +205,7 @@ func (w *CRMRegisterWorkers) recordJobFailure(job entities.Job, reason string, r
 		retriesLeft,
 		url.QueryEscape(reason),
 	)
-	if err := w.projection.caseRepo.AddTimelineEvent(context.Background(), caseID, "JOB_FAILED", note); err != nil {
+	if err := w.projection.caseRepo.AddTimelineEventInternal(context.Background(), caseID, "JOB_FAILED", note); err != nil {
 		slog.Error("failed to record job failure timeline", "caseId", caseID, "err", err)
 	}
 }

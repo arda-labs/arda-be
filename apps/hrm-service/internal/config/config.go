@@ -20,7 +20,7 @@ func Load() Config {
 		AppName:          "hrm-service",
 		HTTPAddr:         "0.0.0.0:8097",
 		LogLevel:         "info",
-		DatabaseDSN:      "postgres://arda_hrm:123456@localhost:5432/hrm?sslmode=disable",
+		DatabaseDSN:      "",
 		WorkflowGRPCAddr: "localhost:9093",
 	}
 

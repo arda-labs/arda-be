@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"net/url"
 
-	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
+	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 )
@@ -34,7 +34,7 @@ func (w *CRMWorkers) CheckDuplicateHandler(client worker.JobClient, job entities
 	if !ok {
 		return
 	}
-	duplicateFound, err := w.crmClient.CheckDuplicateIdentity(context.Background(), customerID)
+	duplicateFound, err := w.crmClient.CheckDuplicateIdentity(crmJobContext(job), customerID)
 	if err != nil {
 		w.failJob(client, job, "CRM Error: "+err.Error())
 		return
@@ -87,7 +87,7 @@ func (w *CRMWorkers) updateStatus(client worker.JobClient, job entities.Job, sta
 	if !ok {
 		return
 	}
-	if err := w.crmClient.UpdateCustomerStatus(context.Background(), customerID, status); err != nil {
+	if err := w.crmClient.UpdateCustomerStatus(crmJobContext(job), customerID, status); err != nil {
 		w.failJob(client, job, "CRM Error: "+err.Error())
 		return
 	}
@@ -209,7 +209,7 @@ func (w *CRMWorkers) recordJobFailure(job entities.Job, reason string, retriesLe
 		retriesLeft,
 		url.QueryEscape(reason),
 	)
-	if err := w.caseRepo.AddTimelineEvent(context.Background(), caseID, "JOB_FAILED", note); err != nil {
+	if err := w.caseRepo.AddTimelineEventInternal(context.Background(), caseID, "JOB_FAILED", note); err != nil {
 		slog.Error("failed to record job failure timeline", "caseId", caseID, "err", err)
 	}
 }

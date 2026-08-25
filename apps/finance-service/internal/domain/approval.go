@@ -6,12 +6,12 @@ import "time"
 type ApprovalStatus string
 
 const (
-	ApprovalPending    ApprovalStatus = "PENDING"
-	ApprovalPendingL2  ApprovalStatus = "PENDING_L2"
-	ApprovalPendingL3  ApprovalStatus = "PENDING_L3"
-	ApprovalApproved   ApprovalStatus = "APPROVED"
-	ApprovalRejected   ApprovalStatus = "REJECTED"
-	ApprovalCancelled  ApprovalStatus = "CANCELLED"
+	ApprovalPending   ApprovalStatus = "PENDING"
+	ApprovalPendingL2 ApprovalStatus = "PENDING_L2"
+	ApprovalPendingL3 ApprovalStatus = "PENDING_L3"
+	ApprovalApproved  ApprovalStatus = "APPROVED"
+	ApprovalRejected  ApprovalStatus = "REJECTED"
+	ApprovalCancelled ApprovalStatus = "CANCELLED"
 )
 
 // ApprovalRequest represents a request for approval of a transaction.
@@ -35,14 +35,14 @@ type ApprovalRequest struct {
 
 // ApprovalStep records each checker's decision.
 type ApprovalStep struct {
-	ID         string     `json:"id"`
-	RequestID  string     `json:"requestId"`
-	Level      int        `json:"level"`
-	CheckerID  string     `json:"checkerId"`
-	Decision   string     `json:"decision,omitempty"` // APPROVED, REJECTED
-	Note       string     `json:"note,omitempty"`
-	DecidedAt  *time.Time `json:"decidedAt,omitempty"`
-	CreatedAt  time.Time  `json:"createdAt"`
+	ID        string     `json:"id"`
+	RequestID string     `json:"requestId"`
+	Level     int        `json:"level"`
+	CheckerID string     `json:"checkerId"`
+	Decision  string     `json:"decision,omitempty"` // APPROVED, REJECTED
+	Note      string     `json:"note,omitempty"`
+	DecidedAt *time.Time `json:"decidedAt,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
 }
 
 // ApprovalTier defines the approval levels for a given amount range.

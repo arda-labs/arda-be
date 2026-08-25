@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -14,9 +15,6 @@ type RequestScope struct {
 
 func ScopeFromRequest(r *http.Request) RequestScope {
 	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
-	if tenantID == "" {
-		tenantID = "default"
-	}
 	return RequestScope{
 		TenantID:    tenantID,
 		OrgIDs:      splitCSVHeader(r.Header.Get("X-User-Org-Ids")),
@@ -28,7 +26,7 @@ func ScopeFromRequest(r *http.Request) RequestScope {
 func (s RequestScope) AllowsOrg(orgID string) bool {
 	orgID = strings.TrimSpace(orgID)
 	if orgID == "" || len(s.OrgIDs) == 0 {
-		return true
+		return false
 	}
 	for _, allowed := range s.OrgIDs {
 		if allowed == orgID {
@@ -46,6 +44,19 @@ func (s RequestScope) ResolveOrgID() string {
 		return s.OrgIDs[0]
 	}
 	return s.ActiveOrgID
+}
+
+func (s RequestScope) Validate() error {
+	if s.TenantID == "" {
+		return fmt.Errorf("tenant scope is required")
+	}
+	if len(s.OrgIDs) == 0 {
+		return fmt.Errorf("organization scope is required")
+	}
+	if s.ActiveOrgID != "" && !s.AllowsOrg(s.ActiveOrgID) {
+		return fmt.Errorf("active organization is not allowed")
+	}
+	return nil
 }
 
 func splitCSVHeader(value string) []string {

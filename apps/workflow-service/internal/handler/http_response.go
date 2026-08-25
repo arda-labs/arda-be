@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
@@ -10,7 +10,7 @@ import (
 )
 
 func writeJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
-	ardahttp.WriteJSON(w, r, status, v)
+	ardahttp.WriteSuccess(w, r, status, v)
 }
 
 func writeAPIError(w http.ResponseWriter, r *http.Request, status int, message string) {
@@ -26,11 +26,11 @@ func writeAPIError(w http.ResponseWriter, r *http.Request, status int, message s
 	case status == http.StatusServiceUnavailable:
 		code = ardaerrors.CodeBadGateway
 	}
-	ardahttp.WriteErrorCode(w, r, status, code, message)
+	ardahttp.WriteProblem(w, r, status, ardaerrors.New(code, message))
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
-	ardahttp.WriteErrorCode(w, r, http.StatusMethodNotAllowed, ardaerrors.CodeMethodNotAllowed, "method not allowed")
+	ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
 }
 
 func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
@@ -42,7 +42,7 @@ func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
 	perPage := listQuery.PerPage
 	total := len(items)
 	if listQuery.All {
-		ardahttp.WriteList(w, r, 1, maxInt(total, 1), total, items)
+		ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(1, maxInt(total, 1), total, items))
 		return
 	}
 	start := listQuery.Offset()
@@ -55,14 +55,24 @@ func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
 		}
 		items = items[start:end]
 	}
-	ardahttp.WriteList(w, r, page, perPage, total, items)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, items))
 }
 
-func writeRawJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	ardahttp.SetRequestCorrelation(w, r)
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+func writeListAny(w http.ResponseWriter, r *http.Request, items any) {
+	if items == nil {
+		items = []any{}
+	}
+	total := 0
+	value := reflect.ValueOf(items)
+	if value.IsValid() && (value.Kind() == reflect.Slice || value.Kind() == reflect.Array) {
+		total = value.Len()
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"items":    items,
+		"page":     1,
+		"per_page": maxInt(total, 1),
+		"total":    total,
+	})
 }
 
 func maxInt(a, b int) int {

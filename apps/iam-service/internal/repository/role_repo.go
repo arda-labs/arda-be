@@ -37,17 +37,16 @@ func (r *RoleRepository) Create(ctx context.Context, role *domain.Role) error {
 	return row.Scan(&role.ID, &role.CreatedAt, &role.UpdatedAt)
 }
 
-func (r *RoleRepository) GetByID(ctx context.Context, id string) (*domain.Role, error) {
-	row := r.db.QueryRowContext(ctx, `
-		SELECT id, code, name, status, created_at, updated_at
-		FROM iam_roles WHERE id = $1
-	`, id)
-	return scanRole(row)
+func (r *RoleRepository) GetByIDScoped(ctx context.Context, id, tenantID string) (*domain.Role, error) {
+	return scanRole(r.db.QueryRowContext(ctx, `
+		SELECT id, code, name, status, tenant_id, created_at, updated_at
+		FROM iam_roles WHERE id = $1 AND tenant_id = $2
+	`, id, tenantID))
 }
 
 func (r *RoleRepository) GetByCode(ctx context.Context, code string) (*domain.Role, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, code, name, status, created_at, updated_at
+		SELECT id, code, name, status, tenant_id, created_at, updated_at
 		FROM iam_roles WHERE code = $1
 	`, code)
 	return scanRole(row)
@@ -59,7 +58,7 @@ func (r *RoleRepository) List(ctx context.Context, params ListRolesParams) ([]do
 	idx := 1
 
 	if params.TenantID != "" {
-		where = append(where, fmt.Sprintf("(tenant_id = $%d OR tenant_id = 'default')", idx))
+		where = append(where, fmt.Sprintf("tenant_id = $%d", idx))
 		args = append(args, params.TenantID)
 		idx++
 	}
@@ -78,7 +77,7 @@ func (r *RoleRepository) List(ctx context.Context, params ListRolesParams) ([]do
 
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
-		SELECT id, code, name, status, created_at, updated_at
+		SELECT id, code, name, status, tenant_id, created_at, updated_at
 		FROM iam_roles WHERE %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d
 	`, wc, idx, idx+1)
 	allArgs := append(args, params.Size, offset)
@@ -92,7 +91,7 @@ func (r *RoleRepository) List(ctx context.Context, params ListRolesParams) ([]do
 	var roles []domain.Role
 	for rows.Next() {
 		var role domain.Role
-		if err := rows.Scan(&role.ID, &role.Code, &role.Name, &role.Status, &role.CreatedAt, &role.UpdatedAt); err != nil {
+		if err := rows.Scan(&role.ID, &role.Code, &role.Name, &role.Status, &role.TenantID, &role.CreatedAt, &role.UpdatedAt); err != nil {
 			return nil, 0, err
 		}
 		roles = append(roles, role)
@@ -100,15 +99,16 @@ func (r *RoleRepository) List(ctx context.Context, params ListRolesParams) ([]do
 	return roles, total, rows.Err()
 }
 
-func (r *RoleRepository) Update(ctx context.Context, role *domain.Role) error {
+func (r *RoleRepository) UpdateScoped(ctx context.Context, role *domain.Role, tenantID string) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE iam_roles SET name = $1, updated_at = now() WHERE id = $2
-	`, role.Name, role.ID)
+		UPDATE iam_roles SET name = $1, updated_at = now()
+		WHERE id = $2 AND tenant_id = $3
+	`, role.Name, role.ID, tenantID)
 	return err
 }
 
-func (r *RoleRepository) Delete(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM iam_roles WHERE id = $1`, id)
+func (r *RoleRepository) DeleteScoped(ctx context.Context, id, tenantID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM iam_roles WHERE id = $1 AND tenant_id = $2`, id, tenantID)
 	return err
 }
 
@@ -187,26 +187,39 @@ func (r *RoleRepository) DeletePermission(ctx context.Context, id string) error 
 
 // ── Role-Permission mapping ──
 
-func (r *RoleRepository) AssignPermission(ctx context.Context, roleID, permID string) error {
-	_, err := r.db.ExecContext(ctx, `
+func (r *RoleRepository) AssignPermissionScoped(ctx context.Context, roleID, permID, tenantID string) error {
+	result, err := r.db.ExecContext(ctx, `
 		INSERT INTO iam_role_permissions (role_id, permission_id)
-		VALUES ($1, $2) ON CONFLICT DO NOTHING
-	`, roleID, permID)
+		SELECT ro.id, p.id FROM iam_roles ro CROSS JOIN iam_permissions p
+		WHERE ro.id = $1 AND p.id = $2 AND ro.tenant_id = $3
+		ON CONFLICT DO NOTHING
+	`, roleID, permID, tenantID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+		return fmt.Errorf("role is outside target tenant or permission does not exist")
+	}
+	return nil
+}
+
+func (r *RoleRepository) UnassignPermissionScoped(ctx context.Context, roleID, permID, tenantID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM iam_role_permissions rp USING iam_roles ro
+		WHERE rp.role_id = ro.id AND ro.id = $1 AND rp.permission_id = $2
+		  AND ro.tenant_id = $3
+	`, roleID, permID, tenantID)
 	return err
 }
 
-func (r *RoleRepository) UnassignPermission(ctx context.Context, roleID, permID string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM iam_role_permissions WHERE role_id = $1 AND permission_id = $2`, roleID, permID)
-	return err
-}
-
-func (r *RoleRepository) ListPermissionsByRole(ctx context.Context, roleID string) ([]domain.Permission, error) {
+func (r *RoleRepository) ListPermissionsByRoleScoped(ctx context.Context, roleID, tenantID string) ([]domain.Permission, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT p.id, p.code, p.name, p.module_code, p.resource_code, p.operation_code, p.created_at
 		FROM iam_permissions p
 		JOIN iam_role_permissions rp ON rp.permission_id = p.id
-		WHERE rp.role_id = $1
-	`, roleID)
+		JOIN iam_roles ro ON ro.id = rp.role_id
+		WHERE rp.role_id = $1 AND ro.tenant_id = $2
+	`, roleID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +240,7 @@ func (r *RoleRepository) ListPermissionsByRole(ctx context.Context, roleID strin
 
 func scanRole(row *sql.Row) (*domain.Role, error) {
 	role := &domain.Role{}
-	err := row.Scan(&role.ID, &role.Code, &role.Name, &role.Status, &role.CreatedAt, &role.UpdatedAt)
+	err := row.Scan(&role.ID, &role.Code, &role.Name, &role.Status, &role.TenantID, &role.CreatedAt, &role.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

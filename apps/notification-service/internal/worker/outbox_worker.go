@@ -5,11 +5,12 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
 	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
 )
 
 type EventPublisher interface {
-	Publish(ctx context.Context, subject string, payload []byte) error
+	Publish(ctx context.Context, event domain.OutboxEvent) error
 }
 
 type OutboxWorker struct {
@@ -45,7 +46,7 @@ func (w *OutboxWorker) runOnce(ctx context.Context) error {
 		return err
 	}
 	for _, event := range events {
-		if err := w.publisher.Publish(ctx, event.Subject, event.Payload); err != nil {
+		if err := w.publisher.Publish(ctx, event); err != nil {
 			if markErr := w.repo.MarkOutboxFailed(ctx, event.ID, err.Error()); markErr != nil {
 				return markErr
 			}

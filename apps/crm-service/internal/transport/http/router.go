@@ -5,11 +5,12 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/crm-service/internal/handler"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 type Router struct {
-	customerHandler   *handler.CustomerHandler
-	amendmentHandler  *handler.AmendmentHandler
+	customerHandler  *handler.CustomerHandler
+	amendmentHandler *handler.AmendmentHandler
 }
 
 func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handler.AmendmentHandler) http.Handler {
@@ -30,11 +31,10 @@ func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handl
 		_, _ = w.Write([]byte(`{"status":"ready"}`))
 	})
 
-	mux.HandleFunc("/api/v1/customers", customerHandler.CreateCustomer)
 	mux.HandleFunc("/api/crm/customers", customerHandler.Customers)
 	mux.HandleFunc("/api/crm/customers/", r.customerByID)
 
-	return mux
+	return ardametadata.HTTPMiddleware(mux)
 }
 
 func (r *Router) customerByID(w http.ResponseWriter, req *http.Request) {

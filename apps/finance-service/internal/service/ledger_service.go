@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/domain"
@@ -41,6 +42,15 @@ func (s *LedgerService) WithParameterResolver(params ParameterResolver) *LedgerS
 
 // PostTransaction validates and posts a double-entry transaction.
 func (s *LedgerService) PostTransaction(ctx context.Context, txn *domain.Transaction) (*domain.Transaction, error) {
+	if txn == nil {
+		return nil, fmt.Errorf("transaction is required")
+	}
+	if strings.TrimSpace(txn.TenantID) == "" {
+		return nil, fmt.Errorf("tenant id required")
+	}
+	if strings.TrimSpace(txn.CreatedBy) == "" {
+		return nil, fmt.Errorf("created by actor required")
+	}
 	var totalDebit, totalCredit float64
 	for _, e := range txn.Entries {
 		amt := parseDecimal(e.Amount)
@@ -56,7 +66,7 @@ func (s *LedgerService) PostTransaction(ctx context.Context, txn *domain.Transac
 	}
 
 	for i, e := range txn.Entries {
-		acct, err := s.accountRepo.GetByID(ctx, e.AccountID)
+		acct, err := s.accountRepo.GetByID(ctx, txn.TenantID, e.AccountID)
 		if err != nil || acct == nil {
 			return nil, fmt.Errorf("entry %d: account %s not found", i, e.AccountID)
 		}
@@ -74,8 +84,26 @@ func (s *LedgerService) PostTransaction(ctx context.Context, txn *domain.Transac
 	}
 
 	if txn.IdempotencyKey != "" {
-		existing, err := s.txnRepo.GetByIdempotencyKey(ctx, txn.IdempotencyKey)
+		replayHash, err := requestHash(struct {
+			TenantID      string
+			OperationName string
+			TxnType       string
+			TxnDate       string
+			Description   string
+			SourceRef     string
+			CreatedBy     string
+			Entries       []domain.LedgerEntry
+		}{txn.TenantID, txn.OperationName, txn.TxnType, txn.TxnDate, txn.Description,
+			txn.SourceRef, txn.CreatedBy, txn.Entries})
+		if err != nil {
+			return nil, err
+		}
+		txn.RequestHash = replayHash
+		existing, err := s.txnRepo.GetByIdempotencyKey(ctx, txn.TenantID, txn.OperationName, txn.IdempotencyKey)
 		if err == nil && existing != nil {
+			if err := verifyIdempotentReplay(existing.RequestHash, replayHash); err != nil {
+				return nil, err
+			}
 			s.logger.Info("idempotent request", "key", txn.IdempotencyKey, "existing_id", existing.ID)
 			entries, _ := s.txnRepo.GetEntriesByTransaction(ctx, existing.ID)
 			existing.Entries = entries
@@ -97,20 +125,23 @@ func (s *LedgerService) PostTransaction(ctx context.Context, txn *domain.Transac
 	if txn.TxnDate == "" {
 		txn.TxnDate = time.Now().Format("2006-01-02")
 	}
-	if txn.TenantID == "" {
-		txn.TenantID = "default"
-	}
 	if txn.Currency == "" {
 		txn.Currency = defaultCurrency
 	}
 	if txn.Amount == "" {
 		txn.Amount = fmt.Sprintf("%.6f", totalDebit)
 	}
-	if txn.CreatedBy == "" {
-		txn.CreatedBy = "00000000-0000-0000-0000-000000000000"
-	}
-
 	if err := s.txnRepo.Create(ctx, txn); err != nil {
+		if txn.IdempotencyKey != "" {
+			if existing, lookupErr := s.txnRepo.GetByIdempotencyKey(ctx, txn.TenantID, txn.OperationName, txn.IdempotencyKey); lookupErr == nil && existing != nil {
+				if verifyErr := verifyIdempotentReplay(existing.RequestHash, txn.RequestHash); verifyErr != nil {
+					return nil, verifyErr
+				}
+				entries, _ := s.txnRepo.GetEntriesByTransaction(ctx, existing.ID)
+				existing.Entries = entries
+				return existing, nil
+			}
+		}
 		return nil, fmt.Errorf("create transaction: %w", err)
 	}
 
@@ -122,9 +153,9 @@ func (s *LedgerService) PostTransaction(ctx context.Context, txn *domain.Transac
 	}
 
 	for _, e := range txn.Entries {
-		acct, err := s.accountRepo.GetByID(ctx, e.AccountID)
+		acct, err := s.accountRepo.GetByID(ctx, txn.TenantID, e.AccountID)
 		if err == nil && acct != nil {
-			if err := s.txnRepo.UpdateBalance(ctx, e.AccountID, e.Amount, acct.NormalBalance, e.EntryType); err != nil {
+			if err := s.txnRepo.UpdateBalance(ctx, txn.TenantID, e.AccountID, e.Amount, acct.NormalBalance, e.EntryType); err != nil {
 				s.logger.Warn("balance update failed", "account", e.AccountID, "err", err)
 			}
 		}
@@ -140,8 +171,11 @@ func (s *LedgerService) PostTransaction(ctx context.Context, txn *domain.Transac
 }
 
 // ReverseTransaction reverses a posted transaction.
-func (s *LedgerService) ReverseTransaction(ctx context.Context, originalID, reason, userID string) (*domain.Transaction, error) {
-	original, err := s.txnRepo.GetByID(ctx, originalID)
+func (s *LedgerService) ReverseTransaction(ctx context.Context, tenantID, originalID, reason, userID string) (*domain.Transaction, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, fmt.Errorf("tenant id required")
+	}
+	original, err := s.txnRepo.GetByID(ctx, tenantID, originalID)
 	if err != nil {
 		return nil, fmt.Errorf("original transaction not found: %w", err)
 	}
@@ -187,30 +221,42 @@ func (s *LedgerService) ReverseTransaction(ctx context.Context, originalID, reas
 		return nil, err
 	}
 
-	s.txnRepo.UpdateStatus(ctx, originalID, domain.TxnReversed, userID)
+	s.txnRepo.UpdateStatus(ctx, tenantID, originalID, domain.TxnReversed, userID)
 	return result, nil
 }
 
 // ── Account helpers ──
 
 func (s *LedgerService) CreateAccount(ctx context.Context, a *domain.Account) (*domain.Account, error) {
+	if a == nil || strings.TrimSpace(a.TenantID) == "" {
+		return nil, fmt.Errorf("tenant id required")
+	}
 	return s.accountRepo.Create(ctx, a)
 }
 
-func (s *LedgerService) GetAccount(ctx context.Context, id string) (*domain.Account, error) {
-	return s.accountRepo.GetByID(ctx, id)
+func (s *LedgerService) GetAccount(ctx context.Context, tenantID, id string) (*domain.Account, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, fmt.Errorf("tenant id required")
+	}
+	return s.accountRepo.GetByID(ctx, tenantID, id)
 }
 
-func (s *LedgerService) GetAccountBalance(ctx context.Context, id string) (*domain.AccountBalance, error) {
-	return s.accountRepo.GetBalance(ctx, id)
+func (s *LedgerService) GetAccountBalance(ctx context.Context, tenantID, id string) (*domain.AccountBalance, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, fmt.Errorf("tenant id required")
+	}
+	return s.accountRepo.GetBalance(ctx, tenantID, id)
 }
 
 func (s *LedgerService) ListAccounts(ctx context.Context, tenantID string) ([]domain.Account, error) {
 	return s.accountRepo.List(ctx, tenantID)
 }
 
-func (s *LedgerService) GetTransaction(ctx context.Context, id string) (*domain.Transaction, error) {
-	txn, err := s.txnRepo.GetByID(ctx, id)
+func (s *LedgerService) GetTransaction(ctx context.Context, tenantID, id string) (*domain.Transaction, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, fmt.Errorf("tenant id required")
+	}
+	txn, err := s.txnRepo.GetByID(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}

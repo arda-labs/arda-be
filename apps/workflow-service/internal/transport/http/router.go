@@ -5,6 +5,9 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/handler"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
@@ -19,11 +22,8 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 	mux.HandleFunc("/health/ready", wfHandler.HealthReady)
 
 	// Workflow APIs
-	mux.HandleFunc("/api/v1/workflows/deploy", wfHandler.Deploy)
 	mux.HandleFunc("/api/workflow/deploy", wfHandler.Deploy)
-	mux.HandleFunc("/api/v1/workflows/start", wfHandler.Start)
 	mux.HandleFunc("/api/workflow/start", wfHandler.Start)
-	mux.HandleFunc("/api/v1/workflows/messages", wfHandler.PublishMessage)
 	mux.HandleFunc("/api/workflow/messages", wfHandler.PublishMessage)
 	mux.HandleFunc("/api/workflow/case-types", wfHandler.CaseTypes)
 	mux.HandleFunc("/api/workflow/case-types/", wfHandler.CaseTypeByID)
@@ -66,7 +66,7 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 		} else if strings.HasSuffix(p, "/cancel") {
 			wfHandler.OperateCancelInstance(w, r)
 		} else {
-			http.NotFound(w, r)
+			writeNotFound(w, r)
 		}
 	})
 	mux.HandleFunc("/api/workflow/operate/incidents", wfHandler.OperateIncidents)
@@ -77,7 +77,7 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 		} else if strings.HasSuffix(p, "/resolve") {
 			wfHandler.OperateResolveIncident(w, r)
 		} else {
-			http.NotFound(w, r)
+			writeNotFound(w, r)
 		}
 	})
 	mux.HandleFunc("/api/workflow/operate/jobs", wfHandler.OperateJobs)
@@ -90,29 +90,12 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 		} else if strings.HasSuffix(p, "/activate") {
 			wfHandler.OperateActivateJobDef(w, r)
 		} else {
-			http.NotFound(w, r)
+			writeNotFound(w, r)
 		}
 	})
 	mux.HandleFunc("/api/workflow/operate/element-stats", wfHandler.OperateElementStats)
 
 	// Dynamic paths
-	mux.HandleFunc("/api/v1/workflows/instances/", func(w http.ResponseWriter, r *http.Request) {
-		// e.g. /api/v1/workflows/instances/{instanceKey}/cancel
-		if r.Method == http.MethodPost && len(r.URL.Path) > len("/api/v1/workflows/instances/") {
-			if r.URL.Path[len(r.URL.Path)-len("/cancel"):] == "/cancel" {
-				wfHandler.Cancel(w, r)
-				return
-			}
-		}
-
-		// e.g. /api/v1/workflows/instances/mapping/{businessKey}
-		if r.Method == http.MethodGet && len(r.URL.Path) > len("/api/v1/workflows/instances/mapping/") {
-			wfHandler.GetMapping(w, r)
-			return
-		}
-
-		http.NotFound(w, r)
-	})
 	mux.HandleFunc("/api/workflow/instances/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && len(r.URL.Path) > len("/api/workflow/instances/") {
 			if r.URL.Path[len(r.URL.Path)-len("/cancel"):] == "/cancel" {
@@ -126,8 +109,31 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 			return
 		}
 
-		http.NotFound(w, r)
+		writeNotFound(w, r)
 	})
 
-	return mux
+	return ardametadata.HTTPMiddleware(requireTenantScope(mux))
+}
+
+func requireTenantScope(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/health/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		metadata := ardametadata.FromOutgoing(r.Context())
+		if metadata.AuthChecked != "true" {
+			ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "verified tenant scope is required"))
+			return
+		}
+		if strings.TrimSpace(metadata.TenantID) == "" {
+			ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeRequired, "verified tenant scope is required"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func writeNotFound(w http.ResponseWriter, r *http.Request) {
+	ardahttp.WriteProblem(w, r, http.StatusNotFound, ardaerrors.New(ardaerrors.CodeNotFound, "route not found"))
 }

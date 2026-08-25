@@ -18,7 +18,43 @@ import (
 )
 
 type PlatformHandler struct {
-	svc *service.PlatformService
+	svc   *service.PlatformService
+	media *ardamedia.Client
+}
+
+func requiredTenantID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeRequired, "verified tenant scope is required")
+		return "", false
+	}
+	return tenantID, true
+}
+
+func bindVerifiedTenant(w http.ResponseWriter, r *http.Request, requested *string) bool {
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return false
+	}
+	if strings.TrimSpace(*requested) != "" && strings.TrimSpace(*requested) != tenantID {
+		writeErrorCode(w, http.StatusForbidden, ardaerrors.CodeForbidden, "requested tenant is outside verified scope")
+		return false
+	}
+	*requested = tenantID
+	return true
+}
+
+func bindVerifiedTenantPointer(w http.ResponseWriter, r *http.Request, requested **string) bool {
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return false
+	}
+	if *requested != nil && strings.TrimSpace(**requested) != "" && strings.TrimSpace(**requested) != tenantID {
+		writeErrorCode(w, http.StatusForbidden, ardaerrors.CodeForbidden, "requested tenant is outside verified scope")
+		return false
+	}
+	*requested = &tenantID
+	return true
 }
 
 var organizationListSpec = ardahttp.ListSpec{
@@ -32,27 +68,31 @@ var organizationListSpec = ardahttp.ListSpec{
 	},
 }
 
-func NewPlatformHandler(svc *service.PlatformService) *PlatformHandler {
-	return &PlatformHandler{svc: svc}
+func NewPlatformHandler(svc *service.PlatformService, media *ardamedia.Client) *PlatformHandler {
+	return &PlatformHandler{svc: svc, media: media}
 }
 
 func (h *PlatformHandler) ListParameters(w http.ResponseWriter, r *http.Request) {
-	items, err := h.svc.ListParameters(r.Context(), r.URL.Query().Get("tenant_id"), r.URL.Query().Get("scope_type"), r.URL.Query().Get("scope_id"))
-	writeResult(w, items, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListParameters(r.Context(), tenantID, r.URL.Query().Get("scope_type"), r.URL.Query().Get("scope_id"))
+	writeResultWithRequest(w, r, items, err)
 }
 
 func (h *PlatformHandler) GetPublicBranding(w http.ResponseWriter, r *http.Request) {
 	item, err := h.svc.ResolveParameter(r.Context(), "", "system.settings", nil)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeResult(w, json.RawMessage(`{}`), nil)
+		writeResultWithRequest(w, r, json.RawMessage(`{}`), nil)
 		return
 	}
 	if err != nil {
-		writeResult(w, nil, err)
+		writeResultWithRequest(w, r, nil, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "public, max-age=60")
-	writeResult(w, publicBrandingPayload(item.Value), nil)
+	writeResultWithRequest(w, r, publicBrandingPayload(item.Value), nil)
 }
 
 func publicBrandingPayload(value string) json.RawMessage {
@@ -97,13 +137,20 @@ func (h *PlatformHandler) UpsertParameter(w http.ResponseWriter, r *http.Request
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "key and value are required")
 		return
 	}
+	if !bindVerifiedTenantPointer(w, r, &req.TenantID) {
+		return
+	}
 	item, err := h.svc.UpsertParameter(r.Context(), req)
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) ListLookupCategories(w http.ResponseWriter, r *http.Request) {
-	items, err := h.svc.ListLookupCategories(r.Context(), r.URL.Query().Get("tenant_id"), r.URL.Query().Get("scope_type"), r.URL.Query().Get("scope_id"))
-	writeResult(w, items, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListLookupCategories(r.Context(), tenantID, r.URL.Query().Get("scope_type"), r.URL.Query().Get("scope_id"))
+	writeResultWithRequest(w, r, items, err)
 }
 
 func (h *PlatformHandler) UpsertLookupCategory(w http.ResponseWriter, r *http.Request) {
@@ -116,18 +163,29 @@ func (h *PlatformHandler) UpsertLookupCategory(w http.ResponseWriter, r *http.Re
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code and name are required")
 		return
 	}
+	if !bindVerifiedTenantPointer(w, r, &req.TenantID) {
+		return
+	}
 	item, err := h.svc.UpsertLookupCategory(r.Context(), req)
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) ListLookupValues(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
 	category := strings.TrimPrefix(r.URL.Path, "/api/platform/lookups/")
 	category = strings.TrimSuffix(category, "/values")
-	items, err := h.svc.ListLookupValues(r.Context(), category)
-	writeResult(w, items, err)
+	items, err := h.svc.ListLookupValues(r.Context(), tenantID, category)
+	writeResultWithRequest(w, r, items, err)
 }
 
 func (h *PlatformHandler) CreateLookupValue(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
 	category := strings.TrimPrefix(r.URL.Path, "/api/platform/lookups/")
 	category = strings.TrimSuffix(category, "/values")
 	var req domain.LookupValue
@@ -139,8 +197,8 @@ func (h *PlatformHandler) CreateLookupValue(w http.ResponseWriter, r *http.Reque
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code and name are required")
 		return
 	}
-	item, err := h.svc.UpsertLookupValue(r.Context(), category, req)
-	writeResult(w, item, err)
+	item, err := h.svc.UpsertLookupValue(r.Context(), tenantID, category, req)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +208,10 @@ func (h *PlatformHandler) ListOrganizations(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	listQuery := listRequest.ListQuery
-	tenantID := r.URL.Query().Get("tenant_id")
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
 
 	unpaged := listQuery.All || listQuery.View == "tree" || listQuery.View == "options"
 	items, total, err := h.svc.ListOrganizations(r.Context(), repository.ListOrganizationsParams{
@@ -175,7 +236,7 @@ func (h *PlatformHandler) ListOrganizations(w http.ResponseWriter, r *http.Reque
 			perPage = total
 		}
 	}
-	ardahttp.WriteList(w, r, listQuery.Page, perPage, total, items)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listQuery.Page, perPage, total, items))
 }
 
 func (h *PlatformHandler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
@@ -188,14 +249,17 @@ func (h *PlatformHandler) CreateOrganization(w http.ResponseWriter, r *http.Requ
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code and name are required")
 		return
 	}
+	if !bindVerifiedTenant(w, r, &req.TenantID) {
+		return
+	}
 	item, err := h.svc.CreateOrganization(r.Context(), req)
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) ListGeoAdminUnits(w http.ResponseWriter, r *http.Request) {
 	level, _ := strconv.Atoi(r.URL.Query().Get("level"))
 	items, err := h.svc.ListGeoAdminUnits(r.Context(), r.URL.Query().Get("parent_code"), level)
-	writeResult(w, items, err)
+	writeResultWithRequest(w, r, items, err)
 }
 
 func (h *PlatformHandler) UpsertGeoAdminUnit(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +273,7 @@ func (h *PlatformHandler) UpsertGeoAdminUnit(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	item, err := h.svc.UpsertGeoAdminUnit(r.Context(), req)
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) GetOrganization(w http.ResponseWriter, r *http.Request) {
@@ -218,8 +282,12 @@ func (h *PlatformHandler) GetOrganization(w http.ResponseWriter, r *http.Request
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	item, err := h.svc.GetOrganizationByID(r.Context(), id)
-	writeResult(w, item, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.GetOrganizationByID(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
@@ -238,8 +306,11 @@ func (h *PlatformHandler) UpdateOrganization(w http.ResponseWriter, r *http.Requ
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code and name are required")
 		return
 	}
+	if !bindVerifiedTenant(w, r, &req.TenantID) {
+		return
+	}
 	item, err := h.svc.UpdateOrganization(r.Context(), req)
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
@@ -248,8 +319,12 @@ func (h *PlatformHandler) DeleteOrganization(w http.ResponseWriter, r *http.Requ
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	err := h.svc.DeleteOrganization(r.Context(), id)
-	writeResult(w, map[string]bool{"ok": true}, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	err := h.svc.DeleteOrganization(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, map[string]bool{"ok": true}, err)
 }
 
 func (h *PlatformHandler) DeleteParameter(w http.ResponseWriter, r *http.Request) {
@@ -258,8 +333,12 @@ func (h *PlatformHandler) DeleteParameter(w http.ResponseWriter, r *http.Request
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	err := h.svc.DeleteParameter(r.Context(), id)
-	writeResult(w, map[string]bool{"ok": true}, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	err := h.svc.DeleteParameter(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, map[string]bool{"ok": true}, err)
 }
 
 func (h *PlatformHandler) DeleteLookupCategory(w http.ResponseWriter, r *http.Request) {
@@ -268,8 +347,12 @@ func (h *PlatformHandler) DeleteLookupCategory(w http.ResponseWriter, r *http.Re
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	err := h.svc.DeleteLookupCategory(r.Context(), id)
-	writeResult(w, map[string]bool{"ok": true}, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	err := h.svc.DeleteLookupCategory(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, map[string]bool{"ok": true}, err)
 }
 
 func (h *PlatformHandler) DeleteLookupValue(w http.ResponseWriter, r *http.Request) {
@@ -278,18 +361,26 @@ func (h *PlatformHandler) DeleteLookupValue(w http.ResponseWriter, r *http.Reque
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	err := h.svc.DeleteLookupValue(r.Context(), id)
-	writeResult(w, map[string]bool{"ok": true}, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	err := h.svc.DeleteLookupValue(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, map[string]bool{"ok": true}, err)
 }
 
 func (h *PlatformHandler) ListCreditInstitutions(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
 	items, err := h.svc.ListCreditInstitutions(
 		r.Context(),
-		r.URL.Query().Get("tenant_id"),
+		tenantID,
 		r.URL.Query().Get("status"),
 		r.URL.Query().Get("q"),
 	)
-	writeResult(w, items, err)
+	writeResultWithRequest(w, r, items, err)
 }
 
 func (h *PlatformHandler) GetCreditInstitution(w http.ResponseWriter, r *http.Request) {
@@ -298,8 +389,12 @@ func (h *PlatformHandler) GetCreditInstitution(w http.ResponseWriter, r *http.Re
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	item, err := h.svc.GetCreditInstitutionByID(r.Context(), id)
-	writeResult(w, item, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.GetCreditInstitutionByID(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) CreateCreditInstitution(w http.ResponseWriter, r *http.Request) {
@@ -312,8 +407,11 @@ func (h *PlatformHandler) CreateCreditInstitution(w http.ResponseWriter, r *http
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, address and status are required")
 		return
 	}
+	if !bindVerifiedTenant(w, r, &req.TenantID) {
+		return
+	}
 	item, err := h.svc.CreateCreditInstitution(r.Context(), req)
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) UpdateCreditInstitution(w http.ResponseWriter, r *http.Request) {
@@ -332,8 +430,11 @@ func (h *PlatformHandler) UpdateCreditInstitution(w http.ResponseWriter, r *http
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, address and status are required")
 		return
 	}
+	if !bindVerifiedTenant(w, r, &req.TenantID) {
+		return
+	}
 	item, err := h.svc.UpdateCreditInstitution(r.Context(), req)
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) DeleteCreditInstitution(w http.ResponseWriter, r *http.Request) {
@@ -342,20 +443,28 @@ func (h *PlatformHandler) DeleteCreditInstitution(w http.ResponseWriter, r *http
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	err := h.svc.DeleteCreditInstitution(r.Context(), id)
-	writeResult(w, map[string]bool{"ok": true}, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	err := h.svc.DeleteCreditInstitution(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, map[string]bool{"ok": true}, err)
 }
 
 func (h *PlatformHandler) ListAreas(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
 	items, err := h.svc.ListAreas(
 		r.Context(),
-		r.URL.Query().Get("tenant_id"),
+		tenantID,
 		r.URL.Query().Get("status"),
 		r.URL.Query().Get("area_type_code"),
 		r.URL.Query().Get("parent_id"),
 		r.URL.Query().Get("q"),
 	)
-	writeResult(w, items, err)
+	writeResultWithRequest(w, r, items, err)
 }
 
 func (h *PlatformHandler) GetArea(w http.ResponseWriter, r *http.Request) {
@@ -364,8 +473,12 @@ func (h *PlatformHandler) GetArea(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	item, err := h.svc.GetAreaByID(r.Context(), id)
-	writeResult(w, item, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.GetAreaByID(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) CreateArea(w http.ResponseWriter, r *http.Request) {
@@ -378,8 +491,11 @@ func (h *PlatformHandler) CreateArea(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, area_type_code and status are required")
 		return
 	}
+	if !bindVerifiedTenant(w, r, &req.TenantID) {
+		return
+	}
 	item, err := h.svc.CreateArea(r.Context(), req)
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) UpdateArea(w http.ResponseWriter, r *http.Request) {
@@ -398,8 +514,11 @@ func (h *PlatformHandler) UpdateArea(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, area_type_code and status are required")
 		return
 	}
+	if !bindVerifiedTenant(w, r, &req.TenantID) {
+		return
+	}
 	item, err := h.svc.UpdateArea(r.Context(), req)
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) DeleteArea(w http.ResponseWriter, r *http.Request) {
@@ -408,13 +527,21 @@ func (h *PlatformHandler) DeleteArea(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	err := h.svc.DeleteArea(r.Context(), id)
-	writeResult(w, map[string]bool{"ok": true}, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	err := h.svc.DeleteArea(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, map[string]bool{"ok": true}, err)
 }
 
 func (h *PlatformHandler) ListFileTemplates(w http.ResponseWriter, r *http.Request) {
-	items, err := h.svc.ListFileTemplates(r.Context(), r.URL.Query().Get("tenant_id"))
-	writeResult(w, items, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListFileTemplates(r.Context(), tenantID)
+	writeResultWithRequest(w, r, items, err)
 }
 
 func (h *PlatformHandler) GetFileTemplate(w http.ResponseWriter, r *http.Request) {
@@ -423,8 +550,12 @@ func (h *PlatformHandler) GetFileTemplate(w http.ResponseWriter, r *http.Request
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	item, err := h.svc.GetFileTemplateByID(r.Context(), id)
-	writeResult(w, item, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.GetFileTemplateByID(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) CreateFileTemplate(w http.ResponseWriter, r *http.Request) {
@@ -438,16 +569,19 @@ func (h *PlatformHandler) CreateFileTemplate(w http.ResponseWriter, r *http.Requ
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, file_type and file_url are required")
 		return
 	}
+	if !bindVerifiedTenant(w, r, &req.TenantID) {
+		return
+	}
 	item, err := h.svc.CreateFileTemplate(r.Context(), req)
 	if err == nil {
 		publicID := extractPublicID(item.FileURL)
 		if publicID != "" {
-			if attachErr := ardamedia.NewClient().Attach(r.Context(), []string{publicID}, "file_template", item.Code, r); attachErr != nil {
+			if attachErr := h.media.Attach(r.Context(), []string{publicID}, "file_template", item.Code, r); attachErr != nil {
 				slog.Error("failed to attach template file on create", "public_id", publicID, "err", attachErr)
 			}
 		}
 	}
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) UpdateFileTemplate(w http.ResponseWriter, r *http.Request) {
@@ -467,16 +601,19 @@ func (h *PlatformHandler) UpdateFileTemplate(w http.ResponseWriter, r *http.Requ
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "code, name, file_type and file_url are required")
 		return
 	}
+	if !bindVerifiedTenant(w, r, &req.TenantID) {
+		return
+	}
 	item, err := h.svc.UpdateFileTemplate(r.Context(), req)
 	if err == nil {
 		publicID := extractPublicID(item.FileURL)
 		if publicID != "" {
-			if attachErr := ardamedia.NewClient().Attach(r.Context(), []string{publicID}, "file_template", item.Code, r); attachErr != nil {
+			if attachErr := h.media.Attach(r.Context(), []string{publicID}, "file_template", item.Code, r); attachErr != nil {
 				slog.Error("failed to attach template file on update", "public_id", publicID, "err", attachErr)
 			}
 		}
 	}
-	writeResult(w, item, err)
+	writeResultWithRequest(w, r, item, err)
 }
 
 func (h *PlatformHandler) DeleteFileTemplate(w http.ResponseWriter, r *http.Request) {
@@ -485,8 +622,12 @@ func (h *PlatformHandler) DeleteFileTemplate(w http.ResponseWriter, r *http.Requ
 		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
 		return
 	}
-	err := h.svc.DeleteFileTemplate(r.Context(), id)
-	writeResult(w, map[string]bool{"ok": true}, err)
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	err := h.svc.DeleteFileTemplate(r.Context(), tenantID, id)
+	writeResultWithRequest(w, r, map[string]bool{"ok": true}, err)
 }
 
 func extractPublicID(fileURL string) string {
@@ -501,23 +642,16 @@ func extractPublicID(fileURL string) string {
 	return ""
 }
 
-func writeResult(w http.ResponseWriter, data any, err error) {
-	writeResultWithRequest(w, nil, data, err)
-}
-
 func writeResultWithRequest(w http.ResponseWriter, r *http.Request, data any, err error) {
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
 	}
 	if r != nil {
-		ardahttp.WriteJSON(w, r, http.StatusOK, data)
+		ardahttp.WriteSuccess(w, r, http.StatusOK, data)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		http.Error(w, `{"error":"encode response"}`, http.StatusInternalServerError)
-	}
+	ardahttp.WriteSuccess(w, nil, http.StatusOK, data)
 }
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
@@ -528,14 +662,14 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 			status = http.StatusNotFound
 		}
 		if r != nil {
-			ardahttp.WriteAppError(w, r, status, appErr)
+			ardahttp.WriteProblem(w, r, status, appErr)
 			return
 		}
 		writeErrorCode(w, status, appErr.Code, appErr.Message)
 		return
 	}
 	if r != nil {
-		ardahttp.WriteErrorCode(w, r, http.StatusInternalServerError, ardaerrors.CodeInternal, err.Error())
+		ardahttp.WriteProblem(w, r, http.StatusInternalServerError, ardaerrors.New(ardaerrors.CodeInternal, err.Error()))
 		return
 	}
 	writeErrorCode(w, http.StatusInternalServerError, "common.error.internal", err.Error())
@@ -546,12 +680,5 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func writeErrorCode(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
-	})
+	ardahttp.WriteProblem(w, nil, status, ardaerrors.New(code, message))
 }

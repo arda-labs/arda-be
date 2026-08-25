@@ -38,7 +38,7 @@ func (h *CustomerHandler) Customers(w http.ResponseWriter, r *http.Request) {
 func (h *CustomerHandler) CustomerByID(w http.ResponseWriter, r *http.Request) {
 	id, action := customerPath(r.URL.Path)
 	if id == "" {
-		http.NotFound(w, r)
+		writeError(w, r, http.StatusNotFound, "customer not found")
 		return
 	}
 
@@ -56,7 +56,7 @@ func (h *CustomerHandler) CustomerByID(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && action == "relationships":
 		h.createRelationship(w, r, id)
 	default:
-		http.NotFound(w, r)
+		writeError(w, r, http.StatusNotFound, "route not found")
 	}
 }
 
@@ -66,6 +66,10 @@ func (h *CustomerHandler) CreateCustomer(w http.ResponseWriter, r *http.Request)
 
 func (h *CustomerHandler) listCustomers(w http.ResponseWriter, r *http.Request) {
 	scope := ScopeFromRequest(r)
+	if err := scope.Validate(); err != nil {
+		writeErrorCode(w, r, http.StatusForbidden, "scope.required", err.Error())
+		return
+	}
 	listQuery := ardahttp.ParseListQuery(r.URL.Query())
 	perPage := listQuery.PerPage
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
@@ -93,12 +97,16 @@ func (h *CustomerHandler) listCustomers(w http.ResponseWriter, r *http.Request) 
 		writeServiceError(w, r, fmt.Errorf("failed to query customers: %w", err))
 		return
 	}
-	ardahttp.WriteList(w, r, listQuery.Page, perPage, total, items)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listQuery.Page, perPage, total, items))
 }
 
 func (h *CustomerHandler) getCustomer(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
-	item, err := h.customerRepo.Get(r.Context(), id)
+	if err := scope.Validate(); err != nil {
+		writeErrorCode(w, r, http.StatusForbidden, "scope.required", err.Error())
+		return
+	}
+	item, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
 	if err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
 		return
@@ -112,6 +120,10 @@ func (h *CustomerHandler) getCustomer(w http.ResponseWriter, r *http.Request, id
 
 func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
 	scope := ScopeFromRequest(r)
+	if err := scope.Validate(); err != nil {
+		writeErrorCode(w, r, http.StatusForbidden, "scope.required", err.Error())
+		return
+	}
 	var req repository.CustomerUpsert
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "invalid request body")
@@ -119,12 +131,23 @@ func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 	if id, _ := customerPath(r.URL.Path); id != "" {
 		req.ID = id
+		existing, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
+		if err != nil {
+			writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
+			return
+		}
+		if existing == nil || !scope.AllowsOrg(existing.OrgID) || existing.TenantID != scope.TenantID {
+			writeError(w, r, http.StatusNotFound, "customer not found")
+			return
+		}
 	}
 	req.TenantID = scope.TenantID
+	req.OrgID = scope.ResolveOrgID()
+	req.OrgIDs = scope.OrgIDs
 	if req.ID == "" {
-		req.OrgID = scope.ResolveOrgID()
-		if req.OrgID == "" && len(scope.OrgIDs) > 0 {
-			req.OrgID = scope.OrgIDs[0]
+		if req.OrgID == "" {
+			writeErrorCode(w, r, http.StatusForbidden, "scope.required", "an active organization is required")
+			return
 		}
 	}
 	item, err := h.customerRepo.UpsertCustomer(r.Context(), req)
@@ -137,7 +160,11 @@ func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
 
 func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
-	item, err := h.customerRepo.Get(r.Context(), id)
+	if err := scope.Validate(); err != nil {
+		writeErrorCode(w, r, http.StatusForbidden, "scope.required", err.Error())
+		return
+	}
+	item, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
 	if err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
 		return
@@ -163,11 +190,11 @@ func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request,
 		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to submit workflow case: "+err.Error())
 		return
 	}
-	if err := h.customerRepo.AttachWorkflowCase(r.Context(), id, caseID); err != nil {
+	if err := h.customerRepo.AttachWorkflowCase(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id, caseID); err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to submit customer: %w", err))
 		return
 	}
-	updated, err := h.customerRepo.Get(r.Context(), id)
+	updated, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
 	if err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
 		return
@@ -177,7 +204,11 @@ func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request,
 
 func (h *CustomerHandler) cancelCustomer(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
-	item, err := h.customerRepo.Get(r.Context(), id)
+	if err := scope.Validate(); err != nil {
+		writeErrorCode(w, r, http.StatusForbidden, "scope.required", err.Error())
+		return
+	}
+	item, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
 	if err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
 		return
@@ -186,7 +217,7 @@ func (h *CustomerHandler) cancelCustomer(w http.ResponseWriter, r *http.Request,
 		writeError(w, r, http.StatusNotFound, "customer not found")
 		return
 	}
-	if err := h.customerRepo.CancelDraft(r.Context(), id); err != nil {
+	if err := h.customerRepo.CancelDraft(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id); err != nil {
 		if strings.Contains(err.Error(), "cannot be cancelled") {
 			writeError(w, r, http.StatusConflict, err.Error())
 			return
@@ -194,7 +225,7 @@ func (h *CustomerHandler) cancelCustomer(w http.ResponseWriter, r *http.Request,
 		writeServiceError(w, r, fmt.Errorf("failed to cancel customer: %w", err))
 		return
 	}
-	updated, err := h.customerRepo.Get(r.Context(), id)
+	updated, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
 	if err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
 		return
@@ -224,6 +255,7 @@ func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.C
 		DomainService:     "crm-service",
 		Priority:          "NORMAL",
 		CreatedBy:         actor,
+		IdempotencyKey:    r.Header.Get("Idempotency-Key"),
 	})
 	if err != nil {
 		return "", err
@@ -232,9 +264,11 @@ func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.C
 		return "", fmt.Errorf("workflow case id is empty")
 	}
 	_, err = h.workflowClient.SubmitCase(r.Context(), createdCase.GetId(), actor, map[string]any{
-		"customerId": item.ID,
-		"riskLevel":  item.RiskLevel,
-	})
+		"customerId":  item.ID,
+		"riskLevel":   item.RiskLevel,
+		"orgId":       item.OrgID,
+		"actorUserId": actor,
+	}, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		return "", err
 	}
@@ -242,7 +276,21 @@ func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.C
 }
 
 func (h *CustomerHandler) listRelationships(w http.ResponseWriter, r *http.Request, id string) {
-	items, err := h.customerRepo.ListRelationships(r.Context(), id)
+	scope := ScopeFromRequest(r)
+	if scopeErr := scope.Validate(); scopeErr != nil {
+		writeErrorCode(w, r, http.StatusForbidden, "scope.required", scopeErr.Error())
+		return
+	}
+	item, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
+	if err != nil {
+		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
+		return
+	}
+	if item == nil || item.TenantID != scope.TenantID || !scope.AllowsOrg(item.OrgID) {
+		writeError(w, r, http.StatusNotFound, "customer not found")
+		return
+	}
+	items, err := h.customerRepo.ListRelationshipsScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
 	if err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to query relationships: %w", err))
 		return
@@ -251,17 +299,31 @@ func (h *CustomerHandler) listRelationships(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *CustomerHandler) createRelationship(w http.ResponseWriter, r *http.Request, id string) {
+	scope := ScopeFromRequest(r)
+	if scopeErr := scope.Validate(); scopeErr != nil {
+		writeErrorCode(w, r, http.StatusForbidden, "scope.required", scopeErr.Error())
+		return
+	}
+	item, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
+	if err != nil {
+		writeServiceError(w, r, fmt.Errorf("failed to query customer: %w", err))
+		return
+	}
+	if item == nil || item.TenantID != scope.TenantID || !scope.AllowsOrg(item.OrgID) {
+		writeError(w, r, http.StatusNotFound, "customer not found")
+		return
+	}
 	var req repository.CustomerRelationshipCreate
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "invalid request body")
 		return
 	}
-	item, err := h.customerRepo.CreateRelationship(r.Context(), id, req)
+	relationship, err := h.customerRepo.CreateRelationshipScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id, req)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusCreated, item)
+	writeJSON(w, r, http.StatusCreated, relationship)
 }
 
 func customerPath(path string) (string, string) {

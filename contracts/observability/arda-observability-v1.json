@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "status": "proposed",
+  "correlation": {
+    "request_id_header": "X-Request-Id",
+    "trace_parent_header": "traceparent",
+    "trace_id_header": "X-Trace-Id",
+    "event_fields": ["request_id", "trace_id", "traceparent", "event_id", "tenant_id", "actor"]
+  },
+  "metrics": [
+    {
+      "name": "arda_http_requests_total",
+      "type": "counter",
+      "labels": ["service"],
+      "purpose": "total HTTP requests"
+    },
+    {
+      "name": "arda_http_responses_total",
+      "type": "counter",
+      "labels": ["service", "class"],
+      "purpose": "HTTP response status classes"
+    },
+    {
+      "name": "arda_http_request_duration_seconds",
+      "type": "histogram",
+      "labels": ["service"],
+      "purpose": "aggregate HTTP duration and latency budget evidence"
+    }
+  ],
+  "slo_classes": [
+    { "id": "public_read", "availability": "99.9%", "latency": "p95", "status": "proposed" },
+    { "id": "admin_command", "availability": "99.9%", "latency": "p95", "status": "proposed" },
+    { "id": "internal_grpc", "availability": "99.95%", "latency": "p95", "status": "proposed" },
+    { "id": "event_delivery", "availability": "99.9%", "latency": "terminal_outcome", "status": "proposed" },
+    { "id": "mfe_navigation", "availability": "99.9%", "latency": "route_load", "status": "proposed" }
+  ],
+  "runtime_requirements": [
+    "Prometheus scrape for every deployed service",
+    "browser-to-gateway trace correlation sample",
+    "dependency dashboards for PostgreSQL, Redis, gRPC, NATS, Zeebe and object storage",
+    "approved SLO targets and burn-rate alerts"
+  ]
+}

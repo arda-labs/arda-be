@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -163,6 +162,33 @@ func (r *UserRepository) UpdateUser(ctx context.Context, u *domain.User) error {
 	return nil
 }
 
+// UpdateUserScoped updates an admin-managed user only when the row still
+// belongs to the tenant selected by the caller. The tenant field is not a
+// substitute for the target scope; both are checked in the predicate.
+func (r *UserRepository) UpdateUserScoped(ctx context.Context, u *domain.User, tenantID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE iam_users SET
+			username = $1, email = $2, display_name = $3,
+			nickname = $4, status = $5, tenant_id = $6,
+			department = $7, position = $8, employee_id = $9,
+			approval_level = $10, daily_limit = $11, bio = $12,
+			first_name = $13, last_name = $14,
+			phone_number = $15, birthdate = $16, gender = $17, address = $18, country = $19,
+			cover_file_id = $20, cover_image_url = $21,
+			kratos_identity_id = NULLIF($22, ''),
+			auth_version = auth_version + 1,
+			updated_at = now()
+		WHERE id = $23 AND tenant_id = $24
+	`, u.Username, u.Email, u.DisplayName, u.Nickname, u.Status, u.TenantID,
+		u.Department, u.Position, u.EmployeeID, u.ApprovalLevel, u.DailyLimit, u.Bio,
+		u.FirstName, u.LastName, u.PhoneNumber, u.Birthdate, u.Gender, u.Address, u.Country,
+		u.CoverFileID, u.CoverImageURL, u.KratosIdentityID, u.ID, tenantID)
+	if err != nil {
+		return fmt.Errorf("update scoped user: %w", err)
+	}
+	return nil
+}
+
 func (r *UserRepository) UpdateUserAvatar(ctx context.Context, userID, avatarFileID, pictureURL string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE iam_users
@@ -289,6 +315,14 @@ func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *UserRepository) DeleteUserScoped(ctx context.Context, id, tenantID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM iam_users WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("delete scoped user: %w", err)
+	}
+	return nil
+}
+
 // AssignRole assigns a role to a user.
 func (r *UserRepository) AssignRole(ctx context.Context, userID, roleID string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -297,16 +331,26 @@ func (r *UserRepository) AssignRole(ctx context.Context, userID, roleID string) 
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO iam_user_roles (user_id, role_id)
-		VALUES ($1, $2)
+		SELECT u.id, ro.id
+		FROM iam_users u
+		JOIN iam_roles ro ON ro.id = $2
+		WHERE u.id = $1 AND ro.tenant_id = u.tenant_id
 		ON CONFLICT DO NOTHING
-	`, userID, roleID); err != nil {
+	`, userID, roleID)
+	if err != nil {
 		return err
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+		return fmt.Errorf("user or role is outside the target tenant")
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO iam_role_assignments (principal_type, principal_id, role_id, scope_type)
-		VALUES ('USER', $1, $2, 'global')
+		SELECT 'USER', u.id, ro.id, 'global'
+		FROM iam_users u
+		JOIN iam_roles ro ON ro.id = $2
+		WHERE u.id = $1 AND ro.tenant_id = u.tenant_id
 		ON CONFLICT DO NOTHING
 	`, userID, roleID); err != nil {
 		return err
@@ -326,15 +370,23 @@ func (r *UserRepository) UnassignRole(ctx context.Context, userID, roleID string
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM iam_user_roles WHERE user_id = $1 AND role_id = $2
+		DELETE FROM iam_user_roles ur
+		USING iam_users u, iam_roles ro
+		WHERE ur.user_id = u.id AND ur.role_id = ro.id
+		  AND u.id = $1 AND ro.id = $2
+		  AND ro.tenant_id = u.tenant_id
 	`, userID, roleID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM iam_role_assignments
-		WHERE principal_type = 'USER'
-		  AND principal_id = $1
-		  AND role_id = $2
+		DELETE FROM iam_role_assignments ra
+		USING iam_users u, iam_roles ro
+		WHERE ra.principal_type = 'USER'
+		  AND ra.principal_id = u.id
+		  AND ra.role_id = ro.id
+		  AND u.id = $1
+		  AND ro.id = $2
+		  AND ro.tenant_id = u.tenant_id
 		  AND scope_type = 'global'
 		  AND scope_id IS NULL
 	`, userID, roleID); err != nil {
@@ -610,6 +662,25 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 		FROM iam_users
 		WHERE id = $1
 	`, id)
+
+	return r.scanUser(row)
+}
+
+// GetUserByIDScoped is the admin target lookup. Self-service callers should
+// use GetUserByID with the authenticated actor identity instead.
+func (r *UserRepository) GetUserByIDScoped(ctx context.Context, id, tenantID string) (*domain.User, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+		       COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
+		       COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
+		       COALESCE(source,'internal'), status, tenant_id,
+		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
+		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       created_at, updated_at
+		FROM iam_users
+		WHERE id = $1 AND tenant_id = $2
+	`, id, tenantID)
 
 	return r.scanUser(row)
 }
@@ -903,6 +974,31 @@ func (r *UserRepository) GetUserRoles(ctx context.Context, userID string) ([]dom
 	return roles, rows.Err()
 }
 
+func (r *UserRepository) GetUserRolesScoped(ctx context.Context, userID, tenantID string) ([]domain.Role, error) {
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT DISTINCT r.id, r.code, r.name, r.status, COALESCE(r.tenant_id, ''), r.created_at, r.updated_at
+		FROM iam_roles r
+		WHERE r.id IN (%s)
+		  AND r.tenant_id = $2
+		  AND EXISTS (SELECT 1 FROM iam_users u WHERE u.id = $1 AND u.tenant_id = $2)
+		ORDER BY r.code
+	`, r.activeRoleIDsForUserSQL()), userID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get scoped user roles: %w", err)
+	}
+	defer rows.Close()
+
+	var roles []domain.Role
+	for rows.Next() {
+		var role domain.Role
+		if err := rows.Scan(&role.ID, &role.Code, &role.Name, &role.Status, &role.TenantID, &role.CreatedAt, &role.UpdatedAt); err != nil {
+			return nil, err
+		}
+		roles = append(roles, role)
+	}
+	return roles, rows.Err()
+}
+
 func (r *UserRepository) GetUserRoleCodesByUserIDs(ctx context.Context, userIDs []string) (map[string][]string, error) {
 	result := make(map[string][]string, len(userIDs))
 	if len(userIDs) == 0 {
@@ -1026,28 +1122,6 @@ func (r *UserRepository) GetUserOrganizations(ctx context.Context, userID string
 		orgs = append(orgs, code)
 	}
 	return orgs, rows.Err()
-}
-
-// InsertAuditLog writes an audit event to the database.
-func (r *UserRepository) InsertAuditLog(ctx context.Context, e *domain.AuthEvent) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO iam_audit_logs (event_type, subject, action, resource, result, details, client_ip, user_agent, request_id, service_name)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, e.EventType, e.Subject, e.Action, e.Resource, e.Result,
-		marshalDetails(e.Details),
-		e.ClientIP, e.UserAgent, e.RequestID, e.ServiceName)
-	if err != nil {
-		return fmt.Errorf("insert audit log: %w", err)
-	}
-	return nil
-}
-
-func marshalDetails(d map[string]any) any {
-	if d == nil {
-		return nil
-	}
-	b, _ := json.Marshal(d)
-	return string(b)
 }
 
 func (r *UserRepository) scanUser(row *sql.Row) (*domain.User, error) {

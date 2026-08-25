@@ -19,15 +19,25 @@ func NewPlatformRepository(db *sql.DB) *PlatformRepository {
 	return &PlatformRepository{db: db}
 }
 
+func requireTenantID(tenantID string) error {
+	if strings.TrimSpace(tenantID) == "" {
+		return fmt.Errorf("tenant scope is required")
+	}
+	return nil
+}
+
 func NewID(prefix string) string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return prefix + "_fallback"
+		panic("secure platform id generation failed: " + err.Error())
 	}
 	return prefix + "_" + hex.EncodeToString(b[:])
 }
 
 func (r *PlatformRepository) ListParameters(ctx context.Context, tenantID, scopeType, scopeID string) ([]domain.Parameter, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return nil, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, key, value, value_type, scope_type, scope_id, description, is_secret, created_at, updated_at
 		FROM plt_system_parameters
@@ -83,6 +93,9 @@ func (r *PlatformRepository) UpsertParameter(ctx context.Context, item domain.Pa
 }
 
 func (r *PlatformRepository) GetParameter(ctx context.Context, tenantID, key, scopeType, scopeID string) (domain.Parameter, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return domain.Parameter{}, err
+	}
 	var item domain.Parameter
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, key, value, value_type, scope_type, scope_id, description, is_secret, created_at, updated_at
@@ -103,6 +116,9 @@ func (r *PlatformRepository) GetParameter(ctx context.Context, tenantID, key, sc
 }
 
 func (r *PlatformRepository) ListLookupCategories(ctx context.Context, tenantID, scopeType, scopeID string) ([]domain.LookupCategory, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return nil, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, code, name, scope_type, scope_id, is_system, description, created_at, updated_at
 		FROM plt_lookup_categories
@@ -144,13 +160,16 @@ func (r *PlatformRepository) UpsertLookupCategory(ctx context.Context, item doma
 	return item, err
 }
 
-func (r *PlatformRepository) ListLookupValues(ctx context.Context, categoryCode string) ([]domain.LookupValue, error) {
+func (r *PlatformRepository) ListLookupValues(ctx context.Context, tenantID, categoryCode string) ([]domain.LookupValue, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return nil, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT v.id, v.category_id, v.code, v.name, v.sort_order, v.is_active, v.metadata::text, v.created_at, v.updated_at
 		FROM plt_lookup_values v
 		JOIN plt_lookup_categories c ON c.id = v.category_id
-		WHERE c.code = $1
-		ORDER BY v.sort_order, v.name`, categoryCode)
+		WHERE c.tenant_id = $1 AND c.code = $2
+		ORDER BY v.sort_order, v.name`, tenantID, categoryCode)
 	if err != nil {
 		return nil, err
 	}
@@ -167,14 +186,17 @@ func (r *PlatformRepository) ListLookupValues(ctx context.Context, categoryCode 
 	return items, rows.Err()
 }
 
-func (r *PlatformRepository) CreateLookupValue(ctx context.Context, categoryCode string, item domain.LookupValue) (domain.LookupValue, error) {
+func (r *PlatformRepository) CreateLookupValue(ctx context.Context, tenantID, categoryCode string, item domain.LookupValue) (domain.LookupValue, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return domain.LookupValue{}, err
+	}
 	if item.ID == "" {
 		item.ID = NewID("lookup_val")
 	}
 	if !item.IsActive {
 		item.IsActive = true
 	}
-	err := r.db.QueryRowContext(ctx, `SELECT id FROM plt_lookup_categories WHERE code = $1 LIMIT 1`, categoryCode).Scan(&item.CategoryID)
+	err := r.db.QueryRowContext(ctx, `SELECT id FROM plt_lookup_categories WHERE tenant_id = $1 AND code = $2 LIMIT 1`, tenantID, categoryCode).Scan(&item.CategoryID)
 	if err != nil {
 		return domain.LookupValue{}, fmt.Errorf("lookup category not found: %w", err)
 	}
@@ -187,14 +209,17 @@ func (r *PlatformRepository) CreateLookupValue(ctx context.Context, categoryCode
 	return item, err
 }
 
-func (r *PlatformRepository) UpsertLookupValue(ctx context.Context, categoryCode string, item domain.LookupValue) (domain.LookupValue, error) {
+func (r *PlatformRepository) UpsertLookupValue(ctx context.Context, tenantID, categoryCode string, item domain.LookupValue) (domain.LookupValue, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return domain.LookupValue{}, err
+	}
 	if item.ID == "" {
 		item.ID = NewID("lookup_val")
 	}
 	if !item.IsActive {
 		item.IsActive = true
 	}
-	err := r.db.QueryRowContext(ctx, `SELECT id FROM plt_lookup_categories WHERE code = $1 LIMIT 1`, categoryCode).Scan(&item.CategoryID)
+	err := r.db.QueryRowContext(ctx, `SELECT id FROM plt_lookup_categories WHERE tenant_id = $1 AND code = $2 LIMIT 1`, tenantID, categoryCode).Scan(&item.CategoryID)
 	if err != nil {
 		return domain.LookupValue{}, fmt.Errorf("lookup category not found: %w", err)
 	}
@@ -211,6 +236,9 @@ func (r *PlatformRepository) UpsertLookupValue(ctx context.Context, categoryCode
 }
 
 func (r *PlatformRepository) ListOrganizations(ctx context.Context, params ListOrganizationsParams) ([]domain.Organization, int, error) {
+	if err := requireTenantID(params.TenantID); err != nil {
+		return nil, 0, err
+	}
 	where := []string{"($1 = '' OR o.tenant_id = $1)"}
 	args := []any{params.TenantID}
 	argN := 2
@@ -303,11 +331,14 @@ func pickOrganizationSort(field string) string {
 }
 
 func (r *PlatformRepository) CreateOrganization(ctx context.Context, item domain.Organization) (domain.Organization, error) {
+	if err := requireTenantID(item.TenantID); err != nil {
+		return domain.Organization{}, err
+	}
 	if item.ID == "" {
 		item.ID = NewID("org")
 	}
 	if item.TenantID == "" {
-		item.TenantID = "default"
+		return domain.Organization{}, fmt.Errorf("tenant id is required")
 	}
 	if !item.IsActive {
 		item.IsActive = true
@@ -372,48 +403,75 @@ func (r *PlatformRepository) UpsertGeoAdminUnit(ctx context.Context, item domain
 	return item, err
 }
 
-func (r *PlatformRepository) GetOrganizationByID(ctx context.Context, id string) (domain.Organization, error) {
+func (r *PlatformRepository) GetOrganizationByID(ctx context.Context, tenantID, id string) (domain.Organization, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return domain.Organization{}, err
+	}
 	var item domain.Organization
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, parent_id, code, name, admin_unit_code, address, is_active, created_at, updated_at
 		FROM plt_organizations
-		WHERE id = $1 LIMIT 1`, id).
+		WHERE tenant_id = $1 AND id = $2 LIMIT 1`, tenantID, id).
 		Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 
 func (r *PlatformRepository) UpdateOrganization(ctx context.Context, item domain.Organization) (domain.Organization, error) {
+	if err := requireTenantID(item.TenantID); err != nil {
+		return domain.Organization{}, err
+	}
+	if item.TenantID == "" {
+		return domain.Organization{}, fmt.Errorf("tenant id is required")
+	}
 	err := r.db.QueryRowContext(ctx, `
 		UPDATE plt_organizations
-		SET parent_id = $2, code = $3, name = $4, admin_unit_code = $5, address = $6, is_active = $7, updated_at = now()
-		WHERE id = $1
+		SET parent_id = $3, code = $4, name = $5, admin_unit_code = $6, address = $7, is_active = $8, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2
 		RETURNING id, tenant_id, parent_id, code, name, admin_unit_code, address, is_active, created_at, updated_at`,
-		item.ID, item.ParentID, item.Code, item.Name, item.AdminUnitCode, item.Address, item.IsActive,
+		item.TenantID, item.ID, item.ParentID, item.Code, item.Name, item.AdminUnitCode, item.Address, item.IsActive,
 	).Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Name, &item.AdminUnitCode, &item.Address, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 
-func (r *PlatformRepository) DeleteOrganization(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE plt_organizations SET is_active = false, updated_at = now() WHERE id = $1`, id)
+func (r *PlatformRepository) DeleteOrganization(ctx context.Context, tenantID, id string) error {
+	if err := requireTenantID(tenantID); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE plt_organizations SET is_active = false, updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	return err
 }
 
-func (r *PlatformRepository) DeleteParameter(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_system_parameters WHERE id = $1`, id)
+func (r *PlatformRepository) DeleteParameter(ctx context.Context, tenantID, id string) error {
+	if err := requireTenantID(tenantID); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_system_parameters WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	return err
 }
 
-func (r *PlatformRepository) DeleteLookupCategory(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_lookup_categories WHERE id = $1`, id)
+func (r *PlatformRepository) DeleteLookupCategory(ctx context.Context, tenantID, id string) error {
+	if err := requireTenantID(tenantID); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_lookup_categories WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	return err
 }
 
-func (r *PlatformRepository) DeleteLookupValue(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_lookup_values WHERE id = $1`, id)
+func (r *PlatformRepository) DeleteLookupValue(ctx context.Context, tenantID, id string) error {
+	if err := requireTenantID(tenantID); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM plt_lookup_values v
+		USING plt_lookup_categories c
+		WHERE v.id = $2 AND v.category_id = c.id AND c.tenant_id = $1`, tenantID, id)
 	return err
 }
 
 func (r *PlatformRepository) ListCreditInstitutions(ctx context.Context, tenantID, status, query string) ([]domain.CreditInstitution, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return nil, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, code, name, address, status, effective_from::text, short_name, phone, email,
 			license_no, license_date::text, tax_code, website, note, created_at, updated_at
@@ -463,14 +521,17 @@ func (r *PlatformRepository) ListCreditInstitutions(ctx context.Context, tenantI
 	return items, rows.Err()
 }
 
-func (r *PlatformRepository) GetCreditInstitutionByID(ctx context.Context, id string) (domain.CreditInstitution, error) {
+func (r *PlatformRepository) GetCreditInstitutionByID(ctx context.Context, tenantID, id string) (domain.CreditInstitution, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return domain.CreditInstitution{}, err
+	}
 	var item domain.CreditInstitution
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, code, name, address, status, effective_from::text, short_name, phone, email,
 			license_no, license_date::text, tax_code, website, note, created_at, updated_at
 		FROM plt_credit_institutions
-		WHERE id = $1
-		LIMIT 1`, id).
+		WHERE tenant_id = $1 AND id = $2
+		LIMIT 1`, tenantID, id).
 		Scan(
 			&item.ID,
 			&item.TenantID,
@@ -494,11 +555,14 @@ func (r *PlatformRepository) GetCreditInstitutionByID(ctx context.Context, id st
 }
 
 func (r *PlatformRepository) CreateCreditInstitution(ctx context.Context, item domain.CreditInstitution) (domain.CreditInstitution, error) {
+	if err := requireTenantID(item.TenantID); err != nil {
+		return domain.CreditInstitution{}, err
+	}
 	if item.ID == "" {
 		item.ID = NewID("ci")
 	}
 	if item.TenantID == "" {
-		item.TenantID = "default"
+		return domain.CreditInstitution{}, fmt.Errorf("tenant id is required")
 	}
 	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO plt_credit_institutions (
@@ -533,14 +597,20 @@ func (r *PlatformRepository) CreateCreditInstitution(ctx context.Context, item d
 }
 
 func (r *PlatformRepository) UpdateCreditInstitution(ctx context.Context, item domain.CreditInstitution) (domain.CreditInstitution, error) {
+	if err := requireTenantID(item.TenantID); err != nil {
+		return domain.CreditInstitution{}, err
+	}
+	if item.TenantID == "" {
+		return domain.CreditInstitution{}, fmt.Errorf("tenant id is required")
+	}
 	err := r.db.QueryRowContext(ctx, `
 		UPDATE plt_credit_institutions
-		SET code = $2, name = $3, address = $4, status = $5, effective_from = $6::date, short_name = $7, phone = $8, email = $9,
-			license_no = $10, license_date = $11::date, tax_code = $12, website = $13, note = $14, updated_at = now()
-		WHERE id = $1
+		SET code = $3, name = $4, address = $5, status = $6, effective_from = $7::date, short_name = $8, phone = $9, email = $10,
+			license_no = $11, license_date = $12::date, tax_code = $13, website = $14, note = $15, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2
 		RETURNING id, tenant_id, code, name, address, status, effective_from::text, short_name, phone, email,
 			license_no, license_date::text, tax_code, website, note, created_at, updated_at`,
-		item.ID, item.Code, item.Name, item.Address, item.Status, item.EffectiveFrom, item.ShortName, item.Phone, item.Email,
+		item.TenantID, item.ID, item.Code, item.Name, item.Address, item.Status, item.EffectiveFrom, item.ShortName, item.Phone, item.Email,
 		item.LicenseNo, item.LicenseDate, item.TaxCode, item.Website, item.Note,
 	).Scan(
 		&item.ID,
@@ -564,12 +634,18 @@ func (r *PlatformRepository) UpdateCreditInstitution(ctx context.Context, item d
 	return item, err
 }
 
-func (r *PlatformRepository) DeleteCreditInstitution(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_credit_institutions WHERE id = $1`, id)
+func (r *PlatformRepository) DeleteCreditInstitution(ctx context.Context, tenantID, id string) error {
+	if err := requireTenantID(tenantID); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_credit_institutions WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	return err
 }
 
 func (r *PlatformRepository) ListAreas(ctx context.Context, tenantID, status, areaTypeCode, parentID, query string) ([]domain.Area, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return nil, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, parent_id, code, name, area_type_code, admin_unit_code, description, status,
 			effective_from::text, effective_to::text, created_at, updated_at
@@ -615,14 +691,17 @@ func (r *PlatformRepository) ListAreas(ctx context.Context, tenantID, status, ar
 	return items, rows.Err()
 }
 
-func (r *PlatformRepository) GetAreaByID(ctx context.Context, id string) (domain.Area, error) {
+func (r *PlatformRepository) GetAreaByID(ctx context.Context, tenantID, id string) (domain.Area, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return domain.Area{}, err
+	}
 	var item domain.Area
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, parent_id, code, name, area_type_code, admin_unit_code, description, status,
 			effective_from::text, effective_to::text, created_at, updated_at
 		FROM plt_areas
-		WHERE id = $1
-		LIMIT 1`, id).
+		WHERE tenant_id = $1 AND id = $2
+		LIMIT 1`, tenantID, id).
 		Scan(
 			&item.ID,
 			&item.TenantID,
@@ -642,11 +721,14 @@ func (r *PlatformRepository) GetAreaByID(ctx context.Context, id string) (domain
 }
 
 func (r *PlatformRepository) CreateArea(ctx context.Context, item domain.Area) (domain.Area, error) {
+	if err := requireTenantID(item.TenantID); err != nil {
+		return domain.Area{}, err
+	}
 	if item.ID == "" {
 		item.ID = NewID("area")
 	}
 	if item.TenantID == "" {
-		item.TenantID = "default"
+		return domain.Area{}, fmt.Errorf("tenant id is required")
 	}
 	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO plt_areas (id, tenant_id, parent_id, code, name, area_type_code, admin_unit_code, description, status, effective_from, effective_to)
@@ -673,14 +755,20 @@ func (r *PlatformRepository) CreateArea(ctx context.Context, item domain.Area) (
 }
 
 func (r *PlatformRepository) UpdateArea(ctx context.Context, item domain.Area) (domain.Area, error) {
+	if err := requireTenantID(item.TenantID); err != nil {
+		return domain.Area{}, err
+	}
+	if item.TenantID == "" {
+		return domain.Area{}, fmt.Errorf("tenant id is required")
+	}
 	err := r.db.QueryRowContext(ctx, `
 		UPDATE plt_areas
-		SET parent_id = $2, code = $3, name = $4, area_type_code = $5, admin_unit_code = $6, description = $7,
-			status = $8, effective_from = $9::date, effective_to = $10::date, updated_at = now()
-		WHERE id = $1
+		SET parent_id = $3, code = $4, name = $5, area_type_code = $6, admin_unit_code = $7, description = $8,
+			status = $9, effective_from = $10::date, effective_to = $11::date, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2
 		RETURNING id, tenant_id, parent_id, code, name, area_type_code, admin_unit_code, description, status,
 			effective_from::text, effective_to::text, created_at, updated_at`,
-		item.ID, item.ParentID, item.Code, item.Name, item.AreaTypeCode, item.AdminUnitCode, item.Description, item.Status, item.EffectiveFrom, item.EffectiveTo,
+		item.TenantID, item.ID, item.ParentID, item.Code, item.Name, item.AreaTypeCode, item.AdminUnitCode, item.Description, item.Status, item.EffectiveFrom, item.EffectiveTo,
 	).Scan(
 		&item.ID,
 		&item.TenantID,
@@ -699,12 +787,18 @@ func (r *PlatformRepository) UpdateArea(ctx context.Context, item domain.Area) (
 	return item, err
 }
 
-func (r *PlatformRepository) DeleteArea(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE plt_areas SET status = 'inactive', updated_at = now() WHERE id = $1`, id)
+func (r *PlatformRepository) DeleteArea(ctx context.Context, tenantID, id string) error {
+	if err := requireTenantID(tenantID); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE plt_areas SET status = 'inactive', updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	return err
 }
 
 func (r *PlatformRepository) ListFileTemplates(ctx context.Context, tenantID string) ([]domain.FileTemplate, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return nil, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, code, name, description, file_type, file_url, mapping_config::text, is_active, created_at, updated_at
 		FROM plt_file_templates
@@ -726,22 +820,28 @@ func (r *PlatformRepository) ListFileTemplates(ctx context.Context, tenantID str
 	return items, rows.Err()
 }
 
-func (r *PlatformRepository) GetFileTemplateByID(ctx context.Context, id string) (domain.FileTemplate, error) {
+func (r *PlatformRepository) GetFileTemplateByID(ctx context.Context, tenantID, id string) (domain.FileTemplate, error) {
+	if err := requireTenantID(tenantID); err != nil {
+		return domain.FileTemplate{}, err
+	}
 	var item domain.FileTemplate
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, code, name, description, file_type, file_url, mapping_config::text, is_active, created_at, updated_at
 		FROM plt_file_templates
-		WHERE id = $1 LIMIT 1`, id).
+		WHERE tenant_id = $1 AND id = $2 LIMIT 1`, tenantID, id).
 		Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Description, &item.FileType, &item.FileURL, &item.MappingConfig, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 
 func (r *PlatformRepository) CreateFileTemplate(ctx context.Context, item domain.FileTemplate) (domain.FileTemplate, error) {
+	if err := requireTenantID(item.TenantID); err != nil {
+		return domain.FileTemplate{}, err
+	}
 	if item.ID == "" {
 		item.ID = NewID("tmpl")
 	}
 	if item.TenantID == "" {
-		item.TenantID = "default"
+		return domain.FileTemplate{}, fmt.Errorf("tenant id is required")
 	}
 	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO plt_file_templates (id, tenant_id, code, name, description, file_type, file_url, mapping_config, is_active)
@@ -753,17 +853,26 @@ func (r *PlatformRepository) CreateFileTemplate(ctx context.Context, item domain
 }
 
 func (r *PlatformRepository) UpdateFileTemplate(ctx context.Context, item domain.FileTemplate) (domain.FileTemplate, error) {
+	if err := requireTenantID(item.TenantID); err != nil {
+		return domain.FileTemplate{}, err
+	}
+	if item.TenantID == "" {
+		return domain.FileTemplate{}, fmt.Errorf("tenant id is required")
+	}
 	err := r.db.QueryRowContext(ctx, `
 		UPDATE plt_file_templates
-		SET code = $2, name = $3, description = $4, file_type = $5, file_url = $6, mapping_config = $7, is_active = $8, updated_at = now()
-		WHERE id = $1
+		SET code = $3, name = $4, description = $5, file_type = $6, file_url = $7, mapping_config = $8, is_active = $9, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2
 		RETURNING id, tenant_id, code, name, description, file_type, file_url, mapping_config::text, is_active, created_at, updated_at`,
-		item.ID, item.Code, item.Name, item.Description, item.FileType, item.FileURL, item.MappingConfig, item.IsActive,
+		item.TenantID, item.ID, item.Code, item.Name, item.Description, item.FileType, item.FileURL, item.MappingConfig, item.IsActive,
 	).Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Description, &item.FileType, &item.FileURL, &item.MappingConfig, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 
-func (r *PlatformRepository) DeleteFileTemplate(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_file_templates WHERE id = $1`, id)
+func (r *PlatformRepository) DeleteFileTemplate(ctx context.Context, tenantID, id string) error {
+	if err := requireTenantID(tenantID); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_file_templates WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	return err
 }

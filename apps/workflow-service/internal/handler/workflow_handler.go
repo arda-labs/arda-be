@@ -86,8 +86,7 @@ func (h *WorkflowHandler) Deploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, r, http.StatusOK, map[string]any{
 		"processDefinitionKey": key,
 		"filename":             header.Filename,
 		"status":               "deployed",
@@ -140,8 +139,7 @@ func (h *WorkflowHandler) Start(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, r, http.StatusOK, map[string]any{
 		"processInstanceKey": key,
 		"businessKey":        req.BusinessKey,
 		"status":             "started",
@@ -178,8 +176,7 @@ func (h *WorkflowHandler) PublishMessage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, r, http.StatusOK, map[string]any{
 		"status": "published",
 	})
 }
@@ -209,8 +206,7 @@ func (h *WorkflowHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, r, http.StatusOK, map[string]any{
 		"processInstanceKey": instanceKey,
 		"status":             "cancelled",
 	})
@@ -240,8 +236,7 @@ func (h *WorkflowHandler) GetMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(mapping)
+	writeJSON(w, r, http.StatusOK, mapping)
 }
 
 func (h *WorkflowHandler) CaseTypes(w http.ResponseWriter, r *http.Request) {
@@ -269,7 +264,7 @@ func (h *WorkflowHandler) CaseTypes(w http.ResponseWriter, r *http.Request) {
 func (h *WorkflowHandler) CaseTypeByID(w http.ResponseWriter, r *http.Request) {
 	caseType, action := caseTypePath(r.URL.Path)
 	if caseType == "" {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if r.Method != http.MethodPut || (action != "" && action != "process-config") {
@@ -326,7 +321,7 @@ func (h *WorkflowHandler) SLAPolicies(w http.ResponseWriter, r *http.Request) {
 func (h *WorkflowHandler) SLAPolicyByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/workflow/sla-policies/"), "/")
 	if id == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if r.Method != http.MethodPut {
@@ -363,7 +358,7 @@ func (h *WorkflowHandler) DescriptionTemplates(w http.ResponseWriter, r *http.Re
 func (h *WorkflowHandler) DescriptionTemplateByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/workflow/description-templates/"), "/")
 	if id == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if r.Method != http.MethodPut {
@@ -418,7 +413,7 @@ func (h *WorkflowHandler) ProcessDefinitions(w http.ResponseWriter, r *http.Requ
 func (h *WorkflowHandler) ProcessDefinitionByID(w http.ResponseWriter, r *http.Request) {
 	id, action := processDefinitionPath(r.URL.Path)
 	if id == "" {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 
@@ -450,7 +445,7 @@ func (h *WorkflowHandler) ProcessDefinitionByID(w http.ResponseWriter, r *http.R
 	case r.Method == http.MethodPost && action == "deploy":
 		h.deployProcessDefinition(w, r, id)
 	default:
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 	}
 }
 
@@ -481,7 +476,7 @@ func (h *WorkflowHandler) deployProcessDefinition(w http.ResponseWriter, r *http
 func (h *WorkflowHandler) ProcessRoleByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/workflow/roles/"), "/")
 	if id == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if r.Method != http.MethodPut {
@@ -518,7 +513,7 @@ func (h *WorkflowHandler) RoleCatalog(w http.ResponseWriter, r *http.Request) {
 func (h *WorkflowHandler) RoleCatalogByCode(w http.ResponseWriter, r *http.Request) {
 	roleCode := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/workflow/role-catalog/"), "/")
 	if roleCode == "" || strings.Contains(roleCode, "/") {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if r.Method != http.MethodPut {
@@ -535,9 +530,14 @@ func (h *WorkflowHandler) RoleCatalogByCode(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *WorkflowHandler) RoleMemberships(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := requiredWorkflowTargetTenant(r)
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
-		items, err := h.caseRepo.ListWorkflowRoleMemberships(r.Context())
+		items, err := h.caseRepo.ListWorkflowRoleMemberships(r.Context(), tenantID)
 		writeListOrError(w, r, items, err)
 	case http.MethodPost:
 		var req repository.WorkflowRoleMembership
@@ -545,7 +545,7 @@ func (h *WorkflowHandler) RoleMemberships(w http.ResponseWriter, r *http.Request
 			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
-		item, err := h.caseRepo.CreateWorkflowRoleMembership(r.Context(), req)
+		item, err := h.caseRepo.CreateWorkflowRoleMembership(r.Context(), tenantID, req)
 		writeMutationOrError(w, r, item, err)
 	default:
 		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
@@ -553,9 +553,14 @@ func (h *WorkflowHandler) RoleMemberships(w http.ResponseWriter, r *http.Request
 }
 
 func (h *WorkflowHandler) RoleMembershipByID(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := requiredWorkflowTargetTenant(r)
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/workflow/role-memberships/"), "/")
 	if id == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if r.Method != http.MethodPut {
@@ -567,7 +572,7 @@ func (h *WorkflowHandler) RoleMembershipByID(w http.ResponseWriter, r *http.Requ
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
-	item, err := h.caseRepo.UpdateWorkflowRoleMembership(r.Context(), id, req)
+	item, err := h.caseRepo.UpdateWorkflowRoleMembership(r.Context(), tenantID, id, req)
 	writeUpdateOrError(w, r, item, err, "Workflow role membership not found")
 }
 
@@ -592,7 +597,7 @@ func (h *WorkflowHandler) AssignmentRules(w http.ResponseWriter, r *http.Request
 func (h *WorkflowHandler) AssignmentRuleByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/workflow/assignment-rules/"), "/")
 	if id == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if r.Method != http.MethodPut {
@@ -609,9 +614,14 @@ func (h *WorkflowHandler) AssignmentRuleByID(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *WorkflowHandler) Delegations(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := requiredWorkflowTargetTenant(r)
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
-		items, err := h.caseRepo.ListWorkflowDelegations(r.Context())
+		items, err := h.caseRepo.ListWorkflowDelegations(r.Context(), tenantID)
 		writeListOrError(w, r, items, err)
 	case http.MethodPost:
 		var req repository.WorkflowDelegation
@@ -619,7 +629,7 @@ func (h *WorkflowHandler) Delegations(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 			return
 		}
-		item, err := h.caseRepo.CreateWorkflowDelegation(r.Context(), req)
+		item, err := h.caseRepo.CreateWorkflowDelegation(r.Context(), tenantID, req)
 		writeMutationOrError(w, r, item, err)
 	default:
 		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
@@ -627,9 +637,14 @@ func (h *WorkflowHandler) Delegations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WorkflowHandler) DelegationByID(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := requiredWorkflowTargetTenant(r)
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/workflow/delegations/"), "/")
 	if id == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if r.Method != http.MethodPut {
@@ -641,7 +656,7 @@ func (h *WorkflowHandler) DelegationByID(w http.ResponseWriter, r *http.Request)
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
-	item, err := h.caseRepo.UpdateWorkflowDelegation(r.Context(), id, req)
+	item, err := h.caseRepo.UpdateWorkflowDelegation(r.Context(), tenantID, id, req)
 	writeUpdateOrError(w, r, item, err, "Workflow delegation not found")
 }
 
@@ -703,7 +718,7 @@ func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
 	if dir == "" || dir == "INCOMING" {
 		items = visibleIncomingWorkItems(items)
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
+	writeListAny(w, r, items)
 }
 
 func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request) {
@@ -736,7 +751,7 @@ func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request
 func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 	id, action := workItemPath(r.URL.Path)
 	if id == "" {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if action == "" {
@@ -757,7 +772,7 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action != "claim" {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -782,7 +797,7 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusConflict, "Task is still being prepared and cannot be claimed")
 		return
 	}
-	ok, err := h.canClaimCandidateRole(r.Context(), r, item.CandidateRole)
+	ok, err := h.canClaimCandidateRole(r.Context(), r, item.TenantID, item.CandidateRole)
 	if err != nil {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve claim permission: "+err.Error())
 		return
@@ -1135,7 +1150,7 @@ func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.
 			repository.IsMakerTrackCaseType(items[i].CaseType)
 
 		if items[i].Status == repository.TaskStatusRouting {
-			roleOK, err := h.canClaimCandidateRole(ctx, r, items[i].CandidateRole)
+			roleOK, err := h.canClaimCandidateRole(ctx, r, items[i].TenantID, items[i].CandidateRole)
 			if err != nil {
 				return err
 			}
@@ -1161,7 +1176,7 @@ func (h *WorkflowHandler) applyWorkItemPermissions(ctx context.Context, r *http.
 			}
 			continue
 		}
-		ok, err := h.canClaimCandidateRole(r.Context(), r, items[i].CandidateRole)
+		ok, err := h.canClaimCandidateRole(r.Context(), r, items[i].TenantID, items[i].CandidateRole)
 		if err != nil {
 			return err
 		}
@@ -1225,7 +1240,7 @@ func workItemSummary(items []repository.WorkItem, userID string) []repository.Wo
 func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 	jobKey, action := taskPath(r.URL.Path)
 	if jobKey == 0 || action != "complete" {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -1329,7 +1344,7 @@ func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
 func (h *WorkflowHandler) ProcessInstanceByKey(w http.ResponseWriter, r *http.Request) {
 	keyText, action := processInstancePath(r.URL.Path)
 	if keyText == "" {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	switch {
@@ -1343,21 +1358,21 @@ func (h *WorkflowHandler) ProcessInstanceByKey(w http.ResponseWriter, r *http.Re
 		}
 		h.retryProcessServiceJobs(w, r, processInstanceKey)
 	default:
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 	}
 }
 
 func (h *WorkflowHandler) JobByKey(w http.ResponseWriter, r *http.Request) {
 	jobKey, action := jobPath(r.URL.Path)
 	if jobKey == 0 {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	switch {
 	case r.Method == http.MethodPost && action == "retry":
 		h.retryJob(w, r, jobKey)
 	default:
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 	}
 }
 
@@ -1463,7 +1478,7 @@ func (h *WorkflowHandler) processInstanceRuntime(w http.ResponseWriter, r *http.
 func (h *WorkflowHandler) CaseByID(w http.ResponseWriter, r *http.Request) {
 	id, action := casePath(r.URL.Path)
 	if id == "" {
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 
@@ -1479,7 +1494,7 @@ func (h *WorkflowHandler) CaseByID(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && action == "claim":
 		h.claimCase(w, r, id)
 	default:
-		http.NotFound(w, r)
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
 	}
 }
 
@@ -1511,9 +1526,16 @@ func (h *WorkflowHandler) createCase(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
+	if req.IdempotencyKey == "" {
+		req.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	}
 
 	bc, err := h.workflowCmd.CreateCase(r.Context(), req)
 	if err != nil {
+		if errors.Is(err, repository.ErrIdempotencyConflict) {
+			writeAPIError(w, r, http.StatusConflict, err.Error())
+			return
+		}
 		writeAPIError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -1543,8 +1565,9 @@ func (h *WorkflowHandler) caseTimeline(w http.ResponseWriter, r *http.Request, i
 }
 
 type caseActorRequest struct {
-	Actor     string         `json:"actor"`
-	Variables map[string]any `json:"variables"`
+	Actor          string         `json:"actor"`
+	Variables      map[string]any `json:"variables"`
+	IdempotencyKey string         `json:"idempotencyKey"`
 }
 
 func (h *WorkflowHandler) caseTaskReadiness(w http.ResponseWriter, r *http.Request, id string) {
@@ -1576,14 +1599,22 @@ func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id 
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
+	if req.IdempotencyKey == "" {
+		req.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	}
 
 	updated, err := h.workflowCmd.SubmitCase(r.Context(), id, service.SubmitCaseInput{
-		Actor:     req.Actor,
-		Variables: req.Variables,
+		Actor:          req.Actor,
+		Variables:      req.Variables,
+		IdempotencyKey: req.IdempotencyKey,
 	})
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeAPIError(w, r, http.StatusNotFound, "Case not found")
+			return
+		}
+		if errors.Is(err, repository.ErrIdempotencyConflict) {
+			writeAPIError(w, r, http.StatusConflict, err.Error())
 			return
 		}
 		writeAPIError(w, r, http.StatusBadRequest, err.Error())
@@ -1791,6 +1822,17 @@ func currentUserID(r *http.Request) string {
 	)
 }
 
+func requiredWorkflowTargetTenant(r *http.Request) (string, error) {
+	if r == nil || r.URL == nil {
+		return "", errors.New("tenantId is required")
+	}
+	tenantID := firstString(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId"))
+	if strings.TrimSpace(tenantID) == "" {
+		return "", errors.New("tenantId is required for workflow tenant-scoped management")
+	}
+	return strings.TrimSpace(tenantID), nil
+}
+
 func currentUserGroups(r *http.Request) []string {
 	raw := firstString(r.Header.Get("X-User-Group-Ids"), r.Header.Get("X-User-Groups"), r.Header.Get("X-Groups"))
 	if raw == "" {
@@ -1811,7 +1853,7 @@ func isSuperadminActor(r *http.Request) bool {
 	return hasToken(currentUserPermissions(r), "superadmin") || hasToken(currentUserRoles(r), "SUPER_ADMIN")
 }
 
-func (h *WorkflowHandler) canClaimCandidateRole(ctx context.Context, r *http.Request, candidateRole string) (bool, error) {
+func (h *WorkflowHandler) canClaimCandidateRole(ctx context.Context, r *http.Request, tenantID, candidateRole string) (bool, error) {
 	candidateRole = strings.TrimSpace(candidateRole)
 	if candidateRole == "" {
 		return false, nil
@@ -1826,7 +1868,7 @@ func (h *WorkflowHandler) canClaimCandidateRole(ctx context.Context, r *http.Req
 	if userID == "" {
 		return false, nil
 	}
-	return h.caseRepo.UserCanClaimRole(ctx, userID, currentUserGroups(r), candidateRole)
+	return h.caseRepo.UserCanClaimRole(ctx, tenantID, userID, currentUserGroups(r), candidateRole)
 }
 
 func userCanClaimCandidateRole(r *http.Request, candidateRole string) bool {
@@ -2031,7 +2073,7 @@ func writeListOrError(w http.ResponseWriter, r *http.Request, items any, err err
 	if items == nil {
 		items = []any{}
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
+	writeListAny(w, r, items)
 }
 
 func writeMutationOrError(w http.ResponseWriter, r *http.Request, item any, err error) {

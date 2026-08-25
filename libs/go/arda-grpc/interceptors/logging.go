@@ -28,8 +28,11 @@ func UnaryServerLogging(logger *slog.Logger) grpc.UnaryServerInterceptor {
 			"code", code.String(),
 			"duration_ms", time.Since(start).Milliseconds(),
 			"request_id", md.RequestID,
+			"trace_id", md.TraceID,
 			"tenant_id", md.TenantID,
-			"user_id", md.UserID,
+			"actor_user_id", firstNonEmpty(md.ActorUserID, md.UserID),
+			"target_user_id", md.TargetUserID,
+			"org_id", md.OrgID,
 			"source_service", md.SourceService,
 		)
 		return resp, err
@@ -45,6 +48,45 @@ func UnaryClientMetadata(sourceService string, base ardametadata.Context) grpc.U
 		if out.TenantID == "" {
 			out.TenantID = base.TenantID
 		}
+		if out.TraceID == "" {
+			out.TraceID = base.TraceID
+		}
+		if out.TraceParent == "" {
+			out.TraceParent = base.TraceParent
+		}
+		if out.UserID == "" {
+			out.UserID = base.UserID
+		}
+		if out.ActorUserID == "" {
+			out.ActorUserID = base.ActorUserID
+		}
+		if out.TargetUserID == "" {
+			out.TargetUserID = base.TargetUserID
+		}
+		if out.UserSubject == "" {
+			out.UserSubject = base.UserSubject
+		}
+		if out.OrgID == "" {
+			out.OrgID = base.OrgID
+		}
+		if len(out.OrgIDs) == 0 {
+			out.OrgIDs = base.OrgIDs
+		}
+		if len(out.GroupIDs) == 0 {
+			out.GroupIDs = base.GroupIDs
+		}
+		if len(out.Roles) == 0 {
+			out.Roles = base.Roles
+		}
+		if len(out.Permissions) == 0 {
+			out.Permissions = base.Permissions
+		}
+		if out.AuthRisk == "" {
+			out.AuthRisk = base.AuthRisk
+		}
+		if out.AuthChecked == "" {
+			out.AuthChecked = base.AuthChecked
+		}
 		if out.Locale == "" {
 			out.Locale = base.Locale
 		}
@@ -54,4 +96,13 @@ func UnaryClientMetadata(sourceService string, base ardametadata.Context) grpc.U
 		ctx = ardametadata.AppendToOutgoing(ctx, out)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

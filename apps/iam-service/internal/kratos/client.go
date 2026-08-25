@@ -2,6 +2,7 @@ package kratos
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,7 +63,7 @@ func New(adminURL string) *Client {
 }
 
 // CreateIdentity creates a new identity in Kratos.
-func (c *Client) CreateIdentity(email, password, name string) (*Identity, error) {
+func (c *Client) CreateIdentity(ctx context.Context, email, password, name string) (*Identity, error) {
 	req := CreateIdentityRequest{
 		SchemaID: "default",
 		Traits: IdentityTraits{
@@ -81,10 +82,17 @@ func (c *Client) CreateIdentity(email, password, name string) (*Identity, error)
 		}
 	}
 
-	body, _ := json.Marshal(req)
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("kratos encode create request: %w", err)
+	}
 	url := fmt.Sprintf("%s/admin/identities", c.adminURL)
-
-	resp, err := c.httpClient.Post(url, "application/json", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("kratos create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("kratos create: %w", err)
 	}
@@ -107,9 +115,13 @@ func (c *Client) CreateIdentity(email, password, name string) (*Identity, error)
 }
 
 // GetIdentity retrieves an identity by ID.
-func (c *Client) GetIdentity(id string) (*Identity, error) {
+func (c *Client) GetIdentity(ctx context.Context, id string) (*Identity, error) {
 	url := fmt.Sprintf("%s/admin/identities/%s", c.adminURL, id)
-	resp, err := c.httpClient.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("kratos get request: %w", err)
+	}
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("kratos get: %w", err)
 	}
@@ -130,9 +142,13 @@ func (c *Client) GetIdentity(id string) (*Identity, error) {
 }
 
 // FindIdentityByIdentifier retrieves an identity by a credential identifier such as email.
-func (c *Client) FindIdentityByIdentifier(identifier string) (*Identity, error) {
+func (c *Client) FindIdentityByIdentifier(ctx context.Context, identifier string) (*Identity, error) {
 	endpoint := fmt.Sprintf("%s/admin/identities?credentials_identifier=%s", c.adminURL, url.QueryEscape(identifier))
-	resp, err := c.httpClient.Get(endpoint)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("kratos list identities request: %w", err)
+	}
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("kratos list identities: %w", err)
 	}
@@ -154,9 +170,12 @@ func (c *Client) FindIdentityByIdentifier(identifier string) (*Identity, error) 
 }
 
 // DeleteIdentity removes an identity by ID.
-func (c *Client) DeleteIdentity(id string) error {
+func (c *Client) DeleteIdentity(ctx context.Context, id string) error {
 	url := fmt.Sprintf("%s/admin/identities/%s", c.adminURL, id)
-	req, _ := http.NewRequest("DELETE", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return fmt.Errorf("kratos delete request: %w", err)
+	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("kratos delete: %w", err)
@@ -169,7 +188,7 @@ func (c *Client) DeleteIdentity(id string) error {
 }
 
 // UpdateIdentityEmail updates the traits of an identity in Kratos.
-func (c *Client) UpdateIdentityEmail(id, email, name string) error {
+func (c *Client) UpdateIdentityEmail(ctx context.Context, id, email, name string) error {
 	req := struct {
 		SchemaID string         `json:"schema_id"`
 		Traits   IdentityTraits `json:"traits"`
@@ -183,10 +202,13 @@ func (c *Client) UpdateIdentityEmail(id, email, name string) error {
 		State: "active",
 	}
 
-	body, _ := json.Marshal(req)
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("kratos encode update request: %w", err)
+	}
 	url := fmt.Sprintf("%s/admin/identities/%s", c.adminURL, id)
 
-	request, err := http.NewRequest("PUT", url, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("kratos update request: %w", err)
 	}
@@ -206,8 +228,8 @@ func (c *Client) UpdateIdentityEmail(id, email, name string) error {
 }
 
 // UpdateIdentityPassword replaces the password credential for an identity.
-func (c *Client) UpdateIdentityPassword(id, password string) error {
-	identity, err := c.GetIdentity(id)
+func (c *Client) UpdateIdentityPassword(ctx context.Context, id, password string) error {
+	identity, err := c.GetIdentity(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -237,9 +259,12 @@ func (c *Client) UpdateIdentityPassword(id, password string) error {
 		req.State = "active"
 	}
 
-	body, _ := json.Marshal(req)
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("kratos encode password update request: %w", err)
+	}
 	url := fmt.Sprintf("%s/admin/identities/%s", c.adminURL, id)
-	request, err := http.NewRequest("PUT", url, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("kratos password update request: %w", err)
 	}

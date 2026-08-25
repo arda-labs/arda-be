@@ -167,7 +167,7 @@ func (s *NotificationService) dispatchWebPush(ctx context.Context, in AcceptInpu
 			})
 			if err != nil {
 				slog.Warn("web push send failed", "userId", item.UserID, "err", err)
-				_ = s.repo.DeletePushSubscriptionByEndpoint(ctx, sub.Endpoint)
+				_ = s.repo.DeletePushSubscriptionByEndpoint(ctx, item.TenantID, sub.Endpoint)
 			}
 		}
 	}
@@ -228,7 +228,7 @@ func (s *NotificationService) SubscribePush(ctx context.Context, tenantID, userI
 	endpoint := strings.TrimSpace(in.Endpoint)
 	p256dh := strings.TrimSpace(in.Keys.P256dh)
 	auth := strings.TrimSpace(in.Keys.Auth)
-	if tenantID == "" || userID == "" {
+	if err := validateUserContext(tenantID, userID); err != nil {
 		return errors.New("user context is required")
 	}
 	if endpoint == "" || p256dh == "" || auth == "" {
@@ -246,23 +246,27 @@ func (s *NotificationService) SubscribePush(ctx context.Context, tenantID, userI
 
 func (s *NotificationService) UnsubscribePush(ctx context.Context, tenantID, userID, endpoint string) error {
 	tenantID, userID, endpoint = strings.TrimSpace(tenantID), strings.TrimSpace(userID), strings.TrimSpace(endpoint)
-	if tenantID == "" || userID == "" || endpoint == "" {
+	if err := validateUserContext(tenantID, userID); err != nil || endpoint == "" {
 		return errors.New("user context and endpoint are required")
 	}
 	return s.repo.DeletePushSubscription(ctx, tenantID, userID, endpoint)
 }
 
-func (s *NotificationService) GetByPublicID(ctx context.Context, publicID string) (*domain.Notification, error) {
+func (s *NotificationService) GetByPublicID(ctx context.Context, tenantID, publicID string) (*domain.Notification, error) {
+	tenantID = strings.TrimSpace(tenantID)
 	publicID = strings.TrimSpace(publicID)
+	if err := validateTenantID(tenantID); err != nil {
+		return nil, err
+	}
 	if publicID == "" {
 		return nil, errors.New("notification id is required")
 	}
-	return s.repo.GetNotificationByPublicID(ctx, publicID)
+	return s.repo.GetNotificationByPublicID(ctx, tenantID, publicID)
 }
 
 func (s *NotificationService) ListInbox(ctx context.Context, tenantID, userID string, limit int) ([]domain.InboxItem, error) {
 	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
-	if tenantID == "" || userID == "" {
+	if err := validateUserContext(tenantID, userID); err != nil {
 		return nil, errors.New("user context is required")
 	}
 	if limit <= 0 || limit > 100 {
@@ -273,7 +277,7 @@ func (s *NotificationService) ListInbox(ctx context.Context, tenantID, userID st
 
 func (s *NotificationService) UnreadCount(ctx context.Context, tenantID, userID string) (int, error) {
 	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
-	if tenantID == "" || userID == "" {
+	if err := validateUserContext(tenantID, userID); err != nil {
 		return 0, errors.New("user context is required")
 	}
 	return s.repo.UnreadCount(ctx, tenantID, userID)
@@ -281,7 +285,7 @@ func (s *NotificationService) UnreadCount(ctx context.Context, tenantID, userID 
 
 func (s *NotificationService) MarkRead(ctx context.Context, tenantID, userID, publicID string) error {
 	tenantID, userID, publicID = strings.TrimSpace(tenantID), strings.TrimSpace(userID), strings.TrimSpace(publicID)
-	if tenantID == "" || userID == "" || publicID == "" {
+	if err := validateUserContext(tenantID, userID); err != nil || publicID == "" {
 		return errors.New("user context and notification id are required")
 	}
 	return s.repo.MarkInboxRead(ctx, tenantID, userID, publicID)
@@ -289,15 +293,15 @@ func (s *NotificationService) MarkRead(ctx context.Context, tenantID, userID, pu
 
 func (s *NotificationService) MarkAllRead(ctx context.Context, tenantID, userID string) error {
 	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
-	if tenantID == "" || userID == "" {
+	if err := validateUserContext(tenantID, userID); err != nil {
 		return errors.New("user context is required")
 	}
 	return s.repo.MarkAllInboxRead(ctx, tenantID, userID)
 }
 
 func validateAccept(in AcceptInput) error {
-	if strings.TrimSpace(in.TenantID) == "" {
-		return errors.New("tenant_id is required")
+	if err := validateTenantID(in.TenantID); err != nil {
+		return err
 	}
 	if strings.TrimSpace(in.IdempotencyKey) == "" {
 		return errors.New("idempotency_key is required")
@@ -332,6 +336,27 @@ func validateAccept(in AcceptInput) error {
 	}
 	if hasInApp && !hasInAppRecipient {
 		return errors.New("in_app channel requires at least one recipient user_id")
+	}
+	return nil
+}
+
+func validateTenantID(tenantID string) error {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return errors.New("tenant_id is required")
+	}
+	if strings.EqualFold(tenantID, "default") {
+		return errors.New("reserved tenant_id is not allowed")
+	}
+	return nil
+}
+
+func validateUserContext(tenantID, userID string) error {
+	if err := validateTenantID(tenantID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(userID) == "" {
+		return errors.New("user_id is required")
 	}
 	return nil
 }

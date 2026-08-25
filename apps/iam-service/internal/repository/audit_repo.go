@@ -25,31 +25,63 @@ func NewAuditRepository(db *sql.DB) *AuditRepository {
 
 // InsertWithChain inserts an audit log with hash chain verification.
 func (r *AuditRepository) InsertWithChain(ctx context.Context, e *domain.AuthEvent) error {
-	prevHash := r.getLastHash(ctx)
-
-	if e.ID == "" {
-		e.ID = fmt.Sprintf("%s-%d", e.EventType, time.Now().UnixNano())
+	if e == nil {
+		return fmt.Errorf("audit event is required")
 	}
 
-	src := prevHash + e.ID + e.Timestamp.String() + e.Result
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin audit transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// A single database lock serializes the read of the tail and the append.
+	// Without this, concurrent audit events can share the same predecessor and
+	// the chain becomes unverifiable even though every INSERT succeeds.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('arda.iam.audit-chain'))`); err != nil {
+		return fmt.Errorf("lock audit chain: %w", err)
+	}
+
+	prevHash, err := lastAuditHash(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("read audit chain tail: %w", err)
+	}
+
+	event := *e
+	if event.ID == "" {
+		event.ID = fmt.Sprintf("%s-%d", event.EventType, time.Now().UnixNano())
+	}
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now().UTC()
+	} else {
+		event.Timestamp = event.Timestamp.UTC()
+	}
+	event.Details = cloneDetails(event.Details)
+
+	src := prevHash + event.ID + canonicalAuditTimestamp(event.Timestamp) + event.Result
 	chainHash := sha256Hex(src)
-	if e.Details == nil {
-		e.Details = make(map[string]any)
+	if event.Details == nil {
+		event.Details = make(map[string]any)
 	}
-	e.Details["chain_prev"] = prevHash
-	e.Details["chain_hash"] = chainHash
+	event.Details["chain_prev"] = prevHash
+	event.Details["chain_hash"] = chainHash
 
-	_, err := r.db.ExecContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO iam_audit_logs
 			(event_id, event_type, subject, action, resource, result,
 			 details, client_ip, user_agent, request_id, service_name,
 			 tenant_id, chain_prev_hash, chain_hash, timestamp)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		ON CONFLICT (event_id) DO NOTHING
-	`, e.ID, e.EventType, e.Subject, e.Action, e.Resource, e.Result,
-		marshalDetails(e.Details), e.ClientIP, e.UserAgent, e.RequestID,
-		e.ServiceName, e.Details["tenant_id"], prevHash, chainHash, e.Timestamp)
-	return err
+	`, event.ID, event.EventType, event.Subject, event.Action, event.Resource, event.Result,
+		marshalDetails(event.Details), event.ClientIP, event.UserAgent, event.RequestID,
+		event.ServiceName, event.Details["tenant_id"], prevHash, chainHash, event.Timestamp); err != nil {
+		return fmt.Errorf("insert audit event: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit audit event: %w", err)
+	}
+	return nil
 }
 
 type QueryParams struct {
@@ -243,11 +275,23 @@ type ChainVerification struct {
 }
 
 func (r *AuditRepository) VerifyChain(ctx context.Context, from, to time.Time) (*ChainVerification, error) {
+	prevHash := ""
+	if !from.IsZero() {
+		err := r.db.QueryRowContext(ctx, `
+			SELECT chain_hash FROM iam_audit_logs
+			WHERE timestamp < $1
+			ORDER BY created_at DESC, id DESC LIMIT 1
+		`, from).Scan(&prevHash)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, fmt.Errorf("read audit chain anchor: %w", err)
+		}
+	}
+
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT event_id, chain_prev_hash, chain_hash, timestamp, result
+		SELECT event_id, chain_prev_hash, chain_hash, timestamp, created_at, result
 		FROM iam_audit_logs
 		WHERE timestamp >= $1 AND timestamp <= $2
-		ORDER BY timestamp ASC, created_at ASC
+		ORDER BY created_at ASC, id ASC
 	`, from, to)
 	if err != nil {
 		return nil, err
@@ -255,20 +299,19 @@ func (r *AuditRepository) VerifyChain(ctx context.Context, from, to time.Time) (
 	defer rows.Close()
 
 	result := &ChainVerification{Valid: true}
-	var prevHash string
 
 	for rows.Next() {
 		var eventID, chainPrev, chainHash string
-		var ts time.Time
+		var ts, createdAt time.Time
 		var res string
 
-		if err := rows.Scan(&eventID, &chainPrev, &chainHash, &ts, &res); err != nil {
+		if err := rows.Scan(&eventID, &chainPrev, &chainHash, &ts, &createdAt, &res); err != nil {
 			return nil, err
 		}
 		result.Total++
 
 		expectedPrev := prevHash
-		expectedHash := sha256Hex(expectedPrev + eventID + ts.String() + res)
+		expectedHash := sha256Hex(expectedPrev + eventID + canonicalAuditTimestamp(ts) + res)
 
 		if chainPrev != expectedPrev || chainHash != expectedHash {
 			result.Valid = false
@@ -301,19 +344,45 @@ func (r *AuditRepository) PurgeByEventType(ctx context.Context, eventType string
 	return int(n), nil
 }
 
-func (r *AuditRepository) getLastHash(ctx context.Context) string {
+func lastAuditHash(ctx context.Context, tx *sql.Tx) (string, error) {
 	var hash string
-	err := r.db.QueryRowContext(ctx, `
+	err := tx.QueryRowContext(ctx, `
 		SELECT chain_hash FROM iam_audit_logs
-		ORDER BY timestamp DESC, created_at DESC LIMIT 1
+		ORDER BY created_at DESC, id DESC LIMIT 1
 	`).Scan(&hash)
-	if err != nil {
-		return ""
+	if err == sql.ErrNoRows {
+		return "", nil
 	}
-	return hash
+	return hash, err
+}
+
+func canonicalAuditTimestamp(ts time.Time) string {
+	return ts.UTC().Format(time.RFC3339Nano)
+}
+
+func cloneDetails(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }
 
 func sha256Hex(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return base64.RawURLEncoding.EncodeToString(h[:])
+}
+
+func marshalDetails(d map[string]any) any {
+	if d == nil {
+		return nil
+	}
+	b, err := json.Marshal(d)
+	if err != nil {
+		return nil
+	}
+	return string(b)
 }

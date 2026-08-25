@@ -43,6 +43,64 @@ routes:
 	}
 }
 
+func TestLoadRejectsInvalidRouteDefinitions(t *testing.T) {
+	tests := map[string]string{
+		"missing id": `
+routes:
+  - path: /private
+    auth: true
+`,
+		"missing leading slash": `
+routes:
+  - id: private
+    path: private
+    auth: true
+`,
+		"public permission": `
+routes:
+  - id: public
+    path: /public
+    auth: false
+    permissions: [public.read]
+`,
+		"public risk mismatch": `
+routes:
+  - id: public
+    path: /public
+    auth: false
+    risk: low
+`,
+		"protected public risk": `
+routes:
+  - id: private
+    path: /private
+    auth: true
+    risk: public
+`,
+		"invalid method": `
+routes:
+  - id: private
+    path: /private
+    methods: [TRACE]
+    auth: true
+`,
+		"duplicate method": `
+routes:
+  - id: private
+    path: /private
+    methods: [GET, get]
+    auth: true
+`,
+	}
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(writePolicy(t, data)); err == nil {
+				t.Fatal("expected invalid route definition error")
+			}
+		})
+	}
+}
+
 func writePolicy(t *testing.T, data string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "policy.yaml")

@@ -2,12 +2,17 @@ package http
 
 import (
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/handler"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // NewRouter wires HTTP routes for the IAM service.
-func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandler, policyHandler *handler.PolicyHandler, adminHandler *handler.AdminHandler, sessionHandler *handler.SessionHandler, mfaHandler *handler.MFAHandler, auditHandler *handler.AuditHandler) http.Handler {
+func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHandler, adminHandler *handler.AdminHandler, sessionHandler *handler.SessionHandler, mfaHandler *handler.MFAHandler, auditHandler *handler.AuditHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Health
@@ -22,15 +27,6 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		_, _ = w.Write([]byte(`{"status":"ready"}`))
 	})
 
-	// ── Auth API (public) ──
-	mux.HandleFunc("/api/auth/login-page", method("GET", authHandler.LoginPage))
-	mux.HandleFunc("/api/auth/login/external", method("POST", authHandler.LoginExternal))
-	mux.HandleFunc("/api/auth/callback/{provider_id}", method("GET", authHandler.CallbackProvider))
-	mux.HandleFunc("/api/auth/callback", method("POST", authHandler.CallbackToken))
-	mux.HandleFunc("/api/auth/refresh", method("POST", authHandler.Refresh))
-	mux.HandleFunc("/api/auth/providers", method("GET", authHandler.ListProviders))
-	mux.HandleFunc("/api/auth/consent", method("POST", authHandler.Consent))
-
 	// ── Admin API — User management ──
 	mux.HandleFunc("/api/admin/users", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -39,7 +35,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodPost:
 			adminHandler.CreateUser(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/admin/users/{id}/sessions", func(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +45,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodDelete:
 			sessionHandler.AdminRevokeUserSessions(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/admin/users/{id}/status", method("PUT", adminHandler.SetUserStatus))
@@ -65,7 +61,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodDelete:
 			adminHandler.DeleteUser(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/admin/users/{userId}/roles", method("POST", adminHandler.AssignUserRole))
@@ -80,7 +76,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodPost:
 			adminHandler.CreateGroup(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/admin/groups/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +88,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodDelete:
 			adminHandler.DeleteGroup(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/admin/groups/{id}/members", func(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +98,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodPost:
 			adminHandler.AddGroupMember(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/admin/groups/{id}/members/{userId}", method("DELETE", adminHandler.RemoveGroupMember))
@@ -113,7 +109,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodPost:
 			adminHandler.AssignGroupRole(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/admin/groups/{id}/roles/{roleId}", method("DELETE", adminHandler.UnassignGroupRole))
@@ -126,7 +122,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodPost:
 			adminHandler.CreateRole(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/admin/roles/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +134,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodDelete:
 			adminHandler.DeleteRole(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/admin/roles/{id}/permissions", method("GET", adminHandler.ListRolePermissions))
@@ -153,7 +149,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodPost:
 			adminHandler.CreatePermission(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/admin/permissions/{id}", method("DELETE", adminHandler.DeletePermission))
@@ -180,14 +176,14 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	mux.HandleFunc("/api/admin/audit/verify", method("GET", auditHandler.Verify))
 
 	// ── Internal API (service-to-service) ──
-	mux.HandleFunc("/internal/iam/users/{id}/mfa/check", method("POST", mfaHandler.CheckMFA))
-	mux.HandleFunc("/internal/iam/users/by-subject/{subject}", method("GET", userHandler.GetBySubject))
-	mux.HandleFunc("/internal/iam/users/by-id/{id}/context", method("GET", userHandler.GetContextByID))
-	mux.HandleFunc("/internal/iam/users/by-kratos-identity/{identityId}/context", method("GET", userHandler.GetContextByKratosIdentityID))
-	mux.HandleFunc("/internal/iam/users/resolve-kratos-identity", method("POST", userHandler.ResolveOrLinkKratosIdentity))
-	mux.HandleFunc("/internal/iam/users/resolve-identity", method("POST", userHandler.ResolveOrLinkIdentity))
-	mux.HandleFunc("/internal/iam/sessions", method("POST", sessionHandler.InternalCreateSession))
-	mux.HandleFunc("/internal/iam/sessions/{id}", method("DELETE", sessionHandler.InternalRevokeSession))
+	mux.Handle("/internal/iam/users/{id}/mfa/check", internalService(method("POST", mfaHandler.CheckMFA)))
+	mux.Handle("/internal/iam/users/by-subject/{subject}", internalService(method("GET", userHandler.GetBySubject)))
+	mux.Handle("/internal/iam/users/by-id/{id}/context", internalService(method("GET", userHandler.GetContextByID)))
+	mux.Handle("/internal/iam/users/by-kratos-identity/{identityId}/context", internalService(method("GET", userHandler.GetContextByKratosIdentityID)))
+	mux.Handle("/internal/iam/users/resolve-kratos-identity", internalService(method("POST", userHandler.ResolveOrLinkKratosIdentity)))
+	mux.Handle("/internal/iam/users/resolve-identity", internalService(method("POST", userHandler.ResolveOrLinkIdentity)))
+	mux.Handle("/internal/iam/sessions", internalService(method("POST", sessionHandler.InternalCreateSession)))
+	mux.Handle("/internal/iam/sessions/{id}", internalService(method("DELETE", sessionHandler.InternalRevokeSession)))
 
 	// ── Session API ──
 	mux.HandleFunc("/api/iam/me/sessions", func(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +193,7 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 		case http.MethodDelete:
 			sessionHandler.RevokeMyOtherSessions(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/iam/me/sessions/{id}", method("DELETE", sessionHandler.RevokeMySession))
@@ -222,12 +218,36 @@ func NewRouter(userHandler *handler.UserHandler, authHandler *handler.AuthHandle
 	return mux
 }
 
+// internalService authenticates the auth-gateway -> IAM HTTP adapter with the
+// same short-lived workload assertion used by internal gRPC. Browser/BFF
+// routes intentionally do not pass through this middleware.
+func internalService(next http.Handler) http.Handler {
+	secret, secretErr := identity.SecretFromEnv()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if secretErr != nil {
+			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
+			return
+		}
+		token := strings.TrimSpace(r.Header.Get("X-Service-Auth"))
+		claims, err := identity.Verify(token, secret, "iam-service", time.Now())
+		if err != nil || claims.Source != "auth-gateway" {
+			ardahttp.WriteProblem(w, r, http.StatusUnauthorized, ardaerrors.New(ardaerrors.CodeUnauthorized, "valid auth-gateway service identity is required"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func method(method string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != method {
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 			return
 		}
 		next(w, r)
 	}
+}
+
+func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
 }

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/handler"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handler.CalendarHandler) http.Handler {
@@ -15,7 +17,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 
 	mux.HandleFunc("/api/platform/public/branding", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 			return
 		}
 		platformHandler.GetPublicBranding(w, r)
@@ -28,7 +30,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodPost, http.MethodPut:
 			platformHandler.UpsertParameter(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -39,13 +41,13 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodPost, http.MethodPut:
 			platformHandler.UpsertLookupCategory(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
 	mux.HandleFunc("/api/platform/lookups/", func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/values") {
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 			return
 		}
 		switch r.Method {
@@ -54,7 +56,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodPost:
 			platformHandler.CreateLookupValue(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -63,7 +65,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodDelete:
 			platformHandler.DeleteParameter(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -72,7 +74,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodDelete:
 			platformHandler.DeleteLookupCategory(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -81,7 +83,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodDelete:
 			platformHandler.DeleteLookupValue(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -92,7 +94,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodPost:
 			platformHandler.CreateOrganization(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -105,7 +107,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodDelete:
 			platformHandler.DeleteOrganization(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -116,7 +118,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodPost, http.MethodPut:
 			platformHandler.UpsertGeoAdminUnit(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -127,7 +129,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodPost:
 			platformHandler.CreateCreditInstitution(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -140,7 +142,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodDelete:
 			platformHandler.DeleteCreditInstitution(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -151,7 +153,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodPost:
 			platformHandler.CreateArea(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -164,7 +166,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodDelete:
 			platformHandler.DeleteArea(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -175,7 +177,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodPost:
 			platformHandler.CreateFileTemplate(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -188,28 +190,28 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodDelete:
 			platformHandler.DeleteFileTemplate(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
 	// ── Calendar & Cut-off ──
 	mux.HandleFunc("/api/platform/calendar/status", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 			return
 		}
 		calendarHandler.GetStatus(w, r)
 	})
 	mux.HandleFunc("/api/platform/calendar/eod", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 			return
 		}
 		calendarHandler.TriggerEOD(w, r)
 	})
 	mux.HandleFunc("/api/platform/calendar/evaluate", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 			return
 		}
 		calendarHandler.EvaluateDate(w, r)
@@ -221,7 +223,7 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		case http.MethodPost:
 			calendarHandler.AddHoliday(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -236,6 +238,6 @@ func health(status string) http.HandlerFunc {
 	}
 }
 
-func methodNotAllowed(w http.ResponseWriter) {
-	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
 }

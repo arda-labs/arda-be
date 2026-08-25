@@ -41,6 +41,7 @@ type Envelope[T any] struct {
 	OrgID         string    `json:"org_id,omitempty"`
 	RequestID     string    `json:"request_id,omitempty"`
 	TraceID       string    `json:"trace_id,omitempty"`
+	TraceParent   string    `json:"traceparent,omitempty"`
 	Locale        string    `json:"locale,omitempty"`
 	Actor         Actor     `json:"actor,omitempty"`
 	Payload       T         `json:"payload"`
@@ -53,6 +54,7 @@ type Options struct {
 	OrgID         string
 	RequestID     string
 	TraceID       string
+	TraceParent   string
 	Locale        string
 	Actor         Actor
 	OccurredAt    time.Time
@@ -69,7 +71,11 @@ func NewEnvelope[T any](eventCode string, payload T, opts Options) (Envelope[T],
 	}
 	id := strings.TrimSpace(opts.ID)
 	if id == "" {
-		id = newID()
+		var err error
+		id, err = newID()
+		if err != nil {
+			return Envelope[T]{}, err
+		}
 	}
 	occurredAt := opts.OccurredAt
 	if occurredAt.IsZero() {
@@ -85,6 +91,7 @@ func NewEnvelope[T any](eventCode string, payload T, opts Options) (Envelope[T],
 		OrgID:         strings.TrimSpace(opts.OrgID),
 		RequestID:     strings.TrimSpace(opts.RequestID),
 		TraceID:       strings.TrimSpace(opts.TraceID),
+		TraceParent:   strings.TrimSpace(opts.TraceParent),
 		Locale:        strings.TrimSpace(opts.Locale),
 		Actor:         opts.Actor,
 		Payload:       payload,
@@ -121,10 +128,10 @@ func RequestIDFromContext(ctx context.Context) string {
 
 type requestIDKey struct{}
 
-func newID() string {
+func newID() (string, error) {
 	b := make([]byte, 18)
 	if _, err := rand.Read(b); err != nil {
-		return base64.RawURLEncoding.EncodeToString([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
+		return "", errors.New("generate event id: " + err.Error())
 	}
-	return base64.RawURLEncoding.EncodeToString(b)
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }

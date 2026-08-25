@@ -1,43 +1,73 @@
 services:
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats-data:/data
+
   iam-service:
     build:
-      context: ./apps/iam-service
+      context: .
+      dockerfile: apps/iam-service/Dockerfile
     environment:
       APP_NAME: iam-service
       HTTP_ADDR: 0.0.0.0:8080
+      GRPC_ADDR: 0.0.0.0:9090
+      MEDIA_GRPC_ADDR: media-service:9092
+      ARDA_SERVICE_AUTH_SECRET: ${ARDA_SERVICE_AUTH_SECRET:?set ARDA_SERVICE_AUTH_SECRET}
+      ARDA_GRPC_CA_FILE: /var/run/arda-grpc-tls/ca.crt
+      ARDA_GRPC_CERT_FILE: /var/run/arda-grpc-tls/tls.crt
+      ARDA_GRPC_KEY_FILE: /var/run/arda-grpc-tls/tls.key
       LOG_LEVEL: info
-      DATABASE_DSN: postgres://${IAM_DATABASE_USER}:${IAM_DATABASE_PASSWORD}@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/${IAM_DATABASE_NAME}?sslmode=${IAM_DATABASE_SSLMODE:-disable}
-      SUPERADMIN_INITIAL_PASSWORD: ${SUPERADMIN_INITIAL_PASSWORD:-admin123}
+      DATABASE_DSN: postgres://${IAM_DATABASE_USER:?set IAM_DATABASE_USER}:${IAM_DATABASE_PASSWORD:?set IAM_DATABASE_PASSWORD}@${IAM_DATABASE_HOST:?set IAM_DATABASE_HOST}:${IAM_DATABASE_PORT:?set IAM_DATABASE_PORT}/${IAM_DATABASE_NAME:?set IAM_DATABASE_NAME}?sslmode=${IAM_DATABASE_SSLMODE:?set IAM_DATABASE_SSLMODE}
     ports:
       - "8081:8080"
+    volumes:
+      - ./.dev/grpc-tls/iam:/var/run/arda-grpc-tls:ro
     env_file:
       - .env
 
   platform-service:
     build:
-      context: ./apps/platform-service
+      context: .
+      dockerfile: apps/platform-service/Dockerfile
     environment:
       APP_NAME: platform-service
       HTTP_ADDR: 0.0.0.0:8080
       GRPC_ADDR: 0.0.0.0:9090
+      MEDIA_GRPC_ADDR: media-service:9092
+      ARDA_SERVICE_AUTH_SECRET: ${ARDA_SERVICE_AUTH_SECRET:?set ARDA_SERVICE_AUTH_SECRET}
+      ARDA_GRPC_CA_FILE: /var/run/arda-grpc-tls/ca.crt
+      ARDA_GRPC_CERT_FILE: /var/run/arda-grpc-tls/tls.crt
+      ARDA_GRPC_KEY_FILE: /var/run/arda-grpc-tls/tls.key
       LOG_LEVEL: info
-      DATABASE_DSN: postgres://${COMMON_DATABASE_USER:-arda_common}:${COMMON_DATABASE_PASSWORD:-123456}@${COMMON_DATABASE_HOST:-host.docker.internal}:${COMMON_DATABASE_PORT:-5432}/${COMMON_DATABASE_NAME:-common}?sslmode=${COMMON_DATABASE_SSLMODE:-disable}
-      NATS_URL: ${NATS_URL:-}
+      DATABASE_DSN: postgres://${COMMON_DATABASE_USER:?set COMMON_DATABASE_USER}:${COMMON_DATABASE_PASSWORD:?set COMMON_DATABASE_PASSWORD}@${COMMON_DATABASE_HOST:?set COMMON_DATABASE_HOST}:${COMMON_DATABASE_PORT:?set COMMON_DATABASE_PORT}/${COMMON_DATABASE_NAME:?set COMMON_DATABASE_NAME}?sslmode=${COMMON_DATABASE_SSLMODE:?set COMMON_DATABASE_SSLMODE}
+      NATS_URL: nats://nats:4222
     ports:
       - "8091:8080"
       - "9091:9090"
+    volumes:
+      - ./.dev/grpc-tls/platform:/var/run/arda-grpc-tls:ro
     env_file:
       - .env
 
   media-service:
     build:
-      context: ./apps/media-service
+      context: .
+      dockerfile: apps/media-service/Dockerfile
     environment:
       APP_NAME: media-service
       HTTP_ADDR: 0.0.0.0:8080
-      GRPC_ADDR: 0.0.0.0:9090
+      GRPC_ADDR: 0.0.0.0:9092
+      ARDA_SERVICE_AUTH_SECRET: ${ARDA_SERVICE_AUTH_SECRET:?set ARDA_SERVICE_AUTH_SECRET}
+      ARDA_GRPC_CA_FILE: /var/run/arda-grpc-tls/ca.crt
+      ARDA_GRPC_CERT_FILE: /var/run/arda-grpc-tls/tls.crt
+      ARDA_GRPC_KEY_FILE: /var/run/arda-grpc-tls/tls.key
       LOG_LEVEL: info
-      DATABASE_DSN: postgres://${MEDIA_DATABASE_USER:-arda_media}:${MEDIA_DATABASE_PASSWORD:-123456}@${MEDIA_DATABASE_HOST:-host.docker.internal}:${MEDIA_DATABASE_PORT:-5432}/${MEDIA_DATABASE_NAME:-media}?sslmode=${MEDIA_DATABASE_SSLMODE:-disable}
+      DATABASE_DSN: postgres://${MEDIA_DATABASE_USER:?set MEDIA_DATABASE_USER}:${MEDIA_DATABASE_PASSWORD:?set MEDIA_DATABASE_PASSWORD}@${MEDIA_DATABASE_HOST:?set MEDIA_DATABASE_HOST}:${MEDIA_DATABASE_PORT:?set MEDIA_DATABASE_PORT}/${MEDIA_DATABASE_NAME:?set MEDIA_DATABASE_NAME}?sslmode=${MEDIA_DATABASE_SSLMODE:?set MEDIA_DATABASE_SSLMODE}
       NATS_URL: ${NATS_URL:-}
       STORAGE_ENDPOINT: ${GARAGE_ENDPOINT:-}
       STORAGE_ACCESS_KEY: ${GARAGE_ACCESS_KEY:-}
@@ -47,9 +77,34 @@ services:
       STORAGE_FORCE_PATH_STYLE: ${GARAGE_FORCE_PATH_STYLE:-true}
     ports:
       - "8092:8080"
-      - "9092:9090"
+      - "9092:9092"
+    volumes:
+      - ./.dev/grpc-tls/media:/var/run/arda-grpc-tls:ro
     env_file:
       - .env
+
+  finance-service:
+    build:
+      context: .
+      dockerfile: apps/finance-service/Dockerfile
+    environment:
+      APP_NAME: finance-service
+      HTTP_ADDR: 0.0.0.0:8080
+      ARDA_SERVICE_AUTH_SECRET: ${ARDA_SERVICE_AUTH_SECRET:?set ARDA_SERVICE_AUTH_SECRET}
+      ARDA_GRPC_CA_FILE: /var/run/arda-grpc-tls/ca.crt
+      ARDA_GRPC_CERT_FILE: /var/run/arda-grpc-tls/tls.crt
+      ARDA_GRPC_KEY_FILE: /var/run/arda-grpc-tls/tls.key
+      LOG_LEVEL: info
+      DATABASE_DSN: postgres://${FINANCE_DATABASE_USER:?set FINANCE_DATABASE_USER}:${FINANCE_DATABASE_PASSWORD:?set FINANCE_DATABASE_PASSWORD}@${FINANCE_DATABASE_HOST:?set FINANCE_DATABASE_HOST}:${FINANCE_DATABASE_PORT:?set FINANCE_DATABASE_PORT}/finance?sslmode=${FINANCE_DATABASE_SSLMODE:?set FINANCE_DATABASE_SSLMODE}
+      PLATFORM_GRPC_ADDR: platform-service:9090
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./.dev/grpc-tls/finance:/var/run/arda-grpc-tls:ro
+    env_file:
+      - .env
+    depends_on:
+      - platform-service
 
   auth-gateway:
     build:
@@ -70,6 +125,7 @@ services:
       INTROSPECTION_CLIENT_SECRET: ${INTROSPECTION_CLIENT_SECRET}
       POLICY_FILE: configs/policy.yaml
       RECENT_AUTH_WINDOW_SECONDS: 300
+      SESSION_STORE: memory
     ports:
       - "8082:8080"
     env_file:
@@ -97,35 +153,52 @@ services:
 
   workflow-service:
     build:
-      context: ./apps/workflow-service
+      context: .
+      dockerfile: apps/workflow-service/Dockerfile
     environment:
       APP_NAME: workflow-service
       HTTP_ADDR: 0.0.0.0:8080
+      ARDA_GRPC_CA_FILE: /var/run/arda-grpc-tls/ca.crt
+      ARDA_GRPC_CERT_FILE: /var/run/arda-grpc-tls/tls.crt
+      ARDA_GRPC_KEY_FILE: /var/run/arda-grpc-tls/tls.key
+      ARDA_SERVICE_AUTH_SECRET: ${ARDA_SERVICE_AUTH_SECRET:?set ARDA_SERVICE_AUTH_SECRET}
       LOG_LEVEL: info
-      DATABASE_DSN: postgres://arda_workflow:123456@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/workflow?sslmode=${IAM_DATABASE_SSLMODE:-disable}
+      DATABASE_DSN: postgres://${WORKFLOW_DATABASE_USER:?set WORKFLOW_DATABASE_USER}:${WORKFLOW_DATABASE_PASSWORD:?set WORKFLOW_DATABASE_PASSWORD}@${WORKFLOW_DATABASE_HOST:?set WORKFLOW_DATABASE_HOST}:${WORKFLOW_DATABASE_PORT:?set WORKFLOW_DATABASE_PORT}/workflow?sslmode=${WORKFLOW_DATABASE_SSLMODE:?set WORKFLOW_DATABASE_SSLMODE}
       ZEEBE_ADDR: ${ZEEBE_ADDR:-192.168.100.201:30650}
       GRPC_ADDR: 0.0.0.0:9090
       CRM_GRPC_ADDR: crm-service:9090
-      NOTIFICATION_SERVICE_URL: http://notification-service:8080
+      IAM_GRPC_ADDR: iam-service:9090
+      NOTIFICATION_GRPC_ADDR: notification-service:9095
     ports:
       - "8093:8080"
       - "9093:9090"
+    volumes:
+      - ./.dev/grpc-tls/workflow:/var/run/arda-grpc-tls:ro
     env_file:
       - .env
+    depends_on:
+      - notification-service
 
   crm-service:
     build:
-      context: ./apps/crm-service
+      context: .
+      dockerfile: apps/crm-service/Dockerfile
     environment:
       APP_NAME: crm-service
       HTTP_ADDR: 0.0.0.0:8080
+      ARDA_GRPC_CA_FILE: /var/run/arda-grpc-tls/ca.crt
+      ARDA_GRPC_CERT_FILE: /var/run/arda-grpc-tls/tls.crt
+      ARDA_GRPC_KEY_FILE: /var/run/arda-grpc-tls/tls.key
+      ARDA_SERVICE_AUTH_SECRET: ${ARDA_SERVICE_AUTH_SECRET:?set ARDA_SERVICE_AUTH_SECRET}
       LOG_LEVEL: info
-      DATABASE_DSN: postgres://arda_crm:123456@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/crm?sslmode=${IAM_DATABASE_SSLMODE:-disable}
+      DATABASE_DSN: postgres://${CRM_DATABASE_USER:?set CRM_DATABASE_USER}:${CRM_DATABASE_PASSWORD:?set CRM_DATABASE_PASSWORD}@${CRM_DATABASE_HOST:?set CRM_DATABASE_HOST}:${CRM_DATABASE_PORT:?set CRM_DATABASE_PORT}/crm?sslmode=${CRM_DATABASE_SSLMODE:?set CRM_DATABASE_SSLMODE}
       GRPC_ADDR: 0.0.0.0:9090
       WORKFLOW_GRPC_ADDR: workflow-service:9090
     ports:
       - "8094:8080"
       - "9094:9090"
+    volumes:
+      - ./.dev/grpc-tls/crm:/var/run/arda-grpc-tls:ro
     env_file:
       - .env
     depends_on:
@@ -133,15 +206,22 @@ services:
 
   hrm-service:
     build:
-      context: ./apps/hrm-service
+      context: .
+      dockerfile: apps/hrm-service/Dockerfile
     environment:
       APP_NAME: hrm-service
       HTTP_ADDR: 0.0.0.0:8080
+      ARDA_GRPC_CA_FILE: /var/run/arda-grpc-tls/ca.crt
+      ARDA_GRPC_CERT_FILE: /var/run/arda-grpc-tls/tls.crt
+      ARDA_GRPC_KEY_FILE: /var/run/arda-grpc-tls/tls.key
+      ARDA_SERVICE_AUTH_SECRET: ${ARDA_SERVICE_AUTH_SECRET:?set ARDA_SERVICE_AUTH_SECRET}
       LOG_LEVEL: info
-      DATABASE_DSN: postgres://arda_hrm:123456@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/hrm?sslmode=${IAM_DATABASE_SSLMODE:-disable}
+      DATABASE_DSN: postgres://${HRM_DATABASE_USER:?set HRM_DATABASE_USER}:${HRM_DATABASE_PASSWORD:?set HRM_DATABASE_PASSWORD}@${HRM_DATABASE_HOST:?set HRM_DATABASE_HOST}:${HRM_DATABASE_PORT:?set HRM_DATABASE_PORT}/hrm?sslmode=${HRM_DATABASE_SSLMODE:?set HRM_DATABASE_SSLMODE}
       WORKFLOW_GRPC_ADDR: workflow-service:9090
     ports:
       - "8097:8080"
+    volumes:
+      - ./.dev/grpc-tls/hrm:/var/run/arda-grpc-tls:ro
     env_file:
       - .env
     depends_on:
@@ -149,14 +229,28 @@ services:
 
   notification-service:
     build:
-      context: ./apps/notification-service
+      context: .
+      dockerfile: apps/notification-service/Dockerfile
     environment:
       APP_NAME: notification-service
       HTTP_ADDR: 0.0.0.0:8080
+      GRPC_ADDR: 0.0.0.0:9095
+      ARDA_SERVICE_AUTH_SECRET: ${ARDA_SERVICE_AUTH_SECRET:?set ARDA_SERVICE_AUTH_SECRET}
+      ARDA_GRPC_CA_FILE: /var/run/arda-grpc-tls/ca.crt
+      ARDA_GRPC_CERT_FILE: /var/run/arda-grpc-tls/tls.crt
+      ARDA_GRPC_KEY_FILE: /var/run/arda-grpc-tls/tls.key
       LOG_LEVEL: info
-      DATABASE_DSN: postgres://arda_notification:123456@${IAM_DATABASE_HOST}:${IAM_DATABASE_PORT}/notification?sslmode=${IAM_DATABASE_SSLMODE:-disable}
-      NATS_URL: ${NATS_URL:-}
+      DATABASE_DSN: postgres://${NOTIFICATION_DATABASE_USER:?set NOTIFICATION_DATABASE_USER}:${NOTIFICATION_DATABASE_PASSWORD:?set NOTIFICATION_DATABASE_PASSWORD}@${NOTIFICATION_DATABASE_HOST:?set NOTIFICATION_DATABASE_HOST}:${NOTIFICATION_DATABASE_PORT:?set NOTIFICATION_DATABASE_PORT}/notification?sslmode=${NOTIFICATION_DATABASE_SSLMODE:?set NOTIFICATION_DATABASE_SSLMODE}
+      NATS_URL: nats://nats:4222
     ports:
       - "8095:8080"
+      - "9095:9095"
+    volumes:
+      - ./.dev/grpc-tls/notification:/var/run/arda-grpc-tls:ro
     env_file:
       - .env
+    depends_on:
+      - nats
+
+volumes:
+  nats-data:

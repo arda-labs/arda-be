@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	iamv1 "github.com/arda-labs/arda/libs/go/arda-proto/iam/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 const defaultTimeout = 5 * time.Second
@@ -34,10 +34,21 @@ func Dial(ctx context.Context, addr, sourceService string) (*Client, error) {
 	if addr == "" {
 		return nil, errors.New("iam grpc address is required")
 	}
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return nil, fmt.Errorf("iam grpc service identity is not configured: %w", err)
+	}
+	transportCreds, err := identity.ClientTransportCredentials("iam-service")
+	if err != nil {
+		return nil, fmt.Errorf("iam grpc tls is not configured: %w", err)
+	}
 	conn, err := grpc.NewClient(
 		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{})),
+		grpc.WithTransportCredentials(transportCreds),
+		grpc.WithChainUnaryInterceptor(
+			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
+			interceptors.UnaryClientServiceAuth(secret, sourceService, "iam-service"),
+		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial iam: %w", err)

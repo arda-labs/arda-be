@@ -31,14 +31,14 @@ func (r *TransactionRepository) Create(ctx context.Context, txn *domain.Transact
 
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO fin_transactions (
-			tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
+			tenant_id, idempotency_key, request_hash, txn_type, direction, case_type, operation_name,
 			txn_date, status, amount, currency, description, source_ref, reversed_transaction_id,
 			counterparty_name, counterparty_account, current_step, priority,
 			created_by, approved_by, metadata
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 		RETURNING id, posted_at, created_at
-	`, txn.TenantID, nullStr(txn.IdempotencyKey), txn.TxnType, nullStr(string(txn.Direction)),
+	`, txn.TenantID, nullStr(txn.IdempotencyKey), nullStr(txn.RequestHash), txn.TxnType, nullStr(string(txn.Direction)),
 		nullStr(txn.CaseType), nullStr(txn.OperationName), txn.TxnDate, string(txn.Status),
 		nullStr(txn.Amount), nullStr(txn.Currency), txn.Description, txn.SourceRef,
 		nullUUID(txn.ReversedTransactionID), nullStr(txn.CounterpartyName), nullStr(txn.CounterpartyAccount),
@@ -47,25 +47,30 @@ func (r *TransactionRepository) Create(ctx context.Context, txn *domain.Transact
 	return row.Scan(&txn.ID, &txn.PostedAt, &txn.CreatedAt)
 }
 
-func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*domain.Transaction, error) {
+func (r *TransactionRepository) GetByID(ctx context.Context, tenantID, id string) (*domain.Transaction, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
+		SELECT id, tenant_id, idempotency_key, request_hash, txn_type, direction, case_type, operation_name,
 		       txn_date, posted_at, status, amount, currency, description, source_ref,
 		       reversed_transaction_id, counterparty_name, counterparty_account, current_step, priority,
 		       created_by, approved_by, metadata, created_at
-		FROM fin_transactions WHERE id = $1
-	`, id)
+		FROM fin_transactions WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id)
 	return scanTransaction(row)
 }
 
-func (r *TransactionRepository) GetByIdempotencyKey(ctx context.Context, key string) (*domain.Transaction, error) {
+// GetByIdempotencyKey returns a transaction only within the explicit
+// tenant/operation idempotency scope. A key is never a global identifier.
+func (r *TransactionRepository) GetByIdempotencyKey(ctx context.Context, tenantID, operationName, key string) (*domain.Transaction, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
+		SELECT id, tenant_id, idempotency_key, request_hash, txn_type, direction, case_type, operation_name,
 		       txn_date, posted_at, status, amount, currency, description, source_ref,
 		       reversed_transaction_id, counterparty_name, counterparty_account, current_step, priority,
 		       created_by, approved_by, metadata, created_at
-		FROM fin_transactions WHERE idempotency_key = $1
-	`, key)
+		FROM fin_transactions
+		WHERE tenant_id = $1
+		  AND COALESCE(operation_name, '') = $2
+		  AND idempotency_key = $3
+	`, tenantID, operationName, key)
 	return scanTransaction(row)
 }
 
@@ -104,7 +109,7 @@ func (r *TransactionRepository) List(ctx context.Context, tenantID string, statu
 	offset := (page - 1) * size
 
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
+		SELECT id, tenant_id, idempotency_key, request_hash, txn_type, direction, case_type, operation_name,
 		       txn_date, posted_at, status, amount, currency, description, source_ref,
 		       reversed_transaction_id, counterparty_name, counterparty_account, current_step, priority,
 		       created_by, approved_by, metadata, created_at
@@ -201,7 +206,7 @@ func (r *TransactionRepository) Search(ctx context.Context, f TransactionSearchF
 	offset := (f.Page - 1) * f.Size
 
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, idempotency_key, txn_type, direction, case_type, operation_name,
+		SELECT id, tenant_id, idempotency_key, request_hash, txn_type, direction, case_type, operation_name,
 		       txn_date, posted_at, status, amount, currency, description, source_ref,
 		       reversed_transaction_id, counterparty_name, counterparty_account, current_step, priority,
 		       created_by, approved_by, metadata, created_at
@@ -225,10 +230,10 @@ func (r *TransactionRepository) Search(ctx context.Context, f TransactionSearchF
 	return txns, total, rows.Err()
 }
 
-func (r *TransactionRepository) UpdateStatus(ctx context.Context, id string, status domain.TransactionStatus, approvedBy string) error {
+func (r *TransactionRepository) UpdateStatus(ctx context.Context, tenantID, id string, status domain.TransactionStatus, approvedBy string) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE fin_transactions SET status = $1, approved_by = $2 WHERE id = $3
-	`, status, approvedBy, id)
+		UPDATE fin_transactions SET status = $1, approved_by = $2 WHERE tenant_id = $3 AND id = $4
+	`, status, approvedBy, tenantID, id)
 	return err
 }
 
@@ -293,7 +298,7 @@ func (r *TransactionRepository) GetEntriesByTransaction(ctx context.Context, txn
 
 // ── Balance update (materialized) ──
 
-func (r *TransactionRepository) UpdateBalance(ctx context.Context, accountID string, delta string, normalBalance domain.NormalBalance, entryType domain.EntryType) error {
+func (r *TransactionRepository) UpdateBalance(ctx context.Context, tenantID, accountID string, delta string, normalBalance domain.NormalBalance, entryType domain.EntryType) error {
 	sign := "+"
 	if (normalBalance == domain.NormalDebit && entryType == domain.EntryCredit) ||
 		(normalBalance == domain.NormalCredit && entryType == domain.EntryDebit) {
@@ -304,7 +309,8 @@ func (r *TransactionRepository) UpdateBalance(ctx context.Context, accountID str
 		UPDATE fin_account_balances
 		SET balance = balance %s $1::numeric, updated_at = now()
 		WHERE account_id = $2
-	`, sign), delta, accountID)
+		  AND EXISTS (SELECT 1 FROM fin_accounts WHERE id = $2 AND tenant_id = $3)
+	`, sign), delta, accountID, tenantID)
 	return err
 }
 
@@ -321,13 +327,14 @@ func scanTransaction(row *sql.Row) (*domain.Transaction, error) {
 func scanTransactionRow(scanner interface{ Scan(dest ...any) error }, t *domain.Transaction) error {
 	var meta sql.NullString
 	var idKey sql.NullString
+	var requestHash sql.NullString
 	var approvedBy sql.NullString
 	var direction, caseType, operationName sql.NullString
 	var amount, currency sql.NullString
 	var counterpartyName, counterpartyAccount, currentStep, priority sql.NullString
 	var reversedTransactionID sql.NullString
 
-	err := scanner.Scan(&t.ID, &t.TenantID, &idKey, &t.TxnType, &direction,
+	err := scanner.Scan(&t.ID, &t.TenantID, &idKey, &requestHash, &t.TxnType, &direction,
 		&caseType, &operationName, &t.TxnDate, &t.PostedAt, &t.Status,
 		&amount, &currency, &t.Description, &t.SourceRef, &reversedTransactionID, &counterpartyName,
 		&counterpartyAccount, &currentStep, &priority, &t.CreatedBy,
@@ -339,6 +346,7 @@ func scanTransactionRow(scanner interface{ Scan(dest ...any) error }, t *domain.
 		return err
 	}
 	t.IdempotencyKey = idKey.String
+	t.RequestHash = requestHash.String
 	t.Direction = domain.TransactionDirection(direction.String)
 	t.CaseType = caseType.String
 	t.OperationName = operationName.String

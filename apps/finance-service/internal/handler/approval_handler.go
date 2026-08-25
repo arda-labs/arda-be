@@ -35,13 +35,13 @@ func (h *ApprovalHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := r.Header.Get("X-Tenant-Id")
-	if tenantID == "" {
-		tenantID = "default"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
 	}
-	makerID := r.Header.Get("X-User-Id")
-	if makerID == "" {
-		makerID = "system"
+	makerID, ok := requireUserID(w, r)
+	if !ok {
+		return
 	}
 
 	result, err := h.svc.CreateApproval(r.Context(), tenantID, req.RequestType, req.RefID, makerID, req.Note, req.Amount)
@@ -56,9 +56,9 @@ func (h *ApprovalHandler) Create(w http.ResponseWriter, r *http.Request) {
 // ListPending returns pending approvals for a level.
 // GET /api/finance/approvals/pending?level=1
 func (h *ApprovalHandler) ListPending(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-Id")
-	if tenantID == "" {
-		tenantID = "default"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
 	}
 	level, _ := strconv.Atoi(r.URL.Query().Get("level"))
 	if level < 1 {
@@ -88,12 +88,16 @@ func (h *ApprovalHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	checkerID := r.Header.Get("X-User-Id")
-	if checkerID == "" {
-		checkerID = "system"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	checkerID, ok := requireUserID(w, r)
+	if !ok {
+		return
 	}
 
-	result, err := h.svc.Approve(r.Context(), id, checkerID, req.Note)
+	result, err := h.svc.Approve(r.Context(), tenantID, id, checkerID, req.Note)
 	if err != nil {
 		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -116,12 +120,16 @@ func (h *ApprovalHandler) Reject(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	checkerID := r.Header.Get("X-User-Id")
-	if checkerID == "" {
-		checkerID = "system"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	checkerID, ok := requireUserID(w, r)
+	if !ok {
+		return
 	}
 
-	result, err := h.svc.Reject(r.Context(), id, checkerID, req.Note)
+	result, err := h.svc.Reject(r.Context(), tenantID, id, checkerID, req.Note)
 	if err != nil {
 		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -139,12 +147,16 @@ func (h *ApprovalHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := r.Header.Get("X-User-Id")
-	if userID == "" {
-		userID = "system"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
 	}
 
-	result, err := h.svc.Cancel(r.Context(), id, userID)
+	result, err := h.svc.Cancel(r.Context(), tenantID, id, userID)
 	if err != nil {
 		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -162,7 +174,11 @@ func (h *ApprovalHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.svc.GetApproval(r.Context(), id)
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	result, err := h.svc.GetApproval(r.Context(), tenantID, id)
 	if err != nil {
 		respondError(w, r, http.StatusNotFound, err.Error())
 		return

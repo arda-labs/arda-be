@@ -24,7 +24,7 @@ func Load() Config {
 		HTTPAddr:    "0.0.0.0:8091",
 		GRPCAddr:    "0.0.0.0:9091",
 		LogLevel:    "info",
-		DatabaseDSN: "postgres://arda_common:123456@localhost:5432/common?sslmode=disable",
+		DatabaseDSN: "",
 		NATSURL:     "",
 	}
 

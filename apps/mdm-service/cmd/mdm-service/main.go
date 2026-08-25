@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 func main() {
@@ -31,7 +33,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      mux,
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -59,16 +61,16 @@ func main() {
 }
 
 type config struct {
-	AppName   string
-	HTTPAddr  string
-	LogLevel  string
+	AppName  string
+	HTTPAddr string
+	LogLevel string
 }
 
 func loadConfig() config {
 	return config{
-		AppName:   "mdm-service",
-		HTTPAddr:  envOr("HTTP_ADDR", "0.0.0.0:8096"),
-		LogLevel:  envOr("LOG_LEVEL", "info"),
+		AppName:  "mdm-service",
+		HTTPAddr: envOr("HTTP_ADDR", "0.0.0.0:8096"),
+		LogLevel: envOr("LOG_LEVEL", "info"),
 	}
 }
 

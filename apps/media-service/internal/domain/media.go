@@ -2,6 +2,11 @@ package domain
 
 import "time"
 
+type FileScope struct {
+	TenantID string
+	OrgID    string
+}
+
 const (
 	StatusPendingUpload = "pending_upload"
 	StatusUploaded      = "uploaded"
@@ -14,8 +19,6 @@ const (
 
 	ScanNotRequired = "not_required"
 	ScanPending     = "pending"
-
-	DefaultTenantID = "default"
 )
 
 type File struct {
@@ -71,7 +74,7 @@ type InitUploadRequest struct {
 }
 
 type InitUploadResponse struct {
-	File      File      `json:"file"`
+	File     File      `json:"file"`
 	Upload   UploadURL `json:"upload"`
 	UploadID string    `json:"upload_id"`
 }
@@ -93,10 +96,3 @@ type DownloadURLResponse struct {
 	URL       string    `json:"url"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
-
-type AttachRequest struct {
-	PublicIDs []string `json:"public_ids"`
-	OwnerType string   `json:"owner_type"`
-	OwnerID   string   `json:"owner_id"`
-}
-

@@ -8,9 +8,9 @@ Local development connects to services running in the k3s LAN cluster.
 
 | Node | IP |
 | --- | --- |
-| `k3s-node1` | `192.168.100.201` |
-| `k3s-node2` | `192.168.100.202` |
-| `k3s-node3` | `192.168.100.203` |
+| `k3s-node1` | `192.168.10.201` |
+| `k3s-node2` | `192.168.10.202` |
+| `k3s-node3` | `192.168.10.203` |
 
 ## LAN Endpoints
 
@@ -18,10 +18,10 @@ Use any node IP for NodePort services.
 
 | Dependency | Endpoint |
 | --- | --- |
-| PostgreSQL CNPG | `192.168.100.201:30432` |
-| Valkey | `192.168.100.201:30379` |
-| Hydra admin | `http://192.168.100.201:30445` |
-| Kratos admin | `http://192.168.100.201:30446` |
+| PostgreSQL CNPG | `192.168.10.201:30432` |
+| Valkey | `192.168.10.201:30379` |
+| Hydra admin | `http://192.168.10.201:30445` |
+| Kratos admin | `http://192.168.10.201:30446` |
 | Hydra public | `https://auth.arda.io.vn` |
 | Kratos public | `https://identity.arda.io.vn` |
 

@@ -33,7 +33,7 @@ func (h *CalendarHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeResult(w, sd, nil)
+	writeResultWithRequest(w, r, sd, nil)
 }
 
 func (h *CalendarHandler) TriggerEOD(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +48,7 @@ func (h *CalendarHandler) TriggerEOD(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeResult(w, map[string]any{
+	writeResultWithRequest(w, r, map[string]any{
 		"message": "EOD completed successfully",
 		"data":    sd,
 	}, nil)
@@ -80,7 +80,7 @@ func (h *CalendarHandler) EvaluateDate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeResult(w, map[string]any{
+	writeResultWithRequest(w, r, map[string]any{
 		"channel":        channelCode,
 		"type":           txnType,
 		"executionTime":  execTime,
@@ -90,7 +90,7 @@ func (h *CalendarHandler) EvaluateDate(w http.ResponseWriter, r *http.Request) {
 
 func (h *CalendarHandler) ListHolidays(w http.ResponseWriter, r *http.Request) {
 	holidays, err := h.service.ListHolidays(r.Context())
-	writeResult(w, holidays, err)
+	writeResultWithRequest(w, r, holidays, err)
 }
 
 func (h *CalendarHandler) AddHoliday(w http.ResponseWriter, r *http.Request) {
@@ -117,5 +117,5 @@ func (h *CalendarHandler) AddHoliday(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeResult(w, holiday, nil)
+	writeResultWithRequest(w, r, holiday, nil)
 }

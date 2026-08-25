@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
 	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 type NotificationRepository struct {
@@ -17,6 +20,106 @@ type NotificationRepository struct {
 
 func NewNotificationRepository(db *sql.DB) *NotificationRepository {
 	return &NotificationRepository{db: db}
+}
+
+// ProcessEventOnce provides the transaction boundary required by an
+// at-least-once consumer. A processed event is a no-op on redelivery; a new
+// event runs handler inside the same transaction as the inbox marker. A
+// transaction-scoped advisory lock serializes the same event while it is being
+// handled. On failure the work transaction is rolled back and the failure is
+// recorded separately, so a partial business mutation cannot be committed.
+func (r *NotificationRepository) ProcessEventOnce(
+	ctx context.Context,
+	consumerName, eventID, subject, tenantID string,
+	handler func(context.Context, *sql.Tx) error,
+) error {
+	consumerName = strings.TrimSpace(consumerName)
+	eventID = strings.TrimSpace(eventID)
+	subject = strings.TrimSpace(subject)
+	if consumerName == "" || eventID == "" || subject == "" {
+		return fmt.Errorf("consumer name, event ID and subject are required")
+	}
+	if handler == nil {
+		return fmt.Errorf("event handler is required")
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, consumerName+":"+eventID); err != nil {
+		return fmt.Errorf("lock event: %w", err)
+	}
+
+	var claimed string
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO noti_event_inbox (consumer_name, event_id, subject, tenant_id)
+		VALUES ($1,$2,$3,$4)
+		ON CONFLICT (consumer_name, event_id) DO UPDATE
+		SET attempts = noti_event_inbox.attempts + 1
+		WHERE noti_event_inbox.processed_at IS NULL
+		RETURNING event_id`, consumerName, eventID, subject, strings.TrimSpace(tenantID)).Scan(&claimed)
+	if errors.Is(err, sql.ErrNoRows) {
+		// A processed event is deliberately idempotent. The conflicting row is
+		// left untouched; this transaction only releases its lock.
+		return tx.Commit()
+	}
+	if err != nil {
+		return err
+	}
+
+	if err := handler(ctx, tx); err != nil {
+		_ = tx.Rollback()
+		if recordErr := r.recordEventFailure(ctx, consumerName, eventID, subject, tenantID, err.Error()); recordErr != nil {
+			return fmt.Errorf("event handler failed: %v; record failure: %w", err, recordErr)
+		}
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE noti_event_inbox
+		SET processed_at = now(), last_error = ''
+		WHERE consumer_name = $1 AND event_id = $2`, consumerName, eventID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *NotificationRepository) recordEventFailure(
+	ctx context.Context, consumerName, eventID, subject, tenantID, reason string,
+) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, consumerName+":"+eventID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE noti_event_inbox
+		SET attempts = attempts + 1, last_error = $3
+		WHERE consumer_name = $1 AND event_id = $2 AND processed_at IS NULL`, consumerName, eventID, reason)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated == 0 {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO noti_event_inbox (consumer_name, event_id, subject, tenant_id, last_error)
+			VALUES ($1,$2,$3,$4,$5)
+			ON CONFLICT (consumer_name, event_id) DO NOTHING`,
+			consumerName, eventID, subject, strings.TrimSpace(tenantID), reason); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (r *NotificationRepository) CreateNotification(ctx context.Context, n *domain.Notification, deliveries []domain.Delivery, inboxItems []domain.InboxItem) (*domain.Notification, error) {
@@ -156,14 +259,79 @@ func (r *NotificationRepository) MarkOutboxPublished(ctx context.Context, id str
 }
 
 func (r *NotificationRepository) MarkOutboxFailed(ctx context.Context, id, reason string) error {
-	_, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	const maxAttempts = 10
+	var attempts int
+	var tenantID, subject string
+	var payload []byte
+	if err := tx.QueryRowContext(ctx, `
+		SELECT tenant_id, subject, payload, attempts
+		FROM noti_outbox WHERE id = $1 FOR UPDATE`, id).Scan(&tenantID, &subject, &payload, &attempts); err != nil {
+		return err
+	}
+	if attempts >= maxAttempts {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO notification_outbox_dlq (outbox_id, tenant_id, subject, payload, attempts, last_error)
+			VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+			ON CONFLICT (outbox_id) DO UPDATE SET attempts = EXCLUDED.attempts,
+			last_error = EXCLUDED.last_error, dead_lettered_at = now(), replayed_at = NULL, replayed_by = NULL`,
+			id, tenantID, subject, string(payload), attempts, reason); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE noti_outbox SET status = 'dead_lettered', locked_until = NULL, last_error = $2 WHERE id = $1`, id, reason); err != nil {
+			return err
+		}
+	} else if _, err := tx.ExecContext(ctx, `
 		UPDATE noti_outbox
 		SET status = 'pending',
-			next_retry_at = now() + interval '30 seconds',
+			next_retry_at = now() + interval '30 seconds' * LEAST($3, 120),
 			locked_until = NULL,
 			last_error = $2
-		WHERE id = $1`, id, reason)
-	return err
+		WHERE id = $1`, id, reason, attempts); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ReplayOutboxDLQ requeues one dead-lettered event only when an operator
+// identity is supplied. It is intentionally bounded to one event per call so
+// a replay cannot flood the stream or accidentally cross tenant boundaries.
+func (r *NotificationRepository) ReplayOutboxDLQ(ctx context.Context, id, operator string) error {
+	if strings.TrimSpace(operator) == "" {
+		return fmt.Errorf("operator identity is required")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `
+		UPDATE notification_outbox_dlq
+		SET replayed_at = now(), replayed_by = $2
+		WHERE outbox_id = $1 AND replayed_at IS NULL`, id, strings.TrimSpace(operator))
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return sql.ErrNoRows
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE noti_outbox
+		SET status = 'pending', attempts = 0, next_retry_at = now(), locked_until = NULL, last_error = ''
+		WHERE id = $1 AND status = 'dead_lettered'`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *NotificationRepository) ListInbox(ctx context.Context, tenantID, userID string, limit int) ([]domain.InboxItem, error) {
@@ -215,13 +383,13 @@ func (r *NotificationRepository) MarkAllInboxRead(ctx context.Context, tenantID,
 	return err
 }
 
-func (r *NotificationRepository) GetNotificationByPublicID(ctx context.Context, publicID string) (*domain.Notification, error) {
+func (r *NotificationRepository) GetNotificationByPublicID(ctx context.Context, tenantID, publicID string) (*domain.Notification, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id::text, public_id, tenant_id, source_service, source_event_id, event_type,
 			recipients, channels, template_key, template_version, payload, status,
 			idempotency_key, correlation_id, priority, created_at, updated_at
 		FROM noti_notifications
-		WHERE public_id = $1`, publicID)
+		WHERE tenant_id = $1 AND public_id = $2`, tenantID, publicID)
 
 	n := &domain.Notification{}
 	if err := scanNotification(row, n); err != nil {
@@ -410,9 +578,9 @@ func (r *NotificationRepository) ListPushSubscriptions(ctx context.Context, tena
 	return out, rows.Err()
 }
 
-func (r *NotificationRepository) DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) error {
+func (r *NotificationRepository) DeletePushSubscriptionByEndpoint(ctx context.Context, tenantID, endpoint string) error {
 	_, err := r.db.ExecContext(ctx, `
-		DELETE FROM noti_push_subscriptions WHERE endpoint = $1`, endpoint)
+		DELETE FROM noti_push_subscriptions WHERE tenant_id = $1 AND endpoint = $2`, tenantID, endpoint)
 	return err
 }
 
@@ -424,9 +592,20 @@ func scanNotification(row scanner, n *domain.Notification) error {
 }
 
 func insertOutbox(ctx context.Context, tx *sql.Tx, subject, eventCode, aggregateType, aggregateID, tenantID, userID string, payload any) error {
+	meta := ardametadata.FromOutgoing(ctx)
 	env, err := ardaevents.NewEnvelope(eventCode, payload, ardaevents.Options{
 		SourceService: "notification-service",
 		TenantID:      tenantID,
+		OrgID:         meta.OrgID,
+		RequestID:     meta.RequestID,
+		TraceID:       meta.TraceID,
+		TraceParent:   meta.TraceParent,
+		Locale:        meta.Locale,
+		Actor: ardaevents.Actor{
+			UserID:         meta.ActorUserID,
+			UserSubject:    meta.UserSubject,
+			ServiceAccount: meta.ServiceAccount,
+		},
 	})
 	if err != nil {
 		return err

@@ -1,6 +1,11 @@
 package repository
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
+)
 
 func TestValidateCreateRequiresBusinessReference(t *testing.T) {
 	err := validateCreate(CaseCreate{
@@ -52,5 +57,19 @@ func TestNewID(t *testing.T) {
 	}
 	if len(id) != 32 {
 		t.Fatalf("newID length = %d, want 32", len(id))
+	}
+}
+
+func TestVerifiedTenantRequiresOutgoingMetadata(t *testing.T) {
+	if _, err := verifiedTenant(context.Background()); err == nil {
+		t.Fatal("verifiedTenant accepted a context without tenant metadata")
+	}
+	ctx := ardametadata.AppendToOutgoing(context.Background(), ardametadata.Context{TenantID: "tenant-1"})
+	got, err := verifiedTenant(ctx)
+	if err != nil {
+		t.Fatalf("verifiedTenant returned error: %v", err)
+	}
+	if got != "tenant-1" {
+		t.Fatalf("verifiedTenant = %q, want tenant-1", got)
 	}
 }

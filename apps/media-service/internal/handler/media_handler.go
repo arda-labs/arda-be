@@ -24,23 +24,6 @@ func NewMediaHandler(service *service.MediaService) *MediaHandler {
 func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	slog.Info("incoming upload request", "method", r.Method, "content_type", contentType)
-	if strings.Contains(contentType, "application/json") {
-		var req domain.InitUploadRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, r, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
-			return
-		}
-		applyRequestContext(r, &req)
-
-		resp, err := h.service.InitUpload(r.Context(), req)
-		if err != nil {
-			writeServiceError(w, r, err)
-			return
-		}
-		writeJSON(w, r, http.StatusCreated, resp)
-		return
-	}
-
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, r, http.StatusBadRequest, "media.upload.invalid_form", "Failed to parse multipart form")
 		return
@@ -62,6 +45,10 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		SizeBytes:        header.Size,
 	}
 	applyRequestContext(r, &req)
+	if strings.TrimSpace(req.TenantID) == "" || strings.TrimSpace(req.OrgID) == "" {
+		writeError(w, r, http.StatusForbidden, "scope.required", "tenant and organization are required")
+		return
+	}
 
 	resp, err := h.service.UploadFile(r.Context(), req, file)
 	if err != nil {
@@ -78,6 +65,43 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *MediaHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
+	var req domain.InitUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
+		return
+	}
+	applyRequestContext(r, &req)
+	if strings.TrimSpace(req.OrgID) == "" {
+		writeError(w, r, http.StatusForbidden, "scope.required", "tenant and organization are required")
+		return
+	}
+	resp, err := h.service.InitUpload(r.Context(), req)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, map[string]any{
+		"file":      publicFileJSON(resp.File),
+		"upload":    resp.Upload,
+		"upload_id": resp.UploadID,
+	})
+}
+
+func (h *MediaHandler) CompleteUpload(w http.ResponseWriter, r *http.Request, fileID string) {
+	scope, ok := mediaScope(r)
+	if !ok {
+		writeError(w, r, http.StatusForbidden, "scope.required", "tenant and organization are required")
+		return
+	}
+	resp, err := h.service.CompleteUploadScoped(r.Context(), scope, fileID)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"file": publicFileJSON(resp.File)})
+}
+
 func (h *MediaHandler) View(w http.ResponseWriter, r *http.Request, publicID string) {
 	h.handleRetrieve(w, r, publicID, false)
 }
@@ -89,13 +113,18 @@ func (h *MediaHandler) Download(w http.ResponseWriter, r *http.Request, publicID
 func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request, publicID string) {
 	slog.Info("incoming delete request", "public_id", publicID)
 	ctx := r.Context()
-	userID := firstHeader(r, "X-User-Id", "X-User-Subject")
+	userID := firstHeader(r, "X-Actor-User-Id", "X-User-Id", "X-User-Subject")
 	tenantID := firstHeader(r, "X-Tenant-Id")
 	orgID := firstHeader(r, "X-Org-Id")
+	scope, ok := mediaScope(r)
+	if !ok {
+		writeError(w, r, http.StatusForbidden, "scope.required", "tenant and organization are required")
+		return
+	}
 	ip := r.RemoteAddr
 	userAgent := r.UserAgent()
 
-	err := h.service.DeleteFileByPublicID(ctx, publicID)
+	err := h.service.DeleteFileByPublicIDScoped(ctx, scope, publicID)
 	if err != nil {
 		fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s media_id=%s action=delete ip=%s ua=%s result=failed error=%v\n",
 			userID, tenantID, orgID, publicID, ip, userAgent, err)
@@ -112,13 +141,18 @@ func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request, publicID s
 func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, publicID string, download bool) {
 	slog.Info("incoming retrieve request", "public_id", publicID, "download", download)
 	ctx := r.Context()
-	file, err := h.service.GetFileByPublicID(ctx, publicID)
+	scope, ok := mediaScope(r)
+	if !ok {
+		writeError(w, r, http.StatusForbidden, "scope.required", "tenant and organization are required")
+		return
+	}
+	file, err := h.service.GetFileByPublicIDScoped(ctx, scope, publicID)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
 	}
 
-	userID := firstHeader(r, "X-User-Id", "X-User-Subject")
+	userID := firstHeader(r, "X-Actor-User-Id", "X-User-Id", "X-User-Subject")
 	tenantID := firstHeader(r, "X-Tenant-Id")
 	orgID := firstHeader(r, "X-Org-Id")
 	ip := r.RemoteAddr
@@ -165,7 +199,7 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.Copy(w, stream)
 	} else {
-		redirectURL, err := h.service.GetContentRedirectURLByPublicID(ctx, publicID, download)
+		redirectURL, err := h.service.GetContentRedirectURLByPublicIDScoped(ctx, scope, publicID, download)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -173,31 +207,6 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 		w.Header().Set("Cache-Control", "private, max-age=30")
 		http.Redirect(w, r, redirectURL, http.StatusFound)
 	}
-}
-
-func (h *MediaHandler) Attach(w http.ResponseWriter, r *http.Request) {
-	slog.Info("incoming attach request", "method", r.Method)
-	var req domain.AttachRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, r, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
-		return
-	}
-
-	tenantID := firstHeader(r, "X-Tenant-Id", "X-Tenant-ID")
-	orgID := firstHeader(r, "X-Org-Id", "X-Org-ID")
-	userID := firstHeader(r, "X-User-Id", "X-User-Subject")
-
-	if tenantID == "" {
-		tenantID = domain.DefaultTenantID
-	}
-
-	err := h.service.AttachFiles(r.Context(), req.PublicIDs, tenantID, orgID, userID, req.OwnerType, req.OwnerID)
-	if err != nil {
-		writeServiceError(w, r, err)
-		return
-	}
-
-	writeJSON(w, r, http.StatusOK, map[string]any{"status": "attached"})
 }
 
 func applyRequestContext(r *http.Request, req *domain.InitUploadRequest) {
@@ -215,6 +224,14 @@ func applyRequestContext(r *http.Request, req *domain.InitUploadRequest) {
 	}
 }
 
+func mediaScope(r *http.Request) (domain.FileScope, bool) {
+	scope := domain.FileScope{
+		TenantID: strings.TrimSpace(firstHeader(r, "X-Tenant-Id", "X-Tenant-ID")),
+		OrgID:    strings.TrimSpace(firstHeader(r, "X-Org-Id", "X-Org-ID")),
+	}
+	return scope, scope.TenantID != "" && scope.OrgID != ""
+}
+
 func firstHeader(r *http.Request, names ...string) string {
 	for _, name := range names {
 		if value := strings.TrimSpace(r.Header.Get(name)); value != "" {
@@ -222,6 +239,29 @@ func firstHeader(r *http.Request, names ...string) string {
 		}
 	}
 	return ""
+}
+
+func publicFileJSON(file domain.File) map[string]any {
+	result := map[string]any{
+		"public_id":         file.PublicID,
+		"module":            file.Module,
+		"entity_type":       file.EntityType,
+		"entity_id":         file.EntityID,
+		"original_filename": file.OriginalFilename,
+		"content_type":      file.ContentType,
+		"size_bytes":        file.SizeBytes,
+		"status":            file.Status,
+		"scan_status":       file.ScanStatus,
+		"visibility":        file.Visibility,
+		"created_at":        file.CreatedAt,
+	}
+	if file.UploadedAt != nil {
+		result["uploaded_at"] = file.UploadedAt
+	}
+	if file.ExpiresAt != nil {
+		result["expires_at"] = file.ExpiresAt
+	}
+	return result
 }
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {

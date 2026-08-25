@@ -22,7 +22,7 @@ func Load() Config {
 		HTTPAddr:         "0.0.0.0:8094",
 		GRPCAddr:         "0.0.0.0:9094",
 		LogLevel:         "info",
-		DatabaseDSN:      "postgres://postgres:postgres@localhost:5432/crm?sslmode=disable",
+		DatabaseDSN:      "",
 		WorkflowGRPCAddr: "localhost:9093",
 	}
 

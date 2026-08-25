@@ -1,37 +1,29 @@
 package notificationclient
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"strings"
-	"time"
+
+	grpcnotification "github.com/arda-labs/arda/libs/go/arda-grpc/client/notification"
 )
 
-type Client struct {
-	baseURL    string
-	httpClient *http.Client
-}
+type Client struct{ grpc *grpcnotification.Client }
 
 type AcceptRequest struct {
-	TenantID       string         `json:"tenant_id"`
-	IdempotencyKey string         `json:"idempotency_key"`
-	SourceService  string         `json:"source_service"`
-	SourceEventID  string         `json:"source_event_id"`
-	EventType      string         `json:"event_type"`
-	TemplateKey    string         `json:"template_key"`
-	Channels       []string       `json:"channels"`
-	Recipients     []Recipient    `json:"recipients"`
-	Payload        map[string]any `json:"payload,omitempty"`
-	CorrelationID  string         `json:"correlation_id,omitempty"`
-	Type           string         `json:"type,omitempty"`
-	TitleKey       string         `json:"title_key,omitempty"`
-	BodyKey        string         `json:"body_key,omitempty"`
-	Href           string         `json:"href,omitempty"`
-	Params         map[string]any `json:"params,omitempty"`
+	TenantID       string
+	IdempotencyKey string
+	SourceService  string
+	SourceEventID  string
+	EventType      string
+	TemplateKey    string
+	Channels       []string
+	Recipients     []Recipient
+	Payload        map[string]any
+	CorrelationID  string
+	Type           string
+	TitleKey       string
+	BodyKey        string
+	Href           string
+	Params         map[string]any
 }
 
 type Recipient struct {
@@ -39,45 +31,33 @@ type Recipient struct {
 	UserID string `json:"user_id,omitempty"`
 }
 
-func New(baseURL string) *Client {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if baseURL == "" {
-		return nil
+func New(addr string) (*Client, error) {
+	grpcClient, err := grpcnotification.New(addr, "workflow-service")
+	if err != nil {
+		return nil, err
 	}
-	return &Client{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
-		},
-	}
+	return &Client{grpc: grpcClient}, nil
 }
 
-func (c *Client) Enabled() bool {
-	return c != nil && c.baseURL != ""
+func (c *Client) Close() error {
+	if c == nil || c.grpc == nil {
+		return nil
+	}
+	return c.grpc.Close()
 }
+
+func (c *Client) Enabled() bool { return c != nil && c.grpc != nil }
 
 func (c *Client) Accept(ctx context.Context, in AcceptRequest) error {
-	if !c.Enabled() {
-		return nil
+	recipients := make([]grpcnotification.Recipient, 0, len(in.Recipients))
+	for _, recipient := range in.Recipients {
+		recipients = append(recipients, grpcnotification.Recipient{Type: recipient.Type, UserID: recipient.UserID})
 	}
-	body, err := json.Marshal(in)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/notifications", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil
-	}
-	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-	return fmt.Errorf("notification accept status %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+	_, _, err := c.grpc.Accept(ctx, grpcnotification.AcceptRequest{
+		TenantID: in.TenantID, IdempotencyKey: in.IdempotencyKey, SourceService: in.SourceService,
+		SourceEventID: in.SourceEventID, EventType: in.EventType, TemplateKey: in.TemplateKey,
+		Channels: in.Channels, Recipients: recipients, Payload: in.Payload, CorrelationID: in.CorrelationID,
+		Type: in.Type, TitleKey: in.TitleKey, BodyKey: in.BodyKey, Href: in.Href, Params: in.Params,
+	})
+	return err
 }

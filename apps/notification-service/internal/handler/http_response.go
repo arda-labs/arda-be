@@ -9,7 +9,7 @@ import (
 )
 
 func writeJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
-	ardahttp.WriteJSON(w, r, status, v)
+	ardahttp.WriteSuccess(w, r, status, v)
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, status int, message string) {
@@ -17,5 +17,5 @@ func writeError(w http.ResponseWriter, r *http.Request, status int, message stri
 	if status == http.StatusBadRequest && strings.Contains(strings.ToLower(message), "json") {
 		code = ardaerrors.CodeInvalidJSON
 	}
-	ardahttp.WriteErrorCode(w, r, status, code, message)
+	ardahttp.WriteProblem(w, r, status, ardaerrors.New(code, message))
 }

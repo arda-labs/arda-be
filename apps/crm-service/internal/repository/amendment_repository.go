@@ -41,35 +41,54 @@ func NewAmendmentRepository(db *sql.DB) *AmendmentRepository {
 	return &AmendmentRepository{db: db}
 }
 
-func (r *AmendmentRepository) HasPending(ctx context.Context, customerID string) (bool, error) {
+func (r *AmendmentRepository) HasPendingScoped(ctx context.Context, scope CustomerScope, customerID string) (bool, error) {
+	if err := validateCustomerScope(scope); err != nil {
+		return false, err
+	}
 	var exists bool
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS(
-			SELECT 1 FROM customer_amendments
-			WHERE customer_id = $1 AND status IN ('DRAFT', 'PENDING')
+			SELECT 1 FROM customer_amendments a
+			WHERE a.customer_id = $2 AND a.status IN ('DRAFT', 'PENDING')
+			  AND EXISTS (
+				SELECT 1 FROM customers c
+				WHERE c.id = a.customer_id AND c.tenant_id = $1 AND c.org_id = ANY($3)
+			  )
 		)
-	`, customerID).Scan(&exists)
+	`, scope.TenantID, customerID, pq.Array(scope.OrgIDs)).Scan(&exists)
 	return exists, err
 }
 
-func (r *AmendmentRepository) CreateDraft(ctx context.Context, customerID, workflowCaseID string) (*CustomerAmendment, error) {
+func (r *AmendmentRepository) CreateDraftScoped(ctx context.Context, scope CustomerScope, customerID, workflowCaseID string) (*CustomerAmendment, error) {
+	if err := validateCustomerScope(scope); err != nil {
+		return nil, err
+	}
 	id, err := newUUID()
 	if err != nil {
 		return nil, err
 	}
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO customer_amendments (id, customer_id, workflow_case_id, status)
-		VALUES ($1, $2, $3, 'DRAFT')
+		SELECT $1, c.id, $3, 'DRAFT'
+		FROM customers c
+		WHERE c.id = $2 AND c.tenant_id = $4 AND c.org_id = ANY($5)
 		RETURNING id, customer_id, workflow_case_id, status,
 		          before_snapshot, after_snapshot, changed_fields,
 		          applied_at, applied_by, rejected_at, rejected_by,
 		          created_at, updated_at
-	`, id, customerID, workflowCaseID)
+	`, id, customerID, workflowCaseID, scope.TenantID, pq.Array(scope.OrgIDs))
 	return scanAmendment(row)
 }
 
-func (r *AmendmentRepository) Get(ctx context.Context, id string) (*CustomerAmendment, error) {
-	row := r.db.QueryRowContext(ctx, amendmentSelect()+` WHERE id = $1`, id)
+func (r *AmendmentRepository) GetScoped(ctx context.Context, scope CustomerScope, id string) (*CustomerAmendment, error) {
+	if err := validateCustomerScope(scope); err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRowContext(ctx, amendmentSelect()+` a WHERE a.id = $2
+		AND EXISTS (
+			SELECT 1 FROM customers c
+			WHERE c.id = a.customer_id AND c.tenant_id = $1 AND c.org_id = ANY($3)
+		)`, scope.TenantID, id, pq.Array(scope.OrgIDs))
 	item, err := scanAmendment(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -77,12 +96,19 @@ func (r *AmendmentRepository) Get(ctx context.Context, id string) (*CustomerAmen
 	return item, err
 }
 
-func (r *AmendmentRepository) GetPendingByCustomer(ctx context.Context, customerID string) (*CustomerAmendment, error) {
+func (r *AmendmentRepository) GetPendingByCustomerScoped(ctx context.Context, scope CustomerScope, customerID string) (*CustomerAmendment, error) {
+	if err := validateCustomerScope(scope); err != nil {
+		return nil, err
+	}
 	row := r.db.QueryRowContext(ctx, amendmentSelect()+`
-		WHERE customer_id = $1 AND status IN ('DRAFT', 'PENDING')
+		a WHERE a.customer_id = $2 AND a.status IN ('DRAFT', 'PENDING')
+		  AND EXISTS (
+			SELECT 1 FROM customers c
+			WHERE c.id = a.customer_id AND c.tenant_id = $1 AND c.org_id = ANY($3)
+		  )
 		ORDER BY updated_at DESC
 		LIMIT 1
-	`, customerID)
+	`, scope.TenantID, customerID, pq.Array(scope.OrgIDs))
 	item, err := scanAmendment(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -90,7 +116,10 @@ func (r *AmendmentRepository) GetPendingByCustomer(ctx context.Context, customer
 	return item, err
 }
 
-func (r *AmendmentRepository) UpdateDraft(ctx context.Context, id string, in AmendmentUpsert) (*CustomerAmendment, error) {
+func (r *AmendmentRepository) UpdateDraftScoped(ctx context.Context, scope CustomerScope, id string, in AmendmentUpsert) (*CustomerAmendment, error) {
+	if err := validateCustomerScope(scope); err != nil {
+		return nil, err
+	}
 	after, err := marshalMap(in.AfterSnapshot)
 	if err != nil {
 		return nil, err
@@ -101,15 +130,22 @@ func (r *AmendmentRepository) UpdateDraft(ctx context.Context, id string, in Ame
 		    changed_fields = $3,
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND status = 'DRAFT'
+		  AND EXISTS (
+			SELECT 1 FROM customers c
+			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $4 AND c.org_id = ANY($5)
+		  )
 		RETURNING id, customer_id, workflow_case_id, status,
 		          before_snapshot, after_snapshot, changed_fields,
 		          applied_at, applied_by, rejected_at, rejected_by,
 		          created_at, updated_at
-	`, id, after, pqStringArray(in.ChangedFields))
+	`, id, after, pqStringArray(in.ChangedFields), scope.TenantID, pq.Array(scope.OrgIDs))
 	return scanAmendment(row)
 }
 
-func (r *AmendmentRepository) Submit(ctx context.Context, id, actor string, before map[string]any) (*CustomerAmendment, error) {
+func (r *AmendmentRepository) SubmitScoped(ctx context.Context, scope CustomerScope, id, actor string, before map[string]any) (*CustomerAmendment, error) {
+	if err := validateCustomerScope(scope); err != nil {
+		return nil, err
+	}
 	beforeJSON, err := marshalMap(before)
 	if err != nil {
 		return nil, err
@@ -127,8 +163,12 @@ func (r *AmendmentRepository) Submit(ctx context.Context, id, actor string, befo
 		    before_snapshot = $2,
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND status = 'DRAFT'
+		  AND EXISTS (
+			SELECT 1 FROM customers c
+			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $3 AND c.org_id = ANY($4)
+		  )
 		RETURNING customer_id
-	`, id, beforeJSON).Scan(&customerID)
+	`, id, beforeJSON, scope.TenantID, pq.Array(scope.OrgIDs)).Scan(&customerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("amendment not found or not in DRAFT status")
 	}
@@ -138,22 +178,29 @@ func (r *AmendmentRepository) Submit(ctx context.Context, id, actor string, befo
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE customers
 		SET status = 'PENDING_AMENDMENT', updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1 AND status = 'ACTIVE'
-	`, customerID); err != nil {
+		WHERE id = $1 AND tenant_id = $2 AND org_id = ANY($3) AND status = 'ACTIVE'
+	`, customerID, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return r.Get(ctx, id)
+	return r.GetScoped(ctx, scope, id)
 }
 
-func (r *AmendmentRepository) GetPendingForWorkflow(ctx context.Context, customerID string) (*CustomerAmendment, error) {
+func (r *AmendmentRepository) GetPendingForWorkflowScoped(ctx context.Context, scope CustomerScope, customerID string) (*CustomerAmendment, error) {
+	if err := validateCustomerScope(scope); err != nil {
+		return nil, err
+	}
 	row := r.db.QueryRowContext(ctx, amendmentSelect()+`
-		WHERE customer_id = $1 AND status = 'PENDING'
+		a WHERE a.customer_id = $2 AND a.status = 'PENDING'
+		  AND EXISTS (
+			SELECT 1 FROM customers c
+			WHERE c.id = a.customer_id AND c.tenant_id = $1 AND c.org_id = ANY($3)
+		  )
 		ORDER BY updated_at DESC
 		LIMIT 1
-	`, customerID)
+	`, scope.TenantID, customerID, pq.Array(scope.OrgIDs))
 	item, err := scanAmendment(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -161,19 +208,26 @@ func (r *AmendmentRepository) GetPendingForWorkflow(ctx context.Context, custome
 	return item, err
 }
 
-func (r *AmendmentRepository) Apply(ctx context.Context, customerID, actor string) error {
-	amendment, err := r.GetPendingForWorkflow(ctx, customerID)
+func (r *AmendmentRepository) ApplyScoped(ctx context.Context, scope CustomerScope, customerID, actor string) error {
+	amendment, err := r.GetPendingForWorkflowScoped(ctx, scope, customerID)
 	if err != nil || amendment == nil {
 		return errors.New("no pending amendment")
 	}
-	return r.applyAmendment(ctx, amendment, actor, false)
+	return r.applyAmendment(ctx, scope, amendment, actor)
 }
 
-func (r *AmendmentRepository) CancelDraft(ctx context.Context, id, customerID string) error {
+func (r *AmendmentRepository) CancelDraftScoped(ctx context.Context, scope CustomerScope, id, customerID string) error {
+	if err := validateCustomerScope(scope); err != nil {
+		return err
+	}
 	res, err := r.db.ExecContext(ctx, `
 		DELETE FROM customer_amendments
 		WHERE id = $1 AND customer_id = $2 AND status = 'DRAFT'
-	`, id, customerID)
+		  AND EXISTS (
+			SELECT 1 FROM customers c
+			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $3 AND c.org_id = ANY($4)
+		  )
+	`, id, customerID, scope.TenantID, pq.Array(scope.OrgIDs))
 	if err != nil {
 		return err
 	}
@@ -187,8 +241,8 @@ func (r *AmendmentRepository) CancelDraft(ctx context.Context, id, customerID st
 	return nil
 }
 
-func (r *AmendmentRepository) Discard(ctx context.Context, customerID, actor string) error {
-	amendment, err := r.GetPendingForWorkflow(ctx, customerID)
+func (r *AmendmentRepository) DiscardScoped(ctx context.Context, scope CustomerScope, customerID, actor string) error {
+	amendment, err := r.GetPendingForWorkflowScoped(ctx, scope, customerID)
 	if err != nil || amendment == nil {
 		return errors.New("no pending amendment")
 	}
@@ -205,20 +259,27 @@ func (r *AmendmentRepository) Discard(ctx context.Context, customerID, actor str
 		    rejected_by = $2,
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
-	`, amendment.ID, actor); err != nil {
+		  AND EXISTS (
+			SELECT 1 FROM customers c
+			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $3 AND c.org_id = ANY($4)
+		  )
+	`, amendment.ID, actor, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE customers
 		SET status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1
-	`, customerID); err != nil {
+		WHERE id = $1 AND tenant_id = $2 AND org_id = ANY($3)
+	`, customerID, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (r *AmendmentRepository) applyAmendment(ctx context.Context, amendment *CustomerAmendment, actor string, fromWorker bool) error {
+func (r *AmendmentRepository) applyAmendment(ctx context.Context, scope CustomerScope, amendment *CustomerAmendment, actor string) error {
+	if err := validateCustomerScope(scope); err != nil {
+		return err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -247,8 +308,8 @@ func (r *AmendmentRepository) applyAmendment(ctx context.Context, amendment *Cus
 		    extended_info = CASE WHEN $9::jsonb = '{}'::jsonb THEN extended_info ELSE $9 END,
 		    status = 'ACTIVE',
 		    updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1
-	`, amendment.CustomerID, name, email, mobile, identityNo, address, personal, business, extended); err != nil {
+		WHERE id = $1 AND tenant_id = $10 AND org_id = ANY($11)
+	`, amendment.CustomerID, name, email, mobile, identityNo, address, personal, business, extended, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -258,14 +319,18 @@ func (r *AmendmentRepository) applyAmendment(ctx context.Context, amendment *Cus
 		    applied_by = $2,
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
-	`, amendment.ID, actor); err != nil {
+		  AND EXISTS (
+			SELECT 1 FROM customers c
+			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $3 AND c.org_id = ANY($4)
+		  )
+	`, amendment.ID, actor, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (r *AmendmentRepository) ReopenPending(ctx context.Context, customerID string) error {
-	amendment, err := r.GetPendingForWorkflow(ctx, customerID)
+func (r *AmendmentRepository) ReopenPendingScoped(ctx context.Context, scope CustomerScope, customerID string) error {
+	amendment, err := r.GetPendingForWorkflowScoped(ctx, scope, customerID)
 	if err != nil || amendment == nil {
 		return errors.New("no pending amendment")
 	}
@@ -280,25 +345,21 @@ func (r *AmendmentRepository) ReopenPending(ctx context.Context, customerID stri
 		SET status = 'DRAFT',
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND status = 'PENDING'
-	`, amendment.ID); err != nil {
+		  AND EXISTS (
+			SELECT 1 FROM customers c
+			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $2 AND c.org_id = ANY($3)
+		  )
+	`, amendment.ID, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE customers
 		SET status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1 AND status = 'PENDING_AMENDMENT'
-	`, customerID); err != nil {
+		WHERE id = $1 AND tenant_id = $2 AND org_id = ANY($3) AND status = 'PENDING_AMENDMENT'
+	`, customerID, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
 		return err
 	}
 	return tx.Commit()
-}
-
-func (r *CustomerRepository) SetPendingAmendment(ctx context.Context, customerID string) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE customers SET status = 'PENDING_AMENDMENT', updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1 AND status = 'ACTIVE'
-	`, customerID)
-	return err
 }
 
 func CustomerSnapshot(c *Customer) map[string]any {

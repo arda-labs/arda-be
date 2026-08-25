@@ -19,7 +19,7 @@ func writeResult(w http.ResponseWriter, r *http.Request, value any, err error) {
 		writeErrorCode(w, r, http.StatusInternalServerError, ardaerrors.CodeInternal, err.Error())
 		return
 	}
-	ardahttp.WriteJSON(w, r, http.StatusOK, value)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, value)
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, status int, message string) {
@@ -27,7 +27,39 @@ func writeError(w http.ResponseWriter, r *http.Request, status int, message stri
 }
 
 func writeErrorCode(w http.ResponseWriter, r *http.Request, status int, code, message string) {
-	ardahttp.WriteErrorCode(w, r, status, code, message)
+	ardahttp.WriteProblem(w, r, status, ardaerrors.New(code, message))
+}
+
+func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
+	if items == nil {
+		items = []T{}
+	}
+	query := ardahttp.ParseListQuery(r.URL.Query())
+	page, perPage := query.Page, query.PerPage
+	total := len(items)
+	if query.All {
+		perPage = maxInt(total, 1)
+		page = 1
+	} else {
+		start := query.Offset()
+		if start >= total {
+			items = []T{}
+		} else {
+			end := start + perPage
+			if end > total {
+				end = total
+			}
+			items = items[start:end]
+		}
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, items))
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func decode(w http.ResponseWriter, r *http.Request, dst any) bool {

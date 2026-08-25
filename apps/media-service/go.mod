@@ -3,6 +3,7 @@ module github.com/arda-labs/arda/apps/media-service
 go 1.26
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/aws/aws-sdk-go-v2 v1.42.0
@@ -43,6 +44,8 @@ require (
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
+
+replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc
 
 replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
 

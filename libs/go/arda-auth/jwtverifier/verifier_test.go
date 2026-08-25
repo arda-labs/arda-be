@@ -8,7 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const testSecret = "super-secret-dev-key-change-in-production"
+const testSecret = "unit-test-secret-only"
 
 func TestVerifyValidToken(t *testing.T) {
 	v := New("http://hydra.local", "arda-api", testSecret)

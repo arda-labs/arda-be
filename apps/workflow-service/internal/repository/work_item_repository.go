@@ -22,6 +22,7 @@ const (
 type WorkItem struct {
 	ID                       string     `json:"id"`
 	CaseID                   string     `json:"caseId"`
+	TenantID                 string     `json:"-"`
 	CaseCode                 string     `json:"caseCode"`
 	CaseType                 string     `json:"caseType"`
 	Direction                string     `json:"direction"`
@@ -222,8 +223,12 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 }
 
 func (r *CaseRepository) workItemSLADueAt(ctx context.Context, caseID string, stepCode string) (*time.Time, error) {
+	tenantID, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var dueAt sql.NullTime
-	err := r.db.QueryRowContext(ctx, `
+	err = r.db.QueryRowContext(ctx, `
 		SELECT COALESCE(
 			(
 				SELECT CASE stp.duration_unit
@@ -232,8 +237,8 @@ func (r *CaseRepository) workItemSLADueAt(ctx context.Context, caseID string, st
 				END
 				FROM business_cases bc
 				JOIN business_sla_task_policies stp ON stp.sla_policy_id = bc.sla_policy_id
-				WHERE bc.id = $1
-				  AND stp.step_code = $2
+				WHERE bc.tenant_id = $1 AND bc.id = $2
+				  AND stp.step_code = $3
 				  AND stp.status = 'ACTIVE'
 				  AND stp.effective_from <= CURRENT_TIMESTAMP
 				  AND (stp.effective_to IS NULL OR stp.effective_to > CURRENT_TIMESTAMP)
@@ -244,14 +249,14 @@ func (r *CaseRepository) workItemSLADueAt(ctx context.Context, caseID string, st
 				SELECT CURRENT_TIMESTAMP + (sp.due_in_hours * INTERVAL '1 hour')
 				FROM business_cases bc
 				JOIN business_sla_policies sp ON sp.id = bc.sla_policy_id
-				WHERE bc.id = $1
+				WHERE bc.tenant_id = $1 AND bc.id = $2
 				  AND sp.status = 'ACTIVE'
 				  AND sp.effective_from <= CURRENT_TIMESTAMP
 				  AND (sp.effective_to IS NULL OR sp.effective_to > CURRENT_TIMESTAMP)
 				LIMIT 1
 			)
 		)
-	`, caseID, stepCode).Scan(&dueAt)
+	`, tenantID, caseID, stepCode).Scan(&dueAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -265,7 +270,11 @@ func (r *CaseRepository) workItemSLADueAt(ctx context.Context, caseID string, st
 }
 
 func (r *CaseRepository) GetWorkItem(ctx context.Context, id string, userID string) (*WorkItem, error) {
-	row := r.db.QueryRowContext(ctx, workItemSelectSQL()+` WHERE wt.id = $1`, id)
+	tenantID, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRowContext(ctx, workItemSelectSQL()+` WHERE bc.tenant_id = $1 AND wt.id = $2`, tenantID, id)
 	item, err := scanWorkItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -285,13 +294,18 @@ func (r *CaseRepository) FindPendingWorkItemByStep(ctx context.Context, caseID, 
 	if caseID == "" || stepCode == "" {
 		return nil, nil
 	}
+	tenantID, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	row := r.db.QueryRowContext(ctx, workItemSelectSQL()+`
-		WHERE wt.case_id = $1
-		  AND wt.step_code = $2
+		WHERE bc.tenant_id = $1
+		  AND wt.case_id = $2
+		  AND wt.step_code = $3
 		  AND wt.status NOT IN ('COMPLETED', 'CANCELLED')
 		ORDER BY wt.updated_at DESC
 		LIMIT 1
-	`, caseID, stepCode)
+	`, tenantID, caseID, stepCode)
 	item, err := scanWorkItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -308,11 +322,16 @@ func (r *CaseRepository) FindActiveWorkTask(ctx context.Context, caseID string, 
 		return nil, nil
 	}
 	where := []string{
+		"bc.tenant_id = $1",
 		"wt.status IN ('READY', 'CLAIMED')",
 		"wt.job_key IS NOT NULL",
 		"wt.job_key IS NOT NULL",
 	}
-	args := []any{}
+	tenantID, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	args := []any{tenantID}
 	if caseID != "" {
 		args = append(args, caseID)
 		where = append(where, fmt.Sprintf("wt.case_id = $%d", len(args)))
@@ -407,8 +426,12 @@ func (r *CaseRepository) queryWorkItems(
 		f.Limit = 100
 	}
 
-	where := append([]string{}, baseWhere...)
-	args := []any{}
+	tenantID, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	where := append([]string{"bc.tenant_id = $1"}, baseWhere...)
+	args := []any{tenantID}
 	add := func(sql string, v any) {
 		args = append(args, v)
 		where = append(where, fmt.Sprintf(sql, len(args)))
@@ -453,7 +476,7 @@ func (r *CaseRepository) queryWorkItems(
 		sql = `
 			SELECT * FROM (
 				SELECT DISTINCT ON (bc.id)
-					wt.id, bc.id, bc.case_code, bc.case_type, bc.primary_object_type, bc.primary_object_id,
+					wt.id, bc.id, bc.tenant_id, bc.case_code, bc.case_type, bc.primary_object_type, bc.primary_object_id,
 					bc.process_instance_key, wt.job_key, wt.task_type, wt.step_code,
 					wt.title, wt.description, wt.status, bc.status, bc.created_by,
 					wt.candidate_role, wt.candidate_group_id, wt.candidate_org_unit_id,
@@ -517,6 +540,10 @@ func (r *CaseRepository) ClaimWorkItem(ctx context.Context, id string, actor str
 	if actor == "" {
 		return nil, errors.New("actor is required")
 	}
+	tenantID, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -526,11 +553,12 @@ func (r *CaseRepository) ClaimWorkItem(ctx context.Context, id string, actor str
 	var assignedTo, status string
 	var jobKey sql.NullInt64
 	err = tx.QueryRowContext(ctx, `
-		SELECT assigned_to, status, job_key
-		FROM workflow_tasks
-		WHERE id = $1
+		SELECT wt.assigned_to, wt.status, wt.job_key
+		FROM workflow_tasks wt
+		JOIN business_cases bc ON bc.id = wt.case_id
+		WHERE bc.tenant_id = $1 AND wt.id = $2
 		FOR UPDATE
-	`, id).Scan(&assignedTo, &status, &jobKey)
+	`, tenantID, id).Scan(&assignedTo, &status, &jobKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -553,7 +581,8 @@ func (r *CaseRepository) ClaimWorkItem(ctx context.Context, id string, actor str
 		    claim_expires_at = COALESCE(claim_expires_at, CURRENT_TIMESTAMP + INTERVAL '30 minutes'),
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
-	`, id, TaskStatusClaimed, actor)
+		  AND EXISTS (SELECT 1 FROM business_cases bc WHERE bc.id = workflow_tasks.case_id AND bc.tenant_id = $4)
+	`, id, TaskStatusClaimed, actor, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -561,7 +590,8 @@ func (r *CaseRepository) ClaimWorkItem(ctx context.Context, id string, actor str
 		UPDATE business_cases
 		SET assigned_to = $2, updated_at = CURRENT_TIMESTAMP
 		WHERE id = (SELECT case_id FROM workflow_tasks WHERE id = $1)
-	`, id, actor)
+		  AND tenant_id = $3
+	`, id, actor, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -583,8 +613,8 @@ func (r *CaseRepository) CompleteWorkItemByJob(ctx context.Context, jobKey int64
 	return err
 }
 
-func (r *CaseRepository) UserCanClaimRole(ctx context.Context, userID string, groupIDs []string, roleCode string) (bool, error) {
-	if userID == "" || roleCode == "" {
+func (r *CaseRepository) UserCanClaimRole(ctx context.Context, tenantID, userID string, groupIDs []string, roleCode string) (bool, error) {
+	if strings.TrimSpace(tenantID) == "" || userID == "" || roleCode == "" {
 		return false, nil
 	}
 	var ok bool
@@ -592,14 +622,15 @@ func (r *CaseRepository) UserCanClaimRole(ctx context.Context, userID string, gr
 		SELECT EXISTS (
 			SELECT 1
 			FROM workflow_role_memberships
-			WHERE role_code = $1
+			WHERE tenant_id = $1
+			  AND role_code = $2
 			  AND principal_type = 'USER'
-			  AND principal_id = $2
+			  AND principal_id = $3
 			  AND status = 'ACTIVE'
 			  AND effective_from <= CURRENT_TIMESTAMP
 			  AND (effective_to IS NULL OR effective_to > CURRENT_TIMESTAMP)
 		)
-	`, roleCode, userID).Scan(&ok)
+	`, tenantID, roleCode, userID).Scan(&ok)
 	if err != nil || ok {
 		return ok, err
 	}
@@ -613,14 +644,15 @@ func (r *CaseRepository) UserCanClaimRole(ctx context.Context, userID string, gr
 			SELECT EXISTS (
 				SELECT 1
 				FROM workflow_role_memberships
-				WHERE role_code = $1
+				WHERE tenant_id = $1
+				  AND role_code = $2
 				  AND principal_type = 'GROUP'
-				  AND principal_id = $2
+				  AND principal_id = $3
 				  AND status = 'ACTIVE'
 				  AND effective_from <= CURRENT_TIMESTAMP
 				  AND (effective_to IS NULL OR effective_to > CURRENT_TIMESTAMP)
 			)
-		`, roleCode, groupID).Scan(&ok)
+		`, tenantID, roleCode, groupID).Scan(&ok)
 		if err != nil || ok {
 			return ok, err
 		}
@@ -631,7 +663,7 @@ func (r *CaseRepository) UserCanClaimRole(ctx context.Context, userID string, gr
 func workItemSelectSQL() string {
 	return `
 		SELECT
-			wt.id, bc.id, bc.case_code, bc.case_type, bc.primary_object_type, bc.primary_object_id,
+			wt.id, bc.id, bc.tenant_id, bc.case_code, bc.case_type, bc.primary_object_type, bc.primary_object_id,
 			bc.process_instance_key, wt.job_key, wt.task_type, wt.step_code,
 			wt.title, wt.description, wt.status, bc.status, bc.created_by,
 			wt.candidate_role, wt.candidate_group_id, wt.candidate_org_unit_id,
@@ -657,7 +689,7 @@ func scanWorkItem(s scanner) (WorkItem, error) {
 	var processInstanceKey, jobKey sql.NullInt64
 	var assignedAt, claimExpiresAt, slaDueAt sql.NullTime
 	err := s.Scan(
-		&item.ID, &item.CaseID, &item.CaseCode, &item.CaseType, &item.PrimaryObjectType, &item.PrimaryObjectID,
+		&item.ID, &item.CaseID, &item.TenantID, &item.CaseCode, &item.CaseType, &item.PrimaryObjectType, &item.PrimaryObjectID,
 		&processInstanceKey, &jobKey, &item.TaskType, &item.StepCode,
 		&item.Title, &item.Description, &item.Status, &item.TransactionStatus, &item.CreatedBy,
 		&item.CandidateRole, &item.CandidateGroupID, &item.CandidateOrgUnitID,

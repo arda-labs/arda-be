@@ -42,6 +42,7 @@ type CustomerUpsert struct {
 	ID           string         `json:"id,omitempty"`
 	TenantID     string         `json:"-"`
 	OrgID        string         `json:"-"`
+	OrgIDs       []string       `json:"-"`
 	CustomerType string         `json:"customerType"`
 	Name         string         `json:"name"`
 	Email        string         `json:"email"`
@@ -67,6 +68,18 @@ type CustomerListFilter struct {
 	Q            string
 	Page         int
 	PerPage      int
+}
+
+type CustomerScope struct {
+	TenantID string
+	OrgIDs   []string
+}
+
+func validateCustomerScope(scope CustomerScope) error {
+	if strings.TrimSpace(scope.TenantID) == "" || len(scope.OrgIDs) == 0 {
+		return errors.New("tenant and organization scope are required")
+	}
+	return nil
 }
 
 type CustomerRelationship struct {
@@ -100,23 +113,22 @@ func NewCustomerRepository(db *sql.DB) *CustomerRepository {
 	return &CustomerRepository{db: db}
 }
 
-func (r *CustomerRepository) Create(ctx context.Context, id, name, email, status string) error {
-	_, err := r.UpsertCustomer(ctx, CustomerUpsert{
-		ID:           id,
-		CustomerType: "PERSONAL",
-		Name:         name,
-		Email:        email,
-		Status:       status,
-	})
-	return err
-}
-
-func (r *CustomerRepository) Get(ctx context.Context, id string) (*Customer, error) {
-	row := r.db.QueryRowContext(ctx, customerSelect()+` WHERE id = $1`, id)
+func (r *CustomerRepository) GetScoped(ctx context.Context, scope CustomerScope, id string) (*Customer, error) {
+	if err := validateCustomerScope(scope); err != nil {
+		return nil, err
+	}
+	args := []any{scope.TenantID, id}
+	where := "tenant_id = $1 AND id = $2"
+	args = append(args, pq.Array(scope.OrgIDs))
+	where += " AND org_id = ANY($3)"
+	row := r.db.QueryRowContext(ctx, customerSelect()+" WHERE "+where, args...)
 	return scanCustomer(row)
 }
 
 func (r *CustomerRepository) ListCustomers(ctx context.Context, f CustomerListFilter) ([]Customer, int, error) {
+	if strings.TrimSpace(f.TenantID) == "" || len(f.OrgIDs) == 0 {
+		return nil, 0, errors.New("tenant and organization scope are required")
+	}
 	if f.Page < 1 {
 		f.Page = 1
 	}
@@ -203,14 +215,17 @@ func (r *CustomerRepository) UpsertCustomer(ctx context.Context, in CustomerUpse
 	if in.CustomerType == "" {
 		in.CustomerType = "PERSONAL"
 	}
-	if in.TenantID == "" {
-		in.TenantID = "default"
+	if strings.TrimSpace(in.TenantID) == "" {
+		return nil, errors.New("tenant scope is required")
+	}
+	if strings.TrimSpace(in.OrgID) == "" {
+		return nil, errors.New("organization scope is required")
 	}
 
 	var existing *Customer
 	if in.ID != "" {
 		var err error
-		existing, err = r.Get(ctx, in.ID)
+		existing, err = r.GetScoped(ctx, CustomerScope{TenantID: in.TenantID, OrgIDs: in.OrgIDs}, in.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -290,17 +305,28 @@ func (r *CustomerRepository) UpsertCustomer(ctx context.Context, in CustomerUpse
 	return scanCustomer(row)
 }
 
-func (r *CustomerRepository) AttachWorkflowCase(ctx context.Context, id, workflowCaseID string) error {
+func (r *CustomerRepository) AttachWorkflowCase(ctx context.Context, scope CustomerScope, id, workflowCaseID string) error {
+	if err := validateCustomerScope(scope); err != nil {
+		return err
+	}
+	args := []any{scope.TenantID, id, workflowCaseID}
+	where := "tenant_id = $1 AND id = $2"
+	args = append(args, pq.Array(scope.OrgIDs))
+	where += " AND org_id = ANY($4)"
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE customers
-		SET workflow_case_id = $2, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1
-	`, id, workflowCaseID)
+		SET workflow_case_id = $3, updated_at = CURRENT_TIMESTAMP
+		WHERE `+where,
+		args...,
+	)
 	return err
 }
 
-func (r *CustomerRepository) AssignOfficialCustomerCode(ctx context.Context, id string) error {
-	item, err := r.Get(ctx, id)
+func (r *CustomerRepository) AssignOfficialCustomerCodeScoped(ctx context.Context, scope CustomerScope, id string) error {
+	if err := validateCustomerScope(scope); err != nil {
+		return err
+	}
+	item, err := r.GetScoped(ctx, scope, id)
 	if err != nil {
 		return err
 	}
@@ -313,7 +339,7 @@ func (r *CustomerRepository) AssignOfficialCustomerCode(ctx context.Context, id 
 		return nil
 	}
 	if item.CustomerCode != "" {
-		inUse, err := r.customerCodeUsedByOther(ctx, item.CustomerCode, id)
+		inUse, err := r.customerCodeUsedByOtherScoped(ctx, scope, item.CustomerCode, id)
 		if err != nil {
 			return err
 		}
@@ -329,11 +355,14 @@ func (r *CustomerRepository) AssignOfficialCustomerCode(ctx context.Context, id 
 		if code == item.CustomerCode {
 			return nil
 		}
+		args := []any{code, id, scope.TenantID}
+		where := "id = $2 AND tenant_id = $3"
+		args = append(args, pq.Array(scope.OrgIDs))
+		where += " AND org_id = ANY($4)"
 		_, err = r.db.ExecContext(ctx, `
 			UPDATE customers
-			SET customer_code = $2, updated_at = CURRENT_TIMESTAMP
-			WHERE id = $1
-		`, id, code)
+			SET customer_code = $1, updated_at = CURRENT_TIMESTAMP
+			WHERE `+where, args...)
 		if err == nil {
 			return nil
 		}
@@ -345,13 +374,17 @@ func (r *CustomerRepository) AssignOfficialCustomerCode(ctx context.Context, id 
 	return errors.New("could not assign unique official customer code")
 }
 
-func (r *CustomerRepository) customerCodeUsedByOther(ctx context.Context, code, id string) (bool, error) {
+func (r *CustomerRepository) customerCodeUsedByOtherScoped(ctx context.Context, scope CustomerScope, code, id string) (bool, error) {
+	args := []any{code, id, scope.TenantID}
+	where := "customer_code = $1 AND id <> $2 AND tenant_id = $3"
+	args = append(args, pq.Array(scope.OrgIDs))
+	where += " AND org_id = ANY($4)"
 	var exists bool
 	err := r.db.QueryRowContext(ctx, `
 		SELECT EXISTS(
-			SELECT 1 FROM customers WHERE customer_code = $1 AND id <> $2
+			SELECT 1 FROM customers WHERE `+where+`
 		)
-	`, code, id).Scan(&exists)
+	`, args...).Scan(&exists)
 	return exists, err
 }
 
@@ -360,12 +393,19 @@ func isPgUniqueViolation(err error) bool {
 	return errors.As(err, &pqErr) && pqErr.Code == "23505"
 }
 
-func (r *CustomerRepository) CancelDraft(ctx context.Context, id string) error {
+func (r *CustomerRepository) CancelDraft(ctx context.Context, scope CustomerScope, id string) error {
+	if err := validateCustomerScope(scope); err != nil {
+		return err
+	}
+	args := []any{scope.TenantID, id}
+	where := "tenant_id = $1 AND id = $2"
+	args = append(args, pq.Array(scope.OrgIDs))
+	where += " AND org_id = ANY($3)"
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE customers
 		SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1 AND status IN ('DRAFT', 'NEEDS_CHANGES')
-	`, id)
+		WHERE `+where+` AND status IN ('DRAFT', 'NEEDS_CHANGES')
+	`, args...)
 	if err != nil {
 		return err
 	}
@@ -379,26 +419,23 @@ func (r *CustomerRepository) CancelDraft(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *CustomerRepository) UpdateStatus(ctx context.Context, id, status string) error {
+func (r *CustomerRepository) UpdateStatusScoped(ctx context.Context, scope CustomerScope, id, status string) error {
+	if err := validateCustomerScope(scope); err != nil {
+		return err
+	}
+	args := []any{status, id, scope.TenantID}
+	where := "id = $2 AND tenant_id = $3"
+	args = append(args, pq.Array(scope.OrgIDs))
+	where += " AND org_id = ANY($4)"
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE customers
-		SET status = $2, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1
-	`, id, status)
+		SET status = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE `+where, args...)
 	return err
 }
 
-func (r *CustomerRepository) Update(ctx context.Context, id, name, email string) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE customers
-		SET name = $2, email = $3, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1
-	`, id, name, email)
-	return err
-}
-
-func (r *CustomerRepository) HasDuplicateIdentity(ctx context.Context, customerID string) (bool, error) {
-	item, err := r.Get(ctx, customerID)
+func (r *CustomerRepository) HasDuplicateIdentityScoped(ctx context.Context, scope CustomerScope, customerID string) (bool, error) {
+	item, err := r.GetScoped(ctx, scope, customerID)
 	if err != nil || item == nil {
 		return false, err
 	}
@@ -422,7 +459,10 @@ func (r *CustomerRepository) HasDuplicateIdentity(ctx context.Context, customerI
 	return exists, row.Scan(&exists)
 }
 
-func (r *CustomerRepository) ListRelationships(ctx context.Context, customerID string) ([]CustomerRelationship, error) {
+func (r *CustomerRepository) ListRelationshipsScoped(ctx context.Context, scope CustomerScope, customerID string) ([]CustomerRelationship, error) {
+	if strings.TrimSpace(scope.TenantID) == "" || len(scope.OrgIDs) == 0 {
+		return nil, errors.New("tenant and organization scope are required")
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT rel.id, rel.customer_id, rel.related_customer_id, COALESCE(c.customer_code, c.id, ''),
 		       COALESCE(c.name, ''),
@@ -430,9 +470,15 @@ func (r *CustomerRepository) ListRelationships(ctx context.Context, customerID s
 		       rel.reciprocal_relation_code, rel.status, rel.created_at, rel.updated_at
 		FROM customer_relationships rel
 		LEFT JOIN customers c ON c.id = rel.related_customer_id
+		  AND c.tenant_id = $2 AND c.org_id = ANY($3)
 		WHERE rel.customer_id = $1
+		  AND EXISTS (
+			SELECT 1 FROM customers owner
+			WHERE owner.id = rel.customer_id
+			  AND owner.tenant_id = $2 AND owner.org_id = ANY($3)
+		  )
 		ORDER BY rel.created_at DESC
-	`, customerID)
+	`, customerID, scope.TenantID, pq.Array(scope.OrgIDs))
 	if err != nil {
 		return nil, err
 	}
@@ -451,15 +497,24 @@ func (r *CustomerRepository) ListRelationships(ctx context.Context, customerID s
 	return items, rows.Err()
 }
 
-func (r *CustomerRepository) CreateRelationship(ctx context.Context, customerID string, in CustomerRelationshipCreate) (*CustomerRelationship, error) {
+func (r *CustomerRepository) CreateRelationshipScoped(ctx context.Context, scope CustomerScope, customerID string, in CustomerRelationshipCreate) (*CustomerRelationship, error) {
 	if customerID == "" {
 		return nil, errors.New("customerId is required")
+	}
+	if strings.TrimSpace(scope.TenantID) == "" || len(scope.OrgIDs) == 0 {
+		return nil, errors.New("tenant and organization scope are required")
 	}
 	if in.RelatedCustomerID == "" || in.RelationType == "" || in.RelationCode == "" || in.ReciprocalRelationCode == "" {
 		return nil, errors.New("relatedCustomerId, relationType, relationCode, and reciprocalRelationCode are required")
 	}
 	if in.Status == "" {
 		in.Status = "ACTIVE"
+	}
+	if related, err := r.GetScoped(ctx, scope, in.RelatedCustomerID); err != nil || related == nil {
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("related customer not found")
 	}
 	id, err := newID()
 	if err != nil {
@@ -480,7 +535,7 @@ func (r *CustomerRepository) CreateRelationship(ctx context.Context, customerID 
 		&item.ReciprocalRelationCode, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return nil, err
 	}
-	if related, err := r.Get(ctx, item.RelatedCustomerID); err == nil && related != nil {
+	if related, err := r.GetScoped(ctx, scope, item.RelatedCustomerID); err == nil && related != nil {
 		item.RelatedCustomerName = related.Name
 		item.RelatedCustomerAddress = related.Address
 	}

@@ -54,12 +54,12 @@ func (s *PlatformService) UpsertLookupCategory(ctx context.Context, item domain.
 	return s.repo.UpsertLookupCategory(ctx, item)
 }
 
-func (s *PlatformService) ListLookupValues(ctx context.Context, categoryCode string) ([]domain.LookupValue, error) {
-	return s.repo.ListLookupValues(ctx, categoryCode)
+func (s *PlatformService) ListLookupValues(ctx context.Context, tenantID, categoryCode string) ([]domain.LookupValue, error) {
+	return s.repo.ListLookupValues(ctx, tenantID, categoryCode)
 }
 
-func (s *PlatformService) UpsertLookupValue(ctx context.Context, categoryCode string, item domain.LookupValue) (domain.LookupValue, error) {
-	return s.repo.UpsertLookupValue(ctx, categoryCode, item)
+func (s *PlatformService) UpsertLookupValue(ctx context.Context, tenantID, categoryCode string, item domain.LookupValue) (domain.LookupValue, error) {
+	return s.repo.UpsertLookupValue(ctx, tenantID, categoryCode, item)
 }
 
 func (s *PlatformService) ListOrganizations(ctx context.Context, params repository.ListOrganizationsParams) ([]domain.Organization, int, error) {
@@ -78,36 +78,36 @@ func (s *PlatformService) UpsertGeoAdminUnit(ctx context.Context, item domain.Ge
 	return s.repo.UpsertGeoAdminUnit(ctx, item)
 }
 
-func (s *PlatformService) GetOrganizationByID(ctx context.Context, id string) (domain.Organization, error) {
-	return s.repo.GetOrganizationByID(ctx, id)
+func (s *PlatformService) GetOrganizationByID(ctx context.Context, tenantID, id string) (domain.Organization, error) {
+	return s.repo.GetOrganizationByID(ctx, tenantID, id)
 }
 
 func (s *PlatformService) UpdateOrganization(ctx context.Context, item domain.Organization) (domain.Organization, error) {
 	return s.repo.UpdateOrganization(ctx, item)
 }
 
-func (s *PlatformService) DeleteOrganization(ctx context.Context, id string) error {
-	return s.repo.DeleteOrganization(ctx, id)
+func (s *PlatformService) DeleteOrganization(ctx context.Context, tenantID, id string) error {
+	return s.repo.DeleteOrganization(ctx, tenantID, id)
 }
 
-func (s *PlatformService) DeleteParameter(ctx context.Context, id string) error {
-	return s.repo.DeleteParameter(ctx, id)
+func (s *PlatformService) DeleteParameter(ctx context.Context, tenantID, id string) error {
+	return s.repo.DeleteParameter(ctx, tenantID, id)
 }
 
-func (s *PlatformService) DeleteLookupCategory(ctx context.Context, id string) error {
-	return s.repo.DeleteLookupCategory(ctx, id)
+func (s *PlatformService) DeleteLookupCategory(ctx context.Context, tenantID, id string) error {
+	return s.repo.DeleteLookupCategory(ctx, tenantID, id)
 }
 
-func (s *PlatformService) DeleteLookupValue(ctx context.Context, id string) error {
-	return s.repo.DeleteLookupValue(ctx, id)
+func (s *PlatformService) DeleteLookupValue(ctx context.Context, tenantID, id string) error {
+	return s.repo.DeleteLookupValue(ctx, tenantID, id)
 }
 
 func (s *PlatformService) ListCreditInstitutions(ctx context.Context, tenantID, status, query string) ([]domain.CreditInstitution, error) {
 	return s.repo.ListCreditInstitutions(ctx, tenantID, status, query)
 }
 
-func (s *PlatformService) GetCreditInstitutionByID(ctx context.Context, id string) (domain.CreditInstitution, error) {
-	return s.repo.GetCreditInstitutionByID(ctx, id)
+func (s *PlatformService) GetCreditInstitutionByID(ctx context.Context, tenantID, id string) (domain.CreditInstitution, error) {
+	return s.repo.GetCreditInstitutionByID(ctx, tenantID, id)
 }
 
 func (s *PlatformService) CreateCreditInstitution(ctx context.Context, item domain.CreditInstitution) (domain.CreditInstitution, error) {
@@ -118,16 +118,16 @@ func (s *PlatformService) UpdateCreditInstitution(ctx context.Context, item doma
 	return s.repo.UpdateCreditInstitution(ctx, item)
 }
 
-func (s *PlatformService) DeleteCreditInstitution(ctx context.Context, id string) error {
-	return s.repo.DeleteCreditInstitution(ctx, id)
+func (s *PlatformService) DeleteCreditInstitution(ctx context.Context, tenantID, id string) error {
+	return s.repo.DeleteCreditInstitution(ctx, tenantID, id)
 }
 
 func (s *PlatformService) ListAreas(ctx context.Context, tenantID, status, areaTypeCode, parentID, query string) ([]domain.Area, error) {
 	return s.repo.ListAreas(ctx, tenantID, status, areaTypeCode, parentID, query)
 }
 
-func (s *PlatformService) GetAreaByID(ctx context.Context, id string) (domain.Area, error) {
-	return s.repo.GetAreaByID(ctx, id)
+func (s *PlatformService) GetAreaByID(ctx context.Context, tenantID, id string) (domain.Area, error) {
+	return s.repo.GetAreaByID(ctx, tenantID, id)
 }
 
 func (s *PlatformService) CreateArea(ctx context.Context, item domain.Area) (domain.Area, error) {
@@ -138,16 +138,16 @@ func (s *PlatformService) UpdateArea(ctx context.Context, item domain.Area) (dom
 	return s.repo.UpdateArea(ctx, item)
 }
 
-func (s *PlatformService) DeleteArea(ctx context.Context, id string) error {
-	return s.repo.DeleteArea(ctx, id)
+func (s *PlatformService) DeleteArea(ctx context.Context, tenantID, id string) error {
+	return s.repo.DeleteArea(ctx, tenantID, id)
 }
 
 func (s *PlatformService) ListFileTemplates(ctx context.Context, tenantID string) ([]domain.FileTemplate, error) {
 	return s.repo.ListFileTemplates(ctx, tenantID)
 }
 
-func (s *PlatformService) GetFileTemplateByID(ctx context.Context, id string) (domain.FileTemplate, error) {
-	return s.repo.GetFileTemplateByID(ctx, id)
+func (s *PlatformService) GetFileTemplateByID(ctx context.Context, tenantID, id string) (domain.FileTemplate, error) {
+	return s.repo.GetFileTemplateByID(ctx, tenantID, id)
 }
 
 func (s *PlatformService) CreateFileTemplate(ctx context.Context, item domain.FileTemplate) (domain.FileTemplate, error) {
@@ -158,6 +158,6 @@ func (s *PlatformService) UpdateFileTemplate(ctx context.Context, item domain.Fi
 	return s.repo.UpdateFileTemplate(ctx, item)
 }
 
-func (s *PlatformService) DeleteFileTemplate(ctx context.Context, id string) error {
-	return s.repo.DeleteFileTemplate(ctx, id)
+func (s *PlatformService) DeleteFileTemplate(ctx context.Context, tenantID, id string) error {
+	return s.repo.DeleteFileTemplate(ctx, tenantID, id)
 }

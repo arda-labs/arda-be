@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -27,9 +28,9 @@ func NewFinanceHandler(svc *service.LedgerService, ops *service.FinanceOperation
 // ── Accounts ──
 
 func (h *FinanceHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-Id")
-	if tenantID == "" {
-		tenantID = "default"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
 	}
 	accounts, err := h.svc.ListAccounts(r.Context(), tenantID)
 	if err != nil {
@@ -57,9 +58,9 @@ func (h *FinanceHandler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := r.Header.Get("X-Tenant-Id")
-	if tenantID == "" {
-		tenantID = "default"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
 	}
 
 	acct := &domain.Account{
@@ -87,13 +88,17 @@ func (h *FinanceHandler) GetAccount(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
-	acct, err := h.svc.GetAccount(r.Context(), id)
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	acct, err := h.svc.GetAccount(r.Context(), tenantID, id)
 	if err != nil || acct == nil {
 		respondError(w, r, http.StatusNotFound, "account not found")
 		return
 	}
 
-	balance, _ := h.svc.GetAccountBalance(r.Context(), id)
+	balance, _ := h.svc.GetAccountBalance(r.Context(), tenantID, id)
 
 	respondJSON(w, r, http.StatusOK, map[string]any{
 		"account": acct,
@@ -107,7 +112,11 @@ func (h *FinanceHandler) GetAccountBalance(w http.ResponseWriter, r *http.Reques
 		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
-	balance, err := h.svc.GetAccountBalance(r.Context(), id)
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	balance, err := h.svc.GetAccountBalance(r.Context(), tenantID, id)
 	if err != nil {
 		respondError(w, r, http.StatusNotFound, "account not found")
 		return
@@ -141,13 +150,13 @@ func (h *FinanceHandler) CreateTransaction(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tenantID := r.Header.Get("X-Tenant-Id")
-	if tenantID == "" {
-		tenantID = "default"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
 	}
-	userID := r.Header.Get("X-User-Id")
-	if userID == "" {
-		userID = r.Header.Get("X-User-Subject")
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
 	}
 
 	entries := make([]domain.LedgerEntry, len(req.Entries))
@@ -167,6 +176,7 @@ func (h *FinanceHandler) CreateTransaction(w http.ResponseWriter, r *http.Reques
 		TenantID:       tenantID,
 		IdempotencyKey: req.IdempotencyKey,
 		TxnType:        req.TxnType,
+		OperationName:  "transaction.create",
 		TxnDate:        req.TxnDate,
 		Description:    req.Description,
 		SourceRef:      req.SourceRef,
@@ -174,12 +184,12 @@ func (h *FinanceHandler) CreateTransaction(w http.ResponseWriter, r *http.Reques
 		Entries:        entries,
 	}
 	if txn.IdempotencyKey == "" {
-		txn.IdempotencyKey = r.Header.Get("X-Idempotency-Key")
+		txn.IdempotencyKey = r.Header.Get("Idempotency-Key")
 	}
 
 	result, err := h.svc.PostTransaction(r.Context(), txn)
 	if err != nil {
-		respondError(w, r, http.StatusBadRequest, err.Error())
+		respondError(w, r, financeCommandErrorStatus(err), err.Error())
 		return
 	}
 
@@ -192,7 +202,11 @@ func (h *FinanceHandler) GetTransaction(w http.ResponseWriter, r *http.Request) 
 		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
-	txn, err := h.svc.GetTransaction(r.Context(), id)
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	txn, err := h.svc.GetTransaction(r.Context(), tenantID, id)
 	if err != nil || txn == nil {
 		respondError(w, r, http.StatusNotFound, "transaction not found")
 		return
@@ -201,9 +215,9 @@ func (h *FinanceHandler) GetTransaction(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *FinanceHandler) ListTransactions(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-Id")
-	if tenantID == "" {
-		tenantID = "default"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
 	}
 	status := r.URL.Query().Get("status")
 	listQuery := ardahttp.ParseListQuery(r.URL.Query())
@@ -227,10 +241,14 @@ func (h *FinanceHandler) ListTransactions(w http.ResponseWriter, r *http.Request
 }
 
 func (h *FinanceHandler) SearchTransactions(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
 	page, size := pageSizeFrom(r)
 	from, to := dateRangeFrom(r)
 	txns, total, err := h.ops.Search(r.Context(), repository.TransactionSearchFilter{
-		TenantID:  tenantIDFrom(r),
+		TenantID:  tenantID,
 		Keyword:   strings.TrimSpace(r.URL.Query().Get("keyword")),
 		Direction: r.URL.Query().Get("direction"),
 		CaseType:  r.URL.Query().Get("case_type"),
@@ -270,7 +288,11 @@ func (h *FinanceHandler) GetOperationTransaction(w http.ResponseWriter, r *http.
 		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
-	txn, err := h.ops.Get(r.Context(), id)
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	txn, err := h.ops.Get(r.Context(), tenantID, id)
 	if err != nil || txn == nil {
 		respondError(w, r, http.StatusNotFound, "transaction not found")
 		return
@@ -279,10 +301,14 @@ func (h *FinanceHandler) GetOperationTransaction(w http.ResponseWriter, r *http.
 }
 
 func (h *FinanceHandler) listOperationTransactions(w http.ResponseWriter, r *http.Request, direction string) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
 	page, size := pageSizeFrom(r)
 	from, to := dateRangeFrom(r)
 	txns, total, err := h.ops.Search(r.Context(), repository.TransactionSearchFilter{
-		TenantID:  tenantIDFrom(r),
+		TenantID:  tenantID,
 		Keyword:   strings.TrimSpace(r.URL.Query().Get("keyword")),
 		Direction: direction,
 		Status:    r.URL.Query().Get("status"),
@@ -300,6 +326,14 @@ func (h *FinanceHandler) listOperationTransactions(w http.ResponseWriter, r *htt
 }
 
 func (h *FinanceHandler) createOperationTransaction(w http.ResponseWriter, r *http.Request, create func(context.Context, string, service.OperationCreateRequest) (*domain.Transaction, error)) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
 	var req struct {
 		IdempotencyKey      string `json:"idempotencyKey"`
 		TxnType             string `json:"txnType"`
@@ -318,9 +352,9 @@ func (h *FinanceHandler) createOperationTransaction(w http.ResponseWriter, r *ht
 	}
 	key := req.IdempotencyKey
 	if key == "" {
-		key = r.Header.Get("X-Idempotency-Key")
+		key = r.Header.Get("Idempotency-Key")
 	}
-	txn, err := create(r.Context(), tenantIDFrom(r), service.OperationCreateRequest{
+	txn, err := create(r.Context(), tenantID, service.OperationCreateRequest{
 		IdempotencyKey:      key,
 		TxnType:             req.TxnType,
 		TxnDate:             req.TxnDate,
@@ -331,13 +365,20 @@ func (h *FinanceHandler) createOperationTransaction(w http.ResponseWriter, r *ht
 		CounterpartyName:    req.CounterpartyName,
 		CounterpartyAccount: req.CounterpartyAccount,
 		Priority:            req.Priority,
-		CreatedBy:           userIDFrom(r),
+		CreatedBy:           userID,
 	})
 	if err != nil {
-		respondError(w, r, http.StatusBadRequest, err.Error())
+		respondError(w, r, financeCommandErrorStatus(err), err.Error())
 		return
 	}
 	respondJSON(w, r, http.StatusCreated, txn)
+}
+
+func financeCommandErrorStatus(err error) int {
+	if errors.Is(err, service.ErrIdempotencyConflict) {
+		return http.StatusConflict
+	}
+	return http.StatusBadRequest
 }
 
 func (h *FinanceHandler) ReverseTransaction(w http.ResponseWriter, r *http.Request) {
@@ -355,12 +396,16 @@ func (h *FinanceHandler) ReverseTransaction(w http.ResponseWriter, r *http.Reque
 		req.Reason = "manual reversal"
 	}
 
-	userID := r.Header.Get("X-User-Id")
-	if userID == "" {
-		userID = "system"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
 	}
 
-	result, err := h.svc.ReverseTransaction(r.Context(), id, req.Reason, userID)
+	result, err := h.svc.ReverseTransaction(r.Context(), tenantID, id, req.Reason, userID)
 	if err != nil {
 		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -372,9 +417,9 @@ func (h *FinanceHandler) ReverseTransaction(w http.ResponseWriter, r *http.Reque
 // ── Trial Balance ──
 
 func (h *FinanceHandler) TrialBalance(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-Id")
-	if tenantID == "" {
-		tenantID = "default"
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
 	}
 	accounts, err := h.svc.ListAccounts(r.Context(), tenantID)
 	if err != nil {
@@ -389,7 +434,7 @@ func (h *FinanceHandler) TrialBalance(w http.ResponseWriter, r *http.Request) {
 
 	var entries []tbEntry
 	for _, a := range accounts {
-		b, _ := h.svc.GetAccountBalance(r.Context(), a.ID)
+		b, _ := h.svc.GetAccountBalance(r.Context(), tenantID, a.ID)
 		entries = append(entries, tbEntry{Account: &a, Balance: b})
 	}
 
@@ -402,36 +447,70 @@ func (h *FinanceHandler) TrialBalance(w http.ResponseWriter, r *http.Request) {
 // ── Shared ──
 
 func (h *FinanceHandler) ListProcessConfigs(w http.ResponseWriter, r *http.Request) {
-	items, err := h.configSvc.ListProcessConfigs(r.Context(), tenantIDFrom(r))
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.configSvc.ListProcessConfigs(r.Context(), tenantID)
 	respondList(w, r, items, err)
 }
 
 func (h *FinanceHandler) ListAccountClassifications(w http.ResponseWriter, r *http.Request) {
-	items, err := h.configSvc.ListAccountClassifications(r.Context(), tenantIDFrom(r))
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.configSvc.ListAccountClassifications(r.Context(), tenantID)
 	respondList(w, r, items, err)
 }
 
 func (h *FinanceHandler) ListJournalDefinitions(w http.ResponseWriter, r *http.Request) {
-	items, err := h.configSvc.ListJournalDefinitions(r.Context(), tenantIDFrom(r))
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.configSvc.ListJournalDefinitions(r.Context(), tenantID)
 	respondList(w, r, items, err)
 }
 
 func (h *FinanceHandler) ListRegulatoryAccounts(w http.ResponseWriter, r *http.Request) {
-	items, err := h.configSvc.ListRegulatoryAccounts(r.Context(), tenantIDFrom(r))
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.configSvc.ListRegulatoryAccounts(r.Context(), tenantID)
 	respondList(w, r, items, err)
 }
 
 func (h *FinanceHandler) ListInternalAccounts(w http.ResponseWriter, r *http.Request) {
-	items, err := h.configSvc.ListInternalAccounts(r.Context(), tenantIDFrom(r))
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.configSvc.ListInternalAccounts(r.Context(), tenantID)
 	respondList(w, r, items, err)
 }
 
 func tenantIDFrom(r *http.Request) string {
-	tenantID := r.Header.Get("X-Tenant-Id")
+	return strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+}
+
+func requireTenantID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	tenantID := tenantIDFrom(r)
 	if tenantID == "" {
-		return "default"
+		respondError(w, r, http.StatusForbidden, "tenant scope is required")
+		return "", false
 	}
-	return tenantID
+	return tenantID, true
+}
+
+func requireUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	userID := userIDFrom(r)
+	if userID == "" {
+		respondError(w, r, http.StatusUnauthorized, "authenticated actor is required")
+		return "", false
+	}
+	return userID, true
 }
 
 func userIDFrom(r *http.Request) string {
@@ -439,10 +518,7 @@ func userIDFrom(r *http.Request) string {
 	if userID == "" {
 		userID = r.Header.Get("X-User-Subject")
 	}
-	if userID == "" {
-		return "00000000-0000-0000-0000-000000000000"
-	}
-	return userID
+	return strings.TrimSpace(userID)
 }
 
 func pageSizeFrom(r *http.Request) (int, int) {

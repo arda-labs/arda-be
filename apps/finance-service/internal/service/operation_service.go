@@ -49,14 +49,18 @@ func (s *FinanceOperationService) CreateOutgoing(ctx context.Context, tenantID s
 }
 
 func (s *FinanceOperationService) create(ctx context.Context, tenantID string, direction domain.TransactionDirection, caseType, operationName string, req OperationCreateRequest) (*domain.Transaction, error) {
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
 	if req.IdempotencyKey == "" {
 		return nil, fmt.Errorf("idempotency key required")
 	}
 	if req.TxnType == "" || req.Amount == "" {
 		return nil, fmt.Errorf("txnType and amount required")
 	}
-	if tenantID == "" {
-		tenantID = "default"
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, fmt.Errorf("tenant id required")
+	}
+	if strings.TrimSpace(req.CreatedBy) == "" {
+		return nil, fmt.Errorf("created by actor required")
 	}
 	if req.Currency == "" {
 		req.Currency = "VND"
@@ -64,12 +68,34 @@ func (s *FinanceOperationService) create(ctx context.Context, tenantID string, d
 	if req.TxnDate == "" {
 		req.TxnDate = time.Now().Format("2006-01-02")
 	}
-	if req.CreatedBy == "" {
-		req.CreatedBy = "00000000-0000-0000-0000-000000000000"
+	req.Currency = strings.TrimSpace(req.Currency)
+	requestHash, err := requestHash(struct {
+		TenantID            string
+		Direction           domain.TransactionDirection
+		CaseType            string
+		OperationName       string
+		TxnType             string
+		TxnDate             string
+		Amount              string
+		Currency            string
+		Description         string
+		SourceRef           string
+		CounterpartyName    string
+		CounterpartyAccount string
+		Priority            string
+		CreatedBy           string
+	}{tenantID, direction, caseType, operationName, req.TxnType, req.TxnDate, req.Amount,
+		req.Currency, req.Description, req.SourceRef, req.CounterpartyName,
+		req.CounterpartyAccount, req.Priority, req.CreatedBy})
+	if err != nil {
+		return nil, err
 	}
 
-	existing, err := s.txnRepo.GetByIdempotencyKey(ctx, req.IdempotencyKey)
+	existing, err := s.txnRepo.GetByIdempotencyKey(ctx, tenantID, operationName, req.IdempotencyKey)
 	if err == nil && existing != nil {
+		if err := verifyIdempotentReplay(existing.RequestHash, requestHash); err != nil {
+			return nil, err
+		}
 		return existing, nil
 	}
 	if err != nil && err != sql.ErrNoRows {
@@ -84,6 +110,7 @@ func (s *FinanceOperationService) create(ctx context.Context, tenantID string, d
 	txn := &domain.Transaction{
 		TenantID:            tenantID,
 		IdempotencyKey:      req.IdempotencyKey,
+		RequestHash:         requestHash,
 		TxnType:             req.TxnType,
 		Direction:           direction,
 		CaseType:            caseType,
@@ -247,8 +274,11 @@ func (s *FinanceOperationService) Search(ctx context.Context, f repository.Trans
 	return s.txnRepo.Search(ctx, f)
 }
 
-func (s *FinanceOperationService) Get(ctx context.Context, id string) (*domain.Transaction, error) {
-	return s.txnRepo.GetByID(ctx, id)
+func (s *FinanceOperationService) Get(ctx context.Context, tenantID, id string) (*domain.Transaction, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, fmt.Errorf("tenant id required")
+	}
+	return s.txnRepo.GetByID(ctx, tenantID, id)
 }
 
 type AccountingConfigService struct {

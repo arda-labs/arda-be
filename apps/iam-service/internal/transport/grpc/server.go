@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	iamv1 "github.com/arda-labs/arda/libs/go/arda-proto/iam/v1"
@@ -59,8 +61,27 @@ func ListenAndServe(grpcAddr string, userRepo *repository.UserRepository) (*grpc
 	if err != nil {
 		return nil, fmt.Errorf("listen grpc: %w", err)
 	}
-	srv := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
+	serviceSecret, err := identity.SecretFromEnv()
+	if err != nil {
+		return nil, fmt.Errorf("service identity is not configured: %w", err)
+	}
+	transportCreds, err := identity.ServerTransportCredentials()
+	if err != nil {
+		return nil, fmt.Errorf("grpc tls is not configured: %w", err)
+	}
+	srv := grpc.NewServer(
+		grpc.Creds(transportCreds),
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerServiceAuth(serviceSecret, "iam-service", map[string]struct{}{"workflow-service": {}}),
+		),
+	)
 	iamv1.RegisterUserServiceServer(srv, NewUserServiceServer(userRepo))
-	go srv.Serve(lis)
+	go func() {
+		if err := srv.Serve(lis); err != nil {
+			// The listener is owned by this long-running process; a serve failure
+			// must be visible instead of being silently discarded.
+			fmt.Fprintln(os.Stderr, "iam grpc serve failed:", err)
+		}
+	}()
 	return srv, nil
 }

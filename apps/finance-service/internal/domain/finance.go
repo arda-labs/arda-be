@@ -65,30 +65,31 @@ const (
 
 // Transaction is a financial transaction.
 type Transaction struct {
-	ID                  string               `json:"id"`
-	TenantID            string               `json:"tenantId"`
-	IdempotencyKey      string               `json:"idempotencyKey,omitempty"`
-	TxnType             string               `json:"txnType"`
-	Direction           TransactionDirection `json:"direction,omitempty"`
-	CaseType            string               `json:"caseType,omitempty"`
-	OperationName       string               `json:"operationName,omitempty"`
-	TxnDate             string               `json:"txnDate"`
-	PostedAt            time.Time            `json:"postedAt"`
-	Status              TransactionStatus    `json:"status"`
-	Amount              string               `json:"amount,omitempty"`
-	Currency            string               `json:"currency,omitempty"`
-	Description         string               `json:"description,omitempty"`
-	SourceRef           string               `json:"sourceRef,omitempty"`
-	ReversedTransactionID string             `json:"reversedTransactionId,omitempty"`
-	CounterpartyName    string               `json:"counterpartyName,omitempty"`
-	CounterpartyAccount string               `json:"counterpartyAccount,omitempty"`
-	CurrentStep         string               `json:"currentStep,omitempty"`
-	Priority            string               `json:"priority,omitempty"`
-	CreatedBy           string               `json:"createdBy"`
-	ApprovedBy          string               `json:"approvedBy,omitempty"`
-	Metadata            map[string]any       `json:"metadata,omitempty"`
-	Entries             []LedgerEntry        `json:"entries,omitempty"`
-	CreatedAt           time.Time            `json:"createdAt"`
+	ID                    string               `json:"id"`
+	TenantID              string               `json:"tenantId"`
+	IdempotencyKey        string               `json:"idempotencyKey,omitempty"`
+	RequestHash           string               `json:"-"`
+	TxnType               string               `json:"txnType"`
+	Direction             TransactionDirection `json:"direction,omitempty"`
+	CaseType              string               `json:"caseType,omitempty"`
+	OperationName         string               `json:"operationName,omitempty"`
+	TxnDate               string               `json:"txnDate"`
+	PostedAt              time.Time            `json:"postedAt"`
+	Status                TransactionStatus    `json:"status"`
+	Amount                string               `json:"amount,omitempty"`
+	Currency              string               `json:"currency,omitempty"`
+	Description           string               `json:"description,omitempty"`
+	SourceRef             string               `json:"sourceRef,omitempty"`
+	ReversedTransactionID string               `json:"reversedTransactionId,omitempty"`
+	CounterpartyName      string               `json:"counterpartyName,omitempty"`
+	CounterpartyAccount   string               `json:"counterpartyAccount,omitempty"`
+	CurrentStep           string               `json:"currentStep,omitempty"`
+	Priority              string               `json:"priority,omitempty"`
+	CreatedBy             string               `json:"createdBy"`
+	ApprovedBy            string               `json:"approvedBy,omitempty"`
+	Metadata              map[string]any       `json:"metadata,omitempty"`
+	Entries               []LedgerEntry        `json:"entries,omitempty"`
+	CreatedAt             time.Time            `json:"createdAt"`
 }
 
 // LedgerEntry is a single debit/credit line in a transaction.
@@ -148,15 +149,15 @@ type AccountClassification struct {
 }
 
 type JournalLine struct {
-	ID                      string `json:"id"`
-	JournalDefinitionID     string `json:"journalDefinitionId"`
-	LineSeq                 int    `json:"lineSeq"`
-	EntryType               string `json:"entryType"`
-	AccountResolutionType   string `json:"accountResolutionType"`
-	AccountRef              string `json:"accountRef"`
-	AmountSource            string `json:"amountSource"`
-	DescriptionTemplate     string `json:"descriptionTemplate,omitempty"`
-	Status                  string `json:"status"`
+	ID                    string `json:"id"`
+	JournalDefinitionID   string `json:"journalDefinitionId"`
+	LineSeq               int    `json:"lineSeq"`
+	EntryType             string `json:"entryType"`
+	AccountResolutionType string `json:"accountResolutionType"`
+	AccountRef            string `json:"accountRef"`
+	AmountSource          string `json:"amountSource"`
+	DescriptionTemplate   string `json:"descriptionTemplate,omitempty"`
+	Status                string `json:"status"`
 }
 
 type JournalDefinition struct {

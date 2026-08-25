@@ -1,0 +1,98 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Arda Browser Auth API",
+    "version": "1.0.0"
+  },
+  "servers": [{ "url": "https://api.arda.io.vn" }],
+  "security": [{ "ardaSession": [] }],
+  "paths": {
+    "/api/auth/me": {
+      "get": {
+        "operationId": "getCurrentAuthUser",
+        "summary": "Get the current browser session user",
+        "responses": {
+          "200": {
+            "description": "Current authenticated user",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthUserSuccess" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ardaSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "arda_sid",
+        "x-browser-credentials": "include"
+      }
+    },
+    "schemas": {
+      "ResponseMeta": {
+        "type": "object",
+        "required": ["request_id"],
+        "properties": {
+          "request_id": { "type": "string" },
+          "trace_id": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AuthUser": {
+        "type": "object",
+        "required": ["userId", "subject", "username", "email", "roles", "permissions", "authVersion"],
+        "properties": {
+          "userId": { "type": "string" },
+          "subject": { "type": "string" },
+          "username": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "tenantId": { "type": "string" },
+          "orgIds": { "type": "array", "items": { "type": "string" } },
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "permissions": { "type": "array", "items": { "type": "string" } },
+          "authVersion": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "AuthUserSuccess": {
+        "type": "object",
+        "required": ["result", "success", "errors", "messages", "meta"],
+        "properties": {
+          "result": { "$ref": "#/components/schemas/AuthUser" },
+          "success": { "const": true },
+          "errors": { "type": "array", "maxItems": 0 },
+          "messages": { "type": "array", "items": { "type": "string" } },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "title", "status", "code", "message"],
+        "properties": {
+          "type": { "type": "string", "format": "uri-reference" },
+          "title": { "type": "string" },
+          "status": { "type": "integer" },
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "request_id": { "type": "string" },
+          "trace_id": { "type": "string" }
+        }
+      }
+    },
+    "responses": {
+      "Problem": {
+        "description": "RFC-style problem response",
+        "content": {
+          "application/problem+json": {
+            "schema": { "$ref": "#/components/schemas/Problem" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -27,6 +27,17 @@ func TestApplyWorkItemPermissionsRoutingIsNotActionable(t *testing.T) {
 	}
 }
 
+func TestRequiredWorkflowTargetTenant(t *testing.T) {
+	if _, err := requiredWorkflowTargetTenant(httptest.NewRequest("GET", "/api/workflow/role-memberships", nil)); err == nil {
+		t.Fatal("missing workflow target tenant was accepted")
+	}
+	r := httptest.NewRequest("GET", "/api/workflow/role-memberships?tenant_id=tenant-1", nil)
+	got, err := requiredWorkflowTargetTenant(r)
+	if err != nil || got != "tenant-1" {
+		t.Fatalf("requiredWorkflowTargetTenant() = %q, %v", got, err)
+	}
+}
+
 func TestCasePath(t *testing.T) {
 	tests := []struct {
 		name       string

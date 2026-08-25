@@ -2,10 +2,12 @@ package grpc
 
 import (
 	"context"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
 	"github.com/arda-labs/arda/apps/platform-service/internal/repository"
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	platformv1 "github.com/arda-labs/arda/libs/go/arda-proto/platform/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,9 +23,24 @@ func NewPlatformServer(svc *service.PlatformService) *PlatformServer {
 	return &PlatformServer{svc: svc}
 }
 
+func verifiedTenant(ctx context.Context, requested string) (string, error) {
+	tenantID := strings.TrimSpace(ardametadata.FromIncoming(ctx).TenantID)
+	if tenantID == "" {
+		return "", status.Error(codes.InvalidArgument, "verified tenant scope is required")
+	}
+	if requested != "" && strings.TrimSpace(requested) != tenantID {
+		return "", status.Error(codes.PermissionDenied, "requested tenant is outside verified scope")
+	}
+	return tenantID, nil
+}
+
 func (s *PlatformServer) ListParameters(ctx context.Context, req *platformv1.ListParametersRequest) (*platformv1.ListParametersResponse, error) {
 	scope := req.GetScope()
-	items, err := s.svc.ListParameters(ctx, scope.GetTenantId(), scope.GetScopeType(), scope.GetScopeId())
+	tenantID, err := verifiedTenant(ctx, scope.GetTenantId())
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.svc.ListParameters(ctx, tenantID, scope.GetScopeType(), scope.GetScopeId())
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -38,7 +55,13 @@ func (s *PlatformServer) UpsertParameter(ctx context.Context, req *platformv1.Up
 	if req.GetParameter() == nil {
 		return nil, status.Error(codes.InvalidArgument, "parameter is required")
 	}
-	item, err := s.svc.UpsertParameter(ctx, parameterFromProto(req.GetParameter()))
+	tenantID, err := verifiedTenant(ctx, req.GetParameter().GetTenantId())
+	if err != nil {
+		return nil, err
+	}
+	item := parameterFromProto(req.GetParameter())
+	item.TenantID = &tenantID
+	item, err = s.svc.UpsertParameter(ctx, item)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -49,15 +72,22 @@ func (s *PlatformServer) ResolveParameter(ctx context.Context, req *platformv1.R
 	if req.GetKey() == "" {
 		return nil, status.Error(codes.InvalidArgument, "key is required")
 	}
+	tenantID, err := verifiedTenant(ctx, req.GetTenantId())
+	if err != nil {
+		return nil, err
+	}
 	scopes := make([]service.ScopeSelector, 0, len(req.GetScopes()))
 	for _, scope := range req.GetScopes() {
+		if scope.GetTenantId() != "" && strings.TrimSpace(scope.GetTenantId()) != tenantID {
+			return nil, status.Error(codes.PermissionDenied, "requested tenant is outside verified scope")
+		}
 		scopes = append(scopes, service.ScopeSelector{
-			TenantID:  scope.GetTenantId(),
+			TenantID:  tenantID,
 			ScopeType: scope.GetScopeType(),
 			ScopeID:   scope.GetScopeId(),
 		})
 	}
-	item, err := s.svc.ResolveParameter(ctx, req.GetTenantId(), req.GetKey(), scopes)
+	item, err := s.svc.ResolveParameter(ctx, tenantID, req.GetKey(), scopes)
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
@@ -66,7 +96,11 @@ func (s *PlatformServer) ResolveParameter(ctx context.Context, req *platformv1.R
 
 func (s *PlatformServer) ListLookupCategories(ctx context.Context, req *platformv1.ListLookupCategoriesRequest) (*platformv1.ListLookupCategoriesResponse, error) {
 	scope := req.GetScope()
-	items, err := s.svc.ListLookupCategories(ctx, scope.GetTenantId(), scope.GetScopeType(), scope.GetScopeId())
+	tenantID, err := verifiedTenant(ctx, scope.GetTenantId())
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.svc.ListLookupCategories(ctx, tenantID, scope.GetScopeType(), scope.GetScopeId())
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -81,7 +115,13 @@ func (s *PlatformServer) UpsertLookupCategory(ctx context.Context, req *platform
 	if req.GetCategory() == nil {
 		return nil, status.Error(codes.InvalidArgument, "category is required")
 	}
-	item, err := s.svc.UpsertLookupCategory(ctx, lookupCategoryFromProto(req.GetCategory()))
+	tenantID, err := verifiedTenant(ctx, req.GetCategory().GetTenantId())
+	if err != nil {
+		return nil, err
+	}
+	item := lookupCategoryFromProto(req.GetCategory())
+	item.TenantID = &tenantID
+	item, err = s.svc.UpsertLookupCategory(ctx, item)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -92,7 +132,11 @@ func (s *PlatformServer) ListLookupValues(ctx context.Context, req *platformv1.L
 	if req.GetCategoryCode() == "" {
 		return nil, status.Error(codes.InvalidArgument, "category_code is required")
 	}
-	items, err := s.svc.ListLookupValues(ctx, req.GetCategoryCode())
+	tenantID, err := verifiedTenant(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.svc.ListLookupValues(ctx, tenantID, req.GetCategoryCode())
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -107,7 +151,11 @@ func (s *PlatformServer) UpsertLookupValue(ctx context.Context, req *platformv1.
 	if req.GetCategoryCode() == "" || req.GetValue() == nil {
 		return nil, status.Error(codes.InvalidArgument, "category_code and value are required")
 	}
-	item, err := s.svc.UpsertLookupValue(ctx, req.GetCategoryCode(), lookupValueFromProto(req.GetValue()))
+	tenantID, err := verifiedTenant(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	item, err := s.svc.UpsertLookupValue(ctx, tenantID, req.GetCategoryCode(), lookupValueFromProto(req.GetValue()))
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -115,8 +163,12 @@ func (s *PlatformServer) UpsertLookupValue(ctx context.Context, req *platformv1.
 }
 
 func (s *PlatformServer) ListOrganizations(ctx context.Context, req *platformv1.ListOrganizationsRequest) (*platformv1.ListOrganizationsResponse, error) {
+	tenantID, err := verifiedTenant(ctx, req.GetTenantId())
+	if err != nil {
+		return nil, err
+	}
 	items, total, err := s.svc.ListOrganizations(ctx, repository.ListOrganizationsParams{
-		TenantID: req.GetTenantId(),
+		TenantID: tenantID,
 		Unpaged:  true,
 	})
 	if err != nil {
@@ -134,7 +186,13 @@ func (s *PlatformServer) CreateOrganization(ctx context.Context, req *platformv1
 	if req.GetOrganization() == nil {
 		return nil, status.Error(codes.InvalidArgument, "organization is required")
 	}
-	item, err := s.svc.CreateOrganization(ctx, organizationFromProto(req.GetOrganization()))
+	tenantID, err := verifiedTenant(ctx, req.GetOrganization().GetTenantId())
+	if err != nil {
+		return nil, err
+	}
+	item := organizationFromProto(req.GetOrganization())
+	item.TenantID = tenantID
+	item, err = s.svc.CreateOrganization(ctx, item)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}

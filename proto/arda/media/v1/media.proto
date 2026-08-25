@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package arda.media.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/media/v1;mediav1";
+
+message AttachFilesRequest {
+  repeated string public_ids = 1;
+  string owner_type = 2;
+  string owner_id = 3;
+}
+
+message AttachFilesResponse {
+  bool ok = 1;
+}
+
+service MediaService {
+  rpc AttachFiles(AttachFilesRequest) returns (AttachFilesResponse);
+}

@@ -2,11 +2,11 @@ app_name: workflow-service
 http_addr: 0.0.0.0:8093
 grpc_addr: 0.0.0.0:9093
 log_level: info
-database_dsn: "postgres://arda_workflow:123456@192.168.100.201:30432/workflow?sslmode=disable"
+database_dsn: ""
 zeebe_addr: 192.168.100.201:30650
 crm_grpc_addr: "localhost:9094"
 iam_grpc_addr: "localhost:9095"
 zeebe_rest_addr: "http://192.168.100.201:30080"
-notification_service_url: "http://localhost:8095"
+notification_grpc_addr: "localhost:9095"
 # Dev only: allow same user to complete checker/risk after submitting as maker
 # relax_maker_checker_sod: true

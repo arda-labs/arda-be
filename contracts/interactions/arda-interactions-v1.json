@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "policy": {
+    "retry_default": "none",
+    "deadline_required": true,
+    "identity_required": true,
+    "trace_context_required": true
+  },
+  "interactions": [
+    {
+      "id": "auth-gateway.iam-http",
+      "source": "auth-gateway",
+      "target": "iam-service",
+      "protocol": "http",
+      "operation": "internal IAM context/session/MFA adapter",
+      "path_prefix": "/internal/iam",
+      "timeout_ms": 10000,
+      "retry": "none",
+      "identity": "signed-service-token",
+      "context": ["request_id", "traceparent", "user_context"],
+      "source_location": "apps/auth-gateway/internal/iamclient/client.go"
+    },
+    {
+      "id": "crm.workflow-command",
+      "source": "crm-service",
+      "target": "workflow-service",
+      "protocol": "grpc",
+      "operation": "customer workflow commands",
+      "timeout_ms": 5000,
+      "retry": "none",
+      "identity": "mtls-and-signed-service-token",
+      "context": ["request_id", "traceparent", "tenant_id", "org_id", "actor_id"],
+      "source_location": "libs/go/arda-grpc/client/workflow/client.go"
+    },
+    {
+      "id": "hrm.workflow-command",
+      "source": "hrm-service",
+      "target": "workflow-service",
+      "protocol": "grpc",
+      "operation": "HR workflow commands",
+      "timeout_ms": 5000,
+      "retry": "none",
+      "identity": "mtls-and-signed-service-token",
+      "context": ["request_id", "traceparent", "tenant_id", "org_id", "actor_id"],
+      "source_location": "libs/go/arda-grpc/client/workflow/client.go"
+    },
+    {
+      "id": "finance.platform-resolve",
+      "source": "finance-service",
+      "target": "platform-service",
+      "protocol": "grpc",
+      "operation": "platform parameter resolution",
+      "timeout_ms": 2000,
+      "retry": "none",
+      "identity": "mtls-and-signed-service-token",
+      "context": ["request_id", "traceparent", "tenant_id", "org_id", "actor_id"],
+      "source_location": "libs/go/arda-grpc/client/platform/client.go"
+    },
+    {
+      "id": "workflow.crm-command",
+      "source": "workflow-service",
+      "target": "crm-service",
+      "protocol": "grpc",
+      "operation": "workflow CRM workers",
+      "timeout_ms": 5000,
+      "retry": "none",
+      "identity": "mtls-and-signed-service-token",
+      "context": ["request_id", "traceparent", "tenant_id", "org_id", "actor_id"],
+      "source_location": "libs/go/arda-grpc/client/crm/client.go"
+    },
+    {
+      "id": "workflow.iam-context",
+      "source": "workflow-service",
+      "target": "iam-service",
+      "protocol": "grpc",
+      "operation": "workflow actor and membership context",
+      "timeout_ms": 2000,
+      "retry": "none",
+      "identity": "mtls-and-signed-service-token",
+      "context": ["request_id", "traceparent", "tenant_id", "org_id", "actor_id"],
+      "source_location": "libs/go/arda-grpc/client/iam/client.go"
+    },
+    {
+      "id": "workflow.notification-command",
+      "source": "workflow-service",
+      "target": "notification-service",
+      "protocol": "grpc",
+      "operation": "accept notification command",
+      "timeout_ms": 5000,
+      "retry": "none",
+      "identity": "mtls-and-signed-service-token",
+      "context": ["request_id", "traceparent", "tenant_id", "org_id", "actor_id", "idempotency_key"],
+      "source_location": "libs/go/arda-grpc/client/notification/client.go"
+    },
+    {
+      "id": "iam.media-attach",
+      "source": "iam-service",
+      "target": "media-service",
+      "protocol": "grpc",
+      "operation": "attach user media",
+      "timeout_ms": 2000,
+      "retry": "none",
+      "identity": "mtls-and-signed-service-token",
+      "context": ["request_id", "traceparent", "tenant_id", "org_id", "actor_id"],
+      "source_location": "libs/go/arda-grpc/client/media/client.go"
+    },
+    {
+      "id": "platform.media-attach",
+      "source": "platform-service",
+      "target": "media-service",
+      "protocol": "grpc",
+      "operation": "attach reference-data media",
+      "timeout_ms": 2000,
+      "retry": "none",
+      "identity": "mtls-and-signed-service-token",
+      "context": ["request_id", "traceparent", "tenant_id", "org_id", "actor_id"],
+      "source_location": "libs/go/arda-grpc/client/media/client.go"
+    }
+  ]
+}

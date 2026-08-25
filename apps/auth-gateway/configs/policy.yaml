@@ -85,6 +85,30 @@ routes:
     permissions:
       - iam.group.manage
 
+  - id: admin-permissions-read
+    path: /api/admin/permissions
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - iam.permission.read
+
+  - id: admin-permissions-create
+    path: /api/admin/permissions
+    methods: [POST]
+    auth: true
+    risk: high
+    permissions:
+      - iam.permission.create
+
+  - id: admin-permissions-delete
+    path: /api/admin/permissions/**
+    methods: [DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - iam.permission.delete
+
   - id: mdm-read
     path: /api/mdm/**
     methods: [GET]
@@ -147,14 +171,149 @@ routes:
     permissions:
       - hrm.manage
 
+  - id: finance-read
+    path: /api/finance/**
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - finance.read
+
+  - id: finance-approval-write
+    path: /api/finance/approvals/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - finance.approve
+
+  - id: finance-write
+    path: /api/finance/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - finance.manage
+
+  - id: workflow-read
+    path: /api/workflow/**
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - workflow.read
+
+  # Workflow configuration is management data even for read operations. Keep
+  # it separate from runtime work-item/process monitoring reads so a user with
+  # workflow.read cannot enumerate or inspect admin configuration.
+  - id: workflow-admin-config-read
+    path: /api/workflow/process-definitions/**
+    methods: [GET]
+    auth: true
+    risk: high
+    permissions:
+      - workflow.manage
+
+  - id: workflow-admin-role-read
+    path: /api/workflow/roles/**
+    methods: [GET]
+    auth: true
+    risk: high
+    permissions:
+      - workflow.manage
+
+  - id: workflow-admin-role-catalog-read
+    path: /api/workflow/role-catalog/**
+    methods: [GET]
+    auth: true
+    risk: high
+    permissions:
+      - workflow.manage
+
+  - id: workflow-admin-role-membership-read
+    path: /api/workflow/role-memberships/**
+    methods: [GET]
+    auth: true
+    risk: high
+    permissions:
+      - workflow.manage
+
+  - id: workflow-admin-assignment-read
+    path: /api/workflow/assignment-rules/**
+    methods: [GET]
+    auth: true
+    risk: high
+    permissions:
+      - workflow.manage
+
+  - id: workflow-admin-delegation-read
+    path: /api/workflow/delegations/**
+    methods: [GET]
+    auth: true
+    risk: high
+    permissions:
+      - workflow.manage
+
+  - id: workflow-admin-sla-read
+    path: /api/workflow/sla-policies/**
+    methods: [GET]
+    auth: true
+    risk: high
+    permissions:
+      - workflow.manage
+
+  - id: workflow-admin-description-read
+    path: /api/workflow/description-templates/**
+    methods: [GET]
+    auth: true
+    risk: high
+    permissions:
+      - workflow.manage
+
+  - id: workflow-operate-write
+    path: /api/workflow/operate/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - workflow.operate
+
+  - id: workflow-write
+    path: /api/workflow/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - workflow.manage
+
+  - id: media-read
+    path: /api/media/**
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - media.read
+
+  - id: media-write
+    path: /api/media/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+    permissions:
+      - media.manage
+
   - id: notifications-read
     path: /api/notifications/**
     methods: [GET]
     auth: true
     risk: low
+    permissions:
+      - notification.read
 
   - id: notifications-write
     path: /api/notifications/**
     methods: [POST, PUT, PATCH, DELETE]
     auth: true
     risk: low
+    permissions:
+      - notification.manage

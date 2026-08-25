@@ -121,8 +121,8 @@ func (s *AdminUserService) ListUsers(ctx context.Context, params repository.List
 	return items, total, nil
 }
 
-func (s *AdminUserService) GetUser(ctx context.Context, id string) (*AdminUserDetails, error) {
-	user, err := s.userRepo.GetUserByID(ctx, id)
+func (s *AdminUserService) GetUser(ctx context.Context, id, tenantID string) (*AdminUserDetails, error) {
+	user, err := s.userRepo.GetUserByIDScoped(ctx, id, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (s *AdminUserService) GetUser(ctx context.Context, id string) (*AdminUserDe
 		return nil, nil
 	}
 
-	roles, err := s.userRepo.GetUserRoles(ctx, id)
+	roles, err := s.userRepo.GetUserRolesScoped(ctx, id, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +146,10 @@ func (s *AdminUserService) GetUser(ctx context.Context, id string) (*AdminUserDe
 }
 
 func (s *AdminUserService) CreateUser(ctx context.Context, input CreateAdminUserInput) (*domain.User, error) {
+	input.TenantID = strings.TrimSpace(input.TenantID)
+	if input.TenantID == "" {
+		return nil, fmt.Errorf("tenant_id is required for the target user")
+	}
 	displayName := displayNameFromParts(input.Name, input.FirstName, input.LastName, input.Username, input.Email)
 	kratosIdentityID, err := s.identity.CreateIdentity(ctx, input.Email, input.Password, displayName)
 	if err != nil {
@@ -194,8 +198,8 @@ func (s *AdminUserService) CreateUser(ctx context.Context, input CreateAdminUser
 	return created, nil
 }
 
-func (s *AdminUserService) UpdateUser(ctx context.Context, id string, input UpdateAdminUserInput) (*domain.User, error) {
-	user, err := s.userRepo.GetUserByID(ctx, id)
+func (s *AdminUserService) UpdateUser(ctx context.Context, id, tenantID string, input UpdateAdminUserInput) (*domain.User, error) {
+	user, err := s.userRepo.GetUserByIDScoped(ctx, id, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -251,14 +255,14 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, id string, input Upda
 		user.TenantID = *input.TenantID
 	}
 
-	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
+	if err := s.userRepo.UpdateUserScoped(ctx, user, tenantID); err != nil {
 		return nil, err
 	}
 	return user, nil
 }
 
-func (s *AdminUserService) DeleteUser(ctx context.Context, id string) (*domain.User, error) {
-	user, err := s.userRepo.GetUserByID(ctx, id)
+func (s *AdminUserService) DeleteUser(ctx context.Context, id, tenantID string) (*domain.User, error) {
+	user, err := s.userRepo.GetUserByIDScoped(ctx, id, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -269,14 +273,14 @@ func (s *AdminUserService) DeleteUser(ctx context.Context, id string) (*domain.U
 	if s.identity.CanManageIdentity(ctx, user) {
 		_ = s.identity.DeleteIdentity(ctx, user)
 	}
-	if err := s.userRepo.DeleteUser(ctx, id); err != nil {
+	if err := s.userRepo.DeleteUserScoped(ctx, id, tenantID); err != nil {
 		return nil, err
 	}
 	return user, nil
 }
 
-func (s *AdminUserService) SetStatus(ctx context.Context, id, status string) (*domain.User, error) {
-	user, err := s.userRepo.GetUserByID(ctx, id)
+func (s *AdminUserService) SetStatus(ctx context.Context, id, tenantID, status string) (*domain.User, error) {
+	user, err := s.userRepo.GetUserByIDScoped(ctx, id, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -285,14 +289,14 @@ func (s *AdminUserService) SetStatus(ctx context.Context, id, status string) (*d
 	}
 
 	user.Status = status
-	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
+	if err := s.userRepo.UpdateUserScoped(ctx, user, tenantID); err != nil {
 		return nil, err
 	}
 	return user, nil
 }
 
-func (s *AdminUserService) ResetPassword(ctx context.Context, id, newPassword string) (*domain.User, error) {
-	user, err := s.userRepo.GetUserByID(ctx, id)
+func (s *AdminUserService) ResetPassword(ctx context.Context, id, tenantID, newPassword string) (*domain.User, error) {
+	user, err := s.userRepo.GetUserByIDScoped(ctx, id, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -305,8 +309,8 @@ func (s *AdminUserService) ResetPassword(ctx context.Context, id, newPassword st
 	return user, nil
 }
 
-func (s *AdminUserService) ProvisionIdentity(ctx context.Context, id, temporaryPassword string) (*domain.User, string, error) {
-	user, err := s.userRepo.GetUserByID(ctx, id)
+func (s *AdminUserService) ProvisionIdentity(ctx context.Context, id, tenantID, temporaryPassword string) (*domain.User, string, error) {
+	user, err := s.userRepo.GetUserByIDScoped(ctx, id, tenantID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -317,7 +321,7 @@ func (s *AdminUserService) ProvisionIdentity(ctx context.Context, id, temporaryP
 	if err != nil {
 		return nil, "", err
 	}
-	updated, err := s.userRepo.GetUserByID(ctx, id)
+	updated, err := s.userRepo.GetUserByIDScoped(ctx, id, tenantID)
 	if err != nil {
 		return nil, "", err
 	}

@@ -9,7 +9,6 @@ import (
 	"github.com/arda-labs/arda/apps/hrm-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
-	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 type HRMHandler struct {
@@ -27,7 +26,7 @@ func (h *HRMHandler) ListPositions(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, nil, err)
 		return
 	}
-	ardahttp.WriteUnpagedList(w, r, items)
+	writeListAll(w, r, items)
 }
 
 func (h *HRMHandler) CreatePosition(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +66,7 @@ func (h *HRMHandler) ListJobTitles(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, nil, err)
 		return
 	}
-	ardahttp.WriteUnpagedList(w, r, items)
+	writeListAll(w, r, items)
 }
 
 func (h *HRMHandler) CreateJobTitle(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +106,7 @@ func (h *HRMHandler) ListOrgUnits(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, nil, err)
 		return
 	}
-	ardahttp.WriteUnpagedList(w, r, items)
+	writeListAll(w, r, items)
 }
 
 func (h *HRMHandler) CreateOrgUnit(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +146,7 @@ func (h *HRMHandler) ListEmployees(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, nil, err)
 		return
 	}
-	ardahttp.WriteUnpagedList(w, r, items)
+	writeListAll(w, r, items)
 }
 
 func (h *HRMHandler) ListEmployeeRegistrations(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +155,7 @@ func (h *HRMHandler) ListEmployeeRegistrations(w http.ResponseWriter, r *http.Re
 		writeResult(w, r, nil, err)
 		return
 	}
-	ardahttp.WriteUnpagedList(w, r, items)
+	writeListAll(w, r, items)
 }
 
 func (h *HRMHandler) CreateEmployeeRegistration(w http.ResponseWriter, r *http.Request) {
@@ -225,10 +224,14 @@ func (h *HRMHandler) submitWorkflowCase(r *http.Request, registrationID string) 
 	}
 	actor := r.Header.Get("X-User-Id")
 	if actor == "" {
-		actor = "hrm-submitter"
+		return "", fmt.Errorf("authenticated actor is required")
+	}
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		return "", fmt.Errorf("tenant scope is required")
 	}
 	createdCase, err := h.workflowClient.CreateCase(r.Context(), workflowclient.CaseCreate{
-		TenantID:          "default",
+		TenantID:          tenantID,
 		CaseType:          "HRM_EMPLOYEE_REGISTRATION",
 		Title:             "Dang ky nhan su " + registrationID,
 		PrimaryObjectType: "HRM_EMPLOYEE_REGISTRATION",
@@ -236,6 +239,7 @@ func (h *HRMHandler) submitWorkflowCase(r *http.Request, registrationID string) 
 		DomainService:     "hrm-service",
 		Priority:          "NORMAL",
 		CreatedBy:         actor,
+		IdempotencyKey:    r.Header.Get("Idempotency-Key"),
 	})
 	if err != nil {
 		return "", err
@@ -245,7 +249,7 @@ func (h *HRMHandler) submitWorkflowCase(r *http.Request, registrationID string) 
 	}
 	_, err = h.workflowClient.SubmitCase(r.Context(), createdCase.GetId(), actor, map[string]any{
 		"employeeRegistrationId": registrationID,
-	})
+	}, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		return "", err
 	}

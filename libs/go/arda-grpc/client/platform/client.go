@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	platformv1 "github.com/arda-labs/arda/libs/go/arda-proto/platform/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 const defaultTimeout = 2 * time.Second
@@ -35,13 +35,24 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 	if addr == "" {
 		return nil, errors.New("platform grpc address is required")
 	}
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return nil, errors.New("platform grpc service identity is not configured: " + err.Error())
+	}
+	transportCreds, err := identity.ClientTransportCredentials("platform-service")
+	if err != nil {
+		return nil, errors.New("platform grpc tls is not configured: " + err.Error())
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	conn, err := grpc.NewClient(
 		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{})),
+		grpc.WithTransportCredentials(transportCreds),
+		grpc.WithChainUnaryInterceptor(
+			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
+			interceptors.UnaryClientServiceAuth(secret, sourceService, "platform-service"),
+		),
 	)
 	if err != nil {
 		return nil, err

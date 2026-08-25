@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -51,6 +52,7 @@ type WorkflowAssignmentRule struct {
 
 type WorkflowDelegation struct {
 	ID              string     `json:"id"`
+	TenantID        string     `json:"tenantId"`
 	FromPrincipalID string     `json:"fromPrincipalId"`
 	ToPrincipalID   string     `json:"toPrincipalId"`
 	RoleCode        string     `json:"roleCode"`
@@ -118,14 +120,19 @@ func (r *CaseRepository) UpdateWorkflowRoleCatalog(ctx context.Context, roleCode
 	return &item, err
 }
 
-func (r *CaseRepository) ListWorkflowRoleMemberships(ctx context.Context) ([]WorkflowRoleMembership, error) {
+func (r *CaseRepository) ListWorkflowRoleMemberships(ctx context.Context, tenantID string) ([]WorkflowRoleMembership, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, errors.New("tenantId is required")
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, role_code, principal_type, principal_id, tenant_id, org_id, branch_id,
 		       product_code, min_amount, max_amount, effective_from, effective_to,
 		       status, created_at, updated_at
 		FROM workflow_role_memberships
+		WHERE tenant_id = $1
 		ORDER BY role_code, principal_type, principal_id
-	`)
+	`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +149,14 @@ func (r *CaseRepository) ListWorkflowRoleMemberships(ctx context.Context) ([]Wor
 	return out, rows.Err()
 }
 
-func (r *CaseRepository) CreateWorkflowRoleMembership(ctx context.Context, in WorkflowRoleMembership) (*WorkflowRoleMembership, error) {
+func (r *CaseRepository) CreateWorkflowRoleMembership(ctx context.Context, tenantID string, in WorkflowRoleMembership) (*WorkflowRoleMembership, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, errors.New("tenantId is required")
+	}
+	if strings.TrimSpace(in.TenantID) != tenantID {
+		return nil, errors.New("requested tenant is outside verified scope")
+	}
 	if err := validateWorkflowRoleMembership(in); err != nil {
 		return nil, err
 	}
@@ -165,24 +179,31 @@ func (r *CaseRepository) CreateWorkflowRoleMembership(ctx context.Context, in Wo
 	return &item, err
 }
 
-func (r *CaseRepository) UpdateWorkflowRoleMembership(ctx context.Context, id string, in WorkflowRoleMembership) (*WorkflowRoleMembership, error) {
+func (r *CaseRepository) UpdateWorkflowRoleMembership(ctx context.Context, tenantID, id string, in WorkflowRoleMembership) (*WorkflowRoleMembership, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, errors.New("tenantId is required")
+	}
 	if id == "" {
 		return nil, errors.New("id is required")
 	}
 	if err := validateWorkflowRoleMembership(in); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(in.TenantID) != tenantID {
+		return nil, errors.New("requested tenant is outside verified scope")
+	}
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE workflow_role_memberships
-		SET role_code = $2, principal_type = $3, principal_id = $4, tenant_id = $5,
-		    org_id = $6, branch_id = $7, product_code = $8, min_amount = $9,
-		    max_amount = $10, effective_from = COALESCE($11, effective_from),
-		    effective_to = $12, status = $13, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1
+		SET role_code = $3, principal_type = $4, principal_id = $5, tenant_id = $6,
+		    org_id = $7, branch_id = $8, product_code = $9, min_amount = $10,
+		    max_amount = $11, effective_from = COALESCE($12, effective_from),
+		    effective_to = $13, status = $14, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND tenant_id = $2
 		RETURNING id, role_code, principal_type, principal_id, tenant_id, org_id, branch_id,
 		          product_code, min_amount, max_amount, effective_from, effective_to,
 		          status, created_at, updated_at
-	`, id, in.RoleCode, in.PrincipalType, in.PrincipalID, in.TenantID, in.OrgID, in.BranchID,
+	`, id, tenantID, in.RoleCode, in.PrincipalType, in.PrincipalID, in.TenantID, in.OrgID, in.BranchID,
 		in.ProductCode, in.MinAmount, in.MaxAmount, in.EffectiveFrom, in.EffectiveTo, statusOrActive(in.Status))
 	item, err := scanWorkflowRoleMembership(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -263,13 +284,18 @@ func (r *CaseRepository) UpdateWorkflowAssignmentRule(ctx context.Context, id st
 	return &item, err
 }
 
-func (r *CaseRepository) ListWorkflowDelegations(ctx context.Context) ([]WorkflowDelegation, error) {
+func (r *CaseRepository) ListWorkflowDelegations(ctx context.Context, tenantID string) ([]WorkflowDelegation, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, errors.New("tenantId is required")
+	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, from_principal_id, to_principal_id, role_code, effective_from,
+		SELECT id, tenant_id, from_principal_id, to_principal_id, role_code, effective_from,
 		       effective_to, reason, status, created_at, updated_at
 		FROM workflow_delegations
+		WHERE tenant_id = $1
 		ORDER BY role_code, effective_from DESC
-	`)
+	`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +312,14 @@ func (r *CaseRepository) ListWorkflowDelegations(ctx context.Context) ([]Workflo
 	return out, rows.Err()
 }
 
-func (r *CaseRepository) CreateWorkflowDelegation(ctx context.Context, in WorkflowDelegation) (*WorkflowDelegation, error) {
+func (r *CaseRepository) CreateWorkflowDelegation(ctx context.Context, tenantID string, in WorkflowDelegation) (*WorkflowDelegation, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, errors.New("tenantId is required")
+	}
+	if strings.TrimSpace(in.TenantID) != tenantID {
+		return nil, errors.New("requested tenant is outside verified scope")
+	}
 	if err := validateWorkflowDelegation(in); err != nil {
 		return nil, err
 	}
@@ -296,34 +329,41 @@ func (r *CaseRepository) CreateWorkflowDelegation(ctx context.Context, in Workfl
 	}
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO workflow_delegations (
-			id, from_principal_id, to_principal_id, role_code, effective_from,
-			effective_to, reason, status
+			id, tenant_id, from_principal_id, to_principal_id, role_code, effective_from,
+			 effective_to, reason, status
 		)
-		VALUES ($1, $2, $3, $4, COALESCE($5, CURRENT_TIMESTAMP), $6, $7, $8)
-		RETURNING id, from_principal_id, to_principal_id, role_code, effective_from,
+		VALUES ($1, $2, $3, $4, $5, COALESCE($6, CURRENT_TIMESTAMP), $7, $8, $9)
+		RETURNING id, tenant_id, from_principal_id, to_principal_id, role_code, effective_from,
 		          effective_to, reason, status, created_at, updated_at
-	`, id, in.FromPrincipalID, in.ToPrincipalID, in.RoleCode, in.EffectiveFrom,
+	`, id, in.TenantID, in.FromPrincipalID, in.ToPrincipalID, in.RoleCode, in.EffectiveFrom,
 		in.EffectiveTo, in.Reason, statusOrActive(in.Status))
 	item, err := scanWorkflowDelegation(row)
 	return &item, err
 }
 
-func (r *CaseRepository) UpdateWorkflowDelegation(ctx context.Context, id string, in WorkflowDelegation) (*WorkflowDelegation, error) {
+func (r *CaseRepository) UpdateWorkflowDelegation(ctx context.Context, tenantID, id string, in WorkflowDelegation) (*WorkflowDelegation, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, errors.New("tenantId is required")
+	}
 	if id == "" {
 		return nil, errors.New("id is required")
+	}
+	if strings.TrimSpace(in.TenantID) != tenantID {
+		return nil, errors.New("requested tenant is outside verified scope")
 	}
 	if err := validateWorkflowDelegation(in); err != nil {
 		return nil, err
 	}
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE workflow_delegations
-		SET from_principal_id = $2, to_principal_id = $3, role_code = $4,
-		    effective_from = COALESCE($5, effective_from), effective_to = $6,
-		    reason = $7, status = $8, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1
-		RETURNING id, from_principal_id, to_principal_id, role_code, effective_from,
+		SET tenant_id = $3, from_principal_id = $4, to_principal_id = $5, role_code = $6,
+		    effective_from = COALESCE($7, effective_from), effective_to = $8,
+		    reason = $9, status = $10, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND tenant_id = $2
+		RETURNING id, tenant_id, from_principal_id, to_principal_id, role_code, effective_from,
 		          effective_to, reason, status, created_at, updated_at
-	`, id, in.FromPrincipalID, in.ToPrincipalID, in.RoleCode, in.EffectiveFrom,
+	`, id, tenantID, in.TenantID, in.FromPrincipalID, in.ToPrincipalID, in.RoleCode, in.EffectiveFrom,
 		in.EffectiveTo, in.Reason, statusOrActive(in.Status))
 	item, err := scanWorkflowDelegation(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -383,6 +423,8 @@ func validateWorkflowDelegation(in WorkflowDelegation) error {
 		return errors.New("toPrincipalId is required")
 	case in.RoleCode == "":
 		return errors.New("roleCode is required")
+	case strings.TrimSpace(in.TenantID) == "":
+		return errors.New("tenantId is required")
 	default:
 		return nil
 	}
@@ -425,7 +467,7 @@ func scanWorkflowAssignmentRule(s scanner) (WorkflowAssignmentRule, error) {
 func scanWorkflowDelegation(s scanner) (WorkflowDelegation, error) {
 	var item WorkflowDelegation
 	var effectiveFrom, effectiveTo sql.NullTime
-	err := s.Scan(&item.ID, &item.FromPrincipalID, &item.ToPrincipalID, &item.RoleCode,
+	err := s.Scan(&item.ID, &item.TenantID, &item.FromPrincipalID, &item.ToPrincipalID, &item.RoleCode,
 		&effectiveFrom, &effectiveTo, &item.Reason, &item.Status,
 		&item.CreatedAt, &item.UpdatedAt)
 	if effectiveFrom.Valid {

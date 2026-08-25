@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 const (
@@ -20,6 +23,7 @@ const (
 )
 
 var ErrNotFound = errors.New("not found")
+var ErrIdempotencyConflict = errors.New("idempotency key was already used with a different request")
 
 type CaseType struct {
 	CaseType           string     `json:"caseType"`
@@ -52,28 +56,31 @@ type CaseTypeUpsert struct {
 }
 
 type BusinessCase struct {
-	ID                 string     `json:"id"`
-	TenantID           string     `json:"tenantId"`
-	CaseType           string     `json:"caseType"`
-	CaseCode           string     `json:"caseCode"`
-	Title              string     `json:"title"`
-	PrimaryObjectType  string     `json:"primaryObjectType"`
-	PrimaryObjectID    string     `json:"primaryObjectId"`
-	DomainService      string     `json:"domainService"`
-	Status             string     `json:"status"`
-	CurrentStep        string     `json:"currentStep"`
-	Priority           string     `json:"priority"`
-	CreatedBy          string     `json:"createdBy"`
-	AssignedTo         *string    `json:"assignedTo,omitempty"`
-	CandidateRole      *string    `json:"candidateRole,omitempty"`
-	SLAPolicyID        *string    `json:"slaPolicyId,omitempty"`
-	SLADueAt           *time.Time `json:"slaDueAt,omitempty"`
-	ProcessInstanceKey *int64     `json:"processInstanceKey,omitempty"`
-	BpmnProcessID      *string    `json:"bpmnProcessId,omitempty"`
-	BpmnVersion        *int       `json:"bpmnVersion,omitempty"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
-	CompletedAt        *time.Time `json:"completedAt,omitempty"`
+	ID                     string     `json:"id"`
+	TenantID               string     `json:"tenantId"`
+	CaseType               string     `json:"caseType"`
+	CaseCode               string     `json:"caseCode"`
+	Title                  string     `json:"title"`
+	PrimaryObjectType      string     `json:"primaryObjectType"`
+	PrimaryObjectID        string     `json:"primaryObjectId"`
+	DomainService          string     `json:"domainService"`
+	Status                 string     `json:"status"`
+	CurrentStep            string     `json:"currentStep"`
+	Priority               string     `json:"priority"`
+	CreatedBy              string     `json:"createdBy"`
+	AssignedTo             *string    `json:"assignedTo,omitempty"`
+	CandidateRole          *string    `json:"candidateRole,omitempty"`
+	SLAPolicyID            *string    `json:"slaPolicyId,omitempty"`
+	SLADueAt               *time.Time `json:"slaDueAt,omitempty"`
+	ProcessInstanceKey     *int64     `json:"processInstanceKey,omitempty"`
+	BpmnProcessID          *string    `json:"bpmnProcessId,omitempty"`
+	BpmnVersion            *int       `json:"bpmnVersion,omitempty"`
+	CreatedAt              time.Time  `json:"createdAt"`
+	UpdatedAt              time.Time  `json:"updatedAt"`
+	CompletedAt            *time.Time `json:"completedAt,omitempty"`
+	SubmitIdempotencyKey   string     `json:"-"`
+	IdempotencyRequestHash string     `json:"-"`
+	SubmitRequestHash      string     `json:"-"`
 }
 
 type CaseCreate struct {
@@ -86,6 +93,7 @@ type CaseCreate struct {
 	DomainService     string `json:"domainService"`
 	Priority          string `json:"priority"`
 	CreatedBy         string `json:"createdBy"`
+	IdempotencyKey    string `json:"idempotencyKey,omitempty"`
 }
 
 type CaseListFilter struct {
@@ -110,7 +118,7 @@ type TimelineEvent struct {
 }
 
 type CaseRepository struct {
-	db       *sql.DB
+	db        *sql.DB
 	iamClient UserLookupClient
 }
 
@@ -127,6 +135,14 @@ type UserLookupInfo struct {
 
 func NewCaseRepository(db *sql.DB) *CaseRepository {
 	return &CaseRepository{db: db}
+}
+
+func verifiedTenant(ctx context.Context) (string, error) {
+	tenant := strings.TrimSpace(ardametadata.FromOutgoing(ctx).TenantID)
+	if tenant == "" {
+		return "", errors.New("verified tenant scope is required")
+	}
+	return tenant, nil
 }
 
 func (r *CaseRepository) SetIAMClient(client UserLookupClient) {
@@ -232,6 +248,15 @@ func (r *CaseRepository) CreateCase(ctx context.Context, in CaseCreate) (*Busine
 	if err := validateCreate(in); err != nil {
 		return nil, err
 	}
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if tenant != in.TenantID {
+		return nil, errors.New("requested tenant is outside verified scope")
+	}
+	in.IdempotencyKey = strings.TrimSpace(in.IdempotencyKey)
+	requestHash := caseRequestHash(in)
 	if in.Priority == "" {
 		in.Priority = "NORMAL"
 	}
@@ -241,6 +266,18 @@ func (r *CaseRepository) CreateCase(ctx context.Context, in CaseCreate) (*Busine
 			return nil, err
 		}
 		in.CaseCode = code
+	}
+	if in.IdempotencyKey != "" {
+		existing, err := r.CaseByIdempotencyKey(ctx, tenant, in.IdempotencyKey)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			if existing.IdempotencyRequestHash == "" || existing.IdempotencyRequestHash != requestHash {
+				return nil, ErrIdempotencyConflict
+			}
+			return existing, nil
+		}
 	}
 
 	ct, err := r.GetCaseType(ctx, in.CaseType)
@@ -275,16 +312,17 @@ func (r *CaseRepository) CreateCase(ctx context.Context, in CaseCreate) (*Busine
 		INSERT INTO business_cases (
 			id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
 			domain_service, status, priority, created_by, candidate_role, sla_policy_id,
-			bpmn_process_id, bpmn_version
+			bpmn_process_id, bpmn_version, idempotency_key, idempotency_request_hash
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULLIF($16, ''), NULLIF($17, ''))
 		RETURNING id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
 		          domain_service, status, current_step, priority, created_by, assigned_to,
 		          candidate_role, sla_policy_id, sla_due_at, process_instance_key,
-		          bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
+		          bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
+			      submit_idempotency_key, idempotency_request_hash, submit_request_hash
 	`, id, in.TenantID, in.CaseType, in.CaseCode, in.Title, in.PrimaryObjectType, in.PrimaryObjectID,
 		in.DomainService, CaseStatusDraft, in.Priority, in.CreatedBy, ct.MakerRole, ct.DefaultSLAPolicyID,
-		ct.BpmnProcessID, ct.BpmnVersion)
+		ct.BpmnProcessID, ct.BpmnVersion, in.IdempotencyKey, requestHash)
 
 	bc, err := scanBusinessCase(row)
 	if err != nil {
@@ -299,13 +337,69 @@ func (r *CaseRepository) CreateCase(ctx context.Context, in CaseCreate) (*Busine
 	return &bc, nil
 }
 
+func (r *CaseRepository) CaseByIdempotencyKey(ctx context.Context, tenantID, key string) (*BusinessCase, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	key = strings.TrimSpace(key)
+	if tenantID == "" || key == "" {
+		return nil, nil
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
+		       domain_service, status, current_step, priority, created_by, assigned_to,
+		       candidate_role, sla_policy_id, sla_due_at, process_instance_key,
+		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
+		       submit_idempotency_key, idempotency_request_hash, submit_request_hash
+		FROM business_cases
+		WHERE tenant_id = $1 AND idempotency_key = $2
+	`, tenantID, key)
+	bc, err := scanBusinessCase(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &bc, nil
+}
+
+// WithSubmissionLock serializes submit commands for one tenant/case across
+// service replicas. The lock is held on a dedicated PostgreSQL session while
+// the Zeebe command and the state transition complete, so two concurrent HTTP
+// retries cannot start two workflows for the same case.
+func (r *CaseRepository) WithSubmissionLock(ctx context.Context, caseID string, fn func(context.Context) (*BusinessCase, error)) (*BusinessCase, error) {
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(caseID) == "" {
+		return nil, errors.New("case id is required")
+	}
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	lockKey := tenant + "\x00" + strings.TrimSpace(caseID)
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(hashtextextended($1, 0))`, lockKey); err != nil {
+		return nil, fmt.Errorf("acquire case submission lock: %w", err)
+	}
+	defer func() {
+		_, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, lockKey)
+	}()
+	return fn(ctx)
+}
+
 func (r *CaseRepository) ListCases(ctx context.Context, f CaseListFilter) ([]BusinessCase, error) {
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if f.Limit <= 0 || f.Limit > 200 {
 		f.Limit = 100
 	}
 
-	where := []string{"1=1"}
-	args := []any{}
+	where := []string{"tenant_id = $1"}
+	args := []any{tenant}
 	add := func(sql string, v any) {
 		args = append(args, v)
 		where = append(where, fmt.Sprintf(sql, len(args)))
@@ -333,7 +427,8 @@ func (r *CaseRepository) ListCases(ctx context.Context, f CaseListFilter) ([]Bus
 		SELECT id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
 		       domain_service, status, current_step, priority, created_by, assigned_to,
 		       candidate_role, sla_policy_id, sla_due_at, process_instance_key,
-		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
+		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
+		       submit_idempotency_key, idempotency_request_hash, submit_request_hash
 		FROM business_cases
 		WHERE `+strings.Join(where, " AND ")+`
 		ORDER BY updated_at DESC
@@ -355,14 +450,19 @@ func (r *CaseRepository) ListCases(ctx context.Context, f CaseListFilter) ([]Bus
 }
 
 func (r *CaseRepository) GetCase(ctx context.Context, id string) (*BusinessCase, error) {
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
 		       domain_service, status, current_step, priority, created_by, assigned_to,
 		       candidate_role, sla_policy_id, sla_due_at, process_instance_key,
-		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
+		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
+		       submit_idempotency_key, idempotency_request_hash, submit_request_hash
 		FROM business_cases
-		WHERE id = $1
-	`, id)
+		WHERE tenant_id = $1 AND id = $2
+	`, tenant, id)
 	bc, err := scanBusinessCase(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -374,14 +474,19 @@ func (r *CaseRepository) GetCase(ctx context.Context, id string) (*BusinessCase,
 }
 
 func (r *CaseRepository) CaseByCaseCode(ctx context.Context, caseCode string) (*BusinessCase, error) {
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
 		       domain_service, status, current_step, priority, created_by, assigned_to,
 		       candidate_role, sla_policy_id, sla_due_at, process_instance_key,
-		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
+		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
+		       submit_idempotency_key, idempotency_request_hash, submit_request_hash
 		FROM business_cases
-		WHERE case_code = $1
-	`, caseCode)
+		WHERE tenant_id = $1 AND case_code = $2
+	`, tenant, caseCode)
 	bc, err := scanBusinessCase(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -392,7 +497,11 @@ func (r *CaseRepository) CaseByCaseCode(ctx context.Context, caseCode string) (*
 	return &bc, nil
 }
 
-func (r *CaseRepository) SubmitCase(ctx context.Context, id string, actor string, processInstanceKey int64) (*BusinessCase, error) {
+func (r *CaseRepository) SubmitCase(ctx context.Context, id string, actor string, processInstanceKey int64, idempotencyKey, requestHash string) (*BusinessCase, error) {
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -400,7 +509,7 @@ func (r *CaseRepository) SubmitCase(ctx context.Context, id string, actor string
 	defer tx.Rollback()
 
 	var fromStatus string
-	err = tx.QueryRowContext(ctx, `SELECT status FROM business_cases WHERE id = $1 FOR UPDATE`, id).Scan(&fromStatus)
+	err = tx.QueryRowContext(ctx, `SELECT status FROM business_cases WHERE tenant_id = $1 AND id = $2 FOR UPDATE`, tenant, id).Scan(&fromStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -413,14 +522,17 @@ func (r *CaseRepository) SubmitCase(ctx context.Context, id string, actor string
 
 	row := tx.QueryRowContext(ctx, `
 		UPDATE business_cases
-		SET status = $2, current_step = 'submitted', process_instance_key = $3,
+		SET status = $3, current_step = 'submitted', process_instance_key = $4,
+		    submit_idempotency_key = NULLIF($5, ''),
+		    submit_request_hash = NULLIF($6, ''),
 		    updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1
+		WHERE tenant_id = $1 AND id = $2
 		RETURNING id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
 		          domain_service, status, current_step, priority, created_by, assigned_to,
 		          candidate_role, sla_policy_id, sla_due_at, process_instance_key,
-		          bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
-	`, id, CaseStatusSubmitted, processInstanceKey)
+		          bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
+		       submit_idempotency_key, idempotency_request_hash, submit_request_hash
+	`, tenant, id, CaseStatusSubmitted, processInstanceKey, strings.TrimSpace(idempotencyKey), strings.TrimSpace(requestHash))
 	bc, err := scanBusinessCase(row)
 	if err != nil {
 		return nil, err
@@ -438,6 +550,10 @@ func (r *CaseRepository) ClaimCase(ctx context.Context, id string, actor string)
 	if actor == "" {
 		return nil, errors.New("actor is required")
 	}
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -446,14 +562,15 @@ func (r *CaseRepository) ClaimCase(ctx context.Context, id string, actor string)
 
 	row := tx.QueryRowContext(ctx, `
 		UPDATE business_cases
-		SET status = CASE WHEN status = $2 THEN $3 ELSE status END,
-		    assigned_to = $4, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1
+		SET status = CASE WHEN status = $3 THEN $4 ELSE status END,
+		    assigned_to = $5, updated_at = CURRENT_TIMESTAMP
+		WHERE tenant_id = $1 AND id = $2
 		RETURNING id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
 		          domain_service, status, current_step, priority, created_by, assigned_to,
 		          candidate_role, sla_policy_id, sla_due_at, process_instance_key,
-		          bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
-	`, id, CaseStatusSubmitted, CaseStatusInReview, actor)
+		          bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
+		       submit_idempotency_key, idempotency_request_hash, submit_request_hash
+	`, tenant, id, CaseStatusSubmitted, CaseStatusInReview, actor)
 	bc, err := scanBusinessCase(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -529,14 +646,19 @@ func (r *CaseRepository) GetCaseByProcessInstanceKey(ctx context.Context, proces
 	if processInstanceKey == 0 {
 		return nil, nil
 	}
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
 		       domain_service, status, current_step, priority, created_by, assigned_to,
 		       candidate_role, sla_policy_id, sla_due_at, process_instance_key,
-		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
+		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
+		       submit_idempotency_key, idempotency_request_hash, submit_request_hash
 		FROM business_cases
-		WHERE process_instance_key = $1
-	`, processInstanceKey)
+		WHERE tenant_id = $1 AND process_instance_key = $2
+	`, tenant, processInstanceKey)
 	bc, err := scanBusinessCase(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -551,6 +673,25 @@ func (r *CaseRepository) AddTimelineEvent(ctx context.Context, caseID, eventType
 	if caseID == "" || eventType == "" {
 		return nil
 	}
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO case_timeline_events (case_id, event_type, note)
+		SELECT $2, $3, $4
+		WHERE EXISTS (SELECT 1 FROM business_cases WHERE id = $2 AND tenant_id = $1)
+	`, tenant, caseID, eventType, note)
+	return err
+}
+
+// AddTimelineEventInternal is reserved for workflow projections whose source
+// event already passed the service boundary and carries no HTTP scope. Public
+// handlers must use AddTimelineEvent so a case ID cannot cross tenants.
+func (r *CaseRepository) AddTimelineEventInternal(ctx context.Context, caseID, eventType, note string) error {
+	if caseID == "" || eventType == "" {
+		return nil
+	}
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO case_timeline_events (case_id, event_type, note)
 		VALUES ($1, $2, $3)
@@ -559,12 +700,16 @@ func (r *CaseRepository) AddTimelineEvent(ctx context.Context, caseID, eventType
 }
 
 func (r *CaseRepository) ListTimeline(ctx context.Context, caseID string) ([]TimelineEvent, error) {
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, case_id, event_type, from_status, to_status, actor, note, data::text, created_at
 		FROM case_timeline_events
-		WHERE case_id = $1
+		WHERE case_id = $2 AND EXISTS (SELECT 1 FROM business_cases WHERE id = case_id AND tenant_id = $1)
 		ORDER BY created_at ASC, id ASC
-	`, caseID)
+	`, tenant, caseID)
 	if err != nil {
 		return nil, err
 	}
@@ -590,7 +735,8 @@ func (r *CaseRepository) ListActiveCasesWithProcess(ctx context.Context, limit i
 		SELECT id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
 		       domain_service, status, current_step, priority, created_by, assigned_to,
 		       candidate_role, sla_policy_id, sla_due_at, process_instance_key,
-		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at
+		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
+		       submit_idempotency_key, idempotency_request_hash, submit_request_hash
 		FROM business_cases
 		WHERE process_instance_key IS NOT NULL
 		  AND completed_at IS NULL
@@ -695,11 +841,13 @@ func scanBusinessCase(s scanner) (BusinessCase, error) {
 	var slaDueAt, completedAt sql.NullTime
 	var processInstanceKey sql.NullInt64
 	var bpmnVersion sql.NullInt64
+	var submitIdempotencyKey, idempotencyRequestHash, submitRequestHash sql.NullString
 	err := s.Scan(&bc.ID, &bc.TenantID, &bc.CaseType, &bc.CaseCode, &bc.Title,
 		&bc.PrimaryObjectType, &bc.PrimaryObjectID, &bc.DomainService, &bc.Status,
 		&bc.CurrentStep, &bc.Priority, &bc.CreatedBy, &assignedTo, &candidateRole,
 		&slaPolicyID, &slaDueAt, &processInstanceKey, &bpmnProcessID, &bpmnVersion,
-		&bc.CreatedAt, &bc.UpdatedAt, &completedAt)
+		&bc.CreatedAt, &bc.UpdatedAt, &completedAt, &submitIdempotencyKey,
+		&idempotencyRequestHash, &submitRequestHash)
 	bc.AssignedTo = nullStringPtr(assignedTo)
 	bc.CandidateRole = nullStringPtr(candidateRole)
 	bc.SLAPolicyID = nullStringPtr(slaPolicyID)
@@ -717,7 +865,16 @@ func scanBusinessCase(s scanner) (BusinessCase, error) {
 	if completedAt.Valid {
 		bc.CompletedAt = &completedAt.Time
 	}
+	bc.IdempotencyRequestHash = idempotencyRequestHash.String
+	bc.SubmitRequestHash = submitRequestHash.String
+	bc.SubmitIdempotencyKey = submitIdempotencyKey.String
 	return bc, err
+}
+
+func caseRequestHash(in CaseCreate) string {
+	encoded, _ := json.Marshal(in)
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
 }
 
 func scanTimelineEvent(s scanner) (TimelineEvent, error) {

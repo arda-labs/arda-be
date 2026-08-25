@@ -8,23 +8,25 @@ import (
 )
 
 type Config struct {
-	AppName          string `yaml:"app_name"`
-	HTTPAddr         string `yaml:"http_addr"`
-	LogLevel         string `yaml:"log_level"`
-	DatabaseDSN      string `yaml:"database_dsn"`
-	NATSURL          string `yaml:"nats_url"`
-	VAPIDPublicKey   string `yaml:"vapid_public_key"`
-	VAPIDPrivateKey  string `yaml:"vapid_private_key"`
-	VAPIDSubject     string `yaml:"vapid_subject"`
+	AppName         string `yaml:"app_name"`
+	HTTPAddr        string `yaml:"http_addr"`
+	GRPCAddr        string `yaml:"grpc_addr"`
+	LogLevel        string `yaml:"log_level"`
+	DatabaseDSN     string `yaml:"database_dsn"`
+	NATSURL         string `yaml:"nats_url"`
+	VAPIDPublicKey  string `yaml:"vapid_public_key"`
+	VAPIDPrivateKey string `yaml:"vapid_private_key"`
+	VAPIDSubject    string `yaml:"vapid_subject"`
 }
 
 func Load() Config {
 	cfg := Config{
-		AppName:     "notification-service",
-		HTTPAddr:    "0.0.0.0:8095",
-		LogLevel:    "info",
-		DatabaseDSN: "postgres://postgres:postgres@localhost:5432/notification?sslmode=disable",
-		NATSURL:     "",
+		AppName:      "notification-service",
+		HTTPAddr:     "0.0.0.0:8095",
+		GRPCAddr:     "0.0.0.0:9095",
+		LogLevel:     "info",
+		DatabaseDSN:  "",
+		NATSURL:      "",
 		VAPIDSubject: "mailto:ops@arda.io.vn",
 	}
 
@@ -40,6 +42,7 @@ func Load() Config {
 
 	envStr("APP_NAME", &cfg.AppName)
 	envStr("HTTP_ADDR", &cfg.HTTPAddr)
+	envStr("GRPC_ADDR", &cfg.GRPCAddr)
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("NATS_URL", &cfg.NATSURL)
@@ -68,6 +71,7 @@ func (c *Config) loadYAML(path string) bool {
 	}
 	set("app_name", &c.AppName)
 	set("http_addr", &c.HTTPAddr)
+	set("grpc_addr", &c.GRPCAddr)
 	set("log_level", &c.LogLevel)
 	set("database_dsn", &c.DatabaseDSN)
 	set("nats_url", &c.NATSURL)

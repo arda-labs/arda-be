@@ -20,8 +20,6 @@ func NewRouter(notificationHandler *handler.NotificationHandler) http.Handler {
 		_, _ = w.Write([]byte(`{"status":"ready"}`))
 	})
 
-	mux.HandleFunc("POST /internal/notifications", notificationHandler.Create)
-	mux.HandleFunc("GET /internal/notifications/{id}", notificationHandler.Get)
 	mux.HandleFunc("GET /api/notifications", notificationHandler.ListInbox)
 	mux.HandleFunc("GET /api/notifications/unread-count", notificationHandler.UnreadCount)
 	mux.HandleFunc("GET /api/notifications/stream", notificationHandler.Stream)

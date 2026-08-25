@@ -4,6 +4,7 @@ import "time"
 
 type Position struct {
 	ID          string    `json:"id"`
+	TenantID    string    `json:"tenant_id"`
 	Code        string    `json:"code"`
 	Name        string    `json:"name"`
 	Status      string    `json:"status"`
@@ -15,6 +16,7 @@ type Position struct {
 
 type JobTitle struct {
 	ID          string    `json:"id"`
+	TenantID    string    `json:"tenant_id"`
 	Code        string    `json:"code"`
 	Name        string    `json:"name"`
 	Description *string   `json:"description,omitempty"`
@@ -24,6 +26,7 @@ type JobTitle struct {
 
 type OrgUnit struct {
 	ID               string    `json:"id"`
+	TenantID         string    `json:"tenant_id"`
 	Code             string    `json:"code"`
 	OrganizationID   string    `json:"organization_id"`
 	OrganizationCode *string   `json:"organization_code,omitempty"`
@@ -40,6 +43,7 @@ type OrgUnit struct {
 
 type Employee struct {
 	ID           string    `json:"id"`
+	TenantID     string    `json:"tenant_id"`
 	EmployeeCode string    `json:"employee_code"`
 	FullName     string    `json:"full_name"`
 	OrgUnitID    *string   `json:"org_unit_id,omitempty"`
@@ -53,6 +57,7 @@ type Employee struct {
 
 type EmployeeRegistration struct {
 	ID               string    `json:"id"`
+	TenantID         string    `json:"tenant_id"`
 	RegistrationCode string    `json:"registration_code"`
 	Payload          string    `json:"payload"`
 	WorkflowCaseID   *string   `json:"workflow_case_id,omitempty"`

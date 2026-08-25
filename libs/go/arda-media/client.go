@@ -1,68 +1,48 @@
 package ardamedia
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
+
+	mediaclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/media"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 type Client struct {
-	endpoint   string
-	httpClient *http.Client
+	grpc *mediaclient.Client
 }
 
-func NewClient() *Client {
-	endpoint := os.Getenv("MEDIA_SERVICE_URL")
-	if endpoint == "" {
-		endpoint = "http://localhost:8092"
+func NewClient(sourceService string) (*Client, error) {
+	addr := strings.TrimSpace(os.Getenv("MEDIA_GRPC_ADDR"))
+	grpcClient, err := mediaclient.Dial(context.Background(), addr, sourceService, nil)
+	if err != nil {
+		return nil, err
 	}
-	return &Client{
-		endpoint:   strings.TrimSuffix(endpoint, "/"),
-		httpClient: &http.Client{},
+	return &Client{grpc: grpcClient}, nil
+}
+
+func (c *Client) Close() error {
+	if c == nil || c.grpc == nil {
+		return nil
 	}
+	return c.grpc.Close()
 }
 
 func (c *Client) Attach(ctx context.Context, publicIDs []string, ownerType, ownerID string, originalReq *http.Request) error {
 	if len(publicIDs) == 0 {
 		return nil
 	}
-
-	url := c.endpoint + "/api/media/attach"
-	payload := map[string]any{
-		"public_ids": publicIDs,
-		"owner_type": ownerType,
-		"owner_id":   ownerID,
+	if c == nil || c.grpc == nil {
+		return fmt.Errorf("media grpc client is not configured")
 	}
-	bodyData, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyData))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// Forward tracing/auth headers if original request is present
+	// Convert only the already-verified inbound context into outgoing gRPC
+	// metadata. The media service never trusts browser-supplied identity headers
+	// or an unauthenticated HTTP call.
 	if originalReq != nil {
-		req.Header.Set("X-Tenant-Id", originalReq.Header.Get("X-Tenant-Id"))
-		req.Header.Set("X-Org-Id", originalReq.Header.Get("X-Org-Id"))
-		req.Header.Set("X-User-Id", originalReq.Header.Get("X-User-Id"))
+		ctx = ardametadata.AppendToOutgoing(ctx, ardametadata.FromHTTPHeaders(originalReq.Header))
 	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to attach files: status %d", resp.StatusCode)
-	}
-	return nil
+	return c.grpc.Attach(ctx, publicIDs, ownerType, ownerID)
 }

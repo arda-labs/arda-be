@@ -2,6 +2,7 @@ package policy
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -36,14 +37,39 @@ func Load(path string) (*Policy, error) {
 	}
 
 	for i := range p.Routes {
+		route := &p.Routes[i]
+		if strings.TrimSpace(route.ID) == "" {
+			return nil, fmt.Errorf("route at index %d has empty id", i)
+		}
+		if strings.TrimSpace(route.Path) == "" || !strings.HasPrefix(route.Path, "/") {
+			return nil, fmt.Errorf("route %q has invalid path %q", route.ID, route.Path)
+		}
+		if !route.Auth && len(route.Permissions) > 0 {
+			return nil, fmt.Errorf("public route %q cannot declare permissions", route.ID)
+		}
 		if p.Routes[i].Risk == "" {
 			p.Routes[i].Risk = defaultRisk(p.Routes[i].Auth)
 		}
 		if !validRisk(p.Routes[i].Risk) {
 			return nil, fmt.Errorf("route %q has invalid risk %q", p.Routes[i].ID, p.Routes[i].Risk)
 		}
+		if !route.Auth && route.Risk != "public" {
+			return nil, fmt.Errorf("public route %q must use public risk", route.ID)
+		}
+		if route.Auth && route.Risk == "public" {
+			return nil, fmt.Errorf("protected route %q cannot use public risk", route.ID)
+		}
+		seenMethods := make(map[string]struct{}, len(route.Methods))
 		for j := range p.Routes[i].Methods {
-			p.Routes[i].Methods[j] = strings.ToUpper(p.Routes[i].Methods[j])
+			method := strings.ToUpper(strings.TrimSpace(p.Routes[i].Methods[j]))
+			if !validMethod(method) {
+				return nil, fmt.Errorf("route %q has invalid method %q", route.ID, method)
+			}
+			if _, ok := seenMethods[method]; ok {
+				return nil, fmt.Errorf("route %q declares duplicate method %q", route.ID, method)
+			}
+			seenMethods[method] = struct{}{}
+			p.Routes[i].Methods[j] = method
 		}
 	}
 
@@ -132,6 +158,16 @@ func defaultRisk(auth bool) string {
 func validRisk(risk string) bool {
 	switch risk {
 	case "public", "low", "medium", "high":
+		return true
+	default:
+		return false
+	}
+}
+
+func validMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+		http.MethodPatch, http.MethodDelete, http.MethodOptions:
 		return true
 	default:
 		return false

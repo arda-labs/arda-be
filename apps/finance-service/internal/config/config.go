@@ -27,7 +27,7 @@ func Load() Config {
 		HTTPAddr: "0.0.0.0:8090",
 		LogLevel: "info",
 
-		DatabaseDSN:      "postgres://postgres:postgres@localhost:5433/finance?sslmode=disable",
+		DatabaseDSN:      "",
 		PlatformGRPCAddr: "localhost:9090",
 		NATSURL:          "nats://localhost:4222",
 

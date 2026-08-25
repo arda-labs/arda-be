@@ -117,13 +117,13 @@ Current API is intentionally minimal. Update/delete, bulk import, fallback resol
 Local default DSN:
 
 ```txt
-postgres://arda_common:123456@localhost:5432/common?sslmode=disable
+<database-dsn-from-local-secret>
 ```
 
 Docker Compose default DSN points to:
 
 ```txt
-postgres://arda_common:123456@host.docker.internal:5432/common?sslmode=disable
+<database-dsn-from-local-secret>
 ```
 
 The service also supports `DATABASE_DSN`.

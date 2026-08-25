@@ -20,7 +20,9 @@ import (
 	grpcserver "github.com/arda-labs/arda/apps/crm-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/crm-service/internal/transport/http"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	crmv1 "github.com/arda-labs/arda/libs/go/arda-proto/crm/v1"
 	"google.golang.org/grpc"
@@ -60,7 +62,23 @@ func main() {
 	customerRepo := repository.NewCustomerRepository(db)
 	amendmentRepo := repository.NewAmendmentRepository(db)
 
-	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(interceptors.UnaryServerLogging(logger)))
+	serviceSecret, err := identity.SecretFromEnv()
+	if err != nil {
+		logger.Error("service identity is not configured", "err", err)
+		os.Exit(1)
+	}
+	transportCreds, err := identity.ServerTransportCredentials()
+	if err != nil {
+		logger.Error("grpc tls is not configured", "err", err)
+		os.Exit(1)
+	}
+	grpcSrv := grpc.NewServer(
+		grpc.Creds(transportCreds),
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerServiceAuth(serviceSecret, "crm-service", map[string]struct{}{"workflow-service": {}}),
+			interceptors.UnaryServerLogging(logger),
+		),
+	)
 	crmv1.RegisterCustomerCommandServiceServer(grpcSrv, grpcserver.NewCustomerCommandServer(customerRepo, amendmentRepo))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
@@ -93,7 +111,7 @@ func main() {
 	// Router and HTTP Server
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(customerHandler, amendmentHandler),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(customerHandler, amendmentHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

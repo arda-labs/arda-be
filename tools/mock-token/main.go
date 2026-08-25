@@ -11,7 +11,10 @@ import (
 )
 
 func main() {
-	secret := envOr("JWT_SECRET", "super-secret-dev-key-change-in-production")
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		log.Fatal("JWT_SECRET is required; do not use a built-in signing secret")
+	}
 	issuer := envOr("JWT_ISSUER", "http://hydra.local")
 	audience := envOr("JWT_AUDIENCE", "arda-api")
 	subject := envOr("SUBJECT", "dev-admin-sub")

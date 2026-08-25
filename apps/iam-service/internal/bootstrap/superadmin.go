@@ -32,13 +32,14 @@ func EnsureSuperAdmin(ctx context.Context, db *sql.DB, opts SuperAdminOptions) e
 
 func ensureSuperAdminRole(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO iam_roles (id, code, name, status)
-		VALUES ($1, $2, 'Super Administrator', 'ACTIVE')
+		INSERT INTO iam_roles (id, code, name, status, tenant_id)
+		VALUES ($1, $2, 'Super Administrator', 'ACTIVE', $3)
 		ON CONFLICT (code) DO UPDATE SET
 			name = EXCLUDED.name,
 			status = 'ACTIVE',
+			tenant_id = EXCLUDED.tenant_id,
 			updated_at = now()
-	`, system.SuperAdminRoleID, system.SuperAdminRoleCode)
+	`, system.SuperAdminRoleID, system.SuperAdminRoleCode, system.SuperAdminTenantID)
 	if err != nil {
 		return fmt.Errorf("ensure superadmin role: %w", err)
 	}

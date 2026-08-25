@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/media-service/internal/domain"
@@ -63,7 +65,10 @@ INSERT INTO media_upload_sessions (
 	return file, nil
 }
 
-func (r *MediaRepository) GetFile(ctx context.Context, fileID string) (domain.File, error) {
+// GetFileInternal is restricted to trusted upload/cleanup workflows. Browser
+// reads must use GetFileByPublicIDScoped so tenant and organization are part of
+// the lookup predicate.
+func (r *MediaRepository) GetFileInternal(ctx context.Context, fileID string) (domain.File, error) {
 	const query = `
 SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,''), module,
   COALESCE(entity_type,''), COALESCE(entity_id,''), original_filename, content_type,
@@ -87,13 +92,27 @@ WHERE id = $1 AND deleted_at IS NULL`
 }
 
 func (r *MediaRepository) CompleteUpload(ctx context.Context, fileID string, sizeBytes int64, contentType, nextStatus, scanStatus string, eventPayload map[string]any) (domain.File, error) {
+	return r.completeUpload(ctx, fileID, "", "", false, sizeBytes, contentType, nextStatus, scanStatus, eventPayload)
+}
+
+// CompleteUploadScoped is the browser-facing completion path. The scope is
+// part of the mutation predicate; a caller cannot complete another tenant's
+// upload by guessing a file ID.
+func (r *MediaRepository) CompleteUploadScoped(ctx context.Context, scope domain.FileScope, fileID string, sizeBytes int64, contentType, nextStatus, scanStatus string, eventPayload map[string]any) (domain.File, error) {
+	if strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.OrgID) == "" {
+		return domain.File{}, errors.New("tenant and organization scope are required")
+	}
+	return r.completeUpload(ctx, fileID, scope.TenantID, scope.OrgID, true, sizeBytes, contentType, nextStatus, scanStatus, eventPayload)
+}
+
+func (r *MediaRepository) completeUpload(ctx context.Context, fileID, tenantID, orgID string, scoped bool, sizeBytes int64, contentType, nextStatus, scanStatus string, eventPayload map[string]any) (domain.File, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.File{}, err
 	}
 	defer tx.Rollback()
 
-	const updateFile = `
+	updateFile := `
 UPDATE media_files
 SET status = $2,
     scan_status = $3,
@@ -102,38 +121,54 @@ SET status = $2,
     uploaded_at = now()
 WHERE id = $1
   AND deleted_at IS NULL
-  AND status = 'pending_upload'
+  AND status = 'pending_upload'`
+	args := []any{fileID, nextStatus, scanStatus, sizeBytes, contentType}
+	if scoped {
+		updateFile += `
+  AND tenant_id = $6
+  AND COALESCE(org_id, '') = $7`
+		args = append(args, tenantID, orgID)
+	}
+	updateFile += `
 RETURNING tenant_id`
-	var tenantID string
-	if err := tx.QueryRowContext(ctx, updateFile, fileID, nextStatus, scanStatus, sizeBytes, contentType).Scan(&tenantID); err != nil {
+	var updatedTenantID string
+	if err := tx.QueryRowContext(ctx, updateFile, args...).Scan(&updatedTenantID); err != nil {
 		if err == sql.ErrNoRows {
 			return domain.File{}, sql.ErrNoRows
 		}
 		return domain.File{}, fmt.Errorf("update media file: %w", err)
 	}
-	if tenantID == "" {
+	if updatedTenantID == "" {
 		return domain.File{}, sql.ErrNoRows
 	}
 
-	const updateSession = `
+	updateSession := `
 UPDATE media_upload_sessions
 SET status = 'completed', completed_at = now()
-WHERE file_id = $1 AND status = 'pending'`
-	if _, err := tx.ExecContext(ctx, updateSession, fileID); err != nil {
+	WHERE file_id = $1 AND status = 'pending'`
+	sessionArgs := []any{fileID}
+	if scoped {
+		updateSession += ` AND tenant_id = $2`
+		sessionArgs = append(sessionArgs, tenantID)
+	}
+	if _, err := tx.ExecContext(ctx, updateSession, sessionArgs...); err != nil {
 		return domain.File{}, fmt.Errorf("update upload session: %w", err)
 	}
 
-	if err := insertOutbox(ctx, tx, tenantID, "media.upload.completed", "media_file", fileID, eventPayload); err != nil {
+	if err := insertOutbox(ctx, tx, updatedTenantID, "media.upload.completed", "media_file", fileID, eventPayload); err != nil {
 		return domain.File{}, err
 	}
 
 	if err := tx.Commit(); err != nil {
 		return domain.File{}, err
 	}
-	return r.GetFile(ctx, fileID)
+	return r.GetFileInternal(ctx, fileID)
 }
 
-func (r *MediaRepository) GetFileByPublicID(ctx context.Context, publicID string) (domain.File, error) {
+func (r *MediaRepository) GetFileByPublicIDScoped(ctx context.Context, scope domain.FileScope, publicID string) (domain.File, error) {
+	if strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.OrgID) == "" {
+		return domain.File{}, errors.New("tenant and organization scope are required")
+	}
 	const query = `
 SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,''), module,
   COALESCE(entity_type,''), COALESCE(entity_id,''), original_filename, content_type,
@@ -141,9 +176,23 @@ SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,'')
   storage_provider, bucket, object_key, storage_class, version_id, visibility,
   COALESCE(created_by,''), created_at, uploaded_at, expires_at
 FROM media_files
-WHERE public_id = $1 AND deleted_at IS NULL`
+WHERE tenant_id = $1 AND COALESCE(org_id,'') = $2 AND public_id = $3 AND deleted_at IS NULL`
+	return r.scanFile(ctx, query, scope.TenantID, scope.OrgID, publicID)
+}
+
+func (r *MediaRepository) DeleteFileScoped(ctx context.Context, scope domain.FileScope, id string) error {
+	if strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.OrgID) == "" {
+		return errors.New("tenant and organization scope are required")
+	}
+	_, err := r.db.ExecContext(ctx, `
+UPDATE media_files SET deleted_at = now(), status = 'deleted'
+WHERE id = $1 AND tenant_id = $2 AND COALESCE(org_id,'') = $3`, id, scope.TenantID, scope.OrgID)
+	return err
+}
+
+func (r *MediaRepository) scanFile(ctx context.Context, query string, args ...any) (domain.File, error) {
 	var file domain.File
-	err := r.db.QueryRowContext(ctx, query, publicID).Scan(
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&file.ID, &file.PublicID, &file.TenantID, &file.OrgID, &file.OwnerUserID, &file.Module,
 		&file.EntityType, &file.EntityID, &file.OriginalFilename, &file.ContentType,
 		&file.Extension, &file.SizeBytes, &file.ChecksumSHA256, &file.Status, &file.ScanStatus,
@@ -156,7 +205,9 @@ WHERE public_id = $1 AND deleted_at IS NULL`
 	return file, nil
 }
 
-func (r *MediaRepository) DeleteFile(ctx context.Context, fileID string) error {
+// DeleteFileInternal is for the tenant-partitioned expiry worker. User-facing
+// deletion uses DeleteFileScoped.
+func (r *MediaRepository) DeleteFileInternal(ctx context.Context, fileID string) error {
 	const query = `UPDATE media_files SET deleted_at = now(), status = 'deleted' WHERE id = $1`
 	_, err := r.db.ExecContext(ctx, query, fileID)
 	return err
@@ -196,10 +247,10 @@ RETURNING id`
 		payload := payloads[publicID]
 		if payload == nil {
 			payload = map[string]any{
-				"file_id":    fileID,
-				"public_id":  publicID,
-				"owner_type": ownerType,
-				"owner_id":   ownerID,
+				"file_id":     fileID,
+				"public_id":   publicID,
+				"owner_type":  ownerType,
+				"owner_id":    ownerID,
 				"attached_at": time.Now().UTC(),
 			}
 		}

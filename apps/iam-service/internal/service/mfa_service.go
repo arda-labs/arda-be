@@ -194,7 +194,10 @@ func (s *MFAService) CheckMFA(ctx context.Context, userID, deviceToken string) (
 	}
 
 	if s.cfg.RememberDevice && deviceToken != "" {
-		dev, _ := s.sessionSvc.GetDeviceByToken(ctx, userID, deviceToken)
+		dev, err := s.sessionSvc.GetDeviceByToken(ctx, userID, deviceToken)
+		if err != nil {
+			return nil, fmt.Errorf("check trusted device: %w", err)
+		}
 		if s.sessionSvc.IsDeviceTrusted(dev) {
 			return result, nil
 		}

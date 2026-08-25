@@ -16,20 +16,8 @@ type Config struct {
 
 	DatabaseDSN string `yaml:"database_dsn"`
 
-	HydraAdminURL     string `yaml:"hydra_admin_url"`
-	HydraPublicURL    string `yaml:"hydra_public_url"`
-	HydraIssuerURL    string `yaml:"hydra_issuer_url"`
-	HydraClientID     string `yaml:"hydra_client_id"`
-	HydraClientSecret string `yaml:"hydra_client_secret"`
-	HydraRedirectURI  string `yaml:"hydra_redirect_uri"`
-
 	KratosAdminURL string `yaml:"kratos_admin_url"`
-
-	SuperAdminInitialPassword string `yaml:"superadmin_initial_password"`
-
-	RedisURL     string `yaml:"redis_url"`
-	TOTPIssuer   string `yaml:"totp_issuer"`
-	AuditEnabled bool   `yaml:"audit_enabled"`
+	TOTPIssuer     string `yaml:"totp_issuer"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -40,19 +28,10 @@ func Load() Config {
 		GRPCAddr: "0.0.0.0:9090",
 		LogLevel: "info",
 
-		DatabaseDSN: "postgres://postgres:postgres@localhost:5432/iam?sslmode=disable",
-
-		HydraAdminURL:     "http://hydra-admin:4445",
-		HydraPublicURL:    "https://auth.arda.io.vn",
-		HydraIssuerURL:    "https://auth.arda.io.vn",
-		HydraClientID:     "arda-shell",
-		HydraClientSecret: "",
-		HydraRedirectURI:  "http://localhost:5000/login",
+		DatabaseDSN: "",
 
 		KratosAdminURL: "http://localhost:4434",
-
-		TOTPIssuer:   "arda.io.vn",
-		AuditEnabled: true,
+		TOTPIssuer:     "arda.io.vn",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -70,17 +49,8 @@ func Load() Config {
 	envStr("GRPC_ADDR", &cfg.GRPCAddr)
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
-	envStr("HYDRA_ADMIN_URL", &cfg.HydraAdminURL)
-	envStr("HYDRA_PUBLIC_URL", &cfg.HydraPublicURL)
-	envStr("HYDRA_ISSUER_URL", &cfg.HydraIssuerURL)
-	envStr("HYDRA_CLIENT_ID", &cfg.HydraClientID)
-	envStr("HYDRA_CLIENT_SECRET", &cfg.HydraClientSecret)
-	envStr("HYDRA_REDIRECT_URI", &cfg.HydraRedirectURI)
 	envStr("KRATOS_ADMIN_URL", &cfg.KratosAdminURL)
-	envStr("SUPERADMIN_INITIAL_PASSWORD", &cfg.SuperAdminInitialPassword)
-	envStr("REDIS_URL", &cfg.RedisURL)
 	envStr("TOTP_ISSUER", &cfg.TOTPIssuer)
-	envBool("AUDIT_ENABLED", &cfg.AuditEnabled)
 
 	return cfg
 }
@@ -104,19 +74,8 @@ func (c *Config) loadYAML(path string) bool {
 	set("http_addr", &c.HTTPAddr)
 	set("log_level", &c.LogLevel)
 	set("database_dsn", &c.DatabaseDSN)
-	set("hydra_admin_url", &c.HydraAdminURL)
-	set("hydra_public_url", &c.HydraPublicURL)
-	set("hydra_issuer_url", &c.HydraIssuerURL)
-	set("hydra_client_id", &c.HydraClientID)
-	set("hydra_client_secret", &c.HydraClientSecret)
-	set("hydra_redirect_uri", &c.HydraRedirectURI)
 	set("kratos_admin_url", &c.KratosAdminURL)
-	set("superadmin_initial_password", &c.SuperAdminInitialPassword)
-	set("redis_url", &c.RedisURL)
 	set("totp_issuer", &c.TOTPIssuer)
-	if v, ok := m["audit_enabled"].(bool); ok {
-		c.AuditEnabled = v
-	}
 	return true
 }
 

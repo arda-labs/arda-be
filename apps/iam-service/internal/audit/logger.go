@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
@@ -15,9 +16,9 @@ type DBWriter interface {
 
 // Logger writes structured audit events with tamper-proof chain.
 type Logger struct {
-	slog    *slog.Logger
+	slog     *slog.Logger
 	dbWriter DBWriter
-	service string
+	service  string
 }
 
 // New creates an audit logger that writes to stdout and optionally to DB.
@@ -33,6 +34,7 @@ func New(service string, db DBWriter) *Logger {
 func (l *Logger) Event(ctx context.Context, e *domain.AuthEvent) {
 	e.Timestamp = time.Now()
 	e.ServiceName = l.service
+	e.Details = redactDetails(e.Details)
 
 	l.slog.Info("audit",
 		"event_type", e.EventType,
@@ -45,12 +47,53 @@ func (l *Logger) Event(ctx context.Context, e *domain.AuthEvent) {
 	)
 
 	if l.dbWriter != nil {
-		go func() {
-			if err := l.dbWriter.InsertWithChain(context.Background(), e); err != nil {
-				l.slog.Warn("failed to persist audit log", "err", err)
-			}
-		}()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if err := l.dbWriter.InsertWithChain(ctx, e); err != nil {
+			l.slog.Warn("failed to persist audit log", "err", err)
+		}
 	}
+}
+
+func redactDetails(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return input
+	}
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		if sensitiveAuditKey(key) {
+			output[key] = "[REDACTED]"
+			continue
+		}
+		output[key] = redactAuditValue(value)
+	}
+	return output
+}
+
+func redactAuditValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return redactDetails(typed)
+	case []any:
+		output := make([]any, len(typed))
+		for i, item := range typed {
+			output[i] = redactAuditValue(item)
+		}
+		return output
+	default:
+		return value
+	}
+}
+
+func sensitiveAuditKey(key string) bool {
+	key = strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+	for _, marker := range []string{"token", "secret", "password", "authorization", "cookie"} {
+		if strings.Contains(key, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // Shortcut methods (same as before)

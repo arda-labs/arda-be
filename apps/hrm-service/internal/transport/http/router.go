@@ -5,6 +5,9 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/hrm-service/internal/handler"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 func NewRouter(hrm *handler.HRMHandler) http.Handler {
@@ -19,7 +22,7 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 		case http.MethodPost:
 			hrm.CreatePosition(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/hrm/positions/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +32,7 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 		case http.MethodDelete:
 			hrm.DeletePosition(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -40,7 +43,7 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 		case http.MethodPost:
 			hrm.CreateJobTitle(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/hrm/job-titles/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +53,7 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 		case http.MethodDelete:
 			hrm.DeleteJobTitle(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
@@ -61,12 +64,12 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 		case http.MethodPost:
 			hrm.CreateOrgUnit(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/hrm/org-units/tree", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 			return
 		}
 		hrm.ListOrgUnits(w, r)
@@ -78,13 +81,13 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 		case http.MethodDelete:
 			hrm.DeleteOrgUnit(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 
 	mux.HandleFunc("/api/hrm/employees", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 			return
 		}
 		hrm.ListEmployees(w, r)
@@ -97,7 +100,7 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 		case http.MethodPost:
 			hrm.CreateEmployeeRegistration(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/hrm/employee-registrations/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -108,18 +111,37 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 		case http.MethodPut:
 			hrm.UpdateEmployeeRegistration(w, r)
 		default:
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/hrm/employee-registrations/{id}/submit", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			methodNotAllowed(w)
+			methodNotAllowed(w, r)
 			return
 		}
 		hrm.SubmitEmployeeRegistration(w, r)
 	})
 
-	return mux
+	return ardametadata.HTTPMiddleware(requireTenantScope(mux))
+}
+
+func requireTenantScope(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/health/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		metadata := ardametadata.FromOutgoing(r.Context())
+		if metadata.AuthChecked != "true" {
+			ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "verified tenant scope is required"))
+			return
+		}
+		if strings.TrimSpace(metadata.TenantID) == "" {
+			ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeRequired, "verified tenant scope is required"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func health(status string) http.HandlerFunc {
@@ -130,6 +152,6 @@ func health(status string) http.HandlerFunc {
 	}
 }
 
-func methodNotAllowed(w http.ResponseWriter) {
-	http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
 }

@@ -47,19 +47,19 @@ func (r *AccountRepository) Create(ctx context.Context, a *domain.Account) (*dom
 	return a, nil
 }
 
-func (r *AccountRepository) GetByID(ctx context.Context, id string) (*domain.Account, error) {
+func (r *AccountRepository) GetByID(ctx context.Context, tenantID, id string) (*domain.Account, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, code, name, type, normal_balance, currency, is_active, parent_id, metadata, created_at, updated_at
-		FROM fin_accounts WHERE id = $1
-	`, id)
+		FROM fin_accounts WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id)
 	return scanAccount(row)
 }
 
-func (r *AccountRepository) GetByCode(ctx context.Context, code string) (*domain.Account, error) {
+func (r *AccountRepository) GetByCode(ctx context.Context, tenantID, code string) (*domain.Account, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, code, name, type, normal_balance, currency, is_active, parent_id, metadata, created_at, updated_at
-		FROM fin_accounts WHERE code = $1
-	`, code)
+		FROM fin_accounts WHERE tenant_id = $1 AND code = $2
+	`, tenantID, code)
 	return scanAccount(row)
 }
 
@@ -92,10 +92,13 @@ func (r *AccountRepository) List(ctx context.Context, tenantID string) ([]domain
 	return accounts, rows.Err()
 }
 
-func (r *AccountRepository) GetBalance(ctx context.Context, accountID string) (*domain.AccountBalance, error) {
+func (r *AccountRepository) GetBalance(ctx context.Context, tenantID, accountID string) (*domain.AccountBalance, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT account_id, balance, updated_at FROM fin_account_balances WHERE account_id = $1
-	`, accountID)
+		SELECT b.account_id, b.balance, b.updated_at
+		FROM fin_account_balances b
+		JOIN fin_accounts a ON a.id = b.account_id
+		WHERE a.tenant_id = $1 AND b.account_id = $2
+	`, tenantID, accountID)
 	var b domain.AccountBalance
 	err := row.Scan(&b.AccountID, &b.Balance, &b.AsOf)
 	if err == sql.ErrNoRows {

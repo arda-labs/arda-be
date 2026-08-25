@@ -75,7 +75,9 @@ POST /api/workflow/delegations
 PUT  /api/workflow/delegations/{id}
 ```
 
-Legacy/versioned aliases also exist for deploy/start/message and instance operations under `/api/v1/workflows/*`.
+The former `/api/v1/workflows/*` aliases were removed. Consumers must use the
+canonical `/api/workflow/*` routes; unknown legacy paths fail closed at the
+gateway/router boundary.
 
 ## Persistence Areas
 

@@ -72,7 +72,11 @@ kubectl -n arda-app create secret generic arda-app-secrets \
   --from-literal=MEDIA_DATABASE_DSN='<dsn>' \
   --from-literal=WORKFLOW_DATABASE_DSN='<dsn>' \
   --from-literal=CRM_DATABASE_DSN='<dsn>' \
+  --from-literal=HRM_DATABASE_DSN='<dsn>' \
   --from-literal=NOTIFICATION_DATABASE_DSN='<dsn>' \
+  --from-literal=ARDA_SERVICE_AUTH_SECRET='<random-workload-secret>' \
+  --from-literal=INTROSPECTION_CLIENT_ID='<oauth-client-id>' \
+  --from-literal=INTROSPECTION_CLIENT_SECRET='<oauth-client-secret>' \
   --from-literal=REDIS_URL='<redis-url>' \
   --from-literal=NATS_URL='<nats-url>' \
   --from-literal=GARAGE_ACCESS_KEY='<garage-access-key>' \
@@ -85,11 +89,15 @@ secret:
 ```bash
 kubectl -n arda-app patch secret arda-app-secrets --type merge -p '{
   "stringData": {
-    "FINANCE_DATABASE_DSN": "postgres://arda_finance:123456@pg-main-rw.database.svc.cluster.local:5432/finance?sslmode=disable",
-    "MEDIA_DATABASE_DSN": "postgres://arda_media:123456@pg-main-rw.database.svc.cluster.local:5432/media?sslmode=disable",
-    "WORKFLOW_DATABASE_DSN": "postgres://arda_workflow:123456@pg-main-rw.database.svc.cluster.local:5432/workflow?sslmode=disable",
-    "CRM_DATABASE_DSN": "postgres://arda_crm:123456@pg-main-rw.database.svc.cluster.local:5432/crm?sslmode=disable",
-    "NOTIFICATION_DATABASE_DSN": "postgres://arda_notification:123456@pg-main-rw.database.svc.cluster.local:5432/notification?sslmode=disable",
+    "FINANCE_DATABASE_DSN": "<database-dsn-from-secret-manager>",
+    "MEDIA_DATABASE_DSN": "<database-dsn-from-secret-manager>",
+    "WORKFLOW_DATABASE_DSN": "<database-dsn-from-secret-manager>",
+    "CRM_DATABASE_DSN": "<database-dsn-from-secret-manager>",
+    "HRM_DATABASE_DSN": "<database-dsn-from-secret-manager>",
+    "NOTIFICATION_DATABASE_DSN": "<database-dsn-from-secret-manager>",
+    "ARDA_SERVICE_AUTH_SECRET": "<random-workload-secret>",
+    "INTROSPECTION_CLIENT_ID": "<oauth-client-id>",
+    "INTROSPECTION_CLIENT_SECRET": "<oauth-client-secret>",
     "GARAGE_ACCESS_KEY": "<garage-access-key>",
     "GARAGE_SECRET_KEY": "<garage-secret-key>"
   }

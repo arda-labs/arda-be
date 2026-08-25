@@ -20,7 +20,10 @@ import (
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
 	grpcserver "github.com/arda-labs/arda/apps/platform-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/platform-service/internal/transport/http"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardamedia "github.com/arda-labs/arda/libs/go/arda-media"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	platformv1 "github.com/arda-labs/arda/libs/go/arda-proto/platform/v1"
 	"google.golang.org/grpc"
@@ -60,18 +63,40 @@ func main() {
 	platformSvc := service.NewPlatformService(repo)
 	calendarSvc := service.NewCalendarService(calendarRepo)
 
-	platformHandler := handler.NewPlatformHandler(platformSvc)
+	mediaClient, err := ardamedia.NewClient("platform-service")
+	if err != nil {
+		logger.Error("media grpc client is required; refusing to start", "err", err)
+		os.Exit(1)
+	}
+	defer mediaClient.Close()
+	platformHandler := handler.NewPlatformHandler(platformSvc, mediaClient)
 	calendarHandler := handler.NewCalendarHandler(calendarSvc)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(platformHandler, calendarHandler),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(platformHandler, calendarHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(interceptors.UnaryServerLogging(logger)))
+	serviceSecret, err := identity.SecretFromEnv()
+	if err != nil {
+		logger.Error("service identity is not configured", "err", err)
+		os.Exit(1)
+	}
+	transportCreds, err := identity.ServerTransportCredentials()
+	if err != nil {
+		logger.Error("grpc tls is not configured", "err", err)
+		os.Exit(1)
+	}
+	grpcSrv := grpc.NewServer(
+		grpc.Creds(transportCreds),
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerServiceAuth(serviceSecret, "platform-service", map[string]struct{}{"finance-service": {}}),
+			interceptors.UnaryServerLogging(logger),
+		),
+	)
 	platformv1.RegisterPlatformServiceServer(grpcSrv, grpcserver.NewPlatformServer(platformSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)

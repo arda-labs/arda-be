@@ -25,7 +25,9 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/worker"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
 	"google.golang.org/grpc"
@@ -173,7 +175,26 @@ func main() {
 
 	// Handlers
 	workflowCmd := service.NewWorkflowCommandService(caseRepo, zeebeSvc)
-	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(interceptors.UnaryServerLogging(logger)))
+	serviceSecret, err := identity.SecretFromEnv()
+	if err != nil {
+		logger.Error("service identity is not configured", "err", err)
+		os.Exit(1)
+	}
+	transportCreds, err := identity.ServerTransportCredentials()
+	if err != nil {
+		logger.Error("grpc tls is not configured", "err", err)
+		os.Exit(1)
+	}
+	grpcSrv := grpc.NewServer(
+		grpc.Creds(transportCreds),
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerServiceAuth(serviceSecret, "workflow-service", map[string]struct{}{
+				"crm-service": {},
+				"hrm-service": {},
+			}),
+			interceptors.UnaryServerLogging(logger),
+		),
+	)
 	workflowv1.RegisterWorkflowCommandServiceServer(grpcSrv, grpcserver.NewWorkflowServer(workflowCmd))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
@@ -193,17 +214,19 @@ func main() {
 	}()
 
 	wfHandler := handler.NewWorkflowHandler(zeebeSvc, zeebeRest, crmClient, mappingRepo, caseRepo, processDefinitionRepo)
-	if notiClient := notificationclient.New(cfg.NotificationServiceURL); notiClient != nil {
-		wfHandler.SetNotificationClient(notiClient)
-		logger.Info("notification client configured", "url", cfg.NotificationServiceURL)
-	} else {
-		logger.Warn("notification client disabled — NOTIFICATION_SERVICE_URL empty")
+	notiClient, err := notificationclient.New(cfg.NotificationGRPCAddr)
+	if err != nil {
+		logger.Error("notification grpc client is required; refusing to start", "err", err)
+		os.Exit(1)
 	}
+	defer notiClient.Close()
+	wfHandler.SetNotificationClient(notiClient)
+	logger.Info("notification gRPC client configured", "addr", cfg.NotificationGRPCAddr)
 
 	// Router and HTTP Server
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(wfHandler),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(wfHandler)),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 45 * time.Second,
 		IdleTimeout:  60 * time.Second,

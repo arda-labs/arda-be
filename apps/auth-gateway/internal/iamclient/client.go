@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 )
 
 // UserContext mirrors the IAM internal API response.
@@ -82,18 +84,50 @@ type MFAEnrollResponse struct {
 	BackupCodes []string `json:"backup_codes"`
 }
 
+type canonicalResponse[T any] struct {
+	Result T `json:"result"`
+}
+
 // Client calls the IAM service internal APIs.
 type Client struct {
-	baseURL string
-	client  *http.Client
+	baseURL       string
+	client        *http.Client
+	serviceSecret string
 }
 
 // New creates a new IAM client.
-func New(baseURL string) *Client {
-	return &Client{
-		baseURL: baseURL,
-		client:  &http.Client{Timeout: 10 * time.Second},
+
+func New(baseURL string, serviceSecret ...string) *Client {
+	secret := ""
+	if len(serviceSecret) > 0 {
+		secret = serviceSecret[0]
 	}
+	return &Client{
+		baseURL:       baseURL,
+		client:        &http.Client{Timeout: 10 * time.Second},
+		serviceSecret: secret,
+	}
+}
+
+// ValidateServiceIdentity ensures production cannot start with an unauthenticated
+// auth-gateway -> IAM internal adapter.
+func (c *Client) ValidateServiceIdentity() error {
+	if c.serviceSecret == "" {
+		return fmt.Errorf("auth-gateway service identity secret is required")
+	}
+	if _, err := identity.Issue(c.serviceSecret, "auth-gateway", "iam-service", time.Now(), time.Minute); err != nil {
+		return fmt.Errorf("auth-gateway service identity is invalid: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) authorizeInternal(req *http.Request) error {
+	token, err := identity.Issue(c.serviceSecret, "auth-gateway", "iam-service", time.Now(), time.Minute)
+	if err != nil {
+		return fmt.Errorf("issue IAM service identity: %w", err)
+	}
+	req.Header.Set("X-Service-Auth", token)
+	return nil
 }
 
 func (c *Client) Ready(ctx context.Context) error {
@@ -119,6 +153,9 @@ func (c *Client) GetUserBySubject(ctx context.Context, subject string) (*UserCon
 	if err != nil {
 		return nil, err
 	}
+	if err := c.authorizeInternal(req); err != nil {
+		return nil, err
+	}
 
 	return c.doUserContext(req)
 }
@@ -130,6 +167,9 @@ func (c *Client) GetUserByID(ctx context.Context, id string) (*UserContext, erro
 	if err != nil {
 		return nil, err
 	}
+	if err := c.authorizeInternal(req); err != nil {
+		return nil, err
+	}
 
 	return c.doUserContext(req)
 }
@@ -138,6 +178,9 @@ func (c *Client) GetUserByKratosIdentityID(ctx context.Context, identityID strin
 	endpoint := c.baseURL + "/internal/iam/users/by-kratos-identity/" + url.PathEscape(identityID) + "/context"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
+		return nil, err
+	}
+	if err := c.authorizeInternal(req); err != nil {
 		return nil, err
 	}
 
@@ -159,6 +202,9 @@ func (c *Client) ResolveOrLinkKratosIdentity(ctx context.Context, identityID, em
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if err := c.authorizeInternal(req); err != nil {
+		return nil, err
+	}
 	return c.doUserContext(req)
 }
 
@@ -179,6 +225,9 @@ func (c *Client) ResolveOrLinkIdentity(ctx context.Context, providerID, external
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if err := c.authorizeInternal(req); err != nil {
+		return nil, err
+	}
 	return c.doUserContext(req)
 }
 
@@ -213,6 +262,9 @@ func (c *Client) CreateSession(ctx context.Context, req *CreateSessionRequest) (
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if err := c.authorizeInternal(httpReq); err != nil {
+		return nil, err
+	}
 
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
@@ -252,6 +304,9 @@ func (c *Client) RevokeSession(ctx context.Context, sessionID string) error {
 	if err != nil {
 		return err
 	}
+	if err := c.authorizeInternal(req); err != nil {
+		return err
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -280,11 +335,11 @@ func (c *Client) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, e
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("mfa status returned status %d", resp.StatusCode)
 	}
-	var status MFAStatus
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+	var response canonicalResponse[MFAStatus]
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("decode mfa status: %w", err)
 	}
-	return &status, nil
+	return &response.Result, nil
 }
 
 // CheckMFA determines whether a device is trusted for login MFA bypass.
@@ -294,6 +349,9 @@ func (c *Client) CheckMFA(ctx context.Context, userID, deviceToken string) (*MFA
 		return nil, err
 	}
 	req.Header.Set("X-Device-Token", deviceToken)
+	if err := c.authorizeInternal(req); err != nil {
+		return nil, err
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -349,11 +407,11 @@ func (c *Client) GenerateMFASecret(ctx context.Context, userID, username, email 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("mfa enroll returned status %d", resp.StatusCode)
 	}
-	var secret MFASecret
-	if err := json.NewDecoder(resp.Body).Decode(&secret); err != nil {
+	var response canonicalResponse[MFASecret]
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("decode mfa secret: %w", err)
 	}
-	return &secret, nil
+	return &response.Result, nil
 }
 
 func (c *Client) VerifyMFAEnrollment(ctx context.Context, userID, code string) (*MFAEnrollResponse, error) {
@@ -376,11 +434,11 @@ func (c *Client) VerifyMFAEnrollment(ctx context.Context, userID, code string) (
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("mfa verify enroll returned status %d", resp.StatusCode)
 	}
-	var result MFAEnrollResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var response canonicalResponse[MFAEnrollResponse]
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("decode mfa enroll response: %w", err)
 	}
-	return &result, nil
+	return &response.Result, nil
 }
 
 // InternalBaseURL returns the base URL for IAM internal API calls.

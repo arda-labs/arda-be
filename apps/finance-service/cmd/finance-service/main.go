@@ -19,6 +19,7 @@ import (
 	"github.com/arda-labs/arda/apps/finance-service/internal/service"
 	transport "github.com/arda-labs/arda/apps/finance-service/internal/transport/http"
 	platformclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/platform"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
@@ -57,16 +58,18 @@ func main() {
 
 	// ── Services ──
 	ledgerSvc := service.NewLedgerService(accountRepo, txnRepo)
-	if cfg.PlatformGRPCAddr != "" {
-		platformClient, err := platformclient.Dial(context.Background(), cfg.PlatformGRPCAddr, cfg.AppName, logger)
-		if err != nil {
-			logger.Warn("platform grpc unavailable", "addr", cfg.PlatformGRPCAddr, "err", err)
-		} else {
-			defer platformClient.Close()
-			ledgerSvc.WithParameterResolver(platformClient)
-			logger.Info("platform grpc configured", "addr", cfg.PlatformGRPCAddr)
-		}
+	if cfg.PlatformGRPCAddr == "" {
+		logger.Error("finance service requires PLATFORM_GRPC_ADDR")
+		os.Exit(1)
 	}
+	platformClient, err := platformclient.Dial(context.Background(), cfg.PlatformGRPCAddr, cfg.AppName, logger)
+	if err != nil {
+		logger.Error("platform grpc is required", "addr", cfg.PlatformGRPCAddr, "err", err)
+		os.Exit(1)
+	}
+	defer platformClient.Close()
+	ledgerSvc.WithParameterResolver(platformClient)
+	logger.Info("platform grpc configured", "addr", cfg.PlatformGRPCAddr)
 	approvalSvc := service.NewApprovalService(approvalRepo, txnRepo, nil)
 	operationSvc := service.NewFinanceOperationService(accountRepo, txnRepo, configRepo)
 	accountingConfigSvc := service.NewAccountingConfigService(configRepo)
@@ -78,7 +81,7 @@ func main() {
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(financeHandler, approvalHandler),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, approvalHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

@@ -32,7 +32,7 @@ func NewAmendmentHandler(
 func (h *AmendmentHandler) Route(w http.ResponseWriter, r *http.Request) {
 	customerID, segments := customerSegments(r.URL.Path)
 	if customerID == "" || len(segments) < 1 || segments[0] != "adjustments" {
-		http.NotFound(w, r)
+		writeError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	if len(segments) == 1 {
@@ -42,7 +42,7 @@ func (h *AmendmentHandler) Route(w http.ResponseWriter, r *http.Request) {
 		case http.MethodGet:
 			h.getCurrentAmendment(w, r, customerID)
 		default:
-			http.NotFound(w, r)
+			writeError(w, r, http.StatusNotFound, "route not found")
 		}
 		return
 	}
@@ -50,13 +50,13 @@ func (h *AmendmentHandler) Route(w http.ResponseWriter, r *http.Request) {
 		h.CustomerAmendmentByID(w, r)
 		return
 	}
-	http.NotFound(w, r)
+	writeError(w, r, http.StatusNotFound, "route not found")
 }
 
 func (h *AmendmentHandler) CustomerAmendmentByID(w http.ResponseWriter, r *http.Request) {
 	customerID, segments := customerSegments(r.URL.Path)
 	if customerID == "" || len(segments) < 2 || segments[0] != "adjustments" {
-		http.NotFound(w, r)
+		writeError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
 	amendmentID := segments[1]
@@ -73,7 +73,7 @@ func (h *AmendmentHandler) CustomerAmendmentByID(w http.ResponseWriter, r *http.
 	case r.Method == http.MethodPost && action == "cancel":
 		h.cancelAmendment(w, r, customerID, amendmentID)
 	default:
-		http.NotFound(w, r)
+		writeError(w, r, http.StatusNotFound, "route not found")
 	}
 }
 
@@ -87,7 +87,8 @@ func (h *AmendmentHandler) startAdjustment(w http.ResponseWriter, r *http.Reques
 		writeErrorCode(w, r, http.StatusConflict, ardaerrors.CodeConflict, "customer must be ACTIVE to start adjustment")
 		return
 	}
-	pending, err := h.amendmentRepo.HasPending(r.Context(), customerID)
+	scope := repositoryScope(r)
+	pending, err := h.amendmentRepo.HasPendingScoped(r.Context(), scope, customerID)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
@@ -102,13 +103,13 @@ func (h *AmendmentHandler) startAdjustment(w http.ResponseWriter, r *http.Reques
 		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to create workflow case: "+err.Error())
 		return
 	}
-	amendment, err := h.amendmentRepo.CreateDraft(r.Context(), customerID, caseID)
+	amendment, err := h.amendmentRepo.CreateDraftScoped(r.Context(), scope, customerID, caseID)
 	if err != nil {
 		writeServiceError(w, r, fmt.Errorf("failed to create amendment: %w", err))
 		return
 	}
 	if err := h.submitAdjustmentCase(r, caseID, customer, actorFromRequest(r)); err != nil && !isAlreadySubmittedWorkflowError(err) {
-		_ = h.amendmentRepo.CancelDraft(r.Context(), amendment.ID, customerID)
+		_ = h.amendmentRepo.CancelDraftScoped(r.Context(), scope, amendment.ID, customerID)
 		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to submit workflow case: "+err.Error())
 		return
 	}
@@ -120,7 +121,7 @@ func (h *AmendmentHandler) getCurrentAmendment(w http.ResponseWriter, r *http.Re
 		writeError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
-	amendment, err := h.amendmentRepo.GetPendingByCustomer(r.Context(), customerID)
+	amendment, err := h.amendmentRepo.GetPendingByCustomerScoped(r.Context(), repositoryScope(r), customerID)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
@@ -133,7 +134,8 @@ func (h *AmendmentHandler) updateAmendment(w http.ResponseWriter, r *http.Reques
 		writeError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
-	amendment, err := h.amendmentRepo.Get(r.Context(), amendmentID)
+	scope := repositoryScope(r)
+	amendment, err := h.amendmentRepo.GetScoped(r.Context(), scope, amendmentID)
 	if err != nil || amendment == nil || amendment.CustomerID != customerID {
 		writeError(w, r, http.StatusNotFound, "amendment not found")
 		return
@@ -143,7 +145,7 @@ func (h *AmendmentHandler) updateAmendment(w http.ResponseWriter, r *http.Reques
 		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "invalid request body")
 		return
 	}
-	updated, err := h.amendmentRepo.UpdateDraft(r.Context(), amendmentID, req)
+	updated, err := h.amendmentRepo.UpdateDraftScoped(r.Context(), scope, amendmentID, req)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -157,7 +159,8 @@ func (h *AmendmentHandler) submitAmendment(w http.ResponseWriter, r *http.Reques
 		writeError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
-	amendment, err := h.amendmentRepo.Get(r.Context(), amendmentID)
+	scope := repositoryScope(r)
+	amendment, err := h.amendmentRepo.GetScoped(r.Context(), scope, amendmentID)
 	if err != nil || amendment == nil || amendment.CustomerID != customerID {
 		writeError(w, r, http.StatusNotFound, "amendment not found")
 		return
@@ -171,7 +174,7 @@ func (h *AmendmentHandler) submitAmendment(w http.ResponseWriter, r *http.Reques
 		writeErrorCode(w, r, http.StatusBadGateway, ardaerrors.CodeBadGateway, "failed to submit workflow case: "+err.Error())
 		return
 	}
-	updated, err := h.amendmentRepo.Submit(r.Context(), amendmentID, actor, repository.CustomerSnapshot(customer))
+	updated, err := h.amendmentRepo.SubmitScoped(r.Context(), scope, amendmentID, actor, repository.CustomerSnapshot(customer))
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -188,7 +191,8 @@ func (h *AmendmentHandler) cancelAmendment(w http.ResponseWriter, r *http.Reques
 		writeError(w, r, http.StatusNotFound, err.Error())
 		return
 	}
-	amendment, err := h.amendmentRepo.Get(r.Context(), amendmentID)
+	scope := repositoryScope(r)
+	amendment, err := h.amendmentRepo.GetScoped(r.Context(), scope, amendmentID)
 	if err != nil || amendment == nil || amendment.CustomerID != customerID {
 		writeError(w, r, http.StatusNotFound, "amendment not found")
 		return
@@ -197,7 +201,7 @@ func (h *AmendmentHandler) cancelAmendment(w http.ResponseWriter, r *http.Reques
 		writeErrorCode(w, r, http.StatusConflict, ardaerrors.CodeConflict, "only draft amendments can be cancelled")
 		return
 	}
-	if err := h.amendmentRepo.CancelDraft(r.Context(), amendmentID, customerID); err != nil {
+	if err := h.amendmentRepo.CancelDraftScoped(r.Context(), scope, amendmentID, customerID); err != nil {
 		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -219,6 +223,7 @@ func (h *AmendmentHandler) createAdjustmentCase(r *http.Request, customer *repos
 		DomainService:     "crm-service",
 		Priority:          "NORMAL",
 		CreatedBy:         actor,
+		IdempotencyKey:    r.Header.Get("Idempotency-Key"),
 	})
 	if err != nil {
 		return "", err
@@ -228,9 +233,11 @@ func (h *AmendmentHandler) createAdjustmentCase(r *http.Request, customer *repos
 
 func (h *AmendmentHandler) submitAdjustmentCase(r *http.Request, caseID string, customer *repository.Customer, actor string) error {
 	_, err := h.workflowClient.SubmitCase(r.Context(), caseID, actor, map[string]any{
-		"customerId": customer.ID,
-		"adjustment": true,
-	})
+		"customerId":  customer.ID,
+		"adjustment":  true,
+		"orgId":       customer.OrgID,
+		"actorUserId": actor,
+	}, r.Header.Get("Idempotency-Key"))
 	return err
 }
 
@@ -254,12 +261,20 @@ func actorFromRequest(r *http.Request) string {
 
 func (h *AmendmentHandler) customerInScope(r *http.Request, customerID string) (*repository.Customer, error) {
 	scope := ScopeFromRequest(r)
-	customer, err := h.customerRepo.Get(r.Context(), customerID)
+	if err := scope.Validate(); err != nil {
+		return nil, err
+	}
+	customer, err := h.customerRepo.GetScoped(r.Context(), repositoryScope(r), customerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query customer: %w", err)
 	}
-	if customer == nil || !scope.AllowsOrg(customer.OrgID) {
+	if customer == nil || customer.TenantID != scope.TenantID || !scope.AllowsOrg(customer.OrgID) {
 		return nil, fmt.Errorf("customer not found")
 	}
 	return customer, nil
+}
+
+func repositoryScope(r *http.Request) repository.CustomerScope {
+	scope := ScopeFromRequest(r)
+	return repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}
 }

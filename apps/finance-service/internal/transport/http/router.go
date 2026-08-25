@@ -5,6 +5,9 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/handler"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // NewRouter wires HTTP routes for the finance service.
@@ -31,7 +34,7 @@ func NewRouter(financeHandler *handler.FinanceHandler, approvalHandler *handler.
 		case http.MethodPost:
 			financeHandler.CreateAccount(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/finance/accounts/{id}/balance", method("GET", financeHandler.GetAccountBalance))
@@ -48,7 +51,7 @@ func NewRouter(financeHandler *handler.FinanceHandler, approvalHandler *handler.
 		case http.MethodPost:
 			financeHandler.CreateIncomingTransaction(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/finance/incoming-transactions/{id}", method("GET", financeHandler.GetOperationTransaction))
@@ -59,7 +62,7 @@ func NewRouter(financeHandler *handler.FinanceHandler, approvalHandler *handler.
 		case http.MethodPost:
 			financeHandler.CreateOutgoingTransaction(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/finance/outgoing-transactions/{id}", method("GET", financeHandler.GetOperationTransaction))
@@ -73,7 +76,7 @@ func NewRouter(financeHandler *handler.FinanceHandler, approvalHandler *handler.
 		case http.MethodPost:
 			financeHandler.CreateTransaction(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/finance/transactions/{id}", method("GET", financeHandler.GetTransaction))
@@ -97,7 +100,7 @@ func NewRouter(financeHandler *handler.FinanceHandler, approvalHandler *handler.
 		case http.MethodPost:
 			approvalHandler.Create(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 	mux.HandleFunc("/api/finance/approvals/{id}", method("GET", approvalHandler.Get))
@@ -116,19 +119,23 @@ func NewRouter(financeHandler *handler.FinanceHandler, approvalHandler *handler.
 		case r.Method == http.MethodGet:
 			approvalHandler.Get(w, r)
 		default:
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 		}
 	})
 
-	return mux
+	return ardametadata.HTTPMiddleware(mux)
 }
 
 func method(method string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != method {
-			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			writeMethodNotAllowed(w, r)
 			return
 		}
 		next(w, r)
 	}
+}
+
+func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
 }

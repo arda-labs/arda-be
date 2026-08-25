@@ -13,22 +13,28 @@ import (
 
 // UserHandler exposes IAM HTTP handlers.
 type UserHandler struct {
-	svc *service.UserService
+	svc   *service.UserService
+	media *ardamedia.Client
 }
 
 // NewUserHandler creates a new handler backed by svc.
-func NewUserHandler(svc *service.UserService) *UserHandler {
-	return &UserHandler{svc: svc}
+func NewUserHandler(svc *service.UserService, media *ardamedia.Client) *UserHandler {
+	return &UserHandler{svc: svc, media: media}
 }
 
 // Me returns the current user context based on the injected internal IAM user id.
 func (h *UserHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
+		respondCanonicalError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
-	h.getContextByID(w, r, r.Context(), userID)
+	userCtx, err := h.svc.GetUserContextByID(r.Context(), userID)
+	if err != nil {
+		respondCanonicalError(w, r, http.StatusNotFound, err.Error())
+		return
+	}
+	respondCanonicalJSON(w, r, http.StatusOK, userCtx)
 }
 
 // GetBySubject returns a user context by external subject.
@@ -108,7 +114,7 @@ func (h *UserHandler) ResolveOrLinkIdentity(w http.ResponseWriter, r *http.Reque
 func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
+		respondCanonicalError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	var req struct {
@@ -116,31 +122,31 @@ func (h *UserHandler) UpdateMyAvatar(w http.ResponseWriter, r *http.Request) {
 		PictureURL   string `json:"picture_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, r, http.StatusBadRequest, "invalid json")
+		respondCanonicalError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	avatarID := strings.TrimSpace(req.AvatarFileID)
 	if avatarID != "" {
-		if err := ardamedia.NewClient().Attach(r.Context(), []string{avatarID}, "iam_user", userID, r); err != nil {
+		if err := h.media.Attach(r.Context(), []string{avatarID}, "iam_user", userID, r); err != nil {
 			slog.Error("failed to attach avatar file", "file_id", avatarID, "err", err)
-			respondError(w, r, http.StatusBadGateway, "failed to attach avatar file")
+			respondCanonicalError(w, r, http.StatusBadGateway, "failed to attach avatar file")
 			return
 		}
 	}
 
 	ctx, err := h.svc.UpdateUserAvatar(r.Context(), userID, avatarID, strings.TrimSpace(req.PictureURL))
 	if err != nil {
-		respondError(w, r, http.StatusBadRequest, err.Error())
+		respondCanonicalError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, r, http.StatusOK, ctx)
+	respondCanonicalJSON(w, r, http.StatusOK, ctx)
 }
 
 func (h *UserHandler) UpdateMyCover(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
+		respondCanonicalError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	var req struct {
@@ -148,31 +154,31 @@ func (h *UserHandler) UpdateMyCover(w http.ResponseWriter, r *http.Request) {
 		CoverImageURL string `json:"cover_image_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, r, http.StatusBadRequest, "invalid json")
+		respondCanonicalError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	coverID := strings.TrimSpace(req.CoverFileID)
 	if coverID != "" {
-		if err := ardamedia.NewClient().Attach(r.Context(), []string{coverID}, "iam_user_cover", userID, r); err != nil {
+		if err := h.media.Attach(r.Context(), []string{coverID}, "iam_user_cover", userID, r); err != nil {
 			slog.Error("failed to attach cover file", "file_id", coverID, "err", err)
-			respondError(w, r, http.StatusBadGateway, "failed to attach cover file")
+			respondCanonicalError(w, r, http.StatusBadGateway, "failed to attach cover file")
 			return
 		}
 	}
 
 	ctx, err := h.svc.UpdateUserCover(r.Context(), userID, coverID, strings.TrimSpace(req.CoverImageURL))
 	if err != nil {
-		respondError(w, r, http.StatusBadRequest, err.Error())
+		respondCanonicalError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, r, http.StatusOK, ctx)
+	respondCanonicalJSON(w, r, http.StatusOK, ctx)
 }
 
 func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
+		respondCanonicalError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	var req struct {
@@ -193,7 +199,7 @@ func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		Bio           string `json:"bio"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, r, http.StatusBadRequest, "invalid json")
+		respondCanonicalError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	ctx, err := h.svc.UpdateUserProfile(r.Context(), userID,
@@ -214,10 +220,10 @@ func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		strings.TrimSpace(req.Bio),
 	)
 	if err != nil {
-		respondError(w, r, http.StatusBadRequest, err.Error())
+		respondCanonicalError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	respondJSON(w, r, http.StatusOK, ctx)
+	respondCanonicalJSON(w, r, http.StatusOK, ctx)
 }
 
 func (h *UserHandler) getContextBySubject(w http.ResponseWriter, r *http.Request, ctx context.Context, subject string) {
@@ -241,50 +247,50 @@ func (h *UserHandler) getContextByID(w http.ResponseWriter, r *http.Request, ctx
 func (h *UserHandler) UpdateMyEmail(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
+		respondCanonicalError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	var req struct {
 		Email string `json:"email"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, r, http.StatusBadRequest, "invalid json")
+		respondCanonicalError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	newEmail := strings.TrimSpace(req.Email)
 	if newEmail == "" {
-		respondError(w, r, http.StatusBadRequest, "email is required")
+		respondCanonicalError(w, r, http.StatusBadRequest, "email is required")
 		return
 	}
 	ctx, err := h.svc.UpdateUserEmail(r.Context(), userID, newEmail)
 	if err != nil {
-		respondError(w, r, http.StatusBadRequest, err.Error())
+		respondCanonicalError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	respondJSON(w, r, http.StatusOK, ctx)
+	respondCanonicalJSON(w, r, http.StatusOK, ctx)
 }
 
 func (h *UserHandler) UpdateMyPassword(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if userID == "" {
-		respondError(w, r, http.StatusUnauthorized, "missing X-User-Id")
+		respondCanonicalError(w, r, http.StatusUnauthorized, "missing X-User-Id")
 		return
 	}
 	var req struct {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, r, http.StatusBadRequest, "invalid json")
+		respondCanonicalError(w, r, http.StatusBadRequest, "invalid json")
 		return
 	}
 	newPassword := strings.TrimSpace(req.Password)
 	if newPassword == "" {
-		respondError(w, r, http.StatusBadRequest, "password is required")
+		respondCanonicalError(w, r, http.StatusBadRequest, "password is required")
 		return
 	}
 	if err := h.svc.UpdateUserPassword(r.Context(), userID, newPassword); err != nil {
-		respondError(w, r, http.StatusBadRequest, err.Error())
+		respondCanonicalError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	respondJSON(w, r, http.StatusOK, map[string]string{"status": "updated"})
+	respondCanonicalJSON(w, r, http.StatusOK, map[string]string{"status": "updated"})
 }

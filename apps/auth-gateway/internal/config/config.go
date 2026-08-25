@@ -37,10 +37,10 @@ type Config struct {
 	HRMServiceURL             string `yaml:"hrm_service_url"`
 	NotificationURL           string `yaml:"notification_service_url"`
 	MDMServiceURL             string `yaml:"mdm_service_url"`
-	ProxyBackendURL           string `yaml:"proxy_backend_url"`
 	PolicyFile                string `yaml:"policy_file"`
 
 	RedisURL            string `yaml:"redis_url"`
+	SessionStore        string `yaml:"session_store"`
 	SessionCookieName   string `yaml:"session_cookie_name"`
 	SessionCookieDomain string `yaml:"session_cookie_domain"`
 	SessionTTL          int    `yaml:"session_ttl_seconds"`
@@ -57,13 +57,6 @@ type Config struct {
 	OAuthRedirectURIs string `yaml:"oauth_redirect_uris"`
 }
 
-func (c Config) ProxyURL() string {
-	if c.ProxyBackendURL != "" {
-		return c.ProxyBackendURL
-	}
-	return c.IAMServiceURL
-}
-
 // Load reads config from YAML file (optional) + env overrides.
 func Load() Config {
 	cfg := Config{
@@ -71,7 +64,7 @@ func Load() Config {
 		HTTPAddr:                  "0.0.0.0:8082",
 		LogLevel:                  "info",
 		TokenStrategy:             "jwt",
-		JWTSecret:                 "super-secret-dev-key-change-in-production",
+		JWTSecret:                 "",
 		JWTIssuer:                 "https://auth.arda.io.vn",
 		JWTAudience:               "arda-api",
 		IAMServiceURL:             "http://localhost:8081",
@@ -90,6 +83,7 @@ func Load() Config {
 		MDMServiceURL:             "http://localhost:8096",
 		PolicyFile:                "configs/policy.yaml",
 		SessionCookieName:         "arda_sid",
+		SessionStore:              "redis",
 		SessionTTL:                86400,
 		RecentAuthWindow:          300,
 		CookieSecure:              true,
@@ -137,9 +131,9 @@ func Load() Config {
 	envStr("HRM_SERVICE_URL", &cfg.HRMServiceURL)
 	envStr("NOTIFICATION_SERVICE_URL", &cfg.NotificationURL)
 	envStr("MDM_SERVICE_URL", &cfg.MDMServiceURL)
-	envStr("PROXY_BACKEND_URL", &cfg.ProxyBackendURL)
 	envStr("POLICY_FILE", &cfg.PolicyFile)
 	envStr("REDIS_URL", &cfg.RedisURL)
+	envStr("SESSION_STORE", &cfg.SessionStore)
 	envStr("SESSION_COOKIE_NAME", &cfg.SessionCookieName)
 	envStr("SESSION_COOKIE_DOMAIN", &cfg.SessionCookieDomain)
 	envInt("SESSION_TTL_SECONDS", &cfg.SessionTTL)
@@ -202,9 +196,9 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("hrm_service_url", &c.HRMServiceURL)
 	setStr("notification_service_url", &c.NotificationURL)
 	setStr("mdm_service_url", &c.MDMServiceURL)
-	setStr("proxy_backend_url", &c.ProxyBackendURL)
 	setStr("policy_file", &c.PolicyFile)
 	setStr("redis_url", &c.RedisURL)
+	setStr("session_store", &c.SessionStore)
 	setStr("session_cookie_name", &c.SessionCookieName)
 	setStr("session_cookie_domain", &c.SessionCookieDomain)
 	if v, ok := m["session_ttl_seconds"].(int); ok {

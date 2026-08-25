@@ -10,7 +10,7 @@ jwks_url: "https://auth.arda.io.vn/.well-known/jwks.json"
 
 introspection_url: "http://192.168.100.201:30445/oauth2/introspect"
 introspection_client_id: auth-gateway
-introspection_client_secret: auth-gateway-secret
+introspection_client_secret: ""
 
 iam_service_url: "http://localhost:8080"
 iam_context_cache_ttl_seconds: 60
@@ -24,7 +24,6 @@ crm_service_url: "http://localhost:8094"
 hrm_service_url: "http://localhost:8097"
 notification_service_url: "http://localhost:8095"
 mdm_service_url: "http://localhost:8096"
-proxy_backend_url: "http://localhost:8080"
 policy_file: "configs/policy.yaml"
 
 kratos_public_url: "https://identity.arda.io.vn"
@@ -34,10 +33,11 @@ oauth_client_id: "arda-shell"
 oauth_redirect_uri: "http://localhost:5000/api/auth/callback"
 oauth_redirect_uris: "https://api.arda.io.vn/api/auth/callback,https://arda.io.vn/callback,http://localhost:5000/api/auth/callback,http://localhost:5000/callback"
 
-redis_url: "redis://default:Pkz1%2F8t3mVkXZKt%2F4IBg3U3nqtzFYZs%2FK%2Fvhnt0C6C4%3D@192.168.100.201:30379"
+redis_url: ""
+session_store: redis
 session_cookie_name: arda_sid
 session_cookie_domain: ""
 session_ttl_seconds: 86400
 recent_auth_window_seconds: 300
-cookie_secure: false
+cookie_secure: true
 cookie_same_site: Lax

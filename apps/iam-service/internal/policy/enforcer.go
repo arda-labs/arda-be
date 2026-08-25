@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/casbin/casbin/v3"
@@ -104,21 +105,22 @@ func abacMatchFunc(args ...any) (any, error) {
 		return false, nil
 	}
 	sub, ok := args[1].(string)
-	if !ok {
+	if !ok || strings.TrimSpace(sub) == "" {
 		return false, nil
 	}
 
-	// Check if user is enabled/disabled
-	if status, ok := env["user_status"]; ok {
-		if status != "ACTIVE" {
-			return false, nil
-		}
+	// An explicit active status is required before Casbin's allow policy can
+	// match. Missing or malformed assurance context must never become an allow.
+	status, ok := env["user_status"].(string)
+	if !ok || status != "ACTIVE" {
+		return false, nil
 	}
 
 	// Check ABAC on the subject's department/attributes
 	_ = sub
 
-	// Allow by default if no specific ABAC rules deny
+	// This function only confirms the explicit ABAC precondition. The actual
+	// allow still requires a matching Casbin policy and role binding.
 	return true, nil
 }
 

@@ -26,9 +26,9 @@ var DefaultApprovalRules = []ApprovalRule{
 	{
 		Type: "TRANSFER",
 		Tiers: []ApprovalTier{
-			{MaxAmount: 100_000_000, Levels: 2},       // < 100tr: maker + checker
-			{MaxAmount: 1_000_000_000, Levels: 3},     // 100tr - 1tỷ: + senior
-			{MaxAmount: -1, Levels: 4},                // > 1tỷ: + director
+			{MaxAmount: 100_000_000, Levels: 2},   // < 100tr: maker + checker
+			{MaxAmount: 1_000_000_000, Levels: 3}, // 100tr - 1tỷ: + senior
+			{MaxAmount: -1, Levels: 4},            // > 1tỷ: + director
 		},
 	},
 	{
@@ -91,6 +91,12 @@ func (s *ApprovalService) DetermineLevels(txnType string, amount float64) int {
 // CreateApproval creates an approval request for a transaction.
 // The transaction stays PENDING until all levels approve.
 func (s *ApprovalService) CreateApproval(ctx context.Context, tenantID, requestType, refID, makerID, makerNote, amount string) (*domain.ApprovalRequest, error) {
+	if tenantID == "" {
+		return nil, fmt.Errorf("tenant id required")
+	}
+	if makerID == "" {
+		return nil, fmt.Errorf("maker actor required")
+	}
 	amt := parseDecimal(amount)
 	levels := s.DetermineLevels(requestType, amt)
 
@@ -120,8 +126,11 @@ func (s *ApprovalService) CreateApproval(ctx context.Context, tenantID, requestT
 }
 
 // Approve records a checker's approval. If all levels done, marks APPROVED.
-func (s *ApprovalService) Approve(ctx context.Context, requestID, checkerID, note string) (*domain.ApprovalRequest, error) {
-	req, err := s.approvalRepo.GetByID(ctx, requestID)
+func (s *ApprovalService) Approve(ctx context.Context, tenantID, requestID, checkerID, note string) (*domain.ApprovalRequest, error) {
+	if tenantID == "" || checkerID == "" {
+		return nil, fmt.Errorf("tenant and checker actor are required")
+	}
+	req, err := s.approvalRepo.GetByID(ctx, tenantID, requestID)
 	if err != nil {
 		return nil, fmt.Errorf("approval request not found")
 	}
@@ -145,13 +154,13 @@ func (s *ApprovalService) Approve(ctx context.Context, requestID, checkerID, not
 
 	// Check if all levels done
 	if level >= req.TotalLevels {
-		if err := s.approvalRepo.Complete(ctx, requestID, domain.ApprovalApproved); err != nil {
+		if err := s.approvalRepo.Complete(ctx, tenantID, requestID, domain.ApprovalApproved); err != nil {
 			return nil, err
 		}
 		req.Status = domain.ApprovalApproved
 
 		// Auto-post the transaction
-		if err := s.txnRepo.UpdateStatus(ctx, req.RefID, domain.TxnPosted, checkerID); err != nil {
+		if err := s.txnRepo.UpdateStatus(ctx, tenantID, req.RefID, domain.TxnPosted, checkerID); err != nil {
 			s.logger.Warn("auto-post transaction failed", "ref", req.RefID, "err", err)
 		} else {
 			s.logger.Info("transaction auto-posted after approval", "ref", req.RefID)
@@ -161,20 +170,23 @@ func (s *ApprovalService) Approve(ctx context.Context, requestID, checkerID, not
 		if level+1 == 3 {
 			nextStatus = domain.ApprovalPendingL3
 		}
-		if err := s.approvalRepo.UpdateStatus(ctx, requestID, nextStatus, level+1); err != nil {
+		if err := s.approvalRepo.UpdateStatus(ctx, tenantID, requestID, nextStatus, level+1); err != nil {
 			return nil, err
 		}
 		req.Status = nextStatus
 		req.CurrentLevel = level + 1
 	}
 
-	req.Steps, _ = s.approvalRepo.GetSteps(ctx, requestID)
+	req.Steps, _ = s.approvalRepo.GetSteps(ctx, tenantID, requestID)
 	return req, nil
 }
 
 // Reject records a rejection. It's final — no more approvals possible.
-func (s *ApprovalService) Reject(ctx context.Context, requestID, checkerID, note string) (*domain.ApprovalRequest, error) {
-	req, err := s.approvalRepo.GetByID(ctx, requestID)
+func (s *ApprovalService) Reject(ctx context.Context, tenantID, requestID, checkerID, note string) (*domain.ApprovalRequest, error) {
+	if tenantID == "" || checkerID == "" {
+		return nil, fmt.Errorf("tenant and checker actor are required")
+	}
+	req, err := s.approvalRepo.GetByID(ctx, tenantID, requestID)
 	if err != nil {
 		return nil, fmt.Errorf("approval request not found")
 	}
@@ -190,21 +202,24 @@ func (s *ApprovalService) Reject(ctx context.Context, requestID, checkerID, note
 		return nil, err
 	}
 
-	if err := s.approvalRepo.Complete(ctx, requestID, domain.ApprovalRejected); err != nil {
+	if err := s.approvalRepo.Complete(ctx, tenantID, requestID, domain.ApprovalRejected); err != nil {
 		return nil, err
 	}
 	req.Status = domain.ApprovalRejected
 
 	// Mark transaction as FAILED
-	s.txnRepo.UpdateStatus(ctx, req.RefID, domain.TxnFailed, checkerID)
+	s.txnRepo.UpdateStatus(ctx, tenantID, req.RefID, domain.TxnFailed, checkerID)
 
 	s.logger.Info("approval rejected", "id", requestID, "by", checkerID)
 	return req, nil
 }
 
 // Cancel allows the maker to cancel a pending approval.
-func (s *ApprovalService) Cancel(ctx context.Context, requestID, userID string) (*domain.ApprovalRequest, error) {
-	req, err := s.approvalRepo.GetByID(ctx, requestID)
+func (s *ApprovalService) Cancel(ctx context.Context, tenantID, requestID, userID string) (*domain.ApprovalRequest, error) {
+	if tenantID == "" || userID == "" {
+		return nil, fmt.Errorf("tenant and actor are required")
+	}
+	req, err := s.approvalRepo.GetByID(ctx, tenantID, requestID)
 	if err != nil {
 		return nil, fmt.Errorf("approval request not found")
 	}
@@ -215,12 +230,12 @@ func (s *ApprovalService) Cancel(ctx context.Context, requestID, userID string) 
 		return nil, fmt.Errorf("can only cancel pending requests")
 	}
 
-	if err := s.approvalRepo.Complete(ctx, requestID, domain.ApprovalCancelled); err != nil {
+	if err := s.approvalRepo.Complete(ctx, tenantID, requestID, domain.ApprovalCancelled); err != nil {
 		return nil, err
 	}
 	req.Status = domain.ApprovalCancelled
 
-	s.txnRepo.UpdateStatus(ctx, req.RefID, domain.TxnFailed, userID)
+	s.txnRepo.UpdateStatus(ctx, tenantID, req.RefID, domain.TxnFailed, userID)
 	return req, nil
 }
 
@@ -230,12 +245,15 @@ func (s *ApprovalService) ListPending(ctx context.Context, tenantID string, leve
 }
 
 // GetApproval returns a full approval request with steps.
-func (s *ApprovalService) GetApproval(ctx context.Context, id string) (*domain.ApprovalRequest, error) {
-	req, err := s.approvalRepo.GetByID(ctx, id)
+func (s *ApprovalService) GetApproval(ctx context.Context, tenantID, id string) (*domain.ApprovalRequest, error) {
+	if tenantID == "" {
+		return nil, fmt.Errorf("tenant id required")
+	}
+	req, err := s.approvalRepo.GetByID(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
-	steps, err := s.approvalRepo.GetSteps(ctx, id)
+	steps, err := s.approvalRepo.GetSteps(ctx, tenantID, id)
 	if err == nil {
 		req.Steps = steps
 	}

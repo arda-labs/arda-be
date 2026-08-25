@@ -10,7 +10,7 @@ downloaded automatically via `GOTOOLCHAIN=auto`.
 
 ### The shared k3s LAN dev infra is NOT reachable from the Cloud VM
 The committed `apps/*/configs/config.yaml` DSNs point at the shared cluster
-(`192.168.100.201:30432` Postgres, Redis, Hydra `:30445`, Kratos `:30446`, Zeebe
+(`192.168.10.201:30432` Postgres, Redis, Hydra `:30445`, Kratos `:30446`, Zeebe
 `:30650`) and `auth.arda.io.vn`. From the Cloud VM these hosts accept the TCP
 handshake but **reset the connection at the application layer**, so they cannot
 be used. Do not rely on them; use the local Postgres below and override env vars.
@@ -21,7 +21,7 @@ be used. Do not rely on them; use the local Postgres below and override env vars
   function, which does **not** exist in Postgres 16.
 - It is **not auto-started** on boot. Start it with: `sudo pg_ctlcluster 18 main start`.
 - Per-service roles/databases are pre-created (persisted on disk): role
-  `arda_<svc>` / password `123456`, databases `iam`, `platform`, `finance`,
+  `arda_<svc>` / password supplied from the local secret file, databases `iam`, `platform`, `finance`,
   `crm`, `hrm`, `workflow`, `media`, `noti`.
 
 ### Running a service locally
@@ -29,12 +29,12 @@ Override `DATABASE_DSN` to point at local Postgres; migrations auto-apply on
 startup (goose). Example:
 ```bash
 cd apps/platform-service
-DATABASE_DSN="postgres://arda_platform:123456@127.0.0.1:5432/platform?sslmode=disable" \
+DATABASE_DSN="postgres://arda_platform:<password>@127.0.0.1:5432/platform?sslmode=disable" \
   go run ./cmd/platform-service        # HTTP :8091, gRPC :9091
 ```
-- `iam-service` (HTTP :8080): set `HYDRA_ADMIN_URL=` and `KRATOS_ADMIN_URL=` empty
-  and `REDIS_URL=` empty. The "provision superadmin identity skipped" Kratos
-  warning is expected and non-fatal (Ory is unreachable). Migrations/casbin still load.
+- `iam-service` (HTTP :8080): set `KRATOS_ADMIN_URL=` empty when Ory is
+  unavailable. Migrations/casbin still load; browser auth is owned by
+  `auth-gateway`.
 - `finance-service` (HTTP :8090): needs Postgres only; platform gRPC dial is optional.
 - `platform-service` needs Postgres only — the simplest service to smoke-test
   (e.g. `POST /api/platform/organizations` then `GET /api/platform/organizations`).

@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package arda.notification.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/notification/v1;notificationv1";
+
+message AcceptNotificationRequest {
+  string tenant_id = 1;
+  string idempotency_key = 2;
+  string source_service = 3;
+  string source_event_id = 4;
+  string event_type = 5;
+  string template_key = 6;
+  repeated string channels = 7;
+  string recipients_json = 8;
+  string payload_json = 9;
+  string correlation_id = 10;
+  int32 priority = 11;
+  string type = 12;
+  string title_key = 13;
+  string body_key = 14;
+  string href = 15;
+  string params_json = 16;
+}
+
+message AcceptNotificationResponse {
+  string notification_id = 1;
+  string status = 2;
+}
+
+service NotificationService {
+  rpc AcceptNotification(AcceptNotificationRequest) returns (AcceptNotificationResponse);
+}

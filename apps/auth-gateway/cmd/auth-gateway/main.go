@@ -16,15 +16,22 @@ import (
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/session"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/token"
 	transport "github.com/arda-labs/arda/apps/auth-gateway/internal/transport/http"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardaredis "github.com/arda-labs/arda/libs/go/arda-redis"
 	"github.com/joho/godotenv"
 )
 
 func main() {
-	// Load .env file (optional — không lỗi nếu không có)
-	_ = godotenv.Load()          // thư mục hiện tại
-	_ = godotenv.Load("../.env") // fallback: thư mục workspace
-	_ = godotenv.Load("../../.env")
+	// Local dotenv loading is opt-in. Production receives configuration through
+	// the process environment/Secret references and must not search parent
+	// directories for an implicit fallback file.
+	if os.Getenv("ARDA_LOAD_DOTENV") == "true" {
+		for _, path := range []string{".env", "../.env", "../../.env"} {
+			if err := godotenv.Load(path); err == nil {
+				break
+			}
+		}
+	}
 
 	cfg := config.Load()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -49,7 +56,11 @@ func main() {
 	logger.Info("token verifier ready", "strategy", cfg.TokenStrategy)
 
 	// ── IAM client ──
-	iam := iamclient.New(cfg.IAMServiceURL)
+	iam := iamclient.New(cfg.IAMServiceURL, os.Getenv("ARDA_SERVICE_AUTH_SECRET"))
+	if err := iam.ValidateServiceIdentity(); err != nil {
+		logger.Error("auth-gateway IAM service identity is not configured", "err", err)
+		os.Exit(1)
+	}
 	_ = iam
 
 	// ── ForwardAuth handler ──
@@ -57,7 +68,12 @@ func main() {
 
 	// ── Session store ──
 	var sessStore session.Store
-	if cfg.RedisURL != "" {
+	switch cfg.SessionStore {
+	case "redis":
+		if cfg.RedisURL == "" {
+			logger.Error("redis session store requires REDIS_URL")
+			os.Exit(1)
+		}
 		rdb, err := ardaredis.Connect(context.Background(), cfg.RedisURL)
 		if err != nil {
 			logger.Error("redis connect", "err", err)
@@ -65,9 +81,12 @@ func main() {
 		}
 		sessStore = session.NewRedisStore(rdb)
 		logger.Info("session store: redis")
-	} else {
+	case "memory":
 		sessStore = session.NewMemoryStore()
-		logger.Info("session store: in-memory (dev mode)")
+		logger.Warn("session store: in-memory; explicit development-only configuration")
+	default:
+		logger.Error("invalid SESSION_STORE; expected redis or memory", "value", cfg.SessionStore)
+		os.Exit(1)
 	}
 
 	// ── BFF handler ──
@@ -77,7 +96,7 @@ func main() {
 	// WriteTimeout must be 0 so SSE (/api/notifications/stream) is not cut after 10s.
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(authHandler, bffHandler, cfg),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(authHandler, bffHandler, cfg)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,

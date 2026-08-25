@@ -14,21 +14,19 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/audit"
-	"github.com/arda-labs/arda/apps/iam-service/internal/auth"
 	"github.com/arda-labs/arda/apps/iam-service/internal/bootstrap"
 	"github.com/arda-labs/arda/apps/iam-service/internal/config"
 	"github.com/arda-labs/arda/apps/iam-service/internal/handler"
-	"github.com/arda-labs/arda/apps/iam-service/internal/hydra"
 	"github.com/arda-labs/arda/apps/iam-service/internal/kratos"
 	"github.com/arda-labs/arda/apps/iam-service/internal/mfa"
 	"github.com/arda-labs/arda/apps/iam-service/internal/migration"
 	"github.com/arda-labs/arda/apps/iam-service/internal/policy"
-	"github.com/arda-labs/arda/apps/iam-service/internal/provider"
-	"github.com/arda-labs/arda/apps/iam-service/internal/ratelimit"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
-	transport "github.com/arda-labs/arda/apps/iam-service/internal/transport/http"
 	iamgrpc "github.com/arda-labs/arda/apps/iam-service/internal/transport/grpc"
+	transport "github.com/arda-labs/arda/apps/iam-service/internal/transport/http"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardamedia "github.com/arda-labs/arda/libs/go/arda-media"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
@@ -73,9 +71,6 @@ func main() {
 	sessionRepo := repository.NewSessionRepository(db)
 	mfaRepo := repository.NewMFARepository(db)
 
-	// ── Hydra client ──
-	hydraClient := hydra.New(cfg.HydraAdminURL, cfg.HydraPublicURL)
-
 	// ── Kratos Admin client ──
 	kratosClient := kratos.New(cfg.KratosAdminURL)
 	if strings.Contains(cfg.KratosAdminURL, "localhost") || strings.Contains(cfg.KratosAdminURL, "127.0.0.1") {
@@ -85,32 +80,21 @@ func main() {
 	// ── Audit logger (uses chain-hash DB writer) ──
 	auditLogger := audit.New("iam-service", auditRepo)
 
-	// ── Rate limiter ──
-	limiter := ratelimit.New()
-
-	// ── Provider registry ──
-	registry := provider.NewRegistry()
-	if err := registry.ValidateAll(context.Background()); err != nil {
-		logger.Error("validate providers", "err", err)
-		os.Exit(1)
-	}
-	logger.Info("providers registered", "count", len(registry.ListEnabled()), "ids", providerIDs(registry))
-
 	// ── Casbin enforcer ──
 	var policyEnf *policy.Enforcer
 	modelPath := "config/casbin_model.conf"
-	if _, err := os.Stat(modelPath); err == nil {
-		casbinAdapter := policy.NewPostgresAdapter(db)
-		enf, err := policy.NewEnforcer(modelPath, casbinAdapter)
-		if err != nil {
-			logger.Warn("casbin enforcer not available", "err", err)
-		} else {
-			policyEnf = enf
-			logger.Info("casbin enforcer loaded (postgres)")
-		}
-	} else {
-		logger.Warn("casbin model not found, policy enforcement disabled", "path", modelPath)
+	if _, err := os.Stat(modelPath); err != nil {
+		logger.Error("casbin model is required; refusing to start", "path", modelPath, "err", err)
+		os.Exit(1)
 	}
+	casbinAdapter := policy.NewPostgresAdapter(db)
+	enf, err := policy.NewEnforcer(modelPath, casbinAdapter)
+	if err != nil {
+		logger.Error("casbin enforcer is required; refusing to start", "err", err)
+		os.Exit(1)
+	}
+	policyEnf = enf
+	logger.Info("casbin enforcer loaded (postgres)")
 
 	// ── Services ──
 	sessionSvc := service.NewSessionService(sessionRepo, service.DefaultSessionConfig)
@@ -118,25 +102,21 @@ func main() {
 	mfaSvc := service.NewMFAService(mfaRepo, sessionSvc, totpSvc, service.DefaultMFAConfig)
 	auditSvc := service.NewAuditService(auditRepo, service.DefaultAuditConfig)
 
-	// ── Auth orchestrator (with MFA) ──
-	orchestrator := auth.NewOrchestrator(
-		registry, hydraClient, userRepo, policyEnf,
-		limiter, auditLogger, cfg.HydraClientID, cfg.HydraRedirectURI,
-	).WithMFAService(mfaSvc)
-
 	// ── Handlers ──
 	identitySvc := service.NewIdentityService(userRepo, kratosClient)
-	if err := ensureSuperAdminIdentity(context.Background(), cfg, userRepo, identitySvc); err != nil {
-		logger.Warn("provision superadmin identity skipped", "err", err)
-	}
 	userSvc := service.NewUserService(userRepo, identitySvc)
-	userHandler := handler.NewUserHandler(userSvc)
-	authHandler := handler.NewAuthHandler(orchestrator, userHandler)
+	mediaClient, err := ardamedia.NewClient("iam-service")
+	if err != nil {
+		logger.Error("media grpc client is required; refusing to start", "err", err)
+		os.Exit(1)
+	}
+	defer mediaClient.Close()
+	userHandler := handler.NewUserHandler(userSvc, mediaClient)
 	policyHandler := handler.NewPolicyHandler(policyEnf)
 	adminUserSvc := service.NewAdminUserService(userRepo, roleRepo, identitySvc)
 	adminHandler := handler.NewAdminHandler(userRepo, roleRepo, groupRepo, adminUserSvc, auditLogger)
-	sessionHandler := handler.NewSessionHandler(sessionSvc, auditLogger)
-	mfaHandler := handler.NewMFAHandler(mfaSvc)
+	sessionHandler := handler.NewSessionHandler(sessionSvc, userRepo, auditLogger)
+	mfaHandler := handler.NewMFAHandler(mfaSvc, userRepo)
 	auditHandler := handler.NewAuditHandler(auditSvc)
 
 	// ── gRPC server ──
@@ -149,7 +129,7 @@ func main() {
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(userHandler, authHandler, policyHandler, adminHandler, sessionHandler, mfaHandler, auditHandler),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(userHandler, policyHandler, adminHandler, sessionHandler, mfaHandler, auditHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -187,19 +167,4 @@ func parseLogLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
-}
-
-func ensureSuperAdminIdentity(ctx context.Context, cfg config.Config, userRepo *repository.UserRepository, identitySvc *service.IdentityService) error {
-	if cfg.SuperAdminInitialPassword == "" {
-		return nil
-	}
-	return nil
-}
-
-func providerIDs(r *provider.Registry) []string {
-	var ids []string
-	for _, p := range r.ListEnabled() {
-		ids = append(ids, p.ID)
-	}
-	return ids
 }

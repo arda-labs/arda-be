@@ -18,6 +18,7 @@ import (
 	"github.com/arda-labs/arda/apps/hrm-service/internal/repository"
 	transport "github.com/arda-labs/arda/apps/hrm-service/internal/transport/http"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 func main() {
@@ -57,7 +58,7 @@ func main() {
 	hrmHandler := handler.NewHRMHandler(repository.NewHRMRepository(db), workflowClient)
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      transport.NewRouter(hrmHandler),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(hrmHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

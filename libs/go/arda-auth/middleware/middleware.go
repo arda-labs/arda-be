@@ -6,6 +6,8 @@ import (
 
 	"github.com/arda-labs/arda/libs/go/arda-auth/jwtverifier"
 	"github.com/arda-labs/arda/libs/go/arda-auth/usercontext"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // New creates an HTTP middleware that verifies the JWT Bearer token,
@@ -15,13 +17,13 @@ func New(verifier *jwtverifier.Verifier) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := jwtverifier.ExtractBearer(r.Header.Get("Authorization"))
 			if raw == "" {
-				http.Error(w, `{"error":"missing authorization"}`, http.StatusUnauthorized)
+				ardahttp.WriteProblem(w, r, http.StatusUnauthorized, ardaerrors.New(ardaerrors.CodeUnauthorized, "missing authorization"))
 				return
 			}
 
 			claims, err := verifier.Verify(r.Context(), raw)
 			if err != nil {
-				http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+				ardahttp.WriteProblem(w, r, http.StatusUnauthorized, ardaerrors.New(ardaerrors.CodeUnauthorized, "invalid token"))
 				return
 			}
 

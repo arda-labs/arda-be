@@ -1,0 +1,292 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Arda Media API",
+    "version": "1.0.0"
+  },
+  "servers": [{ "url": "https://api.arda.io.vn" }],
+  "security": [{ "ardaSession": [] }],
+  "paths": {
+    "/api/media": {
+      "post": {
+        "operationId": "uploadMedia",
+        "summary": "Upload a media file",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": { "$ref": "#/components/schemas/MultipartUploadRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Media uploaded or upload session initialized",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MediaUploadSuccess" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/media/files/init-upload": {
+      "post": {
+        "operationId": "initMediaUpload",
+        "summary": "Initialize a presigned media upload",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InitUploadRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Upload initialized",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InitUploadSuccess" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/media/files/{publicId}/complete-upload": {
+      "post": {
+        "operationId": "completeMediaUpload",
+        "summary": "Complete a presigned media upload",
+        "parameters": [{ "$ref": "#/components/parameters/PublicId" }],
+        "responses": {
+          "200": {
+            "description": "Upload completed",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CompleteUploadSuccess" } } }
+          },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/media/{publicId}": {
+      "get": {
+        "operationId": "viewMedia",
+        "summary": "View media content",
+        "parameters": [{ "$ref": "#/components/parameters/PublicId" }],
+        "responses": {
+          "200": {
+            "description": "Binary media content; content type is the stored media type",
+            "headers": {
+              "ETag": { "schema": { "type": "string" } },
+              "Content-Length": { "schema": { "type": "integer" } }
+            },
+            "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } }
+          },
+          "304": { "description": "Not modified" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMedia",
+        "summary": "Delete media",
+        "parameters": [{ "$ref": "#/components/parameters/PublicId" }],
+        "responses": {
+          "200": {
+            "description": "Media deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StatusSuccess" }
+              }
+            }
+          },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/media/{publicId}/download": {
+      "get": {
+        "operationId": "downloadMedia",
+        "summary": "Download media content",
+        "parameters": [{ "$ref": "#/components/parameters/PublicId" }],
+        "responses": {
+          "200": {
+            "description": "Small binary media content",
+            "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } }
+          },
+          "302": {
+            "description": "Redirect to a short-lived object-storage URL",
+            "headers": { "Location": { "required": true, "schema": { "type": "string", "format": "uri-reference" } } }
+          },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ardaSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "arda_sid",
+        "x-browser-credentials": "include"
+      }
+    },
+    "parameters": {
+      "PublicId": {
+        "name": "publicId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "minLength": 1 }
+      }
+    },
+    "schemas": {
+      "ResponseMeta": {
+        "type": "object",
+        "required": ["request_id"],
+        "properties": {
+          "request_id": { "type": "string" },
+          "trace_id": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "InitUploadRequest": {
+        "type": "object",
+        "required": ["module", "entity_type", "entity_id", "original_filename", "content_type", "size_bytes"],
+        "properties": {
+          "module": { "type": "string", "minLength": 1 },
+          "entity_type": { "type": "string", "minLength": 1 },
+          "entity_id": { "type": "string", "minLength": 1 },
+          "original_filename": { "type": "string", "minLength": 1 },
+          "content_type": { "type": "string", "minLength": 1 },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "checksum_sha256": { "type": "string" },
+          "storage_class": { "type": "string" },
+          "visibility": { "type": "string" }
+        }
+      },
+      "MultipartUploadRequest": {
+        "type": "object",
+        "required": ["file", "module", "entity_type", "entity_id"],
+        "properties": {
+          "file": { "type": "string", "format": "binary" },
+          "module": { "type": "string" },
+          "entity_type": { "type": "string" },
+          "entity_id": { "type": "string" }
+        }
+      },
+      "MediaUploadResult": {
+        "type": "object",
+        "required": ["public_id", "file_name", "mime_type", "size", "created_at"],
+        "properties": {
+          "public_id": { "type": "string" },
+          "file_name": { "type": "string" },
+          "mime_type": { "type": "string" },
+          "size": { "type": "integer", "minimum": 0 },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MediaUploadSuccess": {
+        "type": "object",
+        "required": ["result", "success", "errors", "messages", "meta"],
+        "properties": {
+          "result": { "$ref": "#/components/schemas/MediaUploadResult" },
+          "success": { "const": true },
+          "errors": { "type": "array", "maxItems": 0 },
+          "messages": { "type": "array", "items": { "type": "string" } },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "InitUploadSuccess": {
+        "type": "object",
+        "required": ["result", "success", "errors", "messages", "meta"],
+        "properties": {
+          "result": { "$ref": "#/components/schemas/InitUploadResponse" },
+          "success": { "const": true },
+          "errors": { "type": "array", "maxItems": 0 },
+          "messages": { "type": "array", "items": { "type": "string" } },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "CompleteUploadResponse": {
+        "type": "object",
+        "required": ["file"],
+        "properties": { "file": { "$ref": "#/components/schemas/MediaFile" } }
+      },
+      "CompleteUploadSuccess": {
+        "type": "object",
+        "required": ["result", "success", "errors", "messages", "meta"],
+        "properties": {
+          "result": { "$ref": "#/components/schemas/CompleteUploadResponse" },
+          "success": { "const": true },
+          "errors": { "type": "array", "maxItems": 0 },
+          "messages": { "type": "array", "items": { "type": "string" } },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "InitUploadResponse": {
+        "type": "object",
+        "required": ["file", "upload", "upload_id"],
+        "properties": {
+          "file": { "$ref": "#/components/schemas/MediaFile" },
+          "upload": { "type": "object", "required": ["method", "url", "expires_at"], "additionalProperties": true },
+          "upload_id": { "type": "string" }
+        }
+      },
+      "MediaFile": {
+        "type": "object",
+        "required": ["public_id", "module", "original_filename", "content_type", "size_bytes", "status", "scan_status", "visibility", "created_at"],
+        "properties": {
+          "public_id": { "type": "string" },
+          "module": { "type": "string" },
+          "entity_type": { "type": "string" },
+          "entity_id": { "type": "string" },
+          "original_filename": { "type": "string" },
+          "content_type": { "type": "string" },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "status": { "type": "string" },
+          "scan_status": { "type": "string" },
+          "visibility": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "uploaded_at": { "type": ["string", "null"], "format": "date-time" },
+          "expires_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "StatusSuccess": {
+        "type": "object",
+        "required": ["result", "success", "errors", "messages", "meta"],
+        "properties": {
+          "result": { "type": "object", "additionalProperties": true },
+          "success": { "const": true },
+          "errors": { "type": "array", "maxItems": 0 },
+          "messages": { "type": "array", "items": { "type": "string" } },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "title", "status", "code", "message"],
+        "properties": {
+          "type": { "type": "string", "format": "uri-reference" },
+          "title": { "type": "string" },
+          "status": { "type": "integer" },
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "request_id": { "type": "string" },
+          "trace_id": { "type": "string" }
+        }
+      }
+    },
+    "responses": {
+      "Problem": {
+        "description": "RFC-style problem response",
+        "content": {
+          "application/problem+json": {
+            "schema": { "$ref": "#/components/schemas/Problem" }
+          }
+        }
+      }
+    }
+  }
+}

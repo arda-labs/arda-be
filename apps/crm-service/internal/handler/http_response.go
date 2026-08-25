@@ -11,7 +11,7 @@ import (
 )
 
 func writeJSON(w http.ResponseWriter, r *http.Request, status int, value any) {
-	ardahttp.WriteJSON(w, r, status, value)
+	ardahttp.WriteSuccess(w, r, status, value)
 }
 
 func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
@@ -24,7 +24,7 @@ func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
 	total := len(items)
 
 	if listQuery.All || listQuery.View != "" {
-		ardahttp.WriteList(w, r, 1, maxInt(total, 1), total, items)
+		ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(1, maxInt(total, 1), total, items))
 		return
 	}
 
@@ -38,7 +38,7 @@ func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
 		}
 		items = items[start:end]
 	}
-	ardahttp.WriteList(w, r, page, perPage, total, items)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, items))
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, status int, message string) {
@@ -46,7 +46,7 @@ func writeError(w http.ResponseWriter, r *http.Request, status int, message stri
 	if status == http.StatusBadRequest && strings.Contains(strings.ToLower(message), "json") {
 		code = ardaerrors.CodeInvalidJSON
 	}
-	ardahttp.WriteErrorCode(w, r, status, code, message)
+	ardahttp.WriteProblem(w, r, status, ardaerrors.New(code, message))
 }
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
@@ -71,11 +71,11 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
-	ardahttp.WriteErrorCode(w, r, http.StatusMethodNotAllowed, ardaerrors.CodeMethodNotAllowed, "method not allowed")
+	ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
 }
 
 func writeErrorCode(w http.ResponseWriter, r *http.Request, status int, code, message string) {
-	ardahttp.WriteErrorCode(w, r, status, code, message)
+	ardahttp.WriteProblem(w, r, status, ardaerrors.New(code, message))
 }
 
 func maxInt(a, b int) int {

@@ -30,15 +30,10 @@ kubectl create namespace arda-app --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace arda-web --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-The auth setup script expects `iam-service` in `arda-app` by default:
-
 ```bash
 cd arda-infra/auth
-SUPERADMIN_INITIAL_PASSWORD=admin123 ./setup.sh iam-secret
+SUPERADMIN_INITIAL_PASSWORD='<generate-a-unique-password>' ./setup.sh client
 ```
 
-Override only when a deployment is intentionally elsewhere:
-
-```bash
-APP_NAMESPACE=<namespace> ./setup.sh iam-secret
-```
+The IAM deployment does not receive the Ory seed password; run the auth seed
+step before starting the application stack.

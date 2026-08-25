@@ -9,5 +9,5 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/bin/notification-service /app/notification-service
-EXPOSE 8080
+EXPOSE 8080 9095
 ENTRYPOINT ["/app/notification-service"]

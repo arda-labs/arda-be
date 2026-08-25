@@ -62,3 +62,17 @@ func TestWithResponseMetaList(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestIDPersistsGeneratedValue(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	first := RequestID(req)
+	second := RequestID(req)
+
+	if first == "" || first != second {
+		t.Fatalf("request IDs = %q and %q, want one stable generated ID", first, second)
+	}
+	if got := req.Header.Get(HeaderRequestID); got != first {
+		t.Fatalf("request header ID = %q, want %q", got, first)
+	}
+}

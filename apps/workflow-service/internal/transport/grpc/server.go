@@ -32,6 +32,7 @@ func (s *WorkflowServer) CreateCase(ctx context.Context, req *workflowv1.CreateC
 		DomainService:     req.GetDomainService(),
 		Priority:          req.GetPriority(),
 		CreatedBy:         req.GetCreatedBy(),
+		IdempotencyKey:    req.GetIdempotencyKey(),
 	})
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -45,8 +46,9 @@ func (s *WorkflowServer) SubmitCase(ctx context.Context, req *workflowv1.SubmitC
 		variables = req.GetVariables().AsMap()
 	}
 	bc, err := s.commands.SubmitCase(ctx, req.GetCaseId(), service.SubmitCaseInput{
-		Actor:     req.GetActor(),
-		Variables: variables,
+		Actor:          req.GetActor(),
+		Variables:      variables,
+		IdempotencyKey: req.GetIdempotencyKey(),
 	})
 	if err != nil {
 		switch {

@@ -5,6 +5,8 @@ go 1.26
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/arda-labs/arda/libs/go/arda-auth v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
@@ -20,6 +22,10 @@ require (
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-auth => ../../libs/go/arda-auth
+
+replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc
+
+replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 
 replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
 
