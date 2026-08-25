@@ -76,9 +76,9 @@ allowed.
 - The AI service owns its own database and migration history.
 - `ai` tables do not join directly to IAM or domain tables. Store stable IDs and
   resolve display data through approved APIs.
-- `pgvector` is an optional implementation detail of the knowledge repository,
-  enabled only after the embedding model, dimension, index, and backup/restore
-  plan are approved.
+- The `vector` extension is enabled as a database capability. It remains an
+  optional implementation detail of the knowledge repository until the
+  embedding model, dimension, index, and backup/restore plan are approved.
 
 ## Request lifecycle
 

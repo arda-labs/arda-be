@@ -42,9 +42,10 @@ reached the model.
 - Benchmark HNSW/IVFFlat and full-text fallback on representative tenant data
   before selecting an index.
 
-`pgvector` is not enabled yet. The enabling migration must be additive,
-verified on PostgreSQL 18/CloudNativePG, included in backup/restore testing,
-and reversible by forward-compatible code rather than destructive rollback.
+`pgvector` is enabled in the service-owned AI database through an additive
+Goose migration. The vector column and index remain disabled until the
+provider/dimension and backup/restore, benchmark, and tenant-filtering gates
+are complete. Rollback is forward-compatible rather than destructive.
 
 ## Retrieval pipeline
 

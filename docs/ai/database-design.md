@@ -1,8 +1,9 @@
 # AI database design
 
-Status: approved for the Gate 2 persistence foundation. The migration is
-additive and intentionally excludes `pgvector`; later provider/RAG changes
-require their own review gates in [rollout-plan.md](rollout-plan.md).
+Status: approved for the Gate 2 persistence foundation and the additive
+pgvector capability enablement. The extension is enabled separately from the
+embedding column/index; later provider/RAG changes require their own review
+gates in [rollout-plan.md](rollout-plan.md).
 
 ## Ownership decision
 
@@ -87,18 +88,23 @@ dimension are selected. A text-search column may be added for hybrid retrieval.
 
 ## PostgreSQL/pgvector gates
 
-Before any `CREATE EXTENSION vector` migration:
+The extension enablement migration is complete after these checks:
 
 1. Verify the deployed CloudNativePG PostgreSQL 18 image supports the approved
    extension version.
 2. Confirm extension policy, backup/restore behavior, and operator support.
-3. Select one embedding model/dimension and record it in the design ADR.
-4. Benchmark index/build time, query latency, storage, and tenant filtering.
-5. Test the migration on an isolated restore and a disposable database.
-6. Add monitoring and a forward-compatible rollback plan.
+3. Apply `CREATE EXTENSION IF NOT EXISTS vector` through the AI service Goose
+   migration and verify the installed version in the live database.
 
-Do not add a guessed vector dimension or enable the extension on the shared
-cluster during the documentation phase.
+The following gates remain open before adding a vector column or index:
+
+1. Select one embedding model/dimension and record it in the design ADR.
+2. Benchmark index/build time, query latency, storage, and tenant filtering.
+3. Test the vector migration on an isolated restore and a disposable database.
+4. Add monitoring and a forward-compatible rollback plan.
+
+Do not add a guessed vector dimension or provider credential. The extension
+alone has no effect on current full-text retrieval or production requests.
 
 ## Migration rules
 

@@ -4,9 +4,8 @@ Status: architecture and design review complete; the persistent read-only
 vertical slice is implemented and being rolled out to the real K3s cluster.
 
 This directory is the source of truth for the first AI phase across `arda-be`,
-`arda-mfe`, and `arda-infra`. The documents are intentionally written before
-any AI database migration, `pgvector` enablement, model-provider secret, or
-production workload change.
+`arda-mfe`, and `arda-infra`. The documents precede model-provider secrets,
+vector schema/index changes, and production workload expansion.
 
 ## Decision summary
 
@@ -22,8 +21,9 @@ production workload change.
   Mutations require server-side authorization, idempotency, and human approval.
 - Use a service-owned PostgreSQL database named `ai`. Its application tables
   live in `public` with an `ai_` prefix, matching existing Arda services;
-  `public.goose_db_version` remains migration metadata only. Enable `pgvector`
-  only after the database design and embedding model/dimension are approved.
+  `public.goose_db_version` remains migration metadata only. The `vector`
+  extension is enabled, but embedding schema/index work waits for an approved
+  model and dimension.
 - Reuse IAM for identity and authorization decisions. AI records are not a
   replacement for IAM security audit records.
 
@@ -69,8 +69,9 @@ production workload change.
 
 ## Explicitly not done
 
-The current rollout has no `pgvector` extension, model credential, AI ingress,
-or mutation tool. Knowledge retrieval uses PostgreSQL full-text search over
+The current rollout has the `vector` extension but no vector column/index,
+model credential, AI ingress, or mutation tool. Knowledge retrieval uses
+PostgreSQL full-text search over
 explicitly published sources and has no production content until an owner
 publishes approved sources. The service remains provider-neutral and does not
 execute side effects.

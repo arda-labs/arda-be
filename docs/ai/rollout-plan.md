@@ -32,7 +32,8 @@ the gateway injects a separate short-lived workload identity for the AI service.
 The `ai` database and `arda_ai` role are provisioned additively in the real
 CloudNativePG cluster. The service has additive Goose migrations for
 conversations, messages, runs, tool executions, approvals, sources, chunks,
-and feedback. `pgvector` remains disabled until its specific gates pass.
+and feedback. The `vector` extension is now enabled, while the embedding
+column/index remains disabled until its specific gates pass.
 
 Before enabling user traffic, verify storage headroom and representative
 read/write and retention behavior. The first live rollout keeps the endpoint
@@ -90,9 +91,9 @@ Stop rollout and disable the feature if any of these occurs:
 
 ## Current implementation boundary
 
-The current change adds the service-owned persistence foundation, two bounded
-read-only tools, a disabled-by-default HITL proposal boundary, the
-feature-flagged frontend route, and GitOps wiring. It does not add a model
-provider, `pgvector`, source ingestion, or mutation executor. The next gate is
-non-production approval lifecycle verification, followed by an explicitly
-approved knowledge-source ingestion flow and provider evaluation.
+The current change adds the service-owned persistence foundation, the enabled
+`vector` extension, two bounded read-only tools, a disabled-by-default HITL
+proposal boundary, the feature-flagged frontend route, and GitOps wiring. It
+does not add a model provider, vector column/index, source ingestion, or
+mutation executor. The next gate is an explicitly approved knowledge-source
+ingestion flow and provider evaluation.
