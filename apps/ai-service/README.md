@@ -2,7 +2,12 @@
 
 This is the first production boundary of the Arda AI rollout. It is a
 deterministic AG-UI-compatible HTTP/SSE endpoint with persistent conversations
-and runs, but no model provider, tool, RAG index, or mutation capability.
+and runs, two read-only tools, but no model provider or mutation capability.
+
+Production enables `crm.customer.get` and `knowledge.search` when read tools
+are enabled. CRM requires `crm.customer.read`; knowledge requires the separate
+`ai.knowledge.read` permission. Both use server-resolved tenant scope and
+return bounded, redacted data; knowledge results include citations.
 
 Run locally:
 

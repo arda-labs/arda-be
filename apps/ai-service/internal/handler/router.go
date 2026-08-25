@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
+	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
 const assistantPermission = "ai.assistant.use"
@@ -21,12 +22,17 @@ type runStore interface {
 	Finish(ctx context.Context, run repository.RunContext, assistantMessage, status string) error
 }
 
+type toolResolver interface {
+	Resolve(call tools.Call, scope tools.Context) (tools.Tool, tools.Definition, error)
+}
+
 type runInput struct {
 	ThreadID string          `json:"threadId"`
 	RunID    string          `json:"runId"`
 	Messages []inputMessage  `json:"messages"`
 	State    json.RawMessage `json:"state"`
 	Context  json.RawMessage `json:"context"`
+	Tool     *toolCallInput  `json:"tool,omitempty"`
 }
 
 type inputMessage struct {
@@ -34,12 +40,22 @@ type inputMessage struct {
 	Content string `json:"content"`
 }
 
+type toolCallInput struct {
+	Name      string          `json:"name"`
+	Version   int             `json:"version,omitempty"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
 type agentEvent struct {
-	Type      string `json:"type"`
-	ThreadID  string `json:"threadId,omitempty"`
-	RunID     string `json:"runId,omitempty"`
-	MessageID string `json:"messageId,omitempty"`
-	Delta     string `json:"delta,omitempty"`
+	Type       string          `json:"type"`
+	ThreadID   string          `json:"threadId,omitempty"`
+	RunID      string          `json:"runId,omitempty"`
+	MessageID  string          `json:"messageId,omitempty"`
+	ToolCallID string          `json:"toolCallId,omitempty"`
+	ToolName   string          `json:"toolName,omitempty"`
+	Delta      string          `json:"delta,omitempty"`
+	Result     json.RawMessage `json:"result,omitempty"`
+	Error      string          `json:"error,omitempty"`
 }
 
 func NewRouter(stores ...runStore) http.Handler {
@@ -47,11 +63,19 @@ func NewRouter(stores ...runStore) http.Handler {
 	if len(stores) > 0 {
 		store = stores[0]
 	}
+	return newRouter(store, nil)
+}
+
+func NewRouterWithDependencies(store runStore, resolver toolResolver) http.Handler {
+	return newRouter(store, resolver)
+}
+
+func newRouter(store runStore, resolver toolResolver) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", health)
 	mux.HandleFunc("/health/ready", health)
 	mux.HandleFunc("/api/ai/agent", func(w http.ResponseWriter, r *http.Request) {
-		run(w, r, store)
+		run(w, r, store, resolver)
 	})
 	return mux
 }
@@ -62,7 +86,7 @@ func health(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-func run(w http.ResponseWriter, r *http.Request, store runStore) {
+func run(w http.ResponseWriter, r *http.Request, store runStore, resolver toolResolver) {
 	if r.Method != http.MethodPost {
 		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
 		return
@@ -95,15 +119,44 @@ func run(w http.ResponseWriter, r *http.Request, store runStore) {
 		return
 	}
 
-	userMessage := sanitizeTranscript(latestUserMessage(input.Messages))
-	runContext := repository.RunContext{
-		TenantID:       strings.TrimSpace(r.Header.Get("X-Tenant-Id")),
-		ActorUserID:    strings.TrimSpace(r.Header.Get("X-User-Id")),
-		ExternalThread: strings.TrimSpace(input.ThreadID),
-		ExternalRun:    strings.TrimSpace(input.RunID),
+	scope := tools.Context{
+		TenantID:    strings.TrimSpace(r.Header.Get("X-Tenant-Id")),
+		ActorUserID: strings.TrimSpace(r.Header.Get("X-User-Id")),
+		OrgIDs:      splitHeader(r.Header.Get("X-User-Org-Ids")),
+		ActiveOrgID: strings.TrimSpace(r.Header.Get("X-Org-Id")),
+		RequestID:   strings.TrimSpace(r.Header.Get("X-Request-Id")),
+		Permissions: permissionSet(r.Header.Get("X-Permissions")),
+	}
+	var selectedTool tools.Tool
+	var definition tools.Definition
+	if input.Tool != nil {
+		if resolver == nil {
+			problem(w, http.StatusNotFound, "ai.tool_not_enabled")
+			return
+		}
+		var err error
+		selectedTool, definition, err = resolver.Resolve(tools.Call{
+			Name: input.Tool.Name, Version: input.Tool.Version, Arguments: input.Tool.Arguments,
+		}, scope)
+		if err != nil {
+			switch {
+			case errors.Is(err, tools.ErrToolForbidden):
+				problem(w, http.StatusForbidden, "ai.tool_forbidden")
+			case errors.Is(err, tools.ErrUnknownTool):
+				problem(w, http.StatusNotFound, "ai.tool_not_found")
+			default:
+				problem(w, http.StatusBadRequest, "ai.tool_invalid")
+			}
+			return
+		}
+	}
+
+	scopeRun := repository.RunContext{
+		TenantID: scope.TenantID, ActorUserID: scope.ActorUserID,
+		ExternalThread: strings.TrimSpace(input.ThreadID), ExternalRun: strings.TrimSpace(input.RunID),
 	}
 	if store != nil {
-		if err := store.Start(r.Context(), runContext, userMessage); err != nil {
+		if err := store.Start(r.Context(), scopeRun, sanitizeTranscript(latestUserMessage(input.Messages))); err != nil {
 			if errors.Is(err, repository.ErrRunAlreadyExists) {
 				problem(w, http.StatusConflict, "ai.run_replay")
 				return
@@ -111,35 +164,110 @@ func run(w http.ResponseWriter, r *http.Request, store runStore) {
 			problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
 			return
 		}
-		if err := store.Finish(r.Context(), runContext, protocolSpikeMessage, "SUCCEEDED"); err != nil {
+	}
+
+	if selectedTool != nil {
+		var executionID string
+		var toolStore repository.ToolExecutionStore
+		if store != nil {
+			var ok bool
+			toolStore, ok = store.(repository.ToolExecutionStore)
+			if !ok {
+				_ = store.Finish(r.Context(), scopeRun, "AI tool execution is unavailable.", "FAILED")
+				problem(w, http.StatusServiceUnavailable, "ai.tool_persistence_unavailable")
+				return
+			}
+			var err error
+			executionID, err = toolStore.StartTool(r.Context(), scopeRun, definition.Name, definition.Version, definition.Risk, "allow", redactToolArguments(input.Tool.Arguments))
+			if err != nil {
+				_ = store.Finish(r.Context(), scopeRun, "AI tool execution is unavailable.", "FAILED")
+				problem(w, http.StatusServiceUnavailable, "ai.tool_persistence_unavailable")
+				return
+			}
+		}
+
+		result, toolErr := selectedTool.Execute(r.Context(), scope, input.Tool.Arguments)
+		if toolErr != nil {
+			if toolStore != nil {
+				_ = toolStore.FinishTool(r.Context(), executionID, "FAILED", `{}`, toolErrorCode(toolErr))
+			}
+			assistantMessage := "I could not complete that read request right now."
+			if store != nil {
+				if err := store.Finish(r.Context(), scopeRun, assistantMessage, "FAILED"); err != nil {
+					problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+					return
+				}
+			}
+			writeToolStream(w, input, definition, nil, assistantMessage, toolErrorCode(toolErr))
+			return
+		}
+		if toolStore != nil {
+			if err := toolStore.FinishTool(r.Context(), executionID, "SUCCEEDED", string(result.Data), ""); err != nil {
+				_ = store.Finish(r.Context(), scopeRun, "AI tool execution is unavailable.", "FAILED")
+				problem(w, http.StatusServiceUnavailable, "ai.tool_persistence_unavailable")
+				return
+			}
+		}
+		if store != nil {
+			if err := store.Finish(r.Context(), scopeRun, result.Summary, "SUCCEEDED"); err != nil {
+				problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+				return
+			}
+		}
+		writeToolStream(w, input, definition, &result, result.Summary, "")
+		return
+	}
+
+	if store != nil {
+		if err := store.Finish(r.Context(), scopeRun, protocolSpikeMessage, "SUCCEEDED"); err != nil {
 			problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
 			return
 		}
 	}
+	writeProtocolStream(w, input)
+}
 
+func writeProtocolStream(w http.ResponseWriter, input runInput) {
+	writeStream(w, func(writer *bufio.Writer) {
+		messageID := "msg-" + input.RunID
+		writeEvent(writer, agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
+		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_START", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
+		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: protocolSpikeMessage})
+		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_END", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
+		writeEvent(writer, agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
+	})
+}
+
+func writeToolStream(w http.ResponseWriter, input runInput, definition tools.Definition, result *tools.Result, assistantMessage, toolError string) {
+	writeStream(w, func(writer *bufio.Writer) {
+		messageID := "msg-" + input.RunID
+		toolCallID := "tool-" + input.RunID
+		writeEvent(writer, agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
+		writeEvent(writer, agentEvent{Type: "TOOL_CALL_START", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, ToolName: definition.Name})
+		toolEvent := agentEvent{Type: "TOOL_CALL_END", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, ToolName: definition.Name, Error: toolError}
+		if result != nil {
+			toolEvent.Result = result.Data
+		}
+		writeEvent(writer, toolEvent)
+		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_START", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
+		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: assistantMessage})
+		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_END", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
+		writeEvent(writer, agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: toolError})
+	})
+}
+
+func writeStream(w http.ResponseWriter, emit func(*bufio.Writer)) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
-
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return
 	}
 	writer := bufio.NewWriter(w)
-	messageID := "msg-" + input.RunID
-	writeEvent(writer, agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
-	writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_START", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
-	writeEvent(writer, agentEvent{
-		Type:      "TEXT_MESSAGE_CONTENT",
-		ThreadID:  input.ThreadID,
-		RunID:     input.RunID,
-		MessageID: messageID,
-		Delta:     protocolSpikeMessage,
-	})
-	writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_END", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
-	writeEvent(writer, agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
+	emit(writer)
 	_ = writer.Flush()
 	flusher.Flush()
 }
@@ -151,6 +279,26 @@ func hasPermission(raw, wanted string) bool {
 		}
 	}
 	return false
+}
+
+func permissionSet(raw string) map[string]struct{} {
+	permissions := make(map[string]struct{})
+	for _, value := range strings.Split(raw, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			permissions[value] = struct{}{}
+		}
+	}
+	return permissions
+}
+
+func splitHeader(raw string) []string {
+	var values []string
+	for _, value := range strings.Split(raw, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 func hasUserMessage(messages []inputMessage) bool {
@@ -180,6 +328,20 @@ func sanitizeTranscript(value string) string {
 		return value[:16*1024]
 	}
 	return value
+}
+
+func redactToolArguments(arguments json.RawMessage) string {
+	if len(arguments) == 0 {
+		return `{}`
+	}
+	return sanitizeTranscript(string(arguments))
+}
+
+func toolErrorCode(err error) string {
+	if errors.Is(err, tools.ErrInvalidArgument) {
+		return "ai.tool_invalid_arguments"
+	}
+	return "ai.tool_execution_failed"
 }
 
 func writeEvent(writer *bufio.Writer, event agentEvent) {

@@ -24,6 +24,11 @@ type RunStore interface {
 	Finish(ctx context.Context, run RunContext, assistantMessage, status string) error
 }
 
+type ToolExecutionStore interface {
+	StartTool(ctx context.Context, run RunContext, toolName string, toolVersion int, risk, policyDecision, argumentsRedacted string) (string, error)
+	FinishTool(ctx context.Context, executionID, status, resultRedacted, errorCode string) error
+}
+
 type SQLRunStore struct {
 	db *sql.DB
 }
@@ -137,6 +142,46 @@ func (s *SQLRunStore) Finish(ctx context.Context, run RunContext, assistantMessa
 		return fmt.Errorf("commit AI run finish: %w", err)
 	}
 	return nil
+}
+
+func (s *SQLRunStore) StartTool(ctx context.Context, run RunContext, toolName string, toolVersion int, risk, policyDecision, argumentsRedacted string) (string, error) {
+	if s == nil || s.db == nil {
+		return "", fmt.Errorf("AI run store is not configured")
+	}
+	var executionID string
+	err := s.db.QueryRowContext(ctx, `
+		INSERT INTO ai.tool_executions
+			(run_id, tenant_id, actor_user_id, tool_name, tool_version, risk, status, arguments_redacted, policy_decision, started_at)
+		SELECT id, tenant_id, actor_user_id, $4, $5, $6, 'REQUESTED', $7::jsonb, $8, now()
+		FROM ai.runs
+		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
+		RETURNING id::text
+	`, run.TenantID, run.ActorUserID, run.ExternalRun, toolName, toolVersion, risk, jsonObject(argumentsRedacted), policyDecision).Scan(&executionID)
+	if err != nil {
+		return "", fmt.Errorf("persist AI tool execution: %w", err)
+	}
+	return executionID, nil
+}
+
+func (s *SQLRunStore) FinishTool(ctx context.Context, executionID, status, resultRedacted, errorCode string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("AI run store is not configured")
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE ai.tool_executions
+		SET status = $1, result_redacted = $2::jsonb, error_code = NULLIF($3, ''), finished_at = now()
+		WHERE id = $4
+	`, status, jsonObject(resultRedacted), errorCode, executionID); err != nil {
+		return fmt.Errorf("finish AI tool execution: %w", err)
+	}
+	return nil
+}
+
+func jsonObject(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return `{}`
+	}
+	return value
 }
 
 func insertMessage(ctx context.Context, tx *sql.Tx, conversationID, runID, role, content string) error {

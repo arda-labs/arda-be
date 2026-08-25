@@ -44,8 +44,18 @@ The first production allowlist should be small and read-only, for example:
 - `workflow.case.get_status` — status of a case the user may already read.
 - `platform.lookup.search` — approved reference data only.
 
-The exact names and permissions require an implementation PR and contract
-review. No tool is enabled merely because it appears in this document.
+The first enabled read tools are:
+
+- `crm.customer.get`: accepts only `{"customerId":"..."}`, resolves tenant
+  and organization scope from the gateway context, requires
+  `ai.assistant.use` plus `crm.customer.read`, and returns a redacted summary
+  without email, mobile, identity number, address, or arbitrary CRM JSON.
+- `knowledge.search`: accepts only `{"query":"...","limit":1..5}`, requires
+  `ai.assistant.use` plus `ai.knowledge.read`, searches only published tenant,
+  global, or system sources, and returns bounded chunks with source citations.
+
+The remaining tools are not enabled merely because they appear in this
+document.
 
 ## Tool result rules
 

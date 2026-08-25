@@ -37,11 +37,13 @@ Before enabling user traffic, verify storage headroom and representative
 read/write and retention behavior. The first live rollout keeps the endpoint
 deterministic and records no provider or tool data.
 
-## Gate 3 — first read-only vertical slice
+## Gate 3 — first read-only vertical slice (implemented; live verification pending)
 
-Implement one assistant use case with one knowledge source class and at most a
-few read-only tools. Route it through `auth-gateway`, enforce IAM permissions,
-scope retrieval and tool reads by tenant, and ship citations plus audit/metrics.
+The first read-only tools are `crm.customer.get` and `knowledge.search`. They
+are server-registered, tenant scoped, require separate IAM permissions, emit
+AG-UI tool events, and persist redacted tool execution records. Knowledge uses
+PostgreSQL full-text search over published sources; vector search and source
+ingestion remain separate gates.
 
 Success is measured by grounded/cited answers, zero ACL leakage, bounded
 latency, and a clean failure path—not by autonomous breadth.
@@ -84,7 +86,8 @@ Stop rollout and disable the feature if any of these occurs:
 
 ## Current implementation boundary
 
-The current change adds only the service-owned persistence foundation and its
-GitOps wiring. It does not add a model provider, `pgvector`, mutation tool, RAG
-index, or production AI frontend route. The next implementation action is a
-read-only vertical slice with an approved provider and knowledge source.
+The current change adds the service-owned persistence foundation, two bounded
+read-only tools, the feature-flagged frontend route, and GitOps wiring. It does
+not add a model provider, `pgvector`, source ingestion, or mutation tool. The
+next gate is live canary verification, followed by an explicitly approved
+knowledge-source ingestion flow and only then a non-production HITL proposal.

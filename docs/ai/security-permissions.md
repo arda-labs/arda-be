@@ -15,7 +15,8 @@ authorization.
 Use explicit permission codes owned by IAM, for example:
 
 - `ai.assistant.use` — start a conversation/run;
-- `ai.knowledge.read` — retrieve approved knowledge;
+- `ai.knowledge.read` — retrieve approved knowledge (implemented for the first
+  read-only slice);
 - `ai.tool.<domain>.<operation>` — invoke a named tool;
 - `ai.approval.execute` — approve a particular action class.
 

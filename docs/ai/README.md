@@ -1,7 +1,7 @@
 # Arda AI phase
 
-Status: architecture and design review complete; Gate 2 persistence foundation
-is implemented and being rolled out to the real K3s cluster.
+Status: architecture and design review complete; the persistent read-only
+vertical slice is implemented and being rolled out to the real K3s cluster.
 
 This directory is the source of truth for the first AI phase across `arda-be`,
 `arda-mfe`, and `arda-infra`. The documents are intentionally written before
@@ -54,9 +54,11 @@ production workload change.
   migrations. IAM owns users, tenants, permissions, MFA, and security audit.
 - `arda-be/apps/ai-service` contains the deterministic AG-UI boundary, Goose
   migrations, tenant/actor-owned conversation persistence, replay protection,
-  and production workload identity verification. Model/tools remain disabled.
-- `arda-mfe/apps/shell` has a local-only `/ai-protocol-spike` page, enabled only
-  with `VITE_AI_PROTOCOL_SPIKE=true`, and a dev proxy for `/api/ai`.
+  production workload identity verification, and the first allowlisted
+  read-only `crm.customer.get` and `knowledge.search` tools with redacted
+  output and knowledge citations.
+- `arda-mfe/apps/shell` has a feature-flagged `/ai` page and a local-only
+  `/ai-protocol-spike` compatibility page, plus a dev proxy for `/api/ai`.
 - `arda-be` documents gateway-injected tenant/auth context and high-risk
   recent-auth/step-up requirements.
 - `arda-mfe` is a Bun/Vite React MFE workspace with an existing cookie-based API
@@ -67,6 +69,7 @@ production workload change.
 ## Explicitly not done
 
 The current rollout has no `pgvector` extension, model credential, AI ingress,
-or production frontend route. The deployed service is intentionally a
-persistent protocol boundary only; provider, RAG, tools, and HITL remain
-separate gates and are not enabled by this rollout.
+or mutation tool. Knowledge retrieval uses PostgreSQL full-text search over
+explicitly published sources and has no production content until an owner
+publishes approved sources. The service remains provider-neutral and does not
+execute side effects.
