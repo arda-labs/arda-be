@@ -12,11 +12,16 @@ import (
 type UserService struct {
 	repo     *repository.UserRepository
 	identity *IdentityService
+	tenant   *repository.TenantRepository
 }
 
 // NewUserService creates a new user service.
-func NewUserService(repo *repository.UserRepository, identity *IdentityService) *UserService {
-	return &UserService{repo: repo, identity: identity}
+func NewUserService(repo *repository.UserRepository, identity *IdentityService, tenant ...*repository.TenantRepository) *UserService {
+	var tenantRepo *repository.TenantRepository
+	if len(tenant) > 0 {
+		tenantRepo = tenant[0]
+	}
+	return &UserService{repo: repo, identity: identity, tenant: tenantRepo}
 }
 
 // GetUserContextBySubject builds a user context from an external subject.
@@ -41,6 +46,29 @@ func (s *UserService) GetUserContextByID(ctx context.Context, id string) (*domai
 		return nil, fmt.Errorf("user not found")
 	}
 	return s.buildContext(ctx, user)
+}
+
+// GetUserContextByIDForTenant returns context for an explicitly selected
+// active membership. The tenant ID is never accepted without an IAM lookup.
+func (s *UserService) GetUserContextByIDForTenant(ctx context.Context, id, tenantID string) (*domain.UserContext, error) {
+	user, err := s.repo.GetUserByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if s.tenant == nil {
+		return nil, fmt.Errorf("tenant repository is not configured")
+	}
+	membership, err := s.tenant.GetForUser(ctx, user.ID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if membership == nil {
+		return nil, fmt.Errorf("user is not an active member of the tenant")
+	}
+	return s.buildContextForTenant(ctx, user, tenantID)
 }
 
 func (s *UserService) GetUserContextByKratosIdentityID(ctx context.Context, identityID string) (*domain.UserContext, error) {
@@ -175,22 +203,64 @@ func (s *UserService) UpdateUserProfile(ctx context.Context, userID, name, nickn
 }
 
 func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*domain.UserContext, error) {
+	activeTenantID := user.TenantID
+	var memberships []domain.TenantMembership
+	if s.tenant != nil {
+		var err error
+		memberships, err = s.tenant.ListForUser(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, membership := range memberships {
+			if membership.IsDefault {
+				activeTenantID = membership.TenantID
+				break
+			}
+		}
+		if activeTenantID == "" && len(memberships) == 1 {
+			activeTenantID = memberships[0].TenantID
+		}
+	}
+	return s.buildContextForTenantWithMemberships(ctx, user, activeTenantID, memberships)
+}
+
+func (s *UserService) buildContextForTenant(ctx context.Context, user *domain.User, tenantID string) (*domain.UserContext, error) {
+	memberships, err := s.tenant.ListForUser(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildContextForTenantWithMemberships(ctx, user, tenantID, memberships)
+}
+
+func (s *UserService) buildContextForTenantWithMemberships(ctx context.Context, user *domain.User, activeTenantID string, memberships []domain.TenantMembership) (*domain.UserContext, error) {
 	roles, err := s.repo.GetUserRoles(ctx, user.ID)
+	if activeTenantID != "" && s.tenant != nil {
+		roles, err = s.repo.GetUserRolesForTenant(ctx, user.ID, activeTenantID)
+	}
 	if err != nil {
 		return nil, err
 	}
 
 	perms, err := s.repo.GetUserPermissions(ctx, user.ID)
+	if activeTenantID != "" && s.tenant != nil {
+		perms, err = s.repo.GetUserPermissionsForTenant(ctx, user.ID, activeTenantID)
+	}
 	if err != nil {
 		return nil, err
 	}
 
 	orgs, err := s.repo.GetUserOrganizations(ctx, user.ID)
+	if activeTenantID != "" && s.tenant != nil {
+		orgs, err = s.repo.GetUserOrganizationsForTenant(ctx, user.ID, activeTenantID)
+	}
 	if err != nil {
 		return nil, err
 	}
 
 	groupIDs, err := s.repo.GetUserGroupIDs(ctx, user.ID)
+	if activeTenantID != "" && s.tenant != nil {
+		groupIDs, err = s.repo.GetUserGroupIDsForTenant(ctx, user.ID, activeTenantID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -214,35 +284,38 @@ func (s *UserService) buildContext(ctx context.Context, user *domain.User) (*dom
 	}
 
 	return &domain.UserContext{
-		UserID:        user.ID,
-		Subject:       user.Subject,
-		Username:      user.Username,
-		Email:         user.Email,
-		DisplayName:   user.DisplayName,
-		Nickname:      user.Nickname,
-		FirstName:     user.FirstName,
-		LastName:      user.LastName,
-		PhoneNumber:   user.PhoneNumber,
-		Birthdate:     user.Birthdate,
-		Gender:        user.Gender,
-		Address:       user.Address,
-		Country:       user.Country,
-		PictureURL:    user.PictureURL,
-		AvatarFileID:  user.AvatarFileID,
-		CoverImageURL: user.CoverImageURL,
-		CoverFileID:   user.CoverFileID,
-		TenantID:      user.TenantID,
-		OrgIDs:        orgs,
-		GroupIDs:      groupIDs,
-		Roles:         roleCodes,
-		Permissions:   permCodes,
-		AuthVersion:   authVersion,
-		Department:    user.Department,
-		Position:      user.Position,
-		EmployeeID:    user.EmployeeID,
-		ApprovalLevel: user.ApprovalLevel,
-		DailyLimit:    user.DailyLimit,
-		Bio:           user.Bio,
+		UserID:                  user.ID,
+		Subject:                 user.Subject,
+		Username:                user.Username,
+		Email:                   user.Email,
+		DisplayName:             user.DisplayName,
+		Nickname:                user.Nickname,
+		FirstName:               user.FirstName,
+		LastName:                user.LastName,
+		PhoneNumber:             user.PhoneNumber,
+		Birthdate:               user.Birthdate,
+		Gender:                  user.Gender,
+		Address:                 user.Address,
+		Country:                 user.Country,
+		PictureURL:              user.PictureURL,
+		AvatarFileID:            user.AvatarFileID,
+		CoverImageURL:           user.CoverImageURL,
+		CoverFileID:             user.CoverFileID,
+		TenantID:                activeTenantID,
+		ActiveTenantID:          activeTenantID,
+		TenantMemberships:       memberships,
+		TenantSelectionRequired: len(memberships) > 1 && activeTenantID == "",
+		OrgIDs:                  orgs,
+		GroupIDs:                groupIDs,
+		Roles:                   roleCodes,
+		Permissions:             permCodes,
+		AuthVersion:             authVersion,
+		Department:              user.Department,
+		Position:                user.Position,
+		EmployeeID:              user.EmployeeID,
+		ApprovalLevel:           user.ApprovalLevel,
+		DailyLimit:              user.DailyLimit,
+		Bio:                     user.Bio,
 	}, nil
 }
 

@@ -999,6 +999,30 @@ func (r *UserRepository) GetUserRolesScoped(ctx context.Context, userID, tenantI
 	return roles, rows.Err()
 }
 
+// GetUserRolesForTenant resolves effective roles for a membership-selected
+// tenant without relying on the legacy single-tenant column on iam_users.
+func (r *UserRepository) GetUserRolesForTenant(ctx context.Context, userID, tenantID string) ([]domain.Role, error) {
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT DISTINCT r.id, r.code, r.name, r.status, COALESCE(r.tenant_id, ''), r.created_at, r.updated_at
+		FROM iam_roles r
+		WHERE r.id IN (%s) AND r.tenant_id = $2
+		ORDER BY r.code
+	`, r.activeRoleIDsForUserSQL()), userID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get user roles for tenant: %w", err)
+	}
+	defer rows.Close()
+	var roles []domain.Role
+	for rows.Next() {
+		var role domain.Role
+		if err := rows.Scan(&role.ID, &role.Code, &role.Name, &role.Status, &role.TenantID, &role.CreatedAt, &role.UpdatedAt); err != nil {
+			return nil, err
+		}
+		roles = append(roles, role)
+	}
+	return roles, rows.Err()
+}
+
 func (r *UserRepository) GetUserRoleCodesByUserIDs(ctx context.Context, userIDs []string) (map[string][]string, error) {
 	result := make(map[string][]string, len(userIDs))
 	if len(userIDs) == 0 {
@@ -1100,6 +1124,53 @@ func (r *UserRepository) GetUserPermissions(ctx context.Context, userID string) 
 	return perms, rows.Err()
 }
 
+func (r *UserRepository) GetUserPermissionsForTenant(ctx context.Context, userID, tenantID string) ([]domain.Permission, error) {
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT DISTINCT p.id, p.code, p.name, p.module_code, p.resource_code, p.operation_code
+		FROM iam_permissions p
+		JOIN iam_role_permissions rp ON rp.permission_id = p.id
+		JOIN iam_roles r ON r.id = rp.role_id
+		WHERE r.id IN (%s) AND r.tenant_id = $2
+		ORDER BY p.code
+	`, r.activeRoleIDsForUserSQL()), userID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get user permissions for tenant: %w", err)
+	}
+	defer rows.Close()
+	var perms []domain.Permission
+	for rows.Next() {
+		var p domain.Permission
+		if err := rows.Scan(&p.ID, &p.Code, &p.Name, &p.Module, &p.Resource, &p.Operation); err != nil {
+			return nil, err
+		}
+		perms = append(perms, p)
+	}
+	return perms, rows.Err()
+}
+
+func (r *UserRepository) GetUserGroupIDsForTenant(ctx context.Context, userID, tenantID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT gm.group_id::text
+		FROM iam_group_members gm
+		JOIN iam_groups g ON g.id = gm.group_id
+		WHERE gm.user_id = $1 AND g.tenant_id = $2 AND g.status = 'ACTIVE'
+		ORDER BY g.code
+	`, userID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get user group ids for tenant: %w", err)
+	}
+	defer rows.Close()
+	var groupIDs []string
+	for rows.Next() {
+		var groupID string
+		if err := rows.Scan(&groupID); err != nil {
+			return nil, err
+		}
+		groupIDs = append(groupIDs, groupID)
+	}
+	return groupIDs, rows.Err()
+}
+
 // GetUserOrganizations returns organization IDs a user belongs to.
 func (r *UserRepository) GetUserOrganizations(ctx context.Context, userID string) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `
@@ -1122,6 +1193,28 @@ func (r *UserRepository) GetUserOrganizations(ctx context.Context, userID string
 		orgs = append(orgs, code)
 	}
 	return orgs, rows.Err()
+}
+
+func (r *UserRepository) GetUserOrganizationsForTenant(ctx context.Context, userID, tenantID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT o.id::text
+		FROM iam_organizations o
+		JOIN iam_user_organizations uo ON uo.organization_id = o.id
+		WHERE uo.user_id = $1 AND o.tenant_id = $2
+	`, userID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("get user organizations for tenant: %w", err)
+	}
+	defer rows.Close()
+	var orgIDs []string
+	for rows.Next() {
+		var orgID string
+		if err := rows.Scan(&orgID); err != nil {
+			return nil, err
+		}
+		orgIDs = append(orgIDs, orgID)
+	}
+	return orgIDs, rows.Err()
 }
 
 func (r *UserRepository) scanUser(row *sql.Row) (*domain.User, error) {

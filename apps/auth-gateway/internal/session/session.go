@@ -30,29 +30,41 @@ type Session struct {
 
 // UserInfo is the safe user subset returned to the SPA (no tokens).
 type UserInfo struct {
-	UserID       string   `json:"userId"`
-	Subject      string   `json:"subject"`
-	Username     string   `json:"username"`
-	Email        string   `json:"email"`
-	DisplayName  string   `json:"displayName,omitempty"`
-	Nickname     string   `json:"nickname,omitempty"`
-	FirstName    string   `json:"firstName,omitempty"`
-	LastName     string   `json:"lastName,omitempty"`
-	PhoneNumber  string   `json:"phoneNumber,omitempty"`
-	Birthdate    string   `json:"birthdate,omitempty"`
-	Gender       string   `json:"gender,omitempty"`
-	Address      string   `json:"address,omitempty"`
-	Country      string   `json:"country,omitempty"`
-	Picture      string   `json:"picture,omitempty"`
-	AvatarFileID string   `json:"avatarFileId,omitempty"`
-	CoverImage   string   `json:"coverImage,omitempty"`
-	CoverFileID  string   `json:"coverFileId,omitempty"`
-	TenantID     string   `json:"tenantId,omitempty"`
-	OrgIDs       []string `json:"orgIds,omitempty"`
-	GroupIDs     []string `json:"groupIds,omitempty"`
-	Roles        []string `json:"roles"`
-	Permissions  []string `json:"permissions"`
-	AuthVersion  int64    `json:"authVersion"`
+	UserID                  string             `json:"userId"`
+	Subject                 string             `json:"subject"`
+	Username                string             `json:"username"`
+	Email                   string             `json:"email"`
+	DisplayName             string             `json:"displayName,omitempty"`
+	Nickname                string             `json:"nickname,omitempty"`
+	FirstName               string             `json:"firstName,omitempty"`
+	LastName                string             `json:"lastName,omitempty"`
+	PhoneNumber             string             `json:"phoneNumber,omitempty"`
+	Birthdate               string             `json:"birthdate,omitempty"`
+	Gender                  string             `json:"gender,omitempty"`
+	Address                 string             `json:"address,omitempty"`
+	Country                 string             `json:"country,omitempty"`
+	Picture                 string             `json:"picture,omitempty"`
+	AvatarFileID            string             `json:"avatarFileId,omitempty"`
+	CoverImage              string             `json:"coverImage,omitempty"`
+	CoverFileID             string             `json:"coverFileId,omitempty"`
+	TenantID                string             `json:"tenantId,omitempty"`
+	ActiveTenantID          string             `json:"activeTenantId,omitempty"`
+	TenantMemberships       []TenantMembership `json:"tenantMemberships,omitempty"`
+	TenantSelectionRequired bool               `json:"tenantSelectionRequired"`
+	OrgIDs                  []string           `json:"orgIds,omitempty"`
+	GroupIDs                []string           `json:"groupIds,omitempty"`
+	Roles                   []string           `json:"roles"`
+	Permissions             []string           `json:"permissions"`
+	AuthVersion             int64              `json:"authVersion"`
+}
+
+type TenantMembership struct {
+	TenantID     string `json:"tenantId"`
+	TenantCode   string `json:"tenantCode"`
+	TenantName   string `json:"tenantName"`
+	TenantStatus string `json:"tenantStatus"`
+	Status       string `json:"status"`
+	IsDefault    bool   `json:"isDefault"`
 }
 
 // Store defines the session persistence interface.
@@ -300,29 +312,32 @@ const DefaultCookieName = "arda_sid"
 // MarshalJSON marshals user info.
 func (u *UserInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]any{
-		"userId":       u.UserID,
-		"subject":      u.Subject,
-		"username":     u.Username,
-		"email":        u.Email,
-		"displayName":  u.DisplayName,
-		"nickname":     u.Nickname,
-		"firstName":    u.FirstName,
-		"lastName":     u.LastName,
-		"phoneNumber":  u.PhoneNumber,
-		"birthdate":    u.Birthdate,
-		"gender":       u.Gender,
-		"address":      u.Address,
-		"country":      u.Country,
-		"picture":      u.Picture,
-		"avatarFileId": u.AvatarFileID,
-		"coverImage":   u.CoverImage,
-		"coverFileId":  u.CoverFileID,
-		"tenantId":     u.TenantID,
-		"orgIds":       u.OrgIDs,
-		"groupIds":     u.GroupIDs,
-		"roles":        u.Roles,
-		"permissions":  u.Permissions,
-		"authVersion":  u.AuthVersion,
+		"userId":                  u.UserID,
+		"subject":                 u.Subject,
+		"username":                u.Username,
+		"email":                   u.Email,
+		"displayName":             u.DisplayName,
+		"nickname":                u.Nickname,
+		"firstName":               u.FirstName,
+		"lastName":                u.LastName,
+		"phoneNumber":             u.PhoneNumber,
+		"birthdate":               u.Birthdate,
+		"gender":                  u.Gender,
+		"address":                 u.Address,
+		"country":                 u.Country,
+		"picture":                 u.Picture,
+		"avatarFileId":            u.AvatarFileID,
+		"coverImage":              u.CoverImage,
+		"coverFileId":             u.CoverFileID,
+		"tenantId":                u.TenantID,
+		"activeTenantId":          u.ActiveTenantID,
+		"tenantMemberships":       u.TenantMemberships,
+		"tenantSelectionRequired": u.TenantSelectionRequired,
+		"orgIds":                  u.OrgIDs,
+		"groupIds":                u.GroupIDs,
+		"roles":                   u.Roles,
+		"permissions":             u.Permissions,
+		"authVersion":             u.AuthVersion,
 	})
 }
 

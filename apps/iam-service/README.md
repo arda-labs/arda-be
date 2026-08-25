@@ -3,6 +3,11 @@
 `iam-service` owns Arda internal users, profile data, RBAC, sessions/devices,
 MFA policy, audit, and identity orchestration.
 
+Tenant ownership is explicit: `iam_tenants` is the business tenant registry and
+`iam_tenant_memberships` is the source of truth for user access. The legacy
+single `iam_users.tenant_id` field is retained only as a migration compatibility
+field; new context and authorization decisions use the active membership.
+
 ## Identity model
 
 Arda is Kratos-first for identity and credentials:
@@ -35,6 +40,11 @@ setup; the password secret is not injected into the IAM process.
 | `POST /api/admin/users/{id}/identity/provision` | Create/link Kratos identity for an existing user |
 | `POST /api/admin/users/{id}/identity/password/reset` | Reset Kratos password |
 | `GET /api/admin/identity/consistency` | Audit IAM/Kratos identity mappings |
+| `GET /api/admin/tenants` | List registered business tenants (global admin) |
+| `POST /api/admin/tenants` | Create tenant and root organization (global admin) |
+| `GET /api/admin/tenants/{tenant_id}/members` | List active tenant members (global admin) |
+| `POST /api/admin/tenants/{tenant_id}/members` | Add or restore a member (global admin) |
+| `DELETE /api/admin/tenants/{tenant_id}/members/{user_id}` | Remove membership without deleting the user |
 | `GET /api/admin/users/{id}/sessions` | List user sessions |
 | `DELETE /api/admin/users/{id}/sessions` | Revoke user sessions |
 
@@ -60,6 +70,7 @@ Password reset requires a linked Kratos identity. For legacy users without
 Business profile routes:
 
 - `GET /api/iam/me`
+- `GET /api/iam/me/tenants`
 - `PUT /api/iam/me/profile`
 - `POST /api/iam/me/profile/avatar`
 - `POST /api/iam/me/profile/cover`
@@ -85,6 +96,7 @@ auth-gateway uses these routes to resolve user context and record sessions:
 - `GET /internal/iam/users/by-id/{id}/context`
 - `GET /internal/iam/users/by-kratos-identity/{identityId}/context`
 - `POST /internal/iam/users/resolve-kratos-identity`
+- `GET /internal/iam/users/by-id/{id}/context?tenant_id=<tenant>`
 - `POST /internal/iam/sessions`
 - `DELETE /internal/iam/sessions/{id}`
 

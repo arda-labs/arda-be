@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
@@ -14,29 +15,41 @@ import (
 
 // UserContext mirrors the IAM internal API response.
 type UserContext struct {
-	UserID        string   `json:"userId"`
-	Subject       string   `json:"subject"`
-	Username      string   `json:"username"`
-	Email         string   `json:"email"`
-	DisplayName   string   `json:"displayName,omitempty"`
-	Nickname      string   `json:"nickname,omitempty"`
-	FirstName     string   `json:"firstName,omitempty"`
-	LastName      string   `json:"lastName,omitempty"`
-	PhoneNumber   string   `json:"phoneNumber,omitempty"`
-	Birthdate     string   `json:"birthdate,omitempty"`
-	Gender        string   `json:"gender,omitempty"`
-	Address       string   `json:"address,omitempty"`
-	Country       string   `json:"country,omitempty"`
-	PictureURL    string   `json:"picture,omitempty"`
-	AvatarFileID  string   `json:"avatarFileId,omitempty"`
-	CoverImageURL string   `json:"coverImage,omitempty"`
-	CoverFileID   string   `json:"coverFileId,omitempty"`
-	TenantID      string   `json:"tenantId"`
-	OrgIDs        []string `json:"orgIds"`
-	GroupIDs      []string `json:"groupIds"`
-	Roles         []string `json:"roles"`
-	Permissions   []string `json:"permissions"`
-	AuthVersion   int64    `json:"authVersion"`
+	UserID                  string             `json:"userId"`
+	Subject                 string             `json:"subject"`
+	Username                string             `json:"username"`
+	Email                   string             `json:"email"`
+	DisplayName             string             `json:"displayName,omitempty"`
+	Nickname                string             `json:"nickname,omitempty"`
+	FirstName               string             `json:"firstName,omitempty"`
+	LastName                string             `json:"lastName,omitempty"`
+	PhoneNumber             string             `json:"phoneNumber,omitempty"`
+	Birthdate               string             `json:"birthdate,omitempty"`
+	Gender                  string             `json:"gender,omitempty"`
+	Address                 string             `json:"address,omitempty"`
+	Country                 string             `json:"country,omitempty"`
+	PictureURL              string             `json:"picture,omitempty"`
+	AvatarFileID            string             `json:"avatarFileId,omitempty"`
+	CoverImageURL           string             `json:"coverImage,omitempty"`
+	CoverFileID             string             `json:"coverFileId,omitempty"`
+	TenantID                string             `json:"tenantId"`
+	ActiveTenantID          string             `json:"activeTenantId"`
+	TenantMemberships       []TenantMembership `json:"tenantMemberships"`
+	TenantSelectionRequired bool               `json:"tenantSelectionRequired"`
+	OrgIDs                  []string           `json:"orgIds"`
+	GroupIDs                []string           `json:"groupIds"`
+	Roles                   []string           `json:"roles"`
+	Permissions             []string           `json:"permissions"`
+	AuthVersion             int64              `json:"authVersion"`
+}
+
+type TenantMembership struct {
+	TenantID     string `json:"tenantId"`
+	TenantCode   string `json:"tenantCode"`
+	TenantName   string `json:"tenantName"`
+	TenantStatus string `json:"tenantStatus"`
+	Status       string `json:"status"`
+	IsDefault    bool   `json:"isDefault"`
 }
 
 // CreateSessionRequest is sent to IAM internal API to create a session record.
@@ -161,8 +174,11 @@ func (c *Client) GetUserBySubject(ctx context.Context, subject string) (*UserCon
 }
 
 // GetUserByID fetches a user context by internal IAM UUID.
-func (c *Client) GetUserByID(ctx context.Context, id string) (*UserContext, error) {
+func (c *Client) GetUserByID(ctx context.Context, id string, tenantID ...string) (*UserContext, error) {
 	endpoint := c.baseURL + "/internal/iam/users/by-id/" + url.PathEscape(id) + "/context"
+	if len(tenantID) > 0 && strings.TrimSpace(tenantID[0]) != "" {
+		endpoint += "?tenant_id=" + url.QueryEscape(strings.TrimSpace(tenantID[0]))
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err

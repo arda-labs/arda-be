@@ -54,6 +54,10 @@ func (h *UserHandler) GetContextByID(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusBadRequest, "missing id")
 		return
 	}
+	if tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id")); tenantID != "" {
+		h.getContextByIDForTenant(w, r, r.Context(), id, tenantID)
+		return
+	}
 	h.getContextByID(w, r, r.Context(), id)
 }
 
@@ -239,6 +243,15 @@ func (h *UserHandler) getContextByID(w http.ResponseWriter, r *http.Request, ctx
 	userCtx, err := h.svc.GetUserContextByID(ctx, id)
 	if err != nil {
 		respondError(w, r, http.StatusNotFound, err.Error())
+		return
+	}
+	respondJSON(w, r, http.StatusOK, userCtx)
+}
+
+func (h *UserHandler) getContextByIDForTenant(w http.ResponseWriter, r *http.Request, ctx context.Context, id, tenantID string) {
+	userCtx, err := h.svc.GetUserContextByIDForTenant(ctx, id, tenantID)
+	if err != nil {
+		respondError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
 	respondJSON(w, r, http.StatusOK, userCtx)

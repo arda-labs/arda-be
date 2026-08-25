@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -18,24 +19,44 @@ import (
 
 // AdminHandler manages users, roles, permissions.
 type AdminHandler struct {
-	userRepo  *repository.UserRepository
-	roleRepo  *repository.RoleRepository
-	groupRepo *repository.GroupRepository
-	userSvc   *service.AdminUserService
-	audit     *audit.Logger
-	logger    *slog.Logger
+	userRepo   *repository.UserRepository
+	roleRepo   *repository.RoleRepository
+	groupRepo  *repository.GroupRepository
+	tenantRepo *repository.TenantRepository
+	userSvc    *service.AdminUserService
+	audit      *audit.Logger
+	logger     *slog.Logger
 }
 
 // NewAdminHandler creates an admin handler.
-func NewAdminHandler(userRepo *repository.UserRepository, roleRepo *repository.RoleRepository, groupRepo *repository.GroupRepository, userSvc *service.AdminUserService, auditLogger *audit.Logger) *AdminHandler {
-	return &AdminHandler{
-		userRepo:  userRepo,
-		roleRepo:  roleRepo,
-		groupRepo: groupRepo,
-		userSvc:   userSvc,
-		audit:     auditLogger,
-		logger:    slog.Default(),
+func NewAdminHandler(userRepo *repository.UserRepository, roleRepo *repository.RoleRepository, groupRepo *repository.GroupRepository, userSvc *service.AdminUserService, auditLogger *audit.Logger, tenantRepos ...*repository.TenantRepository) *AdminHandler {
+	var tenantRepo *repository.TenantRepository
+	if len(tenantRepos) > 0 {
+		tenantRepo = tenantRepos[0]
 	}
+	return &AdminHandler{
+		userRepo:   userRepo,
+		roleRepo:   roleRepo,
+		groupRepo:  groupRepo,
+		tenantRepo: tenantRepo,
+		userSvc:    userSvc,
+		audit:      auditLogger,
+		logger:     slog.Default(),
+	}
+}
+
+func (h *AdminHandler) requireActiveTenant(r *http.Request, tenantID string) error {
+	if h.tenantRepo == nil {
+		return nil
+	}
+	exists, err := h.tenantRepo.Exists(r.Context(), tenantID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("tenant does not exist or is not active")
+	}
+	return nil
 }
 
 // ── User CRUD ──
@@ -547,6 +568,10 @@ func (h *AdminHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	if _, ok := validateAdminTargetTenant(w, r, req.TenantID); !ok {
 		return
 	}
+	if err := h.requireActiveTenant(r, req.TenantID); err != nil {
+		respondAdminError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	group := &domain.Group{
 		Code: req.Code, Name: req.Name, Description: req.Description,
 		Status: req.Status, TenantID: req.TenantID,
@@ -871,6 +896,10 @@ func (h *AdminHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.requireActiveTenant(r, req.TenantID); err != nil {
+		respondAdminError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	role := &domain.Role{Code: req.Code, Name: req.Name, TenantID: req.TenantID}
 	if err := h.roleRepo.Create(r.Context(), role); err != nil {
 		respondAdminError(w, r, http.StatusConflict, "role code may already exist: "+err.Error())

@@ -694,7 +694,10 @@ func (h *BFFHandler) resolveSessionUser(ctx context.Context, fallback *session.U
 	if fallback.UserID == "" && looksLikeUUID(fallback.Subject) {
 		fallback.UserID = fallback.Subject
 	}
-	if useCache && h.cache != nil {
+	// A cache entry created before tenant memberships were introduced is not a
+	// complete authorization context. Force one IAM refresh instead of serving
+	// stale roles/organizations under the legacy implicit tenant.
+	if useCache && h.cache != nil && sessionTenantContextComplete(fallback) {
 		for _, key := range sessionUserCacheKeys(fallback.UserID, fallback.Subject, fallback.AuthVersion) {
 			if uc, ok := h.cache.get(key); ok {
 				return sessionUserFromIAM(uc, fallback), true
@@ -710,7 +713,20 @@ func sessionUserComplete(user *session.UserInfo) bool {
 		strings.TrimSpace(user.UserID) != "" &&
 		strings.TrimSpace(user.Subject) != "" &&
 		user.AuthVersion > 0 &&
-		user.GroupIDs != nil
+		user.GroupIDs != nil &&
+		sessionTenantContextComplete(user)
+}
+
+func sessionTenantContextComplete(user *session.UserInfo) bool {
+	if user == nil {
+		return false
+	}
+	// The reserved system scope is intentionally outside the business tenant
+	// registry and is used only by control-plane superadmins.
+	if strings.EqualFold(strings.TrimSpace(user.TenantID), "system") {
+		return true
+	}
+	return user.TenantMemberships != nil
 }
 
 func (h *BFFHandler) ensureSessionUser(ctx context.Context, sess *session.Session, forceFresh bool) bool {
@@ -862,29 +878,41 @@ func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *
 		return fallback
 	}
 	info := &session.UserInfo{
-		UserID:       uc.UserID,
-		Subject:      uc.Subject,
-		Username:     uc.Username,
-		Email:        uc.Email,
-		DisplayName:  uc.DisplayName,
-		Nickname:     uc.Nickname,
-		FirstName:    uc.FirstName,
-		LastName:     uc.LastName,
-		PhoneNumber:  uc.PhoneNumber,
-		Birthdate:    uc.Birthdate,
-		Gender:       uc.Gender,
-		Address:      uc.Address,
-		Country:      uc.Country,
-		Picture:      uc.PictureURL,
-		AvatarFileID: uc.AvatarFileID,
-		CoverImage:   uc.CoverImageURL,
-		CoverFileID:  uc.CoverFileID,
-		TenantID:     uc.TenantID,
-		OrgIDs:       uc.OrgIDs,
-		GroupIDs:     append([]string(nil), uc.GroupIDs...),
-		Roles:        uc.Roles,
-		Permissions:  uc.Permissions,
-		AuthVersion:  uc.AuthVersion,
+		UserID:                  uc.UserID,
+		Subject:                 uc.Subject,
+		Username:                uc.Username,
+		Email:                   uc.Email,
+		DisplayName:             uc.DisplayName,
+		Nickname:                uc.Nickname,
+		FirstName:               uc.FirstName,
+		LastName:                uc.LastName,
+		PhoneNumber:             uc.PhoneNumber,
+		Birthdate:               uc.Birthdate,
+		Gender:                  uc.Gender,
+		Address:                 uc.Address,
+		Country:                 uc.Country,
+		Picture:                 uc.PictureURL,
+		AvatarFileID:            uc.AvatarFileID,
+		CoverImage:              uc.CoverImageURL,
+		CoverFileID:             uc.CoverFileID,
+		TenantID:                uc.TenantID,
+		ActiveTenantID:          uc.ActiveTenantID,
+		TenantSelectionRequired: uc.TenantSelectionRequired,
+		OrgIDs:                  uc.OrgIDs,
+		GroupIDs:                append([]string(nil), uc.GroupIDs...),
+		Roles:                   uc.Roles,
+		Permissions:             uc.Permissions,
+		AuthVersion:             uc.AuthVersion,
+	}
+	if len(uc.TenantMemberships) > 0 {
+		info.TenantMemberships = make([]session.TenantMembership, 0, len(uc.TenantMemberships))
+		for _, membership := range uc.TenantMemberships {
+			info.TenantMemberships = append(info.TenantMemberships, session.TenantMembership{
+				TenantID: membership.TenantID, TenantCode: membership.TenantCode,
+				TenantName: membership.TenantName, TenantStatus: membership.TenantStatus,
+				Status: membership.Status, IsDefault: membership.IsDefault,
+			})
+		}
 	}
 	if info.Subject == "" && fallback != nil {
 		info.Subject = fallback.Subject
@@ -1234,6 +1262,47 @@ func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
 			"total_ms", totalDuration.Milliseconds(),
 		)
 	}
+}
+
+// SwitchTenant changes only the active application tenant in the BFF
+// session. IAM validates membership and returns a tenant-scoped context; the
+// browser never gets to set X-Tenant-Id directly.
+func (h *BFFHandler) SwitchTenant(w http.ResponseWriter, r *http.Request) {
+	sessionID := h.readSessionCookie(r)
+	if sessionID == "" {
+		respondError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	sess, _ := h.store.Get(r.Context(), sessionID)
+	if sess == nil || sess.User == nil || strings.TrimSpace(sess.User.UserID) == "" {
+		respondError(w, http.StatusUnauthorized, "session expired")
+		return
+	}
+	var req struct {
+		TenantID string `json:"tenant_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	tenantID := strings.TrimSpace(req.TenantID)
+	if tenantID == "" {
+		respondError(w, http.StatusBadRequest, "tenant_id is required")
+		return
+	}
+	if h.iamClient == nil {
+		respondError(w, http.StatusBadGateway, "tenant context is not configured")
+		return
+	}
+	uc, err := h.iamClient.GetUserByID(r.Context(), sess.User.UserID, tenantID)
+	if err != nil {
+		h.logger.Warn("tenant switch denied", "user_id", sess.User.UserID, "tenant_id", tenantID, "err", err)
+		respondError(w, http.StatusForbidden, "tenant membership is not active")
+		return
+	}
+	sess.User = sessionUserFromIAM(uc, sess.User)
+	h.updateSession(r.Context(), sess)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, sess.User)
 }
 
 func (h *BFFHandler) WebCheck(w http.ResponseWriter, r *http.Request) {

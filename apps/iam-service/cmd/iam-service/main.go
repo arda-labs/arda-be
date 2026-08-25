@@ -68,6 +68,7 @@ func main() {
 	auditRepo := repository.NewAuditRepository(db)
 	roleRepo := repository.NewRoleRepository(db)
 	groupRepo := repository.NewGroupRepository(db)
+	tenantRepo := repository.NewTenantRepository(db)
 	sessionRepo := repository.NewSessionRepository(db)
 	mfaRepo := repository.NewMFARepository(db)
 
@@ -104,7 +105,8 @@ func main() {
 
 	// ── Handlers ──
 	identitySvc := service.NewIdentityService(userRepo, kratosClient)
-	userSvc := service.NewUserService(userRepo, identitySvc)
+	userSvc := service.NewUserService(userRepo, identitySvc, tenantRepo)
+	tenantSvc := service.NewTenantService(tenantRepo)
 	mediaClient, err := ardamedia.NewClient("iam-service")
 	if err != nil {
 		logger.Error("media grpc client is required; refusing to start", "err", err)
@@ -113,11 +115,12 @@ func main() {
 	defer mediaClient.Close()
 	userHandler := handler.NewUserHandler(userSvc, mediaClient)
 	policyHandler := handler.NewPolicyHandler(policyEnf)
-	adminUserSvc := service.NewAdminUserService(userRepo, roleRepo, identitySvc)
-	adminHandler := handler.NewAdminHandler(userRepo, roleRepo, groupRepo, adminUserSvc, auditLogger)
+	adminUserSvc := service.NewAdminUserService(userRepo, roleRepo, identitySvc, tenantRepo)
+	adminHandler := handler.NewAdminHandler(userRepo, roleRepo, groupRepo, adminUserSvc, auditLogger, tenantRepo)
 	sessionHandler := handler.NewSessionHandler(sessionSvc, userRepo, auditLogger)
 	mfaHandler := handler.NewMFAHandler(mfaSvc, userRepo)
 	auditHandler := handler.NewAuditHandler(auditSvc)
+	tenantHandler := handler.NewTenantHandler(tenantSvc)
 
 	// ── gRPC server ──
 	if _, err := iamgrpc.ListenAndServe(cfg.GRPCAddr, userRepo); err != nil {
@@ -129,7 +132,7 @@ func main() {
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(userHandler, policyHandler, adminHandler, sessionHandler, mfaHandler, auditHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(userHandler, policyHandler, adminHandler, sessionHandler, mfaHandler, auditHandler, tenantHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

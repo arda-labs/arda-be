@@ -23,7 +23,7 @@ Services must not guess whether `X-User-Id` is an OAuth subject, username, email
 | `X-User-Subject` | yes when available | Upstream auth subject kept for traceability. In the current Kratos-first login bridge, Hydra is accepted with `iam_users.id`, so this may equal `X-User-Id`. It is not a database foreign key. |
 | `X-Username` | optional | Display/login username from IAM context. |
 | `X-User-Email` | optional | User email from IAM context. |
-| `X-Tenant-Id` | yes for tenant-scoped requests | Current tenant id from IAM context. |
+| `X-Tenant-Id` | yes for tenant-scoped requests | Active tenant id from the verified IAM membership context. It is injected by auth-gateway, never trusted from the browser. |
 | `X-Roles` | optional | Comma-separated role codes. |
 | `X-Permissions` | optional | Comma-separated permission codes. |
 | `X-Auth-Version` | yes for user requests | IAM security stamp. It increases when user security, roles, or effective permissions change. |
@@ -59,6 +59,11 @@ Token/session or Kratos identity
   -> inject X-User-* headers
   -> downstream service
 ```
+
+The IAM context may contain multiple memberships, but exactly one
+`activeTenantId` is used for a request. A tenant switch must go through
+`POST /api/auth/tenant/switch`; services must not implement their own tenant
+selection logic.
 
 Downstream services should treat the injected headers as the request identity and should not call Hydra/Kratos directly for normal request context.
 
@@ -113,6 +118,8 @@ iam_users.picture_url
 - Store `session.User.UserID` as internal IAM UUID only.
 - Store `session.User.Subject` as external/Ory/Hydra subject.
 - Forward `X-User-Id`, `X-User-Subject`, tenant, roles, and permissions on proxied API calls.
+- Store and forward the membership-validated `activeTenantId`; strip any
+  browser-supplied `X-Tenant-Id` before forwarding.
 - Return the same normalized user context from `/api/auth/me`.
 
 ## Compatibility Note

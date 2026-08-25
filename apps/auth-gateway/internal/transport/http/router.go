@@ -59,6 +59,7 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler,
 
 	// Session management
 	mux.HandleFunc("/api/auth/me", method("GET", bffHandler.Me))
+	mux.HandleFunc("/api/auth/tenant/switch", method("POST", bffHandler.SwitchTenant))
 	mux.HandleFunc("/api/auth/logout", method("POST", bffHandler.Logout))
 	mux.HandleFunc("/api/auth/step-up", method("POST", bffHandler.StepUp))
 	mux.HandleFunc("/api/auth/recent-auth", method("GET", bffHandler.RecentAuthStatus))

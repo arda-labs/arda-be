@@ -70,13 +70,19 @@ type AdminUserService struct {
 	userRepo *repository.UserRepository
 	roleRepo *repository.RoleRepository
 	identity *IdentityService
+	tenant   *repository.TenantRepository
 }
 
-func NewAdminUserService(userRepo *repository.UserRepository, roleRepo *repository.RoleRepository, identity *IdentityService) *AdminUserService {
+func NewAdminUserService(userRepo *repository.UserRepository, roleRepo *repository.RoleRepository, identity *IdentityService, tenant ...*repository.TenantRepository) *AdminUserService {
+	var tenantRepo *repository.TenantRepository
+	if len(tenant) > 0 {
+		tenantRepo = tenant[0]
+	}
 	return &AdminUserService{
 		userRepo: userRepo,
 		roleRepo: roleRepo,
 		identity: identity,
+		tenant:   tenantRepo,
 	}
 }
 
@@ -150,6 +156,15 @@ func (s *AdminUserService) CreateUser(ctx context.Context, input CreateAdminUser
 	if input.TenantID == "" {
 		return nil, fmt.Errorf("tenant_id is required for the target user")
 	}
+	if s.tenant != nil {
+		exists, err := s.tenant.Exists(ctx, input.TenantID)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, fmt.Errorf("tenant does not exist or is not active")
+		}
+	}
 	displayName := displayNameFromParts(input.Name, input.FirstName, input.LastName, input.Username, input.Email)
 	kratosIdentityID, err := s.identity.CreateIdentity(ctx, input.Email, input.Password, displayName)
 	if err != nil {
@@ -179,6 +194,13 @@ func (s *AdminUserService) CreateUser(ctx context.Context, input CreateAdminUser
 		_ = s.identity.DeleteIdentity(ctx, user)
 		return nil, err
 	}
+	if s.tenant != nil {
+		if err := s.tenant.EnsureMembership(ctx, created.ID, input.TenantID, true); err != nil {
+			_ = s.userRepo.DeleteUser(ctx, created.ID)
+			_ = s.identity.DeleteIdentity(ctx, user)
+			return nil, err
+		}
+	}
 
 	if err := s.userRepo.CreateIdentityMapping(ctx, &domain.IdentityMapping{
 		ProviderID:     kratosProviderID,
@@ -205,6 +227,13 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, id, tenantID string, 
 	}
 	if user == nil {
 		return nil, nil
+	}
+	if input.TenantID != nil && s.tenant != nil {
+		if exists, err := s.tenant.Exists(ctx, strings.TrimSpace(*input.TenantID)); err != nil {
+			return nil, err
+		} else if !exists {
+			return nil, fmt.Errorf("tenant does not exist or is not active")
+		}
 	}
 
 	if input.Username != nil {
@@ -257,6 +286,11 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, id, tenantID string, 
 
 	if err := s.userRepo.UpdateUserScoped(ctx, user, tenantID); err != nil {
 		return nil, err
+	}
+	if input.TenantID != nil && s.tenant != nil {
+		if err := s.tenant.EnsureMembership(ctx, user.ID, strings.TrimSpace(*input.TenantID), true); err != nil {
+			return nil, err
+		}
 	}
 	return user, nil
 }

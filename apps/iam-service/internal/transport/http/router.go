@@ -12,7 +12,7 @@ import (
 )
 
 // NewRouter wires HTTP routes for the IAM service.
-func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHandler, adminHandler *handler.AdminHandler, sessionHandler *handler.SessionHandler, mfaHandler *handler.MFAHandler, auditHandler *handler.AuditHandler) http.Handler {
+func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHandler, adminHandler *handler.AdminHandler, sessionHandler *handler.SessionHandler, mfaHandler *handler.MFAHandler, auditHandler *handler.AuditHandler, tenantHandlers ...*handler.TenantHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Health
@@ -214,6 +214,33 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 	mux.HandleFunc("/api/iam/me/mfa/verify", method("POST", mfaHandler.VerifyCode))
 	mux.HandleFunc("/api/iam/me/mfa/backup", method("POST", mfaHandler.VerifyBackupCode))
 	mux.HandleFunc("/api/admin/users/{id}/mfa/reset", method("POST", mfaHandler.AdminResetMFA))
+
+	// Tenant registry and membership context.
+	if len(tenantHandlers) > 0 && tenantHandlers[0] != nil {
+		tenantHandler := tenantHandlers[0]
+		mux.HandleFunc("/api/admin/tenants", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				tenantHandler.ListAdmin(w, r)
+			case http.MethodPost:
+				tenantHandler.Create(w, r)
+			default:
+				writeMethodNotAllowed(w, r)
+			}
+		})
+		mux.HandleFunc("/api/admin/tenants/{tenant_id}/members", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				tenantHandler.ListMembers(w, r)
+			case http.MethodPost:
+				tenantHandler.AddMember(w, r)
+			default:
+				writeMethodNotAllowed(w, r)
+			}
+		})
+		mux.HandleFunc("/api/admin/tenants/{tenant_id}/members/{user_id}", method("DELETE", tenantHandler.RemoveMember))
+		mux.HandleFunc("/api/iam/me/tenants", method("GET", tenantHandler.ListMine))
+	}
 
 	return mux
 }

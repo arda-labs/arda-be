@@ -112,7 +112,7 @@ func TestProxyRejectsUnverifiedActiveOrganization(t *testing.T) {
 		})},
 	}
 	sess := &session.Session{User: &session.UserInfo{
-		UserID: "u1", Subject: "s1", AuthVersion: 1, GroupIDs: []string{}, OrgIDs: []string{"org-1"},
+		UserID: "u1", Subject: "s1", AuthVersion: 1, GroupIDs: []string{}, TenantMemberships: []session.TenantMembership{}, OrgIDs: []string{"org-1"},
 	}}
 	if err := store.Create(nil, sess, time.Minute); err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestProxyOwnsCorrelationHeadersAtPublicBoundary(t *testing.T) {
 		})},
 	}
 	sess := &session.Session{AccessToken: "access-token", User: &session.UserInfo{
-		UserID: "u1", Subject: "s1", TenantID: "tenant-a", AuthVersion: 1, GroupIDs: []string{},
+		UserID: "u1", Subject: "s1", TenantID: "tenant-a", AuthVersion: 1, GroupIDs: []string{}, TenantMemberships: []session.TenantMembership{},
 	}}
 	if err := store.Create(nil, sess, time.Minute); err != nil {
 		t.Fatal(err)
@@ -205,15 +205,16 @@ func TestIAMLookupIDsOnlyReturnsUniqueUUIDs(t *testing.T) {
 }
 
 func TestSessionUserCompleteRequiresStableIdentityAndAuthVersion(t *testing.T) {
-	if sessionUserComplete(&session.UserInfo{UserID: "u1", Subject: "s1", AuthVersion: 2, GroupIDs: []string{}}) != true {
-		t.Fatal("expected user with id, subject, auth version, and group ids to be complete")
+	if sessionUserComplete(&session.UserInfo{UserID: "u1", Subject: "s1", AuthVersion: 2, GroupIDs: []string{}, TenantMemberships: []session.TenantMembership{}}) != true {
+		t.Fatal("expected user with id, subject, auth version, group ids, and tenant context to be complete")
 	}
 	for name, user := range map[string]*session.UserInfo{
-		"nil":               nil,
-		"missing id":        {Subject: "s1", AuthVersion: 2, GroupIDs: []string{}},
-		"missing sub":       {UserID: "u1", AuthVersion: 2, GroupIDs: []string{}},
-		"zero version":      {UserID: "u1", Subject: "s1", GroupIDs: []string{}},
-		"missing group ids": {UserID: "u1", Subject: "s1", AuthVersion: 2},
+		"nil":                    nil,
+		"missing id":             {Subject: "s1", AuthVersion: 2, GroupIDs: []string{}},
+		"missing sub":            {UserID: "u1", AuthVersion: 2, GroupIDs: []string{}},
+		"zero version":           {UserID: "u1", Subject: "s1", GroupIDs: []string{}},
+		"missing group ids":      {UserID: "u1", Subject: "s1", AuthVersion: 2, TenantMemberships: []session.TenantMembership{}},
+		"missing tenant context": {UserID: "u1", Subject: "s1", AuthVersion: 2, GroupIDs: []string{}},
 	} {
 		if sessionUserComplete(user) {
 			t.Fatalf("%s user should be incomplete", name)
@@ -297,7 +298,7 @@ func TestWebCheckAllowsValidBFFSession(t *testing.T) {
 	store := session.NewMemoryStore()
 	handler := &BFFHandler{cfg: config.Config{SessionCookieName: "arda_sid"}, store: store}
 	sess := &session.Session{
-		User: &session.UserInfo{UserID: "u1", Subject: "s1", AuthVersion: 1, GroupIDs: []string{}},
+		User: &session.UserInfo{UserID: "u1", Subject: "s1", AuthVersion: 1, GroupIDs: []string{}, TenantMemberships: []session.TenantMembership{}},
 	}
 	if err := store.Create(nil, sess, time.Minute); err != nil {
 		t.Fatal(err)
@@ -318,10 +319,11 @@ func TestMeReadsTheBFFSessionCookie(t *testing.T) {
 	handler := &BFFHandler{cfg: config.Config{SessionCookieName: "arda_sid"}, store: store}
 	sess := &session.Session{
 		User: &session.UserInfo{
-			UserID:      "u1",
-			Subject:     "s1",
-			AuthVersion: 1,
-			GroupIDs:    []string{},
+			UserID:            "u1",
+			Subject:           "s1",
+			AuthVersion:       1,
+			GroupIDs:          []string{},
+			TenantMemberships: []session.TenantMembership{},
 		},
 	}
 	if err := store.Create(nil, sess, time.Minute); err != nil {
