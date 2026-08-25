@@ -22,9 +22,19 @@ jobs:
           node-version: 22
       - name: Install protobuf toolchain
         shell: bash
+        env:
+          PROTOC_VERSION: 35.0
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes protobuf-compiler
+          set -euo pipefail
+          protoc_root="$RUNNER_TEMP/protoc"
+          mkdir -p "$protoc_root"
+          curl --fail --silent --show-error --location \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
+            --output "$RUNNER_TEMP/protoc.zip"
+          unzip -q "$RUNNER_TEMP/protoc.zip" -d "$protoc_root"
+          export PATH="$protoc_root/bin:$PATH"
+          echo "$protoc_root/bin" >> "$GITHUB_PATH"
+          protoc --version
           go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
