@@ -20,6 +20,12 @@ type NotificationService struct {
 	pushSender *push.Sender
 }
 
+var (
+	ErrTenantScopeRequired     = errors.New("tenant scope is required")
+	ErrTenantMigrationRequired = errors.New("tenant migration is required")
+	ErrUserContextRequired     = errors.New("authenticated user context is required")
+)
+
 func NewNotificationService(repo *repository.NotificationRepository, pushSender *push.Sender) *NotificationService {
 	return &NotificationService{repo: repo, pushSender: pushSender}
 }
@@ -267,7 +273,7 @@ func (s *NotificationService) GetByPublicID(ctx context.Context, tenantID, publi
 func (s *NotificationService) ListInbox(ctx context.Context, tenantID, userID string, limit int) ([]domain.InboxItem, error) {
 	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
 	if err := validateUserContext(tenantID, userID); err != nil {
-		return nil, errors.New("user context is required")
+		return nil, err
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -278,7 +284,7 @@ func (s *NotificationService) ListInbox(ctx context.Context, tenantID, userID st
 func (s *NotificationService) UnreadCount(ctx context.Context, tenantID, userID string) (int, error) {
 	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
 	if err := validateUserContext(tenantID, userID); err != nil {
-		return 0, errors.New("user context is required")
+		return 0, err
 	}
 	return s.repo.UnreadCount(ctx, tenantID, userID)
 }
@@ -343,10 +349,10 @@ func validateAccept(in AcceptInput) error {
 func validateTenantID(tenantID string) error {
 	tenantID = strings.TrimSpace(tenantID)
 	if tenantID == "" {
-		return errors.New("tenant_id is required")
+		return ErrTenantScopeRequired
 	}
 	if strings.EqualFold(tenantID, "default") {
-		return errors.New("reserved tenant_id is not allowed")
+		return ErrTenantMigrationRequired
 	}
 	return nil
 }
@@ -356,7 +362,7 @@ func validateUserContext(tenantID, userID string) error {
 		return err
 	}
 	if strings.TrimSpace(userID) == "" {
-		return errors.New("user_id is required")
+		return ErrUserContextRequired
 	}
 	return nil
 }

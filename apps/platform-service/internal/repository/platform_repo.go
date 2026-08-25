@@ -115,6 +115,30 @@ func (r *PlatformRepository) GetParameter(ctx context.Context, tenantID, key, sc
 	return item, nil
 }
 
+// GetGlobalParameter resolves a global setting without requiring a tenant.
+// Global parameters are deliberately stored with both tenant_id and scope_id
+// NULL; this is the public/control-plane scope and must not go through the
+// tenant-scoped GetParameter path.
+func (r *PlatformRepository) GetGlobalParameter(ctx context.Context, key string) (domain.Parameter, error) {
+	var item domain.Parameter
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, key, value, value_type, scope_type, scope_id, description, is_secret, created_at, updated_at
+		FROM plt_system_parameters
+		WHERE key = $1
+		  AND scope_type = $2
+		  AND scope_id IS NULL
+		  AND tenant_id IS NULL
+		LIMIT 1`, key, domain.ScopeGlobal).
+		Scan(&item.ID, &item.TenantID, &item.Key, &item.Value, &item.ValueType, &item.ScopeType, &item.ScopeID, &item.Description, &item.IsSecret, &item.CreatedAt, &item.UpdatedAt)
+	if err != nil {
+		return domain.Parameter{}, err
+	}
+	if item.IsSecret {
+		item.Value = ""
+	}
+	return item, nil
+}
+
 func (r *PlatformRepository) ListLookupCategories(ctx context.Context, tenantID, scopeType, scopeID string) ([]domain.LookupCategory, error) {
 	if err := requireTenantID(tenantID); err != nil {
 		return nil, err

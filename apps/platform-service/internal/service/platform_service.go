@@ -46,6 +46,10 @@ func (s *PlatformService) ResolveParameter(ctx context.Context, tenantID, key st
 	return s.repo.GetParameter(ctx, tenantID, key, domain.ScopeGlobal, "")
 }
 
+func (s *PlatformService) GetGlobalParameter(ctx context.Context, key string) (domain.Parameter, error) {
+	return s.repo.GetGlobalParameter(ctx, key)
+}
+
 func (s *PlatformService) ListLookupCategories(ctx context.Context, tenantID, scopeType, scopeID string) ([]domain.LookupCategory, error) {
 	return s.repo.ListLookupCategories(ctx, tenantID, scopeType, scopeID)
 }

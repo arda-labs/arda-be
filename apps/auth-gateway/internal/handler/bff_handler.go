@@ -1453,6 +1453,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	requireAuth := match == nil || match.RequireAuth
 	if requireAuth && sess == nil {
+		h.logProxyDenied(r, requestID, traceID, http.StatusUnauthorized, "not_authenticated", nil)
 		h.clearSessionCookie(w)
 		respondRequestError(w, r, http.StatusUnauthorized, "not_authenticated")
 		return
@@ -1460,6 +1461,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	var ensureDuration time.Duration
 	if sess != nil {
 		if !h.recentAuthOK(r, sess) {
+			h.logProxyDenied(r, requestID, traceID, http.StatusForbidden, "recent_auth_required", sess)
 			respondRequestError(w, r, http.StatusForbidden, "recent_auth_required")
 			return
 		}
@@ -1468,6 +1470,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		if !h.ensureSessionUser(r.Context(), sess, forceFreshUser) {
 			ensureDuration = time.Since(ensureStart)
 			if requireAuth {
+				h.logProxyDenied(r, requestID, traceID, http.StatusUnauthorized, "user_context_unavailable", sess)
 				h.clearSessionCookie(w)
 				respondRequestError(w, r, http.StatusUnauthorized, "user_context_unavailable")
 				return
@@ -1475,6 +1478,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		} else {
 			ensureDuration = time.Since(ensureStart)
 			if match != nil && len(match.Route.Permissions) > 0 && !permission.HasAny(sess.User.Permissions, match.Route.Permissions...) {
+				h.logProxyDenied(r, requestID, traceID, http.StatusForbidden, "insufficient_permissions", sess)
 				respondRequestError(w, r, http.StatusForbidden, "insufficient_permissions")
 				return
 			}
@@ -1539,12 +1543,14 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 500 || (strings.HasPrefix(r.URL.Path, "/api/workflow/") && resp.StatusCode >= 400) {
+	if resp.StatusCode >= 400 {
 		h.logger.Warn("upstream proxy returned error status",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"upstream", baseURL,
 			"status", resp.StatusCode,
+			"request_id", requestID,
+			"trace_id", traceID,
 			"duration_ms", upstreamDuration.Milliseconds(),
 		)
 	}
@@ -1589,6 +1595,25 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			"copy_err", copyErr,
 		)
 	}
+}
+
+func (h *BFFHandler) logProxyDenied(r *http.Request, requestID, traceID string, status int, reason string, sess *session.Session) {
+	if h.logger == nil {
+		return
+	}
+	attrs := []any{
+		"method", r.Method,
+		"path", r.URL.Path,
+		"status", status,
+		"reason", reason,
+		"request_id", requestID,
+		"trace_id", traceID,
+		"session_present", sess != nil,
+	}
+	if sess != nil && sess.User != nil {
+		attrs = append(attrs, "user_id", sess.User.UserID, "tenant_id", sess.User.TenantID)
+	}
+	h.logger.Warn("proxy request denied", attrs...)
 }
 
 func isEventStreamRequest(r *http.Request) bool {

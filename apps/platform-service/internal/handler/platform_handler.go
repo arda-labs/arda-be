@@ -82,7 +82,7 @@ func (h *PlatformHandler) ListParameters(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *PlatformHandler) GetPublicBranding(w http.ResponseWriter, r *http.Request) {
-	item, err := h.svc.ResolveParameter(r.Context(), "", "system.settings", nil)
+	item, err := h.svc.GetGlobalParameter(r.Context(), "system.settings")
 	if errors.Is(err, sql.ErrNoRows) {
 		writeResultWithRequest(w, r, json.RawMessage(`{}`), nil)
 		return

@@ -6,17 +6,20 @@ import (
 )
 
 const (
-	CodeUnknown          = "common.error.unknown"
-	CodeInternal         = "common.error.internal"
-	CodeBadGateway       = "common.error.bad_gateway"
-	CodeUnauthorized     = "auth.error.unauthorized"
-	CodeForbidden        = "auth.error.forbidden"
-	CodeNotFound         = "common.error.not_found"
-	CodeConflict         = "common.error.conflict"
-	CodeInvalidJSON      = "validation.invalid_json"
-	CodeInvalidInput     = "validation.invalid_input"
-	CodeRequired         = "validation.required"
-	CodeMethodNotAllowed = "common.error.method_not_allowed"
+	CodeUnknown                 = "common.error.unknown"
+	CodeInternal                = "common.error.internal"
+	CodeBadGateway              = "common.error.bad_gateway"
+	CodeUnauthorized            = "auth.error.unauthorized"
+	CodeForbidden               = "auth.error.forbidden"
+	CodeNotFound                = "common.error.not_found"
+	CodeConflict                = "common.error.conflict"
+	CodeInvalidJSON             = "validation.invalid_json"
+	CodeInvalidInput            = "validation.invalid_input"
+	CodeRequired                = "validation.required"
+	CodeMethodNotAllowed        = "common.error.method_not_allowed"
+	CodeTenantScopeRequired     = "tenant.error.scope_required"
+	CodeTenantMigrationRequired = "tenant.error.migration_required"
+	CodeUserContextRequired     = "auth.error.user_context_required"
 
 	CodeUserNotFound                  = "iam.user.not_found"
 	CodeRoleNotFound                  = "iam.role.not_found"
@@ -98,6 +101,12 @@ func MessageForCode(code string) string {
 		return "Required field is missing"
 	case CodeMethodNotAllowed:
 		return "Method not allowed"
+	case CodeTenantScopeRequired:
+		return "A tenant scope is required"
+	case CodeTenantMigrationRequired:
+		return "Tenant migration is required"
+	case CodeUserContextRequired:
+		return "Authenticated user context is required"
 	case CodeUserNotFound:
 		return "User not found"
 	case CodeRoleNotFound:

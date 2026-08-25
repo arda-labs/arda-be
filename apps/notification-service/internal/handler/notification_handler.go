@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -9,6 +10,8 @@ import (
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
 	"github.com/arda-labs/arda/apps/notification-service/internal/service"
 	"github.com/arda-labs/arda/libs/go/arda-auth/usercontext"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 type NotificationHandler struct {
@@ -24,7 +27,7 @@ func (h *NotificationHandler) ListInbox(w http.ResponseWriter, r *http.Request) 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	items, err := h.svc.ListInbox(r.Context(), tenantID, userID, limit)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, err.Error())
+		writeNotificationError(w, r, err)
 		return
 	}
 	out := make([]map[string]any, 0, len(items))
@@ -38,7 +41,7 @@ func (h *NotificationHandler) UnreadCount(w http.ResponseWriter, r *http.Request
 	tenantID, userID := requestUser(r)
 	count, err := h.svc.UnreadCount(r.Context(), tenantID, userID)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, err.Error())
+		writeNotificationError(w, r, err)
 		return
 	}
 	writeJSON(w, r, http.StatusOK, map[string]any{"count": count})
@@ -105,7 +108,7 @@ func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID := requestUser(r)
 	count, err := h.svc.UnreadCount(r.Context(), tenantID, userID)
 	if err != nil {
-		writeError(w, r, http.StatusUnauthorized, err.Error())
+		writeNotificationError(w, r, err)
 		return
 	}
 	flusher, ok := w.(http.Flusher)
@@ -185,6 +188,29 @@ func requestUser(r *http.Request) (string, string) {
 		userID = uc.Subject
 	}
 	return uc.TenantID, userID
+}
+
+func writeNotificationError(w http.ResponseWriter, r *http.Request, err error) {
+	status := http.StatusInternalServerError
+	code := ardaerrors.CodeInternal
+	message := "Notification service failed"
+
+	switch {
+	case errors.Is(err, service.ErrTenantScopeRequired):
+		status = http.StatusConflict
+		code = ardaerrors.CodeTenantScopeRequired
+		message = "A verified tenant scope is required"
+	case errors.Is(err, service.ErrTenantMigrationRequired):
+		status = http.StatusConflict
+		code = ardaerrors.CodeTenantMigrationRequired
+		message = "The current tenant requires migration before notifications can be used"
+	case errors.Is(err, service.ErrUserContextRequired):
+		status = http.StatusBadRequest
+		code = ardaerrors.CodeUserContextRequired
+		message = "Authenticated user context is required"
+	}
+
+	ardahttp.WriteProblem(w, r, status, ardaerrors.New(code, message))
 }
 
 func inboxItemJSON(item domain.InboxItem) map[string]any {
