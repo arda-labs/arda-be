@@ -9,8 +9,8 @@ const findings = []
 const forbidden = [
   /\badmin123\b/i,
   /\b123456\b/,
-  /super-secret-dev-key-change-in-production/i,
-  /auth-gateway-secret/i,
+  new RegExp(["super-secret", "dev-key-change-in-production"].join("-"), "i"),
+  new RegExp(["auth", "gateway-secret"].join("-"), "i"),
 ]
 const credentialedUrl = /(?:postgres(?:ql)?|redis):\/\/[^\s"'`<>$]+:[^\s"'`<>$@]+@/i
 
