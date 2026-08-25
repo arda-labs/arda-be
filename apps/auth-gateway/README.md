@@ -1,6 +1,88 @@
-# Arda Authentication Gateway
+# auth-gateway
+
+`auth-gateway` is Arda's browser-facing auth edge and BFF.
+
+Production browser traffic reaches it at `https://api.arda.io.vn`. The
+frontend is a separate origin (`https://arda.io.vn`), so this service terminates
+credentialed CORS and handles `OPTIONS` preflight before route method checks.
+
+## Responsibilities
+
+- Traefik forward-auth endpoint: `GET /auth/check`
+- Kratos public flow proxy: `/api/kratos/*`
+- Hydra bridge: Kratos-authenticated login accept, consent accept, and token exchange
+- Browser BFF session creation, validation, logout, and header forwarding
+- IAM context resolution before protected requests reach downstream services
+
+## Kratos + Hydra login flow
+
+```txt
+Frontend
+  -> GET /api/kratos/login/api
+  -> POST /api/kratos/login?flow=<flow_id>
+  -> POST /api/auth/kratos/accept-login
+  -> Kratos whoami
+  -> IAM resolve/link by Kratos identity
+  -> Hydra accept login with iam_users.id
+  -> BFF session cookie
+```
+
+Important behavior:
+
+- The API login proxy strips browser-only headers before forwarding to Kratos API
+  flows. This avoids Kratos rejecting API flows as browser/CSRF requests.
+- `whoami` responses can be compressed and must be decoded before JSON parsing.
+- Gateway stores the internal IAM user ID in session user context.
+- `CORS_ALLOWED_ORIGINS` is a comma-separated exact allowlist. Production uses
+  `https://arda.io.vn`; wildcard origins are not valid with BFF cookies.
+- Session cookies stay host-only to the API hostname. OAuth callbacks must also
+  terminate on `api.arda.io.vn` so no parent-domain cookie is required.
+- Browser redirects after OAuth use `FRONTEND_ORIGIN` (production:
+  `https://arda.io.vn`) rather than the callback/API origin.
+
+## Main routes
+
+| Route | Purpose |
+| --- | --- |
+| `GET /auth/check` | ForwardAuth check for Traefik |
+| `POST /api/auth/kratos/accept-login` | Complete Kratos-authenticated Hydra login challenge |
+| `POST /api/auth/accept-consent` | Accept Hydra consent |
+| `POST /api/auth/callback` | Exchange authorization code with Hydra |
+| `GET /api/kratos/whoami` | Proxy Kratos whoami |
+| `GET /api/kratos/login/api` | Create Kratos API login flow |
+| `GET /api/kratos/login/browser` | Create Kratos browser login flow |
+| `GET /api/kratos/login/flows` | Fetch Kratos login flow |
+| `POST /api/kratos/login` | Submit Kratos login flow |
+| `GET/POST /api/kratos/settings*` | Proxy Kratos settings flows |
+| `GET/POST /api/kratos/recovery*` | Proxy Kratos recovery flows |
+| `GET/POST /api/kratos/verification*` | Proxy Kratos verification flows |
+| `GET /api/auth/me` | Return normalized current BFF user context |
+| `POST /api/auth/logout` | Revoke current BFF session |
+| `GET /api/auth/me/sessions` | List BFF sessions for current user |
+
+## CopilotKit runtime boundary
 
 The gateway is the only public entry point for the CopilotKit runtime. It
 validates the Arda session and `ai.assistant.use` permission, then forwards the
 request to the internal `ai-runtime` service with a short-lived workload
 identity token.
+
+## Context forwarding
+
+Protected proxied requests receive:
+
+- `X-User-Id`: internal IAM user UUID
+- `X-User-Subject`: external/Ory subject, for traceability
+- `X-Username`
+- `X-User-Email`
+- `X-Tenant-Id`
+- `X-Roles`
+- `X-Permissions`
+- `X-Global-Roles`
+- `X-Global-Permissions`
+- `X-Global-Admin` (internal capability assertion)
+- `X-Auth-Version`
+- `X-Auth-Time`
+- `X-Auth-Checked: true`
+
+See `../../docs/auth-user-context-contract.md` for the stable contract.
