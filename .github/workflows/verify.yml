@@ -23,7 +23,7 @@ jobs:
       - name: Install protobuf toolchain
         shell: bash
         env:
-          PROTOC_VERSION: 35.0
+          PROTOC_VERSION: "35.0"
         run: |
           set -euo pipefail
           protoc_root="$RUNNER_TEMP/protoc"
