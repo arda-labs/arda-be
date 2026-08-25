@@ -7,6 +7,14 @@ routes:
     permissions:
       - ai.assistant.use
 
+  - id: ai-copilotkit-runtime
+    path: /api/copilotkit/**
+    methods: [POST, OPTIONS]
+    auth: true
+    risk: low
+    permissions:
+      - ai.assistant.use
+
   - id: iam-public
     path: /api/iam/public/**
     auth: false

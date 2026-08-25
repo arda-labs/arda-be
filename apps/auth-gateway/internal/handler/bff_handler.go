@@ -1513,10 +1513,16 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	proxyReq.Header.Set(ardahttp.HeaderRequestID, requestID)
+	serviceAudience := ""
 	if strings.HasPrefix(r.URL.Path, "/api/ai/") {
-		serviceToken, err := identity.Issue(h.cfg.ServiceAuthSecret, "auth-gateway", "ai-service", time.Now(), time.Minute)
+		serviceAudience = "ai-service"
+	} else if strings.HasPrefix(r.URL.Path, "/api/copilotkit") {
+		serviceAudience = "ai-runtime"
+	}
+	if serviceAudience != "" {
+		serviceToken, err := identity.Issue(h.cfg.ServiceAuthSecret, "auth-gateway", serviceAudience, time.Now(), time.Minute)
 		if err != nil {
-			respondRequestError(w, r, http.StatusBadGateway, "ai_service_identity_unavailable")
+			respondRequestError(w, r, http.StatusBadGateway, "ai_runtime_identity_unavailable")
 			return
 		}
 		proxyReq.Header.Set(identity.MetadataKey, serviceToken)
@@ -1741,6 +1747,7 @@ func (h *BFFHandler) upstreamBaseURL(path string) string {
 		{"/api/hrm", h.cfg.HRMServiceURL},
 		{"/api/notifications", h.cfg.NotificationURL},
 		{"/api/mdm", h.cfg.MDMServiceURL},
+		{"/api/copilotkit", h.cfg.CopilotRuntimeURL},
 		{"/api/ai", h.cfg.AIServiceURL},
 	} {
 		if strings.HasPrefix(path, route.prefix) && strings.TrimSpace(route.url) != "" {

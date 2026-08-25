@@ -25,6 +25,7 @@ hrm_service_url: "http://localhost:8097"
 notification_service_url: "http://localhost:8095"
 mdm_service_url: "http://localhost:8096"
 ai_service_url: "http://localhost:8098"
+copilotkit_runtime_url: "http://localhost:8099"
 policy_file: "configs/policy.yaml"
 
 kratos_public_url: "https://identity.arda.io.vn"

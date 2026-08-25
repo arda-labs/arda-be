@@ -14,9 +14,10 @@ vector schema/index changes, and production workload expansion.
 - Keep the browser boundary at `auth-gateway`; the browser never calls an LLM,
   domain database, vector store, or provider directly.
 - Adopt AG-UI-compatible streaming as the agent-to-UI contract.
-- Do not deploy CopilotKit Runtime in the first production slice. CopilotKit
-  React components/hooks may be evaluated against the AG-UI endpoint after the
-  contract and authentication tests pass.
+- Deploy CopilotKit Runtime as a separate internal Node.js `ai-runtime` service
+  in the first CopilotKit production slice. It is reached only through
+  `auth-gateway`; the browser never connects to the runtime or Go service
+  directly. The runtime is an AG-UI adapter, not Arda's authorization boundary.
 - Start with read-only, tenant-scoped tools and cited knowledge answers.
   Mutations require server-side authorization, idempotency, and human approval.
 - Use a service-owned PostgreSQL database named `ai`. Its application tables
@@ -58,8 +59,8 @@ vector schema/index changes, and production workload expansion.
   production workload identity verification, and the first allowlisted
   read-only `crm.customer.get` and `knowledge.search` tools with redacted
   output and knowledge citations.
-- `arda-mfe/apps/shell` has a feature-flagged `/ai` page and a local-only
-  `/ai-protocol-spike` compatibility page, plus a dev proxy for `/api/ai`.
+- `arda-mfe/apps/shell` has a feature-flagged `/ai` page using CopilotKit's
+  headless AG-UI state with Arda's shadcn `Message`/`MessageScroller` UI.
 - `arda-be` documents gateway-injected tenant/auth context and high-risk
   recent-auth/step-up requirements.
 - `arda-mfe` is a Bun/Vite React MFE workspace with an existing cookie-based API

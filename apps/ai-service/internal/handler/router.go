@@ -55,15 +55,18 @@ type toolCallInput struct {
 }
 
 type agentEvent struct {
-	Type       string          `json:"type"`
-	ThreadID   string          `json:"threadId,omitempty"`
-	RunID      string          `json:"runId,omitempty"`
-	MessageID  string          `json:"messageId,omitempty"`
-	ToolCallID string          `json:"toolCallId,omitempty"`
-	ToolName   string          `json:"toolName,omitempty"`
-	Delta      string          `json:"delta,omitempty"`
-	Result     json.RawMessage `json:"result,omitempty"`
-	Error      string          `json:"error,omitempty"`
+	Type         string          `json:"type"`
+	ThreadID     string          `json:"threadId,omitempty"`
+	RunID        string          `json:"runId,omitempty"`
+	MessageID    string          `json:"messageId,omitempty"`
+	ToolCallID   string          `json:"toolCallId,omitempty"`
+	ToolName     string          `json:"toolName,omitempty"`
+	ToolCallName string          `json:"toolCallName,omitempty"`
+	Delta        string          `json:"delta,omitempty"`
+	Result       json.RawMessage `json:"result,omitempty"`
+	Content      string          `json:"content,omitempty"`
+	Role         string          `json:"role,omitempty"`
+	Error        string          `json:"error,omitempty"`
 }
 
 func NewRouter(stores ...runStore) http.Handler {
@@ -254,17 +257,31 @@ func writeToolStream(w http.ResponseWriter, input runInput, definition tools.Def
 		messageID := "msg-" + input.RunID
 		toolCallID := "tool-" + input.RunID
 		writeEvent(writer, agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
-		writeEvent(writer, agentEvent{Type: "TOOL_CALL_START", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, ToolName: definition.Name})
-		toolEvent := agentEvent{Type: "TOOL_CALL_END", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, ToolName: definition.Name, Error: toolError}
+		writeEvent(writer, agentEvent{Type: "TOOL_CALL_START", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, ToolName: definition.Name, ToolCallName: definition.Name})
+		writeEvent(writer, agentEvent{Type: "TOOL_CALL_ARGS", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, Delta: string(input.Tool.Arguments)})
+		toolEvent := agentEvent{Type: "TOOL_CALL_END", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, ToolName: definition.Name, ToolCallName: definition.Name, Error: toolError}
 		if result != nil {
 			toolEvent.Result = result.Data
 		}
 		writeEvent(writer, toolEvent)
+		toolContent := resultContent(result, toolError, assistantMessage)
+		writeEvent(writer, agentEvent{Type: "TOOL_CALL_RESULT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: "tool-msg-" + input.RunID, ToolCallID: toolCallID, Content: toolContent, Role: "tool"})
 		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_START", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
 		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: assistantMessage})
 		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_END", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
 		writeEvent(writer, agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: toolError})
 	})
+}
+
+func resultContent(result *tools.Result, toolError, assistantMessage string) string {
+	if result != nil {
+		return string(result.Data)
+	}
+	if toolError != "" {
+		payload, _ := json.Marshal(map[string]string{"error": toolError, "message": assistantMessage})
+		return string(payload)
+	}
+	return "{}"
 }
 
 func writeStream(w http.ResponseWriter, emit func(*bufio.Writer)) {

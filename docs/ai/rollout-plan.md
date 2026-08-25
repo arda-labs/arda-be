@@ -62,7 +62,23 @@ non-production environment before enabling the flag.
 No finance, IAM, MFA, permission, or irreversible mutation is included in this
 gate.
 
-## Gate 5 — production canary
+## Gate 5 — CopilotKit runtime canary
+
+Deploy `ai-runtime` as two internal replicas. The only public path is the
+authenticated `/api/copilotkit` gateway route. Verify both workload-token hops,
+permission denial, stream cancellation, tool result rendering, and runtime
+failure isolation before enabling the `/ai` feature flag broadly.
+
+Exit criteria:
+
+- `ai-runtime` has no external ingress and no database credentials;
+- gateway and runtime reject missing, expired, wrong-audience, or forged
+  workload assertions;
+- the Go service remains the authority for tool policy and Arda persistence;
+- frontend uses CopilotKit headless state while retaining the shadcn message UI;
+- rollback can disable the route/flag without deleting AI data.
+
+## Gate 6 — production canary
 
 Deploy separate, versioned backend/frontend/infra artifacts through Argo CD with
 a feature flag, explicit resource limits, provider budget, and rollback plan.
@@ -72,7 +88,7 @@ Rollback code while preserving schema compatibility. Disable the feature flag or
 route before considering any data/schema action. Never delete AI data as a
 normal rollback step.
 
-## Gate 6 — expansion
+## Gate 7 — expansion
 
 Only after the canary meets security and quality gates may the team add more
 domains, knowledge classes, or mutation tools. Each addition gets its own tool
@@ -93,7 +109,7 @@ Stop rollout and disable the feature if any of these occurs:
 
 The current change adds the service-owned persistence foundation, the enabled
 `vector` extension, two bounded read-only tools, a disabled-by-default HITL
-proposal boundary, the feature-flagged frontend route, and GitOps wiring. It
-does not add a model provider, vector column/index, source ingestion, or
-mutation executor. The next gate is an explicitly approved knowledge-source
-ingestion flow and provider evaluation.
+proposal boundary, the CopilotKit Node runtime adapter, the headless shadcn
+frontend, and GitOps wiring. It does not add a model provider, vector
+column/index, source ingestion, or mutation executor. The next gate is an
+explicitly approved knowledge-source ingestion flow and provider evaluation.

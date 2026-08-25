@@ -71,5 +71,11 @@ jobs:
             echo "Testing $dir"
             (cd "$dir" && go test ./...)
           done < <(find . -name go.mod -not -path '*/node_modules/*' -print | sort)
+      - name: Verify ai-runtime
+        working-directory: apps/ai-runtime
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
       - name: Check patch hygiene
         run: git diff --check

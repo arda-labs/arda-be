@@ -26,6 +26,8 @@ gitignore
 *.exe
 *.out
 apps/*/bin/
+apps/ai-runtime/node_modules/
+apps/ai-runtime/dist/
 
 # rendered Helm values (generated, chứa secrets)
 deployments/auth/.values-*.rendered.yaml

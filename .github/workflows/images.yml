@@ -59,6 +59,7 @@ jobs:
           script: |
             const services = [
               { service: "ai-service", image: "ai-service", file: "apps/ai-service/Dockerfile", paths: ["apps/ai-service/"] },
+              { service: "ai-runtime", image: "ai-runtime", file: "apps/ai-runtime/Dockerfile", paths: ["apps/ai-runtime/"] },
               { service: "auth-gateway", image: "auth-gateway", file: "apps/auth-gateway/Dockerfile", paths: ["apps/auth-gateway/"] },
               { service: "iam-service", image: "iam-service", file: "apps/iam-service/Dockerfile", paths: ["apps/iam-service/"] },
               { service: "platform-service", image: "platform-service", file: "apps/platform-service/Dockerfile", paths: ["apps/platform-service/"] },

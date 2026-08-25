@@ -26,29 +26,31 @@ and [authentication](https://docs.copilotkit.ai/auth).
 | Tenant and IAM policy | Requires Arda-owned server checks | CopilotKit cannot be the policy engine |
 | HITL | Good presentation/resume model | Use CopilotKit UI only; enforce approval in Go and domain services |
 | Existing MFE dependency rules | Additional shared package and bundle risk | Isolate in an AI feature/remote after a bundle check |
-| Runtime operations | A Node runtime adds a new deployable and secret boundary | Defer until a concrete feature needs it |
+| Runtime operations | A Node runtime adds a new deployable and secret boundary | Accept for CopilotKit; keep it internal and stateless |
 
 ## Decision
 
 ### Adopt now
 
 - Adopt AG-UI-compatible event semantics as the stable agent/UI boundary.
-- Implement a small, versioned Go endpoint behind `auth-gateway`.
-- Use Arda-owned React UI first, with the option to consume `@ag-ui/client`.
+- Keep the versioned Go AG-UI endpoint behind the runtime and `auth-gateway`.
+- Deploy a separate Node.js `ai-runtime` with CopilotKit Runtime and `HttpAgent`
+  to the Go endpoint.
+- Use CopilotKit React v2 headless state with Arda-owned shadcn UI; do not make
+  the default CopilotKit chat component a requirement.
 - Define Arda-specific custom events only for citations, approval cards, and
   policy/status data that do not fit standard events.
 
 ### Evaluate after the first spike
 
-- CopilotKit React v2 chat and `useHumanInTheLoop` against the Go endpoint.
-- Whether a thin TypeScript runtime/BFF is justified for CopilotKit-specific
-  features such as threads, inspector, or richer generated UI.
-- Whether the added runtime improves delivery enough to justify a new service,
-  auth boundary, deployment, observability, and failure mode.
+- CopilotKit React v2 `useHumanInTheLoop`, threads, inspector, and richer
+  generated UI against the internal runtime.
+- Whether each new CopilotKit feature preserves Arda's server-side policy and
+  persistence boundaries.
 
 ### Do not adopt in phase 1
 
-- CopilotKit Runtime as the production authorization boundary.
+- CopilotKit Runtime as the production authorization or tenant boundary.
 - Direct browser-to-model or browser-to-agent connections.
 - CopilotKit generative UI that can construct unrestricted Arda actions.
 - Framework-specific state persistence that bypasses Arda's `ai` records.
@@ -66,7 +68,8 @@ The spike is successful only if all of these pass:
 4. A read-only tool call renders status and a redacted result.
 5. An approval event pauses and resumes a run without losing the run ID.
 6. Disconnect, timeout, duplicate resume, and revoked-session cases fail closed.
-7. `bun run typecheck`, Go tests, contract checks, and `git diff --check` pass.
+7. `bun run typecheck`, Node runtime build, Go tests, contract checks, and
+   `git diff --check` pass.
 
 ## Versioning rule
 

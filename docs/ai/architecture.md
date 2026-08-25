@@ -13,9 +13,13 @@ operator. The model proposes; Arda policy and domain services decide.
 
 ```text
 React MFE / Arda shell
-  -> auth-gateway: /api/ai/*
+  -> auth-gateway: /api/copilotkit
        validates session, tenant, permission, recent-auth where required
-  -> ai-service (Go)
+  -> ai-runtime (Node + CopilotKit Runtime)
+       single-route CopilotKit endpoint
+       verifies gateway workload identity
+       forwards only trusted user context
+       -> ai-service (Go + AG-UI)
        AG-UI-compatible stream
        conversation/run state
        model adapter
@@ -55,6 +59,21 @@ allowed.
 - Keep IAM security audit as the source of truth for authentication and
   authorization events.
 
+### CopilotKit runtime
+
+- Provide the browser-facing CopilotKit single-route endpoint as an internal
+  Node.js deployment, not as a public ingress.
+- Verify the short-lived `auth-gateway -> ai-runtime` workload assertion and
+  the gateway-derived actor, tenant, and permission context.
+- Create the AG-UI `HttpAgent` request to Go with a new
+  `ai-runtime -> ai-service` workload assertion. Never forward browser cookies,
+  authorization tokens, or arbitrary identity headers.
+- Adapt UI-only `forwardedProps.ardaTool` into the existing Go request shape;
+  Go remains the authority for tool allowlists, argument validation, and
+  domain permissions.
+- Keep the runtime stateless. Conversation/run/tool persistence remains in
+  the Go service and the Arda-owned `ai` database.
+
 ### AI service
 
 - Resolve and re-check the actor/tenant context for every tool execution.
@@ -82,17 +101,20 @@ allowed.
 
 ## Request lifecycle
 
-1. Browser opens an authenticated AI request through the gateway.
-2. Gateway validates session, route permission, tenant context, and risk.
-3. AI service creates or resumes a run under the server-derived actor and tenant.
-4. Retrieval applies tenant and document ACL filters before any content reaches
+1. Browser opens an authenticated CopilotKit request through the gateway.
+2. Gateway validates session, route permission, tenant context, and risk, then
+   signs a short-lived assertion for `ai-runtime`.
+3. Node runtime verifies the assertion and calls Go with a separate
+   `ai-runtime -> ai-service` assertion plus trusted delegated context.
+4. Go creates or resumes a run under the server-derived actor and tenant.
+5. Retrieval applies tenant and document ACL filters before any content reaches
    the model.
-5. The model may answer or request an allowlisted tool. Tool policy validates
+6. The model may answer or request an allowlisted tool. Tool policy validates
    arguments and calls the owning service.
-6. A high-risk mutation pauses for a server-enforced approval checkpoint.
-7. AI service streams typed lifecycle/message/tool/approval events and commits
+7. A high-risk mutation pauses for a server-enforced approval checkpoint.
+8. AI service streams typed lifecycle/message/tool/approval events and commits
    the final run state.
-8. AI operational audit and metrics record outcome, latency, policy decisions,
+9. AI operational audit and metrics record outcome, latency, policy decisions,
    and redaction-safe references.
 
 ## Non-goals for phase 1
