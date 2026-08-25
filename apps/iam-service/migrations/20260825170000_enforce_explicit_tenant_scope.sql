@@ -7,6 +7,7 @@ ALTER TABLE iam_users ALTER COLUMN tenant_id DROP DEFAULT;
 ALTER TABLE iam_roles ALTER COLUMN tenant_id DROP DEFAULT;
 ALTER TABLE iam_groups ALTER COLUMN tenant_id DROP DEFAULT;
 
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -39,6 +40,7 @@ BEGIN
             CHECK (btrim(tenant_id) <> '' AND tenant_id <> 'default') NOT VALID;
     END IF;
 END $$;
+-- +goose StatementEnd
 
 -- +goose Down
 ALTER TABLE iam_users DROP CONSTRAINT IF EXISTS iam_users_explicit_tenant_ck;

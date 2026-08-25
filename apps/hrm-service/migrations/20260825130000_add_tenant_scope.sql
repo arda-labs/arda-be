@@ -2,6 +2,7 @@
 -- Existing rows must be assigned by an explicit data-owner migration before
 -- this schema change is deployed. There is intentionally no synthetic tenant
 -- fallback because that would merge unrelated HRM data.
+-- +goose StatementBegin
 DO $$
 DECLARE
     table_name text;
@@ -20,6 +21,7 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
+-- +goose StatementEnd
 
 ALTER TABLE hrm_positions ADD COLUMN tenant_id text;
 ALTER TABLE hrm_job_titles ADD COLUMN tenant_id text;
