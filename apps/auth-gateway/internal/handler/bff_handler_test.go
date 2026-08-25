@@ -51,6 +51,7 @@ func TestUpstreamBaseURLRoutesKnownAPIPrefixes(t *testing.T) {
 		CRMServiceURL:      "http://crm",
 		NotificationURL:    "http://notification",
 		MDMServiceURL:      "http://mdm",
+		AIServiceURL:       "http://ai",
 	}}
 
 	tests := map[string]string{
@@ -64,6 +65,7 @@ func TestUpstreamBaseURLRoutesKnownAPIPrefixes(t *testing.T) {
 		"/api/crm/customers":        "http://crm",
 		"/api/notifications/unread": "http://notification",
 		"/api/mdm/items":            "http://mdm",
+		"/api/ai/agent":             "http://ai",
 	}
 	for path, want := range tests {
 		if got := handler.upstreamBaseURL(path); got != want {

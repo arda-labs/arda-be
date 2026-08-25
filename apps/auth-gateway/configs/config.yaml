@@ -24,6 +24,7 @@ crm_service_url: "http://localhost:8094"
 hrm_service_url: "http://localhost:8097"
 notification_service_url: "http://localhost:8095"
 mdm_service_url: "http://localhost:8096"
+ai_service_url: "http://localhost:8098"
 policy_file: "configs/policy.yaml"
 
 kratos_public_url: "https://identity.arda.io.vn"

@@ -37,6 +37,7 @@ type Config struct {
 	HRMServiceURL             string `yaml:"hrm_service_url"`
 	NotificationURL           string `yaml:"notification_service_url"`
 	MDMServiceURL             string `yaml:"mdm_service_url"`
+	AIServiceURL              string `yaml:"ai_service_url"`
 	PolicyFile                string `yaml:"policy_file"`
 
 	RedisURL            string `yaml:"redis_url"`
@@ -81,6 +82,7 @@ func Load() Config {
 		HRMServiceURL:             "http://localhost:8097",
 		NotificationURL:           "http://localhost:8095",
 		MDMServiceURL:             "http://localhost:8096",
+		AIServiceURL:              "http://localhost:8098",
 		PolicyFile:                "configs/policy.yaml",
 		SessionCookieName:         "arda_sid",
 		SessionStore:              "redis",
@@ -131,6 +133,7 @@ func Load() Config {
 	envStr("HRM_SERVICE_URL", &cfg.HRMServiceURL)
 	envStr("NOTIFICATION_SERVICE_URL", &cfg.NotificationURL)
 	envStr("MDM_SERVICE_URL", &cfg.MDMServiceURL)
+	envStr("AI_SERVICE_URL", &cfg.AIServiceURL)
 	envStr("POLICY_FILE", &cfg.PolicyFile)
 	envStr("REDIS_URL", &cfg.RedisURL)
 	envStr("SESSION_STORE", &cfg.SessionStore)
@@ -196,6 +199,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("hrm_service_url", &c.HRMServiceURL)
 	setStr("notification_service_url", &c.NotificationURL)
 	setStr("mdm_service_url", &c.MDMServiceURL)
+	setStr("ai_service_url", &c.AIServiceURL)
 	setStr("policy_file", &c.PolicyFile)
 	setStr("redis_url", &c.RedisURL)
 	setStr("session_store", &c.SessionStore)

@@ -6,6 +6,7 @@ Go workspace for Arda backend services.
 
 | Service | Responsibility |
 | --- | --- |
+| `apps/ai-service` | AI protocol spike; orchestration and tools are not enabled yet |
 | `apps/auth-gateway` | Auth edge/BFF, sessions, Kratos/Hydra proxy, forward-auth |
 | `apps/iam-service` | IAM, users, roles, permissions, MFA, audit |
 | `apps/finance-service` | Finance accounts, transactions, approvals, operation queues, accounting config reads |
@@ -22,6 +23,7 @@ Go workspace for Arda backend services.
 - [Tenant Context Contract](docs/tenant-context-contract.md)
 - [HTTP Problem Details Catalog](docs/problems/README.md)
 - [Deployment Namespace Layout](docs/deployment-namespace-layout.md)
+- [AI Architecture and Phase Plan](docs/ai/README.md)
 - [GHCR and k3s Deployment](docs/ghcr-k3s-deployment.md)
 - Argo CD and Kubernetes manifests live in sibling repo `arda-infra`.
 - [Platform Service](docs/platform-service.md)

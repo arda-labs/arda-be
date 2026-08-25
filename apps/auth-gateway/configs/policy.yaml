@@ -1,4 +1,12 @@
 routes:
+  - id: ai-agent-spike
+    path: /api/ai/agent
+    methods: [POST]
+    auth: true
+    risk: low
+    permissions:
+      - ai.assistant.use
+
   - id: iam-public
     path: /api/iam/public/**
     auth: false

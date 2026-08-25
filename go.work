@@ -1,6 +1,7 @@
 go 1.26.3
 
 use (
+	./apps/ai-service
 	./apps/auth-gateway
 	./apps/crm-service
 	./apps/finance-service
