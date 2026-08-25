@@ -43,6 +43,17 @@ tenant, amount, or arguments after the approval summary is created.
 | Strong confirm | Submit workflow, change business record, send external message | Disabled until reviewed |
 | Step-up | Finance transfer/approval, role/MFA/security change | Must use IAM recent-auth/step-up and domain approval |
 
+## Implemented proposal boundary
+
+The Go AI service has a disabled-by-default proposal boundary for the
+non-production Gate 4 test. With `AI_ENABLE_HITL_PROPOSALS=true`, it accepts
+only the typed `crm.customer.export.prepare` proposal (`customerId` plus
+`csv`/`json` format), persists a redacted `PENDING` approval with an
+idempotency key, and permits an independent approver to approve or reject it.
+Approval does not create an export, call CRM, or resume a run; an owning domain
+executor must be designed and separately approved before any side effect is
+allowed. Production keeps this flag disabled.
+
 ## Safety rules
 
 - Deny expired, duplicated, already-consumed, or permission-invalid approvals.

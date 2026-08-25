@@ -19,6 +19,8 @@ Use explicit permission codes owned by IAM, for example:
   read-only slice);
 - `ai.tool.<domain>.<operation>` — invoke a named tool;
 - `ai.approval.execute` — approve a particular action class.
+- `ai.approval.propose` — create a typed, non-executing proposal (implemented
+  behind a disabled-by-default feature flag).
 
 These names are proposed and require alignment with IAM permission conventions.
 Do not grant `ai.*` wildcard access to normal users.

@@ -71,7 +71,9 @@ func main() {
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: ardahttp.MetricsMiddleware(cfg.AppName, handler.ServiceAuthMiddleware(
-			handler.NewRouterWithDependencies(store, resolver),
+			handler.NewRouterWithOptions(store, resolver, handler.RouterOptions{
+				EnableHITLProposals: cfg.EnableHITLProposals,
+			}),
 			cfg.ServiceAuthSecret,
 			cfg.Mode == "production",
 		)),
@@ -80,7 +82,7 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	logger.Info("AI service started", "addr", cfg.HTTPAddr, "mode", cfg.Mode, "persistent", store != nil, "read_tools", resolver != nil)
+	logger.Info("AI service started", "addr", cfg.HTTPAddr, "mode", cfg.Mode, "persistent", store != nil, "read_tools", resolver != nil, "hitl_proposals", cfg.EnableHITLProposals)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error("AI protocol spike stopped", "err", err)
 		os.Exit(1)

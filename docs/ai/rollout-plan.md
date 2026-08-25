@@ -48,11 +48,14 @@ ingestion remain separate gates.
 Success is measured by grounded/cited answers, zero ACL leakage, bounded
 latency, and a clean failure path—not by autonomous breadth.
 
-## Gate 4 — controlled HITL proposal
+## Gate 4 — controlled HITL proposal (proposal boundary implemented)
 
-Add one low-risk proposal or draft flow with server-side approval and idempotency
-in a non-production environment. Validate permission revocation, stale resource,
-duplicate resume, expiry, reconnect, and audit behavior.
+The service now has a disabled-by-default, typed proposal boundary for one
+low-risk `crm.customer.export.prepare` flow. It persists server-side approval
+and idempotency state and supports independent approve/reject decisions, but it
+does not execute or resume any side effect. Validate permission revocation,
+stale resource, duplicate resume, expiry, reconnect, and audit behavior in a
+non-production environment before enabling the flag.
 
 No finance, IAM, MFA, permission, or irreversible mutation is included in this
 gate.
@@ -87,7 +90,8 @@ Stop rollout and disable the feature if any of these occurs:
 ## Current implementation boundary
 
 The current change adds the service-owned persistence foundation, two bounded
-read-only tools, the feature-flagged frontend route, and GitOps wiring. It does
-not add a model provider, `pgvector`, source ingestion, or mutation tool. The
-next gate is live canary verification, followed by an explicitly approved
-knowledge-source ingestion flow and only then a non-production HITL proposal.
+read-only tools, a disabled-by-default HITL proposal boundary, the
+feature-flagged frontend route, and GitOps wiring. It does not add a model
+provider, `pgvector`, source ingestion, or mutation executor. The next gate is
+non-production approval lifecycle verification, followed by an explicitly
+approved knowledge-source ingestion flow and provider evaluation.

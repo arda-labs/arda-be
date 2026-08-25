@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
@@ -32,8 +33,10 @@ func (s *fakeRunStore) Finish(_ context.Context, run repository.RunContext, _ st
 
 type fakeToolRunStore struct {
 	fakeRunStore
-	toolStarted  bool
-	toolFinished bool
+	toolStarted     bool
+	toolFinished    bool
+	approvalCreated bool
+	approvalDecided bool
 }
 
 func (s *fakeToolRunStore) StartTool(_ context.Context, _ repository.RunContext, _ string, _ int, _, _, _ string) (string, error) {
@@ -44,6 +47,16 @@ func (s *fakeToolRunStore) StartTool(_ context.Context, _ repository.RunContext,
 func (s *fakeToolRunStore) FinishTool(_ context.Context, _, _, _, _ string) error {
 	s.toolFinished = true
 	return nil
+}
+
+func (s *fakeToolRunStore) CreateApprovalProposal(_ context.Context, _ repository.ApprovalProposal) (repository.ApprovalRecord, error) {
+	s.approvalCreated = true
+	return repository.ApprovalRecord{ID: "approval-1", Status: "PENDING", ExpiresAt: time.Now().UTC().Add(time.Minute)}, nil
+}
+
+func (s *fakeToolRunStore) DecideApproval(_ context.Context, _, _, _, _ string) (repository.ApprovalRecord, error) {
+	s.approvalDecided = true
+	return repository.ApprovalRecord{ID: "approval-1", Status: "APPROVED", ExpiresAt: time.Now().UTC().Add(time.Minute)}, nil
 }
 
 type handlerTestTool struct{}
@@ -151,6 +164,56 @@ func TestRunExecutesAllowlistedReadToolAndEmitsToolEvents(t *testing.T) {
 		if !strings.Contains(res.Body.String(), event) {
 			t.Fatalf("stream missing %q: %s", event, res.Body.String())
 		}
+	}
+}
+
+func TestApprovalProposalIsTypedAndFeatureFlagged(t *testing.T) {
+	store := &fakeToolRunStore{}
+	body := `{"threadId":"t-approval","runId":"r-approval","idempotencyKey":"idem-1","tool":{"name":"crm.customer.export.prepare","version":1,"arguments":{"customerId":"customer-1","format":"csv"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/approvals", strings.NewReader(body))
+	for key, value := range map[string]string{
+		"X-Auth-Checked": "true", "X-User-Id": "user-1", "X-Tenant-Id": "tenant-1",
+		"X-Permissions": "ai.assistant.use,ai.approval.propose,crm.customer.read",
+	} {
+		req.Header.Set(key, value)
+	}
+	res := httptest.NewRecorder()
+	NewRouterWithOptions(store, nil, RouterOptions{EnableHITLProposals: true}).ServeHTTP(res, req)
+	if res.Code != http.StatusCreated || !store.approvalCreated || !strings.Contains(res.Body.String(), `"status":"PENDING"`) {
+		t.Fatalf("proposal response = %d/%v/%s", res.Code, store.approvalCreated, res.Body.String())
+	}
+
+	bad := httptest.NewRequest(http.MethodPost, "/api/ai/approvals", strings.NewReader(`{"threadId":"t","runId":"r","idempotencyKey":"i","tool":{"name":"crm.customer.export.prepare","arguments":{"customerId":"c","format":"csv","secret":"no"}}}`))
+	for key, value := range map[string]string{
+		"X-Auth-Checked": "true", "X-User-Id": "user-1", "X-Tenant-Id": "tenant-1",
+		"X-Permissions": "ai.assistant.use,ai.approval.propose,crm.customer.read",
+	} {
+		bad.Header.Set(key, value)
+	}
+	badResponse := httptest.NewRecorder()
+	NewRouterWithOptions(store, nil, RouterOptions{EnableHITLProposals: true}).ServeHTTP(badResponse, bad)
+	if badResponse.Code != http.StatusBadRequest {
+		t.Fatalf("invalid proposal status = %d", badResponse.Code)
+	}
+
+	disabled := httptest.NewRecorder()
+	NewRouterWithOptions(store, nil, RouterOptions{}).ServeHTTP(disabled, req)
+	if disabled.Code != http.StatusNotFound {
+		t.Fatalf("disabled proposal status = %d", disabled.Code)
+	}
+}
+
+func TestApprovalDecisionRequiresIndependentApproverPermission(t *testing.T) {
+	store := &fakeToolRunStore{}
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/approvals/approval-1/decision", strings.NewReader(`{"decision":"approve"}`))
+	req.Header.Set("X-Auth-Checked", "true")
+	req.Header.Set("X-User-Id", "approver-1")
+	req.Header.Set("X-Tenant-Id", "tenant-1")
+	req.Header.Set("X-Permissions", "ai.assistant.use,ai.approval.execute")
+	res := httptest.NewRecorder()
+	NewRouterWithOptions(store, nil, RouterOptions{EnableHITLProposals: true}).ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !store.approvalDecided || !strings.Contains(res.Body.String(), `"status":"APPROVED"`) {
+		t.Fatalf("decision response = %d/%v/%s", res.Code, store.approvalDecided, res.Body.String())
 	}
 }
 
