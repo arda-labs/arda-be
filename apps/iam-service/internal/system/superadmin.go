@@ -11,8 +11,10 @@ const (
 	SuperAdminExternalSubject = "super-admin"
 	// SuperAdminTenantID is a reserved bootstrap/system tenant. It is used only
 	// for the explicitly provisioned super-admin record; request middleware and
-	// domain repositories must never use it as a missing-scope fallback.
-	SuperAdminTenantID = "default"
+	// domain repositories must never use it as a missing-scope fallback. It must
+	// not use the legacy "default" placeholder, which is rejected for new IAM
+	// writes by the explicit tenant-scope migration.
+	SuperAdminTenantID = "system"
 
 	SuperAdminRoleCode       = "SUPER_ADMIN"
 	SuperAdminPermissionCode = "superadmin"
