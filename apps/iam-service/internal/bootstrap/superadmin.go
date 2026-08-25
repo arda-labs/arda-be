@@ -34,7 +34,7 @@ func ensureSuperAdminRole(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO iam_roles (id, code, name, status, tenant_id)
 		VALUES ($1, $2, 'Super Administrator', 'ACTIVE', $3)
-		ON CONFLICT (code) DO UPDATE SET
+		ON CONFLICT (tenant_id, code) DO UPDATE SET
 			name = EXCLUDED.name,
 			status = 'ACTIVE',
 			tenant_id = EXCLUDED.tenant_id,
@@ -64,11 +64,11 @@ func ensureSuperAdminPermission(ctx context.Context, db *sql.DB) error {
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO iam_role_permissions (role_id, permission_id)
 		VALUES (
-			(SELECT id FROM iam_roles WHERE code = $1),
-			(SELECT id FROM iam_permissions WHERE code = $2)
+			(SELECT id FROM iam_roles WHERE code = $1 AND tenant_id = $2),
+			(SELECT id FROM iam_permissions WHERE code = $3)
 		)
 		ON CONFLICT DO NOTHING
-	`, system.SuperAdminRoleCode, system.SuperAdminPermissionCode)
+	`, system.SuperAdminRoleCode, system.SuperAdminTenantID, system.SuperAdminPermissionCode)
 	if err != nil {
 		return fmt.Errorf("assign superadmin permission: %w", err)
 	}
@@ -101,10 +101,10 @@ func ensureSuperAdminUser(ctx context.Context, db *sql.DB, opts SuperAdminOption
 		INSERT INTO iam_user_roles (user_id, role_id)
 		VALUES (
 			(SELECT id FROM iam_users WHERE username = $1),
-			(SELECT id FROM iam_roles WHERE code = $2)
+			(SELECT id FROM iam_roles WHERE code = $2 AND tenant_id = $3)
 		)
 		ON CONFLICT DO NOTHING
-	`, system.SuperAdminUsername, system.SuperAdminRoleCode)
+	`, system.SuperAdminUsername, system.SuperAdminRoleCode, system.SuperAdminTenantID)
 	if err != nil {
 		return fmt.Errorf("assign superadmin role: %w", err)
 	}
@@ -112,10 +112,10 @@ func ensureSuperAdminUser(ctx context.Context, db *sql.DB, opts SuperAdminOption
 		INSERT INTO iam_role_assignments (principal_type, principal_id, role_id, scope_type)
 		SELECT 'USER', u.id, r.id, 'global'
 		FROM iam_users u
-		JOIN iam_roles r ON r.code = $2
+		JOIN iam_roles r ON r.code = $2 AND r.tenant_id = $3
 		WHERE u.username = $1
 		ON CONFLICT DO NOTHING
-	`, system.SuperAdminUsername, system.SuperAdminRoleCode)
+	`, system.SuperAdminUsername, system.SuperAdminRoleCode, system.SuperAdminTenantID)
 	if err != nil {
 		return fmt.Errorf("assign superadmin role assignment: %w", err)
 	}
@@ -124,10 +124,10 @@ func ensureSuperAdminUser(ctx context.Context, db *sql.DB, opts SuperAdminOption
 		INSERT INTO iam_user_organizations (user_id, organization_id)
 		SELECT u.id, o.id
 		FROM iam_users u
-		JOIN iam_organizations o ON o.code = 'root'
+		JOIN iam_organizations o ON o.code = 'root' AND o.tenant_id = $2
 		WHERE u.username = $1
 		ON CONFLICT DO NOTHING
-	`, system.SuperAdminUsername)
+	`, system.SuperAdminUsername, system.InitialBusinessTenantID)
 	if err != nil {
 		slog.Warn("assign superadmin root org skipped", "err", err)
 	}
@@ -140,10 +140,10 @@ func ensureDevAdminSuperAdmin(ctx context.Context, db *sql.DB) error {
 		INSERT INTO iam_user_roles (user_id, role_id)
 		SELECT u.id, r.id
 		FROM iam_users u
-		JOIN iam_roles r ON r.code = $1
+		JOIN iam_roles r ON r.code = $1 AND r.tenant_id = $2
 		WHERE u.username = 'admin' OR u.email = 'admin@arda.local'
 		ON CONFLICT DO NOTHING
-	`, system.SuperAdminRoleCode)
+	`, system.SuperAdminRoleCode, system.SuperAdminTenantID)
 	if err != nil {
 		return fmt.Errorf("assign dev admin superadmin role: %w", err)
 	}
@@ -151,10 +151,10 @@ func ensureDevAdminSuperAdmin(ctx context.Context, db *sql.DB) error {
 		INSERT INTO iam_role_assignments (principal_type, principal_id, role_id, scope_type)
 		SELECT 'USER', u.id, r.id, 'global'
 		FROM iam_users u
-		JOIN iam_roles r ON r.code = $1
+		JOIN iam_roles r ON r.code = $1 AND r.tenant_id = $2
 		WHERE u.username = 'admin' OR u.email = 'admin@arda.local'
 		ON CONFLICT DO NOTHING
-	`, system.SuperAdminRoleCode)
+	`, system.SuperAdminRoleCode, system.SuperAdminTenantID)
 	if err != nil {
 		return fmt.Errorf("assign dev admin superadmin role assignment: %w", err)
 	}
@@ -177,7 +177,7 @@ func ensureDevAdminSuperAdmin(ctx context.Context, db *sql.DB) error {
 		INSERT INTO iam_user_organizations (user_id, organization_id)
 		SELECT u.id, o.id
 		FROM iam_users u
-		JOIN iam_organizations o ON o.code = 'root'
+		JOIN iam_organizations o ON o.code = 'root' AND o.tenant_id = u.tenant_id
 		WHERE u.username = 'admin' OR u.email = 'admin@arda.local'
 		ON CONFLICT DO NOTHING
 	`)

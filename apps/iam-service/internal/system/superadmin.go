@@ -15,6 +15,9 @@ const (
 	// not use the legacy "default" placeholder, which is rejected for new IAM
 	// writes by the explicit tenant-scope migration.
 	SuperAdminTenantID = "system"
+	// InitialBusinessTenantID is the stable tenant created by the tenant
+	// registry migration for legacy single-tenant data.
+	InitialBusinessTenantID = "00000000-0000-0000-0000-000000000010"
 
 	SuperAdminRoleCode       = "SUPER_ADMIN"
 	SuperAdminPermissionCode = "superadmin"
