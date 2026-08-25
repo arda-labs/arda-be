@@ -103,6 +103,10 @@ func (s *AdminUserService) ListUsers(ctx context.Context, params repository.List
 
 	items := make([]AdminUserSummary, 0, len(users))
 	for _, u := range users {
+		roles := rolesByUserID[u.ID]
+		if roles == nil {
+			roles = []string{}
+		}
 		items = append(items, AdminUserSummary{
 			ID:               u.ID,
 			Username:         u.Username,
@@ -118,7 +122,7 @@ func (s *AdminUserService) ListUsers(ctx context.Context, params repository.List
 			Status:           u.Status,
 			Source:           u.Source,
 			KratosIdentityID: u.KratosIdentityID,
-			Roles:            rolesByUserID[u.ID],
+			Roles:            roles,
 			TenantID:         u.TenantID,
 			CreatedAt:        u.CreatedAt,
 		})
