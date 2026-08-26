@@ -6,12 +6,17 @@ Go workspace for Arda backend services.
 
 | Service | Responsibility |
 | --- | --- |
-| `apps/ai-service` | AG-UI-compatible AI boundary with persistent runs; model/tools remain gated |
-| `apps/auth-gateway` | Auth edge/BFF, sessions, Kratos/Hydra proxy, forward-auth |
+| `apps/ai-service` | AG-UI-compatible AI boundary: model agent loop, allowlisted tools, HITL approvals, conversation persistence |
+| `apps/ai-runtime` | Internal Node/CopilotKit adapter between gateway and ai-service (no authorization role) |
+| `apps/auth-gateway` | Auth edge/BFF, sessions, Kratos/Hydra proxy, forward-auth, AI proxy |
 | `apps/iam-service` | IAM, users, roles, permissions, MFA, audit |
 | `apps/finance-service` | Finance accounts, transactions, approvals, operation queues, accounting config reads |
 | `apps/workflow-service` | Zeebe facade, business cases, workflow configuration, BPMN process definitions |
 | `apps/platform-service` | Platform reference data, parameters, lookups, organizations, geography |
+| `apps/crm-service` | Customers and membership workbench |
+| `apps/hrm-service` | Positions, job titles, org units, employees, registrations |
+| `apps/media-service` | Media assets on S3/Garage |
+| `apps/notification-service` | Notification inbox and streams |
 | `apps/mdm-service` | MDM scaffold |
 
 ## Docs

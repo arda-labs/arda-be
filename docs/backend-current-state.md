@@ -17,11 +17,17 @@ Current services:
 
 | Service | Status | Responsibility |
 | --- | --- | --- |
-| `auth-gateway` | active | BFF/auth edge, session, Kratos/Hydra proxy, forward-auth |
+| `auth-gateway` | active | BFF/auth edge, session, Kratos/Hydra proxy, forward-auth, CopilotKit AI proxy |
 | `iam-service` | active | users, roles, permissions, sessions, MFA, audit, login orchestration |
 | `finance-service` | active | accounts, transactions, approvals, finance operation queues, accounting config reads |
 | `workflow-service` | active | Zeebe facade, business cases, workflow configuration, BPMN process definitions, monitoring data facade |
 | `platform-service` | scaffolded/active | system parameters, lookups, organizations, credit institutions, administrative geography |
+| `crm-service` | active | customers and membership workbench |
+| `hrm-service` | active | positions, job titles, org units, employees, registrations |
+| `media-service` | scaffolded/active | media assets on S3/Garage |
+| `notification-service` | active | notification inbox and streams |
+| `ai-service` | active (flagged) | AG-UI assistant boundary: model agent loop, allowlisted tools, HITL approvals, conversation persistence |
+| `ai-runtime` | active (internal) | Node/CopilotKit single-route adapter between gateway and ai-service; no authorization role |
 | `mdm-service` | scaffold | placeholder service |
 
 ## Current Edge Flow
@@ -178,6 +184,21 @@ Known workflow gaps:
 - real Zeebe workers calling domain services over gRPC
 - workflow worker command contracts for CRM/HRM/Finance domain callbacks
 
+## AI Service State
+
+`ai-service` implements the AG-UI assistant boundary documented in
+[docs/ai](ai/README.md):
+
+- optional model-driven agent loop (`AI_ENABLE_AGENT`) over an
+  OpenAI-compatible streaming provider behind the `model.Provider` interface;
+  without it the endpoint stays deterministic
+- allowlisted tools `crm.customer.get`, `knowledge.search`, and (behind the
+  HITL flag) confirm-kind `crm.customer.export.prepare`
+- server-enforced approvals: proposal on confirm request, independent
+  approver decision, owner-only execution resume
+- owner-scoped `GET /api/ai/conversations[/messages]`
+- per-tenant/user rate limiting and graceful shutdown
+
 ## Platform Service State
 
 `platform-service` was added as the owner of shared platform/reference data:
@@ -279,6 +300,8 @@ Verified:
 - `go test ./...` passes in `apps/iam-service`
 - `go test ./...` passes in `apps/finance-service`
 - `go test ./...` passes in `apps/workflow-service`
+- `go test ./...` passes in `apps/ai-service` (agent loop, HITL resume,
+  model client SSE parsing)
 - `platform-service` compiles
 
 Not verified locally:

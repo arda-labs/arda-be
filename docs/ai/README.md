@@ -1,7 +1,12 @@
 # Arda AI phase
 
-Status: architecture and design review complete; the persistent read-only
-vertical slice is implemented and being rolled out to the real K3s cluster.
+Status: the persistent read-only vertical slice is implemented and rolling out
+to the real K3s cluster. The model-driven agent loop (OpenAI-compatible
+streaming provider behind a `model.Provider` interface), server-enforced
+approval proposals for `confirm`-kind tools, owner-triggered approval
+execution, and owner-scoped conversation APIs are implemented and tested.
+Remaining: production knowledge content, vector retrieval, and any real
+mutation beyond `prepare`.
 
 This directory is the source of truth for the first AI phase across `arda-be`,
 `arda-mfe`, and `arda-infra`. The documents precede model-provider secrets,
@@ -54,13 +59,18 @@ vector schema/index changes, and production workload expansion.
 
 - `arda-be` has Go services with service-owned PostgreSQL databases and Goose
   migrations. IAM owns users, tenants, permissions, MFA, and security audit.
-- `arda-be/apps/ai-service` contains the deterministic AG-UI boundary, Goose
-  migrations, tenant/actor-owned conversation persistence, replay protection,
-  production workload identity verification, and the first allowlisted
-  read-only `crm.customer.get` and `knowledge.search` tools with redacted
-  output and knowledge citations.
-- `arda-mfe/apps/shell` has a feature-flagged `/ai` page using CopilotKit's
-  headless AG-UI state with Arda's shadcn `Message`/`MessageScroller` UI.
+- `arda-be/apps/ai-service` contains the AG-UI boundary with an optional
+  model-driven agent loop (`AI_ENABLE_AGENT` + OpenAI-compatible provider),
+  Goose migrations, tenant/actor-owned conversation persistence, replay
+  protection, production workload identity verification, allowlisted read-only
+  `crm.customer.get`, `knowledge.search`, and `crm.customer.export.prepare`
+  tools with redacted output and knowledge citations. Confirm-kind tools
+  create approval proposals instead of executing; the run owner resumes an
+  approved proposal through `/api/ai/approvals/{id}/execution`.
+- `arda-mfe/apps/shell` ships the Olorin assistant panel (`@workspace/ai`,
+  Ctrl/Cmd+J) using CopilotKit's headless AG-UI state with Arda's shadcn
+  `Message`/`MessageScroller` UI, typed tool renderers, an approval card with
+  resume, and conversation history backed by the new conversations API.
 - `arda-be` documents gateway-injected tenant/auth context and high-risk
   recent-auth/step-up requirements.
 - `arda-mfe` is a Bun/Vite React MFE workspace with an existing cookie-based API
@@ -70,9 +80,11 @@ vector schema/index changes, and production workload expansion.
 
 ## Explicitly not done
 
-The current rollout has the `vector` extension but no vector column/index,
-model credential, AI ingress, or mutation tool. Knowledge retrieval uses
-PostgreSQL full-text search over
-explicitly published sources and has no production content until an owner
-publishes approved sources. The service remains provider-neutral and does not
-execute side effects.
+The rollout has the `vector` extension but no vector column/index, and no
+production knowledge content until an owner publishes approved sources.
+Knowledge retrieval uses PostgreSQL full-text search. `crm.customer.export.prepare`
+still creates no export artifact — it only verifies scope; a real export
+executor must be designed with the owning domain service. Multi-provider
+routing (cloud vs local model per tenant) is prepared through the
+`model.Provider` interface but not implemented; provider configuration is
+environment-based today. The service executes no other side effects.

@@ -44,7 +44,7 @@ The first production allowlist should be small and read-only, for example:
 - `workflow.case.get_status` — status of a case the user may already read.
 - `platform.lookup.search` — approved reference data only.
 
-The first enabled read tools are:
+The enabled tools are:
 
 - `crm.customer.get`: accepts only `{"customerId":"..."}`, resolves tenant
   and organization scope from the gateway context, requires
@@ -53,9 +53,14 @@ The first enabled read tools are:
 - `knowledge.search`: accepts only `{"query":"...","limit":1..5}`, requires
   `ai.assistant.use` plus `ai.knowledge.read`, searches only published tenant,
   global, or system sources, and returns bounded chunks with source citations.
+- `crm.customer.export.prepare` (kind `confirm`, behind the HITL flag):
+  accepts only `{"customerId":"...","format":"csv"|"json"}`; the registry
+  refuses direct execution, so requesting it produces an approval proposal
+  that the run owner can later execute.
 
-The remaining tools are not enabled merely because they appear in this
-document.
+Every enabled definition carries its JSON Schema in `Definition.Parameters`,
+which is what the model receives for function calling. The remaining tools
+listed above are not enabled merely because they appear in this document.
 
 ## Tool result rules
 

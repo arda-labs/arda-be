@@ -17,12 +17,10 @@ Exit criteria:
 
 ## Gate 1 — protocol and security spike (complete)
 
-The initial deterministic Go endpoint now exists at
-`arda-be/apps/ai-service` with no model credential, database, or tool. The
-gateway has a policy/upstream route and the shell has a local-only
-`/ai-protocol-spike` page enabled with `VITE_AI_PROTOCOL_SPIKE=true`. The
-remaining Gate 1 work is to run the stack together and exercise reconnect,
-cancellation, and error envelopes.
+The initial deterministic Go endpoint exists at `arda-be/apps/ai-service`. The
+gateway has a policy/upstream route and the shell keeps a legacy
+`/ai-protocol-spike` route enabled with `VITE_AI_PROTOCOL_SPIKE=true` (now
+rendered by the Olorin panel page).
 
 Exit criteria met: compatibility tests pass, no trust-header bypass exists, and
 the gateway injects a separate short-lived workload identity for the AI service.
@@ -36,8 +34,9 @@ and feedback. The `vector` extension is now enabled, while the embedding
 column/index remains disabled until its specific gates pass.
 
 Before enabling user traffic, verify storage headroom and representative
-read/write and retention behavior. The first live rollout keeps the endpoint
-deterministic and records no provider or tool data.
+read/write and retention behavior. Without `AI_ENABLE_AGENT` the endpoint
+stays deterministic; with it, provider usage and tool records are written and
+must be monitored.
 
 ## Gate 3 — first read-only vertical slice (implemented; live verification pending)
 
@@ -50,14 +49,18 @@ ingestion remain separate gates.
 Success is measured by grounded/cited answers, zero ACL leakage, bounded
 latency, and a clean failure path—not by autonomous breadth.
 
-## Gate 4 — controlled HITL proposal (proposal boundary implemented)
+## Gate 4 — controlled HITL proposal (implemented; validation pending)
 
-The service now has a disabled-by-default, typed proposal boundary for one
-low-risk `crm.customer.export.prepare` flow. It persists server-side approval
-and idempotency state and supports independent approve/reject decisions, but it
-does not execute or resume any side effect. Validate permission revocation,
-stale resource, duplicate resume, expiry, reconnect, and audit behavior in a
-non-production environment before enabling the flag.
+The service has a disabled-by-default, typed HITL boundary for the low-risk
+`crm.customer.export.prepare` flow: a confirm-kind tool request during the
+agent loop persists a server-side approval with a deterministic idempotency
+key and pauses the run; an independent approver decides; the run owner resumes
+through `/api/ai/approvals/{id}/execution`, which re-checks live permissions,
+executes within the original tenant scope, and finishes the run. Failed
+executions revert for retry. `prepare` still creates no export artifact.
+Validate permission revocation, stale resource, duplicate resume, expiry,
+reconnect, and audit behavior in a non-production environment before enabling
+the flag.
 
 No finance, IAM, MFA, permission, or irreversible mutation is included in this
 gate.
@@ -107,9 +110,14 @@ Stop rollout and disable the feature if any of these occurs:
 
 ## Current implementation boundary
 
-The current change adds the service-owned persistence foundation, the enabled
-`vector` extension, two bounded read-only tools, a disabled-by-default HITL
-proposal boundary, the CopilotKit Node runtime adapter, the headless shadcn
-frontend, and GitOps wiring. It does not add a model provider, vector
-column/index, source ingestion, or mutation executor. The next gate is an
-explicitly approved knowledge-source ingestion flow and provider evaluation.
+The current state adds the service-owned persistence foundation, the enabled
+`vector` extension, bounded read tools plus one confirm-kind tool, the
+model-driven agent loop over an OpenAI-compatible streaming provider behind
+the `model.Provider` interface (env-configured, single source), incremental
+SSE streaming, per-tenant rate limiting, graceful shutdown, owner-scoped
+conversation APIs, the full HITL proposal/decision/execution path, and the
+Olorin shell panel (`@workspace/ai`) with typed renderers, approval card with
+resume, and thread history. It does not yet add multi-provider routing, vector
+column/index, source ingestion, or any real mutation executor. The next gates
+are an approved knowledge-source ingestion flow, provider evaluation/budget,
+and the model-provider canary.
