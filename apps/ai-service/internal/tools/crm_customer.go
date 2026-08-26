@@ -67,6 +67,13 @@ func (t *CRMCustomerGetTool) Definition() Definition {
 		Risk:                "low",
 		Timeout:             3 * time.Second,
 		RedactionProfile:    "customer_summary",
+		Parameters: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"customerId": {"type": "string", "maxLength": 128, "description": "Arda customer identifier or customer code"}
+			},
+			"required": ["customerId"]
+		}`),
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,6 +20,18 @@ var (
 	ErrApprovalState            = errors.New("AI approval is no longer pending")
 	ErrApprovalSelf             = errors.New("requester cannot approve their own AI proposal")
 )
+
+type ApprovedExecution struct {
+	ExecutionID  string
+	Run          RunContext
+	ToolName     string
+	ToolVersion  int
+	Arguments    string
+}
+
+type ExecutionStore interface {
+	FetchApprovedExecution(ctx context.Context, tenantID, approvalID, requesterUserID string) (ApprovedExecution, error)
+}
 
 type ApprovalProposal struct {
 	Run               RunContext
@@ -141,8 +154,7 @@ func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal Appro
 	return record, nil
 }
 
-func jsonEquivalent(left, right string) bool {
-	var leftValue, rightValue any
+func jsonEquivalent(left, right string) bool {	var leftValue, rightValue any
 	if json.Unmarshal([]byte(left), &leftValue) != nil || json.Unmarshal([]byte(right), &rightValue) != nil {
 		return left == right
 	}
@@ -219,4 +231,47 @@ func (s *SQLRunStore) DecideApproval(ctx context.Context, tenantID, approvalID, 
 		return ApprovalRecord{}, fmt.Errorf("commit AI approval decision: %w", err)
 	}
 	return ApprovalRecord{ID: approvalID, Status: newStatus, ExpiresAt: expiresAt}, nil
+}
+
+func (s *SQLRunStore) FetchApprovedExecution(ctx context.Context, tenantID, approvalID, requesterUserID string) (ApprovedExecution, error) {
+	if s == nil || s.db == nil {
+		return ApprovedExecution{}, fmt.Errorf("AI approval store is not configured")
+	}
+	var execution ApprovedExecution
+	var versionText string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT e.id::text,
+		       r.tenant_id, r.actor_user_id::text, r.external_thread_id, r.external_run_id,
+		       e.tool_name, e.tool_version, e.arguments_redacted::text
+		FROM public.ai_approvals a
+		JOIN public.ai_tool_executions e ON e.id = a.tool_execution_id
+		JOIN public.ai_runs r ON r.id = a.run_id
+		WHERE a.id = $1 AND a.tenant_id = $2
+		  AND a.status = 'APPROVED'
+		  AND a.requester_user_id = $3::uuid
+		  AND e.status = 'WAITING_APPROVAL'
+		  AND r.status = 'WAITING_APPROVAL'
+		FOR UPDATE OF a, e
+	`, approvalID, tenantID, requesterUserID).Scan(
+		&execution.ExecutionID,
+		&execution.Run.TenantID,
+		&execution.Run.ActorUserID,
+		&execution.Run.ExternalThread,
+		&execution.Run.ExternalRun,
+		&execution.ToolName,
+		&versionText,
+		&execution.Arguments,
+	)
+	if err == sql.ErrNoRows {
+		return ApprovedExecution{}, ErrApprovalNotFound
+	}
+	if err != nil {
+		return ApprovedExecution{}, fmt.Errorf("resolve approved AI execution: %w", err)
+	}
+	version, parseErr := strconv.Atoi(versionText)
+	if parseErr != nil {
+		version = 1
+	}
+	execution.ToolVersion = version
+	return execution, nil
 }

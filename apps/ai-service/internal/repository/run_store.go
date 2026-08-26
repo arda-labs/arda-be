@@ -29,6 +29,39 @@ type ToolExecutionStore interface {
 	FinishTool(ctx context.Context, executionID, status, resultRedacted, errorCode string) error
 }
 
+type HistoryMessage struct {
+	Role    string
+	Content string
+}
+
+type HistoryStore interface {
+	RecentMessages(ctx context.Context, run RunContext, limit int) ([]HistoryMessage, error)
+}
+
+type UsageSetter interface {
+	SetUsage(ctx context.Context, run RunContext, usageJSON string) error
+}
+
+type ConversationSummary struct {
+	ThreadID      string `json:"threadId"`
+	Title         string `json:"title"`
+	MessageCount  int    `json:"messageCount"`
+	LastMessageAt string `json:"lastMessageAt,omitempty"`
+	Status        string `json:"status"`
+}
+
+type ConversationMessage struct {
+	Sequence  int64  `json:"sequence"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"createdAt"`
+}
+
+type ConversationReader interface {
+	ListConversations(ctx context.Context, tenantID, actorUserID string, limit int) ([]ConversationSummary, error)
+	ConversationMessages(ctx context.Context, tenantID, actorUserID, threadID string, limit int) ([]ConversationMessage, error)
+}
+
 type SQLRunStore struct {
 	db *sql.DB
 }
@@ -182,6 +215,130 @@ func jsonObject(value string) string {
 		return `{}`
 	}
 	return value
+}
+
+func (s *SQLRunStore) RecentMessages(ctx context.Context, run RunContext, limit int) ([]HistoryMessage, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("AI run store is not configured")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.role, m.content
+		FROM public.ai_messages m
+		JOIN public.ai_runs r ON r.id = m.run_id
+		JOIN public.ai_conversations c ON c.id = r.conversation_id
+		WHERE c.tenant_id = $1 AND c.actor_user_id = $2 AND c.external_thread_id = $3
+		  AND r.status IN ('SUCCEEDED', 'FAILED')
+		ORDER BY r.started_at DESC, m.sequence DESC
+		LIMIT $4
+	`, run.TenantID, run.ActorUserID, run.ExternalThread, limit)
+	if err != nil {
+		return nil, fmt.Errorf("load AI history: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []HistoryMessage
+	for rows.Next() {
+		var item HistoryMessage
+		if err := rows.Scan(&item.Role, &item.Content); err != nil {
+			return nil, fmt.Errorf("scan AI history: %w", err)
+		}
+		messages = append(messages, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate AI history: %w", err)
+	}
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+	return messages, nil
+}
+
+func (s *SQLRunStore) SetUsage(ctx context.Context, run RunContext, usageJSON string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("AI run store is not configured")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE public.ai_runs SET usage = $4::jsonb
+		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
+	`, run.TenantID, run.ActorUserID, run.ExternalRun, jsonObject(usageJSON))
+	if err != nil {
+		return fmt.Errorf("persist AI usage: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return fmt.Errorf("AI run not found for usage update")
+	}
+	return nil
+}
+
+func (s *SQLRunStore) ListConversations(ctx context.Context, tenantID, actorUserID string, limit int) ([]ConversationSummary, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("AI run store is not configured")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.external_thread_id,
+		       COALESCE(c.title, LEFT(COALESCE((
+		           SELECT content FROM public.ai_messages m
+		           WHERE m.conversation_id = c.id ORDER BY m.sequence ASC LIMIT 1
+		       ), ''), 120)), 
+		       (SELECT COUNT(*) FROM public.ai_messages m WHERE m.conversation_id = c.id),
+		       COALESCE(c.last_message_at::text, ''),
+		       c.status
+		FROM public.ai_conversations c
+		WHERE c.tenant_id = $1 AND c.actor_user_id = $2 AND c.status = 'ACTIVE'
+		ORDER BY COALESCE(c.last_message_at, c.updated_at) DESC
+		LIMIT $3
+	`, tenantID, actorUserID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list AI conversations: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]ConversationSummary, 0, limit)
+	for rows.Next() {
+		var item ConversationSummary
+		if err := rows.Scan(&item.ThreadID, &item.Title, &item.MessageCount, &item.LastMessageAt, &item.Status); err != nil {
+			return nil, fmt.Errorf("scan AI conversation: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *SQLRunStore) ConversationMessages(ctx context.Context, tenantID, actorUserID, threadID string, limit int) ([]ConversationMessage, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("AI run store is not configured")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.sequence, m.role, m.content, m.created_at::text
+		FROM public.ai_messages m
+		JOIN public.ai_conversations c ON c.id = m.conversation_id
+		WHERE c.tenant_id = $1 AND c.actor_user_id = $2 AND c.external_thread_id = $3
+		ORDER BY m.sequence ASC
+		LIMIT $4
+	`, tenantID, actorUserID, threadID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list AI conversation messages: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]ConversationMessage, 0, limit)
+	for rows.Next() {
+		var item ConversationMessage
+		if err := rows.Scan(&item.Sequence, &item.Role, &item.Content, &item.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan AI message: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func insertMessage(ctx context.Context, tx *sql.Tx, conversationID, runID, role, content string) error {

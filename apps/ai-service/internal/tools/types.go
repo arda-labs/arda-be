@@ -9,9 +9,10 @@ import (
 )
 
 var (
-	ErrUnknownTool     = errors.New("unknown AI tool")
-	ErrToolForbidden   = errors.New("AI tool permission denied")
-	ErrInvalidArgument = errors.New("invalid AI tool arguments")
+	ErrUnknownTool       = errors.New("unknown AI tool")
+	ErrToolForbidden     = errors.New("AI tool permission denied")
+	ErrInvalidArgument   = errors.New("invalid AI tool arguments")
+	ErrApprovalRequired  = errors.New("AI tool requires human approval")
 )
 
 type Definition struct {
@@ -23,6 +24,7 @@ type Definition struct {
 	Risk                string
 	Timeout             time.Duration
 	RedactionProfile    string
+	Parameters          json.RawMessage
 }
 
 type Call struct {
@@ -69,6 +71,46 @@ func NewRegistry(items ...Tool) *Registry {
 	return registry
 }
 
+func (r *Registry) ResolveForExecution(call Call, scope Context) (Tool, Definition, error) {
+	if r == nil {
+		return nil, Definition{}, ErrUnknownTool
+	}
+	item, ok := r.items[call.Name]
+	if !ok {
+		return nil, Definition{}, ErrUnknownTool
+	}
+	definition := item.Definition()
+	version := call.Version
+	if version == 0 {
+		version = 1
+	}
+	if version != definition.Version {
+		return nil, Definition{}, ErrUnknownTool
+	}
+	if strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.ActorUserID) == "" {
+		return nil, Definition{}, ErrToolForbidden
+	}
+	for _, permission := range definition.RequiredPermissions {
+		if _, allowed := scope.Permissions[permission]; !allowed {
+			if _, superadmin := scope.Permissions["superadmin"]; !superadmin {
+				return nil, Definition{}, ErrToolForbidden
+			}
+		}
+	}
+	return item, definition, nil
+}
+
+func (r *Registry) Definitions() []Definition {
+	if r == nil {
+		return nil
+	}
+	items := make([]Definition, 0, len(r.items))
+	for _, item := range r.items {
+		items = append(items, item.Definition())
+	}
+	return items
+}
+
 func (r *Registry) Resolve(call Call, scope Context) (Tool, Definition, error) {
 	if r == nil {
 		return nil, Definition{}, ErrUnknownTool
@@ -94,6 +136,9 @@ func (r *Registry) Resolve(call Call, scope Context) (Tool, Definition, error) {
 				return nil, Definition{}, ErrToolForbidden
 			}
 		}
+	}
+	if definition.Kind == "confirm" {
+		return nil, definition, ErrApprovalRequired
 	}
 	return item, definition, nil
 }

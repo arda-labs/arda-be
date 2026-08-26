@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
@@ -23,6 +24,9 @@ const protocolSpikeMessage = "Arda AI protocol spike is connected. No model or t
 
 type RouterOptions struct {
 	EnableHITLProposals bool
+	ModelProvider       model.Provider
+	AgentMaxSteps       int
+	ModelSystemPrompt   string
 }
 
 type runStore interface {
@@ -90,13 +94,23 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	mux.HandleFunc("/health/live", health)
 	mux.HandleFunc("/health/ready", health)
 	mux.HandleFunc("/api/ai/agent", func(w http.ResponseWriter, r *http.Request) {
-		run(w, r, store, resolver)
+		run(w, r, store, resolver, options)
 	})
 	mux.HandleFunc("/api/ai/approvals", func(w http.ResponseWriter, r *http.Request) {
 		createApproval(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/approvals/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/execution") {
+			executeApprovedTool(w, r, store, resolver, options)
+			return
+		}
 		decideApproval(w, r, store, options)
+	})
+	mux.HandleFunc("/api/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
+		listConversations(w, r, store, options)
+	})
+	mux.HandleFunc("/api/ai/conversations/", func(w http.ResponseWriter, r *http.Request) {
+		conversationMessages(w, r, store, options)
 	})
 	return mux
 }
@@ -107,7 +121,7 @@ func health(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-func run(w http.ResponseWriter, r *http.Request, store runStore, resolver toolResolver) {
+func run(w http.ResponseWriter, r *http.Request, store runStore, resolver toolResolver, options RouterOptions) {
 	if r.Method != http.MethodPost {
 		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
 		return
@@ -163,6 +177,9 @@ func run(w http.ResponseWriter, r *http.Request, store runStore, resolver toolRe
 			}
 			return
 		}
+	} else if store != nil && options.ModelProvider != nil && resolver != nil {
+		runAgentStream(w, r, store, resolver, scope, input, options)
+		return
 	}
 
 	scopeRun := repository.RunContext{

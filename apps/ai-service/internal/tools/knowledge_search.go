@@ -33,6 +33,14 @@ func (t *KnowledgeSearchTool) Definition() Definition {
 		Risk:                "low",
 		Timeout:             3 * time.Second,
 		RedactionProfile:    "knowledge_citation",
+		Parameters: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"query": {"type": "string", "maxLength": 512, "description": "Search keywords"},
+				"limit": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Maximum results, default 5"}
+			},
+			"required": ["query"]
+		}`),
 	}
 }
 

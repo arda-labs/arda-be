@@ -22,6 +22,34 @@ AI_MODE=spike go run ./cmd/ai-service
 
 Endpoint: `POST /api/ai/agent`
 
+## Agent mode (model provider)
+
+Set the following to enable the model-driven agent loop:
+
+```dotenv
+AI_ENABLE_AGENT=true
+AI_MODEL_BASE_URL=https://api.openai.com/v1
+AI_MODEL_API_KEY=<provider key, secret via K8s secretKeyRef only>
+AI_MODEL_ID=<model id>
+AI_AGENT_MAX_STEPS=6
+AI_RATE_LIMIT_PER_MINUTE=30
+```
+
+The provider must speak the OpenAI-compatible chat-completions SSE protocol.
+The agent loop streams `TEXT_MESSAGE_*` deltas incrementally, executes only
+registry tools whose permissions resolve against gateway headers, and never
+executes `confirm`-kind tools directly: requesting one creates an approval
+proposal and ends the run in `WAITING_APPROVAL`.
+
+## Endpoints
+
+- `POST /api/ai/agent` — AG-UI SSE run.
+- `GET /api/ai/conversations` — owner-scoped thread list (`limit` ≤ 100).
+- `GET /api/ai/conversations/{threadId}/messages` — owner-scoped transcript (`limit` ≤ 500).
+- `POST /api/ai/approvals` — HITL proposal (flagged).
+- `POST /api/ai/approvals/{id}/decision` — independent approver decision (flagged).
+- `POST /api/ai/approvals/{id}/execution` — run owner executes an APPROVED confirm tool; retries while the execution row stays `WAITING_APPROVAL`.
+
 The endpoint requires gateway-derived `X-Auth-Checked: true`, `X-User-Id`,
 `X-Tenant-Id`, and `X-Permissions: ai.assistant.use`. It must be reached through
 the authenticated gateway in an environment where it is deployed; these headers
