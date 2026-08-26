@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 )
@@ -39,8 +42,17 @@ func copilotkitEndpoint(w http.ResponseWriter, r *http.Request, store runStore, 
 		Params json.RawMessage `json:"params"`
 		Body   runInput        `json:"body"`
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	if err := decoder.Decode(&envelope); err != nil {
+	raw, readErr := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if readErr != nil {
+		problem(w, http.StatusBadRequest, "ai.invalid_copilotkit_envelope")
+		return
+	}
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&envelope); err != nil {
+		preview := string(raw)
+		if len(preview) > 200 {
+			preview = preview[:200]
+		}
+		slog.Warn("copilotkit envelope rejected", "err", err.Error(), "bytes", len(raw), "preview", preview)
 		problem(w, http.StatusBadRequest, "ai.invalid_copilotkit_envelope")
 		return
 	}
