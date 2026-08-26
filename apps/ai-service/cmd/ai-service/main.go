@@ -77,7 +77,8 @@ func main() {
 
 	routerOptions := handler.RouterOptions{
 		EnableHITLProposals: cfg.EnableHITLProposals,
-		ModelProvider:         ModelProvider,
+		ModelProvider:       ModelProvider,
+		ModelPool:           model.NewClientPool(nil),
 		AgentMaxSteps:       cfg.AgentMaxSteps,
 		ModelSystemPrompt:   cfg.ModelSystemPrompt,
 	}

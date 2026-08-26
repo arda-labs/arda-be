@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arda-labs/arda/apps/ai-service/internal/crypto"
+	ardacrypto "github.com/arda-labs/arda/libs/go/arda-crypto"
 )
 
 var (
@@ -65,7 +65,7 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 
 	// Decrypt API key if encrypted
 	if s.encryptionSecret != "" && strings.HasPrefix(rawAPIKey, "enc:v1:") {
-		decrypted, decErr := crypto.Decrypt(rawAPIKey, s.encryptionSecret)
+		decrypted, decErr := ardacrypto.Decrypt(rawAPIKey, s.encryptionSecret)
 		if decErr == nil {
 			item.APIKey = decrypted
 		} else {
@@ -86,7 +86,7 @@ func (s *SQLRunStore) UpsertTenantSettings(ctx context.Context, settings TenantS
 	apiKeyToSave := strings.TrimSpace(settings.APIKey)
 	// If API key is provided and not already encrypted, encrypt it with AES-256-GCM
 	if apiKeyToSave != "" && !strings.HasPrefix(apiKeyToSave, "enc:v1:") && s.encryptionSecret != "" {
-		encrypted, err := crypto.Encrypt(apiKeyToSave, s.encryptionSecret)
+		encrypted, err := ardacrypto.Encrypt(apiKeyToSave, s.encryptionSecret)
 		if err == nil {
 			apiKeyToSave = encrypted
 		}

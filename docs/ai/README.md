@@ -80,6 +80,9 @@ vector schema/index changes, and production workload expansion.
 19. [nats-events.md](nats-events.md) — NATS JetStream event contracts for run,
     approval, knowledge, and audit events consumed by notification, IAM, and
     platform services.
+20. [enterprise-security-and-crypto.md](enterprise-security-and-crypto.md) —
+    Enterprise security tiers, AES-256-GCM envelope encryption, Blind Indexing
+    search, KeyProvider (KMS/Vault) integration, and SSRF egress filtering.
 
 ## Current repository evidence
 

@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 const aiAdminPermission = "ai.admin"
@@ -262,22 +262,7 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 }
 
 func validateProviderURL(rawURL string) error {
-	rawURL = strings.TrimSpace(rawURL)
-	if rawURL == "" {
-		return errors.New("Base URL không được để trống")
-	}
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("URL không hợp lệ: %w", err)
-	}
-	if u.Scheme != "https" && u.Scheme != "http" {
-		return errors.New("chỉ hỗ trợ giao thức http hoặc https")
-	}
-	host := strings.ToLower(u.Hostname())
-	if host == "169.254.169.254" || host == "metadata.google.internal" || host == "0.0.0.0" {
-		return errors.New("địa chỉ máy chủ không được phép (chặn SSRF)")
-	}
-	return nil
+	return ardahttp.ValidateEgressURL(rawURL, true)
 }
 
 func maskAPIKey(key string) string {

@@ -3,11 +3,14 @@ module github.com/arda-labs/arda/apps/ai-service
 go 1.26
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-crypto v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/lib/pq v1.10.9
 	github.com/pressly/goose/v3 v3.21.1
 )
+
+replace github.com/arda-labs/arda/libs/go/arda-crypto => ../../libs/go/arda-crypto
 
 replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc
 

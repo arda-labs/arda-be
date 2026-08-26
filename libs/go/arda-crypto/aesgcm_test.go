@@ -1,4 +1,4 @@
-package crypto
+package ardacrypto
 
 import (
 	"strings"
@@ -14,7 +14,7 @@ func TestAES256GCM_Roundtrip(t *testing.T) {
 		t.Fatalf("Encrypt failed: %v", err)
 	}
 
-	if !strings.HasPrefix(encrypted, "enc:v1:") {
+	if !strings.HasPrefix(encrypted, VersionPrefix) {
 		t.Fatalf("expected enc:v1: prefix, got: %s", encrypted)
 	}
 	if encrypted == original {
@@ -60,7 +60,7 @@ func TestAES256GCM_TamperedCiphertext(t *testing.T) {
 	secret := "secret-key"
 	encrypted, _ := Encrypt("hello world", secret)
 
-	// Tamper one byte
+	// Tamper one byte in the base64 ciphertext
 	tampered := encrypted[:len(encrypted)-2] + "AA"
 	_, err := Decrypt(tampered, secret)
 

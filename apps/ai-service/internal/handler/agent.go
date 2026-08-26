@@ -70,7 +70,11 @@ func runAgentStream(
 	if settingsStore, ok := store.(repository.TenantSettingsStore); ok {
 		if tenantSettings, err := settingsStore.GetTenantSettings(ctx, scope.TenantID); err == nil && tenantSettings != nil {
 			if tenantSettings.BaseURL != "" && tenantSettings.ModelID != "" {
-				modelProvider = model.NewClient(tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID, nil)
+				if options.ModelPool != nil {
+					modelProvider = options.ModelPool.GetClient(scope.TenantID, tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID)
+				} else {
+					modelProvider = model.NewClient(tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID, nil)
+				}
 			}
 		}
 	}

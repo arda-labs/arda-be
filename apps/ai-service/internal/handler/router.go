@@ -25,6 +25,7 @@ const protocolSpikeMessage = "Arda AI protocol spike is connected. No model or t
 type RouterOptions struct {
 	EnableHITLProposals bool
 	ModelProvider       model.Provider
+	ModelPool           *model.ClientPool
 	AgentMaxSteps       int
 	ModelSystemPrompt   string
 }
