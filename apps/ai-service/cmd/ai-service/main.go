@@ -13,12 +13,14 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/catalog"
 	"github.com/arda-labs/arda/apps/ai-service/internal/config"
 	"github.com/arda-labs/arda/apps/ai-service/internal/handler"
 	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/migration"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
+	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
@@ -68,17 +70,58 @@ func main() {
 
 	var resolver *tools.Registry
 	if cfg.EnableReadTools {
-		items := make([]tools.Tool, 0, 3)
+		items := make([]tools.Tool, 0, 5)
+		var crmGetTool *tools.CRMCustomerGetTool
+		var crmExportTool *tools.CRMCustomerExportPrepareTool
+		var knowledgeTool *tools.KnowledgeSearchTool
+
 		if cfg.CRMServiceURL != "" {
 			client := &http.Client{Timeout: 5 * time.Second}
-			items = append(items,
-				tools.NewCRMCustomerGetTool(cfg.CRMServiceURL, client),
-				tools.NewCRMCustomerExportPrepareTool(cfg.CRMServiceURL, client),
-			)
+			crmGetTool = tools.NewCRMCustomerGetTool(cfg.CRMServiceURL, client)
+			crmExportTool = tools.NewCRMCustomerExportPrepareTool(cfg.CRMServiceURL, client)
+			items = append(items, crmGetTool, crmExportTool)
 		}
 		if db != nil {
-			items = append(items, tools.NewKnowledgeSearchTool(knowledge.NewSQLSearcher(db)))
+			knowledgeTool = tools.NewKnowledgeSearchTool(knowledge.NewSQLSearcher(db))
+			items = append(items, knowledgeTool)
 		}
+
+		// Initialize Code Mode (search & execute meta-tools via Goja sandbox)
+		if cfg.EnableCodeMode {
+			dispatcherReg := catalog.NewDispatcherRegistry()
+			catalog.RegisterBuiltinCatalog(dispatcherReg, crmGetTool, crmExportTool, knowledgeTool)
+			catalogIndex := catalog.NewIndex(dispatcherReg.AllEntries())
+			sandboxEngine := sandbox.NewEngine(dispatcherReg)
+
+			searchMetaTool := tools.NewSearchMetaTool(func(query, domain string, scope tools.Context) (string, int, error) {
+				entries := catalogIndex.Search(query, domain, scope, 5)
+				return catalog.FormatSignatures(entries), len(entries), nil
+			})
+			executeMetaTool := tools.NewExecuteMetaTool(func(ctx context.Context, scope tools.Context, code string) (map[string]any, error) {
+				res, err := sandboxEngine.Execute(ctx, scope, code)
+				if err != nil {
+					return nil, err
+				}
+				out := map[string]any{
+					"output":        res.Output,
+					"durationMs":    res.DurationMs,
+					"methodsCalled": res.MethodsCalled,
+					"scriptHash":    res.ScriptHash,
+				}
+				if res.ApprovalNeeded {
+					out["approval"] = map[string]any{
+						"tool":   res.ProposalTool,
+						"args":   res.ProposalArgs,
+						"status": "PENDING",
+					}
+				}
+				return out, nil
+			})
+
+			// Add meta-tools to registry
+			items = append(items, searchMetaTool, executeMetaTool)
+		}
+
 		if len(items) > 0 {
 			resolver = tools.NewRegistry(items...)
 		}

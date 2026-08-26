@@ -17,6 +17,7 @@ type Config struct {
 	CRMServiceURL       string
 	EnableReadTools     bool
 	EnableHITLProposals bool
+	EnableCodeMode      bool
 	DBMaxOpenConns      int
 	DBMaxIdleConns      int
 	DBConnMaxIdleSec    int
@@ -44,6 +45,7 @@ func Load() Config {
 		CRMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("CRM_SERVICE_URL")), "/"),
 		EnableReadTools:     envBoolOr("AI_ENABLE_READ_TOOLS", false),
 		EnableHITLProposals: envBoolOr("AI_ENABLE_HITL_PROPOSALS", false),
+		EnableCodeMode:      envBoolOr("AI_ENABLE_CODE_MODE", true),
 		DBMaxOpenConns:      envIntOr("DB_MAX_OPEN_CONNS", 8),
 		DBMaxIdleConns:      envIntOr("DB_MAX_IDLE_CONNS", 4),
 		DBConnMaxIdleSec:    envIntOr("DB_CONN_MAX_IDLE_SECONDS", 300),

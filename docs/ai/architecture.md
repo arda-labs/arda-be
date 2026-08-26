@@ -21,7 +21,8 @@ React MFE / Arda shell
         AG-UI-compatible stream
         conversation/run state
         model adapter
-        allowlisted tool registry
+        2 Meta-Tools (search & execute / Code Mode) & legacy tool registry
+        embedded Goja JavaScript sandbox with arda.* SDK bindings
         RAG retrieval with ACL filtering
         AI operational audit
         -> domain service APIs/gRPC, never domain tables
@@ -77,6 +78,11 @@ allowed.
 
 - Resolve and re-check the actor/tenant context for every tool execution.
 - Orchestrate the model, retrieval, tool calls, interrupts, and AG-UI events.
+- Host the embedded Goja JavaScript sandbox for Code Mode (`execute`) and the
+  SDK method catalog (`search`), providing dynamic discovery without context
+  inflation.
+- Bind `arda.*` SDK methods to domain HTTP/gRPC contracts with automatic tenant
+  and permission injection.
 - Persist conversation/run/tool state without storing raw credentials or hidden
   chain-of-thought.
 - Call domain APIs through typed contracts and enforce tool-specific policy.
@@ -108,9 +114,15 @@ allowed.
 4. Go creates or resumes a run under the server-derived actor and tenant.
 5. Retrieval applies tenant and document ACL filters before any content reaches
    the model.
-6. The model may answer or request an allowlisted tool. Tool policy validates
-   arguments and calls the owning service.
+6. The model may answer directly, invoke a named read tool, or use Code Mode:
+   call `search` to discover SDK method signatures, then `execute` to run a
+   sandboxed JavaScript script that composes multiple `arda.*` domain calls
+   within a single turn. Tool policy, argument validation, tenant context, and
+   permission checks apply whether the call originates from a direct tool or
+   from inside the sandbox.
 7. A high-risk mutation pauses for a server-enforced approval checkpoint.
+   In Code Mode, a mutation SDK method called inside the sandbox yields an
+   `ApprovalProposal` instead of executing the side effect.
 8. AI service streams typed lifecycle/message/tool/approval events and commits
    the final run state.
 9. AI operational audit and metrics record outcome, latency, policy decisions,

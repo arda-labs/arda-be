@@ -30,21 +30,37 @@ and [authentication](https://docs.copilotkit.ai/auth).
 
 ## Decision
 
-### Adopt now
+### Adopt now (original decision)
 
 - Adopt AG-UI-compatible event semantics as the stable agent/UI boundary.
 - Keep the versioned Go AG-UI endpoint behind the runtime and `auth-gateway`.
-- Deploy a separate Node.js `ai-runtime` with CopilotKit Runtime and `HttpAgent`
-  to the Go endpoint.
+- ~~Deploy a separate Node.js `ai-runtime` with CopilotKit Runtime and `HttpAgent`
+  to the Go endpoint.~~ **Superseded — see updated decision below.**
 - Use CopilotKit React v2 headless state with Arda-owned shadcn UI; do not make
   the default CopilotKit chat component a requirement.
 - Define Arda-specific custom events only for citations, approval cards, and
   policy/status data that do not fit standard events.
 
+### Updated decision (2026-08-26) — ai-runtime retired, Go-native active
+
+The separate `ai-runtime` Node.js deployment was **retired before reaching
+production**. Evaluation found it added a deployable, a secret boundary, and a
+second workload-token hop without contributing any authorization decision.
+
+Current production state:
+
+- `ai-service` (Go) serves the CopilotKit single-route envelope protocol
+  (`/api/copilotkit`) directly; see [go-native-copilotkit.md](go-native-copilotkit.md).
+- The gateway signs a short-lived HS256 assertion with audience `ai-service`
+  (not `ai-runtime`); `ServiceAuthMiddleware` verifies it before routing.
+- `arda-be/apps/ai-runtime` source is retained for reference only; nothing deploys it.
+- `arda-infra/k8s/apps/ai-runtime.yaml` was deleted from the kustomization;
+  ArgoCD confirmed the deployment as NotFound in the cluster.
+
 ### Evaluate after the first spike
 
 - CopilotKit React v2 `useHumanInTheLoop`, threads, inspector, and richer
-  generated UI against the internal runtime.
+  generated UI against the Go-native endpoint.
 - Whether each new CopilotKit feature preserves Arda's server-side policy and
   persistence boundaries.
 

@@ -60,6 +60,26 @@ vector schema/index changes, and production workload expansion.
 12. [go-native-copilotkit.md](go-native-copilotkit.md) — current CopilotKit
     boundary in Go, gateway policy routes, verification evidence, and ops
     gotchas.
+13. [code-mode-design.md](code-mode-design.md) — 2 Meta-Tools architecture
+    (`search` & `execute` / Code Mode) using embedded Goja sandbox for scalable
+    cross-domain operations.
+14. [sandbox-threat-model.md](sandbox-threat-model.md) — attack scenarios,
+    mitigations, and security invariants for the Goja sandbox runtime.
+15. [sdk-catalog-design.md](sdk-catalog-design.md) — SDK catalog build pipeline,
+    BM25 search index, dispatcher registry, and CI consistency checks for the
+    `search` meta-tool.
+16. [performance-baseline.md](performance-baseline.md) — token cost model,
+    latency budgets, provider budget controls, and canary success criteria for
+    Code Mode rollout.
+17. [multi-provider-design.md](multi-provider-design.md) — multi-provider and
+    model routing design for tenant-plan-based and feature-flag-based provider
+    selection.
+18. [knowledge-ingestion.md](knowledge-ingestion.md) — knowledge source
+    registration, chunking policy, review gate, embedding pipeline, versioning,
+    and retention.
+19. [nats-events.md](nats-events.md) — NATS JetStream event contracts for run,
+    approval, knowledge, and audit events consumed by notification, IAM, and
+    platform services.
 
 ## Current repository evidence
 
@@ -96,4 +116,6 @@ still creates no export artifact — it only verifies scope; a real export
 executor must be designed with the owning domain service. Multi-provider
 routing (cloud vs local model per tenant) is prepared through the
 `model.Provider` interface but not implemented; provider configuration is
-environment-based today. The service executes no other side effects.
+environment-based today (design in [multi-provider-design.md](multi-provider-design.md)).
+NATS event publishing is designed ([nats-events.md](nats-events.md)) but not yet
+wired into the service. The service executes no other side effects.

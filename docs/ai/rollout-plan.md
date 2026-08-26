@@ -65,20 +65,28 @@ the flag.
 No finance, IAM, MFA, permission, or irreversible mutation is included in this
 gate.
 
-## Gate 5 — CopilotKit runtime canary
+## Gate 5 — CopilotKit runtime canary (**retired**)
 
-Deploy `ai-runtime` as two internal replicas. The only public path is the
-authenticated `/api/copilotkit` gateway route. Verify both workload-token hops,
-permission denial, stream cancellation, tool result rendering, and runtime
-failure isolation before enabling the `/ai` feature flag broadly.
+The separate `ai-runtime` Node.js service originally planned for this gate was
+evaluated and **retired before production deployment**. The CopilotKit
+single-route envelope protocol (`/api/copilotkit`) is now served directly from
+`ai-service` in Go; see [go-native-copilotkit.md](go-native-copilotkit.md) for
+the full rationale, contract, and verification evidence.
 
-Exit criteria:
+The former two-hop design (gateway → Node ai-runtime → Go ai-service) was
+replaced because the Node adapter added a deployable boundary and secret hop
+without contributing any authorization decision. The manifest entry was pruned
+from the ArgoCD kustomization and the deployment confirmed NotFound in the
+cluster.
 
-- `ai-runtime` has no external ingress and no database credentials;
-- gateway and runtime reject missing, expired, wrong-audience, or forged
+Exit criteria met (verified 2026-08-26):
+
+- `ai-service` serves `/api/copilotkit` directly with workload-token verification;
+- gateway issues a short-lived HS256 assertion with audience `ai-service`;
+- gateway and ai-service reject missing, expired, wrong-audience, or forged
   workload assertions;
 - the Go service remains the authority for tool policy and Arda persistence;
-- frontend uses CopilotKit headless state while retaining the shadcn message UI;
+- frontend uses CopilotKit headless state with Arda-owned shadcn UI;
 - rollback can disable the route/flag without deleting AI data.
 
 ## Gate 6 — production canary
@@ -91,11 +99,20 @@ Rollback code while preserving schema compatibility. Disable the feature flag or
 route before considering any data/schema action. Never delete AI data as a
 normal rollback step.
 
-## Gate 7 — expansion
+## Gate 7 — expansion & Code Mode evolution
 
-Only after the canary meets security and quality gates may the team add more
-domains, knowledge classes, or mutation tools. Each addition gets its own tool
-contract, permission, risk classification, evaluation set, and rollback story.
+Only after the canary meets security and quality gates may the team expand domains
+and transition to the **2 Meta-Tools (Code Mode)** architecture:
+
+1. **Embedded Sandbox POC:** Introduce the Goja ECMAScript sandbox engine within
+   `ai-service` with strict resource bounds (CPU timeout, memory limits, anti-escape).
+2. **2 Meta-Tools Integration:** Implement `search` (dynamic SDK discovery) and
+   `execute` (sandboxed script running against `arda.*` SDK) as first-class tools.
+3. **Domain Expansion via OpenAPI:** Generate TypeScript definitions and Go dispatchers
+   from `contracts/openapi/` for CRM, HRM, Finance, and Workflow services, eliminating
+   manual tool boilerplate.
+4. **HITL in Code Sandbox:** Validate that mutation SDK calls inside scripts properly
+   yield `ApprovalProposal` checkpoints and resume through the existing approval store.
 
 ## Stop conditions
 

@@ -9,8 +9,22 @@ The assistant has four distinct capabilities:
 3. Propose: prepare a draft, plan, filter, or command for the user to inspect.
 4. Execute: perform an approved command only through a typed, authorized tool.
 
-Phase 1 enables explain/retrieve and a small proposal surface. Execute remains
-disabled until the tool has a domain contract, idempotency, audit, and HITL gate.
+"Execute" has two distinct forms that must not be confused:
+
+- **Sandboxed Code Execution** (`execute` meta-tool): runs LLM-generated
+  JavaScript inside an isolated Goja VM that can only call `arda.*` SDK methods.
+  This is permitted and replaces individual sequential tool calls in Code Mode.
+  It does not bypass HITL — mutation SDK methods inside the sandbox yield an
+  `ApprovalProposal` instead of running the side effect.
+- **Side Effect Execution** (mutation/confirm-kind tools): performs a real
+  domain write, export, workflow action, or other irreversible operation. This
+  always requires an approved HITL checkpoint and is disabled by default until
+  the owning-domain contract, idempotency, audit, and HITL gate are complete.
+
+Phase 1 enables explain/retrieve and a small proposal surface. Side Effect
+Execution remains disabled until each tool has a domain contract, idempotency,
+audit, and HITL gate. Sandboxed Code Execution is enabled as part of the
+Code Mode rollout (Gate 7).
 
 ## Allowed data
 
@@ -25,7 +39,10 @@ disabled until the tool has a domain contract, idempotency, audit, and HITL gate
   password hashes, private signing material, or internal service secrets.
 - Direct queries against another service's database.
 - Cross-tenant retrieval, even if a prompt asks for it.
-- Arbitrary SQL, shell, filesystem, network, code execution, or URL fetching.
+- Arbitrary SQL, shell, host filesystem, unrestricted network, or unsandboxed
+  process execution. Sandboxed JavaScript execution is permitted strictly within
+  the isolated Goja runtime via the `execute` meta-tool, where scripts have zero
+  OS/filesystem/network access and can only interact with the server-bound `arda.*` SDK.
 - Sending email, changing permissions, moving money, changing MFA, deleting
   records, or submitting workflow approvals without an explicit approved tool
   and server-side HITL gate.
