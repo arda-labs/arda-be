@@ -8,6 +8,14 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 )
 
+// trustedSources are the internal callers allowed to reach application
+// routes: direct gateway proxying and the CopilotKit runtime adapter. Both
+// sign with the same shared workload secret.
+var trustedSources = map[string]bool{
+	"auth-gateway": true,
+	"ai-runtime":   true,
+}
+
 // ServiceAuthMiddleware verifies the gateway's workload identity separately
 // from the delegated user/tenant headers. In spike mode it is optional so the
 // protocol endpoint can be tested locally; production always requires it.
@@ -23,7 +31,7 @@ func ServiceAuthMiddleware(next http.Handler, secret string, required bool) http
 			return
 		}
 		claims, err := identity.Verify(r.Header.Get(identity.MetadataKey), secret, "ai-service", time.Now())
-		if err != nil || claims.Source != "auth-gateway" {
+		if err != nil || !trustedSources[claims.Source] {
 			problem(w, http.StatusUnauthorized, "ai.service_auth_required")
 			return
 		}
