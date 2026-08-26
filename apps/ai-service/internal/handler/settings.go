@@ -24,6 +24,7 @@ type settingsDTO struct {
 	ModelID      string  `json:"modelId"`
 	Temperature  float32 `json:"temperature"`
 	IsActive     bool    `json:"isActive"`
+	HasAPIKey    bool    `json:"hasApiKey"`
 }
 
 type testConnectionRequest struct {
@@ -52,16 +53,23 @@ func handleGetSettings(w http.ResponseWriter, r *http.Request, store runStore) {
 		return
 	}
 
+	defaultSettings := settingsDTO{
+		ProviderType: "openai",
+		BaseURL:      "https://api.openai.com/v1",
+		APIKey:       "",
+		ModelID:      "gpt-4o-mini",
+		Temperature:  0.2,
+		IsActive:     true,
+		HasAPIKey:    false,
+	}
+
 	settingsStore, ok := store.(repository.TenantSettingsStore)
 	if !ok {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"providerType": "openai",
-			"baseUrl":      "https://api.openai.com/v1",
-			"apiKey":       "",
-			"modelId":      "gpt-4o-mini",
-			"temperature":  0.2,
-			"isActive":     true,
-			"hasApiKey":    false,
+			"success":  true,
+			"errors":   []any{},
+			"messages": []string{},
+			"result":   defaultSettings,
 		})
 		return
 	}
@@ -70,13 +78,10 @@ func handleGetSettings(w http.ResponseWriter, r *http.Request, store runStore) {
 	if err != nil {
 		if errors.Is(err, repository.ErrTenantSettingsNotFound) {
 			writeJSON(w, http.StatusOK, map[string]any{
-				"providerType": "openai",
-				"baseUrl":      "https://api.openai.com/v1",
-				"apiKey":       "",
-				"modelId":      "gpt-4o-mini",
-				"temperature":  0.2,
-				"isActive":     true,
-				"hasApiKey":    false,
+				"success":  true,
+				"errors":   []any{},
+				"messages": []string{},
+				"result":   defaultSettings,
 			})
 			return
 		}
@@ -84,14 +89,21 @@ func handleGetSettings(w http.ResponseWriter, r *http.Request, store runStore) {
 		return
 	}
 
+	result := settingsDTO{
+		ProviderType: settings.ProviderType,
+		BaseURL:      settings.BaseURL,
+		APIKey:       maskAPIKey(settings.APIKey),
+		ModelID:      settings.ModelID,
+		Temperature:  settings.Temperature,
+		IsActive:     settings.IsActive,
+		HasAPIKey:    strings.TrimSpace(settings.APIKey) != "",
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"providerType": settings.ProviderType,
-		"baseUrl":      settings.BaseURL,
-		"apiKey":       maskAPIKey(settings.APIKey),
-		"modelId":      settings.ModelID,
-		"temperature":  settings.Temperature,
-		"isActive":     settings.IsActive,
-		"hasApiKey":    strings.TrimSpace(settings.APIKey) != "",
+		"success":  true,
+		"errors":   []any{},
+		"messages": []string{},
+		"result":   result,
 	})
 }
 
@@ -152,8 +164,12 @@ func handleUpdateSettings(w http.ResponseWriter, r *http.Request, store runStore
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"message": "AI settings saved successfully",
+		"success":  true,
+		"errors":   []any{},
+		"messages": []string{"AI settings saved successfully"},
+		"result": map[string]any{
+			"saved": true,
+		},
 	})
 }
 
@@ -179,16 +195,24 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 	modelID := strings.TrimSpace(req.ModelID)
 
 	if err := validateProviderURL(baseURL); err != nil {
-		writeJSON(w, http.StatusOK, testConnectionResponse{
-			Success: false,
-			Error:   err.Error(),
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"errors":  []any{},
+			"result": testConnectionResponse{
+				Success: false,
+				Error:   err.Error(),
+			},
 		})
 		return
 	}
 	if modelID == "" {
-		writeJSON(w, http.StatusOK, testConnectionResponse{
-			Success: false,
-			Error:   "Model ID không được để trống",
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"errors":  []any{},
+			"result": testConnectionResponse{
+				Success: false,
+				Error:   "Model ID không được để trống",
+			},
 		})
 		return
 	}
@@ -217,9 +241,13 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 
 	httpReq, err := http.NewRequestWithContext(testCtx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(testPayload))
 	if err != nil {
-		writeJSON(w, http.StatusOK, testConnectionResponse{
-			Success: false,
-			Error:   fmt.Sprintf("Không thể tạo request: %v", err),
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"errors":  []any{},
+			"result": testConnectionResponse{
+				Success: false,
+				Error:   fmt.Sprintf("Không thể tạo request: %v", err),
+			},
 		})
 		return
 	}
@@ -234,10 +262,14 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 	latency := time.Since(start).Milliseconds()
 
 	if err != nil {
-		writeJSON(w, http.StatusOK, testConnectionResponse{
-			Success:   false,
-			LatencyMs: latency,
-			Error:     fmt.Sprintf("Kết nối thất bại: %v", err),
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"errors":  []any{},
+			"result": testConnectionResponse{
+				Success:   false,
+				LatencyMs: latency,
+				Error:     fmt.Sprintf("Kết nối thất bại: %v", err),
+			},
 		})
 		return
 	}
@@ -245,19 +277,27 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<10))
-		writeJSON(w, http.StatusOK, testConnectionResponse{
-			Success:   false,
-			LatencyMs: latency,
-			Error:     fmt.Sprintf("Nhà cung cấp trả về lỗi HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body))),
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"errors":  []any{},
+			"result": testConnectionResponse{
+				Success:   false,
+				LatencyMs: latency,
+				Error:     fmt.Sprintf("Nhà cung cấp trả về lỗi HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body))),
+			},
 		})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, testConnectionResponse{
-		Success:   true,
-		LatencyMs: latency,
-		ModelID:   modelID,
-		Message:   fmt.Sprintf("Kết nối thành công tới %s (%dms)", modelID, latency),
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"errors":  []any{},
+		"result": testConnectionResponse{
+			Success:   true,
+			LatencyMs: latency,
+			ModelID:   modelID,
+			Message:   fmt.Sprintf("Kết nối thành công tới %s (%dms)", modelID, latency),
+		},
 	})
 }
 

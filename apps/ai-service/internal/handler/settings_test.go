@@ -85,17 +85,19 @@ func TestSettings_GetAndUpsertMaskedKey(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", getRes.Code, getRes.Body.String())
 	}
 
-	var getBody map[string]any
-	if err := json.Unmarshal(getRes.Body.Bytes(), &getBody); err != nil {
+	var getEnvelope struct {
+		Result settingsDTO `json:"result"`
+	}
+	if err := json.Unmarshal(getRes.Body.Bytes(), &getEnvelope); err != nil {
 		t.Fatalf("decode GET response failed: %v", err)
 	}
 
-	maskedKey, _ := getBody["apiKey"].(string)
+	maskedKey := getEnvelope.Result.APIKey
 	if !strings.Contains(maskedKey, "...") || strings.Contains(maskedKey, "super-secret") {
 		t.Fatalf("apiKey must be masked, got: %s", maskedKey)
 	}
-	if getBody["modelId"] != "gpt-4o" {
-		t.Fatalf("expected modelId 'gpt-4o', got %v", getBody["modelId"])
+	if getEnvelope.Result.ModelID != "gpt-4o" {
+		t.Fatalf("expected modelId 'gpt-4o', got %v", getEnvelope.Result.ModelID)
 	}
 
 	// 2. PUT Settings
@@ -142,10 +144,12 @@ func TestSettings_TestConnection(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", res.Code)
 	}
-	var testResp testConnectionResponse
-	_ = json.Unmarshal(res.Body.Bytes(), &testResp)
-	if !testResp.Success {
-		t.Fatalf("expected test connection success, got error: %s", testResp.Error)
+	var testEnvelope struct {
+		Result testConnectionResponse `json:"result"`
+	}
+	_ = json.Unmarshal(res.Body.Bytes(), &testEnvelope)
+	if !testEnvelope.Result.Success {
+		t.Fatalf("expected test connection success, got error: %s", testEnvelope.Result.Error)
 	}
 
 	// Test with bad key
@@ -155,12 +159,14 @@ func TestSettings_TestConnection(t *testing.T) {
 	res2 := httptest.NewRecorder()
 	router.ServeHTTP(res2, req2)
 
-	var badResp testConnectionResponse
-	_ = json.Unmarshal(res2.Body.Bytes(), &badResp)
-	if badResp.Success {
+	var badEnvelope struct {
+		Result testConnectionResponse `json:"result"`
+	}
+	_ = json.Unmarshal(res2.Body.Bytes(), &badEnvelope)
+	if badEnvelope.Result.Success {
 		t.Fatal("expected test connection failure for wrong key, got success")
 	}
-	if !strings.Contains(badResp.Error, "401") {
-		t.Fatalf("expected HTTP 401 in error message, got: %s", badResp.Error)
+	if !strings.Contains(badEnvelope.Result.Error, "401") {
+		t.Fatalf("expected HTTP 401 in error message, got: %s", badEnvelope.Result.Error)
 	}
 }
