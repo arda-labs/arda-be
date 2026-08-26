@@ -9,7 +9,7 @@ routes:
 
   - id: ai-copilotkit-runtime
     path: /api/copilotkit/**
-    methods: [POST, OPTIONS]
+    methods: [GET, POST, OPTIONS]
     auth: true
     risk: low
     permissions:

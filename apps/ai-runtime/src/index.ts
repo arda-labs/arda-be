@@ -217,7 +217,8 @@ function main() {
     requireAuthenticatedRequest(config),
     createCopilotEndpointSingleRouteExpress({
       runtime,
-      basePath: "/api/copilotkit",
+      basePath: "/",
+      cors: false,
     }),
   )
 
