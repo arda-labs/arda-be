@@ -66,7 +66,7 @@ func TestSettings_GetAndUpsertMaskedKey(t *testing.T) {
 				TenantID:     "tenant-test",
 				ProviderType: "openai",
 				BaseURL:      "https://api.openai.com/v1",
-				APIKey:       "sk-proj-super-secret-key-123456",
+				APIKey:       "sk-proj-test-provider-key-abcd89",
 				ModelID:      "gpt-4o",
 				Temperature:  0.2,
 				IsActive:     true,
@@ -93,7 +93,7 @@ func TestSettings_GetAndUpsertMaskedKey(t *testing.T) {
 	}
 
 	maskedKey := getEnvelope.Result.APIKey
-	if !strings.Contains(maskedKey, "...") || strings.Contains(maskedKey, "super-secret") {
+	if !strings.Contains(maskedKey, "...") || strings.Contains(maskedKey, "provider-key") {
 		t.Fatalf("apiKey must be masked, got: %s", maskedKey)
 	}
 	if getEnvelope.Result.ModelID != "gpt-4o" {
@@ -101,7 +101,7 @@ func TestSettings_GetAndUpsertMaskedKey(t *testing.T) {
 	}
 
 	// 2. PUT Settings
-	updatePayload := `{"providerType":"openrouter","baseUrl":"https://openrouter.ai/api/v1","apiKey":"sk-or-new-key-123456","modelId":"anthropic/claude-3.5-sonnet","temperature":0.3}`
+	updatePayload := `{"providerType":"openrouter","baseUrl":"https://openrouter.ai/api/v1","apiKey":"sk-or-new-test-key-efgh90","modelId":"anthropic/claude-3.5-sonnet","temperature":0.3}`
 	putReq := httptest.NewRequest(http.MethodPut, "/api/ai/settings", strings.NewReader(updatePayload))
 	adminGatewayHeaders(putReq)
 	putRes := httptest.NewRecorder()
