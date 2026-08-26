@@ -109,6 +109,16 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	mux.HandleFunc("/api/copilotkit", func(w http.ResponseWriter, r *http.Request) {
 		copilotkitEndpoint(w, r, store, resolver, options)
 	})
+	mux.HandleFunc("/api/ai/settings", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handleGetSettings(w, r, store)
+			return
+		}
+		handleUpdateSettings(w, r, store)
+	})
+	mux.HandleFunc("/api/ai/settings/test", func(w http.ResponseWriter, r *http.Request) {
+		handleTestConnection(w, r, store)
+	})
 	mux.HandleFunc("/api/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		listConversations(w, r, store, options)
 	})

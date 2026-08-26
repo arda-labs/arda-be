@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -64,6 +66,20 @@ func runAgentStream(
 		}
 	}
 
+	modelProvider := options.ModelProvider
+	if settingsStore, ok := store.(repository.TenantSettingsStore); ok {
+		if tenantSettings, err := settingsStore.GetTenantSettings(ctx, scope.TenantID); err == nil && tenantSettings != nil {
+			if tenantSettings.BaseURL != "" && tenantSettings.ModelID != "" {
+				modelProvider = model.NewClient(tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID, nil)
+			}
+		}
+	}
+	if modelProvider == nil {
+		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
+		_ = store.Finish(ctx, scopeRun, "Chưa có AI Model Provider nào được cấu hình.", "FAILED")
+		return
+	}
+
 	messages := buildModelMessages(ctx, store, options, scopeRun, latestUserMessage(input.Messages))
 	defs := modelToolDefinitions(resolver)
 	maxSteps := options.AgentMaxSteps
@@ -75,7 +91,7 @@ func runAgentStream(
 	for step := 0; step < maxSteps && !awaitingApproval; step++ {
 		var turnText strings.Builder
 		var collected []model.ToolCall
-		finishReason, _, err := options.ModelProvider.StreamChat(ctx, messages, defs, model.StreamCallbacks{
+		finishReason, _, err := modelProvider.StreamChat(ctx, messages, defs, model.StreamCallbacks{
 			OnTextDelta: func(delta string) {
 				turnText.WriteString(delta)
 				startText()
@@ -92,9 +108,16 @@ func runAgentStream(
 			return
 		}
 		if err != nil {
+			slog.Error("LLM model stream failed",
+				"err", err,
+				"thread_id", input.ThreadID,
+				"run_id", input.RunID,
+				"tenant_id", scope.TenantID,
+				"user_id", scope.ActorUserID,
+			)
 			endText()
 			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
-			_ = store.Finish(ctx, scopeRun, "I could not complete that request right now.", "FAILED")
+			_ = store.Finish(ctx, scopeRun, fmt.Sprintf("I could not complete that request right now: %v", err), "FAILED")
 			return
 		}
 

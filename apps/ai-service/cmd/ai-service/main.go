@@ -50,6 +50,7 @@ func main() {
 			os.Exit(1)
 		}
 		store = repository.NewSQLRunStore(db)
+		store.SetEncryptionSecret(cfg.ServiceAuthSecret)
 	} else if cfg.Mode == "production" {
 		logger.Error("DATABASE_DSN is required in production mode")
 		os.Exit(1)

@@ -70,11 +70,18 @@ type ConversationMutator interface {
 }
 
 type SQLRunStore struct {
-	db *sql.DB
+	db               *sql.DB
+	encryptionSecret string
 }
 
 func NewSQLRunStore(db *sql.DB) *SQLRunStore {
 	return &SQLRunStore{db: db}
+}
+
+func (s *SQLRunStore) SetEncryptionSecret(secret string) {
+	if s != nil {
+		s.encryptionSecret = secret
+	}
 }
 
 func (s *SQLRunStore) Start(ctx context.Context, run RunContext, userMessage string) error {
