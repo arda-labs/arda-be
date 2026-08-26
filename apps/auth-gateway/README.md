@@ -63,9 +63,14 @@ Important behavior:
 ## CopilotKit runtime boundary
 
 The gateway is the only public entry point for the CopilotKit runtime. It
-validates the Arda session and `ai.assistant.use` permission, then forwards the
-request to the internal `ai-runtime` service with a short-lived workload
-identity token.
+validates the Arda session and `ai.assistant.use` permission (policy id
+`ai-copilotkit-runtime`, methods GET+POST+OPTIONS on `/api/copilotkit/**`),
+handles CORS for browser origins, then forwards the request to the internal
+`ai-service` (`COPILOTKIT_RUNTIME_URL`, e.g. `http://ai-service:8080`) with a
+short-lived workload identity token whose audience is `ai-service`. The Go
+service implements the CopilotKit envelope protocol natively; the former
+Node.js `ai-runtime` adapter is retired. See
+`docs/ai/go-native-copilotkit.md`.
 
 ## Context forwarding
 

@@ -26,8 +26,8 @@ Current services:
 | `hrm-service` | active | positions, job titles, org units, employees, registrations |
 | `media-service` | scaffolded/active | media assets on S3/Garage |
 | `notification-service` | active | notification inbox and streams |
-| `ai-service` | active (flagged) | AG-UI assistant boundary: model agent loop, allowlisted tools, HITL approvals, conversation persistence |
-| `ai-runtime` | active (internal) | Node/CopilotKit single-route adapter between gateway and ai-service; no authorization role |
+| `ai-service` | active (flagged) | AG-UI assistant boundary: Go-native CopilotKit envelope endpoint, model agent loop, allowlisted tools, HITL approvals, conversation persistence |
+| ~~`ai-runtime`~~ | retired | Node/CopilotKit adapter removed from the kustomization and pruned by ArgoCD; source kept for reference only |
 | `mdm-service` | scaffold | placeholder service |
 
 ## Current Edge Flow
@@ -192,11 +192,18 @@ Known workflow gaps:
 - optional model-driven agent loop (`AI_ENABLE_AGENT`) over an
   OpenAI-compatible streaming provider behind the `model.Provider` interface;
   without it the endpoint stays deterministic
+- Go-native CopilotKit envelope endpoint `POST /api/copilotkit`
+  (`info` + `agent/run` methods delegating to the same run flow); the gateway
+  signs its workload assertion for audience `ai-service` — see
+  [docs/ai/go-native-copilotkit.md](ai/go-native-copilotkit.md)
 - allowlisted tools `crm.customer.get`, `knowledge.search`, and (behind the
   HITL flag) confirm-kind `crm.customer.export.prepare`
 - server-enforced approvals: proposal on confirm request, independent
   approver decision, owner-only execution resume
-- owner-scoped `GET /api/ai/conversations[/messages]`
+- owner-scoped conversation APIs:
+  `GET /api/ai/conversations[/messages]` and
+  `DELETE /api/ai/conversations/{id}` plus automatic conversation titling on
+  first user message
 - per-tenant/user rate limiting and graceful shutdown
 
 ## Platform Service State

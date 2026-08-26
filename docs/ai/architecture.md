@@ -14,22 +14,20 @@ operator. The model proposes; Arda policy and domain services decide.
 ```text
 React MFE / Arda shell
   -> auth-gateway: /api/copilotkit
-       validates session, tenant, permission, recent-auth where required
-  -> ai-runtime (Node + CopilotKit Runtime)
-       single-route CopilotKit endpoint
-       verifies gateway workload identity
-       forwards only trusted user context
-       -> ai-service (Go + AG-UI)
-       AG-UI-compatible stream
-       conversation/run state
-       model adapter
-       allowlisted tool registry
-       RAG retrieval with ACL filtering
-       AI operational audit
-       -> domain service APIs/gRPC, never domain tables
-       -> PostgreSQL database `ai`, public tables prefixed `ai_`
-       -> approved model provider through egress policy
-       -> NATS events for durable integration where needed
+        validates session, tenant, permission, recent-auth where required
+  -> ai-service (Go + AG-UI, CopilotKit single-route envelope in Go)
+        CopilotKit envelope endpoint (info + agent/run) — see
+        go-native-copilotkit.md; the former Node ai-runtime adapter is retired
+        AG-UI-compatible stream
+        conversation/run state
+        model adapter
+        allowlisted tool registry
+        RAG retrieval with ACL filtering
+        AI operational audit
+        -> domain service APIs/gRPC, never domain tables
+        -> PostgreSQL database `ai`, public tables prefixed `ai_`
+        -> approved model provider through egress policy
+        -> NATS events for durable integration where needed
 ```
 
 The existing `auth-gateway` remains the browser-facing BFF. It should route the
@@ -59,20 +57,21 @@ allowed.
 - Keep IAM security audit as the source of truth for authentication and
   authorization events.
 
-### CopilotKit runtime
+### CopilotKit boundary (implemented in Go)
 
-- Provide the browser-facing CopilotKit single-route endpoint as an internal
-  Node.js deployment, not as a public ingress.
-- Verify the short-lived `auth-gateway -> ai-runtime` workload assertion and
-  the gateway-derived actor, tenant, and permission context.
-- Create the AG-UI `HttpAgent` request to Go with a new
-  `ai-runtime -> ai-service` workload assertion. Never forward browser cookies,
-  authorization tokens, or arbitrary identity headers.
-- Adapt UI-only `forwardedProps.ardaTool` into the existing Go request shape;
+- The browser-facing CopilotKit single-route endpoint lives inside `ai-service`
+  (`/api/copilotkit`), not in a separate Node deployment. The former internal
+  Node.js `ai-runtime` adapter is retired.
+- The service verifies the short-lived `auth-gateway -> ai-service` workload
+  assertion and the gateway-derived actor, tenant, and permission context.
+- Browser cookies, authorization tokens, and arbitrary identity headers are
+  never forwarded from the gateway beyond the trusted context headers it
+  injects after stripping client-supplied values.
+- UI-only `forwardedProps.ardaTool` hints are adapted into the Go request shape;
   Go remains the authority for tool allowlists, argument validation, and
   domain permissions.
-- Keep the runtime stateless. Conversation/run/tool persistence remains in
-  the Go service and the Arda-owned `ai` database.
+- Conversation/run/tool persistence remains in the Go service and the
+  Arda-owned `ai` database.
 
 ### AI service
 
@@ -103,9 +102,9 @@ allowed.
 
 1. Browser opens an authenticated CopilotKit request through the gateway.
 2. Gateway validates session, route permission, tenant context, and risk, then
-   signs a short-lived assertion for `ai-runtime`.
-3. Node runtime verifies the assertion and calls Go with a separate
-   `ai-runtime -> ai-service` assertion plus trusted delegated context.
+   signs a short-lived workload assertion with audience `ai-service`.
+3. `ai-service` verifies the assertion via its trusted-source middleware and
+   decodes the CopilotKit envelope (`info` or `agent/run`).
 4. Go creates or resumes a run under the server-derived actor and tenant.
 5. Retrieval applies tenant and document ACL filters before any content reaches
    the model.

@@ -1,12 +1,14 @@
 # Arda AI phase
 
-Status: the persistent read-only vertical slice is implemented and rolling out
-to the real K3s cluster. The model-driven agent loop (OpenAI-compatible
-streaming provider behind a `model.Provider` interface), server-enforced
-approval proposals for `confirm`-kind tools, owner-triggered approval
-execution, and owner-scoped conversation APIs are implemented and tested.
-Remaining: production knowledge content, vector retrieval, and any real
-mutation beyond `prepare`.
+Status: the persistent read-only vertical slice is implemented and verified
+end-to-end on the real K3s cluster. The model-driven agent loop
+(OpenAI-compatible streaming provider behind a `model.Provider` interface),
+server-enforced approval proposals for `confirm`-kind tools, owner-triggered
+approval execution, owner-scoped conversation APIs with delete and auto-title,
+and the Go-native CopilotKit envelope endpoint are deployed; an authenticated
+browser request through `https://api.arda.io.vn/api/copilotkit` returns the
+agent descriptor (HTTP 200). Remaining: production knowledge content, vector
+retrieval, and any real mutation beyond `prepare`.
 
 This directory is the source of truth for the first AI phase across `arda-be`,
 `arda-mfe`, and `arda-infra`. The documents precede model-provider secrets,
@@ -19,10 +21,11 @@ vector schema/index changes, and production workload expansion.
 - Keep the browser boundary at `auth-gateway`; the browser never calls an LLM,
   domain database, vector store, or provider directly.
 - Adopt AG-UI-compatible streaming as the agent-to-UI contract.
-- Deploy CopilotKit Runtime as a separate internal Node.js `ai-runtime` service
-  in the first CopilotKit production slice. It is reached only through
-  `auth-gateway`; the browser never connects to the runtime or Go service
-  directly. The runtime is an AG-UI adapter, not Arda's authorization boundary.
+- Serve the CopilotKit single-route envelope protocol directly from the Go
+  `ai-service` (`/api/copilotkit`). The former separate internal Node.js
+  `ai-runtime` adapter is **retired** (manifest pruned from ArgoCD); see
+  [go-native-copilotkit.md](go-native-copilotkit.md) for the contract, gateway
+  audience (`ai-service`), and verification evidence.
 - Start with read-only, tenant-scoped tools and cited knowledge answers.
   Mutations require server-side authorization, idempotency, and human approval.
 - Use a service-owned PostgreSQL database named `ai`. Its application tables
@@ -54,23 +57,29 @@ vector schema/index changes, and production workload expansion.
 10. [database-design.md](database-design.md) — proposed schema and migration
     gates. No SQL migration is authorized by this document alone.
 11. [rollout-plan.md](rollout-plan.md) — staged implementation and rollback.
+12. [go-native-copilotkit.md](go-native-copilotkit.md) — current CopilotKit
+    boundary in Go, gateway policy routes, verification evidence, and ops
+    gotchas.
 
 ## Current repository evidence
 
 - `arda-be` has Go services with service-owned PostgreSQL databases and Goose
   migrations. IAM owns users, tenants, permissions, MFA, and security audit.
-- `arda-be/apps/ai-service` contains the AG-UI boundary with an optional
-  model-driven agent loop (`AI_ENABLE_AGENT` + OpenAI-compatible provider),
-  Goose migrations, tenant/actor-owned conversation persistence, replay
-  protection, production workload identity verification, allowlisted read-only
-  `crm.customer.get`, `knowledge.search`, and `crm.customer.export.prepare`
-  tools with redacted output and knowledge citations. Confirm-kind tools
-  create approval proposals instead of executing; the run owner resumes an
-  approved proposal through `/api/ai/approvals/{id}/execution`.
-- `arda-mfe/apps/shell` ships the Olorin assistant panel (`@workspace/ai`,
-  Ctrl/Cmd+J) using CopilotKit's headless AG-UI state with Arda's shadcn
-  `Message`/`MessageScroller` UI, typed tool renderers, an approval card with
-  resume, and conversation history backed by the new conversations API.
+- `arda-be/apps/ai-service` contains the AG-UI boundary with the Go-native
+  CopilotKit envelope endpoint (`/api/copilotkit`), an optional model-driven
+  agent loop (`AI_ENABLE_AGENT` + OpenAI-compatible provider), Goose
+  migrations, tenant/actor-owned conversation persistence (list, messages,
+  delete, auto-title), replay protection, production workload identity
+  verification, allowlisted read-only `crm.customer.get`, `knowledge.search`,
+  and `crm.customer.export.prepare` tools with redacted output and knowledge
+  citations. Confirm-kind tools create approval proposals instead of executing;
+  the run owner resumes an approved proposal through
+  `/api/ai/approvals/{id}/execution`.
+- `arda-mfe/apps/shell` ships the Olorin assistant as a docked, resizable side
+  panel plus a full-screen workspace dialog (Ctrl/Cmd+J) built on
+  `@workspace/ai` — CopilotKit headless AG-UI state, Arda-owned shadcn message
+  UI with markdown rendering, thread switching/deletion backed by the
+  conversations API, and an approval card with resume.
 - `arda-be` documents gateway-injected tenant/auth context and high-risk
   recent-auth/step-up requirements.
 - `arda-mfe` is a Bun/Vite React MFE workspace with an existing cookie-based API

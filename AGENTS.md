@@ -44,3 +44,37 @@ DATABASE_DSN="postgres://arda_platform:<password>@127.0.0.1:5432/platform?sslmod
 Individual service HTTP endpoints are unauthenticated at the service level; auth
 is enforced by `auth-gateway`, which is not usable here because it validates
 tokens against the unreachable Ory Hydra.
+
+---
+
+## 7. AI assistant (Olorin) stack notes
+
+* Backend boundary is Go-native: `ai-service` serves the CopilotKit envelope
+  (`POST /api/copilotkit`, methods `info` + `agent/run`). The Node `ai-runtime`
+  adapter is retired. Contract + verification evidence:
+  `docs/ai/go-native-copilotkit.md` in `arda-be`.
+* Gateway policy ids: `ai-agent-spike`, `ai-copilotkit-runtime`,
+  `ai-conversations-read`, `ai-conversations-delete`, `ai-approvals-write`
+  (all require permission `ai.assistant.use`). Gateway signs workload tokens
+  with audience `ai-service`; `COPILOTKIT_RUNTIME_URL=http://ai-service:8080`.
+* Model config lives in secret `arda-app-secrets` (`AI_MODEL_API_KEY`) plus
+  Deployment env (`AI_MODEL_BASE_URL=https://opencode.ai/zen/v1`,
+  `AI_MODEL_ID=x-preview-f-free`, `AI_ENABLE_AGENT=true`). Never commit keys.
+* Deploy flow: push `arda-be` main -> GitHub Actions images -> ArgoCD image
+  updater rewrites digests in `arda-infra` -> ArgoCD sync. A green CI build
+  does NOT mean pods updated; compare the pinned `sha256:` digest on the
+  Deployment first.
+
+## 8. Windows / PowerShell gotchas (session-verified)
+
+* **curl.exe JSON bodies**: PowerShell 5.1 strips embedded double quotes when
+  passing inline args (`--data-raw '{"a":1}'` arrives as `{a:1}`). Write the
+  body to a temp file and use `--data "@$env:TEMP\body.json"`. A 400
+  `ai.invalid_copilotkit_envelope` with no server-side decode log = client-side
+  quote mangling, not a backend bug.
+* No `&&` chaining; use `cmd1; if ($?) { cmd2 }`. Avoid `-Encoding UTF8` on
+  `Set-Content` for non-ASCII files (adds BOM/mojibake) - edit locale JSON via
+  a small `node -e fs` script instead.
+* Cluster access from this machine works directly via
+  `KUBECONFIG=C:\Users\hoanv\AppData\Roaming\Freelens\kubeconfigs\<id>`;
+  no SSH hop needed.
