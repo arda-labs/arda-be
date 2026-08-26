@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import express, { type NextFunction, type Request, type Response } from "express"
 import { HttpAgent, type RunAgentInput } from "@ag-ui/client"
 import { CopilotRuntime } from "@copilotkit/runtime/v2"
-import { createCopilotEndpointSingleRouteExpress } from "@copilotkit/runtime/v2/express"
+import { createCopilotExpressHandler } from "@copilotkit/runtime/v2/express"
 
 const assistantPermission = "ai.assistant.use"
 const serviceTokenVersion = "v1"
@@ -215,9 +215,10 @@ function main() {
   app.use(
     "/api/copilotkit",
     requireAuthenticatedRequest(config),
-    createCopilotEndpointSingleRouteExpress({
+    createCopilotExpressHandler({
       runtime,
       basePath: "/",
+      mode: "single-route",
       cors: false,
     }),
   )
