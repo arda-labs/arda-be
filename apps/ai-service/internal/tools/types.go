@@ -9,10 +9,10 @@ import (
 )
 
 var (
-	ErrUnknownTool       = errors.New("unknown AI tool")
-	ErrToolForbidden     = errors.New("AI tool permission denied")
-	ErrInvalidArgument   = errors.New("invalid AI tool arguments")
-	ErrApprovalRequired  = errors.New("AI tool requires human approval")
+	ErrUnknownTool      = errors.New("unknown AI tool")
+	ErrToolForbidden    = errors.New("AI tool permission denied")
+	ErrInvalidArgument  = errors.New("invalid AI tool arguments")
+	ErrApprovalRequired = errors.New("AI tool requires human approval")
 )
 
 type Definition struct {
@@ -56,28 +56,50 @@ type Tool interface {
 }
 
 type Registry struct {
-	items map[string]Tool
+	items          map[string]Tool // Exposed to LLM in tool definitions
+	executionItems map[string]Tool // Resolvable for resume/execution (includes HITL executors)
 }
 
 func NewRegistry(items ...Tool) *Registry {
-	registry := &Registry{items: make(map[string]Tool, len(items))}
+	r := &Registry{
+		items:          make(map[string]Tool, len(items)),
+		executionItems: make(map[string]Tool, len(items)),
+	}
 	for _, item := range items {
 		if item == nil {
 			continue
 		}
 		definition := item.Definition()
-		registry.items[definition.Name] = item
+		r.items[definition.Name] = item
+		r.executionItems[definition.Name] = item
 	}
-	return registry
+	return r
+}
+
+func (r *Registry) RegisterExecutionOnly(items ...Tool) {
+	if r == nil {
+		return
+	}
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		definition := item.Definition()
+		r.executionItems[definition.Name] = item
+	}
 }
 
 func (r *Registry) ResolveForExecution(call Call, scope Context) (Tool, Definition, error) {
 	if r == nil {
 		return nil, Definition{}, ErrUnknownTool
 	}
-	item, ok := r.items[call.Name]
+	item, ok := r.executionItems[call.Name]
 	if !ok {
-		return nil, Definition{}, ErrUnknownTool
+		// Fallback to items
+		item, ok = r.items[call.Name]
+		if !ok {
+			return nil, Definition{}, ErrUnknownTool
+		}
 	}
 	definition := item.Definition()
 	version := call.Version

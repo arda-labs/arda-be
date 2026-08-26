@@ -16,7 +16,6 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/catalog"
 	"github.com/arda-labs/arda/apps/ai-service/internal/config"
 	"github.com/arda-labs/arda/apps/ai-service/internal/handler"
-	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/migration"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
@@ -69,28 +68,10 @@ func main() {
 
 	var resolver *tools.Registry
 	if cfg.EnableReadTools {
-		if cfg.EnableCodeMode {
-			// Code Mode: Expose ONLY the 2 Meta-Tools (search & execute) to the model.
-			// Direct domain tools are dispatched internally via the Goja sandbox.
-			suite := catalog.NewCodeModeSuite(cfg.CRMServiceURL, nil, db, store, cfg.EnableHITLProposals)
-			resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool)
-		} else {
-			// Legacy Direct Tools mode (single tool per turn)
-			items := make([]tools.Tool, 0, 3)
-			if cfg.CRMServiceURL != "" {
-				client := &http.Client{Timeout: 5 * time.Second}
-				items = append(items,
-					tools.NewCRMCustomerGetTool(cfg.CRMServiceURL, client),
-					tools.NewCRMCustomerExportPrepareTool(cfg.CRMServiceURL, client),
-				)
-			}
-			if db != nil {
-				items = append(items, tools.NewKnowledgeSearchTool(knowledge.NewSQLSearcher(db)))
-			}
-			if len(items) > 0 {
-				resolver = tools.NewRegistry(items...)
-			}
-		}
+		// Code Mode: Expose ONLY the 2 Meta-Tools (search & execute) to the model.
+		// Domain APIs are dispatched internally through the embedded Goja sandbox.
+		suite := catalog.NewCodeModeSuite(cfg.CRMServiceURL, nil, db, store, cfg.EnableHITLProposals)
+		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool)
 	}
 
 	routerOptions := handler.RouterOptions{

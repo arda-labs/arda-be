@@ -35,23 +35,12 @@ func NewCodeModeSuite(
 ) *CodeModeSuite {
 	dispatcherReg := NewDispatcherRegistry()
 
-	var crmGetTool *tools.CRMCustomerGetTool
-	var crmExportTool *tools.CRMCustomerExportPrepareTool
-	var knowledgeTool *tools.KnowledgeSearchTool
-
-	if crmBaseURL != "" {
-		if httpClient == nil {
-			httpClient = &http.Client{Timeout: 5 * time.Second}
-		}
-		crmGetTool = tools.NewCRMCustomerGetTool(crmBaseURL, httpClient)
-		crmExportTool = tools.NewCRMCustomerExportPrepareTool(crmBaseURL, httpClient)
-	}
-
+	var searcher knowledge.Searcher
 	if db != nil {
-		knowledgeTool = tools.NewKnowledgeSearchTool(knowledge.NewSQLSearcher(db))
+		searcher = knowledge.NewSQLSearcher(db)
 	}
 
-	RegisterBuiltinCatalog(dispatcherReg, crmGetTool, crmExportTool, knowledgeTool)
+	RegisterBuiltinCatalog(dispatcherReg, crmBaseURL, httpClient, searcher)
 	catalogIndex := NewIndex(dispatcherReg.AllEntries())
 	sandboxEngine := sandbox.NewEngine(dispatcherReg)
 
@@ -96,7 +85,7 @@ func NewCodeModeSuite(
 					ToolVersion:       1,
 					Risk:              "medium",
 					ArgumentsRedacted: string(rawArgs),
-					SummaryRedacted: fmt.Sprintf(`{"action":"%s","arguments":%s}`, res.ProposalTool, string(rawArgs)),
+					SummaryRedacted:   fmt.Sprintf(`{"action":"%s","arguments":%s}`, res.ProposalTool, string(rawArgs)),
 					ExpiresAt:         expiresAt,
 					IdempotencyKey:    hex.EncodeToString(key[:16]),
 				})
