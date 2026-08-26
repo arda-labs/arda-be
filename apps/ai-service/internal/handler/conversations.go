@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,8 +16,15 @@ func contextWithTimeout(ctx context.Context, timeout time.Duration) (context.Con
 	return context.WithTimeout(ctx, timeout)
 }
 
-func requireConversationScope(w http.ResponseWriter, r *http.Request) (tools.Context, bool) {
-	if r.Method != http.MethodGet {
+func requireConversationScope(w http.ResponseWriter, r *http.Request, methods ...string) (tools.Context, bool) {
+	allowed := false
+	for _, method := range methods {
+		if r.Method == method {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
 		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
 		return tools.Context{}, false
 	}
@@ -36,7 +44,7 @@ func requireConversationScope(w http.ResponseWriter, r *http.Request) (tools.Con
 }
 
 func listConversations(w http.ResponseWriter, r *http.Request, store runStore, _ RouterOptions) {
-	scope, ok := requireConversationScope(w, r)
+	scope, ok := requireConversationScope(w, r, http.MethodGet)
 	if !ok {
 		return
 	}
@@ -60,7 +68,7 @@ func listConversations(w http.ResponseWriter, r *http.Request, store runStore, _
 }
 
 func conversationMessages(w http.ResponseWriter, r *http.Request, store runStore, _ RouterOptions) {
-	scope, ok := requireConversationScope(w, r)
+	scope, ok := requireConversationScope(w, r, http.MethodGet)
 	if !ok {
 		return
 	}
@@ -86,4 +94,31 @@ func conversationMessages(w http.ResponseWriter, r *http.Request, store runStore
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "messages": []string{}, "result": items})
+}
+
+func deleteConversation(w http.ResponseWriter, r *http.Request, store runStore, _ RouterOptions) {
+	scope, ok := requireConversationScope(w, r, http.MethodDelete)
+	if !ok {
+		return
+	}
+	mutator, hasMutator := store.(repository.ConversationMutator)
+	if !hasMutator {
+		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+		return
+	}
+	threadID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/ai/conversations/"), "/")
+	if threadID == "" || len(threadID) > 255 || strings.Contains(threadID, "/") {
+		problem(w, http.StatusNotFound, "ai.conversation_not_found")
+		return
+	}
+	err := mutator.DeleteConversation(r.Context(), scope.TenantID, scope.ActorUserID, threadID)
+	if err != nil {
+		if errors.Is(err, repository.ErrConversationNotFound) {
+			problem(w, http.StatusNotFound, "ai.conversation_not_found")
+			return
+		}
+		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "messages": []string{}, "result": map[string]string{"threadId": threadID}})
 }

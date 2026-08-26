@@ -1517,7 +1517,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/ai/") {
 		serviceAudience = "ai-service"
 	} else if strings.HasPrefix(r.URL.Path, "/api/copilotkit") {
-		serviceAudience = "ai-runtime"
+		serviceAudience = "ai-service"
 	}
 	if serviceAudience != "" {
 		serviceToken, err := identity.Issue(h.cfg.ServiceAuthSecret, "auth-gateway", serviceAudience, time.Now(), time.Minute)

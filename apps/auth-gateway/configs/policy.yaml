@@ -23,6 +23,14 @@ routes:
     permissions:
       - ai.assistant.use
 
+  - id: ai-conversations-delete
+    path: /api/ai/conversations/**
+    methods: [DELETE]
+    auth: true
+    risk: medium
+    permissions:
+      - ai.assistant.use
+
   - id: ai-approvals-write
     path: /api/ai/approvals/**
     methods: [POST, OPTIONS]

@@ -106,11 +106,23 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 		}
 		decideApproval(w, r, store, options)
 	})
+	mux.HandleFunc("/api/copilotkit", func(w http.ResponseWriter, r *http.Request) {
+		copilotkitEndpoint(w, r, store, resolver, options)
+	})
 	mux.HandleFunc("/api/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		listConversations(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/conversations/", func(w http.ResponseWriter, r *http.Request) {
-		conversationMessages(w, r, store, options)
+		suffix := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/ai/conversations/"), "/")
+		if strings.HasSuffix(suffix, "/messages") {
+			conversationMessages(w, r, store, options)
+			return
+		}
+		if r.Method == http.MethodDelete {
+			deleteConversation(w, r, store, options)
+			return
+		}
+		problem(w, http.StatusNotFound, "ai.conversation_not_found")
 	})
 	return mux
 }
@@ -145,6 +157,12 @@ func run(w http.ResponseWriter, r *http.Request, store runStore, resolver toolRe
 		problem(w, http.StatusBadRequest, "ai.invalid_run_input")
 		return
 	}
+	runInputFlow(w, r, store, resolver, input, options)
+}
+
+// runInputFlow executes a fully decoded AG-UI run input. Shared by the native
+// endpoint and the CopilotKit envelope dispatch.
+func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolver toolResolver, input runInput, options RouterOptions) {
 	if strings.TrimSpace(input.ThreadID) == "" || strings.TrimSpace(input.RunID) == "" {
 		problem(w, http.StatusBadRequest, "ai.run_identifiers_required")
 		return

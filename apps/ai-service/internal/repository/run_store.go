@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-var ErrRunAlreadyExists = errors.New("AI run already exists")
+var (
+	ErrRunAlreadyExists     = errors.New("AI run already exists")
+	ErrConversationNotFound = errors.New("AI conversation not found")
+)
 
 // RunContext contains only server-resolved ownership data and protocol IDs.
 type RunContext struct {
@@ -62,6 +65,10 @@ type ConversationReader interface {
 	ConversationMessages(ctx context.Context, tenantID, actorUserID, threadID string, limit int) ([]ConversationMessage, error)
 }
 
+type ConversationMutator interface {
+	DeleteConversation(ctx context.Context, tenantID, actorUserID, threadID string) error
+}
+
 type SQLRunStore struct {
 	db *sql.DB
 }
@@ -93,11 +100,15 @@ func (s *SQLRunStore) Start(ctx context.Context, run RunContext, userMessage str
 		FOR UPDATE
 	`, run.TenantID, run.ActorUserID, run.ExternalThread).Scan(&conversationID)
 	if err == sql.ErrNoRows {
+		title := userMessage
+		if len(title) > 80 {
+			title = title[:80]
+		}
 		err = tx.QueryRowContext(ctx, `
-			INSERT INTO public.ai_conversations (tenant_id, actor_user_id, external_thread_id, last_message_at)
-			VALUES ($1, $2, $3, now())
+			INSERT INTO public.ai_conversations (tenant_id, actor_user_id, external_thread_id, title, last_message_at)
+			VALUES ($1, $2, $3, NULLIF($4, ''), now())
 			RETURNING id::text
-		`, run.TenantID, run.ActorUserID, run.ExternalThread).Scan(&conversationID)
+		`, run.TenantID, run.ActorUserID, run.ExternalThread, title).Scan(&conversationID)
 	}
 	if err != nil {
 		return fmt.Errorf("resolve AI conversation: %w", err)
@@ -352,3 +363,21 @@ func insertMessage(ctx context.Context, tx *sql.Tx, conversationID, runID, role,
 	}
 	return nil
 }
+
+func (s *SQLRunStore) DeleteConversation(ctx context.Context, tenantID, actorUserID, threadID string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("AI run store is not configured")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE public.ai_conversations SET status = 'DELETED', updated_at = now()
+		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_thread_id = $3 AND status = 'ACTIVE'
+	`, tenantID, actorUserID, threadID)
+	if err != nil {
+		return fmt.Errorf("delete AI conversation: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return ErrConversationNotFound
+	}
+	return nil
+}
+
