@@ -31,11 +31,28 @@ type Config struct {
 	RateLimitPerMinute int
 }
 
-const defaultSystemPrompt = `Bạn là Olorin, trợ lý của nền tảng Arda. Bạn trả lời ngắn gọn, chính xác ` +
+const defaultDirectToolSystemPrompt = `Bạn là Olorin, trợ lý của nền tảng Arda. Bạn trả lời ngắn gọn, chính xác ` +
 	`dựa trên dữ liệu tenant hiện tại. Chỉ dùng tool khi cần; mọi hành động thay đổi ` +
 	`dữ liệu đều phải chờ con người phê duyệt.`
 
+const defaultCodeModeSystemPrompt = `Bạn là Olorin, trợ lý thông minh của nền tảng Arda.
+Bạn tương tác với hệ thống thông qua 2 Meta-Tools:
+1. search({ query, domain? }): Tìm kiếm các phương thức TypeScript SDK (arda.*) phù hợp với yêu cầu.
+2. execute({ code }): Viết và thực thi mã JavaScript (ES6) để gọi SDK arda.* (ví dụ: await arda.crm.getCustomer({ customerId: "..." })), xử lý mảng (map, filter, reduce, sort) và trả về kết quả cuối cùng.
+
+Quy tắc quan trọng:
+- Luôn gọi search() trước để biết chính xác tên hàm và tham số SDK; không tự đoán API.
+- Viết code JS trong execute() gọn gàng, sử dụng await cho các lời gọi arda.*, và luôn có lệnh return kết quả.
+- Có thể dùng console.log() để ghi nhận log kiểm tra.
+- Mọi hành động thay đổi/ghi dữ liệu (mutation) đều tự động chuyển thành đề xuất chờ con người phê duyệt trước khi thực thi.`
+
 func Load() Config {
+	enableCodeMode := envBoolOr("AI_ENABLE_CODE_MODE", true)
+	defaultPrompt := defaultDirectToolSystemPrompt
+	if enableCodeMode {
+		defaultPrompt = defaultCodeModeSystemPrompt
+	}
+
 	return Config{
 		AppName:             envOr("APP_NAME", "ai-service"),
 		HTTPAddr:            envOr("HTTP_ADDR", "0.0.0.0:8098"),
@@ -45,7 +62,7 @@ func Load() Config {
 		CRMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("CRM_SERVICE_URL")), "/"),
 		EnableReadTools:     envBoolOr("AI_ENABLE_READ_TOOLS", false),
 		EnableHITLProposals: envBoolOr("AI_ENABLE_HITL_PROPOSALS", false),
-		EnableCodeMode:      envBoolOr("AI_ENABLE_CODE_MODE", true),
+		EnableCodeMode:      enableCodeMode,
 		DBMaxOpenConns:      envIntOr("DB_MAX_OPEN_CONNS", 8),
 		DBMaxIdleConns:      envIntOr("DB_MAX_IDLE_CONNS", 4),
 		DBConnMaxIdleSec:    envIntOr("DB_CONN_MAX_IDLE_SECONDS", 300),
@@ -54,7 +71,7 @@ func Load() Config {
 		ModelBaseURL:       strings.TrimRight(strings.TrimSpace(envOr("AI_MODEL_BASE_URL", "https://api.openai.com/v1")), "/"),
 		ModelAPIKey:        strings.TrimSpace(os.Getenv("AI_MODEL_API_KEY")),
 		ModelID:            strings.TrimSpace(os.Getenv("AI_MODEL_ID")),
-		ModelSystemPrompt:  envOr("AI_MODEL_SYSTEM_PROMPT", defaultSystemPrompt),
+		ModelSystemPrompt:  envOr("AI_MODEL_SYSTEM_PROMPT", defaultPrompt),
 		AgentMaxSteps:      envIntOr("AI_AGENT_MAX_STEPS", 6),
 		RateLimitPerMinute: envIntOr("AI_RATE_LIMIT_PER_MINUTE", 30),
 	}

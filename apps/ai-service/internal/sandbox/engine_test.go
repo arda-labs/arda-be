@@ -6,51 +6,59 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arda-labs/arda/apps/ai-service/internal/catalog"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
-func setupTestEngine() (*Engine, *catalog.DispatcherRegistry) {
-	reg := catalog.NewDispatcherRegistry()
+type mockRegistry struct {
+	methods []SDKMethod
+}
 
-	// Register a mock CRM getCustomer
-	reg.Register(
-		catalog.CatalogEntry{
-			MethodName: "crm.getCustomer",
-			SDKPath:    "arda.crm.getCustomer",
-			Domain:     "crm",
-			Signature:  "arda.crm.getCustomer(args: { customerId: string }): Promise<any>;",
-			Kind:       "read",
-			RequiredPermissions: []string{"crm.customer.read"},
-			Timeout:    time.Second,
-		},
-		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
-			id, _ := args["customerId"].(string)
-			return map[string]any{
-				"id":           id,
-				"customerCode": "CUST-001",
-				"name":         "Acme Corp",
-				"status":       "ACTIVE",
-				"riskLevel":    "low",
-			}, nil
-		},
-	)
+func (m *mockRegistry) AllSDKMethods() []SDKMethod {
+	return m.methods
+}
 
-	// Register a mock confirm-kind mutation
-	reg.Register(
-		catalog.CatalogEntry{
-			MethodName: "crm.exportCustomer",
-			SDKPath:    "arda.crm.exportCustomer",
-			Domain:     "crm",
-			Signature:  "arda.crm.exportCustomer(args: { customerId: string }): Promise<any>;",
-			Kind:       "confirm",
-			RequiredPermissions: []string{"crm.customer.export"},
-			Timeout:    time.Second,
+func setupTestEngine() (*Engine, *mockRegistry) {
+	reg := &mockRegistry{
+		methods: []SDKMethod{
+			{
+				MethodName: "crm.getCustomer",
+				SDKPath:    "arda.crm.getCustomer",
+				Domain:     "crm",
+				Timeout:    time.Second,
+				CheckPermissions: func(scope tools.Context) error {
+					if _, ok := scope.Permissions["crm.customer.read"]; !ok {
+						return tools.ErrToolForbidden
+					}
+					return nil
+				},
+				Dispatcher: func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
+					id, _ := args["customerId"].(string)
+					return map[string]any{
+						"id":           id,
+						"customerCode": "CUST-001",
+						"name":         "Acme Corp",
+						"status":       "ACTIVE",
+						"riskLevel":    "low",
+					}, nil
+				},
+			},
+			{
+				MethodName: "crm.exportCustomer",
+				SDKPath:    "arda.crm.exportCustomer",
+				Domain:     "crm",
+				Timeout:    time.Second,
+				CheckPermissions: func(scope tools.Context) error {
+					if _, ok := scope.Permissions["crm.customer.export"]; !ok {
+						return tools.ErrToolForbidden
+					}
+					return nil
+				},
+				Dispatcher: func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
+					return nil, tools.ErrApprovalRequired
+				},
+			},
 		},
-		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
-			return nil, tools.ErrApprovalRequired
-		},
-	)
+	}
 
 	return NewEngine(reg), reg
 }
@@ -93,7 +101,9 @@ func TestEngine_ExecutesValidScript(t *testing.T) {
 	scope := testScope()
 
 	code := `
+		console.log("fetching customer 123");
 		const res = await arda.crm.getCustomer({ customerId: "123" });
+		console.log("customer received:", res.name);
 		return {
 			customerName: res.name,
 			code: res.customerCode
@@ -115,6 +125,14 @@ func TestEngine_ExecutesValidScript(t *testing.T) {
 	}
 	if len(result.MethodsCalled) != 1 || result.MethodsCalled[0] != "arda.crm.getCustomer" {
 		t.Errorf("expected MethodsCalled ['arda.crm.getCustomer'], got %v", result.MethodsCalled)
+	}
+
+	// Verify console.log capture
+	if len(result.Logs) != 2 {
+		t.Errorf("expected 2 console logs, got %d: %v", len(result.Logs), result.Logs)
+	}
+	if len(result.Logs) > 0 && !strings.Contains(result.Logs[0], "fetching customer 123") {
+		t.Errorf("unexpected log content: %s", result.Logs[0])
 	}
 }
 

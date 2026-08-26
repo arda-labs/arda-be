@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arda-labs/arda/apps/ai-service/internal/catalog"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 	"github.com/dop251/goja"
 )
@@ -23,28 +22,42 @@ const (
 )
 
 var (
-	ErrSandboxTimeout    = errors.New("ai.sandbox_timeout: script execution exceeded time limit")
-	ErrBudgetExceeded    = errors.New("ai.sandbox_budget_exceeded: maximum 50 SDK method calls exceeded")
-	ErrSandboxBusy      = errors.New("ai.sandbox_busy: maximum concurrent sandbox executions reached")
+	ErrSandboxTimeout = errors.New("ai.sandbox_timeout: script execution exceeded time limit")
+	ErrBudgetExceeded = errors.New("ai.sandbox_budget_exceeded: maximum 50 SDK method calls exceeded")
+	ErrSandboxBusy    = errors.New("ai.sandbox_busy: maximum concurrent sandbox executions reached")
 )
 
 type ExecutionResult struct {
-	Output         any           `json:"output,omitempty"`
-	DurationMs     int64         `json:"durationMs"`
-	ScriptHash     string        `json:"scriptHash"`
-	MethodsCalled  []string      `json:"methodsCalled"`
-	Error          string        `json:"error,omitempty"`
-	ApprovalNeeded bool          `json:"approvalNeeded,omitempty"`
-	ProposalTool   string        `json:"proposalTool,omitempty"`
+	Output         any            `json:"output,omitempty"`
+	Logs           []string       `json:"logs,omitempty"`
+	DurationMs     int64          `json:"durationMs"`
+	ScriptHash     string         `json:"scriptHash"`
+	MethodsCalled  []string       `json:"methodsCalled"`
+	Error          string         `json:"error,omitempty"`
+	ApprovalNeeded bool           `json:"approvalNeeded,omitempty"`
+	ProposalTool   string         `json:"proposalTool,omitempty"`
 	ProposalArgs   map[string]any `json:"proposalArgs,omitempty"`
 }
 
+type SDKMethod struct {
+	MethodName       string
+	SDKPath          string
+	Domain           string
+	Timeout          time.Duration
+	CheckPermissions func(scope tools.Context) error
+	Dispatcher       func(ctx context.Context, scope tools.Context, args map[string]any) (any, error)
+}
+
+type MethodRegistry interface {
+	AllSDKMethods() []SDKMethod
+}
+
 type Engine struct {
-	registry *catalog.DispatcherRegistry
+	registry MethodRegistry
 	sem      chan struct{}
 }
 
-func NewEngine(registry *catalog.DispatcherRegistry) *Engine {
+func NewEngine(registry MethodRegistry) *Engine {
 	return &Engine{
 		registry: registry,
 		sem:      make(chan struct{}, MaxConcurrentSandboxes),
@@ -100,6 +113,28 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 		}
 	}
 
+	// Safe console.log buffer (max 4 KiB total logs)
+	var consoleLogs []string
+	var totalLogBytes int
+	consoleObj := vm.NewObject()
+	logFn := func(call goja.FunctionCall) goja.Value {
+		var parts []string
+		for _, arg := range call.Arguments {
+			parts = append(parts, fmt.Sprintf("%v", arg.Export()))
+		}
+		line := strings.Join(parts, " ")
+		if totalLogBytes < 4*1024 {
+			consoleLogs = append(consoleLogs, line)
+			totalLogBytes += len(line)
+		}
+		return goja.Undefined()
+	}
+	_ = consoleObj.Set("log", logFn)
+	_ = consoleObj.Set("info", logFn)
+	_ = consoleObj.Set("warn", logFn)
+	_ = consoleObj.Set("error", logFn)
+	_ = vm.Set("console", consoleObj)
+
 	// Setup Execution Context & State
 	var mu sync.Mutex
 	callCount := 0
@@ -110,14 +145,9 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 	// 4. Inject arda.* SDK Tree
 	ardaObj := vm.NewObject()
 
-	for _, entry := range e.registry.AllEntries() {
-		entryCopy := entry
-		fn, _, ok := e.registry.Resolve(entry.MethodName)
-		if !ok {
-			continue
-		}
-
-		dispatcherFn := fn
+	methods := e.registry.AllSDKMethods()
+	for _, method := range methods {
+		methodCopy := method
 		jsHandler := func(call goja.FunctionCall) goja.Value {
 			mu.Lock()
 			callCount++
@@ -128,17 +158,19 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 					"message": "Maximum SDK call budget of 50 calls exceeded",
 				}))
 			}
-			res.MethodsCalled = append(res.MethodsCalled, entryCopy.SDKPath)
+			res.MethodsCalled = append(res.MethodsCalled, methodCopy.SDKPath)
 			mu.Unlock()
 
 			// Check permissions in Go
-			if err := entryCopy.CheckPermissions(scope); err != nil {
-				panic(vm.ToValue(map[string]any{
-					"code":    "permission_denied",
-					"domain":  entryCopy.Domain,
-					"method":  entryCopy.SDKPath,
-					"message": err.Error(),
-				}))
+			if methodCopy.CheckPermissions != nil {
+				if err := methodCopy.CheckPermissions(scope); err != nil {
+					panic(vm.ToValue(map[string]any{
+						"code":    "permission_denied",
+						"domain":  methodCopy.Domain,
+						"method":  methodCopy.SDKPath,
+						"message": err.Error(),
+					}))
+				}
 			}
 
 			// Parse arguments
@@ -154,28 +186,32 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 			}
 
 			// Execute dispatcher
-			execCtx, cancel := context.WithTimeout(ctx, entryCopy.Timeout)
+			timeout := methodCopy.Timeout
+			if timeout <= 0 {
+				timeout = DefaultExecutionTimeout
+			}
+			execCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 
-			data, err := dispatcherFn(execCtx, scope, rawArgs)
+			data, err := methodCopy.Dispatcher(execCtx, scope, rawArgs)
 			if err != nil {
 				if errors.Is(err, tools.ErrApprovalRequired) {
 					mu.Lock()
 					approvalRequiredErr = err
-					approvalTool = entryCopy.MethodName
+					approvalTool = methodCopy.MethodName
 					approvalArgs = rawArgs
 					mu.Unlock()
 					panic(vm.ToValue(map[string]any{
 						"code":    "approval_required",
-						"domain":  entryCopy.Domain,
-						"method":  entryCopy.SDKPath,
+						"domain":  methodCopy.Domain,
+						"method":  methodCopy.SDKPath,
 						"message": "Action requires human approval",
 					}))
 				}
 				panic(vm.ToValue(map[string]any{
 					"code":    "execution_failed",
-					"domain":  entryCopy.Domain,
-					"method":  entryCopy.SDKPath,
+					"domain":  methodCopy.Domain,
+					"method":  methodCopy.SDKPath,
 					"message": err.Error(),
 				}))
 			}
@@ -183,7 +219,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 			return vm.ToValue(data)
 		}
 
-		setNestedMethod(vm, ardaObj, entry.SDKPath, jsHandler)
+		setNestedMethod(vm, ardaObj, method.SDKPath, jsHandler)
 	}
 
 	_ = vm.Set("arda", ardaObj)
@@ -205,6 +241,9 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 
 	val, err := vm.RunString(wrappedScript)
 	res.DurationMs = time.Since(start).Milliseconds()
+	if len(consoleLogs) > 0 {
+		res.Logs = consoleLogs
+	}
 
 	if err != nil {
 		if approvalRequiredErr != nil {
@@ -226,7 +265,6 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 	// If the promise returned, export value
 	if val != nil {
 		exported := val.Export()
-		// In Goja, async functions return a Promise value; if we want to resolve promises synchronously in Goja:
 		if p, ok := exported.(*goja.Promise); ok {
 			switch p.State() {
 			case goja.PromiseStateFulfilled:
@@ -268,7 +306,6 @@ func setNestedMethod(vm *goja.Runtime, root *goja.Object, sdkPath string, fn fun
 	if len(parts) < 2 {
 		return
 	}
-	// skip "arda" prefix if present
 	if parts[0] == "arda" {
 		parts = parts[1:]
 	}

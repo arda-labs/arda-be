@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
@@ -65,6 +66,25 @@ func (r *DispatcherRegistry) AllEntries() []CatalogEntry {
 	items := make([]CatalogEntry, 0, len(r.entries))
 	for _, entry := range r.entries {
 		items = append(items, entry)
+	}
+	return items
+}
+
+func (r *DispatcherRegistry) AllSDKMethods() []sandbox.SDKMethod {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := make([]sandbox.SDKMethod, 0, len(r.entries))
+	for name, entry := range r.entries {
+		fn := r.dispatchers[name]
+		entryCopy := entry
+		items = append(items, sandbox.SDKMethod{
+			MethodName:       entry.MethodName,
+			SDKPath:          entry.SDKPath,
+			Domain:           entry.Domain,
+			Timeout:          entry.Timeout,
+			CheckPermissions: entryCopy.CheckPermissions,
+			Dispatcher:       fn,
+		})
 	}
 	return items
 }
