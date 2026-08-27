@@ -39,6 +39,26 @@ routes:
     permissions:
       - ai.assistant.use
 
+  - id: ai-settings-read
+    path: /api/ai/settings/**
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - ai.admin
+      - superadmin
+      - platform.manage
+
+  - id: ai-settings-write
+    path: /api/ai/settings/**
+    methods: [POST, PUT, PATCH]
+    auth: true
+    risk: high
+    permissions:
+      - ai.admin
+      - superadmin
+      - platform.manage
+
   - id: iam-public
     path: /api/iam/public/**
     auth: false
