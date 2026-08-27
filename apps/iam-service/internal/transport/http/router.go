@@ -28,6 +28,7 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 	})
 
 	// ── Admin API — User management ──
+	mux.HandleFunc("/api/admin/users/export", method("GET", adminHandler.ExportUsers))
 	mux.HandleFunc("/api/admin/users", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

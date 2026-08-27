@@ -16,6 +16,7 @@ use (
 	./libs/go/arda-crypto
 	./libs/go/arda-errors
 	./libs/go/arda-events
+	./libs/go/arda-export
 	./libs/go/arda-grpc
 	./libs/go/arda-http
 	./libs/go/arda-media
@@ -23,6 +24,7 @@ use (
 	./libs/go/arda-proto
 	./libs/go/arda-redis
 	./tools/arda-cli
+	./tools/export-stress-test
 	./tools/mock-token
 )
 

@@ -29,6 +29,7 @@ apps/*/bin/
 apps/ai-runtime/node_modules/
 apps/ai-runtime/dist/
 
+
 # rendered Helm values (generated, chứa secrets)
 deployments/auth/.values-*.rendered.yaml
 
@@ -37,3 +38,9 @@ deployments/auth/.values-*.rendered.yaml
 
 # logs
 *.log
+
+# stress test & export artifacts
+stress_output/
+stress_test_*
+*.xlsx
+*.csv

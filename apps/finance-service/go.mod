@@ -10,6 +10,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+require github.com/google/uuid v1.6.0 // indirect
+
 require (
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect

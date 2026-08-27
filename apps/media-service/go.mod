@@ -3,8 +3,8 @@ module github.com/arda-labs/arda/apps/media-service
 go 1.26
 
 require (
-	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/aws/aws-sdk-go-v2 v1.42.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
@@ -12,7 +12,16 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.104.0
 	github.com/lib/pq v1.12.3
 	github.com/pressly/goose/v3 v3.27.1
+	google.golang.org/grpc v1.81.1
 	gopkg.in/yaml.v3 v3.0.1
+)
+
+require (
+	github.com/google/uuid v1.6.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260420184626-e10c466a9529 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 require (

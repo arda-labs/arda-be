@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
 	"github.com/arda-labs/arda/apps/iam-service/internal/system"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardaexport "github.com/arda-labs/arda/libs/go/arda-export"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
@@ -97,6 +100,90 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondAdminList(w, r, items, total, listQuery.Page, listQuery.PerPage)
+}
+
+// ExportUsers handles large-scale direct streaming export of users in XLSX or CSV format.
+func (h *AdminHandler) ExportUsers(w http.ResponseWriter, r *http.Request) {
+	listQuery := parseAdminListQuery(r)
+	status := r.URL.Query().Get("status")
+	formatStr := r.URL.Query().Get("format")
+	tenantID, ok := requiredAdminTargetTenant(w, r)
+	if !ok {
+		return
+	}
+
+	format := ardaexport.NormalizeFormat(formatStr)
+	filename := fmt.Sprintf("users_export_%s", time.Now().Format("20060102_150405"))
+
+	cols := []ardaexport.Column{
+		{Header: "ID", Key: "id", Type: ardaexport.CellTypeCode},
+		{Header: "Tên đăng nhập", Key: "username", Type: ardaexport.CellTypeString},
+		{Header: "Email", Key: "email", Type: ardaexport.CellTypeString},
+		{Header: "Tên hiển thị", Key: "displayName", Type: ardaexport.CellTypeString},
+		{Header: "Họ", Key: "firstName", Type: ardaexport.CellTypeString},
+		{Header: "Tên", Key: "lastName", Type: ardaexport.CellTypeString},
+		{Header: "Số điện thoại", Key: "phoneNumber", Type: ardaexport.CellTypeCode},
+		{
+			Header: "Trạng thái",
+			Key:    "status",
+			Type:   ardaexport.CellTypeString,
+			Formatter: func(v any) any {
+				if s, ok := v.(string); ok {
+					if s == "ACTIVE" {
+						return "Đang hoạt động"
+					}
+					return "Đã vô hiệu"
+				}
+				return v
+			},
+		},
+		{Header: "Ngày tạo", Key: "createdAt", Type: ardaexport.CellTypeDate},
+	}
+
+	opts := ardaexport.StreamOptions{
+		Title:     "BÁO CÁO DANH SÁCH NGƯỜI DÙNG HỆ THỐNG",
+		SheetName: "Users",
+		Columns:   cols,
+		Locale:    "vi-VN",
+	}
+
+	err := ardaexport.ServeStreamHTTP(w, r, format, filename, func(ctx context.Context, out io.Writer) error {
+		rows, err := h.userRepo.StreamUsers(ctx, repository.ListUsersParams{
+			Status:    status,
+			Search:    listQuery.Q,
+			TenantID:  tenantID,
+			SortField: listQuery.Sort,
+			SortOrder: listSortOrder(listQuery),
+		})
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		supplier := func() ([]any, error) {
+			if !rows.Next() {
+				if rows.Err() != nil {
+					return nil, rows.Err()
+				}
+				return nil, io.EOF
+			}
+			var id, username, email, displayName, firstName, lastName, phoneNumber, userStatus string
+			var createdAt time.Time
+			if err := rows.Scan(&id, &username, &email, &displayName, &firstName, &lastName, &phoneNumber, &userStatus, &createdAt); err != nil {
+				return nil, err
+			}
+			return []any{id, username, email, displayName, firstName, lastName, phoneNumber, userStatus, createdAt}, nil
+		}
+
+		if format == ardaexport.FormatCSV {
+			return ardaexport.StreamCSV(ctx, out, opts, supplier)
+		}
+		return ardaexport.StreamXLSX(ctx, out, opts, supplier)
+	})
+
+	if err != nil {
+		h.logger.Error("export users streaming failed", "err", err)
+	}
 }
 
 func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {

@@ -51,3 +51,5 @@ replace github.com/arda-labs/arda/libs/go/arda-media => ../../libs/go/arda-media
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
+
+replace github.com/arda-labs/arda/libs/go/arda-export => ../../libs/go/arda-export

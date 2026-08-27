@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/platform-service
 
-go 1.26
+go 1.26.3
 
 require (
 	github.com/lib/pq v1.12.3
@@ -9,6 +9,8 @@ require (
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+require github.com/google/uuid v1.6.0 // indirect
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0

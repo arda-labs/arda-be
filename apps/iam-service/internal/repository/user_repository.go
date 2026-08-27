@@ -1249,3 +1249,57 @@ func (r *UserRepository) scanUser(row *sql.Row) (*domain.User, error) {
 	}
 	return u, nil
 }
+
+// StreamUsers queries iam_users and returns a live *sql.Rows cursor for memory-constant streaming.
+func (r *UserRepository) StreamUsers(ctx context.Context, params ListUsersParams) (*sql.Rows, error) {
+	where := []string{"1=1"}
+	args := []any{}
+	argIdx := 1
+
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, params.Status)
+		argIdx++
+	}
+	if params.TenantID != "" {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", argIdx))
+		args = append(args, params.TenantID)
+		argIdx++
+	}
+	if params.Search != "" {
+		where = append(where, fmt.Sprintf("(username ILIKE $%d OR email ILIKE $%d)", argIdx, argIdx))
+		args = append(args, "%"+params.Search+"%")
+		argIdx++
+	}
+
+	whereClause := strings.Join(where, " AND ")
+
+	sortCol := "created_at"
+	if params.SortField != "" {
+		switch params.SortField {
+		case "username":
+			sortCol = "username"
+		case "email":
+			sortCol = "email"
+		case "status":
+			sortCol = "status"
+		case "createdAt", "created_at":
+			sortCol = "created_at"
+		}
+	}
+	sortDir := "DESC"
+	if strings.ToUpper(params.SortOrder) == "ASC" {
+		sortDir = "ASC"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, username, email, COALESCE(display_name, ''),
+		       COALESCE(first_name, ''), COALESCE(last_name, ''),
+		       COALESCE(phone_number, ''), status, created_at
+		FROM iam_users
+		WHERE %s
+		ORDER BY %s %s
+	`, whereClause, sortCol, sortDir)
+
+	return r.db.QueryContext(ctx, query, args...)
+}
