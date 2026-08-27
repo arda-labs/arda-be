@@ -171,3 +171,34 @@ func normalizeMessage(code, message string) string {
 	}
 	return MessageForCode(code)
 }
+
+// StatusForCode maps canonical problem codes back to the HTTP status used for
+// the transport response. Handlers should derive the status at the boundary
+// and pair it with New/Wrap; this reverse mapping exists so an *Error crossing
+// a service-to-service boundary can be rendered without per-service guessing
+// or string matching on messages.
+func StatusForCode(code string) int {
+	switch code {
+	case CodeInvalidJSON, CodeInvalidInput, CodeRequired:
+		return http.StatusBadRequest
+	case CodeUnauthorized, CodeUserContextRequired:
+		return http.StatusUnauthorized
+	case CodeForbidden:
+		return http.StatusForbidden
+	case CodeNotFound, CodeUserNotFound, CodeRoleNotFound, CodePermissionNotFound:
+		return http.StatusNotFound
+	case CodeConflict,
+		CodeSuperAdminLastActive,
+		CodeSuperAdminSystemUserProtected,
+		CodeSuperAdminRoleProtected,
+		CodeSuperAdminPermissionProtected,
+		CodeSessionLimitReached:
+		return http.StatusConflict
+	case CodeMethodNotAllowed:
+		return http.StatusMethodNotAllowed
+	case CodeBadGateway:
+		return http.StatusBadGateway
+	default:
+		return http.StatusInternalServerError
+	}
+}

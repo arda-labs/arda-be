@@ -403,3 +403,15 @@ Content-Type: application/json
 ```
 
 FE: `notify.error(t("platform.organizations.load_failed"), translateApiError(err))` — user thấy tiếng Việt từ key `validation.range`, support copy `request_id` khi báo lỗi.
+
+---
+
+## Shared transport helpers (libs/go/arda-http)
+
+Handlers do not re-implement envelope math or keyword error mapping. The shared library owns:
+
+- DeriveErrorCode(status, message) canonical code resolution (invalid-json / required heuristics, 502/503/504 map to BadGateway).
+- WriteServiceError(w, r, err) resolution order: typed *ardaerrors.Error -> StatusForCode(code); sql.ErrNoRows -> 404 common.error.not_found; free-form legacy message -> DeriveStatusFromMessage shim (not found / conflict / cannot be / must be / workflow / upstream keywords).
+- PageSlice(items, ListQuery) framing for in-memory lists; WriteEnvelopeList / WriteEnvelopeUnpaged / WriteEnvelopeAnyList write the migrated success envelope.
+
+Migration status: crm, hrm, workflow, notification, finance, media delegating helpers + iam errorCodeFor use these APIs. Next step is converting service constructors to return *ardaerrors.Error values so the legacy message shim can retire per service.

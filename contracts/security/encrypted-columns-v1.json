@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "notes": [
+    "Every column storing plaintext-reversible secrets must be registered here with its owning service implementation using libs/go/arda-crypto.",
+    "allow_plaintext entries document one-way hashes or intentionally plain values that skip envelope encryption."
+  ],
+  "columns": [
+    {
+      "service": "ai-service",
+      "table": "public.ai_tenant_settings",
+      "column": "api_key",
+      "handling": "encrypted",
+      "implementation": "internal/repository/tenant_settings.go",
+      "cipher": "enc:v1 AES-256-GCM with HKDF-SHA256 key derivation"
+    }
+  ]
+}

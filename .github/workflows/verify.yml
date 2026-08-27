@@ -60,6 +60,8 @@ jobs:
         run: node scripts/check-proto.mjs
       - name: Validate secret hygiene
         run: node scripts/check-secrets.mjs
+      - name: Validate encrypted-column registry
+        run: node scripts/check-encrypted-columns.mjs
       - name: Validate local Compose topology
         run: docker compose config --no-interpolate --quiet
       - name: Test every Go module

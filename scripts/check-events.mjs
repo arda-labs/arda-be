@@ -17,9 +17,16 @@ if (subjects.length !== registeredSubjects.length || subjects.some((value) => !r
 if (eventCodes.length !== registeredCodes.length || eventCodes.some((value) => !registeredCodes.includes(value))) {
   throw new Error("event code registry does not match arda-events.go")
 }
+const STATUSES = new Set(["draft", "wired"])
 for (const event of registry.events) {
   if (!event.producer || !event.consumer_status || event.schema_version !== 1) {
     throw new Error(`incomplete event registry entry: ${event.subject}`)
   }
+  if (!STATUSES.has(event.status)) {
+    throw new Error(`event ${event.subject}: status must be "draft" or "wired"`)
+  }
 }
-console.log(`Event registry OK: ${registry.events.length} version-1 events`)
+const draftCount = registry.events.filter((event) => event.status === "draft").length
+console.log(
+  `Event registry OK: ${registry.events.length} version-1 events (${draftCount} draft, ${registry.events.length - draftCount} wired)`
+)

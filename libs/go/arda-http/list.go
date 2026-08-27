@@ -3,6 +3,7 @@ package ardahttp
 import (
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -130,4 +131,78 @@ func PickSortField(field string, allowed map[string]string, fallback string) str
 		return mapped
 	}
 	return fallback
+}
+
+// PageSlice applies the parsed ListQuery framing to an in-memory slice and
+// reports the values required for a list envelope (paged items, total, page,
+// per_page). all=1 / tree / options views return the full slice with per_page
+// sized to the result, matching ParseListQuery semantics so every service's
+// in-memory list endpoint stays consistent without local reimplementation.
+func PageSlice[T any](items []T, q ListQuery) ([]T, int, int, int) {
+	total := len(items)
+	if q.All || q.View != "" {
+		perPage := total
+		if perPage == 0 {
+			perPage = 1
+		}
+		return items, total, 1, perPage
+	}
+	page := q.Page
+	if page < 1 {
+		page = 1
+	}
+	start := q.Offset()
+	if total == 0 || start >= total {
+		return []T{}, total, page, q.PerPage
+	}
+	end := start + q.PerPage
+	if end > total {
+		end = total
+	}
+	return items[start:end], total, page, q.PerPage
+}
+
+// WriteEnvelopeList writes a migrated success-envelope response whose result
+// is the standard paginated list shape. Pair with PageSlice for handlers that
+// hold the complete result set in memory.
+func WriteEnvelopeList[T any](w http.ResponseWriter, r *http.Request, status int, page, perPage, total int, items []T) {
+	WriteSuccess(w, r, status, NewListResponse(page, perPage, total, items))
+}
+
+// WriteEnvelopeUnpaged writes a migrated success-envelope response for
+// lookup/reference endpoints that intentionally return the complete set in one
+// response while keeping the standard list shape.
+func WriteEnvelopeUnpaged[T any](w http.ResponseWriter, r *http.Request, items []T) {
+	if items == nil {
+		items = []T{}
+	}
+	total := len(items)
+	perPage := total
+	if perPage == 0 {
+		perPage = 1
+	}
+	WriteEnvelopeList(w, r, http.StatusOK, 1, perPage, total, items)
+}
+
+// WriteEnvelopeAnyList mirrors WriteEnvelopeUnpaged for the rare adapter
+// surfaces whose item type is only known as `any` at compile time; the slice
+// length is derived via reflection instead of per-domain type switches.
+func WriteEnvelopeAnyList(w http.ResponseWriter, r *http.Request, items any) {
+	total := 0
+	if items == nil {
+		items = []any{}
+	} else if value := reflect.ValueOf(items); value.IsValid() &&
+		(value.Kind() == reflect.Slice || value.Kind() == reflect.Array) {
+		total = value.Len()
+	}
+	perPage := total
+	if perPage == 0 {
+		perPage = 1
+	}
+	WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"items":    items,
+		"page":     1,
+		"per_page": perPage,
+		"total":    total,
+	})
 }

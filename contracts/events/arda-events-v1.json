@@ -6,10 +6,10 @@
     "delivery": "JetStream durable consumer with explicit acknowledgement after local commit"
   },
   "events": [
-    { "subject": "arda.platform.parameter.changed", "event_code": "platform.parameter.changed", "schema_version": 1, "producer": "platform-service", "consumer_status": "reference-only", "payload_schema": "producer-owned; pending schema publication" },
-    { "subject": "arda.platform.lookup.changed", "event_code": "platform.lookup.changed", "schema_version": 1, "producer": "platform-service", "consumer_status": "reference-only", "payload_schema": "producer-owned; pending schema publication" },
-    { "subject": "arda.finance.transaction.posted", "event_code": "finance.transaction.posted", "schema_version": 1, "producer": "finance-service", "consumer_status": "reference-only", "payload_schema": "producer-owned; pending schema publication" },
-    { "subject": "arda.iam.user.changed", "event_code": "iam.user.changed", "schema_version": 1, "producer": "iam-service", "consumer_status": "reference-only", "payload_schema": "producer-owned; pending schema publication" },
-    { "subject": "arda.notification.inbox.created.v1", "event_code": "notification.inbox.created", "schema_version": 1, "producer": "notification-service", "consumer_status": "publisher-enabled-consumer-reference-only", "payload_schema": "notification inbox payload; consumer requires inbox/dedupe integration fixture" }
+    { "subject": "arda.platform.parameter.changed", "event_code": "platform.parameter.changed", "status": "draft", "schema_version": 1, "producer": "platform-service", "consumer_status": "reference-only", "payload_schema": "producer-owned; pending schema publication" },
+    { "subject": "arda.platform.lookup.changed", "event_code": "platform.lookup.changed", "status": "draft", "schema_version": 1, "producer": "platform-service", "consumer_status": "reference-only", "payload_schema": "producer-owned; pending schema publication" },
+    { "subject": "arda.finance.transaction.posted", "event_code": "finance.transaction.posted", "status": "draft", "schema_version": 1, "producer": "finance-service", "consumer_status": "reference-only", "payload_schema": "producer-owned; pending schema publication" },
+    { "subject": "arda.iam.user.changed", "event_code": "iam.user.changed", "status": "draft", "schema_version": 1, "producer": "iam-service", "consumer_status": "reference-only", "payload_schema": "producer-owned; pending schema publication" },
+    { "subject": "arda.notification.inbox.created.v1", "event_code": "notification.inbox.created", "status": "wired", "schema_version": 1, "producer": "notification-service", "consumer_status": "publisher-enabled-consumer-reference-only", "payload_schema": "notification inbox payload; consumer requires inbox/dedupe integration fixture" }
   ]
 }

@@ -15,6 +15,7 @@ func respondJSON(w http.ResponseWriter, r *http.Request, status int, data any) {
 
 func respondError(w http.ResponseWriter, r *http.Request, status int, msg string) {
 	code := ardaerrors.CodeForStatus(status)
+	// Historical caller contract: bare "invalid body" carries no JSON keyword.
 	if status == http.StatusBadRequest && msg == "invalid body" {
 		code = ardaerrors.CodeInvalidJSON
 	}
@@ -22,52 +23,16 @@ func respondError(w http.ResponseWriter, r *http.Request, status int, msg string
 }
 
 func respondPaged(w http.ResponseWriter, r *http.Request, txns []domain.Transaction, total, page, perPage int) {
-	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, txns))
+	ardahttp.WriteEnvelopeList(w, r, http.StatusOK, page, perPage, total, txns)
 }
 
-func respondUnpagedList(w http.ResponseWriter, r *http.Request, items any) {
-	total := lenItems(items)
-	ardahttp.WriteSuccess(w, r, http.StatusOK, unpagedListResult{
-		Items:   items,
-		Page:    1,
-		PerPage: maxInt(total, 1),
-		Total:   total,
-	})
-}
-
-type unpagedListResult struct {
-	Items   any `json:"items"`
-	Page    int `json:"page"`
-	PerPage int `json:"per_page"`
-	Total   int `json:"total"`
-}
-
-func lenItems(items any) int {
-	switch value := items.(type) {
-	case []domain.ProcessConfig:
-		return len(value)
-	case []domain.AccountClassification:
-		return len(value)
-	case []domain.JournalDefinition:
-		return len(value)
-	case []domain.NamedAccountMapping:
-		return len(value)
-	default:
-		return 0
-	}
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func respondList(w http.ResponseWriter, r *http.Request, data any, err error) {
+// respondList replaces the previous `any` + per-domain lenItems type switch:
+// generics give real totals for every slice, and service errors flow through
+// the shared typed resolver instead of a hand-rolled 500.
+func respondList[T any](w http.ResponseWriter, r *http.Request, items []T, err error) {
 	if err != nil {
-		respondError(w, r, http.StatusInternalServerError, err.Error())
+		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	respondUnpagedList(w, r, data)
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
 }

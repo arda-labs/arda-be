@@ -26,24 +26,7 @@ func respondRequestError(w http.ResponseWriter, r *http.Request, status int, cod
 }
 
 func errorCodeFor(status int, msg string) string {
-	code := ardaerrors.CodeForStatus(status)
-	lower := strings.ToLower(msg)
-	switch {
-	case status == http.StatusBadRequest && strings.Contains(lower, "json"):
-		return ardaerrors.CodeInvalidJSON
-	case status == http.StatusBadRequest && strings.Contains(lower, "required"):
-		return ardaerrors.CodeRequired
-	case status == http.StatusNotFound:
-		return ardaerrors.CodeNotFound
-	case status == http.StatusConflict:
-		return ardaerrors.CodeConflict
-	case status == http.StatusUnauthorized:
-		return ardaerrors.CodeUnauthorized
-	case status == http.StatusForbidden:
-		return ardaerrors.CodeForbidden
-	default:
-		return code
-	}
+	return ardahttp.DeriveErrorCode(status, msg)
 }
 
 func firstNonEmpty(values ...string) string {
