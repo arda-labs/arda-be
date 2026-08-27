@@ -37,13 +37,23 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	visibility := strings.TrimSpace(r.FormValue("visibility"))
+	module := strings.TrimSpace(r.FormValue("module"))
+	entityType := strings.TrimSpace(r.FormValue("entity_type"))
+	if visibility == "" {
+		if module == "iam" || entityType == "iam_user" || entityType == "iam_user_cover" {
+			visibility = "public"
+		}
+	}
+
 	req := domain.InitUploadRequest{
-		Module:           r.FormValue("module"),
-		EntityType:       r.FormValue("entity_type"),
+		Module:           module,
+		EntityType:       entityType,
 		EntityID:         r.FormValue("entity_id"),
 		OriginalFilename: header.Filename,
 		ContentType:      header.Header.Get("Content-Type"),
 		SizeBytes:        header.Size,
+		Visibility:       visibility,
 	}
 	applyRequestContext(r, &req)
 	if strings.TrimSpace(req.TenantID) == "" || strings.TrimSpace(req.OrgID) == "" {
@@ -77,6 +87,11 @@ func (h *MediaHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
 		return
 	}
+	if req.Visibility == "" {
+		if req.Module == "iam" || req.EntityType == "iam_user" || req.EntityType == "iam_user_cover" {
+			req.Visibility = "public"
+		}
+	}
 	resp, err := h.service.InitUpload(r.Context(), req)
 	if err != nil {
 		writeServiceError(w, r, err)
@@ -109,6 +124,14 @@ func (h *MediaHandler) View(w http.ResponseWriter, r *http.Request, publicID str
 
 func (h *MediaHandler) Download(w http.ResponseWriter, r *http.Request, publicID string) {
 	h.handleRetrieve(w, r, publicID, true)
+}
+
+func (h *MediaHandler) PublicView(w http.ResponseWriter, r *http.Request, publicID string) {
+	h.handlePublicRetrieve(w, r, publicID, false)
+}
+
+func (h *MediaHandler) PublicDownload(w http.ResponseWriter, r *http.Request, publicID string) {
+	h.handlePublicRetrieve(w, r, publicID, true)
 }
 
 func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request, publicID string) {
@@ -206,6 +229,59 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 			return
 		}
 		w.Header().Set("Cache-Control", "private, max-age=30")
+		http.Redirect(w, r, redirectURL, http.StatusFound)
+	}
+}
+
+func (h *MediaHandler) handlePublicRetrieve(w http.ResponseWriter, r *http.Request, publicID string, download bool) {
+	slog.Info("incoming public retrieve request", "public_id", publicID, "download", download)
+	ctx := r.Context()
+	file, err := h.service.GetPublicFileByPublicID(ctx, publicID)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+
+	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded && file.Status != domain.StatusTemp && file.Status != domain.StatusAttached {
+		writeError(w, r, http.StatusConflict, "media.file.not_ready", "File is not ready")
+		return
+	}
+
+	const MaxStreamSize = 2 * 1024 * 1024 // 2MB
+	if file.SizeBytes < MaxStreamSize {
+		stream, err := h.service.GetObjectStream(ctx, file)
+		if err != nil {
+			slog.Error("failed to get stream", "err", err)
+			writeError(w, r, http.StatusInternalServerError, "media.stream.failed", "Failed to stream file")
+			return
+		}
+		defer stream.Close()
+
+		w.Header().Set("Content-Type", file.ContentType)
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", file.SizeBytes))
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+
+		if download {
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", file.OriginalFilename))
+		}
+
+		etag := fmt.Sprintf(`W/"%s-%d"`, publicID, file.SizeBytes)
+		w.Header().Set("ETag", etag)
+
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, stream)
+	} else {
+		redirectURL, err := h.service.GetPublicContentRedirectURLByPublicID(ctx, publicID, download)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=300")
 		http.Redirect(w, r, redirectURL, http.StatusFound)
 	}
 }

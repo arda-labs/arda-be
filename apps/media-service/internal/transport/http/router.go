@@ -40,6 +40,22 @@ func NewRouter(mediaHandler *handler.MediaHandler) http.Handler {
 		methodNotAllowed(w, r)
 	})
 
+	mux.HandleFunc("/api/media/public/", func(w http.ResponseWriter, r *http.Request) {
+		publicID, action, ok := parsePublicMediaAction(r.URL.Path)
+		if !ok {
+			ardahttp.WriteProblem(w, r, http.StatusNotFound, ardaerrors.New(ardaerrors.CodeNotFound, "public media route not found"))
+			return
+		}
+		switch {
+		case action == "" && r.Method == http.MethodGet:
+			mediaHandler.PublicView(w, r, publicID)
+		case action == "download" && r.Method == http.MethodGet:
+			mediaHandler.PublicDownload(w, r, publicID)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+
 	mux.HandleFunc("/api/media/", func(w http.ResponseWriter, r *http.Request) {
 		publicID, action, ok := parseMediaAction(r.URL.Path)
 		if !ok {
@@ -59,6 +75,21 @@ func NewRouter(mediaHandler *handler.MediaHandler) http.Handler {
 	})
 
 	return mux
+}
+
+func parsePublicMediaAction(urlPath string) (publicID string, action string, ok bool) {
+	rest := strings.TrimPrefix(urlPath, "/api/media/public/")
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return "", "", false
+	}
+	if len(parts) == 1 {
+		return parts[0], "", true
+	}
+	if len(parts) == 2 {
+		return parts[0], parts[1], true
+	}
+	return "", "", false
 }
 
 func parseMediaAction(urlPath string) (publicID string, action string, ok bool) {

@@ -229,6 +229,17 @@ func (s *MediaService) GetFileByPublicIDScoped(ctx context.Context, scope domain
 	return file, nil
 }
 
+func (s *MediaService) GetPublicFileByPublicID(ctx context.Context, publicID string) (domain.File, error) {
+	file, err := s.repo.GetPublicFileByPublicID(ctx, publicID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.File{}, ErrNotFound
+		}
+		return domain.File{}, err
+	}
+	return file, nil
+}
+
 func (s *MediaService) DeleteFileByPublicIDScoped(ctx context.Context, scope domain.FileScope, publicID string) error {
 	file, err := s.repo.GetFileByPublicIDScoped(ctx, scope, publicID)
 	if err != nil {
@@ -245,6 +256,28 @@ func (s *MediaService) DeleteFileByPublicIDScoped(ctx context.Context, scope dom
 
 func (s *MediaService) GetContentRedirectURLByPublicIDScoped(ctx context.Context, scope domain.FileScope, publicID string, download bool) (string, error) {
 	file, err := s.repo.GetFileByPublicIDScoped(ctx, scope, publicID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded && file.Status != domain.StatusTemp && file.Status != domain.StatusAttached {
+		return "", ErrNotReady
+	}
+	input := storage.PresignGetInput{Bucket: file.Bucket, Key: file.ObjectKey, ExpiresIn: s.cfg.PresignDownloadTTL}
+	if download {
+		input.ResponseContentDisposition = fmt.Sprintf("attachment; filename=%q", file.OriginalFilename)
+	}
+	presigned, err := s.storage.PresignGetObject(ctx, input)
+	if err != nil {
+		return "", err
+	}
+	return presigned.URL, nil
+}
+
+func (s *MediaService) GetPublicContentRedirectURLByPublicID(ctx context.Context, publicID string, download bool) (string, error) {
+	file, err := s.repo.GetPublicFileByPublicID(ctx, publicID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", ErrNotFound

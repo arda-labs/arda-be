@@ -180,6 +180,18 @@ WHERE tenant_id = $1 AND COALESCE(org_id,'') = $2 AND public_id = $3 AND deleted
 	return r.scanFile(ctx, query, scope.TenantID, scope.OrgID, publicID)
 }
 
+func (r *MediaRepository) GetPublicFileByPublicID(ctx context.Context, publicID string) (domain.File, error) {
+	const query = `
+SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,''), module,
+  COALESCE(entity_type,''), COALESCE(entity_id,''), original_filename, content_type,
+  COALESCE(extension,''), size_bytes, COALESCE(checksum_sha256,''), status, scan_status,
+  storage_provider, bucket, object_key, storage_class, version_id, visibility,
+  COALESCE(created_by,''), created_at, uploaded_at, expires_at
+FROM media_files
+WHERE public_id = $1 AND visibility = 'public' AND deleted_at IS NULL`
+	return r.scanFile(ctx, query, publicID)
+}
+
 func (r *MediaRepository) DeleteFileScoped(ctx context.Context, scope domain.FileScope, id string) error {
 	if strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.OrgID) == "" {
 		return errors.New("tenant and organization scope are required")

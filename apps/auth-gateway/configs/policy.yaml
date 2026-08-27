@@ -346,6 +346,12 @@ routes:
     permissions:
       - workflow.manage
 
+  - id: media-public
+    path: /api/media/public/**
+    methods: [GET]
+    auth: false
+    risk: public
+
   - id: media-read
     path: /api/media/**
     methods: [GET]

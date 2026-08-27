@@ -51,3 +51,27 @@ func TestPublicFileJSONDoesNotExposeStorageCoordinates(t *testing.T) {
 		t.Fatalf("public_id = %#v", got["public_id"])
 	}
 }
+
+func TestAvatarVisibilityDefault(t *testing.T) {
+	tests := []struct {
+		module     string
+		entityType string
+		visibility string
+		want       string
+	}{
+		{module: "iam", entityType: "iam_user", visibility: "", want: "public"},
+		{module: "iam", entityType: "iam_user_cover", visibility: "", want: "public"},
+		{module: "crm", entityType: "attachment", visibility: "", want: ""},
+		{module: "crm", entityType: "attachment", visibility: "public", want: "public"},
+	}
+
+	for _, tt := range tests {
+		vis := tt.visibility
+		if vis == "" && (tt.module == "iam" || tt.entityType == "iam_user" || tt.entityType == "iam_user_cover") {
+			vis = "public"
+		}
+		if vis != tt.want {
+			t.Errorf("visibility for module %s, entity %s = %v, want %v", tt.module, tt.entityType, vis, tt.want)
+		}
+	}
+}
