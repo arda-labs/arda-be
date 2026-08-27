@@ -1,98 +1,88 @@
-# API Errors
+# API Errors & Problem Details Standard
 
-Workspace contract for HTTP error responses across Arda backend services and MFE clients.
+Workspace contract for HTTP error responses across Arda Go backend microservices and MFE clients.
 
-**Related:** [http-api.md](http-api.md) (list success shape, `X-Request-Id` headers), [i18n.md](i18n.md) (FE translation of `code`), [problem details catalog](../problems/README.md).
+**Related:** [http-api.md](http-api.md) (list success shape, `X-Request-Id`, `X-Trace-Id` headers), [i18n.md](i18n.md) (FE translation of `code`), [problem details catalog](../problems/README.md).
 
-## JSON shape (domain services — target standard)
+---
 
-Services using `arda-errors` respond with:
+## 1. Canonical Error Shapes
 
+### RFC-7807 Problem Details (`ardahttp.WriteProblem`)
+Endpoint sử dụng `Content-Type: application/problem+json` với cấu trúc flat, đính kèm `request_id` và W3C `trace_id`:
+
+```json
+{
+  "type": "https://docs.arda.io.vn/problems/crm.customer.conflict",
+  "title": "Conflict",
+  "status": 409,
+  "code": "crm.customer.conflict",
+  "message": "customer already has a pending amendment",
+  "errors": [
+    { "field": "tax_code", "code": "validation.required", "message": "validation.required" }
+  ],
+  "request_id": "83b1293a-8742-4916-b864-16a782163b2f",
+  "trace_id": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+}
+```
+
+### Application Error Envelope (`ardahttp.WriteAppError`)
 ```json
 {
   "error": {
     "code": "validation.invalid_input",
     "message": "Request is invalid",
     "fields": { "email": "validation.required" },
-    "request_id": "optional-correlation-id"
+    "request_id": "83b1293a-8742-4916-b864-16a782163b2f"
   }
 }
 ```
 
-Go types: `libs/go/arda-errors` — `ardaerrors.Error`, `ardaerrors.Response`.
+Go shared packages:
+* `libs/go/arda-errors` (`*ardaerrors.Error`, `ardaerrors.Response`)
+* `libs/go/arda-http` (`ardahttp.WriteProblem`, `ardahttp.WriteAppError`, `ardahttp.WriteSuccess`)
 
-## Common codes
+---
+
+## 2. Common Canonical Codes
 
 | Code | Typical HTTP | Meaning |
-| --- | --- | --- |
-| `auth.error.unauthorized` | 401 | Missing or invalid auth |
-| `auth.error.forbidden` | 403 | Authenticated but not allowed |
+| :--- | :--- | :--- |
+| `auth.error.unauthorized` | 401 | Missing or invalid auth token/session |
+| `auth.error.forbidden` | 403 | Authenticated but insufficient permission |
+| `tenant.error.scope_required` | 403 | Missing active tenant or organization scope (`ardaerrors.CodeTenantScopeRequired`) |
+| `tenant.error.migration_required` | 403 | Tenant migration needed |
 | `common.error.not_found` | 404 | Resource missing |
-| `common.error.conflict` | 409 | Duplicate or state conflict |
-| `validation.invalid_json` | 400 | Body not JSON |
+| `common.error.conflict` | 409 | Duplicate entry or state machine conflict |
+| `validation.invalid_json` | 400 | Request body is not valid JSON (`ardaerrors.CodeInvalidJSON`) |
 | `validation.invalid_input` | 400 | General validation failure |
-| `validation.required` | 400 | Required field (often in `fields`) |
-| `common.error.internal` | 500 | Unexpected server error |
-| `iam.user.not_found` | 404 | IAM-specific (extend per domain) |
+| `validation.required` | 400 | Required field missing |
+| `common.error.internal` | 500 | Unexpected server panic/error |
+| `common.error.bad_gateway` | 502 | Upstream service failure (e.g. gRPC client failure) |
 
-Add domain codes as `\<service\>.\<entity\>.\<reason>` (e.g. `iam.superadmin.last_active`).
+---
 
-`ardaerrors.CodeForStatus(httpStatus)` maps status → default code when only status is known.
-
-## Problem details URLs
-
-Public HTTP errors use RFC-style problem details and a stable `type` URL. The
-URL is documentation, not a remote dependency required to handle the error.
-Keep `code`, HTTP status, and URL stable; put localized or changing text in
-`detail`/`message`. Do not include stack traces, tokens, SQL, or authorization
-policy internals. Add every new public problem to the [catalog](../problems/README.md)
-and add a CI check when the documentation site is available.
-
-## Handler patterns (Go)
-
-**Preferred (iam-service):**
+## 3. Go Handler Implementation Standard
 
 ```go
-respondErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "email required")
-respondRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeForbidden, "")
+// 1. Lỗi validation / bad request:
+writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "invalid request body")
+
+// 2. Lỗi thiếu tenant / org scope:
+writeErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
+
+// 3. Lỗi Service layer / SQL:
+writeServiceError(w, r, err) // Tự động map sql.ErrNoRows -> 404, ardaerrors.Error -> code/status tương ứng
+
+// 4. Thành công:
+ardahttp.WriteSuccess(w, r, http.StatusOK, result)
 ```
 
-**Preferred (platform-service):** return `*ardaerrors.Error` from service layer; `writeResult` encodes it.
+---
 
-**Legacy (hrm-service, auth-gateway edge):** `{"error":"plain message"}` — align new code with `arda-errors`; do not copy legacy shape into new services.
+## 4. Frontend Integration Contract
 
-## Field validation
-
-- Use `err.WithField("fieldName", "validation.required")` for form-level errors.
-- HTTP 400 with `fields` map — frontend maps to RHF `setError("fieldName", { message })`.
-
-## Frontend mapping
-
-1. `@workspace/api/client` parses error body on non-2xx.
-2. `ApiErrorLike` in `@workspace/i18n` carries `code`, `message`, `status`, `fields`.
-3. `translateApiError(error)` — looks up `code` in i18n resources, falls back to `message`.
-4. Mutations: `notify.error("Action failed", translateApiError(error))`.
-5. Forms: map `error.fields` to `form.setError` when present.
-
-```tsx
-catch (error) {
-  const apiErr = toApiError(error)
-  if (apiErr instanceof ApiErrorLike && apiErr.fields) {
-    for (const [field, code] of Object.entries(apiErr.fields)) {
-      form.setError(field as keyof Values, { message: translateApiError({ code }) })
-    }
-    return
-  }
-  notify.error("Save failed", translateApiError(error))
-}
-```
-
-## Consistency roadmap
-
-| Layer | Current | Target |
-| --- | --- | --- |
-| iam-service, platform-service | `arda-errors` envelope | Keep |
-| hrm-service, newer CRUD | Simple `{"error":"..."}` | Migrate to `arda-errors` |
-| auth-gateway ForwardAuth | Deny without JSON contract | Edge-only; not for domain APIs |
-
-Skill: `.agents/skills/arda-api-errors` for implementation checklist.
+1. `@workspace/api/client` tự động bắt mọi HTTP non-2xx, trích xuất `code`, `message`, `fields`, `request_id`.
+2. `@workspace/ui/feedback/notify` kết hợp `@workspace/i18n`:
+   * `notify.saveFailed(err)` hoặc `notify.apiError(title, err)` tự động dịch `code` sang ngôn ngữ hiện tại của người dùng.
+   * `error.fields` được tự động map vào React Hook Form `setError("fieldName", { message })`.
