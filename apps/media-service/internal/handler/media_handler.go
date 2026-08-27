@@ -11,6 +11,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/media-service/internal/domain"
 	"github.com/arda-labs/arda/apps/media-service/internal/service"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 )
 
 type MediaHandler struct {
@@ -46,7 +47,7 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	applyRequestContext(r, &req)
 	if strings.TrimSpace(req.TenantID) == "" || strings.TrimSpace(req.OrgID) == "" {
-		writeError(w, r, http.StatusForbidden, "scope.required", "tenant and organization are required")
+		writeError(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
 		return
 	}
 
@@ -68,12 +69,12 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 func (h *MediaHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 	var req domain.InitUploadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, r, http.StatusBadRequest, "validation.invalid_json", "Request body is not valid JSON")
+		writeError(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "Request body is not valid JSON")
 		return
 	}
 	applyRequestContext(r, &req)
 	if strings.TrimSpace(req.OrgID) == "" {
-		writeError(w, r, http.StatusForbidden, "scope.required", "tenant and organization are required")
+		writeError(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
 		return
 	}
 	resp, err := h.service.InitUpload(r.Context(), req)
@@ -91,7 +92,7 @@ func (h *MediaHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 func (h *MediaHandler) CompleteUpload(w http.ResponseWriter, r *http.Request, fileID string) {
 	scope, ok := mediaScope(r)
 	if !ok {
-		writeError(w, r, http.StatusForbidden, "scope.required", "tenant and organization are required")
+		writeError(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
 		return
 	}
 	resp, err := h.service.CompleteUploadScoped(r.Context(), scope, fileID)
@@ -118,7 +119,7 @@ func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request, publicID s
 	orgID := firstHeader(r, "X-Org-Id")
 	scope, ok := mediaScope(r)
 	if !ok {
-		writeError(w, r, http.StatusForbidden, "scope.required", "tenant and organization are required")
+		writeError(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
 		return
 	}
 	ip := r.RemoteAddr
@@ -143,7 +144,7 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 	ctx := r.Context()
 	scope, ok := mediaScope(r)
 	if !ok {
-		writeError(w, r, http.StatusForbidden, "scope.required", "tenant and organization are required")
+		writeError(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
 		return
 	}
 	file, err := h.service.GetFileByPublicIDScoped(ctx, scope, publicID)

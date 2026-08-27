@@ -67,7 +67,7 @@ func (h *CustomerHandler) CreateCustomer(w http.ResponseWriter, r *http.Request)
 func (h *CustomerHandler) listCustomers(w http.ResponseWriter, r *http.Request) {
 	scope := ScopeFromRequest(r)
 	if err := scope.Validate(); err != nil {
-		writeErrorCode(w, r, http.StatusForbidden, "scope.required", err.Error())
+		writeErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, err.Error())
 		return
 	}
 	listQuery := ardahttp.ParseListQuery(r.URL.Query())
@@ -103,7 +103,7 @@ func (h *CustomerHandler) listCustomers(w http.ResponseWriter, r *http.Request) 
 func (h *CustomerHandler) getCustomer(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
 	if err := scope.Validate(); err != nil {
-		writeErrorCode(w, r, http.StatusForbidden, "scope.required", err.Error())
+		writeErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, err.Error())
 		return
 	}
 	item, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
@@ -121,7 +121,7 @@ func (h *CustomerHandler) getCustomer(w http.ResponseWriter, r *http.Request, id
 func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
 	scope := ScopeFromRequest(r)
 	if err := scope.Validate(); err != nil {
-		writeErrorCode(w, r, http.StatusForbidden, "scope.required", err.Error())
+		writeErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, err.Error())
 		return
 	}
 	var req repository.CustomerUpsert
@@ -146,7 +146,7 @@ func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
 	req.OrgIDs = scope.OrgIDs
 	if req.ID == "" {
 		if req.OrgID == "" {
-			writeErrorCode(w, r, http.StatusForbidden, "scope.required", "an active organization is required")
+			writeErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "an active organization is required")
 			return
 		}
 	}
@@ -161,7 +161,7 @@ func (h *CustomerHandler) saveCustomer(w http.ResponseWriter, r *http.Request) {
 func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
 	if err := scope.Validate(); err != nil {
-		writeErrorCode(w, r, http.StatusForbidden, "scope.required", err.Error())
+		writeErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, err.Error())
 		return
 	}
 	item, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
@@ -205,7 +205,7 @@ func (h *CustomerHandler) submitCustomer(w http.ResponseWriter, r *http.Request,
 func (h *CustomerHandler) cancelCustomer(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
 	if err := scope.Validate(); err != nil {
-		writeErrorCode(w, r, http.StatusForbidden, "scope.required", err.Error())
+		writeErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, err.Error())
 		return
 	}
 	item, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
@@ -278,7 +278,7 @@ func (h *CustomerHandler) submitWorkflowCase(r *http.Request, item *repository.C
 func (h *CustomerHandler) listRelationships(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
 	if scopeErr := scope.Validate(); scopeErr != nil {
-		writeErrorCode(w, r, http.StatusForbidden, "scope.required", scopeErr.Error())
+		writeErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, scopeErr.Error())
 		return
 	}
 	item, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
@@ -301,7 +301,7 @@ func (h *CustomerHandler) listRelationships(w http.ResponseWriter, r *http.Reque
 func (h *CustomerHandler) createRelationship(w http.ResponseWriter, r *http.Request, id string) {
 	scope := ScopeFromRequest(r)
 	if scopeErr := scope.Validate(); scopeErr != nil {
-		writeErrorCode(w, r, http.StatusForbidden, "scope.required", scopeErr.Error())
+		writeErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, scopeErr.Error())
 		return
 	}
 	item, err := h.customerRepo.GetScoped(r.Context(), repository.CustomerScope{TenantID: scope.TenantID, OrgIDs: scope.OrgIDs}, id)
