@@ -99,6 +99,31 @@ func (r *RoleRepository) List(ctx context.Context, params ListRolesParams) ([]do
 	return roles, total, rows.Err()
 }
 
+func (r *RoleRepository) StreamRoles(ctx context.Context, params ListRolesParams) (*sql.Rows, error) {
+	where := []string{"1=1"}
+	args := []any{}
+	idx := 1
+
+	if params.TenantID != "" {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", idx))
+		args = append(args, params.TenantID)
+		idx++
+	}
+	if params.Search != "" {
+		where = append(where, fmt.Sprintf("(code ILIKE $%d OR name ILIKE $%d)", idx, idx))
+		args = append(args, "%"+params.Search+"%")
+		idx++
+	}
+
+	wc := strings.Join(where, " AND ")
+	query := fmt.Sprintf(`
+		SELECT id, code, name, status, created_at
+		FROM iam_roles WHERE %s ORDER BY created_at DESC
+	`, wc)
+
+	return r.db.QueryContext(ctx, query, args...)
+}
+
 func (r *RoleRepository) UpdateScoped(ctx context.Context, role *domain.Role, tenantID string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE iam_roles SET name = $1, updated_at = now()

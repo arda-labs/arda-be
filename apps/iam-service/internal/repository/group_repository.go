@@ -80,6 +80,40 @@ func (r *GroupRepository) List(ctx context.Context, params ListGroupsParams) ([]
 	return groups, total, rows.Err()
 }
 
+func (r *GroupRepository) StreamGroups(ctx context.Context, params ListGroupsParams) (*sql.Rows, error) {
+	where := []string{"1=1"}
+	args := []any{}
+	idx := 1
+	if params.TenantID != "" {
+		where = append(where, fmt.Sprintf("g.tenant_id = $%d", idx))
+		args = append(args, params.TenantID)
+		idx++
+	}
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("g.status = $%d", idx))
+		args = append(args, params.Status)
+		idx++
+	}
+	if params.Search != "" {
+		where = append(where, fmt.Sprintf("(g.code ILIKE $%d OR g.name ILIKE $%d)", idx, idx))
+		args = append(args, "%"+params.Search+"%")
+		idx++
+	}
+
+	wc := strings.Join(where, " AND ")
+	query := fmt.Sprintf(`
+		SELECT g.id, g.code, g.name, COALESCE(g.description, ''), g.status,
+		       COUNT(DISTINCT gm.user_id), COUNT(DISTINCT ra.role_id), g.created_at
+		FROM iam_groups g
+		LEFT JOIN iam_group_members gm ON gm.group_id = g.id
+		LEFT JOIN iam_role_assignments ra ON ra.principal_type = 'GROUP' AND ra.principal_id = g.id
+		WHERE %s
+		GROUP BY g.id
+		ORDER BY g.created_at DESC
+	`, wc)
+	return r.db.QueryContext(ctx, query, args...)
+}
+
 func (r *GroupRepository) GetByIDScoped(ctx context.Context, id, tenantID string) (*domain.Group, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT g.id, g.code, g.name, COALESCE(g.description, ''), g.status, g.tenant_id, g.is_system,

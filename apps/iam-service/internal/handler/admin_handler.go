@@ -606,6 +606,87 @@ func (h *AdminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	respondAdminList(w, r, groups, total, listQuery.Page, listQuery.PerPage)
 }
 
+// ExportGroups handles direct streaming export of groups in XLSX or CSV format.
+func (h *AdminHandler) ExportGroups(w http.ResponseWriter, r *http.Request) {
+	listQuery := parseAdminListQuery(r)
+	status := r.URL.Query().Get("status")
+	formatStr := r.URL.Query().Get("format")
+	tenantID, ok := requiredAdminTargetTenant(w, r)
+	if !ok {
+		return
+	}
+
+	format := ardaexport.NormalizeFormat(formatStr)
+	filename := fmt.Sprintf("groups_export_%s", time.Now().Format("20060102_150405"))
+
+	cols := []ardaexport.Column{
+		{Header: "Mã nhóm", Key: "code", Type: ardaexport.CellTypeCode},
+		{Header: "Tên nhóm", Key: "name", Type: ardaexport.CellTypeString},
+		{Header: "Mô tả", Key: "description", Type: ardaexport.CellTypeString},
+		{Header: "Số thành viên", Key: "memberCount", Type: ardaexport.CellTypeNumber},
+		{Header: "Số vai trò", Key: "roleCount", Type: ardaexport.CellTypeNumber},
+		{
+			Header: "Trạng thái",
+			Key:    "status",
+			Type:   ardaexport.CellTypeString,
+			Formatter: func(v any) any {
+				if s, ok := v.(string); ok {
+					if s == "ACTIVE" {
+						return "Đang hoạt động"
+					}
+					return "Đã vô hiệu"
+				}
+				return v
+			},
+		},
+		{Header: "Ngày tạo", Key: "createdAt", Type: ardaexport.CellTypeDate},
+	}
+
+	opts := ardaexport.StreamOptions{
+		Title:     "BÁO CÁO DANH SÁCH NHÓM NGƯỜI DÙNG",
+		SheetName: "Groups",
+		Columns:   cols,
+		Locale:    "vi-VN",
+	}
+
+	err := ardaexport.ServeStreamHTTP(w, r, format, filename, func(ctx context.Context, out io.Writer) error {
+		rows, err := h.groupRepo.StreamGroups(ctx, repository.ListGroupsParams{
+			TenantID: tenantID,
+			Status:   status,
+			Search:   listQuery.Q,
+		})
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		supplier := func() ([]any, error) {
+			if !rows.Next() {
+				if rows.Err() != nil {
+					return nil, rows.Err()
+				}
+				return nil, io.EOF
+			}
+			var id, code, name, description, groupStatus string
+			var memberCount, roleCount int
+			var createdAt time.Time
+			if err := rows.Scan(&id, &code, &name, &description, &groupStatus, &memberCount, &roleCount, &createdAt); err != nil {
+				return nil, err
+			}
+			return []any{code, name, description, memberCount, roleCount, groupStatus, createdAt}, nil
+		}
+
+		if format == ardaexport.FormatCSV {
+			return ardaexport.StreamCSV(ctx, out, opts, supplier)
+		}
+		return ardaexport.StreamXLSX(ctx, out, opts, supplier)
+	})
+
+	if err != nil {
+		h.logger.Error("export groups streaming failed", "err", err)
+	}
+}
+
 func (h *AdminHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -939,6 +1020,81 @@ func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondAdminList(w, r, roles, total, listQuery.Page, listQuery.PerPage)
+}
+
+// ExportRoles handles direct streaming export of roles in XLSX or CSV format.
+func (h *AdminHandler) ExportRoles(w http.ResponseWriter, r *http.Request) {
+	listQuery := parseAdminListQuery(r)
+	formatStr := r.URL.Query().Get("format")
+	tenantID, ok := requiredAdminTargetTenant(w, r)
+	if !ok {
+		return
+	}
+
+	format := ardaexport.NormalizeFormat(formatStr)
+	filename := fmt.Sprintf("roles_export_%s", time.Now().Format("20060102_150405"))
+
+	cols := []ardaexport.Column{
+		{Header: "Mã vai trò", Key: "code", Type: ardaexport.CellTypeCode},
+		{Header: "Tên vai trò", Key: "name", Type: ardaexport.CellTypeString},
+		{
+			Header: "Trạng thái",
+			Key:    "status",
+			Type:   ardaexport.CellTypeString,
+			Formatter: func(v any) any {
+				if s, ok := v.(string); ok {
+					if s == "ACTIVE" {
+						return "Đang hoạt động"
+					}
+					return "Đã vô hiệu"
+				}
+				return v
+			},
+		},
+		{Header: "Ngày tạo", Key: "createdAt", Type: ardaexport.CellTypeDate},
+	}
+
+	opts := ardaexport.StreamOptions{
+		Title:     "BÁO CÁO DANH SÁCH VAI TRÒ HỆ THỐNG",
+		SheetName: "Roles",
+		Columns:   cols,
+		Locale:    "vi-VN",
+	}
+
+	err := ardaexport.ServeStreamHTTP(w, r, format, filename, func(ctx context.Context, out io.Writer) error {
+		rows, err := h.roleRepo.StreamRoles(ctx, repository.ListRolesParams{
+			TenantID: tenantID,
+			Search:   listQuery.Q,
+		})
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		supplier := func() ([]any, error) {
+			if !rows.Next() {
+				if rows.Err() != nil {
+					return nil, rows.Err()
+				}
+				return nil, io.EOF
+			}
+			var id, code, name, status string
+			var createdAt time.Time
+			if err := rows.Scan(&id, &code, &name, &status, &createdAt); err != nil {
+				return nil, err
+			}
+			return []any{code, name, status, createdAt}, nil
+		}
+
+		if format == ardaexport.FormatCSV {
+			return ardaexport.StreamCSV(ctx, out, opts, supplier)
+		}
+		return ardaexport.StreamXLSX(ctx, out, opts, supplier)
+	})
+
+	if err != nil {
+		h.logger.Error("export roles streaming failed", "err", err)
+	}
 }
 
 func (h *AdminHandler) GetRole(w http.ResponseWriter, r *http.Request) {

@@ -70,6 +70,7 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 	mux.HandleFunc("/api/admin/users/{id}/groups", method("GET", adminHandler.ListUserGroups))
 
 	// Admin API - Group management
+	mux.HandleFunc("/api/admin/groups/export", method("GET", adminHandler.ExportGroups))
 	mux.HandleFunc("/api/admin/groups", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -116,6 +117,7 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 	mux.HandleFunc("/api/admin/groups/{id}/roles/{roleId}", method("DELETE", adminHandler.UnassignGroupRole))
 
 	// ── Admin API — Role management ──
+	mux.HandleFunc("/api/admin/roles/export", method("GET", adminHandler.ExportRoles))
 	mux.HandleFunc("/api/admin/roles", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
