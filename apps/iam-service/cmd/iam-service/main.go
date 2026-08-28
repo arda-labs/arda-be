@@ -130,12 +130,13 @@ func main() {
 	logger.Info("grpc server started", "addr", cfg.GRPCAddr)
 
 	// ── HTTP server ──
+	// WriteTimeout must be 0 for large-scale chunked HTTP streaming exports and SSE.
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
 		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(userHandler, policyHandler, adminHandler, sessionHandler, mfaHandler, auditHandler, tenantHandler)),
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		WriteTimeout: 0,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {
