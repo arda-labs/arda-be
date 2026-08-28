@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"sync"
 	"time"
@@ -65,6 +66,11 @@ func (s *AuditService) Stop() {
 // Query returns paginated audit logs.
 func (s *AuditService) Query(ctx context.Context, params repository.QueryParams) ([]domain.AuthEvent, int, error) {
 	return s.repo.Query(ctx, params)
+}
+
+// StreamAudit returns sql.Rows for streaming export.
+func (s *AuditService) StreamAudit(ctx context.Context, params repository.QueryParams) (*sql.Rows, error) {
+	return s.repo.StreamAudit(ctx, params)
 }
 
 // Stats returns audit statistics.

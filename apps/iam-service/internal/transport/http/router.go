@@ -145,6 +145,7 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 	mux.HandleFunc("/api/admin/roles/{id}/permissions/{permId}", method("DELETE", adminHandler.UnassignRolePermission))
 
 	// ── Admin API — Permission management ──
+	mux.HandleFunc("/api/admin/permissions/export", method("GET", adminHandler.ExportPermissions))
 	mux.HandleFunc("/api/admin/permissions", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -174,6 +175,7 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 	}
 
 	// ── Audit API ──
+	mux.HandleFunc("/api/admin/audit/export", method("GET", auditHandler.ExportAudit))
 	mux.HandleFunc("/api/admin/audit", method("GET", auditHandler.Query))
 	mux.HandleFunc("/api/admin/audit/stats", method("GET", auditHandler.Stats))
 	mux.HandleFunc("/api/admin/audit/verify", method("GET", auditHandler.Verify))

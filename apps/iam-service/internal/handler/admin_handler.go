@@ -1309,6 +1309,65 @@ func (h *AdminHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listQuery.Page, listQuery.PerPage, total, perms), "permissions listed")
 }
 
+// ExportPermissions handles direct streaming export of permissions in XLSX or CSV format.
+func (h *AdminHandler) ExportPermissions(w http.ResponseWriter, r *http.Request) {
+	mod := r.URL.Query().Get("module")
+	formatStr := r.URL.Query().Get("format")
+
+	format := ardaexport.NormalizeFormat(formatStr)
+	filename := fmt.Sprintf("permissions_export_%s", time.Now().Format("20060102_150405"))
+
+	cols := []ardaexport.Column{
+		{Header: "Mã quyền", Key: "code", Type: ardaexport.CellTypeCode},
+		{Header: "Tên quyền", Key: "name", Type: ardaexport.CellTypeString},
+		{Header: "Phân hệ", Key: "module", Type: ardaexport.CellTypeString},
+		{Header: "Tài nguyên", Key: "resource", Type: ardaexport.CellTypeString},
+		{Header: "Thao tác", Key: "operation", Type: ardaexport.CellTypeString},
+		{Header: "Ngày tạo", Key: "createdAt", Type: ardaexport.CellTypeDate},
+	}
+
+	opts := ardaexport.StreamOptions{
+		Title:     "BÁO CÁO DANH SÁCH QUYỀN HỆ THỐNG",
+		SheetName: "Permissions",
+		Columns:   cols,
+		Locale:    "vi-VN",
+	}
+
+	err := ardaexport.ServeStreamHTTP(w, r, format, filename, func(ctx context.Context, out io.Writer) error {
+		rows, err := h.roleRepo.StreamPermissions(ctx, repository.ListPermissionsParams{
+			Module: mod,
+		})
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		supplier := func() ([]any, error) {
+			if !rows.Next() {
+				if rows.Err() != nil {
+					return nil, rows.Err()
+				}
+				return nil, io.EOF
+			}
+			var id, code, name, moduleCode, resourceCode, opCode string
+			var createdAt time.Time
+			if err := rows.Scan(&id, &code, &name, &moduleCode, &resourceCode, &opCode, &createdAt); err != nil {
+				return nil, err
+			}
+			return []any{code, name, moduleCode, resourceCode, opCode, createdAt}, nil
+		}
+
+		if format == ardaexport.FormatCSV {
+			return ardaexport.StreamCSV(ctx, out, opts, supplier)
+		}
+		return ardaexport.StreamXLSX(ctx, out, opts, supplier)
+	})
+
+	if err != nil {
+		h.logger.Error("export permissions streaming failed", "err", err)
+	}
+}
+
 func (h *AdminHandler) CreatePermission(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code      string `json:"code"`

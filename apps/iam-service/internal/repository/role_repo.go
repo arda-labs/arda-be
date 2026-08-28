@@ -205,6 +205,26 @@ func (r *RoleRepository) ListPermissions(ctx context.Context, params ListPermiss
 	return perms, total, rows.Err()
 }
 
+func (r *RoleRepository) StreamPermissions(ctx context.Context, params ListPermissionsParams) (*sql.Rows, error) {
+	where := []string{"1=1"}
+	args := []any{}
+	idx := 1
+
+	if params.Module != "" {
+		where = append(where, fmt.Sprintf("module_code = $%d", idx))
+		args = append(args, params.Module)
+		idx++
+	}
+
+	wc := strings.Join(where, " AND ")
+	query := fmt.Sprintf(`
+		SELECT id, code, name, module_code, resource_code, operation_code, created_at
+		FROM iam_permissions WHERE %s ORDER BY module_code, resource_code
+	`, wc)
+
+	return r.db.QueryContext(ctx, query, args...)
+}
+
 func (r *RoleRepository) DeletePermission(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM iam_permissions WHERE id = $1`, id)
 	return err

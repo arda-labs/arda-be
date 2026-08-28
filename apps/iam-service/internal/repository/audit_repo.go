@@ -206,6 +206,63 @@ func (r *AuditRepository) Query(ctx context.Context, params QueryParams) ([]doma
 	return events, total, rows.Err()
 }
 
+func (r *AuditRepository) StreamAudit(ctx context.Context, params QueryParams) (*sql.Rows, error) {
+	where := []string{"1=1"}
+	args := []any{}
+	idx := 1
+
+	if len(params.EventTypes) > 0 {
+		placeholders := make([]string, len(params.EventTypes))
+		for i, et := range params.EventTypes {
+			placeholders[i] = fmt.Sprintf("$%d", idx)
+			args = append(args, et)
+			idx++
+		}
+		where = append(where, fmt.Sprintf("event_type IN (%s)", strings.Join(placeholders, ",")))
+	}
+	if params.Subject != "" {
+		where = append(where, fmt.Sprintf("subject ILIKE $%d", idx))
+		args = append(args, "%"+params.Subject+"%")
+		idx++
+	}
+	if params.Result != "" {
+		where = append(where, fmt.Sprintf("result = $%d", idx))
+		args = append(args, params.Result)
+		idx++
+	}
+	if params.TenantID != "" {
+		where = append(where, fmt.Sprintf("tenant_id = $%d", idx))
+		args = append(args, params.TenantID)
+		idx++
+	}
+	if !params.From.IsZero() {
+		where = append(where, fmt.Sprintf("timestamp >= $%d", idx))
+		args = append(args, params.From)
+		idx++
+	}
+	if !params.To.IsZero() {
+		where = append(where, fmt.Sprintf("timestamp <= $%d", idx))
+		args = append(args, params.To)
+		idx++
+	}
+
+	wc := strings.Join(where, " AND ")
+	order := "timestamp DESC"
+	if params.Sort == "timestamp" {
+		order = "timestamp ASC"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT event_id, event_type, subject, action, resource, result,
+		       client_ip, user_agent, service_name, timestamp
+		FROM iam_audit_logs
+		WHERE %s
+		ORDER BY %s
+	`, wc, order)
+
+	return r.db.QueryContext(ctx, query, args...)
+}
+
 type AuditStats struct {
 	TotalEvents  int            `json:"totalEvents"`
 	ByEventType  map[string]int `json:"byEventType"`
