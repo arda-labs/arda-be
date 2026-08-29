@@ -7,7 +7,6 @@ Go workspace for Arda backend services.
 | Service | Responsibility |
 | --- | --- |
 | `apps/ai-service` | AG-UI-compatible AI boundary: model agent loop, allowlisted tools, HITL approvals, conversation persistence |
-| `apps/ai-runtime` | Internal Node/CopilotKit adapter between gateway and ai-service (no authorization role) |
 | `apps/auth-gateway` | Auth edge/BFF, sessions, Kratos/Hydra proxy, forward-auth, AI proxy |
 | `apps/iam-service` | IAM, users, roles, permissions, MFA, audit |
 | `apps/finance-service` | Finance accounts, transactions, approvals, operation queues, accounting config reads |
