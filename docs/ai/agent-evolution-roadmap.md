@@ -137,6 +137,43 @@ Nếu use case gần nhất vẫn là *hành động trên dữ liệu sống* (
 
 Hiện tại không có máy self-host → **dùng Workers AI trước** (hệ thống đã đi qua Cloudflare), thiết kế `Embedder` (§4.2) đảm bảo self-host sau này chỉ là thêm một implementation + đổi env. Tài liệu nhạy cảm của tenant: khi có nhu cầu index mà không được rời cluster, chỉ những tài liệu đó được chuyển sang provider self-host (cột `embedding_model` cho phép co-exist hai provider trong cùng bảng — mỗi chunk biết nó do ai embed).
 
+## 4.6. Dữ liệu đầu vào (ingestion) — nguồn, pipeline, quản trị
+
+### Phân loại: cái gì ĐƯA vào knowledge, cái gì KHÔNG
+
+| Dữ liệu | Đưa vào knowledge? | Lý do / cách xử lý đúng |
+|---|---|---|
+| Docs sản phẩm, chính sách, hướng dẫn (global/system) | ✅ Nguồn 1 | Biến tĩnh, ít đổi, dùng chung mọi tenant |
+| Tài liệu nghiệp vụ tenant (FAQ, quy trình, biểu mẫu) | ✅ Nguồn 2 | Scope `tenant`, cần review trước khi PUBLISHED |
+| Dữ liệu sống (CRM, finance, workflow) | ❌ Tuyệt đối không | Truy vấn qua tools/sandbox — luôn fresh, luôn đúng tenant |
+| Lịch sử hội thoại | ❌ Không | Privacy; đã có `ai_messages`, không trộn vào knowledge |
+| Raw customer PII trong tài liệu | ❌ Scrub trước embed | Xóa/mask số TK, CCCD trước khi chunk + embed (kể cả qua CF) |
+
+### Pipeline chuẩn các hệ thống lớn dùng
+
+Cloudflare AI Search (từ docs chính thức): không ai upload tay — bạn trỏ nó vào **source-of-truth**, hệ thống **"automatically and continuously index your data source"** (tự phát hiện thay đổi → chunk → embed → index lại), kèm **metadata filtering** (category/version/language) và hybrid search. Doanh nghiệp lớn (Copilot, Glean...) dùng chung pattern: connector theo dõi change-stream từ SharePoint/Confluence/Drive. Bài học chung: **ingestion là sync từ nguồn có thật, không phải trang quản trị upload file**.
+
+### Thiết kế cho Arda — 2 nguồn, làm theo thứ tự
+
+**Nguồn 1 — Docs-as-code (làm cùng lúc với §4.3, chi phí gần bằng 0):**
+Knowledge = markdown trong 1 git repo/folder (tài liệu Arda đã nằm trong git sẵn). Job CI (on merge) chạy indexer: diff file thay đổi → chunk theo heading markdown → embed → upsert, kèm:
+- `source_key` = path git, `version` = commit SHA → versioning + audit **miễn phí** nhờ git (ai đổi gì, khi nào — chính là git log).
+- Dedup: content hash, chỉ re-embed chunk thay đổi.
+- Effective dating: frontmatter `effective_from/effective_to` cho chính sách có hiệu lực theo thời gian (finance/legal) — schema đã có sẵn các cột này.
+
+**Nguồn 2 — Admin upload API cho tenant docs (sau, khi có yêu cầu sản phẩm):**
+`POST /api/ai/knowledge/sources` (draft) → review/tinh chỉnh ở UI admin → chuyển `status=PUBLISHED` mới vào search. Schema `ai_knowledge_sources` đã có `status` — pipeline chỉ cần tôn trọng nó: **search chỉ thấy PUBLISHED** (query hiện tại đã join theo điều kiện này, đúng sẵn).
+- Route mới ⇒ **bắt buộc thêm vào `policy.yaml`** (`ai.knowledge.manage`, chỉ admin tenant).
+- Audit: ai upload, ai publish, vào `ai_knowledge_sources.created_by/updated_by` nếu chưa có — bổ sung khi làm.
+
+### Quản trị cần có (checklist gate trước khi mở nguồn 2)
+
+1. Draft → review → PUBLISHED; chưa publish không thấy.
+2. Tenant scoping đúng tại query time (đã có, giữ bất biến).
+3. PII scrub tại ingest — quan trọng hơn cả lúc chat vì tài liệu sống lâu.
+4. Staleness: job nightly kiểm tra `updated_at` của source vs biến động nguồn; source hết hiệu lực → `effective_to` tự set, không xóa cứng (audit trail).
+5. Eval set 20–30 câu hỏi vàng chạy mỗi lần đổi indexer/model (§4.3 bước 5).
+
 ## 5. Lộ trình 4 cột mốc (thứ tự khuyến nghị — ĐÃ CHỐT: M1 trước)
 
 ### M1 — Giao thức stream chuẩn hóa (P0, ~1 tuần, BE + MFE)
