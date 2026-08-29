@@ -4,7 +4,7 @@
 
 Durable, non-obvious notes for running this Go backend inside a Cursor Cloud VM.
 Standard build/test/lint/run commands are documented in `README.md` and each
-`apps/<service>/Makefile` (`make build|run|test|lint`); `finance-service` has no
+`apps/<service>/Makefile` (`make build|run|test|lint`); `finance-service` and `ai-service` have no
 Makefile, use `go` directly. The Go toolchain (`go 1.26.3`, see `go.work`) is
 downloaded automatically via `GOTOOLCHAIN=auto`.
 
