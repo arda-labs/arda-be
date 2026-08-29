@@ -52,6 +52,55 @@ func runAgentStream(
 	}
 	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
 
+	modelProvider := selectModelProvider(ctx, store, scope, options)
+	if modelProvider == nil {
+		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
+		_ = store.Finish(ctx, scopeRun, "Chưa có AI Model Provider nào được cấu hình.", "FAILED")
+		return
+	}
+
+	messages := buildModelMessages(ctx, store, options, scopeRun, latestUserMessage(input.Messages))
+	agentStepsLoop(w, r, store, resolver, scope, scopeRun, input, sse, options, modelProvider, messages)
+}
+
+// selectModelProvider resolves the provider for a run: tenant BYO settings
+// (allowlist-checked) win over the platform default.
+func selectModelProvider(ctx context.Context, store runStore, scope tools.Context, options RouterOptions) model.Provider {
+	modelProvider := options.ModelProvider
+	settingsStore, ok := store.(repository.TenantSettingsStore)
+	if !ok {
+		return modelProvider
+	}
+	tenantSettings, err := settingsStore.GetTenantSettings(ctx, scope.TenantID)
+	if err != nil || tenantSettings == nil {
+		return modelProvider
+	}
+	if tenantSettings.BaseURL == "" || tenantSettings.ModelID == "" || !baseURLAllowed(options.ModelBaseURLAllowlist, tenantSettings.BaseURL) {
+		return modelProvider
+	}
+	if options.ModelPool != nil {
+		return options.ModelPool.GetClient(scope.TenantID, tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID)
+	}
+	return model.NewClient(tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID, nil)
+}
+
+// agentStepsLoop drives the model↔tool loop shared by fresh runs and resumed
+// runs. It owns SSE text framing, step budgeting, tool dispatch, and the
+// terminal store.Finish call.
+func agentStepsLoop(
+	w http.ResponseWriter,
+	r *http.Request,
+	store runStore,
+	resolver toolResolver,
+	scope tools.Context,
+	scopeRun repository.RunContext,
+	input runInput,
+	sse *sseWriter,
+	options RouterOptions,
+	modelProvider model.Provider,
+	messages []model.Message,
+) {
+	ctx := r.Context()
 	messageID := "msg-" + input.RunID
 	textStarted := false
 	startText := func() {
@@ -66,25 +115,6 @@ func runAgentStream(
 		}
 	}
 
-	modelProvider := options.ModelProvider
-	if settingsStore, ok := store.(repository.TenantSettingsStore); ok {
-		if tenantSettings, err := settingsStore.GetTenantSettings(ctx, scope.TenantID); err == nil && tenantSettings != nil {
-			if tenantSettings.BaseURL != "" && tenantSettings.ModelID != "" && baseURLAllowed(options.ModelBaseURLAllowlist, tenantSettings.BaseURL) {
-				if options.ModelPool != nil {
-					modelProvider = options.ModelPool.GetClient(scope.TenantID, tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID)
-				} else {
-					modelProvider = model.NewClient(tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID, nil)
-				}
-			}
-		}
-	}
-	if modelProvider == nil {
-		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
-		_ = store.Finish(ctx, scopeRun, "Chưa có AI Model Provider nào được cấu hình.", "FAILED")
-		return
-	}
-
-	messages := buildModelMessages(ctx, store, options, scopeRun, latestUserMessage(input.Messages))
 	defs := modelToolDefinitions(resolver)
 	maxSteps := options.AgentMaxSteps
 	if maxSteps <= 0 || maxSteps > 12 {
