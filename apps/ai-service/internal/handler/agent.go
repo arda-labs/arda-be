@@ -140,11 +140,22 @@ func runAgentStream(
 
 		messages = append(messages, model.Message{Role: "assistant", Content: turnText.String(), ToolCalls: collected})
 		for _, call := range collected {
+			if awaitingApproval {
+				// A resumed run must pair every emitted tool_call with a tool
+				// message or strict providers reject the follow-up request.
+				skipped := `{"error":"skipped_pending_approval"}`
+				sse.event(agentEvent{
+					Type: "TOOL_CALL_RESULT", ThreadID: input.ThreadID, RunID: input.RunID,
+					ToolCallID: call.ID, ToolName: call.Name, ToolCallName: call.Name,
+					Result: json.RawMessage(skipped), Error: "ai.tool_skipped_pending_approval",
+				})
+				messages = append(messages, model.Message{Role: "tool", ToolCallID: call.ID, Content: skipped})
+				continue
+			}
 			pending, toolMessage := executeModelToolCall(ctx, r, store, resolver, scope, scopeRun, input, sse, call, options)
 			messages = append(messages, model.Message{Role: "tool", ToolCallID: call.ID, Content: toolMessage})
 			if pending {
 				awaitingApproval = true
-				break
 			}
 		}
 		if finishReason == "" && awaitingApproval {
@@ -178,10 +189,12 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 				if item.Content == "" {
 					continue
 				}
-				switch item.Role {
-				case "user", "assistant", "tool":
-					messages = append(messages, model.Message{Role: item.Role, Content: item.Content})
-				}
+			switch item.Role {
+			case "user", "assistant":
+				messages = append(messages, model.Message{Role: item.Role, Content: item.Content})
+			}
+			// Tool history is skipped on replay: HistoryMessage carries no
+			// tool_call_id, and providers reject unpaired tool messages.
 			}
 		}
 	}
