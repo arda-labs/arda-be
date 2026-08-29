@@ -29,6 +29,11 @@ type Config struct {
 	ModelSystemPrompt  string
 	AgentMaxSteps      int
 	RateLimitPerMinute int
+
+	// ModelBaseURLAllowlist restricts which base URLs tenant settings may
+	// point at (gateway routing, §3.5 of docs/ai/agent-evolution-roadmap.md).
+	// Empty slice = enforcement disabled; only ValidateEgressURL applies.
+	ModelBaseURLAllowlist []string
 }
 
 const defaultDirectToolSystemPrompt = `Bạn là Olorin, trợ lý của nền tảng Arda. Bạn trả lời ngắn gọn, chính xác ` +
@@ -74,6 +79,8 @@ func Load() Config {
 		ModelSystemPrompt:  envOr("AI_MODEL_SYSTEM_PROMPT", defaultPrompt),
 		AgentMaxSteps:      envIntOr("AI_AGENT_MAX_STEPS", 6),
 		RateLimitPerMinute: envIntOr("AI_RATE_LIMIT_PER_MINUTE", 30),
+
+		ModelBaseURLAllowlist: envListOr("AI_MODEL_BASE_URL_ALLOWLIST"),
 	}
 }
 
@@ -102,4 +109,18 @@ func envIntOr(name string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func envListOr(name string) []string {
+	raw := os.Getenv(name)
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var items []string
+	for _, item := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	return items
 }

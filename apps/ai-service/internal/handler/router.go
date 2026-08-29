@@ -28,6 +28,8 @@ type RouterOptions struct {
 	ModelPool           *model.ClientPool
 	AgentMaxSteps       int
 	ModelSystemPrompt   string
+	// ModelBaseURLAllowlist restricts tenant-provided base URLs; empty = disabled.
+	ModelBaseURLAllowlist []string
 }
 
 type runStore interface {
@@ -115,10 +117,10 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 			handleGetSettings(w, r, store)
 			return
 		}
-		handleUpdateSettings(w, r, store)
+		handleUpdateSettings(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/settings/test", func(w http.ResponseWriter, r *http.Request) {
-		handleTestConnection(w, r, store)
+		handleTestConnection(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		listConversations(w, r, store, options)

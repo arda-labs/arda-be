@@ -76,11 +76,12 @@ func main() {
 	}
 
 	routerOptions := handler.RouterOptions{
-		EnableHITLProposals: cfg.EnableHITLProposals,
-		ModelProvider:       ModelProvider,
-		ModelPool:           model.NewClientPool(nil),
-		AgentMaxSteps:       cfg.AgentMaxSteps,
-		ModelSystemPrompt:   cfg.ModelSystemPrompt,
+		EnableHITLProposals:   cfg.EnableHITLProposals,
+		ModelProvider:         ModelProvider,
+		ModelPool:             model.NewClientPool(nil),
+		AgentMaxSteps:         cfg.AgentMaxSteps,
+		ModelSystemPrompt:     cfg.ModelSystemPrompt,
+		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
 	}
 
 	mux := handler.NewRouterWithOptions(store, resolver, routerOptions)

@@ -170,3 +170,92 @@ func TestSettings_TestConnection(t *testing.T) {
 		t.Fatalf("expected HTTP 401 in error message, got: %s", badEnvelope.Result.Error)
 	}
 }
+
+func TestBaseURLAllowed(t *testing.T) {
+	gateway := "https://gateway.example.com/v1/acc/gw"
+	cases := []struct {
+		name      string
+		allowlist []string
+		url       string
+		want      bool
+	}{
+		{"disabled when empty", nil, "https://anything.example.com/v1", true},
+		{"exact match", []string{gateway}, gateway, true},
+		{"subpath match", []string{gateway}, gateway + "/openai", true},
+		{"trailing slash normalized", []string{gateway + "/"}, gateway + "/openai", true},
+		{"path boundary respected", []string{gateway}, "https://gateway.example.com/v1/acc/gwother", false},
+		{"different host", []string{gateway}, "https://evil.example.com/v1/acc/gw", false},
+		{"metadata blocked by prefix mismatch", []string{gateway}, "http://169.254.169.254/latest", false},
+		{"blank candidate", []string{gateway}, "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := baseURLAllowed(tc.allowlist, tc.url); got != tc.want {
+				t.Fatalf("baseURLAllowed(%q) = %v, want %v", tc.url, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSettings_BaseURLAllowlistEnforced(t *testing.T) {
+	gateway := "https://gateway.example.com/v1/acc/gw"
+	store := &fakeSettingsStore{}
+	router := NewRouterWithOptions(store, nil, RouterOptions{
+		ModelBaseURLAllowlist: []string{gateway},
+	})
+
+	// PUT with a disallowed base URL → 400 ai.base_url_not_allowed
+	putReq := httptest.NewRequest(http.MethodPut, "/api/ai/settings",
+		strings.NewReader(`{"providerType":"openai","baseUrl":"https://api.openai.com/v1","apiKey":"sk-test-key-123456","modelId":"gpt-4o-mini"}`))
+	adminGatewayHeaders(putReq)
+	putRes := httptest.NewRecorder()
+	router.ServeHTTP(putRes, putReq)
+	if putRes.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for disallowed base URL, got %d: %s", putRes.Code, putRes.Body.String())
+	}
+	if !strings.Contains(putRes.Body.String(), "ai.base_url_not_allowed") {
+		t.Fatalf("expected ai.base_url_not_allowed problem code, got: %s", putRes.Body.String())
+	}
+	if len(store.settings) != 0 {
+		t.Fatalf("settings must not be persisted when base URL is rejected")
+	}
+
+	// PUT with an allowed gateway sub-path → 200 and persisted
+	allowedPayload := `{"providerType":"openai","baseUrl":"` + gateway + `/openai","apiKey":"sk-gw-key-654321","modelId":"gpt-4o-mini"}`
+	putReq2 := httptest.NewRequest(http.MethodPut, "/api/ai/settings", strings.NewReader(allowedPayload))
+	adminGatewayHeaders(putReq2)
+	putRes2 := httptest.NewRecorder()
+	router.ServeHTTP(putRes2, putReq2)
+	if putRes2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for allowed gateway URL, got %d: %s", putRes2.Code, putRes2.Body.String())
+	}
+	saved := store.settings["tenant-test"]
+	if saved == nil || saved.BaseURL != gateway+"/openai" {
+		t.Fatalf("allowed settings not saved: %+v", saved)
+	}
+}
+
+func TestSettings_TestConnectionRespectsAllowlist(t *testing.T) {
+	gateway := "https://gateway.example.com/v1/acc/gw"
+	store := &fakeSettingsStore{}
+	router := NewRouterWithOptions(store, nil, RouterOptions{
+		ModelBaseURLAllowlist: []string{gateway},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/settings/test",
+		strings.NewReader(`{"baseUrl":"https://api.openai.com/v1","apiKey":"test-key","modelId":"gpt-4o-mini"}`))
+	adminGatewayHeaders(req)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	var envelope struct {
+		Result testConnectionResponse `json:"result"`
+	}
+	_ = json.Unmarshal(res.Body.Bytes(), &envelope)
+	if envelope.Result.Success {
+		t.Fatal("expected test connection to fail for disallowed base URL")
+	}
+	if !strings.Contains(envelope.Result.Error, "danh sách được phép") {
+		t.Fatalf("expected allowlist error message, got: %s", envelope.Result.Error)
+	}
+}
