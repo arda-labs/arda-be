@@ -19,11 +19,20 @@ import (
 // paths and tenant IDs are not labels, preventing cardinality and PII leaks.
 // OpenTelemetry exporters can consume the same request/trace context later
 // without changing the service handler contract.
-func MetricsMiddleware(service string, next http.Handler) http.Handler {
+//
+// extraRenderers append service-specific metric lines to the same /metrics
+// response (after the shared arda_http_* block); each renderer must emit
+// valid Prometheus text format itself.
+func MetricsMiddleware(service string, next http.Handler, extraRenderers ...func(io.Writer)) http.Handler {
 	metrics := &httpMetrics{service: strings.TrimSpace(service)}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/metrics" {
 			metrics.write(w)
+			for _, renderer := range extraRenderers {
+				if renderer != nil {
+					renderer(w)
+				}
+			}
 			return
 		}
 		w.Header().Set(HeaderRequestID, RequestID(r))

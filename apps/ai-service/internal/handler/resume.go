@@ -95,6 +95,8 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 	if !hasResumeStore {
 		// Minimal persistence (spike fakes): finish the run inline without a
 		// resumed agent loop and keep the plain JSON response.
+		recordRunOutcome("SUCCEEDED")
+		recordToolOutcome("SUCCEEDED", definition.Risk)
 		if err := store.Finish(ctx, exec.Run, result.Summary, "SUCCEEDED"); err != nil {
 			problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
 			return

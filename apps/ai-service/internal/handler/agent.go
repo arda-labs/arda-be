@@ -101,6 +101,8 @@ func agentStepsLoop(
 	messages []model.Message,
 ) {
 	ctx := r.Context()
+	timer := startAIRunTimer()
+	defer timer.observe()
 	messageID := "msg-" + input.RunID
 	textStarted := false
 	startText := func() {
@@ -137,6 +139,9 @@ func agentStepsLoop(
 			OnToolCall: func(call model.ToolCall) {
 				collected = append(collected, call)
 			},
+			OnFinish: func(_ string, usage model.Usage) {
+				recordLLMUsage(usage)
+			},
 		})
 		if ctx.Err() != nil {
 			return
@@ -151,6 +156,7 @@ func agentStepsLoop(
 			)
 			endText()
 			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
+			recordRunOutcome("FAILED")
 			_ = store.Finish(ctx, scopeRun, fmt.Sprintf("I could not complete that request right now: %v", err), "FAILED")
 			return
 		}
@@ -164,6 +170,7 @@ func agentStepsLoop(
 			}
 			endText()
 			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
+			recordRunOutcome("SUCCEEDED")
 			_ = store.Finish(ctx, scopeRun, reply, "SUCCEEDED")
 			return
 		}
@@ -196,6 +203,7 @@ func agentStepsLoop(
 	if awaitingApproval {
 		endText()
 		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
+		recordRunOutcome("WAITING_APPROVAL")
 		return
 	}
 
@@ -204,6 +212,7 @@ func agentStepsLoop(
 	startText()
 	sse.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: reply})
 	sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.agent_step_limit"})
+	recordRunOutcome("FAILED")
 	_ = store.Finish(ctx, scopeRun, reply, "FAILED")
 }
 
@@ -316,6 +325,7 @@ func executeModelToolCall(
 	}
 	if hasToolStore && executionID != "" {
 		_ = toolStore.FinishTool(ctx, executionID, status, content, errorCode)
+		recordToolOutcome(status, definition.Risk)
 	}
 
 	sse.event(agentEvent{

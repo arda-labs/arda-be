@@ -90,7 +90,7 @@ func main() {
 		handler.RateLimitMiddleware(mux, cfg.RateLimitPerMinute),
 		cfg.ServiceAuthSecret,
 		cfg.Mode == "production",
-	))
+	), handler.RenderAIMetrics)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
