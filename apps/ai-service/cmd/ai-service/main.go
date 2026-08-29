@@ -82,6 +82,7 @@ func main() {
 		AgentMaxSteps:         cfg.AgentMaxSteps,
 		ModelSystemPrompt:     cfg.ModelSystemPrompt,
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
+		StreamProtocol:        cfg.StreamProtocol,
 	}
 
 	mux := handler.NewRouterWithOptions(store, resolver, routerOptions)

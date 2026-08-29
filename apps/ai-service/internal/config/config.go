@@ -34,6 +34,10 @@ type Config struct {
 	// point at (gateway routing, §3.5 of docs/ai/agent-evolution-roadmap.md).
 	// Empty slice = enforcement disabled; only ValidateEgressURL applies.
 	ModelBaseURLAllowlist []string
+
+	// StreamProtocol selects the SSE dialect: "v1" (legacy AG-UI-style,
+	// default) or "v2" (AI SDK UI Message Stream v1).
+	StreamProtocol string
 }
 
 const defaultDirectToolSystemPrompt = `Bạn là Olorin, trợ lý của nền tảng Arda. Bạn trả lời ngắn gọn, chính xác ` +
@@ -81,6 +85,7 @@ func Load() Config {
 		RateLimitPerMinute: envIntOr("AI_RATE_LIMIT_PER_MINUTE", 30),
 
 		ModelBaseURLAllowlist: envListOr("AI_MODEL_BASE_URL_ALLOWLIST"),
+		StreamProtocol:        envOr("AI_PROTOCOL", "v1"),
 	}
 }
 
