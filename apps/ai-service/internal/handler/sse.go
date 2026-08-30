@@ -85,6 +85,8 @@ type uiStreamPart struct {
 	Output         json.RawMessage `json:"output,omitempty"`
 	ErrorText      string          `json:"errorText,omitempty"`
 	FinishReason   string          `json:"finishReason,omitempty"`
+	ApprovalID     string          `json:"approvalId,omitempty"`
+	Reason         string          `json:"reason,omitempty"`
 }
 
 // translate maps one legacy agent event to zero or more v2 parts. Field
@@ -127,6 +129,15 @@ func (s *sseWriter) translate(ev agentEvent) []uiStreamPart {
 			ToolName: ev.ToolName, Input: input,
 		}}
 	case "TOOL_CALL_RESULT":
+		// Approval proposals additionally emit the spec's tool-approval-request
+		// part so approval-capable clients can react natively; plain clients
+		// keep consuming the proposal payload inside the tool output.
+		if proposalID := proposalIDFromResult(ev.Result); proposalID != "" {
+			return []uiStreamPart{
+				{Type: "tool-approval-request", ToolCallID: ev.ToolCallID, ApprovalID: proposalID, Reason: "human approval required"},
+				{Type: "tool-output-available", ToolCallID: ev.ToolCallID, Output: ev.Result},
+			}
+		}
 		output := ev.Result
 		if len(output) == 0 {
 			if ev.Content == "" {
@@ -168,4 +179,21 @@ func compactJSONText(value string) json.RawMessage {
 	}
 	encoded, _ := json.Marshal(map[string]string{"text": value})
 	return encoded
+}
+
+// proposalIDFromResult detects a HITL approval proposal payload
+// {"proposal":{"id":...}} and returns its id for tool-approval-request parts.
+func proposalIDFromResult(result json.RawMessage) string {
+	if len(result) == 0 {
+		return ""
+	}
+	var probe struct {
+		Proposal *struct {
+			ID string `json:"id"`
+		} `json:"proposal"`
+	}
+	if json.Unmarshal(result, &probe) != nil || probe.Proposal == nil {
+		return ""
+	}
+	return probe.Proposal.ID
 }

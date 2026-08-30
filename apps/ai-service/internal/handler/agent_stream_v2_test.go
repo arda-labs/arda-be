@@ -137,9 +137,15 @@ func TestStreamV2_HitlPendingFixture(t *testing.T) {
 	_, _, events := runAgentV2(t, store, resolver, options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"xuất dữ liệu"}]}`)
 
-	var sawProposal bool
+	var sawProposal, sawApprovalRequest bool
 	for _, event := range events {
-		if event["type"] != "tool-output-available" {
+		if event["type"] != "tool-output-available" && event["type"] != "tool-approval-request" {
+			continue
+		}
+		if event["type"] == "tool-approval-request" {
+			if id, _ := event["approvalId"].(string); id != "" && event["toolCallId"] == "call-9" {
+				sawApprovalRequest = true
+			}
 			continue
 		}
 		output, _ := event["output"].(map[string]any)
@@ -149,6 +155,9 @@ func TestStreamV2_HitlPendingFixture(t *testing.T) {
 	}
 	if !sawProposal {
 		t.Fatalf("proposal not surfaced as tool output; events: %v", eventTypes(events))
+	}
+	if !sawApprovalRequest {
+		t.Fatalf("spec tool-approval-request part missing; events: %v", eventTypes(events))
 	}
 	for _, event := range events {
 		if event["type"] == "finish" {
