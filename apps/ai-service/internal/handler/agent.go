@@ -55,7 +55,7 @@ func runAgentStream(
 	modelProvider := selectModelProvider(ctx, store, scope, options)
 	if modelProvider == nil {
 		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
-		_ = store.Finish(ctx, scopeRun, "Chưa có AI Model Provider nào được cấu hình.", "FAILED")
+		_ = store.Finish(ctx, scopeRun, "Chưa có cấu hình AI model nào được kích hoạt. Vui lòng cấu hình tại trang AI Settings.", "FAILED")
 		return
 	}
 
@@ -63,20 +63,22 @@ func runAgentStream(
 	agentStepsLoop(w, r, store, resolver, scope, scopeRun, input, sse, options, modelProvider, messages)
 }
 
-// selectModelProvider resolves the provider for a run: tenant BYO settings
-// (allowlist-checked) win over the platform default.
+// selectModelProvider resolves the provider for a run. With persistence, the
+// saved tenant configuration is the single source of truth — the env key is
+// only a fallback for spike/local mode without a database. Nil means "not
+// configured", which surfaces as ai.model_unavailable with guidance.
 func selectModelProvider(ctx context.Context, store runStore, scope tools.Context, options RouterOptions) model.Provider {
-	modelProvider := options.ModelProvider
 	settingsStore, ok := store.(repository.TenantSettingsStore)
 	if !ok {
-		return modelProvider
+		// Spike/local mode without persistence.
+		return options.ModelProvider
 	}
 	tenantSettings, err := settingsStore.GetTenantSettings(ctx, scope.TenantID)
 	if err != nil || tenantSettings == nil {
-		return modelProvider
+		return nil
 	}
 	if tenantSettings.BaseURL == "" || tenantSettings.ModelID == "" || !baseURLAllowed(options.ModelBaseURLAllowlist, tenantSettings.BaseURL) {
-		return modelProvider
+		return nil
 	}
 	if options.ModelPool != nil {
 		return options.ModelPool.GetClient(scope.TenantID, tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID)

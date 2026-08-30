@@ -133,7 +133,7 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 	modelProvider := selectModelProvider(ctx, store, scope, options)
 	if modelProvider == nil {
 		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID, Error: "ai.model_unavailable"})
-		_ = store.Finish(ctx, exec.Run, "Chưa có AI Model Provider nào được cấu hình.", "FAILED")
+		_ = store.Finish(ctx, exec.Run, "Chưa có cấu hình AI model nào được kích hoạt. Vui lòng cấu hình tại trang AI Settings.", "FAILED")
 		return
 	}
 

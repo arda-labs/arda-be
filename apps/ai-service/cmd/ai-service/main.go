@@ -62,14 +62,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The env model config is only a fallback for spike/local mode (no
+	// database). With persistence, the saved tenant configuration in
+	// ai_tenant_settings is the single source of truth (see
+	// handler.selectModelProvider) and the env key is ignored.
 	var ModelProvider *model.Client
-	if cfg.ModelReady() {
+	if cfg.ModelReady() && store == nil {
 		ModelProvider = model.NewClient(cfg.ModelBaseURL, cfg.ModelAPIKey, cfg.ModelID, nil)
 		if cfg.ModelGatewayToken != "" {
 			ModelProvider.WithGatewayToken(cfg.ModelGatewayToken)
 		}
 	} else if cfg.ModelEnabled {
-		logger.Warn("AI_ENABLE_AGENT is set but model configuration is incomplete; running without the agent loop")
+		logger.Info("model provider comes from tenant settings (database present)",
+			"platform_env_key_used", false)
 	}
 
 	var resolver *tools.Registry
