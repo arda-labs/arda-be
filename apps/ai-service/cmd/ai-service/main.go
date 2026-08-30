@@ -87,6 +87,8 @@ func main() {
 		AgentMaxSteps:         cfg.AgentMaxSteps,
 		ModelSystemPrompt:     cfg.ModelSystemPrompt,
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
+		PlatformModelBaseURL:  cfg.ModelBaseURL,
+		PlatformModelID:       cfg.ModelID,
 		StreamProtocol:        cfg.StreamProtocol,
 	}
 	if cfg.ModelGatewayToken != "" {

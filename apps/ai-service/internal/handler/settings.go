@@ -40,7 +40,7 @@ type testConnectionResponse struct {
 	Error     string `json:"error,omitempty"`
 }
 
-func handleGetSettings(w http.ResponseWriter, r *http.Request, store runStore) {
+func handleGetSettings(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
 	if r.Method != http.MethodGet {
 		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
 		return
@@ -51,14 +51,19 @@ func handleGetSettings(w http.ResponseWriter, r *http.Request, store runStore) {
 		return
 	}
 
+	// Platform defaults come from the deployment env so the dialog reflects
+	// the configuration actually in effect, not a fictional openai default.
 	defaultSettings := settingsDTO{
 		ProviderType: "openai",
-		BaseURL:      "https://api.openai.com/v1",
+		BaseURL:      options.PlatformModelBaseURL,
 		APIKey:       "",
-		ModelID:      "gpt-4o-mini",
+		ModelID:      options.PlatformModelID,
 		Temperature:  0.2,
 		IsActive:     true,
 		HasAPIKey:    false,
+	}
+	if defaultSettings.BaseURL == "" {
+		defaultSettings.BaseURL = "https://api.openai.com/v1"
 	}
 
 	settingsStore, ok := store.(repository.TenantSettingsStore)

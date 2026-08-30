@@ -32,6 +32,10 @@ type RouterOptions struct {
 	ModelBaseURLAllowlist []string
 	// StreamProtocol: "v1" (legacy, default) or "v2" (AI SDK UI Message Stream).
 	StreamProtocol string
+	// Platform model config surfaced in GET /api/ai/settings when the tenant
+	// has no row, so admins see the configuration actually in effect.
+	PlatformModelBaseURL string
+	PlatformModelID      string
 }
 
 type runStore interface {
@@ -116,13 +120,23 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	})
 	mux.HandleFunc("/api/ai/settings", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			handleGetSettings(w, r, store)
+			handleGetSettings(w, r, store, options)
 			return
 		}
 		handleUpdateSettings(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/settings/test", func(w http.ResponseWriter, r *http.Request) {
 		handleTestConnection(w, r, store, options)
+	})
+	mux.HandleFunc("/api/ai/settings/profiles", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			handleCreateProfile(w, r, store, options)
+			return
+		}
+		handleListProfiles(w, r, store)
+	})
+	mux.HandleFunc("/api/ai/settings/profiles/", func(w http.ResponseWriter, r *http.Request) {
+		handleProfileAction(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		listConversations(w, r, store, options)
