@@ -94,7 +94,6 @@ func main() {
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
 		PlatformModelBaseURL:  cfg.ModelBaseURL,
 		PlatformModelID:       cfg.ModelID,
-		StreamProtocol:        cfg.StreamProtocol,
 	}
 	if cfg.ModelGatewayToken != "" {
 		routerOptions.ModelPool.SetGatewayToken(cfg.ModelGatewayToken)

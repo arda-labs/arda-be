@@ -10,11 +10,10 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
-// Golden fixtures for the AI SDK UI Message Stream v1 protocol (AI_PROTOCOL=v2).
+// Golden fixtures for the AI SDK UI Message Stream v1 protocol.
 
 func runAgentV2(t *testing.T, store runStore, resolver toolResolver, options RouterOptions, body string) (int, string, []map[string]any) {
 	t.Helper()
-	options.StreamProtocol = streamProtocolV2
 	router := NewRouterWithOptions(store, resolver, options)
 	req := httptest.NewRequest(http.MethodPost, "/api/ai/agent", strings.NewReader(body))
 	gatewayHeaders(req)

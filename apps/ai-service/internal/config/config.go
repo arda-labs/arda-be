@@ -40,10 +40,6 @@ type Config struct {
 	// Empty slice = enforcement disabled; only ValidateEgressURL applies.
 	ModelBaseURLAllowlist []string
 
-	// StreamProtocol selects the SSE dialect: "v1" (legacy AG-UI-style,
-	// default) or "v2" (AI SDK UI Message Stream v1).
-	StreamProtocol string
-
 	// Knowledge vector retrieval (roadmap §4.2). KnowledgeVectorEnabled turns
 	// hybrid search on; without a full embedding config the service logs a
 	// warning and keeps full-text-only search.
@@ -101,7 +97,6 @@ func Load() Config {
 		ModelGatewayToken:  strings.TrimSpace(os.Getenv("AI_MODEL_GATEWAY_TOKEN")),
 
 		ModelBaseURLAllowlist: envListOr("AI_MODEL_BASE_URL_ALLOWLIST"),
-		StreamProtocol:        envOr("AI_PROTOCOL", "v1"),
 
 		KnowledgeVectorEnabled: envBoolOr("AI_KNOWLEDGE_VECTOR", false),
 		EmbeddingProvider:      envOr("AI_EMBEDDING_PROVIDER", "workersai"),

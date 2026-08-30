@@ -99,7 +99,7 @@ func TestAgentLoopStreamsTextAndExecutesReadTool(t *testing.T) {
 	}
 	events := decodeSSEEvents(t, res.Body.String())
 	types := eventTypes(events)
-	for _, expected := range []string{"RUN_STARTED", "TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END", "TOOL_CALL_RESULT", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"} {
+	for _, expected := range []string{"start", "tool-input-start", "tool-input-delta", "tool-input-available", "tool-output-available", "text-start", "text-delta", "text-end", "finish-step", "finish"} {
 		found := false
 		for _, actual := range types {
 			if actual == expected {
@@ -143,8 +143,8 @@ func TestAgentLoopCreatesApprovalProposalForConfirmTool(t *testing.T) {
 	events := decodeSSEEvents(t, res.Body.String())
 	var proposal map[string]any
 	for _, event := range events {
-		if event["type"] == "TOOL_CALL_RESULT" {
-			result, ok := event["result"].(map[string]any)
+		if event["type"] == "tool-output-available" {
+			result, ok := event["output"].(map[string]any)
 			if !ok {
 				t.Fatalf("tool result is not an object: %v", event["result"])
 			}

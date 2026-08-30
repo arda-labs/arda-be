@@ -124,7 +124,7 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 		ThreadID: exec.Run.ExternalThread,
 		RunID:    exec.Run.ExternalRun,
 	}
-	sse, ok := newSSEWriter(w, options.StreamProtocol)
+	sse, ok := newSSEWriter(w)
 	if !ok {
 		return
 	}

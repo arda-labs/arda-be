@@ -33,15 +33,17 @@ func TestAgentLoopRequiresSavedTenantSettings(t *testing.T) {
 	events := decodeSSEEvents(t, res.Body.String())
 	foundError, foundFinish := false, false
 	for _, event := range events {
-		if event["type"] == "RUN_FINISHED" {
-			foundFinish = true
-			if event["error"] == "ai.model_unavailable" {
+		switch event["type"] {
+		case "error":
+			if event["errorText"] == "ai.model_unavailable" {
 				foundError = true
 			}
+		case "finish":
+			foundFinish = true
 		}
 	}
 	if !foundFinish || !foundError {
-		t.Fatalf("expected RUN_FINISHED with ai.model_unavailable; events: %v", events)
+		t.Fatalf("expected error part with ai.model_unavailable followed by finish; events: %v", events)
 	}
 	if raw, err := json.Marshal(store.finished); err != nil || string(raw) != "true" {
 		t.Fatalf("run must be persisted as FAILED: %v %s", err, raw)
@@ -69,7 +71,7 @@ func TestAgentLoopSpikeModeUsesEnvProvider(t *testing.T) {
 	events := decodeSSEEvents(t, res.Body.String())
 	text := ""
 	for _, event := range events {
-		if event["type"] == "TEXT_MESSAGE_CONTENT" {
+		if event["type"] == "text-delta" {
 			text += event["delta"].(string)
 		}
 	}

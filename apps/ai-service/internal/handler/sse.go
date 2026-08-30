@@ -8,59 +8,37 @@ import (
 	"strings"
 )
 
-// Stream protocols served from the same agent loop:
-//   - "v1" (default): legacy AG-UI-style events, one JSON per data: line.
-//   - "v2": AI SDK UI Message Stream v1 parts
-//     (https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol), advertised via the
-//     x-vercel-ai-ui-message-stream response header.
-const (
-	streamProtocolV1 = "v1"
-	streamProtocolV2 = "v2"
-)
-
+// The SSE dialect is AI SDK UI Message Stream v1
+// (https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol), advertised via the
+// x-vercel-ai-ui-message-stream response header. The legacy AG-UI-style
+// dialect was removed; backend and frontend must ship together.
 type sseWriter struct {
 	writer          *bufio.Writer
 	flusher         http.Flusher
-	protocol        string
 	started         bool
 	reasoning       bool
 	reasoningOpenID string
 	toolArgs        map[string]*strings.Builder
 }
 
-func newSSEWriter(w http.ResponseWriter, protocol string) (*sseWriter, bool) {
+func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
-	if protocol == streamProtocolV2 {
-		w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
-	}
+	w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
 	w.WriteHeader(http.StatusOK)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return nil, false
 	}
-	if protocol != streamProtocolV2 {
-		protocol = streamProtocolV1
-	}
-	return &sseWriter{writer: bufio.NewWriter(w), flusher: flusher, protocol: protocol}, true
+	return &sseWriter{writer: bufio.NewWriter(w), flusher: flusher}, true
 }
 
 func (s *sseWriter) event(payload agentEvent) {
-	if s.protocol == streamProtocolV2 {
-		for _, part := range s.translate(payload) {
-			s.writeData(part)
-		}
-		return
+	for _, part := range s.translate(payload) {
+		s.writeData(part)
 	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-	fmt.Fprintf(s.writer, "data: %s\n\n", encoded)
-	_ = s.writer.Flush()
-	s.flusher.Flush()
 }
 
 func (s *sseWriter) writeData(part uiStreamPart) {

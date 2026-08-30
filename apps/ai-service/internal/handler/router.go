@@ -30,8 +30,6 @@ type RouterOptions struct {
 	ModelSystemPrompt   string
 	// ModelBaseURLAllowlist restricts tenant-provided base URLs; empty = disabled.
 	ModelBaseURLAllowlist []string
-	// StreamProtocol: "v1" (legacy, default) or "v2" (AI SDK UI Message Stream).
-	StreamProtocol string
 	// Platform model config surfaced in GET /api/ai/settings when the tenant
 	// has no row, so admins see the configuration actually in effect.
 	PlatformModelBaseURL string
@@ -276,7 +274,7 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 					return
 				}
 			}
-			writeToolStream(w, input, options.StreamProtocol, definition, nil, assistantMessage, toolErrorCode(toolErr))
+			writeToolStream(w, input, definition, nil, assistantMessage, toolErrorCode(toolErr))
 			return
 		}
 		if toolStore != nil {
@@ -292,7 +290,7 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 				return
 			}
 		}
-		writeToolStream(w, input, options.StreamProtocol, definition, &result, result.Summary, "")
+		writeToolStream(w, input, definition, &result, result.Summary, "")
 		return
 	}
 
@@ -302,11 +300,11 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 			return
 		}
 	}
-	writeProtocolStream(w, input, options.StreamProtocol)
+	writeProtocolStream(w, input)
 }
 
-func writeProtocolStream(w http.ResponseWriter, input runInput, protocol string) {
-	writeStream(w, protocol, func(writer *sseWriter) {
+func writeProtocolStream(w http.ResponseWriter, input runInput) {
+	writeStream(w, func(writer *sseWriter) {
 		messageID := "msg-" + input.RunID
 		writer.event(agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
 		writer.event(agentEvent{Type: "TEXT_MESSAGE_START", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
@@ -316,8 +314,8 @@ func writeProtocolStream(w http.ResponseWriter, input runInput, protocol string)
 	})
 }
 
-func writeToolStream(w http.ResponseWriter, input runInput, protocol string, definition tools.Definition, result *tools.Result, assistantMessage, toolError string) {
-	writeStream(w, protocol, func(writer *sseWriter) {
+func writeToolStream(w http.ResponseWriter, input runInput, definition tools.Definition, result *tools.Result, assistantMessage, toolError string) {
+	writeStream(w, func(writer *sseWriter) {
 		messageID := "msg-" + input.RunID
 		toolCallID := "tool-" + input.RunID
 		writer.event(agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
@@ -348,8 +346,8 @@ func resultContent(result *tools.Result, toolError, assistantMessage string) str
 	return "{}"
 }
 
-func writeStream(w http.ResponseWriter, protocol string, emit func(*sseWriter)) {
-	sse, ok := newSSEWriter(w, protocol)
+func writeStream(w http.ResponseWriter, emit func(*sseWriter)) {
+	sse, ok := newSSEWriter(w)
 	if !ok {
 		return
 	}

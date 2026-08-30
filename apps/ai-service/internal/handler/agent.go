@@ -46,7 +46,7 @@ func runAgentStream(
 		return
 	}
 
-	sse, ok := newSSEWriter(w, options.StreamProtocol)
+	sse, ok := newSSEWriter(w)
 	if !ok {
 		return
 	}
