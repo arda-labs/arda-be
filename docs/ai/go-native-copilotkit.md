@@ -11,7 +11,7 @@ CopilotKit Runtime as an AG-UI adapter between the gateway and `ai-service`.
 The adapter added a deployable, a secret boundary, and a second workload-token
 hop without adding any authorization decision. It has been removed:
 
-- `arda-be/apps/ai-runtime` source remains for reference only; nothing deploys it.
+- `arda-be/apps/ai-runtime` source has been removed entirely; nothing deploys it.
 - `arda-infra/k8s/apps/ai-runtime.yaml` was deleted from the kustomization;
   ArgoCD pruned the deployment (`kubectl get deploy ai-runtime` → NotFound).
 - The gateway now points `COPILOTKIT_RUNTIME_URL` at

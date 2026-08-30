@@ -32,12 +32,15 @@ func NewCodeModeSuite(
 	db *sql.DB,
 	store repository.RunStore,
 	enableHITL bool,
+	embedder knowledge.Embedder,
 ) *CodeModeSuite {
 	dispatcherReg := NewDispatcherRegistry()
 
 	var searcher knowledge.Searcher
 	if db != nil {
-		searcher = knowledge.NewSQLSearcher(db)
+		sqlSearcher := knowledge.NewSQLSearcher(db)
+		sqlSearcher.SetEmbedder(embedder)
+		searcher = sqlSearcher
 	}
 
 	RegisterBuiltinCatalog(dispatcherReg, crmBaseURL, httpClient, searcher)

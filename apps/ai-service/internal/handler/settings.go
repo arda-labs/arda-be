@@ -107,7 +107,7 @@ func handleGetSettings(w http.ResponseWriter, r *http.Request, store runStore) {
 	})
 }
 
-func handleUpdateSettings(w http.ResponseWriter, r *http.Request, store runStore) {
+func handleUpdateSettings(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
 	if r.Method != http.MethodPut && r.Method != http.MethodPost {
 		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
 		return
@@ -138,7 +138,15 @@ func handleUpdateSettings(w http.ResponseWriter, r *http.Request, store runStore
 		problem(w, http.StatusBadRequest, "ai.invalid_base_url")
 		return
 	}
+	if !baseURLAllowed(options.ModelBaseURLAllowlist, req.BaseURL) {
+		problem(w, http.StatusBadRequest, "ai.base_url_not_allowed")
+		return
+	}
 	if req.ModelID == "" {
+		problem(w, http.StatusBadRequest, "ai.missing_required_fields")
+		return
+	}
+	if strings.TrimSpace(req.APIKey) == "" {
 		problem(w, http.StatusBadRequest, "ai.missing_required_fields")
 		return
 	}
@@ -173,7 +181,7 @@ func handleUpdateSettings(w http.ResponseWriter, r *http.Request, store runStore
 	})
 }
 
-func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore) {
+func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
 	if r.Method != http.MethodPost {
 		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
 		return
@@ -201,6 +209,17 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 			"result": testConnectionResponse{
 				Success: false,
 				Error:   err.Error(),
+			},
+		})
+		return
+	}
+	if !baseURLAllowed(options.ModelBaseURLAllowlist, baseURL) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"errors":  []any{},
+			"result": testConnectionResponse{
+				Success: false,
+				Error:   "Base URL không nằm trong danh sách được phép của hệ thống",
 			},
 		})
 		return
@@ -303,6 +322,31 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 
 func validateProviderURL(rawURL string) error {
 	return ardahttp.ValidateEgressURL(rawURL, true)
+}
+
+// baseURLAllowed reports whether rawURL matches the gateway allowlist.
+// Entries are URL prefixes with path-boundary semantics, so
+// "https://gateway.example/v1/acct/gw" permits "/v1/acct/gw/openai" but not
+// "/v1/acct/other". An empty allowlist disables enforcement (deployment has
+// not switched to a gateway yet); only ValidateEgressURL applies.
+func baseURLAllowed(allowlist []string, rawURL string) bool {
+	if len(allowlist) == 0 {
+		return true
+	}
+	candidate := strings.TrimRight(strings.TrimSpace(rawURL), "/")
+	if candidate == "" {
+		return false
+	}
+	for _, entry := range allowlist {
+		prefix := strings.TrimRight(strings.TrimSpace(entry), "/")
+		if prefix == "" {
+			continue
+		}
+		if candidate == prefix || strings.HasPrefix(candidate, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func maskAPIKey(key string) string {

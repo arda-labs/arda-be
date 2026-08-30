@@ -28,6 +28,10 @@ type RouterOptions struct {
 	ModelPool           *model.ClientPool
 	AgentMaxSteps       int
 	ModelSystemPrompt   string
+	// ModelBaseURLAllowlist restricts tenant-provided base URLs; empty = disabled.
+	ModelBaseURLAllowlist []string
+	// StreamProtocol: "v1" (legacy, default) or "v2" (AI SDK UI Message Stream).
+	StreamProtocol string
 }
 
 type runStore interface {
@@ -115,10 +119,10 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 			handleGetSettings(w, r, store)
 			return
 		}
-		handleUpdateSettings(w, r, store)
+		handleUpdateSettings(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/settings/test", func(w http.ResponseWriter, r *http.Request) {
-		handleTestConnection(w, r, store)
+		handleTestConnection(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		listConversations(w, r, store, options)
@@ -258,7 +262,7 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 					return
 				}
 			}
-			writeToolStream(w, input, definition, nil, assistantMessage, toolErrorCode(toolErr))
+			writeToolStream(w, input, options.StreamProtocol, definition, nil, assistantMessage, toolErrorCode(toolErr))
 			return
 		}
 		if toolStore != nil {
@@ -274,7 +278,7 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 				return
 			}
 		}
-		writeToolStream(w, input, definition, &result, result.Summary, "")
+		writeToolStream(w, input, options.StreamProtocol, definition, &result, result.Summary, "")
 		return
 	}
 
@@ -284,38 +288,38 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 			return
 		}
 	}
-	writeProtocolStream(w, input)
+	writeProtocolStream(w, input, options.StreamProtocol)
 }
 
-func writeProtocolStream(w http.ResponseWriter, input runInput) {
-	writeStream(w, func(writer *bufio.Writer) {
+func writeProtocolStream(w http.ResponseWriter, input runInput, protocol string) {
+	writeStream(w, protocol, func(writer *sseWriter) {
 		messageID := "msg-" + input.RunID
-		writeEvent(writer, agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
-		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_START", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
-		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: protocolSpikeMessage})
-		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_END", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
-		writeEvent(writer, agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
+		writer.event(agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
+		writer.event(agentEvent{Type: "TEXT_MESSAGE_START", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
+		writer.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: protocolSpikeMessage})
+		writer.event(agentEvent{Type: "TEXT_MESSAGE_END", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
+		writer.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
 	})
 }
 
-func writeToolStream(w http.ResponseWriter, input runInput, definition tools.Definition, result *tools.Result, assistantMessage, toolError string) {
-	writeStream(w, func(writer *bufio.Writer) {
+func writeToolStream(w http.ResponseWriter, input runInput, protocol string, definition tools.Definition, result *tools.Result, assistantMessage, toolError string) {
+	writeStream(w, protocol, func(writer *sseWriter) {
 		messageID := "msg-" + input.RunID
 		toolCallID := "tool-" + input.RunID
-		writeEvent(writer, agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
-		writeEvent(writer, agentEvent{Type: "TOOL_CALL_START", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, ToolName: definition.Name, ToolCallName: definition.Name})
-		writeEvent(writer, agentEvent{Type: "TOOL_CALL_ARGS", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, Delta: string(input.Tool.Arguments)})
+		writer.event(agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
+		writer.event(agentEvent{Type: "TOOL_CALL_START", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, ToolName: definition.Name, ToolCallName: definition.Name})
+		writer.event(agentEvent{Type: "TOOL_CALL_ARGS", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, Delta: string(input.Tool.Arguments)})
 		toolEvent := agentEvent{Type: "TOOL_CALL_END", ThreadID: input.ThreadID, RunID: input.RunID, ToolCallID: toolCallID, ToolName: definition.Name, ToolCallName: definition.Name, Error: toolError}
 		if result != nil {
 			toolEvent.Result = result.Data
 		}
-		writeEvent(writer, toolEvent)
+		writer.event(toolEvent)
 		toolContent := resultContent(result, toolError, assistantMessage)
-		writeEvent(writer, agentEvent{Type: "TOOL_CALL_RESULT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: "tool-msg-" + input.RunID, ToolCallID: toolCallID, Content: toolContent, Role: "tool"})
-		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_START", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
-		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: assistantMessage})
-		writeEvent(writer, agentEvent{Type: "TEXT_MESSAGE_END", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
-		writeEvent(writer, agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: toolError})
+		writer.event(agentEvent{Type: "TOOL_CALL_RESULT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: "tool-msg-" + input.RunID, ToolCallID: toolCallID, Content: toolContent, Role: "tool"})
+		writer.event(agentEvent{Type: "TEXT_MESSAGE_START", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
+		writer.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: assistantMessage})
+		writer.event(agentEvent{Type: "TEXT_MESSAGE_END", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
+		writer.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: toolError})
 	})
 }
 
@@ -330,20 +334,13 @@ func resultContent(result *tools.Result, toolError, assistantMessage string) str
 	return "{}"
 }
 
-func writeStream(w http.ResponseWriter, emit func(*bufio.Writer)) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flusher, ok := w.(http.Flusher)
+func writeStream(w http.ResponseWriter, protocol string, emit func(*sseWriter)) {
+	sse, ok := newSSEWriter(w, protocol)
 	if !ok {
 		return
 	}
-	writer := bufio.NewWriter(w)
-	emit(writer)
-	_ = writer.Flush()
-	flusher.Flush()
+	emit(sse)
+	sse.finalFlush()
 }
 
 type approvalProposalInput struct {

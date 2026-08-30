@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/catalog"
 	"github.com/arda-labs/arda/apps/ai-service/internal/config"
 	"github.com/arda-labs/arda/apps/ai-service/internal/handler"
+	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/migration"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
@@ -71,16 +73,18 @@ func main() {
 	if cfg.EnableReadTools {
 		// Code Mode: Expose ONLY the 2 Meta-Tools (search & execute) to the model.
 		// Domain APIs are dispatched internally through the embedded Goja sandbox.
-		suite := catalog.NewCodeModeSuite(cfg.CRMServiceURL, nil, db, store, cfg.EnableHITLProposals)
+		suite := catalog.NewCodeModeSuite(cfg.CRMServiceURL, nil, db, store, cfg.EnableHITLProposals, buildKnowledgeEmbedder(cfg, logger))
 		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool)
 	}
 
 	routerOptions := handler.RouterOptions{
-		EnableHITLProposals: cfg.EnableHITLProposals,
-		ModelProvider:       ModelProvider,
-		ModelPool:           model.NewClientPool(nil),
-		AgentMaxSteps:       cfg.AgentMaxSteps,
-		ModelSystemPrompt:   cfg.ModelSystemPrompt,
+		EnableHITLProposals:   cfg.EnableHITLProposals,
+		ModelProvider:         ModelProvider,
+		ModelPool:             model.NewClientPool(nil),
+		AgentMaxSteps:         cfg.AgentMaxSteps,
+		ModelSystemPrompt:     cfg.ModelSystemPrompt,
+		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
+		StreamProtocol:        cfg.StreamProtocol,
 	}
 
 	mux := handler.NewRouterWithOptions(store, resolver, routerOptions)
@@ -88,7 +92,7 @@ func main() {
 		handler.RateLimitMiddleware(mux, cfg.RateLimitPerMinute),
 		cfg.ServiceAuthSecret,
 		cfg.Mode == "production",
-	))
+	), handler.RenderAIMetrics)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
@@ -118,4 +122,26 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("AI service stopped gracefully")
+}
+
+// buildKnowledgeEmbedder wires hybrid knowledge retrieval (roadmap §4.2):
+// Cloudflare Workers AI by default, OpenAI-compatible self-host later. A nil
+// embedder keeps search full-text-only.
+func buildKnowledgeEmbedder(cfg config.Config, logger *slog.Logger) knowledge.Embedder {
+	if !cfg.KnowledgeVectorEnabled {
+		return nil
+	}
+	switch strings.ToLower(cfg.EmbeddingProvider) {
+	case "openai":
+		if cfg.EmbeddingBaseURL != "" && cfg.EmbeddingModel != "" {
+			return knowledge.NewOpenAIEmbedder(cfg.EmbeddingBaseURL, cfg.EmbeddingModel, cfg.EmbeddingAPIToken, nil)
+		}
+	default:
+		if cfg.EmbeddingAccountID != "" && cfg.EmbeddingAPIToken != "" && cfg.EmbeddingModel != "" {
+			return knowledge.NewWorkersAIEmbedder(cfg.EmbeddingAccountID, cfg.EmbeddingModel, cfg.EmbeddingAPIToken, nil)
+		}
+	}
+	logger.Warn("AI_KNOWLEDGE_VECTOR is set but embedding config is incomplete; knowledge search stays full-text",
+		"provider", cfg.EmbeddingProvider)
+	return nil
 }

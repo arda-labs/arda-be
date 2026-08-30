@@ -46,12 +46,63 @@ func runAgentStream(
 		return
 	}
 
-	sse, ok := newSSEWriter(w)
+	sse, ok := newSSEWriter(w, options.StreamProtocol)
 	if !ok {
 		return
 	}
 	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
 
+	modelProvider := selectModelProvider(ctx, store, scope, options)
+	if modelProvider == nil {
+		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
+		_ = store.Finish(ctx, scopeRun, "Chưa có AI Model Provider nào được cấu hình.", "FAILED")
+		return
+	}
+
+	messages := buildModelMessages(ctx, store, options, scopeRun, latestUserMessage(input.Messages))
+	agentStepsLoop(w, r, store, resolver, scope, scopeRun, input, sse, options, modelProvider, messages)
+}
+
+// selectModelProvider resolves the provider for a run: tenant BYO settings
+// (allowlist-checked) win over the platform default.
+func selectModelProvider(ctx context.Context, store runStore, scope tools.Context, options RouterOptions) model.Provider {
+	modelProvider := options.ModelProvider
+	settingsStore, ok := store.(repository.TenantSettingsStore)
+	if !ok {
+		return modelProvider
+	}
+	tenantSettings, err := settingsStore.GetTenantSettings(ctx, scope.TenantID)
+	if err != nil || tenantSettings == nil {
+		return modelProvider
+	}
+	if tenantSettings.BaseURL == "" || tenantSettings.ModelID == "" || !baseURLAllowed(options.ModelBaseURLAllowlist, tenantSettings.BaseURL) {
+		return modelProvider
+	}
+	if options.ModelPool != nil {
+		return options.ModelPool.GetClient(scope.TenantID, tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID)
+	}
+	return model.NewClient(tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID, nil)
+}
+
+// agentStepsLoop drives the model↔tool loop shared by fresh runs and resumed
+// runs. It owns SSE text framing, step budgeting, tool dispatch, and the
+// terminal store.Finish call.
+func agentStepsLoop(
+	w http.ResponseWriter,
+	r *http.Request,
+	store runStore,
+	resolver toolResolver,
+	scope tools.Context,
+	scopeRun repository.RunContext,
+	input runInput,
+	sse *sseWriter,
+	options RouterOptions,
+	modelProvider model.Provider,
+	messages []model.Message,
+) {
+	ctx := r.Context()
+	timer := startAIRunTimer()
+	defer timer.observe()
 	messageID := "msg-" + input.RunID
 	textStarted := false
 	startText := func() {
@@ -66,25 +117,6 @@ func runAgentStream(
 		}
 	}
 
-	modelProvider := options.ModelProvider
-	if settingsStore, ok := store.(repository.TenantSettingsStore); ok {
-		if tenantSettings, err := settingsStore.GetTenantSettings(ctx, scope.TenantID); err == nil && tenantSettings != nil {
-			if tenantSettings.BaseURL != "" && tenantSettings.ModelID != "" {
-				if options.ModelPool != nil {
-					modelProvider = options.ModelPool.GetClient(scope.TenantID, tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID)
-				} else {
-					modelProvider = model.NewClient(tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID, nil)
-				}
-			}
-		}
-	}
-	if modelProvider == nil {
-		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
-		_ = store.Finish(ctx, scopeRun, "Chưa có AI Model Provider nào được cấu hình.", "FAILED")
-		return
-	}
-
-	messages := buildModelMessages(ctx, store, options, scopeRun, latestUserMessage(input.Messages))
 	defs := modelToolDefinitions(resolver)
 	maxSteps := options.AgentMaxSteps
 	if maxSteps <= 0 || maxSteps > 12 {
@@ -107,6 +139,9 @@ func runAgentStream(
 			OnToolCall: func(call model.ToolCall) {
 				collected = append(collected, call)
 			},
+			OnFinish: func(_ string, usage model.Usage) {
+				recordLLMUsage(usage)
+			},
 		})
 		if ctx.Err() != nil {
 			return
@@ -121,6 +156,7 @@ func runAgentStream(
 			)
 			endText()
 			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
+			recordRunOutcome("FAILED")
 			_ = store.Finish(ctx, scopeRun, fmt.Sprintf("I could not complete that request right now: %v", err), "FAILED")
 			return
 		}
@@ -134,17 +170,29 @@ func runAgentStream(
 			}
 			endText()
 			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
+			recordRunOutcome("SUCCEEDED")
 			_ = store.Finish(ctx, scopeRun, reply, "SUCCEEDED")
 			return
 		}
 
 		messages = append(messages, model.Message{Role: "assistant", Content: turnText.String(), ToolCalls: collected})
 		for _, call := range collected {
+			if awaitingApproval {
+				// A resumed run must pair every emitted tool_call with a tool
+				// message or strict providers reject the follow-up request.
+				skipped := `{"error":"skipped_pending_approval"}`
+				sse.event(agentEvent{
+					Type: "TOOL_CALL_RESULT", ThreadID: input.ThreadID, RunID: input.RunID,
+					ToolCallID: call.ID, ToolName: call.Name, ToolCallName: call.Name,
+					Result: json.RawMessage(skipped), Error: "ai.tool_skipped_pending_approval",
+				})
+				messages = append(messages, model.Message{Role: "tool", ToolCallID: call.ID, Content: skipped})
+				continue
+			}
 			pending, toolMessage := executeModelToolCall(ctx, r, store, resolver, scope, scopeRun, input, sse, call, options)
 			messages = append(messages, model.Message{Role: "tool", ToolCallID: call.ID, Content: toolMessage})
 			if pending {
 				awaitingApproval = true
-				break
 			}
 		}
 		if finishReason == "" && awaitingApproval {
@@ -155,6 +203,7 @@ func runAgentStream(
 	if awaitingApproval {
 		endText()
 		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
+		recordRunOutcome("WAITING_APPROVAL")
 		return
 	}
 
@@ -163,6 +212,7 @@ func runAgentStream(
 	startText()
 	sse.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: reply})
 	sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.agent_step_limit"})
+	recordRunOutcome("FAILED")
 	_ = store.Finish(ctx, scopeRun, reply, "FAILED")
 }
 
@@ -178,10 +228,12 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 				if item.Content == "" {
 					continue
 				}
-				switch item.Role {
-				case "user", "assistant", "tool":
-					messages = append(messages, model.Message{Role: item.Role, Content: item.Content})
-				}
+			switch item.Role {
+			case "user", "assistant":
+				messages = append(messages, model.Message{Role: item.Role, Content: item.Content})
+			}
+			// Tool history is skipped on replay: HistoryMessage carries no
+			// tool_call_id, and providers reject unpaired tool messages.
 			}
 		}
 	}
@@ -273,6 +325,7 @@ func executeModelToolCall(
 	}
 	if hasToolStore && executionID != "" {
 		_ = toolStore.FinishTool(ctx, executionID, status, content, errorCode)
+		recordToolOutcome(status, definition.Risk)
 	}
 
 	sse.event(agentEvent{

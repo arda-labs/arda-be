@@ -1,17 +1,26 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
 type executionResolver interface {
 	ResolveForExecution(call tools.Call, scope tools.Context) (tools.Tool, tools.Definition, error)
+}
+
+// runResumeStore is the capability store needed to continue the agent loop
+// after an approved tool executes (LangGraph-style interrupt/resume).
+type runResumeStore interface {
+	RunMessages(ctx context.Context, run repository.RunContext) ([]repository.HistoryMessage, error)
+	ResumeRun(ctx context.Context, run repository.RunContext) error
 }
 
 func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore, resolver toolResolver, options RouterOptions) {
@@ -81,19 +90,91 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 			return
 		}
 	}
-	if err := store.Finish(ctx, exec.Run, result.Summary, "SUCCEEDED"); err != nil {
-		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+
+	resumeStore, hasResumeStore := store.(runResumeStore)
+	if !hasResumeStore {
+		// Minimal persistence (spike fakes): finish the run inline without a
+		// resumed agent loop and keep the plain JSON response.
+		recordRunOutcome("SUCCEEDED")
+		recordToolOutcome("SUCCEEDED", definition.Risk)
+		if err := store.Finish(ctx, exec.Run, result.Summary, "SUCCEEDED"); err != nil {
+			problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success":  true,
+			"errors":   []any{},
+			"messages": []string{},
+			"result": map[string]any{
+				"id":      parts[0],
+				"status":  "EXECUTED",
+				"summary": result.Summary,
+				"data":    json.RawMessage(content),
+			},
+		})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"errors":  []any{},
-		"messages": []string{},
-		"result": map[string]any{
-			"id":      parts[0],
-			"status":  "EXECUTED",
-			"summary": result.Summary,
-			"data":    json.RawMessage(content),
+
+	if err := resumeStore.ResumeRun(ctx, exec.Run); err != nil {
+		problem(w, http.StatusConflict, "ai.resume_conflict")
+		return
+	}
+
+	resumeInput := runInput{
+		ThreadID: exec.Run.ExternalThread,
+		RunID:    exec.Run.ExternalRun,
+	}
+	sse, ok := newSSEWriter(w, options.StreamProtocol)
+	if !ok {
+		return
+	}
+	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID})
+
+	modelProvider := selectModelProvider(ctx, store, scope, options)
+	if modelProvider == nil {
+		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID, Error: "ai.model_unavailable"})
+		_ = store.Finish(ctx, exec.Run, "Chưa có AI Model Provider nào được cấu hình.", "FAILED")
+		return
+	}
+
+	messages := buildResumeMessages(ctx, resumeStore, options, exec, content)
+	agentStepsLoop(w, r, store, resolver, scope, exec.Run, resumeInput, sse, options, modelProvider, messages)
+}
+
+// buildResumeMessages reconstructs the provider conversation for a resumed
+// run: system prompt + persisted run messages + the executed tool call and
+// its result so the model sees a complete tool_calls/tool pairing.
+func buildResumeMessages(
+	ctx context.Context,
+	store runResumeStore,
+	options RouterOptions,
+	exec repository.ApprovedExecution,
+	toolResultContent string,
+) []model.Message {
+	messages := make([]model.Message, 0, 32)
+	if prompt := strings.TrimSpace(options.ModelSystemPrompt); prompt != "" {
+		messages = append(messages, model.Message{Role: "system", Content: prompt})
+	}
+	if items, err := store.RunMessages(ctx, exec.Run); err == nil {
+		for _, item := range items {
+			if item.Content == "" {
+				continue
+			}
+			switch item.Role {
+			case "user", "assistant":
+				messages = append(messages, model.Message{Role: item.Role, Content: item.Content})
+			}
+		}
+	}
+	toolCallID := "resume-" + exec.ExecutionID
+	messages = append(messages,
+		model.Message{
+			Role: "assistant",
+			ToolCalls: []model.ToolCall{{
+				ID: toolCallID, Name: exec.ToolName, Arguments: exec.Arguments,
+			}},
 		},
-	})
+		model.Message{Role: "tool", ToolCallID: toolCallID, Content: toolResultContent},
+	)
+	return messages
 }

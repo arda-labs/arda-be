@@ -274,6 +274,70 @@ func (s *SQLRunStore) RecentMessages(ctx context.Context, run RunContext, limit 
 	return messages, nil
 }
 
+// RunMessages loads the persisted messages of one run in chronological order,
+// regardless of the run status (RecentMessages only serves finished runs).
+func (s *SQLRunStore) RunMessages(ctx context.Context, run RunContext) ([]HistoryMessage, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("AI run store is not configured")
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.role, m.content
+		FROM public.ai_messages m
+		JOIN public.ai_runs r ON r.id = m.run_id
+		WHERE r.tenant_id = $1 AND r.actor_user_id = $2 AND r.external_run_id = $3
+		ORDER BY m.sequence ASC
+		LIMIT 100
+	`, run.TenantID, run.ActorUserID, run.ExternalRun)
+	if err != nil {
+		return nil, fmt.Errorf("load AI run messages: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []HistoryMessage
+	for rows.Next() {
+		var item HistoryMessage
+		if err := rows.Scan(&item.Role, &item.Content); err != nil {
+			return nil, fmt.Errorf("scan AI run message: %w", err)
+		}
+		messages = append(messages, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate AI run messages: %w", err)
+	}
+	return messages, nil
+}
+
+// ResumeRun returns a WAITING_APPROVAL run (and its pending tool execution)
+// to RUNNING so the agent loop can continue after an approval is executed.
+func (s *SQLRunStore) ResumeRun(ctx context.Context, run RunContext) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("AI run store is not configured")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE public.ai_runs SET status = 'RUNNING', finished_at = NULL
+		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
+		  AND status = 'WAITING_APPROVAL'
+	`, run.TenantID, run.ActorUserID, run.ExternalRun)
+	if err != nil {
+		return fmt.Errorf("resume AI run: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return fmt.Errorf("AI run not awaiting approval")
+	}
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE public.ai_tool_executions te
+		SET status = 'RUNNING'
+		FROM public.ai_runs r
+		WHERE te.run_id = r.id
+		  AND r.tenant_id = $1 AND r.actor_user_id = $2 AND r.external_run_id = $3
+		  AND te.status = 'WAITING_APPROVAL'
+	`, run.TenantID, run.ActorUserID, run.ExternalRun)
+	if err != nil {
+		return fmt.Errorf("resume AI tool execution: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLRunStore) SetUsage(ctx context.Context, run RunContext, usageJSON string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("AI run store is not configured")

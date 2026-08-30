@@ -9,11 +9,10 @@ import (
 )
 
 // trustedSources are the internal callers allowed to reach application
-// routes: direct gateway proxying and the CopilotKit runtime adapter. Both
-// sign with the same shared workload secret.
+// routes: direct gateway proxying. They sign with the same shared workload
+// secret.
 var trustedSources = map[string]bool{
 	"auth-gateway": true,
-	"ai-runtime":   true,
 }
 
 // ServiceAuthMiddleware verifies the gateway's workload identity separately
