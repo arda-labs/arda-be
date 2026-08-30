@@ -94,7 +94,21 @@ func handleCreateProfile(w http.ResponseWriter, r *http.Request, store runStore,
 		problem(w, http.StatusBadRequest, "ai.base_url_not_allowed")
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.ModelID) == "" || strings.TrimSpace(req.APIKey) == "" {
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.ModelID) == "" {
+		problem(w, http.StatusBadRequest, "ai.missing_required_fields")
+		return
+	}
+	// A masked or empty key means "reuse the key currently in effect" — the
+	// dialog only shows masked values and should not force retyping secrets.
+	apiKey := strings.TrimSpace(req.APIKey)
+	if apiKey == "" || strings.Contains(apiKey, "...") {
+		if settingsStore, hasSettings := store.(repository.TenantSettingsStore); hasSettings {
+			if existing, err := settingsStore.GetTenantSettings(r.Context(), scope.TenantID); err == nil && existing != nil {
+				apiKey = existing.APIKey
+			}
+		}
+	}
+	if apiKey == "" {
 		problem(w, http.StatusBadRequest, "ai.missing_required_fields")
 		return
 	}
@@ -104,7 +118,7 @@ func handleCreateProfile(w http.ResponseWriter, r *http.Request, store runStore,
 		Name:         req.Name,
 		ProviderType: strings.TrimSpace(req.ProviderType),
 		BaseURL:      req.BaseURL,
-		APIKey:       strings.TrimSpace(req.APIKey),
+		APIKey:       apiKey,
 		ModelID:      strings.TrimSpace(req.ModelID),
 		Temperature:  req.Temperature,
 		IsActive:     req.IsActive,
