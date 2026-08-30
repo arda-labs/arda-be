@@ -250,12 +250,15 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 
 	// Send lightweight probe request (max_tokens: 1)
 	start := time.Now()
+	// max_tokens 16: some providers (b.ai among them) reject probe requests
+	// with a too-small max_tokens ("must be greater than 2"); 16 stays cheap
+	// while passing every OpenAI-compatible provider's floor.
 	testPayload, _ := json.Marshal(map[string]any{
 		"model": modelID,
 		"messages": []map[string]string{
 			{"role": "user", "content": "ping"},
 		},
-		"max_tokens": 1,
+		"max_tokens": 16,
 	})
 
 	testCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
