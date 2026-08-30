@@ -12,7 +12,7 @@ import (
 
 // Golden fixtures for the AI SDK UI Message Stream v1 protocol.
 
-func runAgentV2(t *testing.T, store runStore, resolver toolResolver, options RouterOptions, body string) (int, string, []map[string]any) {
+func runAgentStreamFixture(t *testing.T, store runStore, resolver toolResolver, options RouterOptions, body string) (int, string, []map[string]any) {
 	t.Helper()
 	router := NewRouterWithOptions(store, resolver, options)
 	req := httptest.NewRequest(http.MethodPost, "/api/ai/agent", strings.NewReader(body))
@@ -22,7 +22,7 @@ func runAgentV2(t *testing.T, store runStore, resolver toolResolver, options Rou
 	return res.Code, res.Header().Get("x-vercel-ai-ui-message-stream"), decodeSSEEvents(t, res.Body.String())
 }
 
-func TestStreamV2_TextOnlyFixture(t *testing.T) {
+func TestStream_TextOnlyFixture(t *testing.T) {
 	server := newModelServer(t, [][]string{{
 		`{"choices":[{"delta":{"content":"Xin chào"}}]}`,
 		`{"choices":[{"delta":{"content":" khách hàng!"}}]}`,
@@ -31,7 +31,7 @@ func TestStreamV2_TextOnlyFixture(t *testing.T) {
 	defer server.Close()
 
 	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client())}
-	code, header, events := runAgentV2(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
+	code, header, events := runAgentStreamFixture(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"chào"}]}`)
 	if code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", code)
@@ -62,7 +62,7 @@ func TestStreamV2_TextOnlyFixture(t *testing.T) {
 	}
 }
 
-func TestStreamV2_ToolCallFixture(t *testing.T) {
+func TestStream_ToolCallFixture(t *testing.T) {
 	server := newModelServer(t, [][]string{
 		{
 			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"test.read"}}]}}]}`,
@@ -80,7 +80,7 @@ func TestStreamV2_ToolCallFixture(t *testing.T) {
 	store := &agentRunStore{}
 	resolver := tools.NewRegistry(handlerTestTool{})
 	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client()), AgentMaxSteps: 3}
-	_, _, events := runAgentV2(t, store, resolver, options,
+	_, _, events := runAgentStreamFixture(t, store, resolver, options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"xem khách hàng"}]}`)
 
 	var inputAvailable, outputAvailable map[string]any
@@ -119,7 +119,7 @@ func TestStreamV2_ToolCallFixture(t *testing.T) {
 	}
 }
 
-func TestStreamV2_HitlPendingFixture(t *testing.T) {
+func TestStream_HitlPendingFixture(t *testing.T) {
 	server := newModelServer(t, [][]string{{
 		`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-9","type":"function","function":{"name":"test.confirm","arguments":"{\"format\":\"csv\"}"}}]}}]}`,
 		`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
@@ -133,7 +133,7 @@ func TestStreamV2_HitlPendingFixture(t *testing.T) {
 		AgentMaxSteps:       3,
 		EnableHITLProposals: true,
 	}
-	_, _, events := runAgentV2(t, store, resolver, options,
+	_, _, events := runAgentStreamFixture(t, store, resolver, options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"xuất dữ liệu"}]}`)
 
 	var sawProposal, sawApprovalRequest bool
@@ -166,7 +166,7 @@ func TestStreamV2_HitlPendingFixture(t *testing.T) {
 	t.Fatalf("stream did not finish; events: %v", eventTypes(events))
 }
 
-func TestStreamV2_ReasoningParts(t *testing.T) {
+func TestStream_ReasoningParts(t *testing.T) {
 	server := newModelServer(t, [][]string{{
 		`{"choices":[{"delta":{"reasoning_content":"Đang phân tích"}}]}`,
 		`{"choices":[{"delta":{"reasoning_content":" yêu cầu..."}}]}`,
@@ -176,7 +176,7 @@ func TestStreamV2_ReasoningParts(t *testing.T) {
 	defer server.Close()
 
 	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client())}
-	_, _, events := runAgentV2(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
+	_, _, events := runAgentStreamFixture(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"chào"}]}`)
 
 	var reasoningDelta, reasoningEnd string
@@ -200,7 +200,7 @@ func TestStreamV2_ReasoningParts(t *testing.T) {
 	}
 }
 
-func TestStreamV2_ModelErrorEmitsErrorPart(t *testing.T) {
+func TestStream_ModelErrorEmitsErrorPart(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte("upstream down"))
@@ -208,7 +208,7 @@ func TestStreamV2_ModelErrorEmitsErrorPart(t *testing.T) {
 	defer server.Close()
 
 	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client())}
-	_, _, events := runAgentV2(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
+	_, _, events := runAgentStreamFixture(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"chào"}]}`)
 
 	var sawError, sawFinish bool

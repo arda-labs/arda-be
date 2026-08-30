@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-// The SSE dialect is AI SDK UI Message Stream v1
+// The SSE dialect is AI SDK UI Message Stream
 // (https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol), advertised via the
-// x-vercel-ai-ui-message-stream response header. The legacy AG-UI-style
-// dialect was removed; backend and frontend must ship together.
+// x-vercel-ai-ui-message-stream response header. Backend and frontend must
+// ship together.
 type sseWriter struct {
 	writer          *bufio.Writer
 	flusher         http.Flusher
@@ -69,7 +69,7 @@ type uiStreamPart struct {
 	Reason         string          `json:"reason,omitempty"`
 }
 
-// translate maps one legacy agent event to zero or more v2 parts. Field
+// translate maps one internal agent event to zero or more stream parts. Field
 // shapes follow packages/ai/src/ui-message-stream/ui-message-chunks.ts of
 // vercel/ai: tool parts key on toolCallId, text parts on id.
 func (s *sseWriter) translate(ev agentEvent) []uiStreamPart {
