@@ -15,6 +15,11 @@ import (
 type Message struct {
 	Role       string     `json:"role"`
 	Content    string     `json:"content,omitempty"`
+	// Reasoning carries provider chain-of-thought (reasoning_content) so a
+	// thinking-mode assistant turn can be replayed within the same run —
+	// thinking providers (deepseek et al.) reject the follow-up request
+	// without it.
+	Reasoning  string     `json:"reasoning_content,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 }

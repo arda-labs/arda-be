@@ -128,6 +128,7 @@ func agentStepsLoop(
 	awaitingApproval := false
 	for step := 0; step < maxSteps && !awaitingApproval; step++ {
 		var turnText strings.Builder
+		var turnReasoning strings.Builder
 		var collected []model.ToolCall
 		finishReason, _, err := modelProvider.StreamChat(ctx, messages, defs, model.StreamCallbacks{
 			OnTextDelta: func(delta string) {
@@ -145,8 +146,11 @@ func agentStepsLoop(
 				recordLLMUsage(usage)
 			},
 			OnReasoningDelta: func(delta string) {
-				// Chain-of-thought streams to reasoning-aware clients but is
-				// never persisted into the model history.
+				// Chain-of-thought streams to reasoning-aware clients and is
+				// kept on the assistant turn so thinking-mode providers accept
+				// the follow-up request within this run. It is never persisted
+				// across runs.
+				turnReasoning.WriteString(delta)
 				sse.event(agentEvent{
 					Type: "REASONING_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID,
 					MessageID: "rsn-" + input.RunID, Delta: delta,
@@ -185,7 +189,12 @@ func agentStepsLoop(
 			return
 		}
 
-		messages = append(messages, model.Message{Role: "assistant", Content: turnText.String(), ToolCalls: collected})
+		messages = append(messages, model.Message{
+			Role:      "assistant",
+			Content:   turnText.String(),
+			Reasoning: turnReasoning.String(),
+			ToolCalls: collected,
+		})
 		for _, call := range collected {
 			if awaitingApproval {
 				// A resumed run must pair every emitted tool_call with a tool
