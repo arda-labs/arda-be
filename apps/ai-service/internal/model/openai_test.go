@@ -72,3 +72,26 @@ func TestStreamChatReportsProviderError(t *testing.T) {
 		t.Fatalf("expected provider status error, got %v", err)
 	}
 }
+
+func TestStreamChatSendsGatewayTokenHeader(t *testing.T) {
+	var authHeader, gatewayHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
+		gatewayHeader = r.Header.Get("cf-aig-authorization")
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "provider-key", "test-model", server.Client()).WithGatewayToken("gw-token")
+	if _, _, err := client.StreamChat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, StreamCallbacks{}); err != nil {
+		t.Fatalf("stream failed: %v", err)
+	}
+	if authHeader != "Bearer provider-key" {
+		t.Fatalf("provider Authorization wrong: %q", authHeader)
+	}
+	if gatewayHeader != "Bearer gw-token" {
+		t.Fatalf("cf-aig-authorization wrong: %q", gatewayHeader)
+	}
+}

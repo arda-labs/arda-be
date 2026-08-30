@@ -45,7 +45,23 @@ func nonAdminGatewayHeaders(req *http.Request) {
 	req.Header.Set("X-Permissions", "ai.assistant.use")
 }
 
-func TestSettings_RequiresAdminPermission(t *testing.T) {
+func TestSettings_RequiresGatewayIdentityContext(t *testing.T) {
+	store := &fakeSettingsStore{}
+	router := NewRouterWithOptions(store, nil, RouterOptions{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ai/settings", nil)
+	res := httptest.NewRecorder()
+
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized without gateway identity context, got %d", res.Code)
+	}
+}
+
+// Authorization for settings routes lives in the auth-gateway policy
+// (ai-settings-read/write require ai.admin/superadmin/platform.manage); the
+// service must not re-check permissions, only the identity context.
+func TestSettings_TrustsGatewayAuthorization(t *testing.T) {
 	store := &fakeSettingsStore{}
 	router := NewRouterWithOptions(store, nil, RouterOptions{})
 
@@ -54,8 +70,8 @@ func TestSettings_RequiresAdminPermission(t *testing.T) {
 	res := httptest.NewRecorder()
 
 	router.ServeHTTP(res, req)
-	if res.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 Forbidden for non-admin, got %d", res.Code)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 for gateway-authorized user without ai.admin, got %d: %s", res.Code, res.Body.String())
 	}
 }
 
