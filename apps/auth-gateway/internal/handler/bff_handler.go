@@ -1398,7 +1398,11 @@ func (h *BFFHandler) StepUp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.verifyMFA(r.Context(), sess.User.UserID, strings.TrimSpace(req.Code)); err != nil {
-			respondError(w, http.StatusUnauthorized, "invalid MFA code")
+			// Machine code (no spaces) so this stays a step-up failure and is
+			// never mapped to the generic 401 "auth.error.unauthorized" — the
+			// frontend treats that code as a global session loss and would
+			// log the user out just for mistyping an OTP.
+			respondError(w, http.StatusUnauthorized, "auth.step_up.invalid_code")
 			return
 		}
 	} else if !req.Confirm {
