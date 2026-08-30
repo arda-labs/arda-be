@@ -206,7 +206,7 @@ func TestSettings_BaseURLAllowlistEnforced(t *testing.T) {
 
 	// PUT with a disallowed base URL → 400 ai.base_url_not_allowed
 	putReq := httptest.NewRequest(http.MethodPut, "/api/ai/settings",
-		strings.NewReader(`{"providerType":"openai","baseUrl":"https://api.openai.com/v1","apiKey":"sk-test-key-123456","modelId":"gpt-4o-mini"}`))
+		strings.NewReader(`{"providerType":"openai","baseUrl":"https://api.openai.com/v1","apiKey":"sk-test-key-abc123def","modelId":"gpt-4o-mini"}`))
 	adminGatewayHeaders(putReq)
 	putRes := httptest.NewRecorder()
 	router.ServeHTTP(putRes, putReq)

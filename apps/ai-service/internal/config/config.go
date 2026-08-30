@@ -38,6 +38,16 @@ type Config struct {
 	// StreamProtocol selects the SSE dialect: "v1" (legacy AG-UI-style,
 	// default) or "v2" (AI SDK UI Message Stream v1).
 	StreamProtocol string
+
+	// Knowledge vector retrieval (roadmap §4.2). KnowledgeVectorEnabled turns
+	// hybrid search on; without a full embedding config the service logs a
+	// warning and keeps full-text-only search.
+	KnowledgeVectorEnabled bool
+	EmbeddingProvider      string // workersai (default) | openai
+	EmbeddingModel         string
+	EmbeddingAPIToken      string
+	EmbeddingAccountID     string
+	EmbeddingBaseURL       string
 }
 
 const defaultDirectToolSystemPrompt = `Bạn là Olorin, trợ lý của nền tảng Arda. Bạn trả lời ngắn gọn, chính xác ` +
@@ -86,6 +96,13 @@ func Load() Config {
 
 		ModelBaseURLAllowlist: envListOr("AI_MODEL_BASE_URL_ALLOWLIST"),
 		StreamProtocol:        envOr("AI_PROTOCOL", "v1"),
+
+		KnowledgeVectorEnabled: envBoolOr("AI_KNOWLEDGE_VECTOR", false),
+		EmbeddingProvider:      envOr("AI_EMBEDDING_PROVIDER", "workersai"),
+		EmbeddingModel:         envOr("AI_EMBEDDING_MODEL", "@cf/qwen/qwen3-embedding-0.6b"),
+		EmbeddingAPIToken:      os.Getenv("AI_EMBEDDING_API_TOKEN"),
+		EmbeddingAccountID:     os.Getenv("AI_EMBEDDING_ACCOUNT_ID"),
+		EmbeddingBaseURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("AI_EMBEDDING_BASE_URL")), "/"),
 	}
 }
 
