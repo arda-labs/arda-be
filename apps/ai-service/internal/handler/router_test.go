@@ -105,9 +105,6 @@ func TestRunStreamsDeterministicUIStreamParts(t *testing.T) {
 	if res.Code != http.StatusOK || res.Header().Get("Content-Type") != "text/event-stream" {
 		t.Fatalf("status/content type = %d/%q", res.Code, res.Header().Get("Content-Type"))
 	}
-	if res.Header().Get("x-vercel-ai-ui-message-stream") != "v1" {
-		t.Fatalf("missing x-vercel-ai-ui-message-stream header")
-	}
 	var events []string
 	scanner := bufio.NewScanner(strings.NewReader(res.Body.String()))
 	for scanner.Scan() {
@@ -116,7 +113,7 @@ func TestRunStreamsDeterministicUIStreamParts(t *testing.T) {
 			events = append(events, line)
 		}
 	}
-	want := []string{"start", "start-step", "text-start", "text-delta", "text-end", "finish-step", "finish"}
+	want := []string{"RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"}
 	if len(events) != len(want) {
 		t.Fatalf("event count = %d, want %d: %s", len(events), len(want), res.Body.String())
 	}
@@ -163,7 +160,7 @@ func TestRunExecutesAllowlistedReadToolAndEmitsToolEvents(t *testing.T) {
 	if res.Code != http.StatusOK || !store.toolStarted || !store.toolFinished || !store.finished {
 		t.Fatalf("status/tool lifecycle = %d/%v/%v/%v", res.Code, store.toolStarted, store.toolFinished, store.finished)
 	}
-	for _, event := range []string{"tool-input-start", "tool-input-available", "tool-output-available", "Customer A is ACTIVE.", "finish"} {
+	for _, event := range []string{"TOOL_CALL_START", "TOOL_CALL_END", "Customer A is ACTIVE.", "RUN_FINISHED"} {
 		if !strings.Contains(res.Body.String(), event) {
 			t.Fatalf("stream missing %q: %s", event, res.Body.String())
 		}

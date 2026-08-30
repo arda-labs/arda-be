@@ -67,9 +67,9 @@ func TestExecuteApprovedToolResumesAgentLoop(t *testing.T) {
 	finished := false
 	for _, event := range events {
 		switch event["type"] {
-		case "text-delta":
+		case "TEXT_MESSAGE_CONTENT":
 			text += event["delta"].(string)
-		case "finish":
+		case "RUN_FINISHED":
 			finished = true
 		}
 	}

@@ -8,17 +8,18 @@ import (
 	"strings"
 )
 
-// The SSE dialect is AI SDK UI Message Stream
-// (https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol), advertised via the
-// x-vercel-ai-ui-message-stream response header. Backend and frontend must
-// ship together.
+// The SSE dialect is AG-UI (agent-gui protocol), the official assistant-ui
+// runtime for non-JS backends. Events are JSON objects in `data:` lines,
+// separated by \n\n, each carrying a `type` field. @ag-ui/client validates
+// and reassembles them (text/tool/reasoning messages, interrupts).
 type sseWriter struct {
-	writer          *bufio.Writer
-	flusher         http.Flusher
-	started         bool
-	reasoning       bool
-	reasoningOpenID string
-	toolArgs        map[string]*strings.Builder
+	writer               *bufio.Writer
+	flusher              http.Flusher
+	reasoningMessageID   string
+	textMessageID        string
+	toolArgs             map[string]*strings.Builder
+	pendingApprovalID    string
+	pendingToolCallID    string
 }
 
 func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
@@ -26,7 +27,6 @@ func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
-	w.Header().Set("x-vercel-ai-ui-message-stream", "v1")
 	w.WriteHeader(http.StatusOK)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -36,13 +36,13 @@ func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
 }
 
 func (s *sseWriter) event(payload agentEvent) {
-	for _, part := range s.translate(payload) {
-		s.writeData(part)
+	for _, event := range s.translate(payload) {
+		s.writeData(event)
 	}
 }
 
-func (s *sseWriter) writeData(part uiStreamPart) {
-	encoded, err := json.Marshal(part)
+func (s *sseWriter) writeData(ev agUiEvent) {
+	encoded, err := json.Marshal(ev)
 	if err != nil {
 		return
 	}
@@ -51,111 +51,159 @@ func (s *sseWriter) writeData(part uiStreamPart) {
 	s.flusher.Flush()
 }
 
-// uiStreamPart is a superset struct for AI SDK UI Message Stream v1 parts;
-// omitted fields stay out of the JSON so each part matches the spec shape.
-type uiStreamPart struct {
-	Type           string          `json:"type"`
-	MessageID      string          `json:"messageId,omitempty"`
-	ID             string          `json:"id,omitempty"`
-	Delta          string          `json:"delta,omitempty"`
-	ToolCallID     string          `json:"toolCallId,omitempty"`
-	ToolName       string          `json:"toolName,omitempty"`
-	InputTextDelta string          `json:"inputTextDelta,omitempty"`
-	Input          json.RawMessage `json:"input,omitempty"`
-	Output         json.RawMessage `json:"output,omitempty"`
-	ErrorText      string          `json:"errorText,omitempty"`
-	FinishReason   string          `json:"finishReason,omitempty"`
-	ApprovalID     string          `json:"approvalId,omitempty"`
-	Reason         string          `json:"reason,omitempty"`
+// agUiEvent is a superset struct for AG-UI protocol events. Zero-valued
+// fields are omitted from the JSON so each event matches the spec shape.
+type agUiEvent struct {
+	Type         string          `json:"type"`
+	ThreadID     string          `json:"threadId,omitempty"`
+	RunID        string          `json:"runId,omitempty"`
+	MessageID    string          `json:"messageId,omitempty"`
+	ToolCallID   string          `json:"toolCallId,omitempty"`
+	ToolCallName string          `json:"toolCallName,omitempty"`
+	Delta        string          `json:"delta,omitempty"`
+	Content      string          `json:"content,omitempty"`
+	Role         string          `json:"role,omitempty"`
+	ErrorText    string          `json:"error,omitempty"`
+	Message      string          `json:"message,omitempty"`
+	Code         string          `json:"code,omitempty"`
+	Outcome      json.RawMessage `json:"outcome,omitempty"`
+	Result       json.RawMessage `json:"result,omitempty"`
+	Input        json.RawMessage `json:"input,omitempty"`
 }
 
-// translate maps one internal agent event to zero or more stream parts. Field
-// shapes follow packages/ai/src/ui-message-stream/ui-message-chunks.ts of
-// vercel/ai: tool parts key on toolCallId, text parts on id.
-func (s *sseWriter) translate(ev agentEvent) []uiStreamPart {
+// translate maps one internal agent event to zero or more AG-UI protocol
+// events. The AG-UI client reassembles these into messages (text, tool
+// calls, reasoning) and manages message lifecycle.
+func (s *sseWriter) translate(ev agentEvent) []agUiEvent {
 	switch ev.Type {
 	case "RUN_STARTED":
-		if s.started {
-			return nil
-		}
-		s.started = true
-		return []uiStreamPart{{Type: "start"}, {Type: "start-step"}}
+		return []agUiEvent{{
+			Type: "RUN_STARTED", ThreadID: ev.ThreadID, RunID: ev.RunID,
+		}}
 	case "TEXT_MESSAGE_START":
-		return []uiStreamPart{{Type: "text-start", ID: ev.MessageID}}
+		s.textMessageID = ev.MessageID
+		return []agUiEvent{{
+			Type: "TEXT_MESSAGE_START", MessageID: ev.MessageID, Role: "assistant",
+		}}
 	case "TEXT_MESSAGE_CONTENT":
-		return []uiStreamPart{{Type: "text-delta", ID: ev.MessageID, Delta: ev.Delta}}
+		if s.textMessageID == "" {
+			// Agent loop emits content without an explicit start; open the
+			// message first so the client has a message to accumulate into.
+			s.textMessageID = ev.MessageID
+			return []agUiEvent{
+				{Type: "TEXT_MESSAGE_START", MessageID: ev.MessageID, Role: "assistant"},
+				{Type: "TEXT_MESSAGE_CONTENT", MessageID: ev.MessageID, Delta: ev.Delta},
+			}
+		}
+		return []agUiEvent{{
+			Type: "TEXT_MESSAGE_CONTENT", MessageID: ev.MessageID, Delta: ev.Delta,
+		}}
 	case "TEXT_MESSAGE_END":
-		return []uiStreamPart{{Type: "text-end", ID: ev.MessageID}}
+		evts := []agUiEvent{{
+			Type: "TEXT_MESSAGE_END", MessageID: ev.MessageID,
+		}}
+		s.textMessageID = ""
+		return evts
 	case "TOOL_CALL_START":
 		if s.toolArgs == nil {
 			s.toolArgs = map[string]*strings.Builder{}
 		}
 		s.toolArgs[ev.ToolCallID] = &strings.Builder{}
-		return []uiStreamPart{{Type: "tool-input-start", ToolCallID: ev.ToolCallID, ToolName: ev.ToolName}}
+		return []agUiEvent{{
+			Type: "TOOL_CALL_START", ToolCallID: ev.ToolCallID, ToolCallName: ev.ToolName,
+		}}
 	case "TOOL_CALL_ARGS":
 		if builder, ok := s.toolArgs[ev.ToolCallID]; ok {
 			builder.WriteString(ev.Delta)
 		}
-		return []uiStreamPart{{Type: "tool-input-delta", ToolCallID: ev.ToolCallID, InputTextDelta: ev.Delta}}
+		return []agUiEvent{{
+			Type: "TOOL_CALL_ARGS", ToolCallID: ev.ToolCallID, Delta: ev.Delta,
+		}}
 	case "TOOL_CALL_END":
-		input := json.RawMessage(`{}`)
-		if builder, ok := s.toolArgs[ev.ToolCallID]; ok {
-			if parsed := json.RawMessage(builder.String()); json.Valid(parsed) {
-				input = parsed
-			}
-		}
-		return []uiStreamPart{{
-			Type: "tool-input-available", ToolCallID: ev.ToolCallID,
-			ToolName: ev.ToolName, Input: input,
+		return []agUiEvent{{
+			Type: "TOOL_CALL_END", ToolCallID: ev.ToolCallID,
 		}}
 	case "TOOL_CALL_RESULT":
-		// Approval proposals additionally emit the spec's tool-approval-request
-		// part so approval-capable clients can react natively; plain clients
-		// keep consuming the proposal payload inside the tool output.
-		if proposalID := proposalIDFromResult(ev.Result); proposalID != "" {
-			return []uiStreamPart{
-				{Type: "tool-approval-request", ToolCallID: ev.ToolCallID, ApprovalID: proposalID, Reason: "human approval required"},
-				{Type: "tool-output-available", ToolCallID: ev.ToolCallID, Output: ev.Result},
-			}
+		content := ev.Content
+		if content == "" && len(ev.Result) > 0 {
+			content = string(ev.Result)
 		}
-		output := ev.Result
-		if len(output) == 0 {
-			if ev.Content == "" {
-				output = json.RawMessage(`{}`)
-			} else {
-				output = json.RawMessage(compactJSONText(ev.Content))
-			}
+		if content == "" {
+			content = "{}"
+		}
+		messageID := ev.MessageID
+		if messageID == "" {
+			messageID = "tool-msg-" + ev.RunID
+		}
+		// Track HITL proposals so the final RUN_FINISHED can emit an
+		// interrupt outcome instead of a plain success.
+		if proposalID := proposalIDFromResult(ev.Result); proposalID != "" {
+			s.pendingApprovalID = proposalID
+			s.pendingToolCallID = ev.ToolCallID
 		}
 		if ev.Error != "" {
-			return []uiStreamPart{{
-				Type: "tool-output-error", ToolCallID: ev.ToolCallID, ErrorText: ev.Error,
+			return []agUiEvent{{
+				Type: "TOOL_CALL_RESULT", MessageID: messageID, ToolCallID: ev.ToolCallID,
+				Content: content, Role: "tool",
 			}}
 		}
-		return []uiStreamPart{{
-			Type: "tool-output-available", ToolCallID: ev.ToolCallID, Output: output,
+		return []agUiEvent{{
+			Type: "TOOL_CALL_RESULT", MessageID: messageID, ToolCallID: ev.ToolCallID,
+			Content: content, Role: "tool",
 		}}
 	case "REASONING_CONTENT":
 		if ev.Delta == "" {
 			return nil
 		}
-		s.reasoningOpenID = "rsn-" + ev.RunID
-		parts := []uiStreamPart{{Type: "reasoning-delta", ID: s.reasoningOpenID, Delta: ev.Delta}}
-		if !s.reasoning {
-			s.reasoning = true
-			return append([]uiStreamPart{{Type: "reasoning-start", ID: s.reasoningOpenID}}, parts...)
+		msgID := "rsn-" + ev.RunID
+		if s.reasoningMessageID == "" {
+			s.reasoningMessageID = msgID
+			return []agUiEvent{
+				{Type: "REASONING_MESSAGE_START", MessageID: msgID, Role: "assistant"},
+				{Type: "REASONING_MESSAGE_CONTENT", MessageID: msgID, Delta: ev.Delta},
+			}
 		}
-		return parts
+		return []agUiEvent{{
+			Type: "REASONING_MESSAGE_CONTENT", MessageID: msgID, Delta: ev.Delta,
+		}}
 	case "RUN_FINISHED":
-		parts := make([]uiStreamPart, 0, 4)
-		if s.reasoning {
-			parts = append(parts, uiStreamPart{Type: "reasoning-end", ID: s.reasoningOpenID})
-			s.reasoning = false
+		evts := make([]agUiEvent, 0, 4)
+		if s.reasoningMessageID != "" {
+			evts = append(evts, agUiEvent{Type: "REASONING_MESSAGE_END", MessageID: s.reasoningMessageID})
+			s.reasoningMessageID = ""
 		}
-		parts = append(parts, uiStreamPart{Type: "finish-step"})
+		if s.textMessageID != "" {
+			evts = append(evts, agUiEvent{Type: "TEXT_MESSAGE_END", MessageID: s.textMessageID})
+			s.textMessageID = ""
+		}
+		// HITL: a pending approval proposal ends the run as an interrupt so
+		// the client can present it and resume via interrupt responses.
+		if s.pendingApprovalID != "" {
+			interrupts := []map[string]any{{
+				"id":         s.pendingApprovalID,
+				"reason":     "confirmation",
+				"message":    "Tác vụ yêu cầu xác nhận của bạn trước khi thực hiện.",
+				"toolCallId": s.pendingToolCallID,
+			}}
+			outcome, _ := json.Marshal(map[string]any{
+				"type":       "interrupt",
+				"interrupts": interrupts,
+			})
+			s.pendingApprovalID = ""
+			s.pendingToolCallID = ""
+			return append(evts, agUiEvent{
+				Type: "RUN_FINISHED", ThreadID: ev.ThreadID, RunID: ev.RunID, Outcome: outcome,
+			})
+		}
 		if ev.Error != "" {
-			parts = append(parts, uiStreamPart{Type: "error", ErrorText: ev.Error})
+			// RUN_ERROR is terminal for the AG-UI client (it dispatches the
+			// run-failed state); no RUN_FINISHED follows.
+			return append(evts, agUiEvent{Type: "RUN_ERROR", Message: ev.Error, Code: "run_error"})
 		}
-		return append(parts, uiStreamPart{Type: "finish", FinishReason: "stop"})
+		outcome, _ := json.Marshal(map[string]string{"type": "success"})
+		return append(evts, agUiEvent{
+			Type: "RUN_FINISHED", ThreadID: ev.ThreadID, RunID: ev.RunID, Outcome: outcome,
+		})
 	default:
 		return nil
 	}
@@ -166,19 +214,8 @@ func (s *sseWriter) finalFlush() {
 	s.flusher.Flush()
 }
 
-// compactJSONText passes JSON through unchanged and wraps plain strings so
-// tool outputs stay object-shaped for the client.
-func compactJSONText(value string) json.RawMessage {
-	trimmed := strings.TrimSpace(value)
-	if json.Valid([]byte(trimmed)) {
-		return json.RawMessage(trimmed)
-	}
-	encoded, _ := json.Marshal(map[string]string{"text": value})
-	return encoded
-}
-
 // proposalIDFromResult detects a HITL approval proposal payload
-// {"proposal":{"id":...}} and returns its id for tool-approval-request parts.
+// {"proposal":{"id":...}} and returns its id.
 func proposalIDFromResult(result json.RawMessage) string {
 	if len(result) == 0 {
 		return ""

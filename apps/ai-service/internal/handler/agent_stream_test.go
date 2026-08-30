@@ -10,16 +10,17 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
-// Golden fixtures for the AI SDK UI Message Stream v1 protocol.
+// Golden fixtures for the AG-UI protocol (agent-gui SSE events consumed by
+// @assistant-ui/react-ag-ui).
 
-func runAgentStreamFixture(t *testing.T, store runStore, resolver toolResolver, options RouterOptions, body string) (int, string, []map[string]any) {
+func runAgentStreamFixture(t *testing.T, store runStore, resolver toolResolver, options RouterOptions, body string) (int, []map[string]any) {
 	t.Helper()
 	router := NewRouterWithOptions(store, resolver, options)
 	req := httptest.NewRequest(http.MethodPost, "/api/ai/agent", strings.NewReader(body))
 	gatewayHeaders(req)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
-	return res.Code, res.Header().Get("x-vercel-ai-ui-message-stream"), decodeSSEEvents(t, res.Body.String())
+	return res.Code, decodeSSEEvents(t, res.Body.String())
 }
 
 func TestStream_TextOnlyFixture(t *testing.T) {
@@ -31,34 +32,33 @@ func TestStream_TextOnlyFixture(t *testing.T) {
 	defer server.Close()
 
 	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client())}
-	code, header, events := runAgentStreamFixture(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
+	code, events := runAgentStreamFixture(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"chào"}]}`)
 	if code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", code)
 	}
-	if header != "v1" {
-		t.Fatalf("missing x-vercel-ai-ui-message-stream header, got %q", header)
-	}
 
-	if code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", code)
-	}
 	types := eventTypes(events)
-	want := []string{"start", "start-step", "text-start", "text-delta", "text-delta", "text-end", "finish-step", "finish"}
+	want := []string{"RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"}
 	if len(types) != len(want) {
 		t.Fatalf("event sequence mismatch: %v", types)
 	}
 	for i, name := range want {
 		if types[i] != name {
-			t.Fatalf("part %d: expected %s, got %s (all: %v)", i, name, types[i], types)
+			t.Fatalf("event %d: expected %s, got %s (all: %v)", i, name, types[i], types)
 		}
 	}
-	joined := events[3]["delta"].(string) + events[4]["delta"].(string)
+	joined := events[2]["delta"].(string) + events[3]["delta"].(string)
 	if joined != "Xin chào khách hàng!" {
 		t.Fatalf("text deltas do not concatenate: %q", joined)
 	}
-	if events[2]["id"] != events[5]["id"] { // text-start id == text-end id
-		t.Fatalf("text-start/text-end id mismatch")
+	if events[1]["messageId"] != events[4]["messageId"] { // text start id == end id
+		t.Fatalf("text start/end messageId mismatch")
+	}
+	// Success outcome must be present on the terminal RUN_FINISHED.
+	outcome, ok := events[5]["outcome"].(map[string]any)
+	if !ok || outcome["type"] != "success" {
+		t.Fatalf("RUN_FINISHED outcome wrong: %v", events[5]["outcome"])
 	}
 }
 
@@ -80,39 +80,35 @@ func TestStream_ToolCallFixture(t *testing.T) {
 	store := &agentRunStore{}
 	resolver := tools.NewRegistry(handlerTestTool{})
 	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client()), AgentMaxSteps: 3}
-	_, _, events := runAgentStreamFixture(t, store, resolver, options,
+	_, events := runAgentStreamFixture(t, store, resolver, options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"xem khách hàng"}]}`)
 
-	var inputAvailable, outputAvailable map[string]any
+	var callStart, callResult map[string]any
 	for _, event := range events {
 		switch event["type"] {
-		case "tool-input-available":
-			inputAvailable = event
-		case "tool-output-available":
-			outputAvailable = event
+		case "TOOL_CALL_START":
+			callStart = event
+		case "TOOL_CALL_RESULT":
+			callResult = event
 		}
 	}
-	if inputAvailable == nil {
-		t.Fatalf("missing tool-input-available in %v", eventTypes(events))
+	if callStart == nil {
+		t.Fatalf("missing TOOL_CALL_START in %v", eventTypes(events))
 	}
-	if inputAvailable["toolCallId"] != "call-1" || inputAvailable["toolName"] != "test.read" {
-		t.Fatalf("tool-input-available fields wrong: %v", inputAvailable)
+	if callStart["toolCallId"] != "call-1" || callStart["toolCallName"] != "test.read" {
+		t.Fatalf("TOOL_CALL_START fields wrong: %v", callStart)
 	}
-	if input, _ := inputAvailable["input"].(map[string]any); input == nil || input["customerId"] != "c1" {
-		t.Fatalf("streamed args not reassembled: %v", inputAvailable["input"])
+	if callResult == nil {
+		t.Fatalf("missing TOOL_CALL_RESULT")
 	}
-	if outputAvailable == nil {
-		t.Fatalf("missing tool-output-available")
+	// handlerTestTool returns Data {"id":"customer-1"} + Summary; the agent
+	// loop wraps it as {"summary":...,"data":{...}}.
+	content, _ := callResult["content"].(string)
+	if !strings.Contains(content, "customer-1") || !strings.Contains(content, "summary") {
+		t.Fatalf("tool result content wrong: %q", content)
 	}
-	// handlerTestTool returns Data {"id":"customer-1"} + Summary; the writer
-	// wraps it as {"summary":...,"data":{...}}.
-	output, _ := outputAvailable["output"].(map[string]any)
-	if output == nil || output["summary"] == nil {
-		t.Fatalf("tool output wrong: %v", outputAvailable)
-	}
-	data, _ := output["data"].(map[string]any)
-	if data == nil || data["id"] != "customer-1" {
-		t.Fatalf("tool output data wrong: %v", outputAvailable)
+	if callResult["role"] != "tool" {
+		t.Fatalf("tool result role wrong: %v", callResult["role"])
 	}
 	if !store.toolStarted || !store.finished {
 		t.Fatalf("tool persistence missing: %+v", store)
@@ -133,37 +129,35 @@ func TestStream_HitlPendingFixture(t *testing.T) {
 		AgentMaxSteps:       3,
 		EnableHITLProposals: true,
 	}
-	_, _, events := runAgentStreamFixture(t, store, resolver, options,
+	_, events := runAgentStreamFixture(t, store, resolver, options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"xuất dữ liệu"}]}`)
 
-	var sawProposal, sawApprovalRequest bool
+	var sawInterruptOutcome, sawProposal bool
 	for _, event := range events {
-		if event["type"] != "tool-output-available" && event["type"] != "tool-approval-request" {
-			continue
-		}
-		if event["type"] == "tool-approval-request" {
-			if id, _ := event["approvalId"].(string); id != "" && event["toolCallId"] == "call-9" {
-				sawApprovalRequest = true
+		if event["type"] == "RUN_FINISHED" {
+			outcome, _ := event["outcome"].(map[string]any)
+			if outcome == nil || outcome["type"] != "interrupt" {
+				continue
 			}
-			continue
+			interrupts, _ := outcome["interrupts"].([]any)
+			if len(interrupts) > 0 {
+				if first, ok := interrupts[0].(map[string]any); ok && first["id"] != nil && first["reason"] == "confirmation" && first["toolCallId"] == "call-9" {
+					sawInterruptOutcome = true
+				}
+			}
 		}
-		output, _ := event["output"].(map[string]any)
-		if proposal, ok := output["proposal"].(map[string]any); ok && proposal["id"] != nil {
-			sawProposal = true
+		if event["type"] == "TOOL_CALL_RESULT" {
+			if content, ok := event["content"].(string); ok && strings.Contains(content, "proposal") {
+				sawProposal = true
+			}
 		}
 	}
 	if !sawProposal {
-		t.Fatalf("proposal not surfaced as tool output; events: %v", eventTypes(events))
+		t.Fatalf("proposal not surfaced as tool result; events: %v", eventTypes(events))
 	}
-	if !sawApprovalRequest {
-		t.Fatalf("spec tool-approval-request part missing; events: %v", eventTypes(events))
+	if !sawInterruptOutcome {
+		t.Fatalf("interrupt outcome missing on RUN_FINISHED; events: %v", eventTypes(events))
 	}
-	for _, event := range events {
-		if event["type"] == "finish" {
-			return // stream must close cleanly while awaiting approval
-		}
-	}
-	t.Fatalf("stream did not finish; events: %v", eventTypes(events))
 }
 
 func TestStream_ReasoningParts(t *testing.T) {
@@ -176,31 +170,31 @@ func TestStream_ReasoningParts(t *testing.T) {
 	defer server.Close()
 
 	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client())}
-	_, _, events := runAgentStreamFixture(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
+	_, events := runAgentStreamFixture(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"chào"}]}`)
 
 	var reasoningDelta, reasoningEnd string
 	for _, event := range events {
 		switch event["type"] {
-		case "reasoning-delta":
+		case "REASONING_MESSAGE_CONTENT":
 			reasoningDelta += event["delta"].(string)
 			reasoningEnd = "pending"
-		case "reasoning-end":
-			reasoningEnd = event["id"].(string)
+		case "REASONING_MESSAGE_END":
+			reasoningEnd = event["messageId"].(string)
 		}
 	}
 	if reasoningDelta != "Đang phân tích yêu cầu..." {
 		t.Fatalf("reasoning deltas wrong: %q", reasoningDelta)
 	}
 	if reasoningEnd == "" || reasoningEnd == "pending" {
-		t.Fatalf("reasoning-end part missing (events: %v)", eventTypes(events))
+		t.Fatalf("REASONING_MESSAGE_END missing (events: %v)", eventTypes(events))
 	}
 	if !strings.Contains(reasoningDelta, "yêu cầu") {
 		t.Fatalf("unexpected reasoning content")
 	}
 }
 
-func TestStream_ModelErrorEmitsErrorPart(t *testing.T) {
+func TestStream_ModelErrorEmitsRunError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte("upstream down"))
@@ -208,19 +202,23 @@ func TestStream_ModelErrorEmitsErrorPart(t *testing.T) {
 	defer server.Close()
 
 	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client())}
-	_, _, events := runAgentStreamFixture(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
+	_, events := runAgentStreamFixture(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"chào"}]}`)
 
-	var sawError, sawFinish bool
+	var sawRunError bool
 	for _, event := range events {
-		switch event["type"] {
-		case "error":
-			sawError = true
-		case "finish":
-			sawFinish = true
+		if event["type"] == "RUN_ERROR" {
+			if msg, _ := event["message"].(string); msg != "" {
+				sawRunError = true
+			}
 		}
 	}
-	if !sawError || !sawFinish {
-		t.Fatalf("expected error part followed by finish; events: %v", eventTypes(events))
+	if !sawRunError {
+		t.Fatalf("expected RUN_ERROR event; events: %v", eventTypes(events))
+	}
+	for _, event := range events {
+		if event["type"] == "RUN_FINISHED" {
+			t.Fatalf("RUN_ERROR is terminal; no RUN_FINISHED should follow: %v", eventTypes(events))
+		}
 	}
 }

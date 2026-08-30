@@ -52,11 +52,19 @@ type runInput struct {
 	State    json.RawMessage `json:"state"`
 	Context  json.RawMessage `json:"context"`
 	Tool     *toolCallInput  `json:"tool,omitempty"`
+	Resume   []agUiResumeEntry `json:"resume,omitempty"`
 }
 
 type inputMessage struct {
+	ID      string `json:"id,omitempty"`
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+type agUiResumeEntry struct {
+	InterruptID string          `json:"interruptId"`
+	Status      string          `json:"status"`
+	Payload     json.RawMessage `json:"payload,omitempty"`
 }
 
 type toolCallInput struct {
@@ -192,6 +200,12 @@ func run(w http.ResponseWriter, r *http.Request, store runStore, resolver toolRe
 func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolver toolResolver, input runInput, options RouterOptions) {
 	if strings.TrimSpace(input.ThreadID) == "" || strings.TrimSpace(input.RunID) == "" {
 		problem(w, http.StatusBadRequest, "ai.run_identifiers_required")
+		return
+	}
+	// AG-UI resume: resume entries from a HITL interrupt are sent in the same
+	// /api/ai/agent body. Delegate to the resume handler.
+	if len(input.Resume) > 0 {
+		runAgentResume(w, r, store, resolver, input, options)
 		return
 	}
 	if !hasUserMessage(input.Messages) {

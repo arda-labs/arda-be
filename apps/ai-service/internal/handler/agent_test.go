@@ -99,7 +99,7 @@ func TestAgentLoopStreamsTextAndExecutesReadTool(t *testing.T) {
 	}
 	events := decodeSSEEvents(t, res.Body.String())
 	types := eventTypes(events)
-	for _, expected := range []string{"start", "tool-input-start", "tool-input-delta", "tool-input-available", "tool-output-available", "text-start", "text-delta", "text-end", "finish-step", "finish"} {
+	for _, expected := range []string{"RUN_STARTED", "TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END", "TOOL_CALL_RESULT", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"} {
 		found := false
 		for _, actual := range types {
 			if actual == expected {
@@ -143,17 +143,21 @@ func TestAgentLoopCreatesApprovalProposalForConfirmTool(t *testing.T) {
 	events := decodeSSEEvents(t, res.Body.String())
 	var proposal map[string]any
 	for _, event := range events {
-		if event["type"] == "tool-output-available" {
-			result, ok := event["output"].(map[string]any)
+		if event["type"] == "TOOL_CALL_RESULT" {
+			content, ok := event["content"].(string)
 			if !ok {
-				t.Fatalf("tool result is not an object: %v", event["result"])
+				t.Fatalf("tool result content is not a string: %v", event["content"])
 			}
-			raw, _ := json.Marshal(result["proposal"])
-			if string(raw) == "null" && result["denied"] != nil {
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(content), &payload); err != nil {
+				t.Fatalf("tool result content not JSON: %s", content)
+			}
+			raw, _ := json.Marshal(payload["proposal"])
+			if string(raw) == "null" && payload["denied"] != nil {
 				continue
 			}
 			if err := json.Unmarshal(raw, &proposal); err != nil || proposal["id"] == nil {
-				t.Fatalf("expected proposal in tool result, got %s", raw)
+				t.Fatalf("expected proposal in tool result, got %s", content)
 			}
 		}
 	}

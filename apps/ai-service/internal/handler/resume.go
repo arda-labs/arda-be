@@ -178,3 +178,109 @@ func buildResumeMessages(
 	)
 	return messages
 }
+
+// runAgentResume continues an interrupted agent loop from AG-UI resume
+// entries. The AG-UI client sends interrupt responses ({interruptId, status,
+// payload}) in the same /api/ai/agent POST body; each resolved interrupt
+// executes the approved tool, then the agent loop resumes streaming AG-UI
+// events on the same connection.
+func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, resolver toolResolver, input runInput, options RouterOptions) {
+	if !options.EnableHITLProposals {
+		problem(w, http.StatusNotFound, "ai.hitl_not_enabled")
+		return
+	}
+	executionStore, hasExecutionStore := store.(repository.ExecutionStore)
+	if !hasExecutionStore || resolver == nil {
+		problem(w, http.StatusServiceUnavailable, "ai.approval_persistence_unavailable")
+		return
+	}
+	resumeResolver, hasResumeResolver := resolver.(executionResolver)
+	if !hasResumeResolver {
+		problem(w, http.StatusServiceUnavailable, "ai.tool_persistence_unavailable")
+		return
+	}
+	ctx := r.Context()
+	scope := scopeFromRequest(r)
+
+	// Execute every resolved interrupt (typically one per run).
+	type executedTool struct {
+		exec   repository.ApprovedExecution
+		content string
+	}
+	var executed []executedTool
+	for _, entry := range input.Resume {
+		if entry.Status != "resolved" || entry.InterruptID == "" {
+			continue
+		}
+		exec, err := executionStore.FetchApprovedExecution(ctx, scope.TenantID, entry.InterruptID, scope.ActorUserID)
+		if err != nil {
+			if errors.Is(err, repository.ErrApprovalNotFound) {
+				problem(w, http.StatusNotFound, "ai.approval_not_found")
+				return
+			}
+			problem(w, http.StatusServiceUnavailable, "ai.approval_persistence_unavailable")
+			return
+		}
+		selected, definition, err := resumeResolver.ResolveForExecution(tools.Call{
+			Name: exec.ToolName, Version: exec.ToolVersion, Arguments: json.RawMessage(exec.Arguments),
+		}, scope)
+		if err != nil || definition.Kind != "confirm" {
+			problem(w, http.StatusForbidden, "ai.tool_forbidden")
+			return
+		}
+		toolCtx, cancel := contextWithTimeout(ctx, definition.Timeout)
+		result, execErr := selected.Execute(toolCtx, scope, json.RawMessage(exec.Arguments))
+		cancel()
+		if execErr != nil {
+			if toolStore, ok := store.(repository.ToolExecutionStore); ok {
+				_ = toolStore.FinishTool(ctx, exec.ExecutionID, "WAITING_APPROVAL", `{}`, toolErrorCode(execErr))
+			}
+			problem(w, http.StatusBadGateway, "ai.execution_failed")
+			return
+		}
+		content := boundContent(string(result.Data))
+		if toolStore, ok := store.(repository.ToolExecutionStore); ok {
+			if err := toolStore.FinishTool(ctx, exec.ExecutionID, "SUCCEEDED", content, ""); err != nil {
+				problem(w, http.StatusServiceUnavailable, "ai.tool_persistence_unavailable")
+				return
+			}
+		}
+		executed = append(executed, executedTool{exec: exec, content: content})
+	}
+	if len(executed) == 0 {
+		// All interrupts cancelled — nothing to execute; the run stays ended.
+		problem(w, http.StatusBadRequest, "ai.resume_entry_required")
+		return
+	}
+
+	resumeStore, hasResumeStore := store.(runResumeStore)
+	if !hasResumeStore {
+		problem(w, http.StatusServiceUnavailable, "ai.approval_persistence_unavailable")
+		return
+	}
+	run := executed[0].exec.Run
+	if err := resumeStore.ResumeRun(ctx, run); err != nil {
+		problem(w, http.StatusConflict, "ai.resume_conflict")
+		return
+	}
+
+	resumeInput := runInput{
+		ThreadID: run.ExternalThread,
+		RunID:    run.ExternalRun,
+	}
+	sse, ok := newSSEWriter(w)
+	if !ok {
+		return
+	}
+	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID})
+
+	modelProvider := selectModelProvider(ctx, store, scope, options)
+	if modelProvider == nil {
+		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID, Error: "ai.model_unavailable"})
+		_ = store.Finish(ctx, run, "Chưa có cấu hình AI model nào được kích hoạt. Vui lòng cấu hình tại trang AI Settings.", "FAILED")
+		return
+	}
+
+	messages := buildResumeMessages(ctx, resumeStore, options, executed[0].exec, executed[0].content)
+	agentStepsLoop(w, r, store, resolver, scope, run, resumeInput, sse, options, modelProvider, messages)
+}

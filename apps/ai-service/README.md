@@ -64,8 +64,7 @@ events, and `RUN_FINISHED`. In production mode `DATABASE_DSN` and
 `ARDA_SERVICE_AUTH_SECRET` are mandatory; migrations run at startup and the
 gateway supplies a separate short-lived workload identity.
 
-For the shell panel, start the frontend with `VITE_AI_ENABLED=true` (or the
-legacy `VITE_AI_PROTOCOL_SPIKE=true`) and run the gateway with
+For the shell panel, start the frontend with `VITE_AI_ENABLED=true` and run the gateway with
 `AI_SERVICE_URL=http://localhost:8098`. The gateway still requires a real
 authenticated session and the `ai.assistant.use` permission; setting the
 frontend flag does not bypass either check. Without a model configured the
