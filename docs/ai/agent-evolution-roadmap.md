@@ -1,6 +1,11 @@
 # Lộ trình tiến hóa Agent Platform Arda
 
-> Tài liệu đánh giá & lộ trình đề xuất — **chưa phải quyết định**, phục vụ review.
+> **TRẠNG THÁI (2026-08-30): WP0–WP4 đã triển khai xong trên nhánh `docs/cleanup`** —
+> §3.5 allowlist (`AI_MODEL_BASE_URL_ALLOWLIST`), §5 M1 protocol v2 (`AI_PROTOCOL=v2` + parser FE dual-protocol),
+> M2 resume HITL, M3 metrics AI trên `/metrics`, §4 RAG hybrid (migration `20260830110000`, embedder WorkersAI/OpenAI, CLI `knowledge-indexer`).
+> Chưa làm: bật AI Gateway trên CF (env), deploy Prometheus (WP3 bước 2), index dữ liệu thật, MCP exposure (M4).
+>
+> Tài liệu đánh giá & lộ trình đề xuất — phục vụ review.
 > Phạm vi: xuyên suốt `arda-be` (ai-service, auth-gateway), `arda-mfe` (packages/ai, shell), `arda-infra`.
 > Ngày viết: 2026-08-29. Bối cảnh: spike đã chạy end-to-end 2026-08-26, đối chiếu với pattern của Cloudflare Code Mode, Anthropic code-exec-with-MCP, LangGraph interrupt/resume.
 
