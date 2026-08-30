@@ -144,6 +144,14 @@ func agentStepsLoop(
 			OnFinish: func(_ string, usage model.Usage) {
 				recordLLMUsage(usage)
 			},
+			OnReasoningDelta: func(delta string) {
+				// Chain-of-thought streams to reasoning-aware clients but is
+				// never persisted into the model history.
+				sse.event(agentEvent{
+					Type: "REASONING_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID,
+					MessageID: "rsn-" + input.RunID, Delta: delta,
+				})
+			},
 		})
 		if ctx.Err() != nil {
 			return

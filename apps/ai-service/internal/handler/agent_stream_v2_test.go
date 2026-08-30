@@ -167,6 +167,40 @@ func TestStreamV2_HitlPendingFixture(t *testing.T) {
 	t.Fatalf("stream did not finish; events: %v", eventTypes(events))
 }
 
+func TestStreamV2_ReasoningParts(t *testing.T) {
+	server := newModelServer(t, [][]string{{
+		`{"choices":[{"delta":{"reasoning_content":"Đang phân tích"}}]}`,
+		`{"choices":[{"delta":{"reasoning_content":" yêu cầu..."}}]}`,
+		`{"choices":[{"delta":{"content":"Câu trả lời."}}]}`,
+		`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+	}})
+	defer server.Close()
+
+	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client())}
+	_, _, events := runAgentV2(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
+		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"chào"}]}`)
+
+	var reasoningDelta, reasoningEnd string
+	for _, event := range events {
+		switch event["type"] {
+		case "reasoning-delta":
+			reasoningDelta += event["delta"].(string)
+			reasoningEnd = "pending"
+		case "reasoning-end":
+			reasoningEnd = event["id"].(string)
+		}
+	}
+	if reasoningDelta != "Đang phân tích yêu cầu..." {
+		t.Fatalf("reasoning deltas wrong: %q", reasoningDelta)
+	}
+	if reasoningEnd == "" || reasoningEnd == "pending" {
+		t.Fatalf("reasoning-end part missing (events: %v)", eventTypes(events))
+	}
+	if !strings.Contains(reasoningDelta, "yêu cầu") {
+		t.Fatalf("unexpected reasoning content")
+	}
+}
+
 func TestStreamV2_ModelErrorEmitsErrorPart(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)

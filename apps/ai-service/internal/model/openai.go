@@ -127,6 +127,9 @@ type StreamCallbacks struct {
 	OnTextDelta   func(delta string)
 	OnToolCall    func(call ToolCall)
 	OnFinish      func(reason string, usage Usage)
+	// OnReasoningDelta surfaces provider chain-of-thought deltas
+	// (e.g. deepseek reasoning_content) for reasoning-aware clients.
+	OnReasoningDelta func(delta string)
 }
 
 // StreamChat sends a chat completion request and consumes the SSE stream.
@@ -213,6 +216,9 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 			if delta.Content != "" && callbacks.OnTextDelta != nil {
 				callbacks.OnTextDelta(delta.Content)
 			}
+			if delta.Reasoning != "" && callbacks.OnReasoningDelta != nil {
+				callbacks.OnReasoningDelta(delta.Reasoning)
+			}
 			for _, raw := range delta.ToolCalls {
 				call, complete := pending.add(raw)
 				if complete && callbacks.OnToolCall != nil {
@@ -233,16 +239,17 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 	return finishReason, usage, nil
 }
 
-type streamChunk struct {
-	Choices []struct {
-		Delta struct {
-			Content   string         `json:"content"`
-			ToolCalls []toolCallWire `json:"tool_calls"`
-		} `json:"delta"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage *Usage `json:"usage"`
-}
+	type streamChunk struct {
+		Choices []struct {
+			Delta struct {
+				Content   string         `json:"content"`
+				Reasoning string         `json:"reasoning_content"`
+				ToolCalls []toolCallWire `json:"tool_calls"`
+			} `json:"delta"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+		Usage *Usage `json:"usage"`
+	}
 
 type pendingToolCalls struct {
 	order []*toolAccumulator

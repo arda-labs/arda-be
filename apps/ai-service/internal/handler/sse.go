@@ -19,11 +19,13 @@ const (
 )
 
 type sseWriter struct {
-	writer   *bufio.Writer
-	flusher  http.Flusher
-	protocol string
-	started  bool
-	toolArgs map[string]*strings.Builder
+	writer          *bufio.Writer
+	flusher         http.Flusher
+	protocol        string
+	started         bool
+	reasoning       bool
+	reasoningOpenID string
+	toolArgs        map[string]*strings.Builder
 }
 
 func newSSEWriter(w http.ResponseWriter, protocol string) (*sseWriter, bool) {
@@ -154,8 +156,24 @@ func (s *sseWriter) translate(ev agentEvent) []uiStreamPart {
 		return []uiStreamPart{{
 			Type: "tool-output-available", ToolCallID: ev.ToolCallID, Output: output,
 		}}
+	case "REASONING_CONTENT":
+		if ev.Delta == "" {
+			return nil
+		}
+		s.reasoningOpenID = "rsn-" + ev.RunID
+		parts := []uiStreamPart{{Type: "reasoning-delta", ID: s.reasoningOpenID, Delta: ev.Delta}}
+		if !s.reasoning {
+			s.reasoning = true
+			return append([]uiStreamPart{{Type: "reasoning-start", ID: s.reasoningOpenID}}, parts...)
+		}
+		return parts
 	case "RUN_FINISHED":
-		parts := []uiStreamPart{{Type: "finish-step"}}
+		parts := make([]uiStreamPart, 0, 4)
+		if s.reasoning {
+			parts = append(parts, uiStreamPart{Type: "reasoning-end", ID: s.reasoningOpenID})
+			s.reasoning = false
+		}
+		parts = append(parts, uiStreamPart{Type: "finish-step"})
 		if ev.Error != "" {
 			parts = append(parts, uiStreamPart{Type: "error", ErrorText: ev.Error})
 		}
