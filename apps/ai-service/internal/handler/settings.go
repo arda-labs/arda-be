@@ -15,8 +15,6 @@ import (
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
-const aiAdminPermission = "ai.admin"
-
 type settingsDTO struct {
 	ProviderType string  `json:"providerType"`
 	BaseURL      string  `json:"baseUrl"`
@@ -48,7 +46,7 @@ func handleGetSettings(w http.ResponseWriter, r *http.Request, store runStore) {
 		return
 	}
 
-	scope, ok := approvalScope(w, r, aiAdminPermission)
+	scope, ok := identityScope(w, r)
 	if !ok {
 		return
 	}
@@ -113,7 +111,7 @@ func handleUpdateSettings(w http.ResponseWriter, r *http.Request, store runStore
 		return
 	}
 
-	scope, ok := approvalScope(w, r, aiAdminPermission)
+	scope, ok := identityScope(w, r)
 	if !ok {
 		return
 	}
@@ -187,7 +185,7 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 		return
 	}
 
-	scope, ok := approvalScope(w, r, aiAdminPermission)
+	scope, ok := identityScope(w, r)
 	if !ok {
 		return
 	}

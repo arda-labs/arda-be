@@ -523,6 +523,22 @@ func decideApproval(w http.ResponseWriter, r *http.Request, store runStore, opti
 	writeJSON(w, http.StatusOK, record)
 }
 
+// identityScope establishes the caller's identity/tenant context without
+// re-checking authorization: the auth-gateway policy (policy.yaml) is the
+// single source of authorization, and the settings routes there already
+// require ai.admin/superadmin/platform.manage.
+func identityScope(w http.ResponseWriter, r *http.Request) (tools.Context, bool) {
+	if r.Header.Get("X-Auth-Checked") != "true" {
+		problem(w, http.StatusUnauthorized, "ai.auth_required")
+		return tools.Context{}, false
+	}
+	if strings.TrimSpace(r.Header.Get("X-User-Id")) == "" || strings.TrimSpace(r.Header.Get("X-Tenant-Id")) == "" {
+		problem(w, http.StatusUnauthorized, "ai.identity_context_required")
+		return tools.Context{}, false
+	}
+	return scopeFromRequest(r), true
+}
+
 func approvalScope(w http.ResponseWriter, r *http.Request, permission string) (tools.Context, bool) {
 	if r.Header.Get("X-Auth-Checked") != "true" {
 		problem(w, http.StatusUnauthorized, "ai.auth_required")
