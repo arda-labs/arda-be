@@ -2,7 +2,7 @@
 
 ## Gate 0 — architecture (current)
 
-Deliver the docs in this directory, record the CopilotKit/AG-UI decision, and
+Deliver the docs in this directory, record the AG-UI protocol decision, and
 review tool/permission names with backend, frontend, security, and operations
 owners.
 
@@ -17,10 +17,10 @@ Exit criteria:
 
 ## Gate 1 — protocol and security spike (complete)
 
-The initial deterministic Go endpoint exists at `arda-be/apps/ai-service`. The
-gateway has a policy/upstream route and the shell keeps a legacy
-`/ai-protocol-spike` route enabled with `VITE_AI_PROTOCOL_SPIKE=true` (now
-rendered by the Olorin panel page).
+The deterministic Go endpoint existed at `arda-be/apps/ai-service`; the
+gateway has a policy/upstream route for `/api/ai/**` served by the Olorin
+panel. The AG-UI protocol replaced the earlier SSE spike: the shell panel now
+streams through `useAgUiRuntime` + `HttpAgent` against `/api/ai/agent`.
 
 Exit criteria met: compatibility tests pass, no trust-header bypass exists, and
 the gateway injects a separate short-lived workload identity for the AI service.
@@ -69,9 +69,13 @@ gate.
 
 The separate `ai-runtime` Node.js service originally planned for this gate was
 evaluated and **retired before production deployment**. The CopilotKit
-single-route envelope protocol (`/api/copilotkit`) is now served directly from
-`ai-service` in Go; see [go-native-copilotkit.md](go-native-copilotkit.md) for
-the full rationale, contract, and verification evidence.
+single-route envelope protocol (`/api/copilotkit`) was then served directly
+from `ai-service` in Go, and was **fully replaced by the AG-UI protocol
+(2026-08-31)** — see [go-native-copilotkit.md](go-native-copilotkit.md) for the
+historical record. The `/api/copilotkit` endpoint, its policy route, and the
+frontend `@copilotkit/react-core` dependency are removed; the assistant now
+streams AG-UI events through `useAgUiRuntime` + `HttpAgent` on
+`POST /api/ai/agent`.
 
 The former two-hop design (gateway → Node ai-runtime → Go ai-service) was
 replaced because the Node adapter added a deployable boundary and secret hop
@@ -79,14 +83,14 @@ without contributing any authorization decision. The manifest entry was pruned
 from the ArgoCD kustomization and the deployment confirmed NotFound in the
 cluster.
 
-Exit criteria met (verified 2026-08-26):
+Security invariants (verified 2026-08-26, retained under AG-UI):
 
-- `ai-service` serves `/api/copilotkit` directly with workload-token verification;
+- `ai-service` verifies the workload assertion with audience `ai-service`;
 - gateway issues a short-lived HS256 assertion with audience `ai-service`;
 - gateway and ai-service reject missing, expired, wrong-audience, or forged
   workload assertions;
 - the Go service remains the authority for tool policy and Arda persistence;
-- frontend uses CopilotKit headless state with Arda-owned shadcn UI;
+- frontend uses the assistant-ui AG-UI runtime with Arda-owned shadcn UI;
 - rollback can disable the route/flag without deleting AI data.
 
 ## Gate 6 — production canary

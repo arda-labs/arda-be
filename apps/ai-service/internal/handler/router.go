@@ -121,9 +121,6 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 		}
 		decideApproval(w, r, store, options)
 	})
-	mux.HandleFunc("/api/copilotkit", func(w http.ResponseWriter, r *http.Request) {
-		copilotkitEndpoint(w, r, store, resolver, options)
-	})
 	mux.HandleFunc("/api/ai/settings", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			handleGetSettings(w, r, store, options)
@@ -195,8 +192,7 @@ func run(w http.ResponseWriter, r *http.Request, store runStore, resolver toolRe
 	runInputFlow(w, r, store, resolver, input, options)
 }
 
-// runInputFlow executes a fully decoded AG-UI run input. Shared by the native
-// endpoint and the CopilotKit envelope dispatch.
+// runInputFlow executes a fully decoded AG-UI run input.
 func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolver toolResolver, input runInput, options RouterOptions) {
 	if strings.TrimSpace(input.ThreadID) == "" || strings.TrimSpace(input.RunID) == "" {
 		problem(w, http.StatusBadRequest, "ai.run_identifiers_required")

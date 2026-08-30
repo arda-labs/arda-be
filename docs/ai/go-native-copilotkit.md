@@ -1,8 +1,13 @@
-# Go-native CopilotKit boundary (current implementation)
+# Go-native CopilotKit boundary (superseded)
 
-Status: **deployed and verified end-to-end (2026-08-26)**. The Node.js
-`ai-runtime` service is retired; `ai-service` serves the CopilotKit envelope
-protocol directly from Go.
+> **SUPERSEDED (2026-08-31)** — replaced by the AG-UI protocol (see
+> `agent-evolution-roadmap.md` §M1). `ai-service` now serves AG-UI events on
+> `POST /api/ai/agent`; the CopilotKit envelope endpoint `/api/copilotkit` was
+> removed. This document is kept as the historical record of the earlier
+> CopilotKit-in-Go design.
+
+The Node.js `ai-runtime` service was retired; `ai-service` had served the
+CopilotKit envelope protocol directly from Go.
 
 ## What changed
 

@@ -1751,7 +1751,6 @@ func (h *BFFHandler) upstreamBaseURL(path string) string {
 		{"/api/hrm", h.cfg.HRMServiceURL},
 		{"/api/notifications", h.cfg.NotificationURL},
 		{"/api/mdm", h.cfg.MDMServiceURL},
-		{"/api/copilotkit", h.cfg.CopilotRuntimeURL},
 		{"/api/ai", h.cfg.AIServiceURL},
 	} {
 		if strings.HasPrefix(path, route.prefix) && strings.TrimSpace(route.url) != "" {

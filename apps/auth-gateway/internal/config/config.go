@@ -38,7 +38,6 @@ type Config struct {
 	NotificationURL           string `yaml:"notification_service_url"`
 	MDMServiceURL             string `yaml:"mdm_service_url"`
 	AIServiceURL              string `yaml:"ai_service_url"`
-	CopilotRuntimeURL         string `yaml:"copilotkit_runtime_url"`
 	ServiceAuthSecret         string `yaml:"-"`
 	PolicyFile                string `yaml:"policy_file"`
 
@@ -85,7 +84,6 @@ func Load() Config {
 		NotificationURL:           "http://localhost:8095",
 		MDMServiceURL:             "http://localhost:8096",
 		AIServiceURL:              "http://localhost:8098",
-		CopilotRuntimeURL:         "http://localhost:8099",
 		PolicyFile:                "configs/policy.yaml",
 		SessionCookieName:         "arda_sid",
 		SessionStore:              "redis",
@@ -137,7 +135,6 @@ func Load() Config {
 	envStr("NOTIFICATION_SERVICE_URL", &cfg.NotificationURL)
 	envStr("MDM_SERVICE_URL", &cfg.MDMServiceURL)
 	envStr("AI_SERVICE_URL", &cfg.AIServiceURL)
-	envStr("COPILOTKIT_RUNTIME_URL", &cfg.CopilotRuntimeURL)
 	envStr("ARDA_SERVICE_AUTH_SECRET", &cfg.ServiceAuthSecret)
 	envStr("POLICY_FILE", &cfg.PolicyFile)
 	envStr("REDIS_URL", &cfg.RedisURL)
@@ -205,7 +202,6 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("notification_service_url", &c.NotificationURL)
 	setStr("mdm_service_url", &c.MDMServiceURL)
 	setStr("ai_service_url", &c.AIServiceURL)
-	setStr("copilotkit_runtime_url", &c.CopilotRuntimeURL)
 	setStr("policy_file", &c.PolicyFile)
 	setStr("redis_url", &c.RedisURL)
 	setStr("session_store", &c.SessionStore)

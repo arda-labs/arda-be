@@ -7,13 +7,6 @@ routes:
     permissions:
       - ai.assistant.use
 
-  - id: ai-copilotkit-runtime
-    path: /api/copilotkit/**
-    methods: [GET, POST, OPTIONS]
-    auth: true
-    risk: low
-    permissions:
-      - ai.assistant.use
 
   - id: ai-conversations-read
     path: /api/ai/conversations/**

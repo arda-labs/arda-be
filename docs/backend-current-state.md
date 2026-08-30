@@ -17,7 +17,7 @@ Current services:
 
 | Service | Status | Responsibility |
 | --- | --- | --- |
-| `auth-gateway` | active | BFF/auth edge, session, Kratos/Hydra proxy, forward-auth, CopilotKit AI proxy |
+| `auth-gateway` | active | BFF/auth edge, session, Kratos/Hydra proxy, forward-auth, AI proxy |
 | `iam-service` | active | users, roles, permissions, sessions, MFA, audit, login orchestration |
 | `finance-service` | active | accounts, transactions, approvals, finance operation queues, accounting config reads |
 | `workflow-service` | active | Zeebe facade, business cases, workflow configuration, BPMN process definitions, monitoring data facade |
@@ -26,7 +26,7 @@ Current services:
 | `hrm-service` | active | positions, job titles, org units, employees, registrations |
 | `media-service` | scaffolded/active | media assets on S3/Garage |
 | `notification-service` | active | notification inbox and streams |
-| `ai-service` | active (flagged) | AG-UI assistant boundary: Go-native CopilotKit envelope endpoint, model agent loop, allowlisted tools, HITL approvals, conversation persistence |
+| `ai-service` | active (flagged) | AG-UI assistant boundary: Go AG-UI endpoint, model agent loop, allowlisted tools, HITL approvals, conversation persistence |
 | ~~`ai-runtime`~~ | retired | Node/CopilotKit adapter removed from the kustomization and pruned by ArgoCD; source kept for reference only |
 | `mdm-service` | scaffold | placeholder service |
 
@@ -192,10 +192,10 @@ Known workflow gaps:
 - optional model-driven agent loop (`AI_ENABLE_AGENT`) over an
   OpenAI-compatible streaming provider behind the `model.Provider` interface;
   without it the endpoint stays deterministic
-- Go-native CopilotKit envelope endpoint `POST /api/copilotkit`
+- AG-UI streaming endpoint `POST /api/ai/agent` (interrupts/resume)
   (`info` + `agent/run` methods delegating to the same run flow); the gateway
   signs its workload assertion for audience `ai-service` — see
-  [docs/ai/go-native-copilotkit.md](ai/go-native-copilotkit.md)
+
 - allowlisted tools `crm.customer.get`, `knowledge.search`, and (behind the
   HITL flag) confirm-kind `crm.customer.export.prepare`
 - server-enforced approvals: proposal on confirm request, independent

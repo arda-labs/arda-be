@@ -1,6 +1,6 @@
 # Lộ trình tiến hóa Agent Platform Arda
 
-> **TRẠNG THÁI (2026-08-31): WP0–WP4 đã triển khai xong; protocol v2 là SSE duy nhất** (dual-protocol + flag `AI_PROTOCOL` đã bị xóa — BE emit thẳng AI SDK UI Message Stream v1 với header `x-vercel-ai-ui-message-stream`, FE chỉ parse v2).
+> **TRẠNG THÁI (2026-08-31): WP0–WP4 đã triển khai xong; giao thức là AG-UI (official assistant-ui runtime cho Go backend)** — BE emit AG-UI events trên `/api/ai/agent`, FE dùng `useAgUiRuntime` + `HttpAgent`. AI SDK UI Message Stream / dual-protocol / header `x-vercel-ai-ui-message-stream` / CopilotKit envelope đều đã bị xóa.
 > §3.5 allowlist (`AI_MODEL_BASE_URL_ALLOWLIST`),
 > M2 resume HITL, M3 metrics AI trên `/metrics`, §4 RAG hybrid (migration `20260830110000`, embedder WorkersAI/OpenAI, CLI `knowledge-indexer`).
 > Chưa làm: bật AI Gateway trên CF (env), deploy Prometheus (WP3 bước 2), index dữ liệu thật, MCP exposure (M4).
@@ -181,15 +181,16 @@ Knowledge = markdown trong 1 git repo/folder (tài liệu Arda đã nằm trong 
 
 ## 5. Lộ trình 4 cột mốc (thứ tự khuyến nghị — ĐÃ CHỐT: M1 trước)
 
-### M1 — Giao thức stream chuẩn hóa (P0, ~1 tuần, BE + MFE)
-Đổi BE emit sang **AI SDK UI Message Stream** (SSE chuẩn mở của Vercel AI SDK — chuẩn mà assistant-ui phía FE hỗ trợ-native).
-- BE: `handler/sse.go` + `agent.go` emit event theo spec mới (part-based: `text-delta`, `tool-input-start`, `tool-output`...).
-- MFE: xóa `packages/ai/src/adapter.ts` tự viết, dùng transport của assistant-ui/AI SDK. Tool renderer registry giữ nguyên.
-- Lợi ích trực tiếp: bỏ ~150 dòng adapter + type mapping tự bảo trì; được streaming tool UI, attachments, generative UI miễn phí về sau.
-- Gate: đã hoàn thành — legacy protocol bị xóa, v2 là SSE duy nhất (BE/FE deploy cùng đợt).
+### M1 — Giao thức stream chuẩn hóa (P0, ~1 tuần, BE + MFE) — ✅ HOÀN THÀNH
+Đổi BE emit sang **AG-UI protocol** (agent-gui, chuẩn official của assistant-ui cho backend không-JS; `useAgUiRuntime` + `HttpAgent` phía FE).
+- BE: `handler/sse.go` emit AG-UI events (`RUN_STARTED`, `TEXT_MESSAGE_*`, `TOOL_CALL_*`, `REASONING_MESSAGE_*`, `RUN_FINISHED` với outcome `success`/`interrupt`, `RUN_ERROR`).
+- MFE: xóa `packages/ai/src/adapter.ts` tự viết (~450 dòng) + `run-status.ts` store, dùng `useAgUiRuntime` từ `@assistant-ui/react-ag-ui`. Tool renderer registry giữ nguyên.
+- HITL: `RUN_FINISHED` outcome `interrupt` + `useAgUiSubmitInterruptResponses()` resume ngay trên cùng endpoint `/api/ai/agent` — bỏ REST execution riêng.
+- Lợi ích: xóa hẳn parser + store tự bảo trì; streaming, reasoning, tool call, interrupt/resume, generative UI về sau đều là native runtime.
+- Gate: đã hoàn thành — AI SDK UI Message Stream / dual-protocol / header `x-vercel-ai-ui-message-stream` đều bị xóa; BE/FE deploy cùng đợt.
 
-### M2 — Resume sau approval (P0, ~3–5 ngày, BE)
-Hoàn thiện HITL theo semantics LangGraph: sau `POST /api/ai/approvals/{id}/execution`, **chạy tiếp agent loop** với tool result + history, stream tiếp vào cùng thread — thay vì dừng và chờ user gõ lại.
+### M2 — Resume sau approval (P0, ~3–5 ngày, BE) — ✅ HOÀN THÀNH (AG-UI)
+HITL theo semantics LangGraph: `RUN_FINISHED` outcome `interrupt` kết thúc stream; user phê duyệt → FE gọi `useAgUiSubmitInterruptResponses` → client POST lại `/api/ai/agent` với `resume` entries → BE `runAgentResume` **chạy tiếp agent loop** với tool result + history, stream AG-UI tiếp vào cùng thread.
 - `resume.go`: sau khi execute approved tool, gọi lại `runAgentStream` với messages đã có tool message.
 - Cần cẩn thận: `maxSteps` đếm riêng cho lượt resume; run status `WAITING_APPROVAL → RUNNING`.
 - Gate: kịch bản test end-to-end "yêu cầu tạo giao dịch → approve → agent tự tổng kết không cần user gõ tiếp".

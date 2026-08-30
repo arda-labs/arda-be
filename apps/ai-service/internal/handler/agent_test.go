@@ -263,17 +263,3 @@ func (s *executionTestStore) FinishTool(_ context.Context, _, status, _, _ strin
 	s.finishToolCalled = status == "SUCCEEDED"
 	return nil
 }
-
-func TestCopilotKitInfoEnvelope(t *testing.T) {
-	router := NewRouterWithOptions(&agentRunStore{}, nil, RouterOptions{})
-	req := httptest.NewRequest(http.MethodPost, "/api/copilotkit", strings.NewReader(`{"method":"info"}`))
-	gatewayHeaders(req)
-	res := httptest.NewRecorder()
-	router.ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", res.Code, res.Body.String())
-	}
-	if !strings.Contains(res.Body.String(), "arda-assistant") {
-		t.Fatalf("info missing agent: %s", res.Body.String())
-	}
-}

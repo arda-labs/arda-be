@@ -6,8 +6,10 @@ HITL is a policy checkpoint, not merely a confirmation dialog. A frontend
 approval card can improve UX, but only the backend may authorize and resume a
 side effect.
 
-CopilotKit's `useHumanInTheLoop` is a useful UI pattern for pausing a run and
-collecting a response; see the [v2 hook reference](https://docs.copilotkit.ai/reference/v2/hooks/useHumanInTheLoop).
+The AG-UI runtime implements the pause/resume pattern natively: the backend
+ends a run with a `RUN_FINISHED` `interrupt` outcome, the frontend collects a
+response and submits it back through `useAgUiSubmitInterruptResponses`, and
+the backend resumes the run on the same `/api/ai/agent` endpoint.
 Arda must still enforce the checkpoint in Go and in the owning domain service.
 
 ## Required approval record
