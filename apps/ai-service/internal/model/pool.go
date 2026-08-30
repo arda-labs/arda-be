@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,11 +23,12 @@ type poolEntry struct {
 // ClientPool manages cached, thread-safe model.Client instances per tenant,
 // keeping persistent HTTP connections warm and avoiding client reallocation per chat turn.
 type ClientPool struct {
-	mu         sync.RWMutex
-	entries    map[string]*poolEntry
-	httpClient *http.Client
-	maxEntries int
-	ttl        time.Duration
+	mu           sync.RWMutex
+	entries      map[string]*poolEntry
+	httpClient   *http.Client
+	maxEntries   int
+	ttl          time.Duration
+	gatewayToken string
 }
 
 func NewClientPool(httpClient *http.Client) *ClientPool {
@@ -47,6 +49,17 @@ func NewClientPool(httpClient *http.Client) *ClientPool {
 		maxEntries: defaultPoolMaxEntries,
 		ttl:        defaultPoolTTL,
 	}
+}
+
+// SetGatewayToken applies the AI Gateway credential (cf-aig-authorization
+// header) to every client the pool creates.
+func (p *ClientPool) SetGatewayToken(token string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.gatewayToken = strings.TrimSpace(token)
 }
 
 func (p *ClientPool) GetClient(tenantID, baseURL, apiKey, modelID string) *Client {
@@ -80,6 +93,9 @@ func (p *ClientPool) GetClient(tenantID, baseURL, apiKey, modelID string) *Clien
 	}
 
 	client := NewClient(baseURL, apiKey, modelID, p.httpClient)
+	if p.gatewayToken != "" {
+		client.WithGatewayToken(p.gatewayToken)
+	}
 	p.entries[tenantID] = &poolEntry{
 		client:    client,
 		lastUsed:  time.Now(),

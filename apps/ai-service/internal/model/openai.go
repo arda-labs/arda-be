@@ -75,10 +75,19 @@ type Provider interface {
 var _ Provider = (*Client)(nil)
 
 type Client struct {
-	baseURL string
-	apiKey  string
-	model   string
-	http    *http.Client
+	baseURL      string
+	apiKey       string
+	model        string
+	gatewayToken string
+	http         *http.Client
+}
+
+// WithGatewayToken sets an AI Gateway credential sent as the
+// cf-aig-authorization header, separate from the upstream provider key in
+// Authorization (Cloudflare AI Gateway authentication mode).
+func (c *Client) WithGatewayToken(token string) *Client {
+	c.gatewayToken = strings.TrimSpace(token)
+	return c
 }
 
 func NewClient(baseURL, apiKey, model string, httpClient *http.Client) *Client {
@@ -162,6 +171,9 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 	req.Header.Set("Accept", "text/event-stream")
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	if c.gatewayToken != "" {
+		req.Header.Set("cf-aig-authorization", "Bearer "+c.gatewayToken)
 	}
 
 	response, err := c.http.Do(req)

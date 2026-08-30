@@ -65,6 +65,9 @@ func main() {
 	var ModelProvider *model.Client
 	if cfg.ModelReady() {
 		ModelProvider = model.NewClient(cfg.ModelBaseURL, cfg.ModelAPIKey, cfg.ModelID, nil)
+		if cfg.ModelGatewayToken != "" {
+			ModelProvider.WithGatewayToken(cfg.ModelGatewayToken)
+		}
 	} else if cfg.ModelEnabled {
 		logger.Warn("AI_ENABLE_AGENT is set but model configuration is incomplete; running without the agent loop")
 	}
@@ -85,6 +88,9 @@ func main() {
 		ModelSystemPrompt:     cfg.ModelSystemPrompt,
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
 		StreamProtocol:        cfg.StreamProtocol,
+	}
+	if cfg.ModelGatewayToken != "" {
+		routerOptions.ModelPool.SetGatewayToken(cfg.ModelGatewayToken)
 	}
 
 	mux := handler.NewRouterWithOptions(store, resolver, routerOptions)

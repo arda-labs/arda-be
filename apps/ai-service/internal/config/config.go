@@ -30,6 +30,11 @@ type Config struct {
 	AgentMaxSteps      int
 	RateLimitPerMinute int
 
+	// ModelGatewayToken is the AI Gateway credential sent as the
+	// cf-aig-authorization header when the model base URL points at a
+	// Cloudflare AI Gateway with authentication enabled. Empty = direct.
+	ModelGatewayToken string
+
 	// ModelBaseURLAllowlist restricts which base URLs tenant settings may
 	// point at (gateway routing, §3.5 of docs/ai/agent-evolution-roadmap.md).
 	// Empty slice = enforcement disabled; only ValidateEgressURL applies.
@@ -93,6 +98,7 @@ func Load() Config {
 		ModelSystemPrompt:  envOr("AI_MODEL_SYSTEM_PROMPT", defaultPrompt),
 		AgentMaxSteps:      envIntOr("AI_AGENT_MAX_STEPS", 6),
 		RateLimitPerMinute: envIntOr("AI_RATE_LIMIT_PER_MINUTE", 30),
+		ModelGatewayToken:  strings.TrimSpace(os.Getenv("AI_MODEL_GATEWAY_TOKEN")),
 
 		ModelBaseURLAllowlist: envListOr("AI_MODEL_BASE_URL_ALLOWLIST"),
 		StreamProtocol:        envOr("AI_PROTOCOL", "v1"),
