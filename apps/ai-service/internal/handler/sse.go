@@ -159,7 +159,7 @@ func (s *sseWriter) translate(ev agentEvent) []agUiEvent {
 		if s.reasoningMessageID == "" {
 			s.reasoningMessageID = msgID
 			return []agUiEvent{
-				{Type: "REASONING_MESSAGE_START", MessageID: msgID, Role: "assistant"},
+				{Type: "REASONING_MESSAGE_START", MessageID: msgID, Role: "reasoning"},
 				{Type: "REASONING_MESSAGE_CONTENT", MessageID: msgID, Delta: ev.Delta},
 			}
 		}
