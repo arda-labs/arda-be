@@ -40,6 +40,16 @@ type Context struct {
 	ActiveOrgID string
 	RequestID   string
 	Permissions map[string]struct{}
+
+	// Identity context injected by the gateway (X-Username, X-User-Email,
+	// X-Roles, X-Global-Roles, X-Global-Admin). Never trusted from the client
+	// directly — the gateway strips and re-injects these headers.
+	Username    string
+	Email       string
+	Roles       []string
+	GlobalRoles []string
+	GlobalAdmin bool
+	AuthVersion string
 }
 
 type Result struct {

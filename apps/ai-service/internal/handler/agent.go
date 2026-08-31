@@ -59,8 +59,34 @@ func runAgentStream(
 		return
 	}
 
-	messages := buildModelMessages(ctx, store, options, scopeRun, latestUserMessage(input.Messages))
+	messages := buildModelMessages(ctx, store, options, scope, scopeRun, latestUserMessage(input.Messages))
 	agentStepsLoop(w, r, store, resolver, scope, scopeRun, input, sse, options, modelProvider, messages)
+}
+
+// buildIdentityContext renders the minimal actor/tenant/org context injected
+// into the model prompt. It deliberately excludes the permission/tool catalog:
+// capabilities are discovered through search/execute and authorization is
+// enforced at execution time, so dumping them here would just burn tokens and
+// go stale.
+func buildIdentityContext(scope tools.Context) string {
+	var b strings.Builder
+	b.WriteString("Current actor:\n")
+	if scope.ActorUserID != "" {
+		fmt.Fprintf(&b, "- user_id: %s\n", scope.ActorUserID)
+	}
+	if scope.Username != "" {
+		fmt.Fprintf(&b, "- username: %s\n", scope.Username)
+	}
+	if scope.TenantID != "" {
+		fmt.Fprintf(&b, "- tenant_id: %s\n", scope.TenantID)
+	}
+	if scope.ActiveOrgID != "" {
+		fmt.Fprintf(&b, "- org_id: %s\n", scope.ActiveOrgID)
+	}
+	b.WriteString("\nAuthorization:\n")
+	b.WriteString("- Use only capabilities exposed by the tool layer.\n")
+	b.WriteString("- Authorization is enforced at execution time.\n")
+	return b.String()
 }
 
 // selectModelProvider resolves the provider for a run. With persistence, the
@@ -235,10 +261,17 @@ func agentStepsLoop(
 	_ = store.Finish(ctx, scopeRun, reply, "FAILED")
 }
 
-func buildModelMessages(ctx context.Context, store runStore, options RouterOptions, scopeRun repository.RunContext, latestUser string) []model.Message {
+func buildModelMessages(ctx context.Context, store runStore, options RouterOptions, scope tools.Context, scopeRun repository.RunContext, latestUser string) []model.Message {
 	messages := make([]model.Message, 0, 24)
 	if prompt := strings.TrimSpace(options.ModelSystemPrompt); prompt != "" {
 		messages = append(messages, model.Message{Role: "system", Content: prompt})
+	}
+	if identity := buildIdentityContext(scope); identity != "" {
+		// Minimal identity context: who the actor is and which tenant/org
+		// they act in. Deliberately NOT the permission/tool catalog — the
+		// model discovers capabilities through search/execute and the
+		// runtime enforces authorization at execution time.
+		messages = append(messages, model.Message{Role: "system", Content: identity})
 	}
 	if historyStore, ok := store.(repository.HistoryStore); ok {
 		items, err := historyStore.RecentMessages(ctx, scopeRun, 20)
@@ -247,12 +280,12 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 				if item.Content == "" {
 					continue
 				}
-			switch item.Role {
-			case "user", "assistant":
-				messages = append(messages, model.Message{Role: item.Role, Content: item.Content})
-			}
-			// Tool history is skipped on replay: HistoryMessage carries no
-			// tool_call_id, and providers reject unpaired tool messages.
+				switch item.Role {
+				case "user", "assistant":
+					messages = append(messages, model.Message{Role: item.Role, Content: item.Content})
+				}
+				// Tool history is skipped on replay: HistoryMessage carries no
+				// tool_call_id, and providers reject unpaired tool messages.
 			}
 		}
 	}
@@ -398,7 +431,7 @@ func createProposalForCall(
 		SummaryRedacted: mustJSON(map[string]any{
 			"action": definition.Name, "arguments": json.RawMessage(sanitizeTranscript(call.Arguments)),
 		}),
-		ResourceVersion: "",
+		ResourceVersion:   "",
 		PermissionVersion: strings.TrimSpace(r.Header.Get("X-Auth-Version")),
 		ExpiresAt:         time.Now().UTC().Add(15 * time.Minute),
 		IdempotencyKey:    hex.EncodeToString(key[:16]),

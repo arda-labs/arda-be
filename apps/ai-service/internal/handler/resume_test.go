@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
@@ -99,16 +100,23 @@ func TestBuildResumeMessagesPairsToolCall(t *testing.T) {
 		ToolName: "test.confirm", ToolVersion: 1, Arguments: `{"format":"csv"}`,
 	}
 
-	messages := buildResumeMessages(context.Background(), store, options, exec, `{"prepared":true}`)
+	messages := buildResumeMessages(context.Background(), store, options, tools.Context{
+		TenantID: "tenant-1", ActorUserID: "user-1",
+	}, exec, `{"prepared":true}`)
 
-	if len(messages) != 4 {
-		t.Fatalf("expected [system user assistant tool], got %d messages: %+v", len(messages), messages)
+	// [system identity user assistant tool] — identity context is injected
+	// after the base system prompt.
+	if len(messages) != 5 {
+		t.Fatalf("expected [system identity user assistant tool], got %d messages: %+v", len(messages), messages)
 	}
-	if messages[0].Role != "system" || messages[1].Role != "user" {
+	if messages[0].Role != "system" || messages[1].Role != "system" || messages[2].Role != "user" {
 		t.Fatalf("unexpected leading roles: %+v", messages)
 	}
-	assistant := messages[2]
-	tool := messages[3]
+	if !strings.Contains(messages[1].Content, "tenant_id") {
+		t.Errorf("expected identity context in second system message, got %q", messages[1].Content)
+	}
+	assistant := messages[3]
+	tool := messages[4]
 	if assistant.Role != "assistant" || len(assistant.ToolCalls) != 1 {
 		t.Fatalf("expected assistant tool_calls message, got %+v", assistant)
 	}

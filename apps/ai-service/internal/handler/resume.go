@@ -137,7 +137,7 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 		return
 	}
 
-	messages := buildResumeMessages(ctx, resumeStore, options, exec, content)
+	messages := buildResumeMessages(ctx, resumeStore, options, scope, exec, content)
 	agentStepsLoop(w, r, store, resolver, scope, exec.Run, resumeInput, sse, options, modelProvider, messages)
 }
 
@@ -148,12 +148,16 @@ func buildResumeMessages(
 	ctx context.Context,
 	store runResumeStore,
 	options RouterOptions,
+	scope tools.Context,
 	exec repository.ApprovedExecution,
 	toolResultContent string,
 ) []model.Message {
 	messages := make([]model.Message, 0, 32)
 	if prompt := strings.TrimSpace(options.ModelSystemPrompt); prompt != "" {
 		messages = append(messages, model.Message{Role: "system", Content: prompt})
+	}
+	if identity := buildIdentityContext(scope); identity != "" {
+		messages = append(messages, model.Message{Role: "system", Content: identity})
 	}
 	if items, err := store.RunMessages(ctx, exec.Run); err == nil {
 		for _, item := range items {
@@ -204,7 +208,7 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 
 	// Execute every resolved interrupt (typically one per run).
 	type executedTool struct {
-		exec   repository.ApprovedExecution
+		exec    repository.ApprovedExecution
 		content string
 	}
 	var executed []executedTool
@@ -281,6 +285,6 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 		return
 	}
 
-	messages := buildResumeMessages(ctx, resumeStore, options, executed[0].exec, executed[0].content)
+	messages := buildResumeMessages(ctx, resumeStore, options, scope, executed[0].exec, executed[0].content)
 	agentStepsLoop(w, r, store, resolver, scope, run, resumeInput, sse, options, modelProvider, messages)
 }

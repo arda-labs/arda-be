@@ -46,12 +46,12 @@ type toolResolver interface {
 }
 
 type runInput struct {
-	ThreadID string          `json:"threadId"`
-	RunID    string          `json:"runId"`
-	Messages []inputMessage  `json:"messages"`
-	State    json.RawMessage `json:"state"`
-	Context  json.RawMessage `json:"context"`
-	Tool     *toolCallInput  `json:"tool,omitempty"`
+	ThreadID string            `json:"threadId"`
+	RunID    string            `json:"runId"`
+	Messages []inputMessage    `json:"messages"`
+	State    json.RawMessage   `json:"state"`
+	Context  json.RawMessage   `json:"context"`
+	Tool     *toolCallInput    `json:"tool,omitempty"`
 	Resume   []agUiResumeEntry `json:"resume,omitempty"`
 }
 
@@ -646,6 +646,14 @@ func scopeFromRequest(r *http.Request) tools.Context {
 		ActiveOrgID: strings.TrimSpace(r.Header.Get("X-Org-Id")),
 		RequestID:   strings.TrimSpace(r.Header.Get("X-Request-Id")),
 		Permissions: permissionSet(r.Header.Get("X-Permissions")),
+		// Identity context for arda.iam.* — the gateway strips any
+		// client-supplied values and re-injects from the trusted session.
+		Username:    strings.TrimSpace(r.Header.Get("X-Username")),
+		Email:       strings.TrimSpace(r.Header.Get("X-User-Email")),
+		Roles:       splitHeader(r.Header.Get("X-Roles")),
+		GlobalRoles: splitHeader(r.Header.Get("X-Global-Roles")),
+		GlobalAdmin: strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Global-Admin")), "true"),
+		AuthVersion: strings.TrimSpace(r.Header.Get("X-Auth-Version")),
 	}
 }
 

@@ -15,6 +15,7 @@ type Config struct {
 	DatabaseDSN         string
 	ServiceAuthSecret   string
 	CRMServiceURL       string
+	FinanceServiceURL   string
 	EnableReadTools     bool
 	EnableHITLProposals bool
 	EnableCodeMode      bool
@@ -80,6 +81,7 @@ func Load() Config {
 		DatabaseDSN:         os.Getenv("DATABASE_DSN"),
 		ServiceAuthSecret:   os.Getenv("ARDA_SERVICE_AUTH_SECRET"),
 		CRMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("CRM_SERVICE_URL")), "/"),
+		FinanceServiceURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("FINANCE_SERVICE_URL")), "/"),
 		EnableReadTools:     envBoolOr("AI_ENABLE_READ_TOOLS", false),
 		EnableHITLProposals: envBoolOr("AI_ENABLE_HITL_PROPOSALS", false),
 		EnableCodeMode:      enableCodeMode,

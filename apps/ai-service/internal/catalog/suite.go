@@ -28,6 +28,7 @@ type CodeModeSuite struct {
 // NewCodeModeSuite builds the complete 2-meta-tool suite (search & execute) backed by the Goja sandbox.
 func NewCodeModeSuite(
 	crmBaseURL string,
+	financeBaseURL string,
 	httpClient *http.Client,
 	db *sql.DB,
 	store repository.RunStore,
@@ -43,7 +44,7 @@ func NewCodeModeSuite(
 		searcher = sqlSearcher
 	}
 
-	RegisterBuiltinCatalog(dispatcherReg, crmBaseURL, httpClient, searcher)
+	RegisterBuiltinCatalog(dispatcherReg, crmBaseURL, financeBaseURL, httpClient, searcher)
 	catalogIndex := NewIndex(dispatcherReg.AllEntries())
 	sandboxEngine := sandbox.NewEngine(dispatcherReg)
 
