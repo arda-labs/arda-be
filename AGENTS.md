@@ -49,10 +49,10 @@ tokens against the unreachable Ory Hydra.
 
 ## 7. AI assistant (Olorin) stack notes
 
-* Backend boundary is Go-native: `ai-service` serves the CopilotKit envelope
-  (`POST /api/copilotkit`, methods `info` + `agent/run`). The Node `ai-runtime`
-  adapter is retired. Contract + verification evidence:
-  `docs/ai/go-native-copilotkit.md` in `arda-be`.
+* Backend boundary is Go-native: `ai-service` serves the AG-UI protocol
+  (`POST /api/ai/agent`). The Node `ai-runtime` adapter and the earlier
+  CopilotKit envelope (`/api/copilotkit`) are retired. Contract + verification
+  evidence: `docs/ai/go-native-copilotkit.md` in `arda-be`.
 * Gateway policy ids: `ai-agent-spike`, `ai-copilotkit-runtime`,
   `ai-conversations-read`, `ai-conversations-delete`, `ai-approvals-write`
   (all require permission `ai.assistant.use`). Gateway signs workload tokens

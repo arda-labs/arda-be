@@ -20,8 +20,8 @@ React MFE / Arda shell
         AG-UI streaming endpoint POST /api/ai/agent
         conversation/run state
         model adapter
-        2 Meta-Tools (search & execute / Code Mode) & legacy tool registry
-        embedded Goja JavaScript sandbox with arda.* SDK bindings
+2 Meta-Tools (search & execute / Code Mode)
+	        embedded Goja JavaScript sandbox with arda.* SDK bindings
         RAG retrieval with ACL filtering
         AI operational audit
         -> domain service APIs/gRPC, never domain tables

@@ -8,16 +8,22 @@ it to support multiple model providers and per-tenant/per-route routing.
 
 ## 1. Current State
 
-`ai-service` reads a single provider from environment variables:
+`ai-service` reads a single, provider-agnostic (OpenAI-compatible) model config
+from environment variables:
 
 ```env
-AI_PROVIDER=openai           # or "anthropic" | "gemini" | "ollama"
+AI_MODEL_BASE_URL=https://api.openai.com/v1
+AI_MODEL_API_KEY=sk-...
 AI_MODEL_ID=gpt-4o-mini
-AI_API_KEY=sk-...
+# optional
+AI_MODEL_SYSTEM_PROMPT=...
+AI_MODEL_GATEWAY_TOKEN=...
+AI_MODEL_BASE_URL_ALLOWLIST=...
 ```
 
-The `model.Provider` interface (`internal/model/provider.go`) already abstracts
-the provider, so the routing layer is a thin addition on top.
+The `model.Client`/`ClientPool` types (`internal/model/client.go`,
+`internal/model/pool.go`) already abstract the provider, so a routing layer is a
+thin addition on top.
 
 ---
 
@@ -35,6 +41,11 @@ Provider selection must support four dimensions:
 ---
 
 ## 3. Provider Registry
+
+> **Note:** This section is forward-looking design, not yet implemented.
+> Current code (`internal/model/client.go`, `internal/model/pool.go`) provides a
+> single OpenAI-compatible `Client` behind a `ClientPool`; the `ProviderRegistry`
+> below describes the intended multi-provider extension.
 
 ```go
 // internal/model/registry.go

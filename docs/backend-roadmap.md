@@ -2,15 +2,17 @@
 
 Last updated: 2026-07-04
 
-Root long-term plan:
+Root long-term plan. The detailed sub-documents below previously lived under
+`docs/roadmap/`, `docs/planning/`, `docs/infra/`, and `docs/architecture/`
+but were relocated during the refactor; they are kept here as references.
 
-- [Backend gRPC Architecture & Long-Term Migration Plan](../../docs/roadmap/09-backend-grpc-architecture.md)
-- [Backend gRPC Execution Checklist](../../docs/planning/backend-grpc-execution-checklist.md)
-- [Dev Runtime Infrastructure, k3s, Redis, DB, and NATS](../../docs/roadmap/10-dev-runtime-infra.md)
-- [Multilingual Platform & i18n Strategy](../../docs/roadmap/11-i18n-multilingual-platform.md)
-- [Current k3s Cluster Inventory](../../docs/infra/current-k3s-cluster.md)
-- [BPMN on Camunda 8 — Modeling & Runtime Contract](../../docs/architecture/bpmn-camunda8.md)
-- [Workflow Boundary Refactor Plan](../../docs/planning/workflow-boundary-refactor.md)
+- **Backend gRPC Architecture & Long-Term Migration Plan** — see `docs/refactor-program/01-architecture-and-governance.md` and `docs/refactor-program/02-contracts-and-frontend.md`.
+- **Backend gRPC Execution Checklist** — see `docs/refactor-program/08-templates-and-checklists.md`.
+- **Dev Runtime Infrastructure, k3s, Redis, DB, and NATS** — see `docs/ghcr-k3s-deployment.md`, `docs/deployment-namespace-layout.md`, and `docs/dev/dependencies.md`.
+- **Multilingual Platform & i18n Strategy** — see `arda-mfe/docs/conventions/i18n-and-localization.md`.
+- **Current k3s Cluster Inventory** — see `arda-infra/README.md` and `.github/profile/README.md`.
+- **BPMN on Camunda 8 — Modeling & Runtime Contract** — see `apps/workflow-service/README.md`.
+- **Workflow Boundary Refactor Plan** — see `docs/refactor-program/04-data-and-service-integration.md`.
 
 ## Direction
 

@@ -12,6 +12,7 @@ ghcr.io/arda-labs/arda-be/media-service:<tag>
 ghcr.io/arda-labs/arda-be/workflow-service:<tag>
 ghcr.io/arda-labs/arda-be/crm-service:<tag>
 ghcr.io/arda-labs/arda-be/notification-service:<tag>
+ghcr.io/arda-labs/arda-be/hrm-service:<tag>
 ```
 
 Tags:

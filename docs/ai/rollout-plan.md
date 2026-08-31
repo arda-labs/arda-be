@@ -40,8 +40,10 @@ must be monitored.
 
 ## Gate 3 — first read-only vertical slice (implemented; live verification pending)
 
-The first read-only tools are `crm.customer.get` and `knowledge.search`. They
-are server-registered, tenant scoped, require separate IAM permissions, emit
+The first read-only SDK methods are `arda.crm.getCustomer` and
+`arda.knowledge.search` (the `crm.customer.get` / `knowledge.search`
+capabilities they map to). They are registered in the SDK catalog
+(`internal/catalog`), tenant scoped, require separate IAM permissions, emit
 AG-UI tool events, and persist redacted tool execution records. Knowledge uses
 PostgreSQL full-text search over published sources; vector search and source
 ingestion remain separate gates.

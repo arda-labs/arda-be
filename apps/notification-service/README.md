@@ -27,5 +27,5 @@ supported.
 
 Planning:
 
-- [P13 Notification Service](../../../docs/roadmap/13-notification-service.md)
-- [Notification Service Execution Checklist](../../../docs/planning/notification-service-execution-checklist.md)
+- Notification Service roadmap and execution checklist are tracked in the
+  backend refactor program — see `arda-be/docs/refactor-program/`.

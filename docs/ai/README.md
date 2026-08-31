@@ -87,6 +87,8 @@ vector schema/index changes, and production workload expansion.
 20. [enterprise-security-and-crypto.md](enterprise-security-and-crypto.md) —
     Enterprise security tiers, AES-256-GCM envelope encryption, Blind Indexing
     search, KeyProvider (KMS/Vault) integration, and SSRF egress filtering.
+21. [agent-evolution-roadmap.md](agent-evolution-roadmap.md) — work-package
+    roadmap (WP0–WP4) and the AG-UI / Code Mode / knowledge evolution plan.
 
 ## Current repository evidence
 

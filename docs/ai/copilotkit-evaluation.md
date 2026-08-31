@@ -49,11 +49,13 @@ second workload-token hop without contributing any authorization decision.
 
 Current production state:
 
-- `ai-service` (Go) serves the CopilotKit single-route envelope protocol
-  (`/api/copilotkit`) directly; see [go-native-copilotkit.md](go-native-copilotkit.md).
+- `ai-service` (Go) serves the AG-UI protocol on `/api/ai/agent` directly,
+  replacing the earlier CopilotKit single-route envelope (`/api/copilotkit`
+  was removed); see [go-native-copilotkit.md](go-native-copilotkit.md).
 - The gateway signs a short-lived HS256 assertion with audience `ai-service`
   (not `ai-runtime`); `ServiceAuthMiddleware` verifies it before routing.
-- `arda-be/apps/ai-runtime` source is retained for reference only; nothing deploys it.
+- `arda-be/apps/ai-runtime` source has been removed entirely from the repo;
+  nothing deploys it.
 - `arda-infra/k8s/apps/ai-runtime.yaml` was deleted from the kustomization;
   ArgoCD confirmed the deployment as NotFound in the cluster.
 

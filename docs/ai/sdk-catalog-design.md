@@ -299,8 +299,8 @@ func bindArda(vm *goja.Runtime, reg *catalog.DispatcherRegistry, scope tools.Con
 ## 6. Catalog Versioning
 
 - The catalog version is a short hash of all entry `MethodName + Signature` strings.
-- The version is included in the `info` endpoint response (`/api/copilotkit` with
-  `method: "info"`) so clients can detect catalog changes.
+- The version is included in the catalog `info` endpoint response so clients
+  can detect catalog changes.
 - When a method signature changes (e.g., a new required parameter), the method
   version increments and the old signature is kept as a deprecated alias for one
   release cycle.
