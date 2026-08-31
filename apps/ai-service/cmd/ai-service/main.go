@@ -78,20 +78,6 @@ func main() {
 			"platform_env_key_used", false)
 	}
 
-	var resolver *tools.Registry
-	if cfg.EnableReadTools {
-// Code Mode: Expose ONLY the 2 Meta-Tools (search & execute) to the model.
-			// Domain APIs are dispatched internally through the embedded Goja sandbox
-			// via typed clients with signed caller identity and delegated subject.
-			suite := catalog.NewCodeModeSuite(
-				svcclient.NewCRMClient(cfg.CRMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
-				svcclient.NewFinanceClient(cfg.FinanceServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
-				svcclient.NewIAMClient(cfg.IAMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
-				db, store, cfg.EnableHITLProposals, buildKnowledgeEmbedder(cfg, logger),
-			)
-		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool)
-	}
-
 	routerOptions := handler.RouterOptions{
 		EnableHITLProposals:   cfg.EnableHITLProposals,
 		ModelProvider:         ModelProvider,
@@ -101,6 +87,25 @@ func main() {
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
 		PlatformModelBaseURL:  cfg.ModelBaseURL,
 		PlatformModelID:       cfg.ModelID,
+	}
+
+	var resolver *tools.Registry
+	if cfg.EnableReadTools {
+		// Code Mode: Expose ONLY the meta-tools (search & execute & readResult)
+		// to the model. Domain APIs are dispatched internally through the
+		// embedded Goja sandbox via typed clients with signed caller identity
+		// and delegated subject. Raw results stay in the sandbox store; the
+		// model fetches full output via readResult.
+		suite := catalog.NewCodeModeSuite(
+			svcclient.NewCRMClient(cfg.CRMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
+			svcclient.NewFinanceClient(cfg.FinanceServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
+			svcclient.NewIAMClient(cfg.IAMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
+			db, store, cfg.EnableHITLProposals, buildKnowledgeEmbedder(cfg, logger),
+		)
+		// readResult is model-visible so the agent can fetch full sandbox
+		// outputs by resultId when the inline preview is truncated.
+		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool, suite.ReadTool)
+		routerOptions.ModelSDKTypes = suite.TypeDefs
 	}
 	if cfg.ModelGatewayToken != "" {
 		routerOptions.ModelPool.SetGatewayToken(cfg.ModelGatewayToken)

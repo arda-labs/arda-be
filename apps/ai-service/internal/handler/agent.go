@@ -273,6 +273,9 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 		// runtime enforces authorization at execution time.
 		messages = append(messages, model.Message{Role: "system", Content: identity})
 	}
+	if sdkTypes := sdkTypesMessage(options.ModelSDKTypes); sdkTypes != nil {
+		messages = append(messages, *sdkTypes)
+	}
 	if historyStore, ok := store.(repository.HistoryStore); ok {
 		items, err := historyStore.RecentMessages(ctx, scopeRun, 20)
 		if err == nil {
@@ -291,6 +294,20 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 	}
 	messages = append(messages, model.Message{Role: "user", Content: latestUser})
 	return messages
+}
+
+// sdkTypesMessage builds the system message carrying the generated arda.*
+// TypeScript declarations. The model reads the whole SDK surface once instead
+// of re-searching every method; empty returns nil so nothing is injected.
+func sdkTypesMessage(typedefs string) *model.Message {
+	typedefs = strings.TrimSpace(typedefs)
+	if typedefs == "" {
+		return nil
+	}
+	return &model.Message{
+		Role:    "system",
+		Content: "Arda SDK type definitions (source of truth for arda.* methods; search() is only needed for JSDoc detail or param confirmation):\n" + typedefs,
+	}
 }
 
 func modelToolDefinitions(resolver toolResolver) []model.ToolDef {

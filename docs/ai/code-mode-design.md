@@ -22,9 +22,14 @@ Code Mode (Search & Execute):
 
 ---
 
-## The 2 Meta-Tools Contract
+## The 3 Meta-Tools Contract
 
-The AI agent in `ai-service` is equipped with two primary meta-tools:
+The AI agent in `ai-service` is equipped with three meta-tools: `search`,
+`execute`, and `readResult`. Two Cloudflare-style optimizations were added in
+M4 (2026-08-31): the full SDK surface is generated once as a TypeScript
+`.d.ts` and injected into the model context (so `search` is only needed for
+JSDoc detail), and raw `execute` outputs stay in the sandbox result store (the
+model gets a preview + `resultId` and fetches the full data via `readResult`).
 
 ### 1. `search` (Dynamic SDK Discovery)
 
@@ -91,6 +96,66 @@ Executes a JavaScript program written by the LLM that composes calls to the inje
   }
 }
 ```
+
+**M4 output contract (raw results stay in the sandbox):** `execute` no longer
+echoes the full output back to the model. The raw output is stored in a
+bounded, TTL-backed `sandbox.ResultStore` keyed by run/request, and the tool
+returns:
+
+```json
+{
+  "resultId": "run-abc:1",
+  "durationMs": 42,
+  "methodsCalled": ["arda.crm.getCustomer"],
+  "scriptHash": "ab12cd34",
+  "output": {
+    "truncated": true,
+    "size": 8124,
+    "hint": "call readResult({ resultId }) for the full output"
+  }
+}
+```
+
+Outputs ≤ 1 KiB are echoed inline; larger ones are stored and referenced. The
+model calls `readResult` when it needs the complete data — the
+Anthropic/Cloudflare "filesystem as context" pattern, replacing the old
+`compactToolFeedback` that truncated everything at 8 KiB into the conversation.
+
+### 3. `readResult` (Fetch Full Sandbox Output)
+
+```json
+{
+  "name": "readResult",
+  "version": 1,
+  "kind": "read",
+  "description": "Read the full output of a previous execute() call by its resultId. Use this when execute() returned a resultId but you need the complete data (e.g. more rows, full object) to continue.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "resultId": {
+        "type": "string",
+        "description": "The resultId returned by a previous execute() call."
+      }
+    },
+    "required": ["resultId"]
+  }
+}
+```
+
+The `resultId` embeds the run/request namespace, so `readResult` only resolves
+results created by the same run — cross-tenant reads are impossible. Stored
+results expire after 15 minutes (TTL) and the store is bounded (64 entries).
+
+### 4. Generated TypeScript Type Definitions (M4)
+
+`catalog.GenerateTypeDefinitions` renders the live catalog into a compact
+`declare namespace arda { ... }` declaration file (one line per method +
+first JSDoc line), injected once as a system message at the start of every
+run and resume via `RouterOptions.ModelSDKTypes`. The model reads the whole
+SDK surface up front (~1k tokens at the current catalog size) instead of
+re-searching each method, and the code-mode system prompt tells it to rely on
+the type definitions and only call `search` for JSDoc detail or parameter
+confirmation.
 
 ---
 

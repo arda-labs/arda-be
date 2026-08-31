@@ -3,7 +3,7 @@
 > **TRẠNG THÁI (2026-08-31): WP0–WP4 đã triển khai xong; giao thức là AG-UI (official assistant-ui runtime cho Go backend)** — BE emit AG-UI events trên `/api/ai/agent`, FE dùng `useAgUiRuntime` + `HttpAgent`. AI SDK UI Message Stream / dual-protocol / header `x-vercel-ai-ui-message-stream` / CopilotKit envelope đều đã bị xóa.
 > §3.5 allowlist (`AI_MODEL_BASE_URL_ALLOWLIST`),
 > M2 resume HITL, M3 metrics AI trên `/metrics`, §4 RAG hybrid (migration `20260830110000`, embedder WorkersAI/OpenAI, CLI `knowledge-indexer`).
-> Chưa làm: bật AI Gateway trên CF (env), deploy Prometheus (WP3 bước 2), index dữ liệu thật, MCP exposure (M4).
+> M4 code-mode tối ưu — 2/3 mảnh xong (2026-08-31): codegen `.d.ts` cho `arda.*` từ catalog inject vào context + raw results ở lại trong `sandbox.ResultStore` với meta-tool `readResult`. Chưa làm: MCP exposure (M4 mảnh 3 — khi có client ngoài), bật AI Gateway trên CF (env), deploy Prometheus (WP3 bước 2), index dữ liệu thật.
 >
 > Tài liệu đánh giá & lộ trình đề xuất — phục vụ review.
 > Phạm vi: xuyên suốt `arda-be` (ai-service, auth-gateway), `arda-mfe` (packages/ai, shell), `arda-infra`.
@@ -200,11 +200,11 @@ HITL theo semantics LangGraph: `RUN_FINISHED` outcome `interrupt` kết thúc st
 - Bước 2 (tùy chọn): Langfuse self-host trên k3s nếu muốn UI trace + dataset eval — cân nhắc sau khi dùng OTel thấy thiếu gì.
 - Lợi ích: debug "run FAILED vì gì", đo token/chi phí per tenant (bổ trợ cho analytics của AI Gateway ở §3).
 
-### M4 — Code-mode tối ưu kiểu Cloudflare (P2, khi số tool > ~15, BE)
+### M4 — Code-mode tối ưu kiểu Cloudflare (P2, khi số tool > ~15, BE) — ✅ 2/3 MẢNH XONG
 Bạn **đã có** code-mode; đây là tối ưu theo bài [Cloudflare Code Mode](https://blog.cloudflare.com/code-mode-mcp/):
-1. Sinh TypeScript `.d.ts` cho `arda.*` SDK từ tool Definitions (codegen vào `proto-generate` pipeline) — model đọc types ~1k tokens thay vì mô tả từng tool.
-2. Raw tool results **ở lại trong sandbox**: hiện `compactToolFeedback` đẩy cả `data` về model. Đổi thành: sandbox giữ kết quả trong biến/scratch state, model chỉ thấy `summary` + path để query tiếp nếu cần (pattern Anthropic "filesystem làm context" — thay `boundContent` cắt cụt 8KiB).
-3. MCP exposure: chỉ khi có nhu cầu client ngoài (IDE, Claude) — giữ registry hiện tại làm source of truth, MCP là một adapter read-only.
+1. ✅ Sinh TypeScript `.d.ts` cho `arda.*` SDK từ catalog (`catalog.GenerateTypeDefinitions`, sinh runtime từ registry làm source of truth) — inject 1 lần vào context mỗi run/resume qua `RouterOptions.ModelSDKTypes`; model đọc types ~1k tokens thay vì mô tả từng tool; system prompt đã cập nhật ("chỉ search khi cần JSDoc chi tiết").
+2. ✅ Raw tool results **ở lại trong sandbox**: `sandbox.ResultStore` (TTL 15 phút, bounded 64 entries, key theo run/request → cross-tenant không đọc được) + meta-tool `readResult({resultId})` (model-visible). `execute` chỉ trả preview ≤1 KiB + `resultId`; model gọi `readResult` khi cần full data — thay `compactToolFeedback` cắt cụt 8 KiB.
+3. ⏳ MCP exposure: chỉ khi có nhu cầu client ngoài (IDE, Claude) — giữ registry hiện tại làm source of truth, MCP là một adapter read-only.
 
 ### Không làm (chủ động loại)
 - ❌ Assistant sang Cloudflare Workers / Agents SDK — phá nguyên tắc §1.

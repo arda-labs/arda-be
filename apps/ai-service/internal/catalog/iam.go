@@ -213,11 +213,12 @@ func entryMatches(entry CatalogEntry, search string) bool {
 
 func firstJSDocLine(jsdoc string) string {
 	line := strings.TrimSpace(jsdoc)
-	if idx := strings.IndexByte(line, '\n'); idx != -1 {
-		line = line[:idx]
-	}
 	line = strings.TrimSpace(strings.TrimPrefix(line, "/**"))
+	if idx := strings.IndexByte(line, '\n'); idx != -1 {
+		line = strings.TrimSpace(line[:idx])
+	}
 	line = strings.TrimSpace(strings.TrimPrefix(line, "*"))
+	line = strings.TrimSpace(strings.TrimSuffix(line, "*/"))
 	return line
 }
 

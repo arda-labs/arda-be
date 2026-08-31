@@ -28,6 +28,10 @@ type RouterOptions struct {
 	ModelPool           *model.ClientPool
 	AgentMaxSteps       int
 	ModelSystemPrompt   string
+	// ModelSDKTypes is the generated arda.* TypeScript declaration file
+	// injected once into the model context so the model knows the whole SDK
+	// surface without re-searching. Empty = not injected (direct-tool mode).
+	ModelSDKTypes string
 	// ModelBaseURLAllowlist restricts tenant-provided base URLs; empty = disabled.
 	ModelBaseURLAllowlist []string
 	// Platform model config surfaced in GET /api/ai/settings when the tenant

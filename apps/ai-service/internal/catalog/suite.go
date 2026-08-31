@@ -17,15 +17,25 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
+// resultPreviewLimit bounds how much raw output is echoed back to the model
+// inline; anything larger stays in the sandbox ResultStore and is fetched via
+// readResult (Cloudflare code-mode pattern).
+const resultPreviewLimit = 1 << 10
+
 type CodeModeSuite struct {
 	SearchTool  tools.Tool
 	ExecuteTool tools.Tool
+	ReadTool    tools.Tool
 	Catalog     *Index
 	Engine      *sandbox.Engine
 	Registry    *DispatcherRegistry
+	ResultStore *sandbox.ResultStore
+	// TypeDefs is the generated arda.* TypeScript declaration file injected
+	// into the model context once per run.
+	TypeDefs string
 }
 
-// NewCodeModeSuite builds the complete 2-meta-tool suite (search & execute)
+// NewCodeModeSuite builds the 3-meta-tool suite (search & execute & readResult)
 // backed by the Goja sandbox. Clients carry the service identity and delegate
 // subject headers to target services.
 func NewCodeModeSuite(
@@ -49,6 +59,7 @@ func NewCodeModeSuite(
 	RegisterBuiltinCatalog(dispatcherReg, crmClient, financeClient, iamClient, searcher)
 	catalogIndex := NewIndex(dispatcherReg.AllEntries())
 	sandboxEngine := sandbox.NewEngine(dispatcherReg)
+	resultStore := sandbox.NewResultStore()
 
 	searchTool := tools.NewSearchMetaTool(func(query, domain string, scope tools.Context) (string, int, error) {
 		entries := catalogIndex.Search(query, domain, scope, 5)
@@ -61,11 +72,28 @@ func NewCodeModeSuite(
 			return nil, err
 		}
 
+		// Raw output stays in the sandbox store; the model gets a bounded
+		// preview plus a resultId to fetch the full data via readResult.
+		rawOutput, _ := json.Marshal(res.Output)
+		resultID := resultStore.Put(scope.RequestID, rawOutput, res.Logs)
+
 		out := map[string]any{
-			"output":        res.Output,
 			"durationMs":    res.DurationMs,
 			"methodsCalled": res.MethodsCalled,
 			"scriptHash":    res.ScriptHash,
+		}
+		if resultID != "" {
+			out["resultId"] = resultID
+		}
+		if len(rawOutput) > resultPreviewLimit {
+			// Too big to echo inline — tell the model where to read it.
+			out["output"] = map[string]any{
+				"truncated": true,
+				"size":      len(rawOutput),
+				"hint":      "call readResult({ resultId }) for the full output",
+			}
+		} else if len(rawOutput) > 0 {
+			out["output"] = json.RawMessage(rawOutput)
 		}
 		if len(res.Logs) > 0 {
 			out["logs"] = res.Logs
@@ -114,11 +142,25 @@ func NewCodeModeSuite(
 		return out, nil
 	})
 
+	readTool := tools.NewReadResultMetaTool(func(ctx context.Context, scope tools.Context, resultID string) (map[string]any, error) {
+		data, logs, ok := resultStore.Get(scope.RequestID, resultID)
+		if !ok {
+			return nil, fmt.Errorf("result %q not found or expired", resultID)
+		}
+		return map[string]any{
+			"output": json.RawMessage(data),
+			"logs":   logs,
+		}, nil
+	})
+
 	return &CodeModeSuite{
 		SearchTool:  searchTool,
 		ExecuteTool: executeTool,
+		ReadTool:    readTool,
 		Catalog:     catalogIndex,
 		Engine:      sandboxEngine,
 		Registry:    dispatcherReg,
+		ResultStore: resultStore,
+		TypeDefs:    GenerateTypeDefinitions(dispatcherReg.AllEntries()),
 	}
 }

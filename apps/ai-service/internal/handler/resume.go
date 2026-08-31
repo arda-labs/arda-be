@@ -159,6 +159,9 @@ func buildResumeMessages(
 	if identity := buildIdentityContext(scope); identity != "" {
 		messages = append(messages, model.Message{Role: "system", Content: identity})
 	}
+	if sdkTypes := sdkTypesMessage(options.ModelSDKTypes); sdkTypes != nil {
+		messages = append(messages, *sdkTypes)
+	}
 	if items, err := store.RunMessages(ctx, exec.Run); err == nil {
 		for _, item := range items {
 			if item.Content == "" {
