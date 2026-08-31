@@ -6,6 +6,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/handler"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
@@ -42,6 +43,11 @@ func NewRouter(financeHandler *handler.FinanceHandler, approvalHandler *handler.
 	mux.HandleFunc("/api/finance/accounts/", func(w http.ResponseWriter, r *http.Request) {
 		financeHandler.GetAccount(w, r)
 	})
+
+	// Internal AI surface: ai-service calls here with a signed caller
+	// assertion and the delegated subject as headers. Resource-level scoping
+	// still applies inside the handler (tenant from X-Tenant-Id).
+	mux.Handle("/internal/ai/accounts/{id}", internalAIService(method("GET", financeHandler.GetAccount)))
 
 	// Business operation transactions
 	mux.HandleFunc("/api/finance/incoming-transactions", func(w http.ResponseWriter, r *http.Request) {
@@ -138,4 +144,18 @@ func method(method string, next http.HandlerFunc) http.HandlerFunc {
 
 func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
+}
+
+// internalAIService authenticates the ai-service caller on the internal AI
+// surface. Missing/invalid tokens are hard-rejected; the delegated subject
+// (X-Tenant-Id, X-User-Id, ...) is forwarded by the caller, not trusted from
+// browsers — this route is never exposed to them.
+func internalAIService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
+		})
+	}
+	return identity.RequireServiceAuth(secret, "finance-service", identity.AllowedSources("ai-service"))(next)
 }

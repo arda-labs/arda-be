@@ -35,6 +35,23 @@ func (h *CustomerHandler) Customers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// InternalAIGetCustomer serves the internal AI surface GET
+// /internal/ai/customers/{id}. The caller (ai-service) is authenticated by
+// RequireServiceAuth at the router; this handler reuses the same scoping and
+// redaction rules as the public route for the delegated subject headers.
+func (h *CustomerHandler) InternalAIGetCustomer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, r, http.StatusNotFound, "customer not found")
+		return
+	}
+	h.getCustomer(w, r, id)
+}
+
 func (h *CustomerHandler) CustomerByID(w http.ResponseWriter, r *http.Request) {
 	id, action := customerPath(r.URL.Path)
 	if id == "" {

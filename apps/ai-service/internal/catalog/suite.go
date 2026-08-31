@@ -7,13 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox"
+	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
@@ -25,12 +25,13 @@ type CodeModeSuite struct {
 	Registry    *DispatcherRegistry
 }
 
-// NewCodeModeSuite builds the complete 2-meta-tool suite (search & execute) backed by the Goja sandbox.
+// NewCodeModeSuite builds the complete 2-meta-tool suite (search & execute)
+// backed by the Goja sandbox. Clients carry the service identity and delegate
+// subject headers to target services.
 func NewCodeModeSuite(
-	crmBaseURL string,
-	financeBaseURL string,
-	iamBaseURL string,
-	httpClient *http.Client,
+	crmClient *svcclient.CRMClient,
+	financeClient *svcclient.FinanceClient,
+	iamClient *svcclient.IAMClient,
 	db *sql.DB,
 	store repository.RunStore,
 	enableHITL bool,
@@ -45,7 +46,7 @@ func NewCodeModeSuite(
 		searcher = sqlSearcher
 	}
 
-	RegisterBuiltinCatalog(dispatcherReg, crmBaseURL, financeBaseURL, iamBaseURL, httpClient, searcher)
+	RegisterBuiltinCatalog(dispatcherReg, crmClient, financeClient, iamClient, searcher)
 	catalogIndex := NewIndex(dispatcherReg.AllEntries())
 	sandboxEngine := sandbox.NewEngine(dispatcherReg)
 

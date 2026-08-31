@@ -2,43 +2,20 @@ package catalog
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
-type CustomerSummary struct {
-	ID           string    `json:"id"`
-	CustomerCode string    `json:"customerCode"`
-	Name         string    `json:"name"`
-	CustomerType string    `json:"customerType"`
-	Status       string    `json:"status"`
-	Segment      string    `json:"segment,omitempty"`
-	Rank         string    `json:"rank,omitempty"`
-	RiskLevel    string    `json:"riskLevel,omitempty"`
-	OrgID        string    `json:"orgId"`
-	UpdatedAt    time.Time `json:"updatedAt"`
-}
-
-type customerEnvelope struct {
-	Result CustomerSummary `json:"result"`
-}
-
 // RegisterCRMCatalog registers CRM SDK methods (arda.crm.*) that proxy to the
-// CRM service with delegated identity headers.
-func RegisterCRMCatalog(reg *DispatcherRegistry, crmBaseURL string, httpClient *http.Client) {
-	cleanCRMURL := strings.TrimRight(strings.TrimSpace(crmBaseURL), "/")
-	if cleanCRMURL == "" {
+// CRM service internal surface through the typed client. The dispatchers only
+// validate arguments and convert the verified AI scope to delegated subject
+// headers; the signed caller identity is added by the transport.
+func RegisterCRMCatalog(reg *DispatcherRegistry, crmClient *svcclient.CRMClient) {
+	if crmClient == nil || crmClient.BaseURL == "" {
 		return
-	}
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 5 * time.Second}
 	}
 
 	// 1. arda.crm.getCustomer (Read)
@@ -63,38 +40,9 @@ func RegisterCRMCatalog(reg *DispatcherRegistry, crmBaseURL string, httpClient *
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
 			customerID, _ := args["customerId"].(string)
-			customerID = strings.TrimSpace(customerID)
-			if customerID == "" || len(customerID) > 128 {
-				return nil, fmt.Errorf("customerId is required (max 128 characters)")
-			}
-
-			target := cleanCRMURL + "/api/crm/customers/" + url.PathEscape(customerID)
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+			c, err := crmClient.GetCustomer(ctx, scopeToMetadata(scope), strings.TrimSpace(customerID))
 			if err != nil {
-				return nil, fmt.Errorf("create CRM request: %w", err)
-			}
-
-			setDelegatedHeaders(req, scope)
-
-			resp, err := httpClient.Do(req)
-			if err != nil {
-				return nil, fmt.Errorf("CRM request failed: %w", err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
-				return nil, fmt.Errorf("CRM returned status %d", resp.StatusCode)
-			}
-
-			var envelope customerEnvelope
-			if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&envelope); err != nil {
-				return nil, fmt.Errorf("decode CRM response: %w", err)
-			}
-
-			c := envelope.Result
-			if strings.TrimSpace(c.ID) == "" {
-				return nil, fmt.Errorf("CRM customer response missing identity")
+				return nil, err
 			}
 			return c, nil
 		},
@@ -122,22 +70,9 @@ func RegisterCRMCatalog(reg *DispatcherRegistry, crmBaseURL string, httpClient *
 			Timeout:             3 * time.Second,
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
-			// When called directly on resume approval: execute the actual export preparation
 			customerID, _ := args["customerId"].(string)
-			if strings.TrimSpace(customerID) == "" {
-				return nil, fmt.Errorf("customerId is required")
-			}
 			format, _ := args["format"].(string)
-			if format == "" {
-				format = "csv"
-			}
-
-			return map[string]any{
-				"status":     "PREPARED",
-				"customerId": customerID,
-				"format":     format,
-				"summary":    fmt.Sprintf("Export for customer %s in %s format is ready for download.", customerID, strings.ToUpper(format)),
-			}, nil
+			return crmClient.ExportCustomer(ctx, scopeToMetadata(scope), strings.TrimSpace(customerID), format)
 		},
 	)
 }

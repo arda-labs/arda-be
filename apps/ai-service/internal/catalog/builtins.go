@@ -1,9 +1,8 @@
 package catalog
 
 import (
-	"net/http"
-
 	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
+	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 )
 
 // RegisterBuiltinCatalog registers all default SDK methods grouped by domain:
@@ -11,17 +10,13 @@ import (
 // dispatchers; this function is the single wiring point.
 func RegisterBuiltinCatalog(
 	reg *DispatcherRegistry,
-	crmBaseURL string,
-	financeBaseURL string,
-	iamBaseURL string,
-	httpClient *http.Client,
+	crmClient *svcclient.CRMClient,
+	financeClient *svcclient.FinanceClient,
+	iamClient *svcclient.IAMClient,
 	searcher knowledge.Searcher,
 ) {
-	if httpClient == nil {
-		httpClient = &http.Client{}
-	}
-	RegisterCRMCatalog(reg, crmBaseURL, httpClient)
+	RegisterCRMCatalog(reg, crmClient)
 	RegisterKnowledgeCatalog(reg, searcher)
-	RegisterIAMCatalog(reg, iamBaseURL, httpClient)
-	RegisterFinanceCatalog(reg, financeBaseURL, httpClient)
+	RegisterIAMCatalog(reg, iamClient)
+	RegisterFinanceCatalog(reg, financeClient)
 }

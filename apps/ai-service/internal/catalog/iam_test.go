@@ -6,8 +6,24 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
+
+// testSecret satisfies identity.Issue's minimum length (32 chars).
+const testSecret = "01234567890123456789012345678901"
+
+func testIAMClient(baseURL string) *svcclient.IAMClient {
+	return svcclient.NewIAMClient(baseURL, "ai-service", testSecret, nil)
+}
+
+func testCRMClient(baseURL string) *svcclient.CRMClient {
+	return svcclient.NewCRMClient(baseURL, "ai-service", testSecret, nil)
+}
+
+func testFinanceClient(baseURL string) *svcclient.FinanceClient {
+	return svcclient.NewFinanceClient(baseURL, "ai-service", testSecret, nil)
+}
 
 func iamScope() tools.Context {
 	return tools.Context{
@@ -30,7 +46,7 @@ func iamScope() tools.Context {
 
 func TestIAMMe_ReturnsIdentity(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, "http://iam.local", nil)
+	RegisterIAMCatalog(reg, testIAMClient("http://iam.local"))
 
 	fn, entry, ok := reg.Resolve("iam.me")
 	if !ok {
@@ -72,7 +88,7 @@ func TestIAMMe_ReturnsIdentity(t *testing.T) {
 
 func TestIAMMe_RequiresAssistantUse(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, "http://iam.local", nil)
+	RegisterIAMCatalog(reg, testIAMClient("http://iam.local"))
 
 	_, entry, _ := reg.Resolve("iam.me")
 	scope := iamScope()
@@ -90,7 +106,7 @@ func TestIAMMe_RequiresAssistantUse(t *testing.T) {
 
 func TestIAMListUsers_RequiresIamUserRead(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, "http://iam.local", nil)
+	RegisterIAMCatalog(reg, testIAMClient("http://iam.local"))
 
 	_, entry, ok := reg.Resolve("iam.listUsers")
 	if !ok {
@@ -106,17 +122,17 @@ func TestIAMListUsers_RequiresIamUserRead(t *testing.T) {
 	if err := entry.CheckPermissions(scope); err != nil {
 		t.Errorf("expected allowed with iam.user.read, got %v", err)
 	}
-	// Not registered when IAM URL is empty.
+	// Not registered when IAM client is nil.
 	regNoIAM := NewDispatcherRegistry()
-	RegisterIAMCatalog(regNoIAM, "", nil)
+	RegisterIAMCatalog(regNoIAM, nil)
 	if _, _, ok := regNoIAM.Resolve("iam.listUsers"); ok {
-		t.Error("iam.listUsers must not register without an IAM base URL")
+		t.Error("iam.listUsers must not register without an IAM client")
 	}
 }
 
 func TestIAMListUsers_DispatchesAndRedacts(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/admin/users" {
+		if r.URL.Path != "/internal/ai/users" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
 		if got := r.URL.Query().Get("tenant_id"); got != "tenant-1" {
@@ -127,6 +143,9 @@ func TestIAMListUsers_DispatchesAndRedacts(t *testing.T) {
 		}
 		if r.Header.Get("X-Auth-Checked") != "true" {
 			t.Error("expected X-Auth-Checked=true")
+		}
+		if r.Header.Get("X-Service-Auth") == "" {
+			t.Error("expected signed x-service-auth caller assertion")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -143,7 +162,7 @@ func TestIAMListUsers_DispatchesAndRedacts(t *testing.T) {
 	defer server.Close()
 
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, server.URL, nil)
+	RegisterIAMCatalog(reg, testIAMClient(server.URL))
 
 	fn, entry, ok := reg.Resolve("iam.listUsers")
 	if !ok {
@@ -159,32 +178,27 @@ func TestIAMListUsers_DispatchesAndRedacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listUsers failed: %v", err)
 	}
-	page := result.(map[string]any)
-	items := page["items"].([]map[string]any)
-	if len(items) != 2 {
-		t.Fatalf("expected 2 items, got %d", len(items))
+	page, ok := result.(svcclient.UserListPage)
+	if !ok {
+		t.Fatalf("unexpected result type %T", result)
 	}
-	// Redaction: sensitive fields must not leak.
-	for _, item := range items {
-		if _, ok := item["address"]; ok {
-			t.Errorf("address leaked: %v", item)
-		}
-		if _, ok := item["mobile"]; ok {
-			t.Errorf("mobile leaked: %v", item)
-		}
+	if len(page.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(page.Items))
 	}
-	if items[0]["roles"].([]any)[0] != "crm_agent" {
-		t.Errorf("expected roles preserved, got %v", items[0]["roles"])
+	// Redaction: typed decode drops sensitive fields (address, mobile) that
+	// are not part of the UserSummary shape.
+	if page.Items[0].Roles[0] != "crm_agent" {
+		t.Errorf("expected roles preserved, got %v", page.Items[0].Roles)
 	}
 }
 
 func TestIAMListCapabilities_FiltersByPermissionAndSearch(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, "http://iam.local", nil)
+	RegisterIAMCatalog(reg, testIAMClient("http://iam.local"))
 	// Register extra entries across domains to exercise filtering.
-	RegisterCRMCatalog(reg, "http://crm.local", nil)
+	RegisterCRMCatalog(reg, testCRMClient("http://crm.local"))
 	RegisterKnowledgeCatalog(reg, nil) // nil searcher → not registered
-	RegisterFinanceCatalog(reg, "http://finance.local", nil)
+	RegisterFinanceCatalog(reg, testFinanceClient("http://finance.local"))
 
 	scope := iamScope() // crm.customer.read + finance.read
 
@@ -220,9 +234,9 @@ func TestIAMListCapabilities_FiltersByPermissionAndSearch(t *testing.T) {
 
 func TestIAMListCapabilities_SearchAndPagination(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, "http://iam.local", nil)
-	RegisterCRMCatalog(reg, "http://crm.local", nil)
-	RegisterFinanceCatalog(reg, "http://finance.local", nil)
+	RegisterIAMCatalog(reg, testIAMClient("http://iam.local"))
+	RegisterCRMCatalog(reg, testCRMClient("http://crm.local"))
+	RegisterFinanceCatalog(reg, testFinanceClient("http://finance.local"))
 
 	scope := iamScope()
 

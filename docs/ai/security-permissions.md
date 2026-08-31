@@ -65,3 +65,79 @@ error, or audit write failure must never turn into a successful mutation.
 - tool schema extra fields, oversized inputs, replayed idempotency keys;
 - provider timeout, partial stream, browser reconnect, and duplicate resume;
 - redaction checks for logs, audit, transcript, metrics, and error responses.
+
+## Service-to-service: caller identity vs delegated subject
+
+Every tool dispatch from ai-service to a domain service (CRM, IAM, finance,
+...) crosses an internal boundary. Two facts are kept separate on that
+boundary:
+
+- **Caller identity** — *which service* is calling. Signed with the shared
+  `ARDA_SERVICE_AUTH_SECRET` as a short-lived `x-service-auth` HMAC assertion
+  (`libs/go/arda-grpc/identity`). Never derived from request arguments.
+- **Delegated subject** — *which user/tenant/org the caller acts for*.
+  Forwarded as `X-User-Id`, `X-Tenant-Id`, `X-Org-Id`, `X-User-Org-Ids`,
+  `X-Roles`, `X-Permissions`, `X-Auth-Checked` headers
+  (`libs/go/arda-grpc/metadata`). Built **only** from the gateway-verified AI
+  scope (`scopeToMetadata` in `apps/ai-service/internal/catalog`); tool
+  arguments can never set these headers.
+
+```
+Gateway → user auth → ai-service
+                            │
+              ┌─────────────┴─────────────┐
+         Caller identity            Delegated subject
+         ai-service (signed)        user/tenant/org (Context)
+              └──────────┬──────────────┘
+                         │ svcclient (typed clients)
+                         │ x-service-auth + subject headers
+                         ▼
+              CRM / IAM / Finance  ← /internal/ai/* routes
+                         │ RequireServiceAuth (strict)
+                         ▼
+              resource-level authorization (target tự check)
+```
+
+### Contract
+
+1. **`/internal/ai/*` is hard-closed.** Missing, invalid, expired, or
+   wrong-audience `x-service-auth` → `401`; caller not in the allowed-source
+   set → `403`. There is no fallback or pass-through
+   (`identity.RequireServiceAuth`). Precedent: IAM's existing
+   `internalService` for `auth-gateway`.
+2. **The subject comes from the verified context, not from the client.** The
+   dispatcher converts `tools.Context` (gateway-injected) into
+   `metadata.Context`; typed clients (`svcclient`) reject any attempt to
+   override identity headers from tool arguments by construction.
+3. **Replay protection is a bounded window, not a one-time token.** Tokens
+   carry `source + audience + issued/expiry + nonce` and are valid ≤ 5
+   minutes; there is no server-side replay store yet. On one cluster this
+   reduces replay risk without per-service secrets; the nonce exists for
+   future audit/correlation. Recorded limitation, not a design goal.
+4. **`X-Permissions`/`X-Roles` are informational hints.** The ai-service
+   re-checks `RequiredPermissions` before dispatch, but the *target service*
+   remains the authority: each internal handler re-validates tenant/org/user
+   scope (e.g. IAM `requiredAdminTargetTenant`, CRM `getCustomer` scoping)
+   and performs resource-level authorization on the delegated subject.
+5. **Retry policy is method-aware.** `svcclient.Do` auto-retries idempotent
+   methods (GET/HEAD/OPTIONS) once on transient errors/5xx; POST/PUT/PATCH
+   are never auto-retried. Responses are size-bounded (`MaxResponse`).
+6. **Mutations stay human-in-the-loop.** `Kind: confirm` SDK methods produce
+   an `ApprovalProposal`; the dispatcher never executes them directly.
+
+### Checklist: thêm service mới
+
+- [ ] Tạo `svcclient/<service>.go`: `New<Service>Client(baseURL, "ai-service",
+      secret, hc)` + method typed cho từng SDK read/confirm.
+- [ ] Đăng ký catalog trong `RegisterBuiltinCatalog` (domain registrar mới
+      hoặc thêm vào registrar hiện có).
+- [ ] Thêm route `GET /internal/ai/...` trong service đích với
+      `identity.RequireServiceAuth(secret, "<service>", identity.AllowedSources("ai-service"))`.
+- [ ] Handler internal route **re-validate tenant/org/user scope** từ delegated
+      headers (không tin `X-Permissions`).
+- [ ] Response dùng envelope chuẩn (`{result: ...}`) để typed client decode
+      bounded; không trả raw model.
+- [ ] Khai báo `ARDA_SERVICE_AUTH_SECRET` trong manifest/deployment của cả
+      ai-service và service đích.
+- [ ] Test: token đúng → 200, thiếu → 401, sai source → 403, response vượt
+      `MaxResponse` → error.

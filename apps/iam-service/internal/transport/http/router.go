@@ -190,6 +190,11 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 	mux.Handle("/internal/iam/sessions", internalService(method("POST", sessionHandler.InternalCreateSession)))
 	mux.Handle("/internal/iam/sessions/{id}", internalService(method("DELETE", sessionHandler.InternalRevokeSession)))
 
+	// Internal AI surface: ai-service calls here with a signed caller
+	// assertion and the delegated subject as headers. ListUsers re-validates
+	// the delegated actor/tenant scope before serving (requiredAdminTargetTenant).
+	mux.Handle("/internal/ai/users", internalAIService(method("GET", adminHandler.ListUsers)))
+
 	// ── Session API ──
 	mux.HandleFunc("/api/iam/me/sessions", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -268,6 +273,20 @@ func internalService(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// internalAIService authenticates the ai-service caller on the internal AI
+// surface. Missing/invalid tokens are hard-rejected; the delegated subject
+// (X-Tenant-Id, X-User-Id, ...) is forwarded by the caller, not trusted from
+// browsers — this route is never exposed to them.
+func internalAIService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
+		})
+	}
+	return identity.RequireServiceAuth(secret, "iam-service", identity.AllowedSources("ai-service"))(next)
 }
 
 func method(method string, next http.HandlerFunc) http.HandlerFunc {
