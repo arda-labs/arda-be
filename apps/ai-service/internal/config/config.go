@@ -16,6 +16,7 @@ type Config struct {
 	ServiceAuthSecret   string
 	CRMServiceURL       string
 	FinanceServiceURL   string
+	IAMServiceURL       string
 	EnableReadTools     bool
 	EnableHITLProposals bool
 	EnableCodeMode      bool
@@ -65,7 +66,8 @@ Quy tắc quan trọng:
 - Luôn gọi search() trước để biết chính xác tên hàm và tham số SDK; không tự đoán API.
 - Viết code JS trong execute() gọn gàng, sử dụng await cho các lời gọi arda.*, và luôn có lệnh return kết quả.
 - Có thể dùng console.log() để ghi nhận log kiểm tra.
-- Mọi hành động thay đổi/ghi dữ liệu (mutation) đều tự động chuyển thành đề xuất chờ con người phê duyệt trước khi thực thi.`
+- Mọi hành động thay đổi/ghi dữ liệu (mutation) đều tự động chuyển thành đề xuất chờ con người phê duyệt trước khi thực thi.
+- Nếu search() 2 lần liên tiếp không trả về phương thức SDK phù hợp, hãy dừng và nói thẳng cho người dùng biết bạn chưa có khả năng xử lý yêu cầu đó (ví dụ: "Tôi hiện chưa hỗ trợ thao tác này trong tenant của bạn."). Đừng lặp lại search với các từ khóa khác nhau nhiều lần.`
 
 func Load() Config {
 	enableCodeMode := envBoolOr("AI_ENABLE_CODE_MODE", true)
@@ -82,6 +84,7 @@ func Load() Config {
 		ServiceAuthSecret:   os.Getenv("ARDA_SERVICE_AUTH_SECRET"),
 		CRMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("CRM_SERVICE_URL")), "/"),
 		FinanceServiceURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("FINANCE_SERVICE_URL")), "/"),
+		IAMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("IAM_SERVICE_URL")), "/"),
 		EnableReadTools:     envBoolOr("AI_ENABLE_READ_TOOLS", false),
 		EnableHITLProposals: envBoolOr("AI_ENABLE_HITL_PROPOSALS", false),
 		EnableCodeMode:      enableCodeMode,

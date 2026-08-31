@@ -29,6 +29,7 @@ type CodeModeSuite struct {
 func NewCodeModeSuite(
 	crmBaseURL string,
 	financeBaseURL string,
+	iamBaseURL string,
 	httpClient *http.Client,
 	db *sql.DB,
 	store repository.RunStore,
@@ -44,7 +45,7 @@ func NewCodeModeSuite(
 		searcher = sqlSearcher
 	}
 
-	RegisterBuiltinCatalog(dispatcherReg, crmBaseURL, financeBaseURL, httpClient, searcher)
+	RegisterBuiltinCatalog(dispatcherReg, crmBaseURL, financeBaseURL, iamBaseURL, httpClient, searcher)
 	catalogIndex := NewIndex(dispatcherReg.AllEntries())
 	sandboxEngine := sandbox.NewEngine(dispatcherReg)
 

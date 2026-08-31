@@ -81,7 +81,7 @@ func main() {
 	if cfg.EnableReadTools {
 		// Code Mode: Expose ONLY the 2 Meta-Tools (search & execute) to the model.
 		// Domain APIs are dispatched internally through the embedded Goja sandbox.
-		suite := catalog.NewCodeModeSuite(cfg.CRMServiceURL, cfg.FinanceServiceURL, nil, db, store, cfg.EnableHITLProposals, buildKnowledgeEmbedder(cfg, logger))
+		suite := catalog.NewCodeModeSuite(cfg.CRMServiceURL, cfg.FinanceServiceURL, cfg.IAMServiceURL, nil, db, store, cfg.EnableHITLProposals, buildKnowledgeEmbedder(cfg, logger))
 		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool)
 	}
 

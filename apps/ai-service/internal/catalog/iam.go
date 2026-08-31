@@ -2,6 +2,11 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -9,10 +14,11 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
-// RegisterIAMCatalog registers IAM self-service SDK methods (arda.iam.*).
-// These answer "who am I" and "what can I do" from the gateway-injected
-// identity context — no additional service call is made.
-func RegisterIAMCatalog(reg *DispatcherRegistry) {
+// RegisterIAMCatalog registers IAM SDK methods (arda.iam.*). Self-service
+// methods (me, listCapabilities) answer from the gateway-injected identity
+// context; admin methods (listUsers) proxy to the IAM service with delegated
+// identity headers.
+func RegisterIAMCatalog(reg *DispatcherRegistry, iamBaseURL string, httpClient *http.Client) {
 	reg.Register(
 		CatalogEntry{
 			MethodName: "iam.me",
@@ -77,6 +83,131 @@ func RegisterIAMCatalog(reg *DispatcherRegistry) {
 			return listCapabilities(reg, scope, args)
 		},
 	)
+
+	// arda.iam.listUsers — admin read of the tenant's user directory. Requires
+	// iam.user.read; the IAM handler re-validates the delegated actor/tenant
+	// scope before serving.
+	cleanIAMURL := strings.TrimRight(strings.TrimSpace(iamBaseURL), "/")
+	if cleanIAMURL != "" {
+		if httpClient == nil {
+			httpClient = &http.Client{Timeout: 5 * time.Second}
+		}
+		reg.Register(
+			CatalogEntry{
+				MethodName: "iam.listUsers",
+				SDKPath:    "arda.iam.listUsers",
+				Domain:     "iam",
+				Signature:  "arda.iam.listUsers(args: { search?: string; status?: string; limit?: number; cursor?: number }): Promise<UserListPage>;",
+				JSDoc: `/**
+ * List users in the active tenant's directory (admin). Returns id, username,
+ * email, name, status, roles per user, with pagination.
+ * @param args.search Free-text filter on username/email/name (optional)
+ * @param args.status Filter by status: ACTIVE, SUSPENDED, DISABLED, PENDING (optional)
+ * @param args.limit Page size, 1-50 (default 20)
+ * @param args.cursor One-based page number (default 1)
+ * @returns UserListPage { items: [{ id, username, email, name, status, roles }], total, page, perPage }
+ * @requires iam.user.read
+ * @domain iam
+ */`,
+				Keywords:            []string{"iam", "user", "users", "list", "directory", "account", "member", "staff", "admin", "search"},
+				Kind:                "read",
+				RequiredPermissions: []string{"iam.user.read"},
+				Risk:                "medium",
+				Timeout:             3 * time.Second,
+			},
+			func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
+				return listUsers(ctx, cleanIAMURL, httpClient, scope, args)
+			},
+		)
+	}
+}
+
+func listUsers(ctx context.Context, iamBaseURL string, httpClient *http.Client, scope tools.Context, args map[string]any) (any, error) {
+	search, _ := args["search"].(string)
+	search = strings.TrimSpace(search)
+	if len(search) > 128 {
+		return nil, fmt.Errorf("search is too long (max 128 characters)")
+	}
+
+	status, _ := args["status"].(string)
+	status = strings.TrimSpace(strings.ToUpper(status))
+
+	limit := 20
+	if l, ok := args["limit"].(float64); ok && l > 0 {
+		limit = int(l)
+		if limit > 50 {
+			limit = 50
+		}
+	}
+
+	page := 1
+	if p, ok := args["cursor"].(float64); ok && p > 0 {
+		page = int(p)
+	}
+
+	u, err := url.Parse(iamBaseURL + "/api/admin/users")
+	if err != nil {
+		return nil, fmt.Errorf("parse IAM URL: %w", err)
+	}
+	q := u.Query()
+	q.Set("tenant_id", scope.TenantID)
+	q.Set("page", fmt.Sprintf("%d", page))
+	q.Set("size", fmt.Sprintf("%d", limit))
+	if search != "" {
+		q.Set("q", search)
+	}
+	if status != "" {
+		q.Set("status", status)
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create IAM request: %w", err)
+	}
+	setDelegatedHeaders(req, scope)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("IAM request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+		return nil, fmt.Errorf("IAM returned status %d", resp.StatusCode)
+	}
+
+	var envelope struct {
+		Result struct {
+			Items []map[string]any `json:"items"`
+			Page  int              `json:"page"`
+			Total int              `json:"total"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 512<<10)).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("decode IAM response: %w", err)
+	}
+
+	// Redact to a bounded summary: id/username/email/name/status/roles.
+	items := make([]map[string]any, 0, len(envelope.Result.Items))
+	for _, raw := range envelope.Result.Items {
+		roles, _ := raw["roles"].([]any)
+		items = append(items, map[string]any{
+			"id":       raw["id"],
+			"username": raw["username"],
+			"email":    raw["email"],
+			"name":     raw["name"],
+			"status":   raw["status"],
+			"roles":    roles,
+		})
+	}
+	return map[string]any{
+		"items":   items,
+		"total":   envelope.Result.Total,
+		"page":    envelope.Result.Page,
+		"perPage": limit,
+	}, nil
 }
 
 func listCapabilities(reg *DispatcherRegistry, scope tools.Context, args map[string]any) (any, error) {

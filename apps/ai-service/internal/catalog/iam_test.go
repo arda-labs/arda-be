@@ -2,6 +2,8 @@ package catalog
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
@@ -28,7 +30,7 @@ func iamScope() tools.Context {
 
 func TestIAMMe_ReturnsIdentity(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg)
+	RegisterIAMCatalog(reg, "http://iam.local", nil)
 
 	fn, entry, ok := reg.Resolve("iam.me")
 	if !ok {
@@ -70,7 +72,7 @@ func TestIAMMe_ReturnsIdentity(t *testing.T) {
 
 func TestIAMMe_RequiresAssistantUse(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg)
+	RegisterIAMCatalog(reg, "http://iam.local", nil)
 
 	_, entry, _ := reg.Resolve("iam.me")
 	scope := iamScope()
@@ -86,9 +88,99 @@ func TestIAMMe_RequiresAssistantUse(t *testing.T) {
 	}
 }
 
+func TestIAMListUsers_RequiresIamUserRead(t *testing.T) {
+	reg := NewDispatcherRegistry()
+	RegisterIAMCatalog(reg, "http://iam.local", nil)
+
+	_, entry, ok := reg.Resolve("iam.listUsers")
+	if !ok {
+		t.Fatal("iam.listUsers not registered")
+	}
+	// Without iam.user.read → forbidden.
+	scope := iamScope()
+	if err := entry.CheckPermissions(scope); err == nil {
+		t.Error("expected permission error without iam.user.read")
+	}
+	// With iam.user.read → allowed.
+	scope.Permissions["iam.user.read"] = struct{}{}
+	if err := entry.CheckPermissions(scope); err != nil {
+		t.Errorf("expected allowed with iam.user.read, got %v", err)
+	}
+	// Not registered when IAM URL is empty.
+	regNoIAM := NewDispatcherRegistry()
+	RegisterIAMCatalog(regNoIAM, "", nil)
+	if _, _, ok := regNoIAM.Resolve("iam.listUsers"); ok {
+		t.Error("iam.listUsers must not register without an IAM base URL")
+	}
+}
+
+func TestIAMListUsers_DispatchesAndRedacts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/admin/users" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("tenant_id"); got != "tenant-1" {
+			t.Errorf("expected tenant_id query tenant-1, got %s", got)
+		}
+		if r.Header.Get("X-User-Id") != "user-1" {
+			t.Errorf("expected delegated X-User-Id user-1, got %s", r.Header.Get("X-User-Id"))
+		}
+		if r.Header.Get("X-Auth-Checked") != "true" {
+			t.Error("expected X-Auth-Checked=true")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"result": {
+				"items": [
+					{"id":"u1","username":"a","email":"a@x.vn","name":"User A","status":"ACTIVE","roles":["crm_agent"],"address":"secret-address"},
+					{"id":"u2","username":"b","email":"b@x.vn","name":"User B","status":"SUSPENDED","roles":[],"mobile":"0900"}
+				],
+				"page":1,"total":2
+			},
+			"success": true
+		}`))
+	}))
+	defer server.Close()
+
+	reg := NewDispatcherRegistry()
+	RegisterIAMCatalog(reg, server.URL, nil)
+
+	fn, entry, ok := reg.Resolve("iam.listUsers")
+	if !ok {
+		t.Fatal("iam.listUsers not registered")
+	}
+	scope := iamScope()
+	scope.Permissions["iam.user.read"] = struct{}{}
+	if err := entry.CheckPermissions(scope); err != nil {
+		t.Fatalf("permission check failed: %v", err)
+	}
+
+	result, err := fn(context.Background(), scope, map[string]any{"limit": float64(20)})
+	if err != nil {
+		t.Fatalf("listUsers failed: %v", err)
+	}
+	page := result.(map[string]any)
+	items := page["items"].([]map[string]any)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	// Redaction: sensitive fields must not leak.
+	for _, item := range items {
+		if _, ok := item["address"]; ok {
+			t.Errorf("address leaked: %v", item)
+		}
+		if _, ok := item["mobile"]; ok {
+			t.Errorf("mobile leaked: %v", item)
+		}
+	}
+	if items[0]["roles"].([]any)[0] != "crm_agent" {
+		t.Errorf("expected roles preserved, got %v", items[0]["roles"])
+	}
+}
+
 func TestIAMListCapabilities_FiltersByPermissionAndSearch(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg)
+	RegisterIAMCatalog(reg, "http://iam.local", nil)
 	// Register extra entries across domains to exercise filtering.
 	RegisterCRMCatalog(reg, "http://crm.local", nil)
 	RegisterKnowledgeCatalog(reg, nil) // nil searcher → not registered
@@ -128,7 +220,7 @@ func TestIAMListCapabilities_FiltersByPermissionAndSearch(t *testing.T) {
 
 func TestIAMListCapabilities_SearchAndPagination(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg)
+	RegisterIAMCatalog(reg, "http://iam.local", nil)
 	RegisterCRMCatalog(reg, "http://crm.local", nil)
 	RegisterFinanceCatalog(reg, "http://finance.local", nil)
 

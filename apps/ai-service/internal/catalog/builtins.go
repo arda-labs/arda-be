@@ -13,6 +13,7 @@ func RegisterBuiltinCatalog(
 	reg *DispatcherRegistry,
 	crmBaseURL string,
 	financeBaseURL string,
+	iamBaseURL string,
 	httpClient *http.Client,
 	searcher knowledge.Searcher,
 ) {
@@ -21,6 +22,6 @@ func RegisterBuiltinCatalog(
 	}
 	RegisterCRMCatalog(reg, crmBaseURL, httpClient)
 	RegisterKnowledgeCatalog(reg, searcher)
-	RegisterIAMCatalog(reg)
+	RegisterIAMCatalog(reg, iamBaseURL, httpClient)
 	RegisterFinanceCatalog(reg, financeBaseURL, httpClient)
 }
