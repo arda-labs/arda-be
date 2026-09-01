@@ -2,21 +2,18 @@ package catalog
 
 import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
-	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 )
 
-// RegisterBuiltinCatalog registers all default SDK methods grouped by domain:
-// crm, knowledge, iam, and finance. Each domain registrar owns its entries and
-// dispatchers; this function is the single wiring point.
+// RegisterBuiltinCatalog registers the hand-written SDK methods that do not
+// proxy a single internal HTTP route: identity self-service, capability
+// listing, knowledge search, and the local export stub. Direct internal
+// HTTP reads/mutations come from GeneratedCatalog() — see
+// RegisterGeneratedCatalog.
 func RegisterBuiltinCatalog(
 	reg *DispatcherRegistry,
-	crmClient *svcclient.CRMClient,
-	financeClient *svcclient.FinanceClient,
-	iamClient *svcclient.IAMClient,
 	searcher knowledge.Searcher,
 ) {
-	RegisterCRMCatalog(reg, crmClient)
+	RegisterCRMCatalog(reg)
 	RegisterKnowledgeCatalog(reg, searcher)
-	RegisterIAMCatalog(reg, iamClient)
-	RegisterFinanceCatalog(reg, financeClient)
+	RegisterIAMCatalog(reg)
 }

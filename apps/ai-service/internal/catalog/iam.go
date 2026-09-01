@@ -6,15 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
-// RegisterIAMCatalog registers IAM SDK methods (arda.iam.*). Self-service
-// methods (me, listCapabilities) answer from the gateway-injected identity
-// context; admin methods (listUsers) proxy to the IAM service internal surface
-// through the typed client.
-func RegisterIAMCatalog(reg *DispatcherRegistry, iamClient *svcclient.IAMClient) {
+// RegisterIAMCatalog registers IAM self-service SDK methods (arda.iam.*)
+// answered from the gateway-injected identity context. The admin directory
+// read (iam.listUsers) is generated from contracts/ai-internal/iam-v1.json —
+// see RegisterGeneratedCatalog.
+func RegisterIAMCatalog(reg *DispatcherRegistry) {
 	reg.Register(
 		CatalogEntry{
 			MethodName: "iam.me",
@@ -77,53 +76,6 @@ func RegisterIAMCatalog(reg *DispatcherRegistry, iamClient *svcclient.IAMClient)
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
 			return listCapabilities(reg, scope, args)
-		},
-	)
-
-	// arda.iam.listUsers — admin read of the tenant's user directory. Requires
-	// iam.user.read; the IAM handler re-validates the delegated actor/tenant
-	// scope before serving.
-	if iamClient == nil || iamClient.BaseURL == "" {
-		return
-	}
-	reg.Register(
-		CatalogEntry{
-			MethodName: "iam.listUsers",
-			SDKPath:    "arda.iam.listUsers",
-			Domain:     "iam",
-			Signature:  "arda.iam.listUsers(args: { search?: string; status?: string; limit?: number; cursor?: number }): Promise<UserListPage>;",
-			JSDoc: `/**
- * List users in the active tenant's directory (admin). Returns id, username,
- * email, name, status, roles per user, with pagination.
- * @param args.search Free-text filter on username/email/name (optional)
- * @param args.status Filter by status: ACTIVE, SUSPENDED, DISABLED, PENDING (optional)
- * @param args.limit Page size, 1-50 (default 20)
- * @param args.cursor One-based page number (default 1)
- * @returns UserListPage { items: [{ id, username, email, name, status, roles }], total, page, perPage }
- * @requires iam.user.read
- * @domain iam
- */`,
-			Keywords:            []string{"iam", "user", "users", "list", "directory", "account", "member", "staff", "admin", "search"},
-			Kind:                "read",
-			RequiredPermissions: []string{"iam.user.read"},
-			Risk:                "medium",
-			Timeout:             3 * time.Second,
-		},
-		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
-			params := svcclient.ListUsersParams{}
-			if search, ok := args["search"].(string); ok {
-				params.Search = search
-			}
-			if status, ok := args["status"].(string); ok {
-				params.Status = status
-			}
-			if limit, ok := args["limit"].(float64); ok && limit > 0 {
-				params.Limit = int(limit)
-			}
-			if cursor, ok := args["cursor"].(float64); ok && cursor > 0 {
-				params.Page = int(cursor)
-			}
-			return iamClient.ListUsers(ctx, scopeToMetadata(scope), params)
 		},
 	)
 }

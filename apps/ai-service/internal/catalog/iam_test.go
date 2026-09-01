@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,6 +26,14 @@ func testFinanceClient(baseURL string) *svcclient.FinanceClient {
 	return svcclient.NewFinanceClient(baseURL, "ai-service", testSecret, nil)
 }
 
+func genClients(iamURL, crmURL, financeURL string) ClientSet {
+	return ClientSet{
+		IAM:     testIAMClient(iamURL),
+		CRM:     testCRMClient(crmURL),
+		Finance: testFinanceClient(financeURL),
+	}
+}
+
 func iamScope() tools.Context {
 	return tools.Context{
 		TenantID:    "tenant-1",
@@ -44,9 +53,14 @@ func iamScope() tools.Context {
 	}
 }
 
+func registerFullCatalog(reg *DispatcherRegistry, set ClientSet) {
+	RegisterBuiltinCatalog(reg, nil)
+	RegisterGeneratedCatalog(reg, set)
+}
+
 func TestIAMMe_ReturnsIdentity(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, testIAMClient("http://iam.local"))
+	RegisterIAMCatalog(reg)
 
 	fn, entry, ok := reg.Resolve("iam.me")
 	if !ok {
@@ -88,7 +102,7 @@ func TestIAMMe_ReturnsIdentity(t *testing.T) {
 
 func TestIAMMe_RequiresAssistantUse(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, testIAMClient("http://iam.local"))
+	RegisterIAMCatalog(reg)
 
 	_, entry, _ := reg.Resolve("iam.me")
 	scope := iamScope()
@@ -104,9 +118,49 @@ func TestIAMMe_RequiresAssistantUse(t *testing.T) {
 	}
 }
 
-func TestIAMListUsers_RequiresIamUserRead(t *testing.T) {
+func TestGeneratedCatalog_RegistersAnnotatedEntries(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, testIAMClient("http://iam.local"))
+	registerFullCatalog(reg, genClients("http://iam.local", "http://crm.local", "http://finance.local"))
+
+	for _, method := range []string{"iam.listUsers", "crm.getCustomer", "finance.getAccount"} {
+		if _, entry, ok := reg.Resolve(method); !ok {
+			t.Errorf("%s not registered from contract", method)
+		} else if entry.Kind != "read" {
+			t.Errorf("%s: expected read kind, got %s", method, entry.Kind)
+		}
+	}
+
+	// Export stays manual and confirm-kind.
+	_, entry, ok := reg.Resolve("crm.exportCustomer")
+	if !ok {
+		t.Fatal("crm.exportCustomer not registered")
+	}
+	if entry.Kind != "confirm" {
+		t.Errorf("export: expected confirm kind, got %s", entry.Kind)
+	}
+	if entry.RequiredPermissions[0] != "crm.customer.manage" {
+		t.Errorf("export: expected crm.customer.manage, got %v", entry.RequiredPermissions)
+	}
+}
+
+func TestGeneratedCatalog_SkipsUnwiredServices(t *testing.T) {
+	reg := NewDispatcherRegistry()
+	registerFullCatalog(reg, ClientSet{})
+
+	for _, method := range []string{"iam.listUsers", "crm.getCustomer", "finance.getAccount"} {
+		if _, _, ok := reg.Resolve(method); ok {
+			t.Errorf("%s must not register without a service client", method)
+		}
+	}
+	// Self-service manual entries do not depend on service clients.
+	if _, _, ok := reg.Resolve("iam.me"); !ok {
+		t.Error("iam.me must register without any service client")
+	}
+}
+
+func TestGeneratedCatalog_ListUsersPermissions(t *testing.T) {
+	reg := NewDispatcherRegistry()
+	registerFullCatalog(reg, genClients("http://iam.local", "http://crm.local", "http://finance.local"))
 
 	_, entry, ok := reg.Resolve("iam.listUsers")
 	if !ok {
@@ -122,21 +176,21 @@ func TestIAMListUsers_RequiresIamUserRead(t *testing.T) {
 	if err := entry.CheckPermissions(scope); err != nil {
 		t.Errorf("expected allowed with iam.user.read, got %v", err)
 	}
-	// Not registered when IAM client is nil.
-	regNoIAM := NewDispatcherRegistry()
-	RegisterIAMCatalog(regNoIAM, nil)
-	if _, _, ok := regNoIAM.Resolve("iam.listUsers"); ok {
-		t.Error("iam.listUsers must not register without an IAM client")
-	}
 }
 
-func TestIAMListUsers_DispatchesAndRedacts(t *testing.T) {
+func TestGeneratedCatalog_ListUsersDispatchRedacts(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/internal/ai/users" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
 		if got := r.URL.Query().Get("tenant_id"); got != "tenant-1" {
 			t.Errorf("expected tenant_id query tenant-1, got %s", got)
+		}
+		if got := r.URL.Query().Get("size"); got != "20" {
+			t.Errorf("expected size=20, got %s", got)
+		}
+		if got := r.URL.Query().Get("q"); got != "nguyen" {
+			t.Errorf("expected q=nguyen from search arg, got %s", got)
 		}
 		if r.Header.Get("X-User-Id") != "user-1" {
 			t.Errorf("expected delegated X-User-Id user-1, got %s", r.Header.Get("X-User-Id"))
@@ -162,43 +216,149 @@ func TestIAMListUsers_DispatchesAndRedacts(t *testing.T) {
 	defer server.Close()
 
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, testIAMClient(server.URL))
+	registerFullCatalog(reg, genClients(server.URL, "", ""))
 
-	fn, entry, ok := reg.Resolve("iam.listUsers")
+	fn, _, ok := reg.Resolve("iam.listUsers")
 	if !ok {
 		t.Fatal("iam.listUsers not registered")
 	}
-	scope := iamScope()
-	scope.Permissions["iam.user.read"] = struct{}{}
-	if err := entry.CheckPermissions(scope); err != nil {
-		t.Fatalf("permission check failed: %v", err)
-	}
-
-	result, err := fn(context.Background(), scope, map[string]any{"limit": float64(20)})
+	result, err := fn(context.Background(), iamScope(), map[string]any{"limit": float64(20), "search": "nguyen"})
 	if err != nil {
 		t.Fatalf("listUsers failed: %v", err)
 	}
-	page, ok := result.(svcclient.UserListPage)
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	var page struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(raw, &page); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if len(page.Items) != 2 || page.Total != 2 {
+		t.Fatalf("expected 2 items/total 2, got %d/%d", len(page.Items), page.Total)
+	}
+	// Redaction: response allowlist drops fields not declared in the contract
+	// (address, mobile) even though the server returned them.
+	for key := range page.Items[0] {
+		if key == "address" || key == "mobile" {
+			t.Errorf("sensitive field %s leaked through the response allowlist", key)
+		}
+	}
+	if page.Items[0]["id"] != "u1" {
+		t.Errorf("expected id u1, got %v", page.Items[0]["id"])
+	}
+}
+
+func TestGeneratedCustomerDispatch_PathParamsAndRedaction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/ai/customers/C-1" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"result":{"id":"C-1","customerCode":"KH-001","name":"Cong ty A","identityNumbers":["0123"],"infoMap":{"x":1}},"success":true}`))
+	}))
+	defer server.Close()
+
+	reg := NewDispatcherRegistry()
+	registerFullCatalog(reg, genClients("", server.URL, ""))
+
+	fn, _, ok := reg.Resolve("crm.getCustomer")
 	if !ok {
-		t.Fatalf("unexpected result type %T", result)
+		t.Fatal("crm.getCustomer not registered")
 	}
-	if len(page.Items) != 2 {
-		t.Fatalf("expected 2 items, got %d", len(page.Items))
+	result, err := fn(context.Background(), iamScope(), map[string]any{"customerId": "C-1"})
+	if err != nil {
+		t.Fatalf("getCustomer failed: %v", err)
 	}
-	// Redaction: typed decode drops sensitive fields (address, mobile) that
-	// are not part of the UserSummary shape.
-	if page.Items[0].Roles[0] != "crm_agent" {
-		t.Errorf("expected roles preserved, got %v", page.Items[0].Roles)
+	raw, _ := json.Marshal(result)
+	var customer map[string]any
+	if err := json.Unmarshal(raw, &customer); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if customer["customerCode"] != "KH-001" {
+		t.Errorf("expected customerCode KH-001, got %v", customer["customerCode"])
+	}
+	if _, leaked := customer["identityNumbers"]; leaked {
+		t.Error("identityNumbers leaked through the response allowlist")
+	}
+	if _, leaked := customer["infoMap"]; leaked {
+		t.Error("infoMap leaked through the response allowlist")
+	}
+}
+
+func TestGeneratedCatalog_ArgValidation(t *testing.T) {
+	reg := NewDispatcherRegistry()
+	registerFullCatalog(reg, genClients("http://iam.local", "http://crm.local", "http://finance.local"))
+
+	cases := []struct {
+		name   string
+		path   string
+		args   map[string]any
+		expect string
+	}{
+		{"search too long", "iam.listUsers", map[string]any{"search": string(make([]byte, 200))}, "too long"},
+		{"limit over max", "iam.listUsers", map[string]any{"limit": float64(100)}, "must be <="},
+		{"limit not number", "iam.listUsers", map[string]any{"limit": "ten"}, "must be a number"},
+		{"status not enum", "iam.listUsers", map[string]any{"status": "GHOST"}, "must be one of"},
+		{"customerId required", "crm.getCustomer", map[string]any{}, "required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fn, _, ok := reg.Resolve(tc.path)
+			if !ok {
+				t.Fatalf("%s not registered", tc.path)
+			}
+			_, err := fn(context.Background(), iamScope(), tc.args)
+			if err == nil {
+				t.Fatalf("expected error containing %q", tc.expect)
+			}
+			if !contains(err.Error(), tc.expect) {
+				t.Fatalf("expected error containing %q, got %v", tc.expect, err)
+			}
+		})
+	}
+}
+
+func TestGeneratedCatalog_FinanceDispatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/ai/accounts/ACC-1" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"result":{"account":{"id":"ACC-1","code":"111","name":"Cash","type":"ASSET","normalBalance":"DEBIT","currency":"VND","isActive":true},"balance":{"amount":1000,"currency":"VND"}},"success":true}`))
+	}))
+	defer server.Close()
+
+	reg := NewDispatcherRegistry()
+	registerFullCatalog(reg, genClients("", "", server.URL))
+
+	fn, _, ok := reg.Resolve("finance.getAccount")
+	if !ok {
+		t.Fatal("finance.getAccount not registered")
+	}
+	result, err := fn(context.Background(), iamScope(), map[string]any{"accountId": "ACC-1"})
+	if err != nil {
+		t.Fatalf("getAccount failed: %v", err)
+	}
+	raw, _ := json.Marshal(result)
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	account, _ := payload["account"].(map[string]any)
+	if account == nil || account["code"] != "111" {
+		t.Errorf("expected account.code 111, got %v", payload)
+	}
+	// Untyped balance passes through the allowlist untouched.
+	if _, ok := payload["balance"].(map[string]any); !ok {
+		t.Errorf("expected balance object passthrough, got %v", payload["balance"])
 	}
 }
 
 func TestIAMListCapabilities_FiltersByPermissionAndSearch(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, testIAMClient("http://iam.local"))
-	// Register extra entries across domains to exercise filtering.
-	RegisterCRMCatalog(reg, testCRMClient("http://crm.local"))
-	RegisterKnowledgeCatalog(reg, nil) // nil searcher → not registered
-	RegisterFinanceCatalog(reg, testFinanceClient("http://finance.local"))
+	registerFullCatalog(reg, genClients("http://iam.local", "http://crm.local", "http://finance.local"))
 
 	scope := iamScope() // crm.customer.read + finance.read
 
@@ -209,8 +369,8 @@ func TestIAMListCapabilities_FiltersByPermissionAndSearch(t *testing.T) {
 	page := result.(map[string]any)
 	items := page["items"].([]map[string]any)
 
-	// Scope has crm.customer.read and finance.read but NOT crm.customer.export
-	// nor ai.knowledge.read → those must be filtered out.
+	// Scope has crm.customer.read and finance.read but NOT crm.customer.manage
+	// nor iam.user.read nor ai.knowledge.read → those must be filtered out.
 	seen := map[string]bool{}
 	for _, item := range items {
 		seen[item["sdkPath"].(string)] = true
@@ -225,7 +385,10 @@ func TestIAMListCapabilities_FiltersByPermissionAndSearch(t *testing.T) {
 		t.Error("expected arda.finance.getAccount in capabilities")
 	}
 	if seen["arda.crm.exportCustomer"] {
-		t.Error("arda.crm.exportCustomer must be filtered: missing crm.customer.export")
+		t.Error("arda.crm.exportCustomer must be filtered: missing crm.customer.manage")
+	}
+	if seen["arda.iam.listUsers"] {
+		t.Error("arda.iam.listUsers must be filtered: missing iam.user.read")
 	}
 	if seen["arda.knowledge.search"] {
 		t.Error("arda.knowledge.search must be filtered: nil searcher")
@@ -234,9 +397,7 @@ func TestIAMListCapabilities_FiltersByPermissionAndSearch(t *testing.T) {
 
 func TestIAMListCapabilities_SearchAndPagination(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterIAMCatalog(reg, testIAMClient("http://iam.local"))
-	RegisterCRMCatalog(reg, testCRMClient("http://crm.local"))
-	RegisterFinanceCatalog(reg, testFinanceClient("http://finance.local"))
+	registerFullCatalog(reg, genClients("http://iam.local", "http://crm.local", "http://finance.local"))
 
 	scope := iamScope()
 
@@ -277,4 +438,17 @@ func TestIAMListCapabilities_SearchAndPagination(t *testing.T) {
 	if page["hasMore"] != true {
 		t.Error("expected hasMore=true with limit=1")
 	}
+}
+
+func contains(haystack, needle string) bool {
+	return len(needle) == 0 || (len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0)
+}
+
+func indexOf(haystack, needle string) int {
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if haystack[i:i+len(needle)] == needle {
+			return i
+		}
+	}
+	return -1
 }

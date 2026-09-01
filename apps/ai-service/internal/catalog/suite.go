@@ -56,7 +56,12 @@ func NewCodeModeSuite(
 		searcher = sqlSearcher
 	}
 
-	RegisterBuiltinCatalog(dispatcherReg, crmClient, financeClient, iamClient, searcher)
+	RegisterBuiltinCatalog(dispatcherReg, searcher)
+	RegisterGeneratedCatalog(dispatcherReg, ClientSet{
+		CRM:     crmClient,
+		Finance: financeClient,
+		IAM:     iamClient,
+	})
 	catalogIndex := NewIndex(dispatcherReg.AllEntries())
 	sandboxEngine := sandbox.NewEngine(dispatcherReg)
 	resultStore := sandbox.NewResultStore()

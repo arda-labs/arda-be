@@ -5,50 +5,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
-// RegisterCRMCatalog registers CRM SDK methods (arda.crm.*) that proxy to the
-// CRM service internal surface through the typed client. The dispatchers only
-// validate arguments and convert the verified AI scope to delegated subject
-// headers; the signed caller identity is added by the transport.
-func RegisterCRMCatalog(reg *DispatcherRegistry, crmClient *svcclient.CRMClient) {
-	if crmClient == nil || crmClient.BaseURL == "" {
-		return
-	}
-
-	// 1. arda.crm.getCustomer (Read)
-	reg.Register(
-		CatalogEntry{
-			MethodName: "crm.getCustomer",
-			SDKPath:    "arda.crm.getCustomer",
-			Domain:     "crm",
-			Signature:  "arda.crm.getCustomer(args: { customerId: string }): Promise<CustomerSummary>;",
-			JSDoc: `/**
- * Read a redacted customer summary in the active tenant and organization scope.
- * @param args.customerId Arda customer identifier or customer code (max 128 chars)
- * @returns CustomerSummary { id, customerCode, name, status, segment, rank, riskLevel, orgId, updatedAt }
- * @requires crm.customer.read
- * @domain crm
- */`,
-			Keywords:            []string{"customer", "crm", "client", "code", "name", "status", "segment", "risk", "get", "read"},
-			Kind:                "read",
-			RequiredPermissions: []string{"crm.customer.read"},
-			Risk:                "low",
-			Timeout:             3 * time.Second,
-		},
-		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
-			customerID, _ := args["customerId"].(string)
-			c, err := crmClient.GetCustomer(ctx, scopeToMetadata(scope), strings.TrimSpace(customerID))
-			if err != nil {
-				return nil, err
-			}
-			return c, nil
-		},
-	)
-
-	// 2. arda.crm.exportCustomer (Mutation - Confirm kind)
+// RegisterCRMCatalog registers hand-written CRM SDK methods (arda.crm.*).
+// The direct internal read (arda.crm.getCustomer) is generated from
+// contracts/ai-internal/crm-v1.json — see RegisterGeneratedCatalog.
+//
+// arda.crm.exportCustomer stays manual: the CRM service has no export
+// backend yet, so the proposal is prepared locally without an HTTP call.
+// When the owning team ships /internal/ai/customers/{id}/export with a
+// dedicated crm.customer.export permission, move it to the contract and
+// delete this entry (see catalog-scale-plan.md WP5/WP6).
+func RegisterCRMCatalog(reg *DispatcherRegistry) {
 	reg.Register(
 		CatalogEntry{
 			MethodName: "crm.exportCustomer",
@@ -60,19 +29,31 @@ func RegisterCRMCatalog(reg *DispatcherRegistry, crmClient *svcclient.CRMClient)
  * @param args.customerId Customer identifier
  * @param args.format Export format: 'csv' or 'json' (default 'csv')
  * @returns ApprovalProposal
- * @requires crm.customer.export
+ * @requires crm.customer.manage
  * @domain crm
  */`,
 			Keywords:            []string{"export", "customer", "csv", "json", "download", "prepare"},
 			Kind:                "confirm",
-			RequiredPermissions: []string{"crm.customer.export"},
+			RequiredPermissions: []string{"crm.customer.manage"},
 			Risk:                "medium",
 			Timeout:             3 * time.Second,
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
 			customerID, _ := args["customerId"].(string)
+			customerID = strings.TrimSpace(customerID)
+			if customerID == "" {
+				return nil, tools.ErrInvalidArgument
+			}
 			format, _ := args["format"].(string)
-			return crmClient.ExportCustomer(ctx, scopeToMetadata(scope), strings.TrimSpace(customerID), format)
+			if strings.TrimSpace(format) == "" {
+				format = "csv"
+			}
+			return map[string]any{
+				"status":     "PREPARED",
+				"customerId": customerID,
+				"format":     format,
+				"summary":    "Export for customer " + customerID + " in " + strings.ToUpper(format) + " format is ready for download.",
+			}, nil
 		},
 	)
 }
