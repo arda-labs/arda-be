@@ -1,0 +1,67 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Arda CRM internal AI surface",
+    "version": "1.0.0",
+    "description": "Operations the CRM service exposes to ai-service on /internal/ai/*. Signed service-to-service transport; delegated subject headers are forwarded by ai-service and re-validated by the CRM handler."
+  },
+  "paths": {
+    "/internal/ai/customers/{customerId}": {
+      "get": {
+        "operationId": "aiGetCustomer",
+        "summary": "Read a redacted customer summary in the active tenant and organization scope.",
+        "description": "Read a redacted customer summary in the active tenant and organization scope.",
+        "x-ai-tool": {
+          "sdkPath": "arda.crm.getCustomer",
+          "domain": "crm",
+          "kind": "read",
+          "risk": "low",
+          "timeoutMs": 3000,
+          "keywords": ["customer", "crm", "client", "code", "name", "status", "segment", "risk", "get", "read"],
+          "requiredPerms": ["crm.customer.read"],
+          "service": "crm-service",
+          "envelope": "result",
+          "returns": "CustomerSummary { id, customerCode, name, status, segment, rank, riskLevel, orgId, updatedAt }"
+        },
+        "parameters": [
+          { "name": "customerId", "in": "path", "required": true, "schema": { "type": "string", "maxLength": 128 }, "description": "Arda customer identifier or customer code (max 128 chars)" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted customer summary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": { "$ref": "#/components/schemas/AiCustomerSummary" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AiCustomerSummary": {
+        "type": "object",
+        "description": "Redacted customer shape exposed to the AI SDK. Sensitive fields (email, mobile, identity numbers, info maps) are dropped by the CRM handler and again by the response allowlist.",
+        "properties": {
+          "id": { "type": "string" },
+          "customerCode": { "type": "string" },
+          "name": { "type": "string" },
+          "customerType": { "type": "string" },
+          "status": { "type": "string" },
+          "segment": { "type": "string" },
+          "rank": { "type": "string" },
+          "riskLevel": { "type": "string" },
+          "orgId": { "type": "string" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

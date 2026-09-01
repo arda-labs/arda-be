@@ -24,6 +24,7 @@ use (
 	./libs/go/arda-proto
 	./libs/go/arda-redis
 	./tools/arda-cli
+	./tools/catalog-gen
 	./tools/export-stress-test
 	./tools/mock-token
 )

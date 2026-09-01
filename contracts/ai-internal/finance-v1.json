@@ -1,0 +1,70 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Arda Finance internal AI surface",
+    "version": "1.0.0",
+    "description": "Operations the finance service exposes to ai-service on /internal/ai/*. Signed service-to-service transport; delegated subject headers are forwarded by ai-service and re-validated by the finance handler."
+  },
+  "paths": {
+    "/internal/ai/accounts/{accountId}": {
+      "get": {
+        "operationId": "aiGetAccount",
+        "summary": "Read a chart-of-accounts entry in the delegated tenant.",
+        "description": "Read a chart-of-accounts entry with its current balance in the active tenant.",
+        "x-ai-tool": {
+          "sdkPath": "arda.finance.getAccount",
+          "domain": "finance",
+          "kind": "read",
+          "risk": "medium",
+          "timeoutMs": 3000,
+          "keywords": ["finance", "account", "chart", "ledger", "code", "balance", "read", "get"],
+          "requiredPerms": ["finance.read"],
+          "service": "finance-service",
+          "envelope": "result",
+          "returns": "GetAccountResult { account: { id, code, name, type, normalBalance, currency, isActive }, balance }"
+        },
+        "parameters": [
+          { "name": "accountId", "in": "path", "required": true, "schema": { "type": "string", "maxLength": 128 }, "description": "Finance account identifier (max 128 chars)" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account with current balance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": { "$ref": "#/components/schemas/AiAccountResult" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AiAccount": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "code": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "normalBalance": { "type": "string" },
+          "currency": { "type": "string" },
+          "isActive": { "type": "boolean" }
+        }
+      },
+      "AiAccountResult": {
+        "type": "object",
+        "properties": {
+          "account": { "$ref": "#/components/schemas/AiAccount" },
+          "balance": {}
+        }
+      }
+    }
+  }
+}
