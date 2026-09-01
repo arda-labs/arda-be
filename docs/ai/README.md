@@ -89,6 +89,10 @@ vector schema/index changes, and production workload expansion.
     search, KeyProvider (KMS/Vault) integration, and SSRF egress filtering.
 21. [agent-evolution-roadmap.md](agent-evolution-roadmap.md) — work-package
     roadmap (WP0–WP4) and the AG-UI / Code Mode / knowledge evolution plan.
+22. [catalog-scale-plan.md](catalog-scale-plan.md) — WP5–WP9 plan for scaling
+    the AI capability catalog: OpenAPI `x-ai-tool` annotations + `catalog-gen`
+    (catalog-as-data), context budget / compact SDK map, semantic re-ranking,
+    MCP exposure, and CI consistency checks.
 
 ## Current repository evidence
 
@@ -99,11 +103,14 @@ vector schema/index changes, and production workload expansion.
   model-driven agent loop (`AI_ENABLE_AGENT` + OpenAI-compatible provider),
   Goose migrations, tenant/actor-owned conversation persistence (list,
   messages, delete, auto-title), replay protection, production workload
-  identity verification, allowlisted read-only `crm.customer.get`,
-  `knowledge.search`, and `crm.customer.export.prepare` tools with redacted
-  output and knowledge citations. Confirm-kind tools create approval proposals
-  instead of executing; the run owner resumes an approved proposal through an
-  AG-UI interrupt response.
+  identity verification, and redacted read tools with knowledge citations.
+  Internal HTTP tools (`iam.listUsers`, `crm.getCustomer`, `finance.getAccount`)
+  are generated from `contracts/ai-internal/*.json` (`x-ai-tool`) via
+  `tools/catalog-gen` with response-schema redaction; hand-written entries
+  cover identity self-service, capability listing, knowledge search, and the
+  local `crm.exportCustomer` approval stub. Confirm-kind tools create approval
+  proposals instead of executing; the run owner resumes an approved proposal
+  through an AG-UI interrupt response.
 - `arda-mfe/apps/shell` ships the Olorin assistant as a docked, resizable side
   panel plus a full-screen workspace dialog (Ctrl/Cmd+J) built on
   `@workspace/ai` — the assistant-ui AG-UI runtime (`useAgUiRuntime` +

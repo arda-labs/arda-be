@@ -1,9 +1,13 @@
 # Lộ trình tiến hóa Agent Platform Arda
 
-> **TRẠNG THÁI (2026-08-31): WP0–WP4 đã triển khai xong; giao thức là AG-UI (official assistant-ui runtime cho Go backend)** — BE emit AG-UI events trên `/api/ai/agent`, FE dùng `useAgUiRuntime` + `HttpAgent`. AI SDK UI Message Stream / dual-protocol / header `x-vercel-ai-ui-message-stream` / CopilotKit envelope đều đã bị xóa.
+> **TRẠNG THÁI (2026-09-01): WP0–WP4 đã triển khai xong; giao thức là AG-UI (official assistant-ui runtime cho Go backend)** — BE emit AG-UI events trên `/api/ai/agent`, FE dùng `useAgUiRuntime` + `HttpAgent`. AI SDK UI Message Stream / dual-protocol / header `x-vercel-ai-ui-message-stream` / CopilotKit envelope đều đã bị xóa.
 > §3.5 allowlist (`AI_MODEL_BASE_URL_ALLOWLIST`),
 > M2 resume HITL, M3 metrics AI trên `/metrics`, §4 RAG hybrid (migration `20260830110000`, embedder WorkersAI/OpenAI, CLI `knowledge-indexer`).
 > M4 code-mode tối ưu — 2/3 mảnh xong (2026-08-31): codegen `.d.ts` cho `arda.*` từ catalog inject vào context + raw results ở lại trong `sandbox.ResultStore` với meta-tool `readResult`. Chưa làm: MCP exposure (M4 mảnh 3 — khi có client ngoài), bật AI Gateway trên CF (env), deploy Prometheus (WP3 bước 2), index dữ liệu thật.
+> **WP5 catalog-as-data đã hiện thực (2026-09-01, xem `catalog-scale-plan.md`):**
+> `contracts/ai-internal/*.json` (`x-ai-tool`) → `tools/catalog-gen` →
+> `generated.go` + generic HTTP executor; CI `check-ai-catalog.mjs`. WP5–WP9
+> kế tiếp nằm ở `catalog-scale-plan.md`.
 >
 > Tài liệu đánh giá & lộ trình đề xuất — phục vụ review.
 > Phạm vi: xuyên suốt `arda-be` (ai-service, auth-gateway), `arda-mfe` (packages/ai, shell), `arda-infra`.

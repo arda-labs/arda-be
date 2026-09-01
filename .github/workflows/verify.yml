@@ -40,6 +40,8 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Validate OpenAPI pilot
         run: node scripts/check-openapi.mjs
+      - name: Validate internal AI surface contracts
+        run: node scripts/check-ai-catalog.mjs
       - name: Validate migration conventions
         run: node scripts/check-migrations.mjs
       - name: Validate RLS feasibility pilot
