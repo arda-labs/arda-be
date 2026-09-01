@@ -99,6 +99,7 @@ func main() {
 		suite := catalog.NewCodeModeSuite(
 			svcclient.NewCRMClient(cfg.CRMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			svcclient.NewFinanceClient(cfg.FinanceServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
+			svcclient.NewHRMClient(cfg.HRMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			svcclient.NewIAMClient(cfg.IAMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			db, store, cfg.EnableHITLProposals, buildKnowledgeEmbedder(cfg, logger),
 		)

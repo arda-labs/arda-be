@@ -19,6 +19,7 @@ import (
 type ClientSet struct {
 	CRM     *svcclient.CRMClient
 	Finance *svcclient.FinanceClient
+	HRM     *svcclient.HRMClient
 	IAM     *svcclient.IAMClient
 }
 
@@ -34,6 +35,11 @@ func (s ClientSet) client(service string) *svcclient.Client {
 			return nil
 		}
 		return s.Finance.Client
+	case "hrm-service":
+		if s.HRM == nil {
+			return nil
+		}
+		return s.HRM.Client
 	case "iam-service":
 		if s.IAM == nil {
 			return nil

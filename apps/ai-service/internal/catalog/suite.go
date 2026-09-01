@@ -41,6 +41,7 @@ type CodeModeSuite struct {
 func NewCodeModeSuite(
 	crmClient *svcclient.CRMClient,
 	financeClient *svcclient.FinanceClient,
+	hrmClient *svcclient.HRMClient,
 	iamClient *svcclient.IAMClient,
 	db *sql.DB,
 	store repository.RunStore,
@@ -60,6 +61,7 @@ func NewCodeModeSuite(
 	RegisterGeneratedCatalog(dispatcherReg, ClientSet{
 		CRM:     crmClient,
 		Finance: financeClient,
+		HRM:     hrmClient,
 		IAM:     iamClient,
 	})
 	catalogIndex := NewIndex(dispatcherReg.AllEntries())

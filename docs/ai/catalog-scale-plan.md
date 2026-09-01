@@ -1,15 +1,20 @@
 # WP5–WP9: Lộ trình scale Catalog & Capability Discovery
 
-> **TRẠNG THÁI (2026-09-01): WP5 ĐÃ HIỆN THỰC.** Catalog-as-data đang chạy:
-> `contracts/ai-internal/{iam,crm,finance}-v1.json` annotate `x-ai-tool` →
+> **TRẠNG THÁI (2026-09-01): WP5 + WP6 ĐÃ HIỆN THỰC.** Catalog-as-data đang chạy:
+> `contracts/ai-internal/{iam,crm,finance,hrm}-v1.json` annotate `x-ai-tool` →
 > `tools/catalog-gen` sinh `internal/catalog/generated.go` (commit, auditable)
 > → generic executor `httptarget.go` thực thi qua signed delegated transport
 > với response allowlist. CI: `scripts/check-ai-catalog.mjs` trong verify.yml
 > (stale generated.go, ghost permission, sai domain/kind, route ngoài
-> /internal/ai/*). Entries còn ở catalog Go tay: `iam.me`,
-> `iam.listCapabilities`, `knowledge.search`, `crm.exportCustomer` (stub —
-> CRM chưa có export backend; chuyển sang contract khi route + permission
-> `crm.customer.export` tồn tại). WP6–WP9: chờ theo lộ trình dưới đây.
+> /internal/ai/*, và — WP6 — service khai báo trong contract nhưng thiếu
+> `<PREFIX>_SERVICE_URL` ở arda-infra). WP6 runbook:
+> `docs/ai/domain-onboarding.md`, đã validate bằng pilot
+> `arda.hrm.listEmployees` (route `/internal/ai/employees` của hrm-service,
+> permission `hrm.read`, redact tenant_id/org refs/iam_user_id). Entries còn
+> ở catalog Go tay: `iam.me`, `iam.listCapabilities`, `knowledge.search`,
+> `crm.exportCustomer` (stub — CRM chưa có export backend; chuyển sang
+> contract khi route + permission `crm.customer.export` tồn tại).
+> WP7–WP9: chờ theo trigger dưới đây.
 > Kế thừa `agent-evolution-roadmap.md` (WP0–WP4 đã xong) và **hiện thực hóa**
 > `sdk-catalog-design.md` §3 (OpenAPI `x-ai-tool` + catalog-gen) và §7 (CI
 > consistency checks) — hai phần đã thiết kế sẵn nhưng chưa làm.

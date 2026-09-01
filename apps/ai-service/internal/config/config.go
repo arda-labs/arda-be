@@ -16,6 +16,7 @@ type Config struct {
 	ServiceAuthSecret   string
 	CRMServiceURL       string
 	FinanceServiceURL   string
+	HRMServiceURL       string
 	IAMServiceURL       string
 	EnableReadTools     bool
 	EnableHITLProposals bool
@@ -85,6 +86,7 @@ func Load() Config {
 		ServiceAuthSecret:   os.Getenv("ARDA_SERVICE_AUTH_SECRET"),
 		CRMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("CRM_SERVICE_URL")), "/"),
 		FinanceServiceURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("FINANCE_SERVICE_URL")), "/"),
+		HRMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("HRM_SERVICE_URL")), "/"),
 		IAMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("IAM_SERVICE_URL")), "/"),
 		EnableReadTools:     envBoolOr("AI_ENABLE_READ_TOOLS", false),
 		EnableHITLProposals: envBoolOr("AI_ENABLE_HITL_PROPOSALS", false),

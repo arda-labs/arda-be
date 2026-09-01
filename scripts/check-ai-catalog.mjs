@@ -26,6 +26,7 @@ const VALID_SERVICES = new Set([
 
 let totalTools = 0;
 const seenPaths = new Set();
+const declaredServices = new Set();
 const issues = [];
 
 for (const file of files) {
@@ -54,6 +55,7 @@ for (const file of files) {
       }
       if (!tool.service) issues.push(`${at}: x-ai-tool.service is required`);
       else if (!VALID_SERVICES.has(tool.service)) issues.push(`${at}: unknown service ${tool.service}`);
+      if (tool.service) declaredServices.add(tool.service.replace("-service", "").toUpperCase());
       const kind = tool.kind ?? (method === "get" ? "read" : "confirm");
       if (!VALID_KINDS.has(kind)) issues.push(`${at}: invalid kind ${kind}`);
       if (kind === "read" && method !== "get") {
@@ -117,5 +119,28 @@ if (gen.status !== 0) {
   throw new Error("ai-catalog: generated.go is stale — run `go run ./tools/catalog-gen` and commit");
 }
 console.log(gen.stdout.trim());
+
+// Deployment wiring cross-check (WP6): every tool's service must have a
+// <PREFIX>_SERVICE_URL env on the ai-service Deployment, else the tool
+// silently never registers (the 2026-09-01 IAM_SERVICE_URL lesson). The
+// arda-infra workspace is not part of this repository, so the check runs
+// only when the sibling checkout is present (CI: skipped).
+const infraPath = new URL("../../arda-infra/k8s/apps/ai-service.yaml", import.meta.url);
+let infra = null;
+try {
+  infra = await readFile(infraPath, "utf8");
+} catch {
+  // Sibling checkout absent (CI) — wiring check skipped.
+}
+if (infra !== null) {
+  const wired = new Set([...infra.matchAll(/- name: ([A-Z]+)_SERVICE_URL\b/g)].map((m) => m[1]));
+  const missing = [...declaredServices].filter((d) => !wired.has(d));
+  if (missing.length > 0) {
+    throw new Error(
+      `ai-catalog: services declared in contracts but not wired in arda-infra ai-service.yaml (missing ${missing.map((m) => `${m}_SERVICE_URL`).join(", ")}) — tools would silently never register`,
+    );
+  }
+  console.log(`Deployment wiring OK: ${[...declaredServices].sort().join(", ")} wired in arda-infra`);
+}
 
 console.log(`AI catalog OK: ${files.length} documents, ${totalTools} tools, all permissions present in policy.yaml`);

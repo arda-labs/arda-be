@@ -26,12 +26,22 @@ func testFinanceClient(baseURL string) *svcclient.FinanceClient {
 	return svcclient.NewFinanceClient(baseURL, "ai-service", testSecret, nil)
 }
 
+func testHRMClient(baseURL string) *svcclient.HRMClient {
+	return svcclient.NewHRMClient(baseURL, "ai-service", testSecret, nil)
+}
+
 func genClients(iamURL, crmURL, financeURL string) ClientSet {
 	return ClientSet{
 		IAM:     testIAMClient(iamURL),
 		CRM:     testCRMClient(crmURL),
 		Finance: testFinanceClient(financeURL),
 	}
+}
+
+func genClientsWithHRM(hrmURL string) ClientSet {
+	set := genClients("http://iam.local", "http://crm.local", "http://finance.local")
+	set.HRM = testHRMClient(hrmURL)
+	return set
 }
 
 func iamScope() tools.Context {
@@ -353,6 +363,63 @@ func TestGeneratedCatalog_FinanceDispatch(t *testing.T) {
 	// Untyped balance passes through the allowlist untouched.
 	if _, ok := payload["balance"].(map[string]any); !ok {
 		t.Errorf("expected balance object passthrough, got %v", payload["balance"])
+	}
+}
+
+func TestGeneratedCatalog_HRMDispatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/ai/employees" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("q"); got != "nguyen" {
+			t.Errorf("expected q=nguyen from search arg, got %s", got)
+		}
+		if got := r.URL.Query().Get("tenant_id"); got != "tenant-1" {
+			t.Errorf("expected tenant_id=tenant-1 from scope, got %s", got)
+		}
+		// The server returns internal linkage fields the allowlist must drop.
+		_, _ = w.Write([]byte(`{"result":{"items":[
+			{"id":"e1","employeeCode":"NV-001","fullName":"Nguyen Van A","status":"ACTIVE","tenant_id":"tenant-1","iamUserId":"iam-1"}
+		],"page":1,"per_page":20,"total":1},"success":true}`))
+	}))
+	defer server.Close()
+
+	reg := NewDispatcherRegistry()
+	registerFullCatalog(reg, genClientsWithHRM(server.URL))
+
+	fn, entry, ok := reg.Resolve("hrm.listEmployees")
+	if !ok {
+		t.Fatal("hrm.listEmployees not registered")
+	}
+	if entry.RequiredPermissions[0] != "hrm.read" {
+		t.Errorf("expected hrm.read, got %v", entry.RequiredPermissions)
+	}
+	result, err := fn(context.Background(), iamScope(), map[string]any{"search": "nguyen"})
+	if err != nil {
+		t.Fatalf("listEmployees failed: %v", err)
+	}
+	raw, _ := json.Marshal(result)
+	var page struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(raw, &page); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(page.Items) != 1 || page.Total != 1 {
+		t.Fatalf("expected 1 item/total 1, got %d/%d", len(page.Items), page.Total)
+	}
+	for key := range page.Items[0] {
+		if key == "tenant_id" || key == "iamUserId" {
+			t.Errorf("internal field %s leaked through the response allowlist", key)
+		}
+	}
+	if page.Items[0]["employeeCode"] != "NV-001" {
+		t.Errorf("expected employeeCode NV-001, got %v", page.Items[0]["employeeCode"])
+	}
+	// Without hrm.read the entry is forbidden for the actor.
+	if err := entry.CheckPermissions(iamScope()); err == nil {
+		t.Error("expected permission error without hrm.read")
 	}
 }
 

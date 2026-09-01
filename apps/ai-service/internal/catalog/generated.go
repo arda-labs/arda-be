@@ -108,6 +108,42 @@ func GeneratedCatalog() []GeneratedEntry {
 			ResponseSchema: `{"type":"object","properties":{"account":{"type":"object","properties":{"code":{"type":"string"},"currency":{"type":"string"},"id":{"type":"string"},"isActive":{"type":"boolean"},"name":{"type":"string"},"normalBalance":{"type":"string"},"type":{"type":"string"}}},"balance":{}}}`,
 		},
 		{
+			SDKPath:   "arda.hrm.listEmployees",
+			Domain:    "hrm",
+			Signature: "arda.hrm.listEmployees(args: {search?: string; status?: string; cursor?: number; limit?: number}): Promise<EmployeeListPage>;",
+			JSDoc: `/**
+ * List employees in the delegated tenant directory.
+ *
+ * List employees in the active tenant's HR directory. Returns id, employeeCode, fullName, status per employee, with pagination.
+ * @param args.search Free-text filter on employee code/full name
+ * @param args.status Filter by employment status
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-50
+ * @returns EmployeeListPage { items: [{ id, employeeCode, fullName, status }], page, perPage, total }
+ * @requires hrm.read
+ * @domain hrm
+ */`,
+			Keywords:            []string{"hrm", "employee", "employees", "staff", "personnel", "list", "directory", "search", "hr"},
+			Kind:                "read",
+			RequiredPermissions: []string{"hrm.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "hrm-service",
+			Method:              "GET",
+			Path:                "/internal/ai/employees",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "status", Param: "status", In: "query", Required: false, Type: "string", MaxLength: 0, Min: nil, Max: nil, Default: "", Transform: "upper", Enum: []string{"ACTIVE", "PROBATION", "INACTIVE"}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(50.0), Default: "20", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"employeeCode":{"type":"string"},"fullName":{"type":"string"},"id":{"type":"string"},"status":{"type":"string"}}}},"page":{"type":"integer"},"perPage":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
 			SDKPath:   "arda.iam.listUsers",
 			Domain:    "iam",
 			Signature: "arda.iam.listUsers(args: {search?: string; status?: string; limit?: number; cursor?: number}): Promise<UserListPage>;",
