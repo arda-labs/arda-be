@@ -32,14 +32,18 @@ EMBED_MODEL = "@cf/qwen/qwen3-embedding-0.6b"
 class StubEmbedder(Embedder):
     """Deterministic 1024-dim embeddings; raise EmbeddingError when fail=True."""
 
-    def __init__(self, *, fail: bool = False):
+    def __init__(self, *, fail: bool = False, truncate: int = 0):
         super().__init__(settings=EmbeddingSettings(dimensions=1024, batch_size=16))
         self._fail = fail
+        self._truncate = truncate
 
     def embed(self, texts):
         if self._fail:
             raise EmbeddingError("stub embedder always fails")
-        return [[0.1 * (i % 10 + 1)] * 1024 for i in range(len(texts))]
+        vectors = [[0.1 * (i % 10 + 1)] * 1024 for i in range(len(texts))]
+        if self._truncate:
+            vectors = vectors[: len(texts) - self._truncate]
+        return vectors
 
 
 def _settings() -> Settings:
@@ -256,3 +260,23 @@ def test_claim_skips_processing_job_and_bumps_attempts(client):
         # already processing -> SKIP LOCKED must not hand it to another worker
         again = queue.claim_job(conn, "worker-b", 300)
         assert again is None
+
+
+def test_vector_count_mismatch_requeues_without_publishing(client):
+    source_id, version_id, job_id = _seed_version(client)
+
+    # embedder returns one fewer vector than texts — the guard must abort the
+    # job (requeue) instead of silently publishing chunks with embedding IS NULL
+    run_worker(_settings(), once=True, embedder=StubEmbedder(truncate=1))
+
+    r = client.get(f"/api/rag/jobs/{job_id}")
+    job = r.json()
+    assert job["status"] == "pending", "mismatch must requeue, not publish"
+    assert job["attempts"] == 1
+    assert "embedder returned" in job["error_message"], job["error_message"]
+    assert "vectors for" in job["error_message"], job["error_message"]
+    assert job["total_chunks"] > job["embedded_chunks"], "no batch may claim full progress"
+
+    # version must NOT have been published
+    r = client.get(f"/api/rag/sources/{source_id}/versions/{version_id}")
+    assert r.json()["status"] == "INDEXING"

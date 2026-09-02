@@ -131,7 +131,8 @@ def fail_or_requeue(
         conn.execute(
             text(
                 "UPDATE ai_ingestion_jobs"
-                " SET status='pending', error_message=:err,"
+                " SET status='pending', locked_by=NULL, locked_at=NULL,"
+                "     error_message=:err,"
                 "     next_retry_at=now() + make_interval(secs => :backoff), updated_at=now()"
                 " WHERE id=:job"
             ),

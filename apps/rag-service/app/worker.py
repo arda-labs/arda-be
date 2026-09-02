@@ -21,12 +21,12 @@ from app.service import ingestion
 logger = logging.getLogger(__name__)
 
 
-def _run_job(engine, job, embedder) -> None:
+def _run_job(engine, job, embedder, batch_size: int) -> None:
     """Process one claimed job. Raises on any job-level error."""
     logger.info(
         "job %s: start (attempt %d/%d)", job.id, job.attempts, job.max_attempts,
     )
-    ingestion.process_job(engine, job, embedder)
+    ingestion.process_job(engine, job, embedder, batch_size=batch_size)
     with engine.begin() as conn:
         queue.complete_job(conn, job.id, job.source_version_id, job.source_id)
     logger.info("job %s: completed", job.id)
@@ -59,7 +59,7 @@ def run_worker(settings: Settings, *, once: bool = False,
             time.sleep(settings.worker.poll_interval_sec)
             continue
         try:
-            _run_job(engine, job, embedder)
+            _run_job(engine, job, embedder, settings.embedding.batch_size)
         except Exception as exc:            # noqa: BLE001 — job-level failure handling
             logger.exception("job %s failed", job.id)
             with engine.begin() as conn:

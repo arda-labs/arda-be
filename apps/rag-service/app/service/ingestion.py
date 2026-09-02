@@ -7,6 +7,7 @@ from sqlalchemy import Engine, text
 
 from app.db.queue import Job, heartbeat
 from app.rag.chunker import chunk_markdown
+from app.rag.embedder import EmbeddingError
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,10 @@ def process_job(engine: Engine, job: Job, embedder, batch_size: int = 16) -> Non
             if not texts:
                 continue
             vectors = embedder.embed(texts)
+            if len(vectors) != len(rows):
+                raise EmbeddingError(
+                    f"embedder returned {len(vectors)} vectors for {len(rows)} texts"
+                )
             with engine.begin() as conn:
                 for row, vector in zip(rows, vectors):
                     conn.execute(
