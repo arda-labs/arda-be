@@ -31,18 +31,12 @@ def _check_permission(ctx: SecurityContext) -> None:
         raise PermissionDeniedError("ai.knowledge.manage required")
 
 
-def _effective_tenant(body_tenant: str | None, ctx: SecurityContext) -> str | None:
-    return ctx.tenant_id or body_tenant
+def _effective_tenant(ctx: SecurityContext) -> str | None:
+    return ctx.tenant_id
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _parse_dt(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +46,7 @@ def _parse_dt(value: str | None) -> datetime | None:
 
 def create_source(engine: Engine, ctx: SecurityContext, data: SourceCreate) -> SourceOut:
     _check_permission(ctx)
-    effective_tenant = _effective_tenant(data.tenant_id, ctx)
+    effective_tenant = _effective_tenant(ctx)
     with engine.begin() as conn:
         row = conn.execute(
             insert(knowledge_sources)
@@ -66,8 +60,8 @@ def create_source(engine: Engine, ctx: SecurityContext, data: SourceCreate) -> S
                 language=data.language,
                 tags=data.tags,
                 owner_id=data.owner_id,
-                effective_from=_parse_dt(data.effective_from),
-                effective_to=_parse_dt(data.effective_to),
+                effective_from=data.effective_from,
+                effective_to=data.effective_to,
                 created_by=ctx.user_id,
                 updated_at=func.now(),
             )
@@ -211,10 +205,12 @@ def review_version(
     now_iso = _now().isoformat()
     with engine.begin() as conn:
         row = conn.execute(
-            select(knowledge_source_versions).where(
+            select(knowledge_source_versions)
+            .where(
                 knowledge_source_versions.c.id == version_id,
                 knowledge_source_versions.c.source_id == source_id,
             )
+            .with_for_update()
         ).mappings().one_or_none()
         if row is None:
             raise NotFoundError(f"version {version_id} not found for source {source_id}")
@@ -242,10 +238,12 @@ def publish_version(
     _check_permission(ctx)
     with engine.begin() as conn:
         row = conn.execute(
-            select(knowledge_source_versions).where(
+            select(knowledge_source_versions)
+            .where(
                 knowledge_source_versions.c.id == version_id,
                 knowledge_source_versions.c.source_id == source_id,
             )
+            .with_for_update()
         ).mappings().one_or_none()
         if row is None:
             raise NotFoundError(f"version {version_id} not found for source {source_id}")

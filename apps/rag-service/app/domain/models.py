@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field
 
 
 class SourceCreate(BaseModel):
-    tenant_id: str | None = None
     title: str = Field(min_length=1, max_length=500)
     description: str | None = None
     source_type: str = "docs"  # docs | admin | url
@@ -12,8 +11,8 @@ class SourceCreate(BaseModel):
     language: str = "vi"
     tags: list[str] = []
     owner_id: str | None = None
-    effective_from: str | None = None  # ISO-8601
-    effective_to: str | None = None
+    effective_from: datetime | None = None  # ISO-8601
+    effective_to: datetime | None = None
 
 
 class ChunkerConfig(BaseModel):

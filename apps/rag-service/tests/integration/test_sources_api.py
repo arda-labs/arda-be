@@ -104,3 +104,104 @@ def test_lifecycle(client):
     )
     assert r.status_code == 501, r.text
     assert r.json()["error"]["code"] == "rag.not_supported_yet"
+
+
+def test_body_tenant_id_is_rejected(client):
+    """Security: tenant identity ONLY from SecurityContext, never body."""
+    r = client.post("/api/rag/sources", json={"title": "X", "tenant_id": "other-tenant"})
+    assert r.status_code == 201, r.text
+    assert r.json()["tenant_id"] == "tenant-a"  # header, not body
+
+
+def test_body_malformed_effective_from_is_422(client):
+    """Malformed ISO date in body → 422, not 500."""
+    r = client.post("/api/rag/sources", json={"title": "X", "effective_from": "not-a-date"})
+    assert r.status_code == 422, r.text
+
+
+def test_reject_keeps_draft_and_records_reason(client):
+    src = _create_source(client)
+    r = client.post(
+        f"/api/rag/sources/{src['id']}/versions",
+        json={"version": "1.0", "content_type": "markdown", "content": "# x"},
+    )
+    version_id = r.json()["id"]
+
+    # Reject → stays DRAFT with reason recorded
+    r = client.post(
+        f"/api/rag/sources/{src['id']}/versions/{version_id}/review",
+        json={"decision": "reject", "reason": "not good enough"},
+    )
+    assert r.status_code == 200, r.text
+    ver = r.json()
+    assert ver["status"] == "DRAFT"
+    assert ver["status_history"][-1]["to"] == "DRAFT"
+    assert ver["status_history"][-1]["reason"] == "not good enough"
+
+    # Reviewing an APPROVED version → 409
+    r = client.post(
+        f"/api/rag/sources/{src['id']}/versions/{version_id}/review",
+        json={"decision": "approve"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "APPROVED"
+    r = client.post(
+        f"/api/rag/sources/{src['id']}/versions/{version_id}/review",
+        json={"decision": "reject", "reason": "too late"},
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["error"]["code"] == "rag.conflict"
+
+
+def test_concurrent_publish_creates_single_job(client):
+    """Row lock must serialize concurrent publish: one job, not two."""
+    import concurrent.futures
+    import os
+
+    from sqlalchemy import create_engine, func, select
+
+    from app.db.schema import ingestion_jobs
+    from app.domain.security import SecurityContext
+    from app.service.sources import publish_version
+    from app.domain.errors import ConflictError
+
+    src = _create_source(client)
+    r = client.post(
+        f"/api/rag/sources/{src['id']}/versions",
+        json={"version": "1.0", "content_type": "markdown", "content": "# x"},
+    )
+    version_id = r.json()["id"]
+    r = client.post(
+        f"/api/rag/sources/{src['id']}/versions/{version_id}/review",
+        json={"decision": "approve"},
+    )
+    assert r.status_code == 200
+
+    dsn = os.environ.get("TEST_DATABASE_DSN", "")
+    engine = create_engine(dsn, pool_pre_ping=True) if dsn else None
+    assert engine is not None, "TEST_DATABASE_DSN must be set"
+
+    ctx = SecurityContext(tenant_id="tenant-a", user_id="user-1",
+                          source_service="auth-gateway",
+                          permissions=("ai.knowledge.manage",))
+
+    def _publish(_):
+        try:
+            publish_version(engine, ctx, src["id"], version_id)
+            return "ok"
+        except ConflictError:
+            return "conflict"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        results = list(ex.map(_publish, range(2)))
+
+    assert results.count("ok") == 1, f"exactly one publish must succeed: {results}"
+    assert results.count("conflict") == 1, f"one publish must hit 409: {results}"
+    with engine.connect() as conn:
+        n = conn.execute(
+            select(func.count()).select_from(ingestion_jobs).where(
+                ingestion_jobs.c.source_version_id == version_id
+            )
+        ).scalar()
+    assert n == 1, f"expected exactly 1 job, got {n}"
+    engine.dispose()
