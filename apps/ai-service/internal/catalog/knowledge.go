@@ -53,7 +53,32 @@ func RegisterKnowledgeCatalog(reg *DispatcherRegistry, searcher knowledge.Search
 			if err != nil {
 				return nil, fmt.Errorf("knowledge search error: %w", err)
 			}
-			return items, nil
+			return knowledgeResults(items), nil
 		},
 	)
+}
+
+// knowledgeResults projects knowledge.Hit onto the KnowledgeSearchResult
+// shape promised by the JSDoc contract. Goja exports Go structs by field
+// name (Title, Content...), not JSON tags, so returning []Hit directly
+// leaves the model reading r.sourceTitle / r.content as undefined — which
+// is exactly what the null fields in run ePEz5r1 showed.
+func knowledgeResults(hits []knowledge.Hit) []map[string]any {
+	results := make([]map[string]any, 0, len(hits))
+	for _, hit := range hits {
+		results = append(results, map[string]any{
+			"sourceId":    hit.SourceID,
+			"sourceKey":   hit.SourceKey,
+			"version":     hit.Version,
+			"heading":     hit.Heading,
+			"sourceTitle": hit.Title,
+			"content":     hit.Content,
+			"sourceType":  hit.SourceType,
+			// Not provided by the current SQL searcher; present so the model
+			// can rely on the documented shape (and check for null).
+			"citations":  nil,
+			"matchScore": nil,
+		})
+	}
+	return results
 }
