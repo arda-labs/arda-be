@@ -1,6 +1,6 @@
 from sqlalchemy import (
-    ARRAY, BigInteger, Column, DateTime, ForeignKey, Index, Integer, MetaData,
-    String, Table, Text, func,
+    ARRAY, BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer,
+    MetaData, String, Table, Text, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
@@ -61,6 +61,29 @@ ingestion_jobs = Table(
     Column("next_retry_at", DateTime(timezone=True), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+rag_runs = Table(
+    "ai_rag_runs", meta,
+    Column("id", UUID, primary_key=True, server_default=func.gen_random_uuid()),
+    Column("tenant_id", String, nullable=True),
+    Column("query", Text, nullable=False),
+    Column("rewritten_query", Text, nullable=True),
+    Column("retrieved_count", Integer, nullable=True),
+    Column("reranked_count", Integer, nullable=True),
+    Column("hit_ids", ARRAY(String), nullable=True),
+    Column("latency_ms", Integer, nullable=True),
+    Column("model_used", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+rag_feedback = Table(
+    "ai_rag_feedback", meta,
+    Column("id", UUID, primary_key=True, server_default=func.gen_random_uuid()),
+    Column("run_id", UUID, ForeignKey("ai_rag_runs.id"), nullable=False),
+    Column("helpful", Boolean, nullable=False),
+    Column("comment", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 # Indexes

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.api.feedback import router as feedback_router
 from app.api.health import router as health_router
 from app.api.sources import router as sources_router
 from app.config import Settings
@@ -45,6 +46,7 @@ def create_app(settings: Settings, migrate_on_startup: bool | None = None) -> Fa
 
     app.include_router(health_router)
     app.include_router(sources_router)
+    app.include_router(feedback_router)
     return app
 
 

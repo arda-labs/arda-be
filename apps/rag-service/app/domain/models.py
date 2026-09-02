@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 
@@ -111,3 +112,23 @@ class JobOut(BaseModel):
     next_retry_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class FeedbackCreate(BaseModel):
+    run_id: str
+    helpful: bool
+    comment: str | None = None
+
+    @field_validator("run_id")
+    @classmethod
+    def _run_id_uuid(cls, v: str) -> str:
+        uuid.UUID(v)  # ValueError -> FastAPI 422
+        return v
+
+
+class FeedbackOut(BaseModel):
+    id: str
+    run_id: str
+    helpful: bool
+    comment: str | None = None
+    created_at: datetime | None = None
