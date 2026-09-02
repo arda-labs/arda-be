@@ -39,6 +39,9 @@ deployments/auth/.values-*.rendered.yaml
 # logs
 *.log
 
+# git worktrees (tách workspace cho SDD)
+.worktrees/
+
 # stress test & export artifacts
 stress_output/
 stress_test_*
