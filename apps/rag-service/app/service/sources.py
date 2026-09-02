@@ -134,13 +134,13 @@ def create_version(engine: Engine, ctx: SecurityContext, source_id: int, data: V
     if data.content_type in ("url", "file"):
         raise NotSupportedError(f"content_type '{data.content_type}' not supported yet")
 
-    # P2.1 stores no raw content (no content column); only the sha256 hash.
     content_hash = _sha256(data.content) if data.content else None
 
     insert_kw = dict(
         source_id=source_id,
         version=data.version,
         content_type=data.content_type,
+        content=data.content,
         content_url=data.content_url,
         content_hash=content_hash,
         created_by=ctx.user_id,
@@ -327,6 +327,7 @@ def _version_row_to_out(row) -> VersionOut:
         version=row["version"],
         status=row["status"],
         content_type=row["content_type"],
+        content=row.get("content"),
         content_url=row.get("content_url"),
         chunker_version=row.get("chunker_version"),
         chunk_size=row.get("chunk_size"),

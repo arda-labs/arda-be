@@ -38,6 +38,7 @@ def test_lifecycle(client):
     version_id = ver["id"]
     assert ver["status"] == "DRAFT"
     assert ver["content_hash"] == hashlib.sha256(content.encode()).hexdigest()
+    assert ver["content"] == content
 
     # 3. Publish before review -> 409
     r = client.post(f"/api/rag/sources/{source_id}/versions/{version_id}/publish")

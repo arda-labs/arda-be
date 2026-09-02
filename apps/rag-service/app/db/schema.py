@@ -35,6 +35,7 @@ knowledge_source_versions = Table(
     Column("status", Text, nullable=False, server_default=func.text("'DRAFT'")),
     Column("content_type", Text, nullable=False, server_default=func.text("'markdown'")),
     Column("content_url", Text, nullable=True),
+    Column("content", Text, nullable=True),
     Column("chunker_version", Text, nullable=True),
     Column("chunk_size", Integer, nullable=True),
     Column("chunk_overlap", Integer, nullable=True),

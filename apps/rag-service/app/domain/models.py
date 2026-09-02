@@ -65,6 +65,7 @@ class VersionOut(BaseModel):
     version: str
     status: str
     content_type: str
+    content: str | None = None
     content_url: str | None = None
     chunker_version: str | None = None
     chunk_size: int | None = None
