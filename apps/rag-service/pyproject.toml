@@ -1,0 +1,30 @@
+[project]
+name = "rag-service"
+version = "0.1.0"
+description = "RAG knowledge service — ingestion, hybrid retrieval, reranking"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "sqlalchemy>=2.0",
+  "psycopg[binary]>=3.2",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.7",
+  "llama-index-core==0.12.4",
+  "llama-index-vector-stores-postgres==0.6.3",
+  "llama-index-embeddings-openai==0.5.8",
+  "anthropic>=0.49",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "httpx>=0.27"]   # httpx ONLY for tests, never a runtime dep
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
