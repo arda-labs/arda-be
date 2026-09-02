@@ -51,12 +51,15 @@ def run_migrations(engine: Engine) -> None:
                     continue
                 up, _down = _load_sql_blocks(path)
                 if not up:
-                    raise RuntimeError(f"{path.name}: empty Up block")
+                    raise RuntimeError(f"{path.name}: missing Up block (or Down marker)")
                 conn.execute(text(up))
                 conn.execute(
                     text("INSERT INTO rag_schema_version (filename) VALUES (:f)"),
                     {"f": path.name},
                 )
                 logger.info("applied migration %s", path.name)
+        except BaseException:
+            conn.rollback()  # reset aborted-tx state so unlock below always runs
+            raise
         finally:
             conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": _ADVISORY_LOCK_KEY})
