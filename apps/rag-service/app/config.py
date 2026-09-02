@@ -30,6 +30,10 @@ class RetrievalSettings(BaseSettings):
     final_top_k: int = 3
 
 
+class QuerySettings(BaseSettings):
+    rewrite_enabled: bool = False    # P3.4 placeholder — no LLM rewrite in Phase 1
+
+
 class WorkerSettings(BaseSettings):
     lease_duration_sec: int = 300     # 5m
     heartbeat_interval_sec: int = 60
@@ -48,4 +52,5 @@ class Settings(BaseSettings):
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     reranker: RerankerSettings = Field(default_factory=RerankerSettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
+    query: QuerySettings = Field(default_factory=QuerySettings)   # env RAG_QUERY__REWRITE_ENABLED
     worker: WorkerSettings = Field(default_factory=WorkerSettings)

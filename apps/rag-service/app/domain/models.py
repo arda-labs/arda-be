@@ -132,3 +132,36 @@ class FeedbackOut(BaseModel):
     helpful: bool
     comment: str | None = None
     created_at: datetime | None = None
+
+
+class QueryRequest(BaseModel):
+    """POST /api/rag/query body — identity fields never allowed here."""
+    query: str = Field(min_length=1, max_length=512)
+    top_k: int = Field(ge=1, le=10)
+
+    @field_validator("query")
+    @classmethod
+    def _query_not_whitespace(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("query must not be empty or whitespace")
+        return v
+
+
+class QueryHitOut(BaseModel):
+    source_id: int
+    source_version_id: int
+    version: str
+    title: str
+    heading: str
+    content: str
+    score: float          # RRF fused score (ruling 2 — never raw leg scores)
+    citation: str         # f"[{source_id}:{heading}]"
+
+
+class QueryResponse(BaseModel):
+    run_id: str
+    hits: list[QueryHitOut]
+    latency_ms: int
+    rewritten: bool = False          # P3.4 — always false in Phase 1
+    retrieved_count: int             # candidates BEFORE rerank
+    reranked_count: int              # len(hits) after rerank + clamp
