@@ -27,7 +27,7 @@ func RegisterIAMCatalog(reg *DispatcherRegistry) {
  * @returns Me { user, tenant, organizations, roles, permissions, globalRoles, isGlobalAdmin }
  * @domain iam
  */`,
-			Keywords:            []string{"iam", "me", "whoami", "identity", "profile", "user", "roles", "permissions", "tenant", "account"},
+			Keywords:            []string{"iam", "me", "whoami", "identity", "profile", "user", "roles", "permissions", "tenant", "account", "quyền", "quyền hạn", "tôi là ai", "thông tin tài khoản", "vai trò", "danh tính"},
 			Kind:                "read",
 			RequiredPermissions: []string{"ai.assistant.use"},
 			Risk:                "low",
@@ -68,7 +68,7 @@ func RegisterIAMCatalog(reg *DispatcherRegistry) {
  * @returns CapabilityPage { items: [{ sdkPath, domain, kind, summary, requiredPermissions, risk }], total, hasMore, nextCursor }
  * @domain iam
  */`,
-			Keywords:            []string{"iam", "capabilities", "tools", "list", "permissions", "discover", "what can i do", "available"},
+			Keywords:            []string{"iam", "capabilities", "tools", "list", "permissions", "discover", "what can i do", "available", "chức năng", "trợ lý", "hỗ trợ", "làm được", "có thể làm", "khả năng"},
 			Kind:                "read",
 			RequiredPermissions: []string{"ai.assistant.use"},
 			Risk:                "low",

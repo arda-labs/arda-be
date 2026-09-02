@@ -201,7 +201,7 @@ và `README.md` index.
 | Time-to-AI-tool cho 1 API mới | sửa Go ai-service + deploy | commit annotation, không đụng ai-service |
 | Token cơ sở / run (SDK types) | ~1k (7 entry) | phẳng theo thời gian (WP7) dù catalog lớn |
 | Tỷ lệ run có `ai.tool_not_found` / `forbidden` | chưa đo | đo từ M3, giảm dần |
-| Search precision (eval set vàng) | chưa đo | baseline WP5, cải thiện WP8 |
+| Search precision (eval set vàng) | baseline WP5: 27 câu (BM25) — keyword/boundary 0 miss, paraphrase 0% miss | paraphrase ≤20% khi catalog lớn; WP8 re-rank nếu vượt |
 | Lỗi cấu hình kiểu env thiếu | phát hiện ở prod (2026-09-01) | phát hiện ở CI (`check-ai-catalog`) |
 
 ## 7. Chủ động KHÔNG làm

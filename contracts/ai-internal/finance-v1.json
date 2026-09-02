@@ -17,14 +17,39 @@
           "kind": "read",
           "risk": "medium",
           "timeoutMs": 3000,
-          "keywords": ["finance", "account", "chart", "ledger", "code", "balance", "read", "get"],
-          "requiredPerms": ["finance.read"],
+          "keywords": [
+            "finance",
+            "account",
+            "chart",
+            "ledger",
+            "code",
+            "balance",
+            "read",
+            "get",
+            "kế toán",
+            "số dư",
+            "sổ cái",
+            "tài khoản kế toán",
+            "tk"
+          ],
+          "requiredPerms": [
+            "finance.read"
+          ],
           "service": "finance-service",
           "envelope": "result",
           "returns": "GetAccountResult { account: { id, code, name, type, normalBalance, currency, isActive }, balance }"
         },
         "parameters": [
-          { "name": "accountId", "in": "path", "required": true, "schema": { "type": "string", "maxLength": 128 }, "description": "Finance account identifier (max 128 chars)" }
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Finance account identifier (max 128 chars)"
+          }
         ],
         "responses": {
           "200": {
@@ -34,7 +59,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "result": { "$ref": "#/components/schemas/AiAccountResult" }
+                    "result": {
+                      "$ref": "#/components/schemas/AiAccountResult"
+                    }
                   }
                 }
               }
@@ -49,19 +76,35 @@
       "AiAccount": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "code": { "type": "string" },
-          "name": { "type": "string" },
-          "type": { "type": "string" },
-          "normalBalance": { "type": "string" },
-          "currency": { "type": "string" },
-          "isActive": { "type": "boolean" }
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "normalBalance": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
         }
       },
       "AiAccountResult": {
         "type": "object",
         "properties": {
-          "account": { "$ref": "#/components/schemas/AiAccount" },
+          "account": {
+            "$ref": "#/components/schemas/AiAccount"
+          },
           "balance": {}
         }
       }

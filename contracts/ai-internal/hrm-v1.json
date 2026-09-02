@@ -17,18 +17,87 @@
           "kind": "read",
           "risk": "medium",
           "timeoutMs": 3000,
-          "keywords": ["hrm", "employee", "employees", "staff", "personnel", "list", "directory", "search", "hr"],
-          "requiredPerms": ["hrm.read"],
+          "keywords": [
+            "hrm",
+            "employee",
+            "employees",
+            "staff",
+            "personnel",
+            "list",
+            "directory",
+            "search",
+            "hr",
+            "nhân viên",
+            "nhân sự",
+            "hồ sơ nhân viên",
+            "chăm sóc nhân viên"
+          ],
+          "requiredPerms": [
+            "hrm.read"
+          ],
           "service": "hrm-service",
           "envelope": "result",
           "returns": "EmployeeListPage { items: [{ id, employeeCode, fullName, status }], page, perPage, total }"
         },
         "parameters": [
-          { "name": "q", "in": "query", "x-ai-arg": "search", "schema": { "type": "string", "maxLength": 128 }, "description": "Free-text filter on employee code/full name" },
-          { "name": "status", "in": "query", "x-ai-arg": "status", "x-ai-transform": "upper", "schema": { "type": "string", "enum": ["ACTIVE", "PROBATION", "INACTIVE"] }, "description": "Filter by employment status" },
-          { "name": "page", "in": "query", "x-ai-arg": "cursor", "schema": { "type": "integer", "minimum": 1, "default": 1 }, "description": "One-based page number" },
-          { "name": "per_page", "in": "query", "x-ai-arg": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 }, "description": "Page size, 1-50" },
-          { "name": "tenant_id", "in": "query", "x-ai-scope": "tenant", "required": true, "schema": { "type": "string" }, "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments." }
+          {
+            "name": "q",
+            "in": "query",
+            "x-ai-arg": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Free-text filter on employee code/full name"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "x-ai-arg": "status",
+            "x-ai-transform": "upper",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "PROBATION",
+                "INACTIVE"
+              ]
+            },
+            "description": "Filter by employment status"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "x-ai-arg": "cursor",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "One-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "x-ai-arg": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "description": "Page size, 1-50"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "x-ai-scope": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
         ],
         "responses": {
           "200": {
@@ -43,11 +112,19 @@
                       "properties": {
                         "items": {
                           "type": "array",
-                          "items": { "$ref": "#/components/schemas/AiEmployee" }
+                          "items": {
+                            "$ref": "#/components/schemas/AiEmployee"
+                          }
                         },
-                        "page": { "type": "integer" },
-                        "perPage": { "type": "integer" },
-                        "total": { "type": "integer" }
+                        "page": {
+                          "type": "integer"
+                        },
+                        "perPage": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
                       }
                     }
                   }
@@ -65,10 +142,18 @@
         "type": "object",
         "description": "Redacted employee exposed to the AI SDK. Internal linkage fields (tenant_id, org/position/job-title refs, iam_user_id) are dropped by the HRM handler and again by the response allowlist.",
         "properties": {
-          "id": { "type": "string" },
-          "employeeCode": { "type": "string" },
-          "fullName": { "type": "string" },
-          "status": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "employeeCode": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
         }
       }
     }

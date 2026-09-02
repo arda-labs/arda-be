@@ -27,7 +27,13 @@
             "member",
             "staff",
             "admin",
-            "search"
+            "search",
+            "người dùng",
+            "thành viên",
+            "tài khoản",
+            "vô hiệu hóa",
+            "đình chỉ",
+            "danh sách người dùng"
           ],
           "requiredPerms": [
             "iam.user.read"

@@ -32,7 +32,7 @@ func RegisterCRMCatalog(reg *DispatcherRegistry) {
  * @requires crm.customer.manage
  * @domain crm
  */`,
-			Keywords:            []string{"export", "customer", "csv", "json", "download", "prepare"},
+			Keywords:            []string{"export", "customer", "csv", "json", "download", "prepare", "xuất dữ liệu", "tải", "file"},
 			Kind:                "confirm",
 			RequiredPermissions: []string{"crm.customer.manage"},
 			Risk:                "medium",

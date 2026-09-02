@@ -64,7 +64,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * @requires crm.customer.read
  * @domain crm
  */`,
-			Keywords:            []string{"customer", "crm", "client", "code", "name", "status", "segment", "risk", "get", "read"},
+			Keywords:            []string{"customer", "crm", "client", "code", "name", "status", "segment", "risk", "get", "read", "khách hàng", "hồ sơ khách", "phân khúc", "risk level", "mã khách"},
 			Kind:                "read",
 			RequiredPermissions: []string{"crm.customer.read"},
 			Risk:                "low",
@@ -92,7 +92,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * @requires finance.read
  * @domain finance
  */`,
-			Keywords:            []string{"finance", "account", "chart", "ledger", "code", "balance", "read", "get"},
+			Keywords:            []string{"finance", "account", "chart", "ledger", "code", "balance", "read", "get", "kế toán", "số dư", "sổ cái", "tài khoản kế toán", "tk"},
 			Kind:                "read",
 			RequiredPermissions: []string{"finance.read"},
 			Risk:                "medium",
@@ -123,7 +123,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * @requires hrm.read
  * @domain hrm
  */`,
-			Keywords:            []string{"hrm", "employee", "employees", "staff", "personnel", "list", "directory", "search", "hr"},
+			Keywords:            []string{"hrm", "employee", "employees", "staff", "personnel", "list", "directory", "search", "hr", "nhân viên", "nhân sự", "hồ sơ nhân viên", "chăm sóc nhân viên"},
 			Kind:                "read",
 			RequiredPermissions: []string{"hrm.read"},
 			Risk:                "medium",
@@ -159,7 +159,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * @requires iam.user.read
  * @domain iam
  */`,
-			Keywords:            []string{"iam", "user", "users", "list", "directory", "account", "member", "staff", "admin", "search"},
+			Keywords:            []string{"iam", "user", "users", "list", "directory", "account", "member", "staff", "admin", "search", "người dùng", "thành viên", "tài khoản", "vô hiệu hóa", "đình chỉ", "danh sách người dùng"},
 			Kind:                "read",
 			RequiredPermissions: []string{"iam.user.read"},
 			Risk:                "medium",

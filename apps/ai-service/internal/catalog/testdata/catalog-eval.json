@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "description": "Golden questions for catalog retrieval evaluation. Each question names the SDK method(s) a competent assistant must retrieve. 'category': keyword = terms should match the current index; paraphrase = natural Vietnamese rewording (the WP8 watch set); boundary = discriminative between similar tools. The deterministic harness (catalog/eval_test.go) runs this in CI; tools/catalog-eval runs it through a live model for tool-selection rate (WP7 instrument).",
+  "questions": [
+    { "id": "users-01", "category": "keyword", "question": "Cho tôi danh sách user trong hệ thống", "expected": ["iam.listUsers"] },
+    { "id": "users-02", "category": "keyword", "question": "Liệt kê các users thuộc tenant này", "expected": ["iam.listUsers"] },
+    { "id": "users-03", "category": "paraphrase", "question": "Ai đang bị vô hiệu hóa tài khoản trên hệ thống?", "expected": ["iam.listUsers"] },
+    { "id": "users-04", "category": "paraphrase", "question": "Danh sách thành viên trong công ty gồm những ai?", "expected": ["iam.listUsers"] },
+    { "id": "users-05", "category": "boundary", "question": "Tìm user có email kết thúc bằng @gmail.com", "expected": ["iam.listUsers"] },
+
+    { "id": "me-01", "category": "keyword", "question": "Tôi có những quyền gì?", "expected": ["iam.me"] },
+    { "id": "me-02", "category": "keyword", "question": "Tôi thuộc tenant nào và có role gì?", "expected": ["iam.me"] },
+    { "id": "me-03", "category": "paraphrase", "question": "Tôi là ai trong hệ thống này?", "expected": ["iam.me"] },
+    { "id": "me-04", "category": "boundary", "question": "Thông tin tài khoản hiện tại của tôi là gì?", "expected": ["iam.me"] },
+
+    { "id": "cap-01", "category": "paraphrase", "question": "Bạn có thể làm được những gì?", "expected": ["iam.listCapabilities"] },
+    { "id": "cap-02", "category": "keyword", "question": "Liệt kê các chức năng mà trợ lý AI hỗ trợ", "expected": ["iam.listCapabilities"] },
+    { "id": "cap-03", "category": "boundary", "question": "Trợ lý có tool nào để làm việc với domain crm?", "expected": ["iam.listCapabilities"] },
+
+    { "id": "cust-01", "category": "keyword", "question": "Xem thông tin khách hàng KH-0123", "expected": ["crm.getCustomer"] },
+    { "id": "cust-02", "category": "keyword", "question": "Khách hàng C-99 có risk level bao nhiêu?", "expected": ["crm.getCustomer"] },
+    { "id": "cust-03", "category": "paraphrase", "question": "Công ty với mã KH-0123 thuộc phân khúc nào?", "expected": ["crm.getCustomer"] },
+    { "id": "cust-04", "category": "paraphrase", "question": "Tra giúp tôi hồ sơ của khách hàng CUST-042", "expected": ["crm.getCustomer"] },
+
+    { "id": "export-01", "category": "keyword", "question": "Xuất dữ liệu khách hàng C-1 ra file CSV", "expected": ["crm.exportCustomer"] },
+    { "id": "export-02", "category": "keyword", "question": "Chuẩn bị bản export khách hàng C-5 định dạng json", "expected": ["crm.exportCustomer"] },
+    { "id": "export-03", "category": "paraphrase", "question": "Tải hồ sơ khách C-7 về máy dưới dạng file", "expected": ["crm.exportCustomer"] },
+
+    { "id": "fin-01", "category": "keyword", "question": "Tài khoản kế toán ACC-1 số dư hiện tại bao nhiêu?", "expected": ["finance.getAccount"] },
+    { "id": "fin-02", "category": "keyword", "question": "Xem thông tin tài khoản có mã TK-1121 trong hệ thống kế toán", "expected": ["finance.getAccount"] },
+    { "id": "fin-03", "category": "paraphrase", "question": "Tài khoản 1111 còn hoạt động không, cho tôi chi tiết", "expected": ["finance.getAccount"] },
+
+    { "id": "kb-01", "category": "keyword", "question": "Tìm trong tài liệu nội bộ về chính sách nghỉ phép", "expected": ["knowledge.search"] },
+    { "id": "kb-02", "category": "paraphrase", "question": "Quy trình duyệt hợp đồng được quy định thế nào?", "expected": ["knowledge.search"] },
+    { "id": "kb-03", "category": "keyword", "question": "Tra FAQ về cách sử dụng hệ thống giúp tôi", "expected": ["knowledge.search"] },
+
+    { "id": "hrm-01", "category": "keyword", "question": "Liệt kê nhân viên trong công ty", "expected": ["hrm.listEmployees"] },
+    { "id": "hrm-02", "category": "boundary", "question": "Tra hồ sơ nhân viên NV-001 giúp tôi", "expected": ["hrm.listEmployees"] }
+  ]
+}

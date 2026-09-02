@@ -17,14 +17,41 @@
           "kind": "read",
           "risk": "low",
           "timeoutMs": 3000,
-          "keywords": ["customer", "crm", "client", "code", "name", "status", "segment", "risk", "get", "read"],
-          "requiredPerms": ["crm.customer.read"],
+          "keywords": [
+            "customer",
+            "crm",
+            "client",
+            "code",
+            "name",
+            "status",
+            "segment",
+            "risk",
+            "get",
+            "read",
+            "khách hàng",
+            "hồ sơ khách",
+            "phân khúc",
+            "risk level",
+            "mã khách"
+          ],
+          "requiredPerms": [
+            "crm.customer.read"
+          ],
           "service": "crm-service",
           "envelope": "result",
           "returns": "CustomerSummary { id, customerCode, name, status, segment, rank, riskLevel, orgId, updatedAt }"
         },
         "parameters": [
-          { "name": "customerId", "in": "path", "required": true, "schema": { "type": "string", "maxLength": 128 }, "description": "Arda customer identifier or customer code (max 128 chars)" }
+          {
+            "name": "customerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Arda customer identifier or customer code (max 128 chars)"
+          }
         ],
         "responses": {
           "200": {
@@ -34,7 +61,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "result": { "$ref": "#/components/schemas/AiCustomerSummary" }
+                    "result": {
+                      "$ref": "#/components/schemas/AiCustomerSummary"
+                    }
                   }
                 }
               }
@@ -50,16 +79,37 @@
         "type": "object",
         "description": "Redacted customer shape exposed to the AI SDK. Sensitive fields (email, mobile, identity numbers, info maps) are dropped by the CRM handler and again by the response allowlist.",
         "properties": {
-          "id": { "type": "string" },
-          "customerCode": { "type": "string" },
-          "name": { "type": "string" },
-          "customerType": { "type": "string" },
-          "status": { "type": "string" },
-          "segment": { "type": "string" },
-          "rank": { "type": "string" },
-          "riskLevel": { "type": "string" },
-          "orgId": { "type": "string" },
-          "updatedAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string"
+          },
+          "customerCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "customerType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "segment": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "string"
+          },
+          "riskLevel": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       }
     }

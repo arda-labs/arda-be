@@ -31,7 +31,7 @@ func RegisterKnowledgeCatalog(reg *DispatcherRegistry, searcher knowledge.Search
  * @requires ai.knowledge.read
  * @domain knowledge
  */`,
-			Keywords:            []string{"knowledge", "doc", "faq", "policy", "procedure", "search", "rag", "guide", "rule"},
+			Keywords:            []string{"knowledge", "doc", "faq", "policy", "procedure", "search", "rag", "guide", "rule", "tài liệu", "nội bộ", "chính sách", "quy trình", "nghỉ phép"},
 			Kind:                "read",
 			RequiredPermissions: []string{"ai.knowledge.read"},
 			Risk:                "low",
