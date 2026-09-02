@@ -1,10 +1,13 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app.api.health import router as health_router
+from app.api.sources import router as sources_router
 from app.config import Settings
+from app.domain.errors import RagError
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +35,16 @@ def create_app(settings: Settings, migrate_on_startup: bool | None = None) -> Fa
     )
     app.state.settings = settings
     app.state.do_migrate = settings.migrate_on_startup if migrate_on_startup is None else migrate_on_startup
+
+    @app.exception_handler(RagError)
+    def _rag_error_handler(_request: Request, exc: RagError) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": {"code": exc.code, "message": str(exc)}},
+        )
+
     app.include_router(health_router)
+    app.include_router(sources_router)
     return app
 
 
