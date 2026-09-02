@@ -156,7 +156,16 @@ commit annotation, **không đụng ai-service**.
   trigger) để A/B và rollback 1 dòng env.
 - **Gate WP7:** eval set 20–30 câu tiếng Việt vàng (mỗi câu trỏ về đúng 1
   tool) — tỷ lệ chọn đúng tool ở chế độ compact không tụt quá 5% so với full;
-  token/run giảm đo được.
+  token/run giảm đo được. Instrument đã sẵn sàng:
+  `TestCatalogEvalLLM` (`internal/catalog/eval_llm_test.go`) chạy cùng prompt
+  + typedefs + meta-tools như production qua model thật — baseline full-mode
+  2026-09-02: **22/27 hit** (keyword 13/14, paraphrase 6/9, boundary 3/4),
+  ~1.5–1.6k prompt tokens/bước với 12 entry. Chạy thủ công:
+
+  ```
+  CATALOG_EVAL_LLM=1 AI_MODEL_BASE_URL=... AI_MODEL_API_KEY=... AI_MODEL_ID=... \
+    go test ./apps/ai-service/internal/catalog/ -run TestCatalogEvalLLM -v -timeout 30m
+  ```
 
 ### WP8 — Semantic re-ranking cho search (P2, ~2 ngày, BE — **trigger-based**)
 
@@ -202,6 +211,8 @@ và `README.md` index.
 | Token cơ sở / run (SDK types) | ~1k (7 entry) | phẳng theo thời gian (WP7) dù catalog lớn |
 | Tỷ lệ run có `ai.tool_not_found` / `forbidden` | chưa đo | đo từ M3, giảm dần |
 | Search precision (eval set vàng) | baseline WP5: 27 câu (BM25) — keyword/boundary 0 miss, paraphrase 0% miss | paraphrase ≤20% khi catalog lớn; WP8 re-rank nếu vượt |
+| Tool-selection qua model thật (WP7 instrument) | 22/27 hit (81%): keyword 13/14, paraphrase 6/9, boundary 3/4 — deepseek-v4-flash, 2026-09-02 | đo lại mỗi khi catalog đổi; miss cluster là đầu vào của WP7/WP8 |
+| Token cơ sở / bước (LLM eval đo thực) | ~1.5–1.6k prompt tokens/bước với 12 entry (typedefs + system prompt) | phẳng theo thời gian (WP7) dù catalog lớn |
 | Lỗi cấu hình kiểu env thiếu | phát hiện ở prod (2026-09-01) | phát hiện ở CI (`check-ai-catalog`) |
 
 ## 7. Chủ động KHÔNG làm
