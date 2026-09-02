@@ -58,11 +58,16 @@ def _split_with_overlap(body: str, chunk_size: int, chunk_overlap: int) -> list[
     exceeds chunk_size is pre-sliced into step-sized units so the
     overlap tail always fits when units are merged.
     """
+    if chunk_size < 1:
+        raise ValueError("chunk_size must be >= 1")
+    if not 0 <= chunk_overlap < chunk_size:
+        raise ValueError("chunk_overlap must satisfy 0 <= chunk_overlap < chunk_size")
+
     words = _words(body)
     if len(words) <= chunk_size:
         return [body]
 
-    step = max(1, chunk_size - chunk_overlap)
+    step = chunk_size - chunk_overlap  # >= 1 after validation
     units: list[list[str]] = []
     for para in (p.strip() for p in body.split("\n\n") if p.strip()):
         pw = _words(para)
@@ -73,15 +78,28 @@ def _split_with_overlap(body: str, chunk_size: int, chunk_overlap: int) -> list[
 
     parts: list[str] = []
     buffer: list[str] = []
-    for unit in units:
+    i = 0
+    while i < len(units) or buffer:
         if not buffer:
-            buffer = unit
-        elif len(buffer) + len(unit) <= chunk_size:
-            buffer.extend(unit)
-        else:
-            parts.append(" ".join(buffer))
-            overlap = buffer[-chunk_overlap:] if chunk_overlap else []
-            buffer = overlap + unit
-    if buffer:
+            buffer = units[i]
+            i += 1
+            continue
+        if i < len(units) and len(buffer) + len(units[i]) <= chunk_size:
+            buffer.extend(units[i])
+            i += 1
+            continue
+        # cannot extend further -> flush; next part starts with the overlap tail
         parts.append(" ".join(buffer))
+        overlap = buffer[-chunk_overlap:] if chunk_overlap else []
+        if i >= len(units):
+            buffer = []
+        elif len(overlap) + len(units[i]) <= chunk_size:
+            buffer = overlap + units[i]
+            i += 1
+        else:
+            fit = chunk_size - len(overlap)
+            buffer = overlap + units[i][:fit]
+            units[i] = units[i][fit:]  # remainder stays queued
+            if not units[i]:
+                i += 1
     return [p for p in parts if p]

@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SourceCreate(BaseModel):
@@ -20,6 +20,21 @@ class ChunkerConfig(BaseModel):
     chunk_size: int = 512
     chunk_overlap: int = 64
     chunker_version: str = "1"
+
+    @field_validator("chunk_size")
+    @classmethod
+    def _chunk_size_ge_1(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("chunk_size must be >= 1")
+        return v
+
+    @field_validator("chunk_overlap")
+    @classmethod
+    def _overlap_lt_chunk_size(cls, v: int, info) -> int:
+        cs = info.data.get("chunk_size", 512)
+        if not 0 <= v < cs:
+            raise ValueError(f"chunk_overlap must satisfy 0 <= chunk_overlap < chunk_size ({cs})")
+        return v
 
 
 class VersionCreate(BaseModel):
