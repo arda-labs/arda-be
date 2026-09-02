@@ -13,8 +13,10 @@ from sqlalchemy import text
 
 from app.config import RetrievalSettings
 
-# Spec §5.3 — the tenant/permission filter, verbatim. s = ai_knowledge_sources,
+# Spec §5.3 — the tenant/permission filter. s = ai_knowledge_sources,
 # v = ai_knowledge_source_versions, c = ai_knowledge_chunks.
+# Tenant clause deviates from plan brief per controller ruling: NULL tenant =
+# global, accessible to all tenants (IS NOT DISTINCT FROM would be redundant).
 _ACCESS_FILTER = """
   AND (s.tenant_id IS NOT DISTINCT FROM :tenant OR s.tenant_id IS NULL)  -- NULL tenant = global/system; accessible to all
   AND s.scope IN ('tenant', 'global')                   -- system never exposed
@@ -51,14 +53,14 @@ def hybrid_search(
     *,
     tenant_id: str | None,
     settings: RetrievalSettings,
-    model: str = "",
+    model: str,
 ) -> list[Candidate]:
     """Hybrid FTS + vector retrieval, RRF-fused, deduped by chunk_id.
 
     `conn` is a SQLAlchemy connection; the caller owns the transaction.
     `model` is the embedding model name that chunks must match to be eligible
-    for the vector leg (immutable contract — never mix models). Callers pass
-    `settings.embedding.model`; tests may pass the configured model directly.
+    for the vector leg (immutable contract — never mix models); callers pass
+    `settings.embedding.model`.
     """
     params = {"tenant": tenant_id, "model": model}
 
@@ -93,12 +95,19 @@ def hybrid_search(
               JOIN ai_knowledge_source_versions v ON v.id = c.source_version_id
               JOIN ai_knowledge_sources s ON s.id = v.source_id
              WHERE (to_tsvector('simple', c.content)
-                      @@ plainto_tsquery('simple', :q)
-                OR to_tsvector('simple', s.title || ' ' || COALESCE(c.heading, ''))
-                      @@ plainto_tsquery('simple', :q))
+                        @@ plainto_tsquery('simple', :q)
+                   OR to_tsvector('simple', s.title || ' ' || COALESCE(c.heading, ''))
+                        @@ plainto_tsquery('simple', :q))
             """
             + _ACCESS_FILTER
-            + " LIMIT :k"
+            + """
+             ORDER BY GREATEST(
+                          ts_rank(to_tsvector('simple', c.content), plainto_tsquery('simple', :q)),
+                          ts_rank(to_tsvector('simple', s.title || ' ' || COALESCE(c.heading, '')),
+                                  plainto_tsquery('simple', :q))
+                      ) DESC
+             LIMIT :k
+            """
         ),
         {**params, "q": query, "k": settings.fts_top_k},
     ).mappings().all()

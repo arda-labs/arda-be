@@ -20,9 +20,11 @@ MODEL = "@cf/qwen/qwen3-embedding-0.6b"
 OTHER_MODEL = "some-other-model"
 
 
-def _unit(vec: float) -> list[float]:
-    """Unit vector with all components equal -> vec. Deterministic, 1024-dim."""
-    return [vec] * 1024
+def _axis(index: int) -> list[float]:
+    """Unit vector along axis `index`, 1024 dimensions. Deterministic."""
+    vec = [0.0] * 1024
+    vec[index] = 1.0
+    return vec
 
 
 def _sha(text: str) -> str:
@@ -75,6 +77,7 @@ def _seed_chunks(
     version_id: int,
     chunks: list[tuple[str, str]],  # (heading, content)
     model: str | None,              # None -> embedding stays NULL
+    axis_base: int = 0,             # chunk i gets unit vector along axis (axis_base + i)
 ) -> list[str]:
     """Insert chunks directly via SQL, mirroring ingestion.py. Returns chunk_ids."""
     ids = []
@@ -105,7 +108,7 @@ def _seed_chunks(
                     ),
                     {"vid": version_id, "idx": i, "heading": heading, "content": content,
                      "cid": chunk_id, "ch": content_hash,
-                     "emb": _unit(0.1 * (i + 1)), "model": model},
+                     "emb": _axis(axis_base + i), "model": model},
                 )
     # Mirror the worker's atomic publish (complete_job) without running the worker.
     with engine.begin() as conn:
@@ -127,28 +130,28 @@ def std_ids(client, engine):
     sid_a, vid_a = _seed_source_version(
         client, title="FAQ nghỉ phép", tenant="tenant-a", scope="tenant", version="1.0")
     out["A0"], out["A1"] = _seed_chunks(
-        engine, source_id=sid_a, version_id=vid_a, model=MODEL,
+        engine, source_id=sid_a, version_id=vid_a, model=MODEL, axis_base=0,
         chunks=[
-            ("Nghỉ phép năm", "Nghỉ phép năm được hưởng nguyên lương theo quy định của công ty."),
-            ("Quy trình xin nghỉ phép", "Quy trình xin nghỉ phép: gửi đơn qua cổng thông tin nội bộ."),
+            ("Nghỉ phép năm", "Nghỉ phép năm: người lao động được nghỉ phép hưởng nguyên lương. Mỗi năm được nghỉ phép tối đa 12 ngày theo quy định của công ty."),
+            ("Quy trình xin nghỉ phép", "Quy trình xin nghỉ phép: gửi đơn qua cổng thông tin nội bộ trước khi nghỉ phép."),
         ],
     )
     sid_b, vid_b = _seed_source_version(
         client, title="Chính sách chung", tenant=None, scope="global", version="1.0")
     out["B0"] = _seed_chunks(
-        engine, source_id=sid_b, version_id=vid_b, model=MODEL,
+        engine, source_id=sid_b, version_id=vid_b, model=MODEL, axis_base=2,
         chunks=[("Chính sách chung", "Chính sách chung của công ty áp dụng cho tất cả nhân viên.")],
     )[0]
     sid_c, vid_c = _seed_source_version(
         client, title="FAQ nghỉ phép B", tenant="tenant-b", scope="tenant", version="1.0")
     out["C0"] = _seed_chunks(
-        engine, source_id=sid_c, version_id=vid_c, model=MODEL,
+        engine, source_id=sid_c, version_id=vid_c, model=MODEL, axis_base=3,
         chunks=[("Nghỉ phép tenant B", "Nội dung bí mật của tenant-b về nghỉ phép.")],
     )[0]
     sid_d, vid_d = _seed_source_version(
         client, title="Hệ thống", tenant="tenant-a", scope="system", version="1.0")
     out["D0"] = _seed_chunks(
-        engine, source_id=sid_d, version_id=vid_d, model=MODEL,
+        engine, source_id=sid_d, version_id=vid_d, model=MODEL, axis_base=4,
         chunks=[("Hệ thống nội bộ", "Hệ thống nội bộ không được truy cập qua tìm kiếm.")],
     )[0]
     sid_e, vid_e = _seed_source_version(
@@ -168,8 +171,8 @@ def _search(conn, query: str, qv: list[float] | None, *, tenant_id: str | None):
 
 
 def _query_zero():
-    """Vector closest to Source A's chunk 0 (embedding 0.1)."""
-    return [0.1] * 1024
+    """Unit vector along axis 0: closest to A0, orthogonal to every other chunk."""
+    return _axis(0)
 
 
 def test_hybrid_returns_tenant_and_global_never_other_tenants_or_system(std_ids, engine):
@@ -244,6 +247,22 @@ def test_rrf_ranks_both_legs_first_and_dedupes(std_ids, engine):
         # A0 came from both legs
         a0 = next(h for h in hits if h.chunk_id == std_ids["A0"])
         assert a0.source == "both"
+    finally:
+        conn.close()
+
+
+def test_fts_leg_order_is_deterministic_by_relevance(std_ids, engine):
+    """FTS-only path (query_vector=None): ORDER BY GREATEST(ts_rank(...)) must be deterministic.
+
+    A0's content mentions 'nghỉ phép' most frequently (3x) -> ranks first.
+    The exact order of lower-ranked chunks is ts_rank-implementation-dependent
+    (density vs frequency), but A0 must always be first.
+    """
+    conn = engine.connect()
+    try:
+        hits = _search(conn, "nghỉ phép", None, tenant_id="tenant-a")
+        ranked = [h.chunk_id for h in hits]
+        assert ranked[0] == std_ids["A0"], f"A0 must rank first in the FTS leg, got {ranked}"
     finally:
         conn.close()
 
