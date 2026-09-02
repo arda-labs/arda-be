@@ -101,12 +101,12 @@ def test_anthropic_fallback_on_client_exception():
 
 def test_anthropic_fallback_on_unparseable_scores():
     c = _candidates(3)
+    # Each bad payload is returned verbatim from the client callable: "not json"
+    # hits JSONDecodeError, "42" fails the list type check, "[1, 2]" the length
+    # check, "[1.0, 2.0, 3.0, 4.0]" the length check, "[true, 2.0, 3.0]" the
+    # numeric-entry check. All must fall back to input order.
     for bad in ["not json", "42", "[1, 2]", "[1.0, 2.0, 3.0, 4.0]", "[true, 2.0, 3.0]"]:
-        client = _FakeAnthropicClient.__new__(_FakeAnthropicClient)
-        client.scores = []
-        client.payloads = []
-        client.__call__ = lambda messages, s=bad: s
-        reranker = AnthropicReranker(DEFAULT, client=client)
+        reranker = AnthropicReranker(DEFAULT, client=lambda messages, s=bad: s)
         assert reranker.rerank("q", c, top_n=3) == c[:3], f"expected fallback for {bad!r}"
 
 
