@@ -133,21 +133,21 @@ func (ix *Indexer) IndexDocument(ctx context.Context, tenantID, sourceKey, versi
 	case errors.Is(err, sql.ErrNoRows):
 		err = ix.db.QueryRowContext(ctx, `
 			INSERT INTO public.ai_knowledge_sources
-				(tenant_id, source_key, title, version, status, scope, source_type, effective_from)
-			VALUES ($1, $2, $3, $4, 'PUBLISHED', $5, $6, now())
+				(tenant_id, source_key, title, version, checksum, status, scope, source_type, effective_from)
+			VALUES ($1, $2, $3, $4, $5, 'PUBLISHED', $6, $7, now())
 			RETURNING id
-		`, tenantColumn, sourceKey, title, version, scope, sourceType).Scan(&sourceID)
+		`, tenantColumn, sourceKey, title, version, contentChecksum(markdown), scope, sourceType).Scan(&sourceID)
 		if err != nil {
 			return 0, 0, fmt.Errorf("insert knowledge source: %w", err)
 		}
 	case err != nil:
 		return 0, 0, fmt.Errorf("find knowledge source: %w", err)
-	default:
-		if _, err := ix.db.ExecContext(ctx, `
-			UPDATE public.ai_knowledge_sources
-			SET title = $3, status = 'PUBLISHED', updated_at = now()
-			WHERE id = $1 AND version = $2
-		`, sourceID, version, title); err != nil {
+		default:
+			if _, err := ix.db.ExecContext(ctx, `
+				UPDATE public.ai_knowledge_sources
+				SET title = $3, checksum = $4, status = 'PUBLISHED', updated_at = now()
+				WHERE id = $1 AND version = $2
+			`, sourceID, version, title, contentChecksum(markdown)); err != nil {
 			return 0, 0, fmt.Errorf("update knowledge source: %w", err)
 		}
 	}

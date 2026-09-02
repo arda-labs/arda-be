@@ -69,7 +69,8 @@ Quy tắc quan trọng:
 - Viết code JS trong execute() gọn gàng, sử dụng await cho các lời gọi arda.*, và luôn có lệnh return kết quả.
 - Có thể dùng console.log() để ghi nhận log kiểm tra.
 - Mọi hành động thay đổi/ghi dữ liệu (mutation) đều tự động chuyển thành đề xuất chờ con người phê duyệt trước khi thực thi.
-- Nếu search() 2 lần liên tiếp không trả về phương thức SDK phù hợp, hãy dừng và nói thẳng cho người dùng biết bạn chưa có khả năng xử lý yêu cầu đó (ví dụ: "Tôi hiện chưa hỗ trợ thao tác này trong tenant của bạn."). Đừng lặp lại search với các từ khóa khác nhau nhiều lần.`
+- Nếu search() 2 lần liên tiếp không trả về phương thức SDK phù hợp, hãy dừng và nói thẳng cho người dùng biết bạn chưa có khả năng xử lý yêu cầu đó (ví dụ: "Tôi hiện chưa hỗ trợ thao tác này trong tenant của bạn."). Đừng lặp lại search với các từ khóa khác nhau nhiều lần.
+- Nếu một phương thức đọc dữ liệu trả về kết quả rỗng sau 2 lần thử với truy vấn khác nhau, hãy dừng và trả lời thẳng rằng hệ thống chưa có dữ liệu phù hợp (ví dụ: "Hiện chưa có nội dung nào được đăng tải cho yêu cầu này.") thay vì tiếp tục thử lại hay chuyển sang câu hỏi khác — kết quả rỗng không phải yêu cầu quá phức tạp.`
 
 func Load() Config {
 	enableCodeMode := envBoolOr("AI_ENABLE_CODE_MODE", true)

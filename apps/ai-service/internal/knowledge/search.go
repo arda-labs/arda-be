@@ -61,6 +61,16 @@ func (s *SQLSearcher) Search(ctx context.Context, tenantID, query string, limit 
 			to_tsvector('simple', coalesce(c.heading, '') || ' ' || c.content),
 			plainto_tsquery('simple', $2)
 		) DESC, s.updated_at DESC, c.chunk_index ASC`
+	// Text match (full-text or ILIKE) is the cheap pre-filter. When the
+	// embedder is available it widens the gate with a semantic-similarity
+	// window so natural-language questions that share no exact token with a
+	// chunk still reach the ranking stage — vector order then decides what
+	// the model sees. No embedder means text match only.
+	matchFilter := `(
+		to_tsvector('simple', coalesce(c.heading, '') || ' ' || c.content)
+		@@ plainto_tsquery('simple', $2)
+		OR c.content ILIKE '%' || $2 || '%'
+	)`
 	args := []any{tenantID, query, limit}
 
 	if s.embedder != nil {
@@ -79,6 +89,7 @@ func (s *SQLSearcher) Search(ctx context.Context, tenantID, query string, limit 
 					0
 				) * 0.6) DESC, s.updated_at DESC, c.chunk_index ASC`
 			args = []any{tenantID, query, limit, s.embedder.Model(), vectorLiteral(queryVector[0])}
+			matchFilter += ` OR (c.embedding_model = $4 AND c.embedding <=> $5::vector < 0.75)`
 		}
 	}
 
@@ -93,12 +104,8 @@ func (s *SQLSearcher) Search(ctx context.Context, tenantID, query string, limit 
 		  AND ((s.scope IN ('global', 'system') AND s.tenant_id IS NULL)
 		       OR (s.scope = 'tenant' AND s.tenant_id = $1))
 		  AND (c.tenant_id IS NULL OR c.tenant_id = $1)
-		  AND (
-			to_tsvector('simple', coalesce(c.heading, '') || ' ' || c.content)
-			@@ plainto_tsquery('simple', $2)
-			OR c.content ILIKE '%' || $2 || '%'
-		  )
-		ORDER BY `+orderBy+`
+		  AND ` + matchFilter + `
+		ORDER BY ` + orderBy + `
 		LIMIT $3
 	`, args...)
 	if err != nil {
