@@ -1,5 +1,3 @@
-import os
-
 import pytest
 
 from app.rag.embedder import Embedder, EmbeddingError, build_embedder
@@ -15,14 +13,13 @@ class _FakeClient:
         return [[0.1] * self.dim for _ in texts]
 
 
-def _settings(dim: int = 1024, base_url: str = "http://localhost:9999/v1", key: str = "k"):
+def _settings(dim: int = 1024, base_url: str = "http://localhost:9999/v1"):
     from app.config import EmbeddingSettings
 
-    os.environ["CF_WORKERS_AI_API_TOKEN"] = key
     return EmbeddingSettings(dimensions=dim, base_url=base_url)
 
 
-def test_dimension_mismatch_raises(monkeypatch):
+def test_dimension_mismatch_raises():
     emb = Embedder(_settings(dim=1024), _client=_FakeClient(1023))
     with pytest.raises(EmbeddingError, match="1024"):
         emb.embed(["a", "b"])
@@ -43,7 +40,7 @@ def test_empty_texts_returns_empty():
 def test_model_and_dimensions_properties():
     emb = Embedder(_settings(dim=768), _client=_FakeClient(768))
     assert emb.dimensions == 768
-    assert emb.model
+    assert emb.model == "@cf/qwen/qwen3-embedding-0.6b"
 
 
 def test_build_embedder_none_without_base_url():
@@ -52,17 +49,17 @@ def test_build_embedder_none_without_base_url():
     assert build_embedder(EmbeddingSettings(base_url="")) is None
 
 
-def test_build_embedder_none_without_api_key():
+def test_build_embedder_none_without_api_key(monkeypatch):
     from app.config import EmbeddingSettings
 
-    os.environ.pop("CF_WORKERS_AI_API_TOKEN", None)
+    monkeypatch.delenv("CF_WORKERS_AI_API_TOKEN", raising=False)
     assert build_embedder(EmbeddingSettings(base_url="http://x")) is None
 
 
-def test_build_embedder_returns_instance():
+def test_build_embedder_returns_instance(monkeypatch):
     from app.config import EmbeddingSettings
 
-    os.environ["CF_WORKERS_AI_API_TOKEN"] = "k"
+    monkeypatch.setenv("CF_WORKERS_AI_API_TOKEN", "k")
     emb = build_embedder(EmbeddingSettings(base_url="http://x"))
     assert emb is not None
     assert emb.dimensions == 1024
