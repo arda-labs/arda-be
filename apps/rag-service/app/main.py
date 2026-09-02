@@ -11,13 +11,12 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    settings: Settings = app.state.settings
-    if settings.migrate_on_startup:
+    if app.state.do_migrate:
         try:
             from app.db.engine import get_engine
             from app.db.migrate import run_migrations
 
-            run_migrations(get_engine(settings))
+            run_migrations(get_engine(app.state.settings))
         except ImportError:
             logger.warning("migrations skipped: app.db.migrate not available yet")
     yield
@@ -32,6 +31,7 @@ def create_app(settings: Settings, migrate_on_startup: bool | None = None) -> Fa
         lifespan=_lifespan,
     )
     app.state.settings = settings
+    app.state.do_migrate = settings.migrate_on_startup if migrate_on_startup is None else migrate_on_startup
     app.include_router(health_router)
     return app
 
