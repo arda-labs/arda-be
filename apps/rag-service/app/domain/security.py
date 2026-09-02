@@ -56,7 +56,10 @@ def verify_service_token(
     if claims["aud"] != expected_audience.strip():
         raise AuthenticationError("wrong audience")
     now = (now or dt.datetime.now(dt.timezone.utc)).timestamp()
-    iat, exp = claims.get("iat") or 0, claims.get("exp") or 0
+    try:
+        iat, exp = int(claims.get("iat") or 0), int(claims.get("exp") or 0)
+    except (TypeError, ValueError):
+        raise AuthenticationError("invalid lifetime") from None
     if iat <= 0 or exp <= iat or now < iat - _MAX_CLOCK_SKEW.total_seconds() or not (now < exp):
         raise AuthenticationError("invalid lifetime")
     return VerifiedClaims(source=claims["src"], audience=claims["aud"])
