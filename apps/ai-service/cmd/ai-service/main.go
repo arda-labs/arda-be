@@ -90,6 +90,11 @@ func main() {
 	}
 
 	var resolver *tools.Registry
+	var ragClient *svcclient.RAGClient
+	if cfg.RAGServiceURL != "" {
+		ragClient = svcclient.NewRAGClient(cfg.RAGServiceURL, "ai-service", cfg.ServiceAuthSecret, nil)
+	}
+	_ = ragClient // ponytail: wire into catalog.NewCodeModeSuite when knowledge tools are added
 	if cfg.EnableReadTools {
 		// Code Mode: Expose ONLY the meta-tools (search & execute & readResult)
 		// to the model. Domain APIs are dispatched internally through the

@@ -18,6 +18,7 @@ type Config struct {
 	FinanceServiceURL   string
 	HRMServiceURL       string
 	IAMServiceURL       string
+	RAGServiceURL       string
 	EnableReadTools     bool
 	EnableHITLProposals bool
 	EnableCodeMode      bool
@@ -89,6 +90,7 @@ func Load() Config {
 		FinanceServiceURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("FINANCE_SERVICE_URL")), "/"),
 		HRMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("HRM_SERVICE_URL")), "/"),
 		IAMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("IAM_SERVICE_URL")), "/"),
+		RAGServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), "/"),
 		EnableReadTools:     envBoolOr("AI_ENABLE_READ_TOOLS", false),
 		EnableHITLProposals: envBoolOr("AI_ENABLE_HITL_PROPOSALS", false),
 		EnableCodeMode:      enableCodeMode,
