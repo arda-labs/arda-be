@@ -46,6 +46,17 @@ routes:
       - superadmin
       - platform.manage
 
+  - id: ai-tools-read
+    path: /api/ai/tools
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - ai.assistant.use
+      - ai.admin
+      - superadmin
+      - platform.manage
+
   - id: ai-settings-read
     path: /api/ai/settings/**
     methods: [GET]

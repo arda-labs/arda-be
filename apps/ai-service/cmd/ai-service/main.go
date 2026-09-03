@@ -136,6 +136,26 @@ func main() {
 		// outputs by resultId when the inline preview is truncated.
 		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool, suite.ReadTool)
 		routerOptions.ModelSDKTypes = suite.TypeDefs
+
+		if suite.Registry != nil {
+			entries := suite.Registry.AllEntries()
+			toolsDTO := make([]handler.CatalogToolDTO, 0, len(entries))
+			for _, e := range entries {
+				toolsDTO = append(toolsDTO, handler.CatalogToolDTO{
+					MethodName:          e.MethodName,
+					SDKPath:             e.SDKPath,
+					Domain:              e.Domain,
+					Signature:           e.Signature,
+					JSDoc:               e.JSDoc,
+					Keywords:            e.Keywords,
+					Kind:                e.Kind,
+					RequiredPermissions: e.RequiredPermissions,
+					Risk:                e.Risk,
+					TimeoutMs:           e.Timeout.Milliseconds(),
+				})
+			}
+			routerOptions.CatalogTools = toolsDTO
+		}
 	}
 	if cfg.ModelGatewayToken != "" {
 		routerOptions.ModelPool.SetGatewayToken(cfg.ModelGatewayToken)

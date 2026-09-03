@@ -53,6 +53,21 @@ type RouterOptions struct {
 	RAGClient ragFeedbacker
 	// RAGService is the in-process knowledge/RAG service for /api/rag/* endpoints.
 	RAGService *knowledge.Service
+	// CatalogTools is the list of SDK tools surfaced via GET /api/ai/tools.
+	CatalogTools []CatalogToolDTO
+}
+
+type CatalogToolDTO struct {
+	MethodName          string   `json:"methodName"`
+	SDKPath             string   `json:"sdkPath"`
+	Domain              string   `json:"domain"`
+	Signature           string   `json:"signature"`
+	JSDoc               string   `json:"jsdoc"`
+	Keywords            []string `json:"keywords,omitempty"`
+	Kind                string   `json:"kind"`
+	RequiredPermissions []string `json:"requiredPermissions"`
+	Risk                string   `json:"risk"`
+	TimeoutMs           int64    `json:"timeoutMs"`
 }
 
 type runStore interface {
@@ -154,6 +169,9 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 			return
 		}
 		problem(w, http.StatusNotFound, "ai.approval_endpoint_not_found")
+	})
+	mux.HandleFunc("/api/ai/tools", func(w http.ResponseWriter, r *http.Request) {
+		handleListTools(w, r, options)
 	})
 	mux.HandleFunc("/api/ai/settings", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
@@ -607,6 +625,28 @@ func handleListApprovals(w http.ResponseWriter, r *http.Request, store runStore,
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+func handleListTools(w http.ResponseWriter, r *http.Request, options RouterOptions) {
+	if r.Method != http.MethodGet {
+		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
+		return
+	}
+	toolsList := options.CatalogTools
+	if toolsList == nil {
+		toolsList = []CatalogToolDTO{}
+	}
+	domain := r.URL.Query().Get("domain")
+	if domain != "" {
+		filtered := make([]CatalogToolDTO, 0, len(toolsList))
+		for _, t := range toolsList {
+			if strings.EqualFold(t.Domain, domain) {
+				filtered = append(filtered, t)
+			}
+		}
+		toolsList = filtered
+	}
+	writeJSON(w, http.StatusOK, toolsList)
 }
 
 // identityScope establishes the caller's identity/tenant context without

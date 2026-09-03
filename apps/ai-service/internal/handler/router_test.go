@@ -238,3 +238,27 @@ func TestServiceAuthMiddlewareRejectsMissingWorkloadIdentityOnApplicationRoutes(
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
 	}
 }
+
+func TestListToolsEndpoint(t *testing.T) {
+	options := RouterOptions{
+		CatalogTools: []CatalogToolDTO{
+			{MethodName: "crm.getCustomer", SDKPath: "arda.crm.getCustomer", Domain: "crm", Risk: "low"},
+			{MethodName: "hrm.listEmployees", SDKPath: "arda.hrm.listEmployees", Domain: "hrm", Risk: "low"},
+		},
+	}
+	router := NewRouterWithOptions(nil, nil, options)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ai/tools", nil)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "crm.getCustomer") {
+		t.Fatalf("list tools failed: code = %d, body = %s", res.Code, res.Body.String())
+	}
+
+	filterReq := httptest.NewRequest(http.MethodGet, "/api/ai/tools?domain=crm", nil)
+	filterRes := httptest.NewRecorder()
+	router.ServeHTTP(filterRes, filterReq)
+	if filterRes.Code != http.StatusOK || !strings.Contains(filterRes.Body.String(), "crm.getCustomer") || strings.Contains(filterRes.Body.String(), "hrm.listEmployees") {
+		t.Fatalf("filter tools failed: code = %d, body = %s", filterRes.Code, filterRes.Body.String())
+	}
+}
