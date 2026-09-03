@@ -31,8 +31,14 @@ class Embedder:
             from llama_index.embeddings.openai import OpenAIEmbedding
 
             api_key = _env(self.settings.api_key_env)
+            # llama-index OpenAIEmbedding validates model against its own enum
+            # (only OpenAI models). We pass a placeholder that passes the enum
+            # check, then override model_name with the real provider model
+            # (e.g. @cf/qwen/qwen3-embedding-0.6b) so the actual API payload
+            # uses the correct model name.
             self._client = OpenAIEmbedding(
-                model=self.settings.model,
+                model="text-embedding-ada-002",
+                model_name=self.settings.model,
                 api_key=api_key,
                 api_base=self.settings.base_url or None,
                 embed_batch_size=self.settings.batch_size,
