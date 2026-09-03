@@ -24,6 +24,17 @@ routes:
     permissions:
       - ai.assistant.use
 
+  - id: ai-approvals-read
+    path: /api/ai/approvals/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - ai.assistant.use
+      - ai.admin
+      - superadmin
+      - platform.manage
+
   - id: ai-approvals-write
     path: /api/ai/approvals/**
     methods: [POST, OPTIONS]
@@ -31,6 +42,9 @@ routes:
     risk: medium
     permissions:
       - ai.assistant.use
+      - ai.admin
+      - superadmin
+      - platform.manage
 
   - id: ai-settings-read
     path: /api/ai/settings/**

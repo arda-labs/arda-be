@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -133,6 +134,10 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 		createFeedback(w, r, options.RAGClient)
 	})
 	mux.HandleFunc("/api/ai/approvals", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handleListApprovals(w, r, store, options)
+			return
+		}
 		createApproval(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/approvals/", func(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +145,15 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 			executeApprovedTool(w, r, store, resolver, options)
 			return
 		}
-		decideApproval(w, r, store, options)
+		if strings.HasSuffix(r.URL.Path, "/decision") {
+			decideApproval(w, r, store, options)
+			return
+		}
+		if r.Method == http.MethodGet {
+			handleListApprovals(w, r, store, options)
+			return
+		}
+		problem(w, http.StatusNotFound, "ai.approval_endpoint_not_found")
 	})
 	mux.HandleFunc("/api/ai/settings", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
@@ -567,6 +580,33 @@ func decideApproval(w http.ResponseWriter, r *http.Request, store runStore, opti
 		return
 	}
 	writeJSON(w, http.StatusOK, record)
+}
+
+func handleListApprovals(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
+	if !options.EnableHITLProposals {
+		problem(w, http.StatusNotFound, "ai.hitl_not_enabled")
+		return
+	}
+	scope, ok := approvalScope(w, r, assistantPermission)
+	if !ok {
+		return
+	}
+	approvalStore, ok := store.(repository.ApprovalStore)
+	if !ok || approvalStore == nil {
+		writeJSON(w, http.StatusOK, []repository.ApprovalDetail{})
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+	list, err := approvalStore.ListApprovals(r.Context(), scope.TenantID, status, limit, offset)
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "ai.list_approvals_failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
 }
 
 // identityScope establishes the caller's identity/tenant context without

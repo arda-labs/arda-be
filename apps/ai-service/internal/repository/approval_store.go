@@ -53,9 +53,26 @@ type ApprovalRecord struct {
 	Replayed  bool      `json:"replayed,omitempty"`
 }
 
+type ApprovalDetail struct {
+	ID              string          `json:"id"`
+	Status          string          `json:"status"`
+	ToolName        string          `json:"toolName"`
+	ToolVersion     int             `json:"toolVersion"`
+	Risk            string          `json:"risk"`
+	Arguments       json.RawMessage `json:"arguments"`
+	Summary         json.RawMessage `json:"summary,omitempty"`
+	RequesterUserID string          `json:"requesterUserId"`
+	ApproverUserID  *string         `json:"approverUserId,omitempty"`
+	ThreadID        string          `json:"threadId"`
+	RunID           string          `json:"runId"`
+	ExpiresAt       time.Time       `json:"expiresAt"`
+	CreatedAt       time.Time       `json:"createdAt"`
+}
+
 type ApprovalStore interface {
 	CreateApprovalProposal(ctx context.Context, proposal ApprovalProposal) (ApprovalRecord, error)
 	DecideApproval(ctx context.Context, tenantID, approvalID, approverUserID, decision string) (ApprovalRecord, error)
+	ListApprovals(ctx context.Context, tenantID, status string, limit, offset int) ([]ApprovalDetail, error)
 }
 
 func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal ApprovalProposal) (ApprovalRecord, error) {
@@ -274,4 +291,78 @@ func (s *SQLRunStore) FetchApprovedExecution(ctx context.Context, tenantID, appr
 	}
 	execution.ToolVersion = version
 	return execution, nil
+}
+
+func (s *SQLRunStore) ListApprovals(ctx context.Context, tenantID, status string, limit, offset int) ([]ApprovalDetail, error) {
+	if s == nil || s.db == nil {
+		return []ApprovalDetail{}, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	query := `
+		SELECT a.id::text, a.status, e.tool_name, e.tool_version, e.risk,
+		       e.arguments_redacted, a.summary_redacted, a.requester_user_id::text,
+		       a.approver_user_id::text, r.external_thread_id, r.external_run_id,
+		       a.expires_at, a.created_at
+		FROM public.ai_approvals a
+		JOIN public.ai_tool_executions e ON e.id = a.tool_execution_id
+		JOIN public.ai_runs r ON r.id = a.run_id
+		WHERE a.tenant_id = $1
+	`
+	args := []any{tenantID}
+
+	if status != "" {
+		args = append(args, strings.ToUpper(status))
+		query += fmt.Sprintf(" AND a.status = $%d", len(args))
+	}
+
+	query += fmt.Sprintf(" ORDER BY a.created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, limit, offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list approvals: %w", err)
+	}
+	defer rows.Close()
+
+	var list []ApprovalDetail
+	for rows.Next() {
+		var item ApprovalDetail
+		var versionText string
+		var rawArgs, rawSummary []byte
+		var approverID sql.NullString
+		if err := rows.Scan(
+			&item.ID, &item.Status, &item.ToolName, &versionText, &item.Risk,
+			&rawArgs, &rawSummary, &item.RequesterUserID,
+			&approverID, &item.ThreadID, &item.RunID,
+			&item.ExpiresAt, &item.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan approval detail: %w", err)
+		}
+		item.ToolVersion, _ = strconv.Atoi(versionText)
+		if item.ToolVersion == 0 {
+			item.ToolVersion = 1
+		}
+		if approverID.Valid {
+			item.ApproverUserID = &approverID.String
+		}
+		if len(rawArgs) > 0 {
+			item.Arguments = json.RawMessage(rawArgs)
+		} else {
+			item.Arguments = json.RawMessage(`{}`)
+		}
+		if len(rawSummary) > 0 {
+			item.Summary = json.RawMessage(rawSummary)
+		}
+		list = append(list, item)
+	}
+	if list == nil {
+		list = []ApprovalDetail{}
+	}
+	return list, rows.Err()
 }

@@ -59,6 +59,10 @@ func (s *fakeToolRunStore) DecideApproval(_ context.Context, _, _, _, _ string) 
 	return repository.ApprovalRecord{ID: "approval-1", Status: "APPROVED", ExpiresAt: time.Now().UTC().Add(time.Minute)}, nil
 }
 
+func (s *fakeToolRunStore) ListApprovals(_ context.Context, _, _ string, _, _ int) ([]repository.ApprovalDetail, error) {
+	return []repository.ApprovalDetail{}, nil
+}
+
 type handlerTestTool struct{}
 
 func (handlerTestTool) Definition() tools.Definition {
