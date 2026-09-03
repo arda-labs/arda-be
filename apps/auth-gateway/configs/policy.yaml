@@ -68,6 +68,27 @@ routes:
       - superadmin
       - platform.manage
 
+  - id: ai-agents-read
+    path: /api/ai/agents/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - ai.assistant.use
+      - ai.admin
+      - superadmin
+      - platform.manage
+
+  - id: ai-agents-write
+    path: /api/ai/agents/**
+    methods: [POST, PUT, DELETE, OPTIONS]
+    auth: true
+    risk: medium
+    permissions:
+      - ai.admin
+      - superadmin
+      - platform.manage
+
   - id: ai-settings-read
     path: /api/ai/settings/**
     methods: [GET]

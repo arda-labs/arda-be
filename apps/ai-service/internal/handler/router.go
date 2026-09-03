@@ -79,6 +79,12 @@ type analyticsStore interface {
 	GetAnalytics(ctx context.Context, tenantID string) (*repository.AnalyticsSummary, error)
 }
 
+type agentStore interface {
+	ListAgents(ctx context.Context, tenantID string) ([]repository.AgentConfig, error)
+	SaveAgent(ctx context.Context, agent repository.AgentConfig) (*repository.AgentConfig, error)
+	DeleteAgent(ctx context.Context, tenantID, agentID string) error
+}
+
 type toolResolver interface {
 	Resolve(call tools.Call, scope tools.Context) (tools.Tool, tools.Definition, error)
 }
@@ -179,6 +185,24 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	})
 	mux.HandleFunc("/api/ai/analytics/overview", func(w http.ResponseWriter, r *http.Request) {
 		handleGetAnalytics(w, r, store, options)
+	})
+	mux.HandleFunc("/api/ai/agents", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			handleSaveAgent(w, r, store, options)
+			return
+		}
+		handleListAgents(w, r, store, options)
+	})
+	mux.HandleFunc("/api/ai/agents/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			handleDeleteAgent(w, r, store, options)
+			return
+		}
+		if r.Method == http.MethodPut || r.Method == http.MethodPost {
+			handleSaveAgent(w, r, store, options)
+			return
+		}
+		handleListAgents(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/settings", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
@@ -670,6 +694,66 @@ func handleGetAnalytics(w http.ResponseWriter, r *http.Request, store runStore, 
 		}
 	}
 	writeJSON(w, http.StatusOK, repository.DefaultAnalyticsSummary())
+}
+
+func handleListAgents(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
+	if r.Method != http.MethodGet {
+		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
+		return
+	}
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if as, ok := store.(agentStore); ok {
+		agents, err := as.ListAgents(r.Context(), tenantID)
+		if err == nil {
+			writeJSON(w, http.StatusOK, agents)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, repository.DefaultAgents(tenantID))
+}
+
+func handleSaveAgent(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	var agent repository.AgentConfig
+	if err := json.NewDecoder(r.Body).Decode(&agent); err != nil {
+		problem(w, http.StatusBadRequest, "ai.invalid_json")
+		return
+	}
+	agent.TenantID = tenantID
+
+	// If ID is in URL path: /api/ai/agents/{id}
+	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(pathParts) >= 4 && pathParts[3] != "" {
+		agent.ID = pathParts[3]
+	}
+
+	if as, ok := store.(agentStore); ok {
+		saved, err := as.SaveAgent(r.Context(), agent)
+		if err != nil {
+			problem(w, http.StatusBadRequest, "ai.save_agent_failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, saved)
+		return
+	}
+	writeJSON(w, http.StatusOK, agent)
+}
+
+func handleDeleteAgent(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(pathParts) < 4 || pathParts[3] == "" {
+		problem(w, http.StatusBadRequest, "ai.agent_id_required")
+		return
+	}
+	agentID := pathParts[3]
+	if as, ok := store.(agentStore); ok {
+		if err := as.DeleteAgent(r.Context(), tenantID, agentID); err != nil {
+			problem(w, http.StatusInternalServerError, "ai.delete_agent_failed")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
 // identityScope establishes the caller's identity/tenant context without

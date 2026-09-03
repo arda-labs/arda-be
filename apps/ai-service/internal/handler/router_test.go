@@ -272,3 +272,20 @@ func TestAnalyticsEndpoint(t *testing.T) {
 		t.Fatalf("analytics failed: code = %d, body = %s", res.Code, res.Body.String())
 	}
 }
+
+func TestAgentsEndpoints(t *testing.T) {
+	router := NewRouter()
+	req := httptest.NewRequest(http.MethodGet, "/api/ai/agents", nil)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "HR Assistant") {
+		t.Fatalf("list agents failed: code = %d, body = %s", res.Code, res.Body.String())
+	}
+
+	saveReq := httptest.NewRequest(http.MethodPost, "/api/ai/agents", strings.NewReader(`{"name":"Custom Agent","department":"Tech","modelId":"gemini-2.5-flash","temperature":0.3,"systemPrompt":"test"}`))
+	saveRes := httptest.NewRecorder()
+	router.ServeHTTP(saveRes, saveReq)
+	if saveRes.Code != http.StatusOK || !strings.Contains(saveRes.Body.String(), "Custom Agent") {
+		t.Fatalf("save agent failed: code = %d, body = %s", saveRes.Code, saveRes.Body.String())
+	}
+}
