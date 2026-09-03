@@ -19,7 +19,7 @@ python -m venv .venv
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `RAG_DB_DSN` | Yes | — | Postgres DSN (e.g. `postgres://user:pass@host:5432/rag`) |
+| `RAG_DB_DSN` | Yes | — | Postgres DSN (e.g. `postgres://${RAG_DB_USER}:${RAG_DB_PASSWORD}@host:5432/rag`) |
 | `RAG_AUTH_SECRET` | Yes | — | Shared HMAC secret for identity token verification |
 | `RAG_EMBEDDING__MODEL` | No | `@cf/qwen/qwen3-embedding-0.6b` | Embedding model name |
 | `RAG_EMBEDDING__BASE_URL` | No | — | OpenAI-compatible /embeddings endpoint |
@@ -33,13 +33,13 @@ All settings are prefixed with `RAG_`. Nested sections use `__` delimiter, e.g.
 ### Start the API server
 
 ```bash
-RAG_DB_DSN="postgres://..." RAG_AUTH_SECRET="..." uvicorn app.main:app --host 0.0.0.0 --port 8099
+RAG_DB_DSN="postgres://${RAG_DB_USER}:${RAG_DB_PASSWORD}@host:5432/rag" RAG_AUTH_SECRET="..." uvicorn app.main:app --host 0.0.0.0 --port 8099
 ```
 
 ### Start the ingestion worker
 
 ```bash
-RAG_DB_DSN="postgres://..." RAG_AUTH_SECRET="..." python -m app.worker
+RAG_DB_DSN="postgres://${RAG_DB_USER}:${RAG_DB_PASSWORD}@host:5432/rag" RAG_AUTH_SECRET="..." python -m app.worker
 ```
 
 ## Project layout
