@@ -165,3 +165,66 @@ func TestFeedbackMalformedBody(t *testing.T) {
 		t.Errorf("code = %v, want ai.invalid_feedback_input", code)
 	}
 }
+
+func TestFeedbackRagUnprocessableMapsToBadRequest(t *testing.T) {
+	fake := &fakeRAGFeedbacker{returnErr: &svcclient.StatusError{Service: "rag-service", Status: http.StatusUnprocessableEntity}}
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/feedback",
+		strings.NewReader(`{"run_id":"r1","helpful":true}`))
+	req.Header.Set("X-Auth-Checked", "true")
+	req.Header.Set("X-User-Id", "u-1")
+	req.Header.Set("X-Tenant-Id", "t-1")
+	req.Header.Set("X-Permissions", "ai.assistant.use")
+	res := httptest.NewRecorder()
+	NewRouterWithOptions(nil, nil, RouterOptions{RAGClient: fake}).ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (422 must map to 400)", res.Code, http.StatusBadRequest)
+	}
+	var body map[string]any
+	json.NewDecoder(res.Body).Decode(&body)
+	if code, _ := body["code"]; code != "ai.invalid_feedback_input" {
+		t.Errorf("code = %v, want ai.invalid_feedback_input", code)
+	}
+}
+
+func TestFeedbackRagForbiddenMapsToFeedbackForbidden(t *testing.T) {
+	fake := &fakeRAGFeedbacker{returnErr: &svcclient.StatusError{Service: "rag-service", Status: http.StatusForbidden}}
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/feedback",
+		strings.NewReader(`{"run_id":"r1","helpful":true}`))
+	req.Header.Set("X-Auth-Checked", "true")
+	req.Header.Set("X-User-Id", "u-1")
+	req.Header.Set("X-Tenant-Id", "t-1")
+	req.Header.Set("X-Permissions", "ai.assistant.use")
+	res := httptest.NewRecorder()
+	NewRouterWithOptions(nil, nil, RouterOptions{RAGClient: fake}).ServeHTTP(res, req)
+
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusForbidden)
+	}
+	var body map[string]any
+	json.NewDecoder(res.Body).Decode(&body)
+	if code, _ := body["code"]; code != "ai.feedback_forbidden" {
+		t.Errorf("code = %v, want ai.feedback_forbidden", code)
+	}
+}
+
+func TestFeedbackRagServerErrorMapsToBadGateway(t *testing.T) {
+	fake := &fakeRAGFeedbacker{returnErr: &svcclient.StatusError{Service: "rag-service", Status: http.StatusInternalServerError}}
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/feedback",
+		strings.NewReader(`{"run_id":"r1","helpful":true}`))
+	req.Header.Set("X-Auth-Checked", "true")
+	req.Header.Set("X-User-Id", "u-1")
+	req.Header.Set("X-Tenant-Id", "t-1")
+	req.Header.Set("X-Permissions", "ai.assistant.use")
+	res := httptest.NewRecorder()
+	NewRouterWithOptions(nil, nil, RouterOptions{RAGClient: fake}).ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d (5xx must map to 502)", res.Code, http.StatusBadGateway)
+	}
+	var body map[string]any
+	json.NewDecoder(res.Body).Decode(&body)
+	if code, _ := body["code"]; code != "ai.feedback_unavailable" {
+		t.Errorf("code = %v, want ai.feedback_unavailable", code)
+	}
+}
