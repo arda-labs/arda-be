@@ -52,6 +52,74 @@ routes:
       - superadmin
       - platform.manage
 
+  - id: rag-query
+    path: /api/rag/query
+    methods: [POST]
+    auth: true
+    risk: low
+    permissions:
+      - ai.assistant.use
+
+  - id: rag-feedback
+    path: /api/rag/feedback
+    methods: [POST]
+    auth: true
+    risk: low
+    permissions:
+      - ai.assistant.use
+
+  - id: ai-feedback
+    path: /api/ai/feedback
+    methods: [POST]
+    auth: true
+    risk: low
+    permissions:
+      - ai.assistant.use
+
+  - id: rag-sources-read
+    path: /api/rag/sources
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
+
+  - id: rag-sources-read-subtree
+    path: /api/rag/sources/**
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
+
+  - id: rag-sources-write
+    path: /api/rag/sources
+    methods: [POST]
+    auth: true
+    risk: high
+    permissions:
+      - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
+
+  - id: rag-sources-write-subtree
+    path: /api/rag/sources/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
+
   - id: iam-public
     path: /api/iam/public/**
     auth: false

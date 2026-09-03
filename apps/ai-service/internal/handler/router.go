@@ -14,13 +14,21 @@ import (
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
+	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 const assistantPermission = "ai.assistant.use"
 const approvalProposePermission = "ai.approval.propose"
 const approvalExecutePermission = "ai.approval.execute"
 const protocolSpikeMessage = "Arda AI protocol spike is connected. No model or tool was invoked."
+
+// ragFeedbacker is the RAG feedback surface used by the handler. Narrow
+// interface so the handler never imports the full svcclient package.
+type ragFeedbacker interface {
+	Feedback(ctx context.Context, md metadata.Context, runID string, helpful bool, comment string) (*svcclient.FeedbackOut, error)
+}
 
 type RouterOptions struct {
 	EnableHITLProposals bool
@@ -38,6 +46,9 @@ type RouterOptions struct {
 	// has no row, so admins see the configuration actually in effect.
 	PlatformModelBaseURL string
 	PlatformModelID      string
+	// RAGClient is the RAG feedback client. Nil means feedback is unavailable.
+	// Matches the nil-safe pattern of ModelProvider.
+	RAGClient ragFeedbacker
 }
 
 type runStore interface {
@@ -114,6 +125,9 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	mux.HandleFunc("/health/ready", health)
 	mux.HandleFunc("/api/ai/agent", func(w http.ResponseWriter, r *http.Request) {
 		run(w, r, store, resolver, options)
+	})
+	mux.HandleFunc("/api/ai/feedback", func(w http.ResponseWriter, r *http.Request) {
+		createFeedback(w, r, options.RAGClient)
 	})
 	mux.HandleFunc("/api/ai/approvals", func(w http.ResponseWriter, r *http.Request) {
 		createApproval(w, r, store, options)

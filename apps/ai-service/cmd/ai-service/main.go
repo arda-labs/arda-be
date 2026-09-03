@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/catalog"
 	"github.com/arda-labs/arda/apps/ai-service/internal/config"
 	"github.com/arda-labs/arda/apps/ai-service/internal/handler"
-	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/migration"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
@@ -78,6 +76,11 @@ func main() {
 			"platform_env_key_used", false)
 	}
 
+	var ragClient *svcclient.RAGClient
+	if cfg.RAGServiceURL != "" {
+		ragClient = svcclient.NewRAGClient(cfg.RAGServiceURL, "ai-service", cfg.ServiceAuthSecret, nil)
+	}
+
 	routerOptions := handler.RouterOptions{
 		EnableHITLProposals:   cfg.EnableHITLProposals,
 		ModelProvider:         ModelProvider,
@@ -87,6 +90,7 @@ func main() {
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
 		PlatformModelBaseURL:  cfg.ModelBaseURL,
 		PlatformModelID:       cfg.ModelID,
+		RAGClient:             ragClient,
 	}
 
 	var resolver *tools.Registry
@@ -101,7 +105,7 @@ func main() {
 			svcclient.NewFinanceClient(cfg.FinanceServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			svcclient.NewHRMClient(cfg.HRMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			svcclient.NewIAMClient(cfg.IAMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
-			db, store, cfg.EnableHITLProposals, buildKnowledgeEmbedder(cfg, logger),
+			store, cfg.EnableHITLProposals, ragClient,
 		)
 		// readResult is model-visible so the agent can fetch full sandbox
 		// outputs by resultId when the inline preview is truncated.
@@ -147,26 +151,4 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("AI service stopped gracefully")
-}
-
-// buildKnowledgeEmbedder wires hybrid knowledge retrieval (roadmap §4.2):
-// Cloudflare Workers AI by default, OpenAI-compatible self-host later. A nil
-// embedder keeps search full-text-only.
-func buildKnowledgeEmbedder(cfg config.Config, logger *slog.Logger) knowledge.Embedder {
-	if !cfg.KnowledgeVectorEnabled {
-		return nil
-	}
-	switch strings.ToLower(cfg.EmbeddingProvider) {
-	case "openai":
-		if cfg.EmbeddingBaseURL != "" && cfg.EmbeddingModel != "" {
-			return knowledge.NewOpenAIEmbedder(cfg.EmbeddingBaseURL, cfg.EmbeddingModel, cfg.EmbeddingAPIToken, nil)
-		}
-	default:
-		if cfg.EmbeddingAccountID != "" && cfg.EmbeddingAPIToken != "" && cfg.EmbeddingModel != "" {
-			return knowledge.NewWorkersAIEmbedder(cfg.EmbeddingAccountID, cfg.EmbeddingModel, cfg.EmbeddingAPIToken, nil)
-		}
-	}
-	logger.Warn("AI_KNOWLEDGE_VECTOR is set but embedding config is incomplete; knowledge search stays full-text",
-		"provider", cfg.EmbeddingProvider)
-	return nil
 }

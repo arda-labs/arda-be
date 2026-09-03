@@ -5,32 +5,34 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
+	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
-type fixedSearcher struct{}
+// fakeRAG implements ragSearcher for unit tests. It captures the arguments
+// so callers can assert search dispatch.
+type fakeRAG struct {
+	capturedQuery string
+	capturedTopK  int
+}
 
-func (fixedSearcher) Search(context.Context, string, string, int) ([]knowledge.Hit, error) {
-	return []knowledge.Hit{
-		{
-			SourceID:   "src-1",
-			SourceKey:  "docs/faq.md",
-			Title:      "FAQ hệ thống",
-			Version:    "v1",
-			Heading:    "Cách tra FAQ",
-			Content:    "Nội dung FAQ...",
-			SourceType: "faq",
+func (f *fakeRAG) Search(ctx context.Context, md metadata.Context, query string, topK int) (*svcclient.RAGResponse, error) {
+	f.capturedQuery = query
+	f.capturedTopK = topK
+	return &svcclient.RAGResponse{
+		RunID: "test-run-1",
+		Hits: []svcclient.RAGHit{
+			{SourceID: 7, SourceVersionID: 1, Version: "v1", Title: "FAQ hệ thống", Heading: "Cách tra FAQ", Content: "Nội dung FAQ...", Score: 0.42, Citation: "[7:Cách tra FAQ]"},
 		},
 	}, nil
 }
 
 // TestKnowledgeSearchResultShape guards the Goja contract: the dispatcher
 // must return the KnowledgeSearchResult shape promised by the JSDoc
-// (sourceTitle/content/...), not the Go struct's field names — Goja ignores
-// JSON tags, so a []Hit return surfaces as Title/Content to the model.
+// (sourceId, sourceTitle, content, citations, matchScore).
 func TestKnowledgeSearchResultShape(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterKnowledgeCatalog(reg, fixedSearcher{})
+	RegisterBuiltinCatalog(reg, &fakeRAG{})
 
 	fn, entry, ok := reg.Resolve("knowledge.search")
 	if !ok {
@@ -63,10 +65,17 @@ func TestKnowledgeSearchResultShape(t *testing.T) {
 	if err := json.Unmarshal(raw, &shaped); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	for _, key := range []string{"sourceId", "sourceTitle", "content", "citations", "matchScore"} {
+	for _, key := range []string{"runId", "sourceId", "sourceTitle", "content", "citations", "matchScore"} {
 		if _, present := shaped[key]; !present {
 			t.Errorf("contract field %q missing from result (got keys %v)", key, shaped)
 		}
+	}
+	if shaped["runId"] != "test-run-1" {
+		t.Errorf("runId = %v, want test-run-1", shaped["runId"])
+	}
+	// sourceId should be a float64 in JSON (Go's default JSON number).
+	if v, ok := shaped["sourceId"].(float64); !ok || int(v) != 7 {
+		t.Errorf("sourceId = %v (type %T), want 7", shaped["sourceId"], shaped["sourceId"])
 	}
 	if shaped["sourceTitle"] != "FAQ hệ thống" {
 		t.Errorf("sourceTitle = %v, want FAQ hệ thống", shaped["sourceTitle"])
@@ -74,12 +83,18 @@ func TestKnowledgeSearchResultShape(t *testing.T) {
 	if shaped["content"] != "Nội dung FAQ..." {
 		t.Errorf("content = %v, want Nội dung FAQ...", shaped["content"])
 	}
+	if shaped["citations"] != "[7:Cách tra FAQ]" {
+		t.Errorf("citations = %v, want [7:Cách tra FAQ]", shaped["citations"])
+	}
+	if v, ok := shaped["matchScore"].(float64); !ok || v != 0.42 {
+		t.Errorf("matchScore = %v (type %T), want 0.42", shaped["matchScore"], shaped["matchScore"])
+	}
 }
 
 // TestKnowledgeSearchRejectsBlankQuery covers the argument guard.
 func TestKnowledgeSearchRejectsBlankQuery(t *testing.T) {
 	reg := NewDispatcherRegistry()
-	RegisterKnowledgeCatalog(reg, fixedSearcher{})
+	RegisterBuiltinCatalog(reg, &fakeRAG{})
 	fn, _, ok := reg.Resolve("knowledge.search")
 	if !ok {
 		t.Fatal("knowledge.search not registered")
@@ -89,5 +104,26 @@ func TestKnowledgeSearchRejectsBlankQuery(t *testing.T) {
 	}
 	if _, err := fn(context.Background(), iamScope(), map[string]any{}); err == nil {
 		t.Fatal("expected missing query to be rejected")
+	}
+}
+
+// TestKnowledgeSearchSendsTopK asserts that the limit argument is forwarded
+// to the RAG client as topK.
+func TestKnowledgeSearchSendsTopK(t *testing.T) {
+	fake := &fakeRAG{}
+	reg := NewDispatcherRegistry()
+	RegisterBuiltinCatalog(reg, fake)
+	fn, _, ok := reg.Resolve("knowledge.search")
+	if !ok {
+		t.Fatal("knowledge.search not registered")
+	}
+	if _, err := fn(context.Background(), iamScope(), map[string]any{"query": "test", "limit": float64(2)}); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if fake.capturedTopK != 2 {
+		t.Errorf("expected topK=2, got %d", fake.capturedTopK)
+	}
+	if fake.capturedQuery != "test" {
+		t.Errorf("expected query=test, got %q", fake.capturedQuery)
 	}
 }

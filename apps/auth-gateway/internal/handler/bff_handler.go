@@ -1522,6 +1522,8 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		serviceAudience = "ai-service"
 	} else if strings.HasPrefix(r.URL.Path, "/api/copilotkit") {
 		serviceAudience = "ai-service"
+	} else if strings.HasPrefix(r.URL.Path, "/api/rag/") {
+		serviceAudience = "rag-service"
 	}
 	if serviceAudience != "" {
 		serviceToken, err := identity.Issue(h.cfg.ServiceAuthSecret, "auth-gateway", serviceAudience, time.Now(), time.Minute)
@@ -1752,6 +1754,7 @@ func (h *BFFHandler) upstreamBaseURL(path string) string {
 		{"/api/notifications", h.cfg.NotificationURL},
 		{"/api/mdm", h.cfg.MDMServiceURL},
 		{"/api/ai", h.cfg.AIServiceURL},
+		{"/api/rag", h.cfg.RAGServiceURL},
 	} {
 		if strings.HasPrefix(path, route.prefix) && strings.TrimSpace(route.url) != "" {
 			return route.url
