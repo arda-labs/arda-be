@@ -165,3 +165,23 @@ class QueryResponse(BaseModel):
     rewritten: bool = False          # P3.4 — always false in Phase 1
     retrieved_count: int             # candidates BEFORE rerank
     reranked_count: int              # len(hits) after rerank + clamp
+
+
+class ChunkPreviewOut(BaseModel):
+    index: int
+    heading: str
+    content: str
+    content_hash: str
+    word_count: int
+    char_count: int
+
+
+class ChunkPreviewRequest(BaseModel):
+    content: str
+    chunker_config: ChunkerConfig | None = None
+
+
+class ChunkPreviewResponse(BaseModel):
+    total_chunks: int
+    extracted_text: str | None = None
+    chunks: list[ChunkPreviewOut]

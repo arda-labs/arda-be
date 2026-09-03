@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy import Engine
 
 from app.api.deps import security_context
 from app.domain.errors import RagError
 from app.domain.models import (
+    ChunkPreviewRequest,
+    ChunkPreviewResponse,
     JobOut,
     PublishResult,
     ReviewRequest,
@@ -16,6 +18,7 @@ from app.domain.security import SecurityContext
 from app.service import sources as svc
 
 router = APIRouter()
+
 
 
 def get_db(request: Request) -> Engine:
@@ -140,3 +143,33 @@ def get_job(
     db: Engine = Depends(get_db),
 ):
     return svc.get_job(db, ctx, job_id)
+
+
+# ---------------------------------------------------------------------------
+# Preview & Ingestion testing
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/rag/sources/preview-chunks", response_model=ChunkPreviewResponse)
+def preview_chunks(
+    data: ChunkPreviewRequest,
+    ctx: SecurityContext = Depends(security_context),
+):
+    return svc.preview_chunks(ctx, data)
+
+
+@router.post("/api/rag/sources/parse-preview", response_model=ChunkPreviewResponse)
+async def parse_and_preview(
+    file: UploadFile = File(...),
+    chunk_size: int = Form(512),
+    chunk_overlap: int = Form(64),
+    ctx: SecurityContext = Depends(security_context),
+):
+    contents = await file.read()
+    return svc.parse_and_preview_file(
+        ctx,
+        file_bytes=contents,
+        filename=file.filename or "document.txt",
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )

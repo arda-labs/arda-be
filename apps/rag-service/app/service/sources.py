@@ -10,6 +10,9 @@ from app.domain.errors import (
     PermissionDeniedError,
 )
 from app.domain.models import (
+    ChunkPreviewOut,
+    ChunkPreviewRequest,
+    ChunkPreviewResponse,
     JobOut,
     PublishResult,
     ReviewRequest,
@@ -20,6 +23,9 @@ from app.domain.models import (
 )
 from app.domain.security import SecurityContext
 from app.db.schema import ingestion_jobs, knowledge_source_versions, knowledge_sources
+from app.rag.chunker import chunk_markdown
+from app.rag.parser import parse_document
+
 
 
 def _sha256(content: str) -> str:
@@ -356,4 +362,69 @@ def _job_row_to_out(row) -> JobOut:
         next_retry_at=row.get("next_retry_at"),
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at"),
+    )
+
+
+def preview_chunks(ctx: SecurityContext, data: ChunkPreviewRequest) -> ChunkPreviewResponse:
+    _check_permission(ctx)
+    cfg = data.chunker_config
+    chunk_size = cfg.chunk_size if cfg and cfg.chunk_size else 512
+    chunk_overlap = cfg.chunk_overlap if cfg and cfg.chunk_overlap is not None else 64
+    chunker_version = cfg.chunker_version if cfg and cfg.chunker_version else "1"
+
+    chunks = chunk_markdown(
+        data.content,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        chunker_version=chunker_version,
+    )
+    items = [
+        ChunkPreviewOut(
+            index=i,
+            heading=c.heading,
+            content=c.content,
+            content_hash=c.content_hash,
+            word_count=len(c.content.split()),
+            char_count=len(c.content),
+        )
+        for i, c in enumerate(chunks)
+    ]
+    return ChunkPreviewResponse(
+        total_chunks=len(items),
+        extracted_text=data.content,
+        chunks=items,
+    )
+
+
+def parse_and_preview_file(
+    ctx: SecurityContext,
+    file_bytes: bytes,
+    filename: str,
+    chunk_size: int = 512,
+    chunk_overlap: int = 64,
+    chunker_version: str = "1",
+) -> ChunkPreviewResponse:
+    _check_permission(ctx)
+    extracted_text = parse_document(file_bytes, filename)
+    chunks = chunk_markdown(
+        extracted_text,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        chunker_version=chunker_version,
+    )
+    items = [
+        ChunkPreviewOut(
+            index=i,
+            heading=c.heading,
+            content=c.content,
+            content_hash=c.content_hash,
+            word_count=len(c.content.split()),
+            char_count=len(c.content),
+        )
+        for i, c in enumerate(chunks)
+    ]
+    return ChunkPreviewResponse(
+        total_chunks=len(items),
+        extracted_text=extracted_text,
+        chunks=items,
     )
