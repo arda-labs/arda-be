@@ -85,7 +85,7 @@ func Load() Config {
 		NotificationURL:           "http://localhost:8095",
 		MDMServiceURL:             "http://localhost:8096",
 		AIServiceURL:              "http://localhost:8098",
-		RAGServiceURL:             "http://localhost:8099",
+		RAGServiceURL:             "http://localhost:8098",
 		PolicyFile:                "configs/policy.yaml",
 		SessionCookieName:         "arda_sid",
 		SessionStore:              "redis",

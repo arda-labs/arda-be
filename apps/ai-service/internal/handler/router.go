@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
@@ -49,6 +50,8 @@ type RouterOptions struct {
 	// RAGClient is the RAG feedback client. Nil means feedback is unavailable.
 	// Matches the nil-safe pattern of ModelProvider.
 	RAGClient ragFeedbacker
+	// RAGService is the in-process knowledge/RAG service for /api/rag/* endpoints.
+	RAGService *knowledge.Service
 }
 
 type runStore interface {
@@ -174,6 +177,9 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 		}
 		problem(w, http.StatusNotFound, "ai.conversation_not_found")
 	})
+	if options.RAGService != nil {
+		NewRAGHandler(options.RAGService).RegisterRoutes(mux)
+	}
 	return mux
 }
 

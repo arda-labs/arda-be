@@ -16,6 +16,7 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/catalog"
 	"github.com/arda-labs/arda/apps/ai-service/internal/config"
 	"github.com/arda-labs/arda/apps/ai-service/internal/handler"
+	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/migration"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
@@ -76,6 +77,19 @@ func main() {
 			"platform_env_key_used", false)
 	}
 
+	var knowledgeSvc *knowledge.Service
+	var inProcessRAG *knowledge.InProcessRAGAdapter
+	if db != nil {
+		knowledgeRepo := knowledge.NewRepository(db)
+		var embedder knowledge.Embedder
+		if cfg.ModelBaseURL != "" {
+			embedder = knowledge.NewOpenAIEmbedder(cfg.ModelBaseURL, cfg.ModelAPIKey, "@cf/qwen/qwen3-embedding-0.6b", 1024, nil)
+		}
+		knowledgeSvc = knowledge.NewService(knowledgeRepo, embedder, logger)
+		go knowledgeSvc.StartWorker(context.Background())
+		inProcessRAG = knowledge.NewInProcessRAGAdapter(knowledgeSvc)
+	}
+
 	var ragClient *svcclient.RAGClient
 	if cfg.RAGServiceURL != "" {
 		ragClient = svcclient.NewRAGClient(cfg.RAGServiceURL, "ai-service", cfg.ServiceAuthSecret, nil)
@@ -90,7 +104,12 @@ func main() {
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
 		PlatformModelBaseURL:  cfg.ModelBaseURL,
 		PlatformModelID:       cfg.ModelID,
-		RAGClient:             ragClient,
+		RAGService:            knowledgeSvc,
+	}
+	if inProcessRAG != nil {
+		routerOptions.RAGClient = inProcessRAG
+	} else {
+		routerOptions.RAGClient = ragClient
 	}
 
 	var resolver *tools.Registry
@@ -100,12 +119,18 @@ func main() {
 		// embedded Goja sandbox via typed clients with signed caller identity
 		// and delegated subject. Raw results stay in the sandbox store; the
 		// model fetches full output via readResult.
+		var ragSearcher catalog.RAGSearcher
+		if inProcessRAG != nil {
+			ragSearcher = inProcessRAG
+		} else if ragClient != nil {
+			ragSearcher = ragClient
+		}
 		suite := catalog.NewCodeModeSuite(
 			svcclient.NewCRMClient(cfg.CRMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			svcclient.NewFinanceClient(cfg.FinanceServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			svcclient.NewHRMClient(cfg.HRMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			svcclient.NewIAMClient(cfg.IAMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
-			store, cfg.EnableHITLProposals, ragClient,
+			store, cfg.EnableHITLProposals, ragSearcher,
 		)
 		// readResult is model-visible so the agent can fetch full sandbox
 		// outputs by resultId when the inline preview is truncated.

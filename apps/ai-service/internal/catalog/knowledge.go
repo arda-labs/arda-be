@@ -11,11 +11,13 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
-// ragSearcher is the narrow interface consumed by the knowledge.search
-// handler. RAGClient satisfies it structurally; unit tests inject a fake.
-type ragSearcher interface {
+// RAGSearcher is the narrow interface consumed by the knowledge.search
+// handler. RAGClient or in-process RAG adapter satisfies it structurally.
+type RAGSearcher interface {
 	Search(ctx context.Context, md metadata.Context, query string, topK int) (*svcclient.RAGResponse, error)
 }
+
+type ragSearcher = RAGSearcher
 
 // RegisterKnowledgeCatalog registers knowledge SDK methods (arda.knowledge.*).
 func RegisterKnowledgeCatalog(reg *DispatcherRegistry, rag ragSearcher) {

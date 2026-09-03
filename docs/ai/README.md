@@ -14,39 +14,22 @@ This directory is the source of truth for the first AI phase across `arda-be`,
 `arda-mfe`, and `arda-infra`. The documents precede model-provider secrets,
 vector schema/index changes, and production workload expansion.
 
+## Master Specification
+
+👉 **[ARCHITECTURE.md](ARCHITECTURE.md)** là tài liệu đặc tả chuẩn xác và cập nhật nhất cho toàn bộ hệ thống AI & RAG hiện tại của Arda.
+
 ## Decision summary
 
-- Use a new Arda-owned AI service boundary. It owns orchestration, tool policy,
-  knowledge retrieval, conversation state, and AI operational records.
-- Keep the browser boundary at `auth-gateway`; the browser never calls an LLM,
-  domain database, vector store, or provider directly.
-- Adopt AG-UI as the agent-to-UI contract: `ai-service` emits AG-UI SSE events
-  (lifecycle, text/tool/reasoning messages, `RUN_FINISHED` with
-  `success`/`interrupt` outcomes, `RUN_ERROR`), and the frontend runs the
-  official assistant-ui AG-UI runtime (`useAgUiRuntime` + `HttpAgent`).
-  HITL interrupts resume through the same `/api/ai/agent` endpoint with
-  `resume` entries.
-- The former separate internal Node.js `ai-runtime` adapter and the later
-  Go-native CopilotKit envelope (`/api/copilotkit`) are **retired**; see
-  [go-native-copilotkit.md](go-native-copilotkit.md) for the historical
-  record.
-- Start with read-only, tenant-scoped tools and cited knowledge answers.
-  Mutations require server-side authorization, idempotency, and human approval.
-- Use a service-owned PostgreSQL database named `ai`. Its application tables
-  live in `public` with an `ai_` prefix, matching existing Arda services;
-  `public.goose_db_version` remains migration metadata only. The `vector`
-  extension is enabled, but embedding schema/index work waits for an approved
-  model and dimension.
-- Reuse IAM for identity and authorization decisions. AI records are not a
-  replacement for IAM security audit records.
+- Use a single, consolidated Go-native service boundary (`apps/ai-service`). It owns orchestration, AG-UI protocol, conversation state, and in-process RAG knowledge retrieval.
+- Keep the browser boundary at `auth-gateway`; the browser never calls an LLM, domain database, vector store, or provider directly.
+- Adopt AG-UI as the agent-to-UI contract: `ai-service` emits AG-UI SSE events, and the frontend runs the official assistant-ui AG-UI runtime (`useAgUiRuntime` + `HttpAgent`).
+- All knowledge tables are managed in PostgreSQL `ai` database via Goose migrations in `apps/ai-service/migrations`.
+- Historical/obsolete design spikes (Node.js runtime, CopilotKit, Python rag-service) are archived in `archive/`.
 
 ## Documents
 
-1. [architecture.md](architecture.md) — target components and boundaries.
-2. [copilotkit-evaluation.md](copilotkit-evaluation.md) — CopilotKit and AG-UI
-   fit, alternatives, and adoption decision.
-3. [agent-boundaries.md](agent-boundaries.md) — allowed and forbidden agent
-   behavior.
+1. [ARCHITECTURE.md](ARCHITECTURE.md) — master target components, RAG engine, and boundaries.
+2. [agent-boundaries.md](agent-boundaries.md) — allowed and forbidden agent behavior.
 4. [human-in-the-loop.md](human-in-the-loop.md) — approval and interrupt rules.
 5. [tool-contracts.md](tool-contracts.md) — typed tool contract and execution
    lifecycle.

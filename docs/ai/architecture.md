@@ -1,136 +1,96 @@
-# AI architecture
+# Arda AI & RAG Architecture (Single Source of Truth)
 
-## Goal
+Status: **Hoàn thiện & Hợp nhất toàn bộ về Go thuần (Go-native)**
+Ngày cập nhật: **2026-09-03**
+Sở hữu: `arda-be/apps/ai-service`
 
-Provide a tenant-aware assistant for Arda users that can answer questions from
-approved knowledge and read selected live Arda data, while preserving the
-existing gateway, IAM, service ownership, and GitOps boundaries.
+---
 
-The first phase is an assistant and workflow co-pilot, not an autonomous
-operator. The model proposes; Arda policy and domain services decide.
+## 1. Tổng quan kiến trúc
 
-## Target shape
+Toàn bộ năng lực AI & RAG trong hệ sinh thái Arda được hợp nhất duy nhất tại một microservice viết bằng **Go**: **`ai-service`** (`arda-be/apps/ai-service`).
+
+Không còn runtime Python, không còn adapter Node.js, không còn network hop trung gian.
 
 ```text
-React MFE / Arda shell
-  -> auth-gateway: /api/ai/agent
-        validates session, tenant, permission, recent-auth where required
-  -> ai-service (Go, AG-UI protocol — official assistant-ui runtime for
-                 non-JS backends; the former Node ai-runtime is retired)
-        AG-UI streaming endpoint POST /api/ai/agent
-        conversation/run state
-        model adapter
-2 Meta-Tools (search & execute / Code Mode)
-	        embedded Goja JavaScript sandbox with arda.* SDK bindings
-        RAG retrieval with ACL filtering
-        AI operational audit
-        -> domain service APIs/gRPC, never domain tables
-        -> PostgreSQL database `ai`, public tables prefixed `ai_`
-        -> approved model provider through egress policy
-        -> NATS events for durable integration where needed
+[ React MFE (apps/shell + apps/platform) ]
+                  │
+                  ▼ (Cookie-based HTTP / SSE)
+        [ auth-gateway (BFF) ]
+                  │ (Workload identity HMAC-SHA256)
+                  ▼
+   ┌─────────────────────────────────────────────────────────────┐
+   │                  ai-service (Go, Port 8098)                 │
+   │                                                             │
+   │  1. Agent Loop & AG-UI Protocol (/api/ai/agent)             │
+   │  2. Conversations & HITL Approvals Engine                   │
+   │  3. In-process RAG & Knowledge Engine:                      │
+   │     - Chunker: Heading-based markdown splitting + overlap   │
+   │     - Parser: Text, Markdown, CSV, JSON extractor           │
+   │     - Embedder: OpenAI / Cloudflare Workers AI client       │
+   │     - Hybrid Search: pgvector (<=>) + FTS (simple) + RRF    │
+   │     - Background Ingestion Worker (Postgres SKIP LOCKED)    │
+   │     - HTTP API Handlers (/api/rag/*)                        │
+   └──────────────────────────────┬──────────────────────────────┘
+                                  │
+                                  ▼
+                    [ PostgreSQL: Database `ai` ]
 ```
 
-The existing `auth-gateway` remains the browser-facing BFF. It should route the
-AI API only after the AI service exposes a health/readiness contract and the
-gateway has an explicit policy entry. No generic authenticated pass-through is
-allowed.
+---
 
-## Component responsibilities
+## 2. Các thành phần cốt lõi
 
-### MFE
+### 2.1. Frontend & Giao thức Agent (AG-UI Protocol)
+- Giao thức chuẩn: **AG-UI** (official assistant-ui runtime cho backend phi JS).
+- Endpoint: `POST /api/ai/agent`.
+- Truyền sự kiện qua Server-Sent Events (SSE): text stream, tool execution, interrupts (Human-in-the-loop) và resume.
+- Phía MFE: gói `@workspace/ai` cung cấp `useAgUiRuntime` + `HttpAgent`.
 
-- Render chat, citations, tool status, and approval controls using Arda's design
-  system.
-- Send only user intent, conversation/run identifiers, and UI context allowed
-  by the contract.
-- Use the authenticated cookie/session already managed by Arda. Do not persist
-  provider tokens or treat browser permissions as authoritative.
-- Treat streamed tool calls and state as untrusted display data until the
-  backend confirms the result.
+### 2.2. Bộ máy tri thức & RAG nội bộ (`internal/knowledge`)
+- **Tách Chunk (`chunker.go`)**: Cắt nhỏ văn bản theo Markdown Headings (`# `, `## `, `### `), áp dụng thuật toán sliding window với `chunk_size` (mặc định 512 từ) và `chunk_overlap` (mặc định 64 từ).
+- **Trích xuất tài liệu (`parser.go`)**: Đọc tài liệu nhị phân hoặc văn bản tải lên thành Markdown có cấu trúc.
+- **Tạo Vector Embedding (`embedder.go`)**: Gọi Cloudflare Workers AI hoặc OpenAI embedding endpoint (model `@cf/qwen/qwen3-embedding-0.6b` hoặc `text-embedding-3-small`, 1024 chiều).
+- **Tìm kiếm kết hợp (Hybrid Search - `repository.go`)**:
+  - **Nhánh Vector**: So khớp khoảng cách Cosine `c.embedding <=> $1::vector` có index HNSW.
+  - **Nhánh FTS**: Truy vấn toàn văn `to_tsvector('simple', c.content) @@ plainto_tsquery('simple', $query)`.
+  - **Hợp nhất điểm số (RRF Fusion)**: Công thức chuẩn $RRF\_Score = \sum \frac{1}{60 + rank}$.
+- **Hàng đợi nhúng ngầm (Ingestion Worker - `service.go`)**: Goroutine chạy nền định kỳ quét bảng `ai_ingestion_jobs` với khóa `FOR UPDATE SKIP LOCKED`, tự động chia chunk và sinh vector embedding.
 
-### Auth gateway and IAM
+---
 
-- Authenticate the session and inject trusted actor, active tenant, roles,
-  permissions, auth version, request ID, and recent-auth context.
-- Strip client-supplied identity, tenant, role, permission, and auth headers.
-- Enforce route-level permission and risk metadata before proxying.
-- Keep IAM security audit as the source of truth for authentication and
-  authorization events.
+## 3. Ranh giới API & Phân quyền
 
-### AG-UI protocol boundary
+Toàn bộ request từ bên ngoài đều đi qua `auth-gateway`:
 
-- Conversation/run/tool persistence remains in the Go service and the
-  Arda-owned `ai` database.
+| Endpoint | Quyền hạn yêu cầu | Mô tả |
+|---|---|---|
+| `POST /api/ai/agent` | `ai.assistant.use` | Khởi chạy Agent loop, stream AG-UI events |
+| `GET /api/ai/conversations` | `ai.assistant.use` | Quản lý lịch sử hội thoại |
+| `POST /api/ai/approvals/**` | `ai.approval.propose` / `ai.approval.execute` | Quản trị phê duyệt HITL |
+| `POST /api/rag/query` | `ai.assistant.use` | Truy vấn tìm kiếm tri thức (Hybrid + Citations) |
+| `POST /api/rag/feedback` | `ai.assistant.use` | Đánh giá độ hữu ích của kết quả RAG |
+| `GET/POST /api/rag/sources` | `ai.knowledge.manage` | Danh mục nguồn tri thức |
+| `POST /api/rag/sources/{id}/versions` | `ai.knowledge.manage` | Tạo phiên bản tri thức |
+| `POST /api/rag/sources/{id}/versions/{vid}/review` | `ai.knowledge.manage` | Duyệt / Từ chối phiên bản tri thức |
+| `POST /api/rag/sources/{id}/versions/{vid}/publish` | `ai.knowledge.manage` | Xuất bản phiên bản $\rightarrow$ kích hoạt Ingestion Job |
+| `POST /api/rag/sources/preview-chunks` | `ai.knowledge.manage` | Xem trước Chunks từ Markdown text |
+| `POST /api/rag/sources/parse-preview` | `ai.knowledge.manage` | Kéo thả file tải lên, parse và xem trước Chunks |
 
-### AI service
+---
 
-- Resolve and re-check the actor/tenant context for every tool execution.
-- Orchestrate the model, retrieval, tool calls, interrupts, and AG-UI events.
-- Host the embedded Goja JavaScript sandbox for Code Mode (`execute`) and the
-  SDK method catalog (`search`), providing dynamic discovery without context
-  inflation.
-- Bind `arda.*` SDK methods to domain HTTP/gRPC contracts with automatic tenant
-  and permission injection.
-- Persist conversation/run/tool state without storing raw credentials or hidden
-  chain-of-thought.
-- Call domain APIs through typed contracts and enforce tool-specific policy.
-- Emit redacted operational events and metrics.
+## 4. Cấu trúc Database (`database: ai`)
 
-### Domain services
+Tất cả bảng ứng dụng nằm trong schema `public`, quản lý tập trung bằng **Goose migrations** trong `apps/ai-service/migrations/`:
 
-- Remain the owners of business data and invariants.
-- Expose narrow read/command contracts for AI tools where approved.
-- Re-authorize sensitive operations at the domain boundary; AI authorization is
-  not a substitute for domain authorization.
-
-### PostgreSQL and vector search
-
-- The AI service owns its own database and migration history.
-- `ai` tables do not join directly to IAM or domain tables. Store stable IDs and
-  resolve display data through approved APIs.
-- The `vector` extension is enabled as a database capability. It remains an
-  optional implementation detail of the knowledge repository until the
-  embedding model, dimension, index, and backup/restore plan are approved.
-
-## Request lifecycle
-
-1. Browser opens an authenticated AG-UI run request (`POST /api/ai/agent`)
-   through the gateway. Interrupted runs resume through the same endpoint
-   with `resume` entries (interrupt responses).
-2. Gateway validates session, route permission, tenant context, and risk, then
-   signs a short-lived workload assertion with audience `ai-service`.
-3. `ai-service` verifies the assertion via its trusted-source middleware and
-   decodes the AG-UI run input (messages, tools, resume entries).
-4. Go creates or resumes a run under the server-derived actor and tenant.
-5. Retrieval applies tenant and document ACL filters before any content reaches
-   the model.
-6. The model may answer directly, invoke a named read tool, or use Code Mode:
-   call `search` to discover SDK method signatures, then `execute` to run a
-   sandboxed JavaScript script that composes multiple `arda.*` domain calls
-   within a single turn. Tool policy, argument validation, tenant context, and
-   permission checks apply whether the call originates from a direct tool or
-   from inside the sandbox.
-7. A high-risk mutation pauses for a server-enforced approval checkpoint.
-   In Code Mode, a mutation SDK method called inside the sandbox yields an
-   `ApprovalProposal` instead of executing the side effect.
-8. AI service streams typed lifecycle/message/tool/approval events and commits
-   the final run state.
-9. AI operational audit and metrics record outcome, latency, policy decisions,
-   and redaction-safe references.
-
-## Non-goals for phase 1
-
-- General autonomous task execution or background agents.
-- Arbitrary SQL, shell commands, browser automation, or unrestricted HTTP tools.
-- Cross-tenant search or a global knowledge index without explicit ACL semantics.
-- Model-generated UI that can execute arbitrary frontend code.
-- Replacing workflow-service, IAM, approval queues, or domain business rules.
-
-## Architectural invariants
-
-- No AI request can select a tenant by writing a trusted header or prompt value.
-- No model output is treated as a permission decision.
-- No side effect occurs only because a model emitted a tool call.
-- Every tool call has a stable name, version, schema, actor, tenant, policy
-  decision, timeout, and outcome.
-- A code rollback must remain compatible with committed AI schema changes.
+* `ai_conversations`: Quản lý phiên hội thoại của người dùng theo `tenant_id` và `actor_user_id`.
+* `ai_messages`: Lưu lịch sử tin nhắn và chuỗi sự kiện.
+* `ai_runs`: Quản lý trạng thái thực thi của từng lượt chat, token usage và model sử dụng.
+* `ai_tool_executions`: Lịch sử gọi tool và dữ liệu đã redact nhạy cảm.
+* `ai_approvals`: Trạng thái phê duyệt Human-In-The-Loop.
+* `ai_knowledge_sources`: Danh mục nguồn tri thức (`BIGSERIAL id`, scope tenant/global, classification).
+* `ai_knowledge_source_versions`: Các phiên bản nội dung của nguồn (DRAFT, APPROVED, PUBLISHED).
+* `ai_knowledge_chunks`: Từng đoạn chunk kèm vector embedding (`vector(1024)` + index HNSW).
+* `ai_ingestion_jobs`: Hàng đợi xử lý chunking và embedding nền.
+* `ai_rag_runs`: Ghi nhận nhật ký truy vấn để đo độ trễ và số ứng viên tìm kiếm.
+* `ai_rag_feedback`: Phản hồi chất lượng từ người dùng.

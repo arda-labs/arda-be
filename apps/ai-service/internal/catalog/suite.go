@@ -43,7 +43,7 @@ func NewCodeModeSuite(
 	iamClient *svcclient.IAMClient,
 	store repository.RunStore,
 	enableHITL bool,
-	ragClient *svcclient.RAGClient,
+	ragClient ragSearcher,
 ) *CodeModeSuite {
 	dispatcherReg := NewDispatcherRegistry()
 
