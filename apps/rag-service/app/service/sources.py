@@ -27,7 +27,10 @@ def _sha256(content: str) -> str:
 
 
 def _check_permission(ctx: SecurityContext) -> None:
-    if ctx.source_service == "auth-gateway" and "ai.knowledge.manage" not in ctx.permissions:
+    # Mirror of policy.yaml rag-sources-* permissions. ai.admin is reserved
+    # for future IAM roles; superadmin is the wildcard sentinel.
+    allowed = {"ai.knowledge.manage", "ai.admin", "superadmin", "platform.manage"}
+    if ctx.source_service == "auth-gateway" and not allowed.intersection(ctx.permissions):
         raise PermissionDeniedError("ai.knowledge.manage required")
 
 

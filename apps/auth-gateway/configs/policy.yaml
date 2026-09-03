@@ -83,6 +83,9 @@ routes:
     risk: medium
     permissions:
       - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
 
   - id: rag-sources-read-subtree
     path: /api/rag/sources/**
@@ -91,6 +94,9 @@ routes:
     risk: medium
     permissions:
       - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
 
   - id: rag-sources-write
     path: /api/rag/sources
@@ -99,6 +105,9 @@ routes:
     risk: high
     permissions:
       - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
 
   - id: rag-sources-write-subtree
     path: /api/rag/sources/**
@@ -107,6 +116,9 @@ routes:
     risk: high
     permissions:
       - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
 
   - id: iam-public
     path: /api/iam/public/**
