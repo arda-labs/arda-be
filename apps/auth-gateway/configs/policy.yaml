@@ -120,6 +120,17 @@ routes:
       - superadmin
       - platform.manage
 
+  - id: rag-jobs-read
+    path: /api/rag/jobs/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
+
   - id: iam-public
     path: /api/iam/public/**
     auth: false
