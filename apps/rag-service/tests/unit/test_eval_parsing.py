@@ -6,8 +6,10 @@ scripts/eval_ragas.
 """
 from __future__ import annotations
 
+import base64
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -17,7 +19,8 @@ _SCRIPTS = Path(__file__).resolve().parent.parent.parent / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-from scripts.eval_ragas import DatasetError, EvalDataset, EvalItem, parse_dataset  # noqa: E402
+from app.domain import security  # noqa: E402
+from scripts.eval_ragas import DatasetError, EvalDataset, EvalItem, build_service_token, parse_dataset  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -185,3 +188,32 @@ class TestParseDatasetErrors:
         assert len(ds.items) == 1
         assert ds.items[0].query == "q"
         assert ds.items[0].expected_answer == "a"
+
+
+# ---------------------------------------------------------------------------
+# x-service-auth signing — CI-safe round trip with the service's verifier.
+# ---------------------------------------------------------------------------
+
+SECRET = "a" * 32  # >= 32 chars per Go contract
+
+
+class TestBuildServiceToken:
+    def test_round_trip_verifies(self) -> None:
+        """build_service_token output must be accepted by verify_service_token."""
+        token = build_service_token(SECRET, "ai-service", "rag-service")
+        claims = security.verify_service_token(token, SECRET, "rag-service")
+        assert claims == security.VerifiedClaims(source="ai-service", audience="rag-service")
+
+    def test_expiry_in_ttl_window(self) -> None:
+        token = build_service_token(SECRET, "ai-service", "rag-service", ttl_seconds=120)
+        payload = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        now = time.time()
+        assert claims["iat"] <= now + 60
+        assert claims["exp"] >= now + 60
+        assert claims["exp"] <= now + 120 + 60  # generous skew margin
+
+    def test_wrong_secret_rejected(self) -> None:
+        token = build_service_token(SECRET, "ai-service", "rag-service")
+        with pytest.raises(security.AuthenticationError):
+            security.verify_service_token(token, "b" * 32, "rag-service")

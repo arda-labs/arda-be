@@ -275,7 +275,20 @@ def compute_ragas_metrics(rows: list[dict[str, Any]]) -> dict[str, float]:
             f"ragas evaluation failed: {exc}\n"
             "Check the judge-LLM credentials/endpoint configured for ragas."
         ) from exc
-    return {name: float(result[name]) for name in RAGAS_METRICS}
+    # ragas returns one float per row per metric; this script evaluates each
+    # row individually, so unwrap the single-element list (defensive: accept a
+    # bare scalar for other ragas versions).
+    return {
+        name: _single_value(result[name])
+        for name in RAGAS_METRICS
+    }
+
+
+def _single_value(value: Any) -> float:
+    """First element when ragas returns a list for a one-row evaluate()."""
+    if isinstance(value, list):
+        return float(value[0])
+    return float(value)
 
 
 # --------------------------------------------------------------------------
