@@ -27,7 +27,7 @@ monorepo (11 Go microservice hiện có → 1 Go + 1 Python).
 
 ### 2.2 Công nghệ
 
-- Python 3.12 + FastAPI + uvicorn
+- Python 3.13 + FastAPI + uvicorn
 - `llama-index-core`, `llama-index-vector-stores-postgres`,
   `llama-index-embeddings-openai` (dùng **OpenAI-compatible endpoint** để gọi
   Cloudflare Workers AI embedding)
@@ -659,17 +659,17 @@ arda-be/apps/rag-service/
 
 ```toml
 [tool.poetry.dependencies]
-python = "^3.12"
-fastapi = "^0.115"
-uvicorn = { version = "^0.32", extras = ["standard"] }
-sqlalchemy = "^2.0"
-psycopg = { version = "^3.2", extras = ["binary"] }
-pydantic-settings = "^2.7"
+python = "^3.13"
+fastapi = "^0.141"
+uvicorn = { version = "^0.52", extras = ["standard"] }
+sqlalchemy = "^2.0.52"
+psycopg = { version = "^3.3", extras = ["binary"] }
+pydantic-settings = "^2.15"
 # LOCK EXACT khi implement — ecosystem LlamaIndex thay đổi nhanh
-llama-index-core = "0.12.4"
-llama-index-vector-stores-postgres = "0.6.3"
-llama-index-embeddings-openai = "0.5.8"
-anthropic = "^0.49"
+llama-index-core = "0.14.24"
+llama-index-vector-stores-postgres = "0.9.0"
+llama-index-embeddings-openai = "0.7.0"
+anthropic = "^1.3"
 ```
 
 Bỏ `httpx` — LlamaIndex embedder tự xử lý OpenAI-compatible HTTP client.

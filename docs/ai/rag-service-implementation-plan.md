@@ -6,15 +6,15 @@
 
 **Architecture:** FastAPI service with separate API/worker Deployments, PostgreSQL pgvector for storage, LlamaIndex for chunking/embedding, custom hybrid retriever (FTS + vector + RRF), Anthropic Haiku reranker, Postgres-backed durable queue for ingestion.
 
-**Tech Stack:** Python 3.12, FastAPI, SQLAlchemy 2.0 + psycopg v3, LlamaIndex 0.12.4, Anthropic SDK, pgvector, SQL migrations
+**Tech Stack:** Python 3.13, FastAPI, SQLAlchemy 2.0 + psycopg v3, LlamaIndex 0.14.24, Anthropic SDK, pgvector, SQL migrations
 
 **Spec:** `docs/ai/rag-service-design.md`
 
 ## Global Constraints
 
-- Python 3.12+ only, no Java/Node.js sidecars
-- `llama-index-core==0.12.4`, `llama-index-vector-stores-postgres==0.6.3`, `llama-index-embeddings-openai==0.5.8` — exact pins, no `^`
-- `psycopg[binary]>=3.2` — psycopg v3, not v2
+- Python 3.13+ only, no Java/Node.js sidecars
+- `llama-index-core==0.14.24`, `llama-index-vector-stores-postgres==0.9.0`, `llama-index-embeddings-openai==0.7.0` — exact pins, no `^`
+- `psycopg[binary]>=3.3` — psycopg v3, not v2
 - `httpx` is NOT a dependency — LlamaIndex embedder handles HTTP
 - All new tables in `public` schema with `ai_` prefix
 - `vector(1024)` + embedding model is immutable Phase 1 contract — dimension mismatch → job FAILED
@@ -172,22 +172,22 @@ Expected: FAIL — `ModuleNotFoundError: app.main` (or `create_app` missing).
 name = "rag-service"
 version = "0.1.0"
 description = "RAG knowledge service — ingestion, hybrid retrieval, reranking"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
-  "fastapi>=0.115",
-  "uvicorn[standard]>=0.32",
-  "sqlalchemy>=2.0",
-  "psycopg[binary]>=3.2",
-  "pydantic>=2.9",
-  "pydantic-settings>=2.7",
-  "llama-index-core==0.12.4",
-  "llama-index-vector-stores-postgres==0.6.3",
-  "llama-index-embeddings-openai==0.5.8",
-  "anthropic>=0.49",
+  "fastapi>=0.141",
+  "uvicorn[standard]>=0.52",
+  "sqlalchemy>=2.0.52",
+  "psycopg[binary]>=3.3",
+  "pydantic>=2.13",
+  "pydantic-settings>=2.15",
+  "llama-index-core==0.14.24",
+  "llama-index-vector-stores-postgres==0.9.0",
+  "llama-index-embeddings-openai==0.7.0",
+  "anthropic>=1.3",
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "httpx>=0.27"]   # httpx ONLY for tests, never a runtime dep
+dev = ["pytest>=9", "httpx>=0.28"]   # httpx ONLY for tests, never a runtime dep
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -320,7 +320,7 @@ Expected: PASS.
 `Dockerfile` (one image, two commands — api default, worker via `--entrypoint`):
 
 ```dockerfile
-FROM python:3.12-slim AS base
+FROM python:3.13-slim AS base
 WORKDIR /srv
 COPY pyproject.toml ./
 COPY app ./app
