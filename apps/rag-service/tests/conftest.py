@@ -81,7 +81,7 @@ def client(engine):
             "x-service-auth": token,
             "X-Tenant-Id": "tenant-a",
             "X-User-Id": "user-1",
-            "X-Permissions": "ai.knowledge.manage",
+            "X-Permissions": "ai.knowledge.manage,ai.assistant.use",
         },
     ) as c:
         yield c

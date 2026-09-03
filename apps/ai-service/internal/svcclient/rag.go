@@ -89,7 +89,6 @@ func (c *RAGClient) Search(ctx context.Context, md metadata.Context, query strin
 	}
 	req.Body = io.NopCloser(&buf)
 	req.ContentLength = int64(buf.Len())
-	req.Method = http.MethodPost // override the GET-only default from NewRequest
 	req.Header.Set("Content-Type", "application/json") // FastAPI requires it (422 without)
 
 	var result RAGResponse
@@ -117,7 +116,6 @@ func (c *RAGClient) Feedback(ctx context.Context, md metadata.Context, runID str
 	}
 	req.Body = io.NopCloser(&buf)
 	req.ContentLength = int64(buf.Len())
-	req.Method = http.MethodPost // override the GET-only default from NewRequest
 	req.Header.Set("Content-Type", "application/json") // FastAPI requires it (422 without)
 
 	// POST is a mutation — Do never auto-retries it.
