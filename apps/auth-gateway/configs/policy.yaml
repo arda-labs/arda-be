@@ -68,6 +68,14 @@ routes:
     permissions:
       - ai.assistant.use
 
+  - id: ai-feedback
+    path: /api/ai/feedback
+    methods: [POST]
+    auth: true
+    risk: low
+    permissions:
+      - ai.assistant.use
+
   - id: rag-sources-read
     path: /api/rag/sources
     methods: [GET]

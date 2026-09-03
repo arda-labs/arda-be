@@ -76,6 +76,11 @@ func main() {
 			"platform_env_key_used", false)
 	}
 
+	var ragClient *svcclient.RAGClient
+	if cfg.RAGServiceURL != "" {
+		ragClient = svcclient.NewRAGClient(cfg.RAGServiceURL, "ai-service", cfg.ServiceAuthSecret, nil)
+	}
+
 	routerOptions := handler.RouterOptions{
 		EnableHITLProposals:   cfg.EnableHITLProposals,
 		ModelProvider:         ModelProvider,
@@ -85,13 +90,10 @@ func main() {
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
 		PlatformModelBaseURL:  cfg.ModelBaseURL,
 		PlatformModelID:       cfg.ModelID,
+		RAGClient:             ragClient,
 	}
 
 	var resolver *tools.Registry
-	var ragClient *svcclient.RAGClient
-	if cfg.RAGServiceURL != "" {
-		ragClient = svcclient.NewRAGClient(cfg.RAGServiceURL, "ai-service", cfg.ServiceAuthSecret, nil)
-	}
 	if cfg.EnableReadTools {
 		// Code Mode: Expose ONLY the meta-tools (search & execute & readResult)
 		// to the model. Domain APIs are dispatched internally through the

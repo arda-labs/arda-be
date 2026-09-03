@@ -43,6 +43,23 @@ type RAGQueryRequest struct {
 	TopK  int    `json:"top_k"`
 }
 
+// FeedbackRequest is the POST /api/rag/feedback body. Comment is omitted when
+// empty so rag FeedbackCreate.comment defaults to None.
+type FeedbackRequest struct {
+	RunID   string `json:"run_id"`
+	Helpful bool   `json:"helpful"`
+	Comment string `json:"comment,omitempty"`
+}
+
+// FeedbackOut is the created rag-service feedback row echoed back.
+type FeedbackOut struct {
+	ID        string `json:"id"`
+	RunID     string `json:"run_id"`
+	Helpful   bool   `json:"helpful"`
+	Comment   string `json:"comment,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+}
+
 // RAGClient calls the rag-service knowledge retrieval surface
 // (/api/rag/query). POST is a mutation from the transport's point of view, so
 // it is never auto-retried.
@@ -76,6 +93,35 @@ func (c *RAGClient) Search(ctx context.Context, md metadata.Context, query strin
 	req.Header.Set("Content-Type", "application/json") // FastAPI requires it (422 without)
 
 	var result RAGResponse
+	if err := c.Do(ctx, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// Feedback records the user's rating of a RAG run in the delegated tenant
+// scope. runID is passed through for rag-service's UUID validation (a
+// non-UUID run_id is impossible client-side) — 422 surfaces as a StatusError.
+func (c *RAGClient) Feedback(ctx context.Context, md metadata.Context, runID string, helpful bool, comment string) (*FeedbackOut, error) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" || len(runID) > 64 {
+		return nil, fmt.Errorf("run_id is required (max 64 characters)")
+	}
+	req, err := c.NewRequest(ctx, http.MethodPost, "/api/rag/feedback", md)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(FeedbackRequest{RunID: runID, Helpful: helpful, Comment: comment}); err != nil {
+		return nil, fmt.Errorf("encode rag feedback: %w", err)
+	}
+	req.Body = io.NopCloser(&buf)
+	req.ContentLength = int64(buf.Len())
+	req.Method = http.MethodPost // override the GET-only default from NewRequest
+	req.Header.Set("Content-Type", "application/json") // FastAPI requires it (422 without)
+
+	// POST is a mutation — Do never auto-retries it.
+	var result FeedbackOut
 	if err := c.Do(ctx, req, &result); err != nil {
 		return nil, err
 	}
