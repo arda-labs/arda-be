@@ -3,14 +3,12 @@ package catalog
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox"
 	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
@@ -43,21 +41,13 @@ func NewCodeModeSuite(
 	financeClient *svcclient.FinanceClient,
 	hrmClient *svcclient.HRMClient,
 	iamClient *svcclient.IAMClient,
-	db *sql.DB,
 	store repository.RunStore,
 	enableHITL bool,
-	embedder knowledge.Embedder,
+	ragClient *svcclient.RAGClient,
 ) *CodeModeSuite {
 	dispatcherReg := NewDispatcherRegistry()
 
-	var searcher knowledge.Searcher
-	if db != nil {
-		sqlSearcher := knowledge.NewSQLSearcher(db)
-		sqlSearcher.SetEmbedder(embedder)
-		searcher = sqlSearcher
-	}
-
-	RegisterBuiltinCatalog(dispatcherReg, searcher)
+	RegisterBuiltinCatalog(dispatcherReg, ragClient)
 	RegisterGeneratedCatalog(dispatcherReg, ClientSet{
 		CRM:     crmClient,
 		Finance: financeClient,

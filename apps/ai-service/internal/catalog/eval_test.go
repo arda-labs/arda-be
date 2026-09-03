@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
+	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 // evalQuestion mirrors one entry of testdata/catalog-eval.json.
@@ -41,13 +42,13 @@ func loadEvalQuestions(t *testing.T) []evalQuestion {
 	return set.Questions
 }
 
-// stubSearcher satisfies knowledge.Searcher so RegisterKnowledgeCatalog
-// actually registers arda.knowledge.search in the eval index. It returns no
-// hits — this suite measures retrieval of the method, not search quality.
+// stubSearcher satisfies ragSearcher so RegisterKnowledgeCatalog actually
+// registers arda.knowledge.search in the eval index. It returns no hits —
+// this suite measures retrieval of the method, not search quality.
 type stubSearcher struct{}
 
-func (stubSearcher) Search(context.Context, string, string, int) ([]knowledge.Hit, error) {
-	return nil, nil
+func (stubSearcher) Search(ctx context.Context, md metadata.Context, query string, topK int) (*svcclient.RAGResponse, error) {
+	return &svcclient.RAGResponse{Hits: nil}, nil
 }
 
 // evalRegistry builds the same registry the running service builds, with
