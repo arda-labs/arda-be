@@ -262,3 +262,13 @@ func TestListToolsEndpoint(t *testing.T) {
 		t.Fatalf("filter tools failed: code = %d, body = %s", filterRes.Code, filterRes.Body.String())
 	}
 }
+
+func TestAnalyticsEndpoint(t *testing.T) {
+	router := NewRouter()
+	req := httptest.NewRequest(http.MethodGet, "/api/ai/analytics/overview", nil)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"totalRuns"`) {
+		t.Fatalf("analytics failed: code = %d, body = %s", res.Code, res.Body.String())
+	}
+}

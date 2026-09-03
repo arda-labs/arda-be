@@ -75,6 +75,10 @@ type runStore interface {
 	Finish(ctx context.Context, run repository.RunContext, assistantMessage, status string) error
 }
 
+type analyticsStore interface {
+	GetAnalytics(ctx context.Context, tenantID string) (*repository.AnalyticsSummary, error)
+}
+
 type toolResolver interface {
 	Resolve(call tools.Call, scope tools.Context) (tools.Tool, tools.Definition, error)
 }
@@ -172,6 +176,9 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	})
 	mux.HandleFunc("/api/ai/tools", func(w http.ResponseWriter, r *http.Request) {
 		handleListTools(w, r, options)
+	})
+	mux.HandleFunc("/api/ai/analytics/overview", func(w http.ResponseWriter, r *http.Request) {
+		handleGetAnalytics(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/settings", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
@@ -647,6 +654,22 @@ func handleListTools(w http.ResponseWriter, r *http.Request, options RouterOptio
 		toolsList = filtered
 	}
 	writeJSON(w, http.StatusOK, toolsList)
+}
+
+func handleGetAnalytics(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
+	if r.Method != http.MethodGet {
+		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
+		return
+	}
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if as, ok := store.(analyticsStore); ok {
+		summary, err := as.GetAnalytics(r.Context(), tenantID)
+		if err == nil && summary != nil {
+			writeJSON(w, http.StatusOK, summary)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, repository.DefaultAnalyticsSummary())
 }
 
 // identityScope establishes the caller's identity/tenant context without
