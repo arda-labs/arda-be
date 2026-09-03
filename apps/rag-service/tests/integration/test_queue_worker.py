@@ -18,10 +18,7 @@ from app.rag.chunker import chunk_markdown
 from app.rag.embedder import Embedder, EmbeddingError
 from app.worker import run_worker
 
-DSN = os.environ.get(
-    "TEST_DATABASE_DSN",
-    "postgresql+psycopg://arda_super:123456@192.168.10.201:30432/rag_test",
-)
+DSN = os.environ.get("TEST_DATABASE_DSN", "")
 
 CHUNK_SIZE = 64
 CHUNK_OVERLAP = 16

@@ -13,10 +13,7 @@ from app.config import Settings
 from app.db.migrate import run_migrations
 from app.main import create_app
 
-TEST_DSN = os.environ.get(
-    "TEST_DATABASE_DSN",
-    "postgresql+psycopg://arda_super:123456@192.168.10.201:30432/rag_test",
-)
+TEST_DSN = os.environ.get("TEST_DATABASE_DSN", "")
 SECRET = "a" * 32
 
 
