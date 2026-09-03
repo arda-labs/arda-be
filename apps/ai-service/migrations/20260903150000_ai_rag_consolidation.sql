@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS public.ai_knowledge_source_versions (
     CONSTRAINT ai_source_version_unique UNIQUE (source_id, version)
 );
 
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -49,6 +50,7 @@ BEGIN
             FOREIGN KEY (active_version_id) REFERENCES public.ai_knowledge_source_versions(id) ON DELETE SET NULL;
     END IF;
 END $$;
+-- +goose StatementEnd
 
 CREATE TABLE IF NOT EXISTS public.ai_knowledge_chunks (
     id BIGSERIAL PRIMARY KEY,
