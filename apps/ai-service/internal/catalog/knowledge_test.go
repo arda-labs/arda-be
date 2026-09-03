@@ -65,10 +65,13 @@ func TestKnowledgeSearchResultShape(t *testing.T) {
 	if err := json.Unmarshal(raw, &shaped); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	for _, key := range []string{"sourceId", "sourceTitle", "content", "citations", "matchScore"} {
+	for _, key := range []string{"runId", "sourceId", "sourceTitle", "content", "citations", "matchScore"} {
 		if _, present := shaped[key]; !present {
 			t.Errorf("contract field %q missing from result (got keys %v)", key, shaped)
 		}
+	}
+	if shaped["runId"] != "test-run-1" {
+		t.Errorf("runId = %v, want test-run-1", shaped["runId"])
 	}
 	// sourceId should be a float64 in JSON (Go's default JSON number).
 	if v, ok := shaped["sourceId"].(float64); !ok || int(v) != 7 {

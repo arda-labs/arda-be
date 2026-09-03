@@ -34,7 +34,7 @@ func RegisterKnowledgeCatalog(reg *DispatcherRegistry, rag ragSearcher) {
 	 * Search published knowledge sources and business documentation with citations.
 	 * @param args.query Natural language search query (max 512 chars)
 	 * @param args.limit Number of items, 1-5 (default 3)
-	 * @returns KnowledgeSearchResult[] { sourceId, sourceTitle, content, citations, matchScore }
+	 * @returns KnowledgeSearchResult[] { runId, sourceId, sourceTitle, content, citations, matchScore }
 	 * @requires ai.knowledge.read
 	 * @domain knowledge
 	 */`,
@@ -60,17 +60,19 @@ func RegisterKnowledgeCatalog(reg *DispatcherRegistry, rag ragSearcher) {
 			if err != nil {
 				return nil, fmt.Errorf("knowledge search error: %w", err)
 			}
-			return knowledgeResults(resp.Hits), nil
+			return knowledgeResults(resp), nil
 		},
 	)
 }
 
-// knowledgeResults projects []svcclient.RAGHit onto the KnowledgeSearchResult
-// shape promised by the JSDoc contract.
-func knowledgeResults(hits []svcclient.RAGHit) []map[string]any {
-	results := make([]map[string]any, 0, len(hits))
-	for _, hit := range hits {
+// knowledgeResults projects a svcclient.RAGResponse onto the
+// KnowledgeSearchResult shape promised by the JSDoc contract. runId lets the
+// UI attach feedback to the exact RAG run that produced the hits.
+func knowledgeResults(resp *svcclient.RAGResponse) []map[string]any {
+	results := make([]map[string]any, 0, len(resp.Hits))
+	for _, hit := range resp.Hits {
 		results = append(results, map[string]any{
+			"runId":       resp.RunID,
 			"sourceId":    hit.SourceID,
 			"version":     hit.Version,
 			"heading":     hit.Heading,
