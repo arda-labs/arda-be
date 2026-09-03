@@ -14,12 +14,12 @@ import (
 
 // fakeRAGFeedbacker implements ragFeedbacker for handler tests.
 type fakeRAGFeedbacker struct {
-	recordedRunID  string
+	recordedRunID   string
 	recordedHelpful bool
 	recordedComment string
 	recordedTenant  string
 	recordedUser    string
-	returnErr      error
+	returnErr       error
 }
 
 func (f *fakeRAGFeedbacker) Feedback(_ context.Context, md metadata.Context, runID string, helpful bool, comment string) (*svcclient.FeedbackOut, error) {

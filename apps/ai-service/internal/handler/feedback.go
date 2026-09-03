@@ -62,7 +62,7 @@ func createFeedback(w http.ResponseWriter, r *http.Request, rag ragFeedbacker) {
 	// scopes feedback by org — extend this literal then.
 	md := metadata.Context{TenantID: scope.TenantID, UserID: scope.ActorUserID,
 		ActorUserID: scope.ActorUserID, RequestID: scope.RequestID, AuthChecked: "true"}
-	out, err := rag.Feedback(r.Context(), md, runID, input.Helpful, input.Comment)
+	out, err := rag.Feedback(r.Context(), md, runID, input.Helpful, strings.TrimSpace(input.Comment))
 	if err != nil {
 		var statusErr *svcclient.StatusError
 		if errors.As(err, &statusErr) {
