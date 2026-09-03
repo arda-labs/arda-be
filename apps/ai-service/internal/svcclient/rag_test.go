@@ -21,6 +21,9 @@ func TestRAGSearch_SendsSignedAndDelegatedHeaders(t *testing.T) {
 		if r.Header.Get("X-Service-Auth") == "" {
 			t.Error("missing x-service-auth header")
 		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", ct)
+		}
 		if r.Header.Get("X-Source-Service") != "ai-service" {
 			t.Errorf("X-Source-Service = %q, want ai-service", r.Header.Get("X-Source-Service"))
 		}
