@@ -88,3 +88,28 @@ def client(engine):
         },
     ) as c:
         yield c
+
+
+@pytest.fixture()
+def assistant_client(engine):
+    """Gateway-authenticated client with the chat-permission set (ai.assistant.use)."""
+    _clean_data(engine)
+    settings = Settings(
+        auth_secret=SECRET,
+        trusted_sources=["ai-service", "auth-gateway"],
+        db_dsn=TEST_DSN,
+        migrate_on_startup=False,
+    )
+    app = create_app(settings, migrate_on_startup=False)
+    app.state.engine = engine
+    token = _gateway_token()
+    with TestClient(
+        app,
+        headers={
+            "x-service-auth": token,
+            "X-Tenant-Id": "tenant-a",
+            "X-User-Id": "user-1",
+            "X-Permissions": "ai.assistant.use",
+        },
+    ) as c:
+        yield c

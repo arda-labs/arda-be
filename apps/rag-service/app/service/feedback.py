@@ -2,10 +2,14 @@ from sqlalchemy import Engine, insert
 from sqlalchemy.exc import IntegrityError
 
 from app.db.schema import rag_feedback
-from app.domain.errors import NotFoundError
+from app.domain.errors import NotFoundError, PermissionDeniedError
 from app.domain.models import FeedbackCreate, FeedbackOut
 from app.domain.security import SecurityContext
-from app.service.sources import _check_permission
+
+
+def _check_permission(ctx: SecurityContext) -> None:
+    if ctx.source_service == "auth-gateway" and "ai.assistant.use" not in ctx.permissions:
+        raise PermissionDeniedError("ai.assistant.use required")
 
 
 def create_feedback(engine: Engine, ctx: SecurityContext, data: FeedbackCreate) -> FeedbackOut:
