@@ -214,6 +214,20 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	mux.HandleFunc("/api/ai/settings/test", func(w http.ResponseWriter, r *http.Request) {
 		handleTestConnection(w, r, store, options)
 	})
+	mux.HandleFunc("/api/ai/settings/routing", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handleGetRouting(w, r, store)
+			return
+		}
+		handleUpdateRouting(w, r, store)
+	})
+	mux.HandleFunc("/api/ai/settings/quotas", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handleGetQuotas(w, r, store)
+			return
+		}
+		handleUpdateQuotas(w, r, store)
+	})
 	mux.HandleFunc("/api/ai/settings/profiles", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			handleCreateProfile(w, r, store, options)
