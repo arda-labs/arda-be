@@ -242,6 +242,12 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 		}
 		handleUpdateStrategies(w, r, store)
 	})
+	mux.HandleFunc("/api/rag/connectors", func(w http.ResponseWriter, r *http.Request) {
+		handleConnectors(w, r, store)
+	})
+	mux.HandleFunc("/api/rag/connectors/", func(w http.ResponseWriter, r *http.Request) {
+		handleConnectorSubtree(w, r, store)
+	})
 	mux.HandleFunc("/api/ai/settings/profiles", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			handleCreateProfile(w, r, store, options)

@@ -210,6 +210,39 @@ routes:
       - superadmin
       - platform.manage
 
+  - id: rag-connectors-read
+    path: /api/rag/connectors
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
+
+  - id: rag-connectors-write
+    path: /api/rag/connectors
+    methods: [POST]
+    auth: true
+    risk: medium
+    permissions:
+      - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
+
+  - id: rag-connectors-subtree-write
+    path: /api/rag/connectors/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+    permissions:
+      - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
+
   - id: iam-public
     path: /api/iam/public/**
     auth: false
