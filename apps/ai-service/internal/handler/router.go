@@ -228,6 +228,20 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 		}
 		handleUpdateQuotas(w, r, store)
 	})
+	mux.HandleFunc("/api/ai/settings/guardrails", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handleGetGuardrails(w, r, store)
+			return
+		}
+		handleUpdateGuardrails(w, r, store)
+	})
+	mux.HandleFunc("/api/rag/strategies", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handleGetStrategies(w, r, store)
+			return
+		}
+		handleUpdateStrategies(w, r, store)
+	})
 	mux.HandleFunc("/api/ai/settings/profiles", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			handleCreateProfile(w, r, store, options)

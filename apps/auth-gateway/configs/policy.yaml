@@ -188,6 +188,28 @@ routes:
       - superadmin
       - platform.manage
 
+  - id: rag-strategies-read
+    path: /api/rag/strategies
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
+
+  - id: rag-strategies-write
+    path: /api/rag/strategies
+    methods: [POST, PUT, PATCH]
+    auth: true
+    risk: medium
+    permissions:
+      - ai.admin
+      - ai.knowledge.manage
+      - superadmin
+      - platform.manage
+
   - id: iam-public
     path: /api/iam/public/**
     auth: false
