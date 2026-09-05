@@ -688,6 +688,22 @@ func decideApproval(w http.ResponseWriter, r *http.Request, store runStore, opti
 		}
 		return
 	}
+	if options.EventPublisher != nil {
+		_ = options.EventPublisher.Publish(r.Context(), events.SubjectApprovalDecided, events.NewEnvelope(
+			events.TypeApprovalDecided,
+			scope.TenantID,
+			scope.ActorUserID,
+			scope.RequestID,
+			scope.TraceID,
+			"",
+			events.ApprovalDecidedData{
+				ApprovalID:     parts[0],
+				Decision:       input.Decision,
+				ApproverUserID: scope.ActorUserID,
+				SelfApproval:   false,
+			},
+		))
+	}
 	writeJSON(w, http.StatusOK, record)
 }
 
@@ -932,6 +948,7 @@ func scopeFromRequest(r *http.Request) tools.Context {
 		OrgIDs:      splitHeader(r.Header.Get("X-User-Org-Ids")),
 		ActiveOrgID: strings.TrimSpace(r.Header.Get("X-Org-Id")),
 		RequestID:   strings.TrimSpace(r.Header.Get("X-Request-Id")),
+		TraceID:     strings.TrimSpace(r.Header.Get("X-Trace-Id")),
 		Permissions: permissionSet(r.Header.Get("X-Permissions")),
 		// Identity context for arda.iam.* — the gateway strips any
 		// client-supplied values and re-injects from the trusted session.

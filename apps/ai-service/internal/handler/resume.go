@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/events"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
@@ -97,6 +98,23 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 			problem(w, http.StatusServiceUnavailable, "ai.tool_persistence_unavailable")
 			return
 		}
+	}
+
+	if options.EventPublisher != nil {
+		_ = options.EventPublisher.Publish(ctx, events.SubjectApprovalExecuted, events.NewEnvelope(
+			events.TypeApprovalExecuted,
+			scope.TenantID,
+			scope.ActorUserID,
+			scope.RequestID,
+			scope.TraceID,
+			exec.Run.ExternalRun,
+			events.ApprovalExecutedData{
+				ApprovalID:     parts[0],
+				ToolName:       exec.ToolName,
+				DurationMs:     0,
+				IdempotencyKey: exec.IdempotencyKey,
+			},
+		))
 	}
 
 	resumeStore, hasResumeStore := store.(runResumeStore)

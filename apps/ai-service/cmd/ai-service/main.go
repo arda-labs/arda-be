@@ -15,6 +15,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/catalog"
 	"github.com/arda-labs/arda/apps/ai-service/internal/config"
+	"github.com/arda-labs/arda/apps/ai-service/internal/events"
 	"github.com/arda-labs/arda/apps/ai-service/internal/handler"
 	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/migration"
@@ -102,6 +103,30 @@ func main() {
 		ragClient = svcclient.NewRAGClient(cfg.RAGServiceURL, "ai-service", cfg.ServiceAuthSecret, nil)
 	}
 
+	var eventPublisher events.Publisher
+	if cfg.NATSURL != "" {
+		natsPub, err := events.NewNATSPublisher(cfg.NATSURL, cfg.AppName, logger)
+		if err != nil {
+			logger.Warn("could not connect to NATS; falling back to buffered publisher", "nats_url", cfg.NATSURL, "err", err)
+			eventPublisher = events.NewBufferedPublisher(1000, logger)
+		} else {
+			eventPublisher = natsPub
+			logger.Info("AI service NATS JetStream event publisher started", "nats_url", cfg.NATSURL, "stream", events.StreamName)
+		}
+	} else {
+		eventPublisher = events.NewBufferedPublisher(1000, logger)
+	}
+	defer eventPublisher.Close()
+
+	var providerRegistry *model.ProviderRegistry
+	if cfg.ProvidersConfigFile != "" {
+		if reg, err := model.LoadProvidersFromYAML(cfg.ProvidersConfigFile); err == nil {
+			providerRegistry = reg
+			go providerRegistry.StartActiveHealthProbing(context.Background())
+			logger.Info("multi-provider registry loaded from file", "config_file", cfg.ProvidersConfigFile)
+		}
+	}
+
 	routerOptions := handler.RouterOptions{
 		EnableHITLProposals:   cfg.EnableHITLProposals,
 		ModelProvider:         ModelProvider,
@@ -113,6 +138,8 @@ func main() {
 		PlatformModelBaseURL:  cfg.ModelBaseURL,
 		PlatformModelID:       cfg.ModelID,
 		RAGService:            knowledgeSvc,
+		EventPublisher:        eventPublisher,
+		ProviderRegistry:      providerRegistry,
 	}
 	if db != nil || (cfg.ModelEnabled && cfg.ModelReady()) {
 		routerOptions.ReadyCheck = func(ctx context.Context) error {
@@ -169,6 +196,9 @@ func main() {
 			svcclient.NewIAMClient(cfg.IAMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			store, cfg.EnableHITLProposals, ragSearcher,
 		)
+		if eventPublisher != nil {
+			suite.SetEventPublisher(eventPublisher)
+		}
 		// readResult is model-visible so the agent can fetch full sandbox
 		// outputs by resultId when the inline preview is truncated.
 		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool, suite.ReadTool)

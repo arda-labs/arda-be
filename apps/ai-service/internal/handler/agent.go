@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/events"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
@@ -86,6 +87,38 @@ func runAgentStream(
 		if modelStore, ok := store.(repository.ModelSetter); ok {
 			_ = modelStore.SetModel(ctx, scopeRun, descriptor.ProviderName(), descriptor.ModelID())
 		}
+	}
+
+	if options.EventPublisher != nil {
+		mode := "direct_tool"
+		if options.ModelSDKTypes != "" {
+			mode = "code_mode"
+		}
+		pName := "unknown"
+		mName := ""
+		if descriptor, ok := modelProvider.(interface {
+			ProviderName() string
+			ModelID() string
+		}); ok {
+			pName = descriptor.ProviderName()
+			mName = descriptor.ModelID()
+		}
+		_ = options.EventPublisher.Publish(ctx, events.SubjectRunStarted, events.NewEnvelope(
+			events.TypeRunStarted,
+			scope.TenantID,
+			scope.ActorUserID,
+			scope.RequestID,
+			scope.TraceID,
+			input.RunID,
+			events.RunStartedData{
+				ConversationID:  input.ThreadID,
+				AgentID:         "arda-assistant",
+				Provider:        pName,
+				ModelID:         mName,
+				ProtocolVersion: "1",
+				Mode:            mode,
+			},
+		))
 	}
 
 	messages := buildModelMessages(ctx, store, options, scope, scopeRun, latestUserMessage(input.Messages))
@@ -168,8 +201,53 @@ func selectModelProvider(ctx context.Context, store runStore, scope tools.Contex
 	if err != nil || rules == nil {
 		return primary
 	}
+	if options.ProviderRegistry != nil {
+		features := make([]string, 0, 2)
+		if options.ModelSDKTypes != "" {
+			features = append(features, "code_mode")
+		}
+		routingCtx := model.RoutingContext{
+			TenantPlan:   "starter",
+			RiskLevel:    "low",
+			FeatureFlags: features,
+			RunID:        scope.RequestID,
+		}
+		if regProvider := options.ProviderRegistry.Select(routingCtx); regProvider != nil {
+			primary = regProvider
+		}
+	}
+
 	ordered := []model.Provider{primary}
 	seen := map[string]struct{}{tenantSettings.BaseURL + "\x00" + tenantSettings.ModelID: {}}
+
+	// If specialized routing is set for Code Mode or Fast Model, prioritize matching profile
+	targetModel := ""
+	if options.ModelSDKTypes != "" && rules.CodeModel != "" {
+		targetModel = rules.CodeModel
+	} else if rules.FastModel != "" {
+		targetModel = rules.FastModel
+	}
+	if targetModel != "" {
+		for _, profile := range profiles {
+			if strings.EqualFold(profile.ModelID, targetModel) || strings.EqualFold(profile.Name, targetModel) {
+				if baseURLAllowed(options.ModelBaseURLAllowlist, profile.BaseURL) {
+					var specialized model.Provider
+					if options.ModelPool != nil {
+						specialized = options.ModelPool.GetProvider(scope.TenantID, profile.BaseURL, profile.APIKey, profile.ModelID)
+					} else {
+						specialized = model.NewCircuitBreakerProvider(model.NewClient(profile.BaseURL, profile.APIKey, profile.ModelID, nil), 3, 30*time.Second)
+					}
+					key := profile.BaseURL + "\x00" + profile.ModelID
+					if _, exists := seen[key]; !exists {
+						ordered = append([]model.Provider{specialized}, ordered...)
+						seen[key] = struct{}{}
+					}
+					break
+				}
+			}
+		}
+	}
+
 	for _, target := range []string{rules.PrimaryProvider, rules.SecondaryProvider, rules.FailoverProvider} {
 		for _, profile := range profiles {
 			if !profileMatchesTarget(profile, target) {
@@ -310,6 +388,22 @@ func agentStepsLoop(
 			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
 			recordRunOutcome("FAILED")
 			_ = store.Finish(ctx, scopeRun, fmt.Sprintf("I could not complete that request right now: %v", err), "FAILED")
+			if options.EventPublisher != nil {
+				_ = options.EventPublisher.Publish(ctx, events.SubjectRunFailed, events.NewEnvelope(
+					events.TypeRunFailed,
+					scope.TenantID,
+					scope.ActorUserID,
+					scope.RequestID,
+					scope.TraceID,
+					input.RunID,
+					events.RunFailedData{
+						ConversationID: input.ThreadID,
+						ErrorCode:      "ai.model_unavailable",
+						DurationMs:     timer.durationMs(),
+						Retryable:      true,
+					},
+				))
+			}
 			return
 		}
 		if descriptor, ok := modelProvider.(interface {
@@ -353,6 +447,28 @@ func agentStepsLoop(
 			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
 			recordRunOutcome("SUCCEEDED")
 			_ = store.Finish(ctx, scopeRun, reply, "SUCCEEDED")
+			if options.EventPublisher != nil {
+				mode := "direct_tool"
+				if options.ModelSDKTypes != "" {
+					mode = "code_mode"
+				}
+				_ = options.EventPublisher.Publish(ctx, events.SubjectRunFinished, events.NewEnvelope(
+					events.TypeRunFinished,
+					scope.TenantID,
+					scope.ActorUserID,
+					scope.RequestID,
+					scope.TraceID,
+					input.RunID,
+					events.RunFinishedData{
+						ConversationID: input.ThreadID,
+						DurationMs:     timer.durationMs(),
+						InputTokens:    usageTotal.PromptTokens,
+						OutputTokens:   usageTotal.CompletionTokens,
+						ToolCallCount:  len(collected),
+						Mode:           mode,
+					},
+				))
+			}
 			return
 		}
 
@@ -408,6 +524,22 @@ func agentStepsLoop(
 	sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.agent_step_limit"})
 	recordRunOutcome("FAILED")
 	_ = store.Finish(ctx, scopeRun, reply, "FAILED")
+	if options.EventPublisher != nil {
+		_ = options.EventPublisher.Publish(ctx, events.SubjectRunFailed, events.NewEnvelope(
+			events.TypeRunFailed,
+			scope.TenantID,
+			scope.ActorUserID,
+			scope.RequestID,
+			scope.TraceID,
+			input.RunID,
+			events.RunFailedData{
+				ConversationID: input.ThreadID,
+				ErrorCode:      "ai.agent_step_limit",
+				DurationMs:     timer.durationMs(),
+				Retryable:      false,
+			},
+		))
+	}
 }
 
 // terminateAgentRunOnContext converts a request cancellation/deadline into a
@@ -681,6 +813,21 @@ func executeModelToolCall(
 		return false, `{"error":"unknown_tool"}`
 	case errors.Is(err, tools.ErrToolForbidden):
 		emit("TOOL_CALL_RESULT", json.RawMessage(`{"error":"forbidden"}`), "ai.tool_forbidden")
+		if options.EventPublisher != nil {
+			_ = options.EventPublisher.Publish(ctx, events.SubjectAuditToolDenied, events.NewEnvelope(
+				events.TypeAuditToolDenied,
+				scope.TenantID,
+				scope.ActorUserID,
+				scope.RequestID,
+				scope.TraceID,
+				input.RunID,
+				events.AuditToolDeniedData{
+					ToolName:          call.Name,
+					MissingPermission: "ai.assistant.use",
+					RiskLevel:         "low",
+				},
+			))
+		}
 		return false, `{"error":"forbidden"}`
 	case errors.Is(err, tools.ErrApprovalRequired):
 		return createProposalForCall(r, store, scope, scopeRun, input, sse, call, definition, options)
@@ -791,6 +938,23 @@ func createProposalForCall(
 	payload := mustJSON(map[string]any{"proposal": map[string]any{
 		"id": record.ID, "status": record.Status, "expiresAt": record.ExpiresAt,
 	}})
+	if options.EventPublisher != nil {
+		_ = options.EventPublisher.Publish(r.Context(), events.SubjectApprovalRequested, events.NewEnvelope(
+			events.TypeApprovalRequested,
+			scopeRun.TenantID,
+			scopeRun.ActorUserID,
+			scope.RequestID,
+			scope.TraceID,
+			input.RunID,
+			events.ApprovalRequestedData{
+				ApprovalID:         record.ID,
+				ToolName:           definition.Name,
+				SummaryRedacted:    fmt.Sprintf(`{"action":"%s"}`, definition.Name),
+				RequiredCapability: "ai.approval.execute",
+				ExpiresAt:          record.ExpiresAt.Format(time.RFC3339),
+			},
+		))
+	}
 	sse.event(agentEvent{
 		Type: "TOOL_CALL_RESULT", ThreadID: input.ThreadID, RunID: input.RunID,
 		ToolCallID: call.ID, ToolName: call.Name, ToolCallName: call.Name,

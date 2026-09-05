@@ -24,6 +24,11 @@ type Service struct {
 	// FTS-only querying, but production ingestion must be explicit about this
 	// failure.
 	requireEmbedding bool
+	eventPublisher   EventPublisher
+}
+
+type EventPublisher interface {
+	Publish(ctx context.Context, subject string, envelope any) error
 }
 
 func NewService(repo *Repository, embedder Embedder, logger *slog.Logger) *Service {
@@ -50,6 +55,12 @@ func (s *Service) SetRequireEmbedding(required bool) {
 func (s *Service) SetReranker(reranker Reranker) {
 	if s != nil {
 		s.reranker = reranker
+	}
+}
+
+func (s *Service) SetEventPublisher(pub EventPublisher) {
+	if s != nil {
+		s.eventPublisher = pub
 	}
 }
 

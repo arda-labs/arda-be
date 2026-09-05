@@ -39,6 +39,7 @@ type Context struct {
 	OrgIDs      []string
 	ActiveOrgID string
 	RequestID   string
+	TraceID     string
 	Permissions map[string]struct{}
 
 	// Identity context injected by the gateway (X-Username, X-User-Email,

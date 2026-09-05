@@ -215,3 +215,7 @@ func startAIRunTimer() *aiRunTimer {
 func (t *aiRunTimer) observe() {
 	aiRunDuration.observe(time.Since(t.start).Seconds())
 }
+
+func (t *aiRunTimer) durationMs() int64 {
+	return time.Since(t.start).Milliseconds()
+}

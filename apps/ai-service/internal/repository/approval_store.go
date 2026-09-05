@@ -22,11 +22,12 @@ var (
 )
 
 type ApprovedExecution struct {
-	ExecutionID string
-	Run         RunContext
-	ToolName    string
-	ToolVersion int
-	Arguments   string
+	ExecutionID    string
+	Run            RunContext
+	ToolName       string
+	ToolVersion    int
+	Arguments      string
+	IdempotencyKey string
 }
 
 type ExecutionStore interface {
@@ -268,7 +269,7 @@ func (s *SQLRunStore) FetchApprovedExecution(ctx context.Context, tenantID, appr
 	err = tx.QueryRowContext(ctx, `
 		SELECT e.id::text, r.id::text,
 		       r.tenant_id, r.actor_user_id::text, r.external_thread_id, r.external_run_id,
-		       e.tool_name, e.tool_version, e.arguments_redacted::text,
+		       e.tool_name, e.tool_version, e.arguments_redacted::text, a.idempotency_key,
 		       a.status, e.status, r.status, a.expires_at
 		FROM public.ai_approvals a
 		JOIN public.ai_tool_executions e ON e.id = a.tool_execution_id
@@ -289,6 +290,7 @@ func (s *SQLRunStore) FetchApprovedExecution(ctx context.Context, tenantID, appr
 		&execution.ToolName,
 		&versionText,
 		&execution.Arguments,
+		&execution.IdempotencyKey,
 		&approvalStatus,
 		&executionStatus,
 		&runStatus,

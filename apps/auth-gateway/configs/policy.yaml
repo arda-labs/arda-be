@@ -101,7 +101,7 @@ routes:
 
   - id: ai-settings-write
     path: /api/ai/settings/**
-    methods: [POST, PUT, PATCH]
+    methods: [POST, PUT, PATCH, DELETE]
     auth: true
     risk: high
     permissions:

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/events"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox"
 	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
@@ -21,16 +22,23 @@ import (
 const resultPreviewLimit = 1 << 10
 
 type CodeModeSuite struct {
-	SearchTool  tools.Tool
-	ExecuteTool tools.Tool
-	ReadTool    tools.Tool
-	Catalog     *Index
-	Engine      *sandbox.Engine
-	Registry    *DispatcherRegistry
-	ResultStore *sandbox.ResultStore
+	SearchTool     tools.Tool
+	ExecuteTool    tools.Tool
+	ReadTool       tools.Tool
+	Catalog        *Index
+	Engine         *sandbox.Engine
+	Registry       *DispatcherRegistry
+	ResultStore    *sandbox.ResultStore
+	EventPublisher events.Publisher
 	// TypeDefs is the generated arda.* TypeScript declaration file injected
 	// into the model context once per run.
 	TypeDefs string
+}
+
+func (s *CodeModeSuite) SetEventPublisher(p events.Publisher) {
+	if s != nil {
+		s.EventPublisher = p
+	}
 }
 
 // NewCodeModeSuite builds the 3-meta-tool suite (search & execute & readResult)
@@ -58,6 +66,14 @@ func NewCodeModeSuite(
 	sandboxEngine := sandbox.NewEngine(dispatcherReg)
 	resultStore := sandbox.NewResultStore()
 
+	suite := &CodeModeSuite{
+		Catalog:     catalogIndex,
+		Engine:      sandboxEngine,
+		Registry:    dispatcherReg,
+		ResultStore: resultStore,
+		TypeDefs:    GenerateTypeDefinitions(dispatcherReg.AllEntries()),
+	}
+
 	searchTool := tools.NewSearchMetaTool(func(query, domain string, scope tools.Context) (string, int, error) {
 		entries := catalogIndex.Search(query, domain, scope, 5)
 		return FormatSignatures(entries), len(entries), nil
@@ -66,6 +82,21 @@ func NewCodeModeSuite(
 	executeTool := tools.NewExecuteMetaTool(func(ctx context.Context, scope tools.Context, code string) (map[string]any, error) {
 		res, err := sandboxEngine.Execute(ctx, scope, code)
 		if err != nil {
+			if suite.EventPublisher != nil {
+				h := sha256.Sum256([]byte(code))
+				_ = suite.EventPublisher.Publish(ctx, events.SubjectAuditSandboxRejected, events.NewEnvelope(
+					events.TypeAuditSandboxRejected,
+					scope.TenantID,
+					scope.ActorUserID,
+					scope.RequestID,
+					"",
+					"",
+					events.AuditSandboxRejectedData{
+						RejectionReason: err.Error(),
+						ScriptHash:      hex.EncodeToString(h[:]),
+					},
+				))
+			}
 			return nil, err
 		}
 
@@ -126,6 +157,24 @@ func NewCodeModeSuite(
 				}
 			}
 
+			if suite.EventPublisher != nil {
+				_ = suite.EventPublisher.Publish(ctx, events.SubjectApprovalRequested, events.NewEnvelope(
+					events.TypeApprovalRequested,
+					scope.TenantID,
+					scope.ActorUserID,
+					scope.RequestID,
+					"",
+					proposalID,
+					events.ApprovalRequestedData{
+						ApprovalID:         proposalID,
+						ToolName:           res.ProposalTool,
+						SummaryRedacted:    fmt.Sprintf(`{"action":"%s"}`, res.ProposalTool),
+						RequiredCapability: "ai.approval.execute",
+						ExpiresAt:          expiresAt.Format(time.RFC3339),
+					},
+				))
+			}
+
 			out["approval"] = map[string]any{
 				"id":        proposalID,
 				"status":    "PENDING",
@@ -150,14 +199,8 @@ func NewCodeModeSuite(
 		}, nil
 	})
 
-	return &CodeModeSuite{
-		SearchTool:  searchTool,
-		ExecuteTool: executeTool,
-		ReadTool:    readTool,
-		Catalog:     catalogIndex,
-		Engine:      sandboxEngine,
-		Registry:    dispatcherReg,
-		ResultStore: resultStore,
-		TypeDefs:    GenerateTypeDefinitions(dispatcherReg.AllEntries()),
-	}
+	suite.SearchTool = searchTool
+	suite.ExecuteTool = executeTool
+	suite.ReadTool = readTool
+	return suite
 }
