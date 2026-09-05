@@ -1,9 +1,9 @@
 # AI database design
 
-Status: approved for the Gate 2 persistence foundation and the additive
-pgvector capability enablement. The extension is enabled separately from the
-embedding column/index; later provider/RAG changes require their own review
-gates in [rollout-plan.md](rollout-plan.md).
+Status: approved for the persistence foundation and the additive pgvector
+schema. The current migration provides `embedding vector(1024)`, an HNSW
+cosine index, and a dimension constraint. Provider selection, re-embedding,
+and production rollout still require the review gates in [rollout-plan.md](rollout-plan.md).
 
 ## Ownership decision
 
@@ -78,8 +78,10 @@ Approval consumption must be a transactionally guarded state transition.
 `content`, `content_checksum`, token count, ACL metadata, embedding set/model
 metadata, and timestamps.
 
-The vector column and index are intentionally undecided until the model and
-dimension are selected. A text-search column may be added for hybrid retrieval.
+The vector column is `vector(1024)` and the cosine HNSW index is created by the
+AI migrations. Every stored vector declares its model and dimension; ingestion
+rejects a dimension other than 1024. Full-text search remains available as the
+lexical leg of hybrid retrieval.
 
 ### `public.ai_feedback`
 
@@ -96,9 +98,10 @@ The extension enablement migration is complete after these checks:
 3. Apply `CREATE EXTENSION IF NOT EXISTS vector` through the AI service Goose
    migration and verify the installed version in the live database.
 
-The following gates remain open before adding a vector column or index:
+Operational gates remain open for production use:
 
-1. Select one embedding model/dimension and record it in the design ADR.
+1. Select and operate an approved embedding provider/model and record it in the
+   deployment configuration and ADR.
 2. Benchmark index/build time, query latency, storage, and tenant filtering.
 3. Test the vector migration on an isolated restore and a disposable database.
 4. Add monitoring and a forward-compatible rollback plan.

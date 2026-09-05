@@ -16,14 +16,24 @@ type DepartmentBudgetDTO struct {
 	RPMLimit     int     `json:"rpmLimit"`
 }
 
+type DepartmentBudgetInputDTO struct {
+	Department   string  `json:"department"`
+	MonthlyLimit float64 `json:"monthlyLimit"`
+	RPMLimit     int     `json:"rpmLimit"`
+}
+
 type QuotasResponseDTO struct {
-	Budgets    []DepartmentBudgetDTO `json:"budgets"`
-	WebhookURL string                `json:"webhookUrl"`
+	Budgets           []DepartmentBudgetDTO `json:"budgets"`
+	WebhookURL        string                `json:"webhookUrl"`
+	MonthlyTokenLimit int64                 `json:"monthlyTokenLimit"`
+	TokensUsed        int64                 `json:"tokensUsed"`
+	PeriodStart       string                `json:"periodStart"`
 }
 
 type UpdateQuotasRequestDTO struct {
-	Budgets    []DepartmentBudgetDTO `json:"budgets"`
-	WebhookURL string                `json:"webhookUrl"`
+	Budgets           []DepartmentBudgetInputDTO `json:"budgets"`
+	WebhookURL        string                     `json:"webhookUrl"`
+	MonthlyTokenLimit int64                      `json:"monthlyTokenLimit"`
 }
 
 func handleGetQuotas(w http.ResponseWriter, r *http.Request, store runStore) {
@@ -37,18 +47,7 @@ func handleGetQuotas(w http.ResponseWriter, r *http.Request, store runStore) {
 	}
 	quotaStore, ok := store.(repository.QuotaStore)
 	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"result": QuotasResponseDTO{
-				Budgets: []DepartmentBudgetDTO{
-					{Department: "Tech & DevOps", MonthlyLimit: 300, Spent: 118.2, RPMLimit: 120},
-					{Department: "Sales & Marketing", MonthlyLimit: 150, Spent: 42.5, RPMLimit: 60},
-					{Department: "HR & Internal Ops", MonthlyLimit: 80, Spent: 15.4, RPMLimit: 30},
-					{Department: "Finance & Accounting", MonthlyLimit: 100, Spent: 22.1, RPMLimit: 40},
-				},
-				WebhookURL: "https://hooks.slack.com/services/T00/B00/XXXX",
-			},
-		})
+		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
 		return
 	}
 
@@ -69,17 +68,14 @@ func handleGetQuotas(w http.ResponseWriter, r *http.Request, store runStore) {
 		budgetDTOs = append(budgetDTOs, DepartmentBudgetDTO{
 			Department:   b.Department,
 			MonthlyLimit: b.MonthlyLimit,
-			Spent:        b.Spent,
 			RPMLimit:     b.RPMLimit,
 		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true,
-		"result": QuotasResponseDTO{
-			Budgets:    budgetDTOs,
-			WebhookURL: settings.WebhookURL,
-		},
+		"result": QuotasResponseDTO{Budgets: budgetDTOs, WebhookURL: settings.WebhookURL,
+			MonthlyTokenLimit: settings.MonthlyTokenLimit, TokensUsed: settings.TokensUsed, PeriodStart: settings.PeriodStart},
 	})
 }
 
@@ -110,7 +106,6 @@ func handleUpdateQuotas(w http.ResponseWriter, r *http.Request, store runStore) 
 			TenantID:     scope.TenantID,
 			Department:   strings.TrimSpace(b.Department),
 			MonthlyLimit: b.MonthlyLimit,
-			Spent:        b.Spent,
 			RPMLimit:     b.RPMLimit,
 		})
 	}
@@ -121,18 +116,28 @@ func handleUpdateQuotas(w http.ResponseWriter, r *http.Request, store runStore) 
 	}
 
 	if err := quotaStore.SaveQuotaSettings(r.Context(), repository.QuotaSettings{
-		TenantID:   scope.TenantID,
-		WebhookURL: strings.TrimSpace(req.WebhookURL),
+		TenantID: scope.TenantID, WebhookURL: strings.TrimSpace(req.WebhookURL), MonthlyTokenLimit: req.MonthlyTokenLimit,
 	}); err != nil {
 		problem(w, http.StatusInternalServerError, "ai.quotas_save_failed")
 		return
 	}
 
+	responseBudgets := make([]DepartmentBudgetDTO, 0, len(req.Budgets))
+	savedBudgets, err := quotaStore.ListDepartmentBudgets(r.Context(), scope.TenantID)
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "ai.quotas_fetch_failed")
+		return
+	}
+	for _, b := range savedBudgets {
+		responseBudgets = append(responseBudgets, DepartmentBudgetDTO{Department: b.Department, MonthlyLimit: b.MonthlyLimit, Spent: b.Spent, RPMLimit: b.RPMLimit})
+	}
+	fresh, err := quotaStore.GetQuotaSettings(r.Context(), scope.TenantID)
+	if err != nil || fresh == nil {
+		problem(w, http.StatusInternalServerError, "ai.quotas_fetch_failed")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true,
-		"result": QuotasResponseDTO{
-			Budgets:    req.Budgets,
-			WebhookURL: req.WebhookURL,
-		},
+		"result":  QuotasResponseDTO{Budgets: responseBudgets, WebhookURL: req.WebhookURL, MonthlyTokenLimit: req.MonthlyTokenLimit, TokensUsed: fresh.TokensUsed, PeriodStart: fresh.PeriodStart},
 	})
 }

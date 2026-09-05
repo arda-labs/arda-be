@@ -86,7 +86,7 @@ func handleCreateProfile(w http.ResponseWriter, r *http.Request, store runStore,
 		return
 	}
 	req.BaseURL = strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
-	if err := validateProviderURL(req.BaseURL); err != nil {
+	if err := validateProviderURL(req.BaseURL, options.AllowLocalModelURLs); err != nil {
 		problem(w, http.StatusBadRequest, "ai.invalid_base_url")
 		return
 	}

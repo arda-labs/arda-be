@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content,omitempty"`
+	Role    string `json:"role"`
+	Content string `json:"content,omitempty"`
 	// Reasoning carries provider chain-of-thought (reasoning_content) so a
 	// thinking-mode assistant turn can be replayed within the same run —
 	// thinking providers (deepseek et al.) reject the follow-up request
@@ -42,12 +43,13 @@ type toolCallWire struct {
 
 func (m Message) MarshalJSON() ([]byte, error) {
 	type alias struct {
-		Role    string          `json:"role"`
-		Content string          `json:"content,omitempty"`
-		ToolCalls []toolCallWire `json:"tool_calls,omitempty"`
-		ToolCallID string        `json:"tool_call_id,omitempty"`
+		Role       string         `json:"role"`
+		Content    string         `json:"content,omitempty"`
+		Reasoning  string         `json:"reasoning_content,omitempty"`
+		ToolCalls  []toolCallWire `json:"tool_calls,omitempty"`
+		ToolCallID string         `json:"tool_call_id,omitempty"`
 	}
-	out := alias{Role: m.Role, Content: m.Content, ToolCallID: m.ToolCallID}
+	out := alias{Role: m.Role, Content: m.Content, Reasoning: m.Reasoning, ToolCallID: m.ToolCallID}
 	for _, call := range m.ToolCalls {
 		wire := toolCallWire{ID: call.ID, Type: "function"}
 		wire.Function.Name = call.Name
@@ -77,6 +79,12 @@ type Provider interface {
 	StreamChat(ctx context.Context, messages []Message, tools []ToolDef, callbacks StreamCallbacks) (finishReason string, usage Usage, err error)
 }
 
+// Probe performs a bounded upstream health check without creating a chat
+// completion. It is used by readiness diagnostics and operator tooling.
+type Prober interface {
+	Probe(context.Context) error
+}
+
 var _ Provider = (*Client)(nil)
 
 type Client struct {
@@ -85,6 +93,66 @@ type Client struct {
 	model        string
 	gatewayToken string
 	http         *http.Client
+}
+
+// ModelID and ProviderName expose only non-secret routing metadata for audit
+// and analytics. API keys are intentionally never returned.
+func (c *Client) ModelID() string {
+	if c == nil {
+		return ""
+	}
+	return c.model
+}
+
+func (c *Client) ProviderName() string {
+	if c == nil {
+		return ""
+	}
+	u, err := url.Parse(c.baseURL)
+	if err != nil || u.Hostname() == "" {
+		return "unknown"
+	}
+	return u.Hostname()
+}
+
+func (c *Client) Validate() error {
+	if c == nil || c.baseURL == "" || c.model == "" {
+		return fmt.Errorf("model client is not configured")
+	}
+	u, err := url.Parse(c.baseURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return fmt.Errorf("model base URL must be an http or https URL")
+	}
+	return nil
+}
+
+func (c *Client) Probe(ctx context.Context) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	u := strings.TrimRight(c.baseURL, "/") + "/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return err
+	}
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	if c.gatewayToken != "" {
+		req.Header.Set("cf-aig-authorization", "Bearer "+c.gatewayToken)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("provider health probe returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // WithGatewayToken sets an AI Gateway credential sent as the
@@ -108,18 +176,18 @@ func NewClient(baseURL, apiKey, model string, httpClient *http.Client) *Client {
 }
 
 type streamRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Tools    []toolSchema `json:"tools,omitempty"`
-	Stream   bool      `json:"stream"`
+	Model         string       `json:"model"`
+	Messages      []Message    `json:"messages"`
+	Tools         []toolSchema `json:"tools,omitempty"`
+	Stream        bool         `json:"stream"`
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
 }
 
 type toolSchema struct {
-	Type     string          `json:"type"`
-	Function toolDefinition  `json:"function"`
+	Type     string         `json:"type"`
+	Function toolDefinition `json:"function"`
 }
 
 type toolDefinition struct {
@@ -129,9 +197,9 @@ type toolDefinition struct {
 }
 
 type StreamCallbacks struct {
-	OnTextDelta   func(delta string)
-	OnToolCall    func(call ToolCall)
-	OnFinish      func(reason string, usage Usage)
+	OnTextDelta func(delta string)
+	OnToolCall  func(call ToolCall)
+	OnFinish    func(reason string, usage Usage)
 	// OnReasoningDelta surfaces provider chain-of-thought deltas
 	// (e.g. deepseek reasoning_content) for reasoning-aware clients.
 	OnReasoningDelta func(delta string)
@@ -141,8 +209,8 @@ type StreamCallbacks struct {
 // It returns the finish reason of the last choice plus token usage when the
 // provider reports it.
 func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []ToolDef, callbacks StreamCallbacks) (string, Usage, error) {
-	if c == nil || c.baseURL == "" || c.model == "" {
-		return "", Usage{}, fmt.Errorf("model client is not configured")
+	if err := c.Validate(); err != nil {
+		return "", Usage{}, err
 	}
 	request := streamRequest{
 		Model:    c.model,
@@ -171,22 +239,9 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 	if err != nil {
 		return "", Usage{}, fmt.Errorf("encode model request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
+	response, err := c.doWithRetry(ctx, payload)
 	if err != nil {
-		return "", Usage{}, fmt.Errorf("create model request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-	if c.gatewayToken != "" {
-		req.Header.Set("cf-aig-authorization", "Bearer "+c.gatewayToken)
-	}
-
-	response, err := c.http.Do(req)
-	if err != nil {
-		return "", Usage{}, fmt.Errorf("model request failed: %w", err)
+		return "", Usage{}, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
@@ -244,17 +299,69 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 	return finishReason, usage, nil
 }
 
-	type streamChunk struct {
-		Choices []struct {
-			Delta struct {
-				Content   string         `json:"content"`
-				Reasoning string         `json:"reasoning_content"`
-				ToolCalls []toolCallWire `json:"tool_calls"`
-			} `json:"delta"`
-			FinishReason string `json:"finish_reason"`
-		} `json:"choices"`
-		Usage *Usage `json:"usage"`
+const maxProviderAttempts = 3
+
+func (c *Client) doWithRetry(ctx context.Context, payload []byte) (*http.Response, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxProviderAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
+		if err != nil {
+			return nil, fmt.Errorf("create model request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		if c.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		}
+		if c.gatewayToken != "" {
+			req.Header.Set("cf-aig-authorization", "Bearer "+c.gatewayToken)
+		}
+		response, err := c.http.Do(req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			lastErr = fmt.Errorf("model request failed: %w", err)
+		} else if response.StatusCode == http.StatusOK {
+			return response, nil
+		} else {
+			body, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
+			response.Body.Close()
+			lastErr = fmt.Errorf("model returned status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+			if !retryableProviderStatus(response.StatusCode) {
+				return nil, lastErr
+			}
+		}
+		if attempt < maxProviderAttempts {
+			backoff := time.Duration(1<<(attempt-1)) * 250 * time.Millisecond
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
 	}
+	return nil, lastErr
+}
+
+func retryableProviderStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status == http.StatusBadGateway ||
+		status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
+}
+
+type streamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content   string         `json:"content"`
+			Reasoning string         `json:"reasoning_content"`
+			ToolCalls []toolCallWire `json:"tool_calls"`
+		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage *Usage `json:"usage"`
+}
 
 type pendingToolCalls struct {
 	order []*toolAccumulator

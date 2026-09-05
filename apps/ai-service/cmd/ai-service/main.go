@@ -30,6 +30,10 @@ func main() {
 	slog.SetDefault(logger)
 
 	cfg := config.Load()
+	if cfg.RAGEmbeddingDimensions != 1024 {
+		logger.Error("AI_RAG_EMBEDDING_DIMENSIONS must be 1024 for the current schema", "dimensions", cfg.RAGEmbeddingDimensions)
+		os.Exit(1)
+	}
 	var db *sql.DB
 	var store *repository.SQLRunStore
 	if cfg.DatabaseDSN != "" {
@@ -62,19 +66,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// The env model config is only a fallback for spike/local mode (no
-	// database). With persistence, the saved tenant configuration in
-	// ai_tenant_settings is the single source of truth (see
-	// handler.selectModelProvider) and the env key is ignored.
-	var ModelProvider *model.Client
-	if cfg.ModelReady() && store == nil {
-		ModelProvider = model.NewClient(cfg.ModelBaseURL, cfg.ModelAPIKey, cfg.ModelID, nil)
+	// The deployment model is the platform fallback. A tenant can override it
+	// through ai_tenant_settings; keeping the platform client available avoids
+	// making every tenant configure an identical provider before first use.
+	var ModelProvider model.Provider
+	if cfg.ModelReady() {
+		client := model.NewClient(cfg.ModelBaseURL, cfg.ModelAPIKey, cfg.ModelID, nil)
 		if cfg.ModelGatewayToken != "" {
-			ModelProvider.WithGatewayToken(cfg.ModelGatewayToken)
+			client.WithGatewayToken(cfg.ModelGatewayToken)
 		}
+		ModelProvider = model.NewCircuitBreakerProvider(client, 3, 30*time.Second)
 	} else if cfg.ModelEnabled {
-		logger.Info("model provider comes from tenant settings (database present)",
-			"platform_env_key_used", false)
+		logger.Warn("model provider is not configured; tenants must provide an active model setting")
 	}
 
 	var knowledgeSvc *knowledge.Service
@@ -82,10 +85,14 @@ func main() {
 	if db != nil {
 		knowledgeRepo := knowledge.NewRepository(db)
 		var embedder knowledge.Embedder
-		if cfg.ModelBaseURL != "" {
-			embedder = knowledge.NewOpenAIEmbedder(cfg.ModelBaseURL, cfg.ModelAPIKey, "@cf/qwen/qwen3-embedding-0.6b", 1024, nil)
+		if cfg.RAGEmbeddingBaseURL != "" {
+			embedder = knowledge.NewOpenAIEmbedder(cfg.RAGEmbeddingBaseURL, cfg.RAGEmbeddingAPIKey, cfg.RAGEmbeddingModel, cfg.RAGEmbeddingDimensions, nil)
 		}
 		knowledgeSvc = knowledge.NewService(knowledgeRepo, embedder, logger)
+		knowledgeSvc.SetRequireEmbedding(cfg.RAGRequireEmbedding)
+		if cfg.RAGRerankerBaseURL != "" {
+			knowledgeSvc.SetReranker(knowledge.NewCohereReranker(cfg.RAGRerankerBaseURL, cfg.RAGRerankerAPIKey, cfg.RAGRerankerModel, nil))
+		}
 		go knowledgeSvc.StartWorker(context.Background())
 		inProcessRAG = knowledge.NewInProcessRAGAdapter(knowledgeSvc)
 	}
@@ -102,9 +109,39 @@ func main() {
 		AgentMaxSteps:         cfg.AgentMaxSteps,
 		ModelSystemPrompt:     cfg.ModelSystemPrompt,
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
+		AllowLocalModelURLs:   cfg.Mode != "production",
 		PlatformModelBaseURL:  cfg.ModelBaseURL,
 		PlatformModelID:       cfg.ModelID,
 		RAGService:            knowledgeSvc,
+	}
+	if db != nil || (cfg.ModelEnabled && cfg.ModelReady()) {
+		routerOptions.ReadyCheck = func(ctx context.Context) error {
+			if db != nil {
+				if err := db.PingContext(ctx); err != nil {
+					return err
+				}
+			}
+			if cfg.ModelEnabled && cfg.ModelReady() && ModelProvider != nil {
+				if prober, ok := ModelProvider.(model.Prober); ok {
+					probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+					defer cancel()
+					probeErr := prober.Probe(probeCtx)
+					providerName := "unknown"
+					if descriptor, ok := ModelProvider.(interface{ ProviderName() string }); ok {
+						providerName = descriptor.ProviderName()
+					}
+					handler.RecordProviderProbe(providerName, probeErr)
+					if probeErr != nil {
+						return probeErr
+					}
+				}
+			}
+			return nil
+		}
+	} else if cfg.Mode == "production" {
+		routerOptions.ReadyCheck = func(context.Context) error { return errors.New("database is required in production") }
+	} else if cfg.ModelEnabled && !cfg.ModelReady() {
+		routerOptions.ReadyCheck = func(context.Context) error { return errors.New("model provider is not configured") }
 	}
 	if inProcessRAG != nil {
 		routerOptions.RAGClient = inProcessRAG
@@ -192,7 +229,7 @@ func main() {
 		"agent_model", cfg.ModelReady(),
 	)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.Error("AI protocol spike stopped", "err", err)
+		logger.Error("AI service stopped unexpectedly", "err", err)
 		os.Exit(1)
 	}
 	logger.Info("AI service stopped gracefully")

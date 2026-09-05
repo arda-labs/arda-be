@@ -26,12 +26,19 @@ func (a *InProcessRAGAdapter) Search(ctx context.Context, md metadata.Context, q
 		hits = append(hits, svcclient.RAGHit{
 			SourceID:        int(h.SourceID),
 			SourceVersionID: int(h.SourceVersionID),
+			SourceKey:       h.SourceKey,
 			Version:         h.Version,
 			Title:           h.Title,
 			Heading:         h.Heading,
 			Content:         h.Content,
 			Score:           h.Score,
 			Citation:        h.Citation,
+			CitationRef: svcclient.CitationRef{
+				SourceID: int(h.CitationRef.SourceID), SourceVersionID: int(h.CitationRef.SourceVersionID),
+				Title: h.CitationRef.Title, Version: h.CitationRef.Version, Heading: h.CitationRef.Heading,
+				EffectiveFrom: h.CitationRef.EffectiveFrom, EffectiveTo: h.CitationRef.EffectiveTo,
+				URL: h.CitationRef.URL, Locator: h.CitationRef.Locator,
+			},
 		})
 	}
 	return &svcclient.RAGResponse{
@@ -49,7 +56,7 @@ func (a *InProcessRAGAdapter) Feedback(ctx context.Context, md metadata.Context,
 	if comment != "" {
 		c = &comment
 	}
-	fb, err := a.svc.Repo().SaveFeedback(ctx, runID, helpful, c)
+	fb, err := a.svc.Repo().SaveFeedback(ctx, md.TenantID, runID, helpful, c)
 	if err != nil {
 		return nil, err
 	}

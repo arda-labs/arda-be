@@ -14,12 +14,12 @@ import (
 // In-process Prometheus metrics for the AI runtime, rendered into the shared
 // /metrics endpoint via ardahttp.MetricsMiddleware extraRenderers. Counters
 // reset on restart; the deployed Prometheus is expected to scrape frequently
-// enough for the aggregate views this spike exposes.
+// enough for the aggregate views this service exposes.
 
 type aiCounterVec struct {
-	name  string
-	help  string
-	mu    sync.Mutex
+	name string
+	help string
+	mu   sync.Mutex
 	// labelValues joined by \x00 → value
 	values map[string]uint64
 	labels []string
@@ -151,6 +151,11 @@ var (
 		"AI agent loop wall-clock duration.",
 		0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120,
 	)
+	aiProviderProbesTotal = newAICounterVec(
+		"arda_ai_provider_probes_total",
+		"Model provider health probes by provider and outcome.",
+		"provider", "outcome",
+	)
 )
 
 // RenderAIMetrics appends the arda_ai_* metric family to /metrics.
@@ -159,6 +164,20 @@ func RenderAIMetrics(w io.Writer) {
 	aiToolExecutionsTotal.render(w)
 	aiLLMTokensTotal.render(w)
 	aiRunDuration.render(w)
+	aiProviderProbesTotal.render(w)
+}
+
+// RecordProviderProbe records one readiness health probe without exposing
+// provider credentials or URLs.
+func RecordProviderProbe(provider string, err error) {
+	if provider == "" {
+		provider = "unknown"
+	}
+	outcome := "success"
+	if err != nil {
+		outcome = "failure"
+	}
+	aiProviderProbesTotal.add(1, provider, outcome)
 }
 
 // recordRunOutcome counts one terminal (or paused) run status.

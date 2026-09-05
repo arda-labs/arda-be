@@ -5,21 +5,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 )
+
+// agUIProtocolVersion is the Arda compatibility version for the AG-UI
+// dialect served by this endpoint. AG-UI itself does not put a protocol
+// version in every event, so Arda carries one as an additive extension and
+// also advertises it in the response header. Clients may omit the request
+// version for backwards compatibility; when supplied it must match.
+const agUIProtocolVersion = "ag-ui-v1"
+
+const agUIProtocolVersionHeader = "X-Arda-AI-Protocol-Version"
 
 // The SSE dialect is AG-UI (agent-gui protocol), the official assistant-ui
 // runtime for non-JS backends. Events are JSON objects in `data:` lines,
 // separated by \n\n, each carrying a `type` field. @ag-ui/client validates
 // and reassembles them (text/tool/reasoning messages, interrupts).
 type sseWriter struct {
-	writer               *bufio.Writer
-	flusher              http.Flusher
-	reasoningMessageID   string
-	textMessageID        string
-	toolArgs             map[string]*strings.Builder
-	pendingApprovalID    string
-	pendingToolCallID    string
+	writer             *bufio.Writer
+	flusher            http.Flusher
+	sequence           uint64
+	terminal           bool
+	threadID           string
+	runID              string
+	reasoningMessageID string
+	textMessageID      string
+	toolArgs           map[string]*strings.Builder
+	pendingApprovalID  string
+	pendingToolCallID  string
 }
 
 func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
@@ -27,6 +41,7 @@ func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
+	w.Header().Set(agUIProtocolVersionHeader, agUIProtocolVersion)
 	w.WriteHeader(http.StatusOK)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -36,8 +51,37 @@ func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
 }
 
 func (s *sseWriter) event(payload agentEvent) {
+	// Once an AG-UI run is terminal, any later callback is stale work from a
+	// provider/tool goroutine. Dropping it keeps clients from observing a
+	// second terminal event after RUN_ERROR or RUN_FINISHED.
+	if s.terminal {
+		return
+	}
 	for _, event := range s.translate(payload) {
+		if event.ThreadID == "" {
+			event.ThreadID = s.threadID
+		}
+		if event.RunID == "" {
+			event.RunID = s.runID
+		}
+		s.sequence++
+		event.ProtocolVersion = agUIProtocolVersion
+		event.Sequence = s.sequence
+		if event.RunID != "" {
+			event.EventID = event.RunID + ":" + strconv.FormatUint(s.sequence, 10)
+		} else {
+			event.EventID = agUIProtocolVersion + ":" + strconv.FormatUint(s.sequence, 10)
+		}
+		if event.Type == "RUN_FINISHED" || event.Type == "RUN_ERROR" {
+			s.terminal = true
+		}
 		s.writeData(event)
+	}
+	if payload.ThreadID != "" {
+		s.threadID = payload.ThreadID
+	}
+	if payload.RunID != "" {
+		s.runID = payload.RunID
 	}
 }
 
@@ -54,21 +98,24 @@ func (s *sseWriter) writeData(ev agUiEvent) {
 // agUiEvent is a superset struct for AG-UI protocol events. Zero-valued
 // fields are omitted from the JSON so each event matches the spec shape.
 type agUiEvent struct {
-	Type         string          `json:"type"`
-	ThreadID     string          `json:"threadId,omitempty"`
-	RunID        string          `json:"runId,omitempty"`
-	MessageID    string          `json:"messageId,omitempty"`
-	ToolCallID   string          `json:"toolCallId,omitempty"`
-	ToolCallName string          `json:"toolCallName,omitempty"`
-	Delta        string          `json:"delta,omitempty"`
-	Content      string          `json:"content,omitempty"`
-	Role         string          `json:"role,omitempty"`
-	ErrorText    string          `json:"error,omitempty"`
-	Message      string          `json:"message,omitempty"`
-	Code         string          `json:"code,omitempty"`
-	Outcome      json.RawMessage `json:"outcome,omitempty"`
-	Result       json.RawMessage `json:"result,omitempty"`
-	Input        json.RawMessage `json:"input,omitempty"`
+	Type            string          `json:"type"`
+	ProtocolVersion string          `json:"protocolVersion,omitempty"`
+	EventID         string          `json:"eventId,omitempty"`
+	Sequence        uint64          `json:"sequence,omitempty"`
+	ThreadID        string          `json:"threadId,omitempty"`
+	RunID           string          `json:"runId,omitempty"`
+	MessageID       string          `json:"messageId,omitempty"`
+	ToolCallID      string          `json:"toolCallId,omitempty"`
+	ToolCallName    string          `json:"toolCallName,omitempty"`
+	Delta           string          `json:"delta,omitempty"`
+	Content         string          `json:"content,omitempty"`
+	Role            string          `json:"role,omitempty"`
+	ErrorText       string          `json:"error,omitempty"`
+	Message         string          `json:"message,omitempty"`
+	Code            string          `json:"code,omitempty"`
+	Outcome         json.RawMessage `json:"outcome,omitempty"`
+	Result          json.RawMessage `json:"result,omitempty"`
+	Input           json.RawMessage `json:"input,omitempty"`
 }
 
 // translate maps one internal agent event to zero or more AG-UI protocol
@@ -198,7 +245,10 @@ func (s *sseWriter) translate(ev agentEvent) []agUiEvent {
 		if ev.Error != "" {
 			// RUN_ERROR is terminal for the AG-UI client (it dispatches the
 			// run-failed state); no RUN_FINISHED follows.
-			return append(evts, agUiEvent{Type: "RUN_ERROR", Message: ev.Error, Code: "run_error"})
+			return append(evts, agUiEvent{
+				Type: "RUN_ERROR", ThreadID: ev.ThreadID, RunID: ev.RunID,
+				Message: ev.Error, Code: ev.Error,
+			})
 		}
 		outcome, _ := json.Marshal(map[string]string{"type": "success"})
 		return append(evts, agUiEvent{

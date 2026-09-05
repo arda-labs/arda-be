@@ -68,6 +68,7 @@ func (s *SQLRunStore) ListProfiles(ctx context.Context, tenantID string) ([]Tena
 		); err != nil {
 			return nil, fmt.Errorf("scan tenant setting profile: %w", err)
 		}
+		profile.APIKey = s.decryptKey(profile.APIKey)
 		profiles = append(profiles, profile)
 	}
 	if err := rows.Err(); err != nil {

@@ -60,17 +60,16 @@ Important behavior:
 | `POST /api/auth/logout` | Revoke current BFF session |
 | `GET /api/auth/me/sessions` | List BFF sessions for current user |
 
-## CopilotKit runtime boundary
+## AI runtime boundary
 
-The gateway is the only public entry point for the CopilotKit runtime. It
-validates the Arda session and `ai.assistant.use` permission (policy id
-`ai-copilotkit-runtime`, methods GET+POST+OPTIONS on `/api/copilotkit/**`),
-handles CORS for browser origins, then forwards the request to the internal
-`ai-service` (`COPILOTKIT_RUNTIME_URL`, e.g. `http://ai-service:8080`) with a
-short-lived workload identity token whose audience is `ai-service`. The Go
-service implements the CopilotKit envelope protocol natively; the former
-Node.js `ai-runtime` adapter is retired. See
-`docs/ai/go-native-copilotkit.md`.
+The gateway is the only public entry point for the AI runtime. It validates
+the Arda session and `ai.assistant.use` permission (policy id `ai-agent` on
+`POST /api/ai/agent`), handles the browser boundary, then forwards the request
+to the internal `ai-service` (`AI_SERVICE_URL`, e.g.
+`http://ai-service:8080`) with a short-lived workload identity token whose
+audience is `ai-service`. The Go service emits AG-UI SSE events consumed by the
+frontend assistant runtime. Historical CopilotKit documents are archived under
+`docs/ai/archive/`.
 
 ## Context forwarding
 

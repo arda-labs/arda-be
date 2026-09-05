@@ -1,6 +1,6 @@
 # Knowledge Ingestion Pipeline
 
-Status: **Design specification — implement with Knowledge RAG Gate (after Gate 7)**.
+Status: **Implemented baseline — production hardening and provider/index gates remain**.
 Covers how knowledge content enters the system, goes through review, and becomes
 retrievable by the AI assistant.
 
@@ -28,7 +28,7 @@ Chunking (deterministic, idempotent, preserves heading/location)
 Review Gate (manual or auto-approved, depends on classification)
   │ approved
   ▼
-Embedding (when vector column is enabled)
+Embedding (required in production; optional FTS-only in development)
   │
   ▼
 Index + Publish Version
@@ -165,10 +165,12 @@ Self-review is rejected (reviewer must not be the source owner).
 
 Embedding runs as a background Goose-managed job after approval.
 
-**Current state:** Embedding is disabled until the embedding model, dimension,
-and vector index are selected (per `knowledge-rag-design.md` gates). Approved
-content is chunked and stored but not embedded; full-text search is available
-immediately.
+**Current state:** Approved content is chunked and queued by the service-owned
+worker. Development may use FTS-only retrieval when no embedding provider is
+configured. Production sets `AI_RAG_REQUIRE_EMBEDDING` implicitly through
+production mode and fails the job/query when embedding is unavailable. The
+current migration reserves a 1024-dimension vector shape; provider selection,
+index sizing, and a real tenant corpus remain rollout gates.
 
 **When embedding is enabled:**
 

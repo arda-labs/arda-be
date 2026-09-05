@@ -16,7 +16,7 @@ var trustedSources = map[string]bool{
 }
 
 // ServiceAuthMiddleware verifies the gateway's workload identity separately
-// from the delegated user/tenant headers. In spike mode it is optional so the
+// from the delegated user/tenant headers. In development mode it is optional so the
 // protocol endpoint can be tested locally; production always requires it.
 func ServiceAuthMiddleware(next http.Handler, secret string, required bool) http.Handler {
 	if strings.TrimSpace(secret) == "" && !required {

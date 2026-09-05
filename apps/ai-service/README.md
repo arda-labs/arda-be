@@ -20,7 +20,8 @@ creates no export artifact; it verifies scope and returns a bounded payload.
 Run locally:
 
 ```powershell
-AI_MODE=spike go run ./cmd/ai-service
+$env:AI_MODE="development"
+go run ./cmd/ai-service
 ```
 
 ## Agent mode (model provider)
@@ -36,10 +37,22 @@ AI_AGENT_MAX_STEPS=6
 AI_RATE_LIMIT_PER_MINUTE=30
 ```
 
+Knowledge ingestion uses an OpenAI-compatible embedding endpoint with a
+1024-dimension vector. Set `AI_RAG_EMBEDDING_BASE_URL`,
+`AI_RAG_EMBEDDING_API_KEY`, and `AI_RAG_EMBEDDING_MODEL` explicitly when the
+embedding provider differs from chat; they fall back to the chat URL/key for
+backward compatibility. Production mode fails closed when embeddings are
+missing; development can opt into the same behavior with
+`AI_RAG_REQUIRE_EMBEDDING=true`. Optional Cohere-compatible reranking is
+enabled with `AI_RAG_RERANKER_BASE_URL`, `AI_RAG_RERANKER_API_KEY`, and
+`AI_RAG_RERANKER_MODEL`.
+
 The provider must speak the OpenAI-compatible chat-completions SSE protocol
 (cloud providers, vLLM, Ollama, and similar local runtimes all work). The
 handler depends only on the `model.Provider` interface, so additional sources
-can be added later without touching tool or handler code. The agent loop
+can be added later without touching tool or handler code. Tenant profiles can
+define primary/secondary/failover providers; fallback is attempted only before
+any output is emitted, and repeated upstream failures are circuit-broken. The agent loop
 streams `TEXT_MESSAGE_*` deltas incrementally, executes only registry tools
 whose permissions resolve against gateway headers, and never executes
 `confirm`-kind tools directly: requesting one creates an approval proposal
@@ -53,6 +66,8 @@ and ends the run in `WAITING_APPROVAL`.
 - `POST /api/ai/approvals` — HITL proposal (flagged).
 - `POST /api/ai/approvals/{id}/decision` — independent approver decision (flagged).
 - `POST /api/ai/approvals/{id}/execution` — run owner executes an APPROVED confirm tool; retries while the execution row stays `WAITING_APPROVAL`.
+- `GET /health/live` and `/health/ready` — liveness is process-only; readiness
+  checks the configured database when persistence is enabled.
 
 The endpoint requires gateway-derived `X-Auth-Checked: true`, `X-User-Id`,
 `X-Tenant-Id`, and `X-Permissions: ai.assistant.use`. It must be reached through
@@ -60,12 +75,49 @@ the authenticated gateway in an environment where it is deployed; these headers
 are not a standalone authentication mechanism.
 
 The response is an AG-UI-style SSE stream with `RUN_STARTED`, text message
-events, and `RUN_FINISHED`. In production mode `DATABASE_DSN` and
+events, and exactly one terminal event: `RUN_FINISHED` for success/interrupt or
+`RUN_ERROR` for failure. Every event carries the additive Arda fields
+`protocolVersion: "ag-ui-v1"`, a per-run `eventId`, and a monotonically
+increasing `sequence`; the response advertises the same value in
+`X-Arda-AI-Protocol-Version`. Clients may send `protocolVersion` in the run
+input, and an unsupported value is rejected before the stream opens. A client
+disconnect or request deadline is persisted as `CANCELLED`/`FAILED` and is
+reported as `RUN_ERROR` with `ai.run_cancelled`/`ai.run_timeout` when the
+connection can still be written. A run without a valid provider configuration
+fails with `ai.model_unavailable`; the service never returns a successful placeholder
+response. In production mode `DATABASE_DSN` and
 `ARDA_SERVICE_AUTH_SECRET` are mandatory; migrations run at startup and the
 gateway supplies a separate short-lived workload identity.
 
 For the shell panel, start the frontend with `VITE_AI_ENABLED=true` and run the gateway with
 `AI_SERVICE_URL=http://localhost:8098`. The gateway still requires a real
 authenticated session and the `ai.assistant.use` permission; setting the
-frontend flag does not bypass either check. Without a model configured the
-endpoint stays deterministic and answers with the protocol spike message.
+frontend flag does not bypass either check. A tenant model profile can override
+the deployment provider; otherwise the configured platform provider is used.
+
+Tenant quota settings may set `monthlyTokenLimit`. Each model run reserves a
+bounded allowance atomically and finalizes it with provider usage; exceeding
+the limit returns `ai.quota_exceeded` before the run starts.
+
+## Retrieval evaluation
+
+The repository includes a repeatable retrieval evaluator. Run it against a
+local service or gateway with the same tenant identity used by the golden set.
+For authenticated gateway use, set `AI_EVAL_COOKIE` (must be a short-lived
+test session; never print or store it):
+
+```powershell
+$env:AI_EVAL_BASE_URL="http://localhost:8098"
+$env:AI_EVAL_STRICT="1"
+# For authenticated gateway use, set AI_EVAL_COOKIE (must be a short-lived test session; never print or store it):
+# $env:AI_EVAL_COOKIE="<short-lived-test-session-cookie>"
+go run ./cmd/ai-eval
+```
+
+It reports source recall, citation coverage, hit counts, latency, and a
+machine-readable per-case result. A strict run exits non-zero when a case
+violates its expected evidence or no-answer policy.
+
+For the end-to-end gateway check, provide a short-lived authenticated session
+cookie and run `node scripts/gateway-smoke.mjs`. The script verifies the SSE
+terminal event and monotonic sequence without invoking mutation tools.

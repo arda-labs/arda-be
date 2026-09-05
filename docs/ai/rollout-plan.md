@@ -15,11 +15,11 @@ Exit criteria:
 - an agreed first read-only use case and data classification;
 - no production DB, secret, ingress, or workload mutation.
 
-## Gate 1 — protocol and security spike (complete)
+## Gate 1 — protocol and security foundation (complete)
 
-The deterministic Go endpoint existed at `arda-be/apps/ai-service`; the
-gateway has a policy/upstream route for `/api/ai/**` served by the Olorin
-panel. The AG-UI protocol replaced the earlier SSE spike: the shell panel now
+The Go endpoint exists at `arda-be/apps/ai-service`; the gateway has a
+policy/upstream route for `/api/ai/**` served by the Olorin panel. The AG-UI
+protocol replaced the earlier experimental SSE implementation: the shell panel now
 streams through `useAgUiRuntime` + `HttpAgent` against `/api/ai/agent`.
 
 Exit criteria met: compatibility tests pass, no trust-header bypass exists, and
@@ -30,13 +30,14 @@ the gateway injects a separate short-lived workload identity for the AI service.
 The `ai` database and `arda_ai` role are provisioned additively in the real
 CloudNativePG cluster. The service has additive Goose migrations for
 conversations, messages, runs, tool executions, approvals, sources, chunks,
-and feedback. The `vector` extension is now enabled, while the embedding
-column/index remains disabled until its specific gates pass.
+feedback, embedding dimensions, and ingestion queue leases. The vector
+extension and operational indexes are migration-managed; provider/index sizing
+still requires an environment-specific rollout check.
 
 Before enabling user traffic, verify storage headroom and representative
-read/write and retention behavior. Without `AI_ENABLE_AGENT` the endpoint
-stays deterministic; with it, provider usage and tool records are written and
-must be monitored.
+read/write and retention behavior. A run without a valid model configuration
+fails explicitly with `ai.model_unavailable`; provider usage and tool records
+are written only for successful model-backed runs and must be monitored.
 
 ## Gate 3 — first read-only vertical slice (implemented; live verification pending)
 
@@ -44,9 +45,11 @@ The first read-only SDK methods are `arda.crm.getCustomer` and
 `arda.knowledge.search` (the `crm.customer.get` / `knowledge.search`
 capabilities they map to). They are registered in the SDK catalog
 (`internal/catalog`), tenant scoped, require separate IAM permissions, emit
-AG-UI tool events, and persist redacted tool execution records. Knowledge uses
-PostgreSQL full-text search over published sources; vector search and source
-ingestion remain separate gates.
+AG-UI tool events, and persist redacted tool execution records. Knowledge
+retrieval uses published, ACL-filtered sources with PostgreSQL full-text plus
+optional vector search and reranking. Ingestion has review/publish states,
+retry/lease recovery, and fail-closed embedding mode; live corpus and quality
+evaluation remain release gates.
 
 Success is measured by grounded/cited answers, zero ACL leakage, bounded
 latency, and a clean failure path—not by autonomous breadth.
@@ -73,7 +76,7 @@ The separate `ai-runtime` Node.js service originally planned for this gate was
 evaluated and **retired before production deployment**. The CopilotKit
 single-route envelope protocol (`/api/copilotkit`) was then served directly
 from `ai-service` in Go, and was **fully replaced by the AG-UI protocol
-(2026-08-31)** — see [go-native-copilotkit.md](go-native-copilotkit.md) for the
+(2026-08-31)** — see [archive/go-native-copilotkit.md](archive/go-native-copilotkit.md) for the
 historical record. The `/api/copilotkit` endpoint, its policy route, and the
 frontend `@copilotkit/react-core` dependency are removed; the assistant now
 streams AG-UI events through `useAgUiRuntime` + `HttpAgent` on
@@ -133,14 +136,14 @@ Stop rollout and disable the feature if any of these occurs:
 
 ## Current implementation boundary
 
-The current state adds the service-owned persistence foundation, the enabled
-`vector` extension, bounded read tools plus one confirm-kind tool, the
-model-driven agent loop over an OpenAI-compatible streaming provider behind
-the `model.Provider` interface (env-configured, single source), incremental
-SSE streaming, per-tenant rate limiting, graceful shutdown, owner-scoped
+The current state adds the service-owned persistence foundation, migration-
+managed vector/queue structures, bounded read tools plus one confirm-kind tool,
+the model-driven agent loop over an OpenAI-compatible streaming provider behind
+the `model.Provider` interface (platform env provider with tenant override), incremental SSE
+streaming, per-tenant rate limiting, graceful shutdown, owner-scoped
 conversation APIs, the full HITL proposal/decision/execution path, and the
 Olorin shell panel (`@workspace/ai`) with typed renderers, approval card with
-resume, and thread history. It does not yet add multi-provider routing, vector
-column/index, source ingestion, or any real mutation executor. The next gates
-are an approved knowledge-source ingestion flow, provider evaluation/budget,
-and the model-provider canary.
+resume, and thread history. It does not yet add multi-provider routing, a
+production embedding/reranker service contract, or any real mutation executor.
+The next gates are approved knowledge content, measurable RAG evaluation,
+provider quota/cost enforcement, and the model-provider canary.

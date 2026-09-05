@@ -11,14 +11,19 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
-// With persistence, the saved tenant configuration is the only model source:
-// a missing row must fail the run with guidance, not silently fall back to
-// the platform env key.
-func TestAgentLoopRequiresSavedTenantSettings(t *testing.T) {
+// With persistence, an active tenant setting overrides the platform provider;
+// a missing row uses the platform fallback so first use does not require
+// duplicating deployment configuration per tenant.
+func TestAgentLoopUsesPlatformFallbackWhenTenantSettingsMissing(t *testing.T) {
+	server := newModelServer(t, [][]string{{
+		`{"choices":[{"delta":{"content":"fallback"}}]}`,
+		`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+	}})
+	defer server.Close()
 	store := &fakeSettingsStore{} // TenantSettingsStore with no saved row
 	resolver := tools.NewRegistry(handlerTestTool{})
 	options := RouterOptions{
-		ModelProvider: model.NewClient("http://env-key-fallback.invalid", "env-key", "env-model", nil),
+		ModelProvider: model.NewClient(server.URL, "env-key", "env-model", server.Client()),
 	}
 	router := NewRouterWithOptions(store, resolver, options)
 
@@ -31,24 +36,22 @@ func TestAgentLoopRequiresSavedTenantSettings(t *testing.T) {
 		t.Fatalf("expected 200 SSE, got %d", res.Code)
 	}
 	events := decodeSSEEvents(t, res.Body.String())
-	foundError := false
+	got := ""
 	for _, event := range events {
-		if event["type"] == "RUN_ERROR" {
-			if event["message"] == "ai.model_unavailable" {
-				foundError = true
-			}
+		if event["type"] == "TEXT_MESSAGE_CONTENT" {
+			got += event["delta"].(string)
 		}
 	}
-	if !foundError {
-		t.Fatalf("expected RUN_ERROR with ai.model_unavailable; events: %v", events)
+	if got != "fallback" {
+		t.Fatalf("expected platform fallback response, got %q; events: %v", got, events)
 	}
 	if raw, err := json.Marshal(store.finished); err != nil || string(raw) != "true" {
 		t.Fatalf("run must be persisted as FAILED: %v %s", err, raw)
 	}
 }
 
-// Spike mode (store without TenantSettingsStore) keeps using the env provider.
-func TestAgentLoopSpikeModeUsesEnvProvider(t *testing.T) {
+// Development mode (store without TenantSettingsStore) keeps using the env provider.
+func TestAgentLoopDevelopmentModeUsesEnvProvider(t *testing.T) {
 	server := newModelServer(t, [][]string{{
 		`{"choices":[{"delta":{"content":"Xin chào!"}}]}`,
 		`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
@@ -73,6 +76,6 @@ func TestAgentLoopSpikeModeUsesEnvProvider(t *testing.T) {
 		}
 	}
 	if text != "Xin chào!" {
-		t.Fatalf("spike mode should stream via env provider, got %q (events %v)", text, eventTypes(events))
+		t.Fatalf("development mode should stream via env provider, got %q (events %v)", text, eventTypes(events))
 	}
 }

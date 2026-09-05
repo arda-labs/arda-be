@@ -11,6 +11,20 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 )
 
+func TestRAGHandlerRequiresGatewayIdentity(t *testing.T) {
+	svc := knowledge.NewService(nil, nil, nil)
+	mux := http.NewServeMux()
+	NewRAGHandler(svc).RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/rag/query", bytes.NewBufferString(`{"query":"policy"}`))
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d: %s", res.Code, res.Body.String())
+	}
+}
+
 func TestRAGHandlerPreviewChunks(t *testing.T) {
 	svc := knowledge.NewService(nil, nil, nil)
 	ragHandler := NewRAGHandler(svc)
@@ -22,6 +36,7 @@ func TestRAGHandlerPreviewChunks(t *testing.T) {
 		Content: "## Tiêu đề\n\nNội dung văn bản kiểm tra.",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/rag/sources/preview-chunks", bytes.NewReader(body))
+	setAIIdentityHeaders(req)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -63,6 +78,7 @@ func TestRAGHandlerParsePreview(t *testing.T) {
 	_ = writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/rag/sources/parse-preview", &buf)
+	setAIIdentityHeaders(req)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	w := httptest.NewRecorder()
 

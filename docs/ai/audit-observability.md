@@ -47,7 +47,8 @@ references only where needed for debugging.
 
 ## SLO starting point
 
-Do not commit production SLO numbers until the spike has baseline data. The
+Do not commit production SLO numbers until the service has representative
+baseline data. The
 initial dashboard should nevertheless expose the full path separately:
 
 ```text

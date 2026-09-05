@@ -137,7 +137,7 @@ func handleUpdateSettings(w http.ResponseWriter, r *http.Request, store runStore
 	req.ModelID = strings.TrimSpace(req.ModelID)
 	req.ProviderType = strings.TrimSpace(req.ProviderType)
 
-	if err := validateProviderURL(req.BaseURL); err != nil {
+	if err := validateProviderURL(req.BaseURL, options.AllowLocalModelURLs); err != nil {
 		problem(w, http.StatusBadRequest, "ai.invalid_base_url")
 		return
 	}
@@ -205,7 +205,7 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 	apiKey := strings.TrimSpace(req.APIKey)
 	modelID := strings.TrimSpace(req.ModelID)
 
-	if err := validateProviderURL(baseURL); err != nil {
+	if err := validateProviderURL(baseURL, options.AllowLocalModelURLs); err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"success": true,
 			"errors":  []any{},
@@ -326,8 +326,8 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 	})
 }
 
-func validateProviderURL(rawURL string) error {
-	return ardahttp.ValidateEgressURL(rawURL, true)
+func validateProviderURL(rawURL string, allowLocal bool) error {
+	return ardahttp.ValidateEgressURL(rawURL, allowLocal)
 }
 
 // baseURLAllowed reports whether rawURL matches the gateway allowlist.

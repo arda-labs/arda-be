@@ -103,14 +103,31 @@ type QueryRequest struct {
 }
 
 type QueryHit struct {
-	SourceID        int64   `json:"source_id"`
-	SourceVersionID int64   `json:"source_version_id"`
-	Version         string  `json:"version"`
-	Title           string  `json:"title"`
-	Heading         string  `json:"heading"`
-	Content         string  `json:"content"`
-	Score           float64 `json:"score"`
-	Citation        string  `json:"citation"`
+	SourceID        int64       `json:"source_id"`
+	SourceKey       string      `json:"source_key"`
+	SourceVersionID int64       `json:"source_version_id"`
+	Version         string      `json:"version"`
+	Title           string      `json:"title"`
+	Heading         string      `json:"heading"`
+	Content         string      `json:"content"`
+	Score           float64     `json:"score"`
+	Citation        string      `json:"citation"`
+	CitationRef     CitationRef `json:"citation_ref"`
+}
+
+// CitationRef is the stable, machine-readable citation contract returned by
+// retrieval. The legacy Citation string remains for older tool consumers,
+// while synthesis and UI should use this structured reference.
+type CitationRef struct {
+	SourceID        int64      `json:"source_id"`
+	SourceVersionID int64      `json:"source_version_id"`
+	Title           string     `json:"title"`
+	Version         string     `json:"version"`
+	Heading         string     `json:"heading,omitempty"`
+	EffectiveFrom   *time.Time `json:"effective_from,omitempty"`
+	EffectiveTo     *time.Time `json:"effective_to,omitempty"`
+	URL             *string    `json:"url,omitempty"`
+	Locator         string     `json:"locator"`
 }
 
 type QueryResponse struct {

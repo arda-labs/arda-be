@@ -32,7 +32,8 @@ func TestStream_TextOnlyFixture(t *testing.T) {
 	defer server.Close()
 
 	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client())}
-	code, events := runAgentStreamFixture(t, &agentRunStore{}, tools.NewRegistry(handlerTestTool{}), options,
+	store := &agentRunStore{}
+	code, events := runAgentStreamFixture(t, store, tools.NewRegistry(handlerTestTool{}), options,
 		`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"chào"}]}`)
 	if code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", code)
@@ -220,5 +221,26 @@ func TestStream_ModelErrorEmitsRunError(t *testing.T) {
 		if event["type"] == "RUN_FINISHED" {
 			t.Fatalf("RUN_ERROR is terminal; no RUN_FINISHED should follow: %v", eventTypes(events))
 		}
+	}
+}
+
+func TestCitationGuardExtractsNestedKnowledgeEvidence(t *testing.T) {
+	raw := `{"result":{"items":[{"sourceTitle":"Quy chế giao dịch","heading":"Phê duyệt","version":"v2","citations":[{"title":"Quy chế giao dịch","heading":"Phê duyệt","version":"v2"}]}]}}`
+	labels := extractCitationLabels(raw)
+	if len(labels) != 1 || labels[0] != "Quy chế giao dịch — Phê duyệt (v2)" {
+		t.Fatalf("unexpected citation labels: %#v", labels)
+	}
+	if hasCitationMarker("Câu trả lời chưa có nguồn") {
+		t.Fatalf("ordinary prose must not satisfy citation marker")
+	}
+}
+
+func TestCitationGuardRejectsInventedMarker(t *testing.T) {
+	citations := []string{"Quy chế giao dịch — Phê duyệt (v2)"}
+	if hasValidCitation("Theo [source-1], giao dịch được phê duyệt.", citations) {
+		t.Fatal("invented source marker must not satisfy citation guard")
+	}
+	if !hasValidCitation("Theo Quy chế giao dịch — Phê duyệt (v2), giao dịch được phê duyệt.", citations) {
+		t.Fatal("known citation label should satisfy citation guard")
 	}
 }

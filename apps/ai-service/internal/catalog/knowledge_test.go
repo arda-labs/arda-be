@@ -83,8 +83,11 @@ func TestKnowledgeSearchResultShape(t *testing.T) {
 	if shaped["content"] != "Nội dung FAQ..." {
 		t.Errorf("content = %v, want Nội dung FAQ...", shaped["content"])
 	}
-	if shaped["citations"] != "[7:Cách tra FAQ]" {
-		t.Errorf("citations = %v, want [7:Cách tra FAQ]", shaped["citations"])
+	if citations, ok := shaped["citations"].([]any); !ok || len(citations) != 1 {
+		t.Errorf("citations = %v, want one structured citation", shaped["citations"])
+	}
+	if shaped["citation"] != "[7:Cách tra FAQ]" {
+		t.Errorf("citation = %v, want [7:Cách tra FAQ]", shaped["citation"])
 	}
 	if v, ok := shaped["matchScore"].(float64); !ok || v != 0.42 {
 		t.Errorf("matchScore = %v (type %T), want 0.42", shaped["matchScore"], shaped["matchScore"])

@@ -29,6 +29,7 @@ type ClientPool struct {
 	maxEntries   int
 	ttl          time.Duration
 	gatewayToken string
+	guards       map[string]Provider
 }
 
 func NewClientPool(httpClient *http.Client) *ClientPool {
@@ -48,7 +49,27 @@ func NewClientPool(httpClient *http.Client) *ClientPool {
 		httpClient: httpClient,
 		maxEntries: defaultPoolMaxEntries,
 		ttl:        defaultPoolTTL,
+		guards:     make(map[string]Provider),
 	}
+}
+
+// GetProvider returns a pooled client wrapped in a circuit breaker whose
+// state follows the tenant/configuration key across requests.
+func (p *ClientPool) GetProvider(tenantID, baseURL, apiKey, modelID string) Provider {
+	if p == nil {
+		return NewCircuitBreakerProvider(NewClient(baseURL, apiKey, modelID, nil), 3, 30*time.Second)
+	}
+	client := p.GetClient(tenantID, baseURL, apiKey, modelID)
+	key := tenantID + "\x00" + hashConfig(baseURL, apiKey, modelID)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.evictExpiredGuardsLocked(time.Now())
+	if guarded, ok := p.guards[key]; ok {
+		return guarded
+	}
+	guarded := NewCircuitBreakerProvider(client, 3, 30*time.Second)
+	p.guards[key] = guarded
+	return guarded
 }
 
 // SetGatewayToken applies the AI Gateway credential (cf-aig-authorization
@@ -69,22 +90,21 @@ func (p *ClientPool) GetClient(tenantID, baseURL, apiKey, modelID string) *Clien
 
 	configHash := hashConfig(baseURL, apiKey, modelID)
 
-	p.mu.RLock()
-	entry, ok := p.entries[tenantID]
-	if ok && entry.configKey == configHash && time.Since(entry.lastUsed) < p.ttl {
-		entry.lastUsed = time.Now()
-		p.mu.RUnlock()
-		return entry.client
-	}
-	p.mu.RUnlock()
-
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	now := time.Now()
+	p.evictExpiredGuardsLocked(now)
 
 	// Double-check under write lock
-	if entry, ok := p.entries[tenantID]; ok && entry.configKey == configHash && time.Since(entry.lastUsed) < p.ttl {
-		entry.lastUsed = time.Now()
+	if entry, ok := p.entries[tenantID]; ok && entry.configKey == configHash && now.Sub(entry.lastUsed) < p.ttl {
+		entry.lastUsed = now
 		return entry.client
+	}
+	// A configuration change must not retain the previous circuit state.
+	for key := range p.guards {
+		if strings.HasPrefix(key, tenantID+"\x00") {
+			delete(p.guards, key)
+		}
 	}
 
 	// Evict old entries if pool is full
@@ -98,7 +118,7 @@ func (p *ClientPool) GetClient(tenantID, baseURL, apiKey, modelID string) *Clien
 	}
 	p.entries[tenantID] = &poolEntry{
 		client:    client,
-		lastUsed:  time.Now(),
+		lastUsed:  now,
 		configKey: configHash,
 	}
 
@@ -112,6 +132,11 @@ func (p *ClientPool) Invalidate(tenantID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.entries, tenantID)
+	for key := range p.guards {
+		if strings.HasPrefix(key, tenantID+"\x00") {
+			delete(p.guards, key)
+		}
+	}
 }
 
 func (p *ClientPool) evictOldestLocked() {
@@ -127,6 +152,29 @@ func (p *ClientPool) evictOldestLocked() {
 
 	if oldestTenant != "" {
 		delete(p.entries, oldestTenant)
+		for key := range p.guards {
+			if strings.HasPrefix(key, oldestTenant+"\x00") {
+				delete(p.guards, key)
+			}
+		}
+	}
+}
+
+// evictExpiredGuardsLocked bounds circuit-breaker state even when a tenant's
+// client entry is replaced by a new model configuration. Guards are cache
+// state, so removing them only affects the next request's warm-up period.
+func (p *ClientPool) evictExpiredGuardsLocked(now time.Time) {
+	for key := range p.guards {
+		separator := strings.IndexByte(key, 0)
+		if separator < 0 {
+			delete(p.guards, key)
+			continue
+		}
+		tenantID := key[:separator]
+		entry, ok := p.entries[tenantID]
+		if !ok || now.Sub(entry.lastUsed) >= p.ttl {
+			delete(p.guards, key)
+		}
 	}
 }
 

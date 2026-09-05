@@ -36,16 +36,19 @@ reached the model.
   dates.
 - Use deterministic chunk IDs and an ingestion job ID for replay safety.
 - Keep chunk text bounded and preserve headings/source location for citations.
-- Choose an embedding model and dimension before adding the vector column.
+- Use the approved 1024-dimensional embedding contract for the current schema;
+  changing dimensions requires a new embedding set and migration.
 - Keep provider/model/dimension metadata with each embedding set; do not mix
   dimensions in one index.
 - Benchmark HNSW/IVFFlat and full-text fallback on representative tenant data
   before selecting an index.
 
-`pgvector` is enabled in the service-owned AI database through an additive
-Goose migration. The vector column and index remain disabled until the
-provider/dimension and backup/restore, benchmark, and tenant-filtering gates
-are complete. Rollback is forward-compatible rather than destructive.
+`pgvector` is enabled in the service-owned AI database through additive Goose
+migrations. The chunks table stores `vector(1024)` and has a cosine HNSW index;
+retrieval only compares vectors when the query and chunk model metadata match.
+Provider approval, backup/restore, benchmark, and tenant-filtering gates remain
+required before enabling the path for production traffic. Rollback is
+forward-compatible rather than destructive.
 
 ## Retrieval pipeline
 
@@ -54,7 +57,8 @@ are complete. Rollback is forward-compatible rather than destructive.
 3. Run hybrid retrieval (metadata/full-text plus vector when enabled).
 4. Rerank within the authorized candidate set.
 5. Enforce result count, token, and classification limits.
-6. Attach stable citations: source ID, version, title, section, and location.
+6. Attach stable citations: source key/ID, version, title, section, effective
+   dates, and location.
 7. Instruct the model to answer only from supplied evidence for knowledge claims.
 
 ## Prompt-injection defenses

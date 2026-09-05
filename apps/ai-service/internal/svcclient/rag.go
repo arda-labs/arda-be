@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
@@ -16,14 +17,28 @@ import (
 // ai_knowledge_sources / ai_knowledge_chunks row ids (ints in the service
 // contract, matching apps/rag-service/app/domain/models.py QueryHitOut).
 type RAGHit struct {
-	SourceID        int     `json:"source_id"`
-	SourceVersionID int     `json:"source_version_id"`
-	Version         string  `json:"version"`
-	Title           string  `json:"title"`
-	Heading         string  `json:"heading"`
-	Content         string  `json:"content"`
-	Score           float64 `json:"score"`
-	Citation        string  `json:"citation"`
+	SourceID        int         `json:"source_id"`
+	SourceKey       string      `json:"source_key"`
+	SourceVersionID int         `json:"source_version_id"`
+	Version         string      `json:"version"`
+	Title           string      `json:"title"`
+	Heading         string      `json:"heading"`
+	Content         string      `json:"content"`
+	Score           float64     `json:"score"`
+	Citation        string      `json:"citation"`
+	CitationRef     CitationRef `json:"citation_ref"`
+}
+
+type CitationRef struct {
+	SourceID        int        `json:"source_id"`
+	SourceVersionID int        `json:"source_version_id"`
+	Title           string     `json:"title"`
+	Version         string     `json:"version"`
+	Heading         string     `json:"heading,omitempty"`
+	EffectiveFrom   *time.Time `json:"effective_from,omitempty"`
+	EffectiveTo     *time.Time `json:"effective_to,omitempty"`
+	URL             *string    `json:"url,omitempty"`
+	Locator         string     `json:"locator"`
 }
 
 // RAGResponse is the full POST /api/rag/query response.

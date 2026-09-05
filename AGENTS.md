@@ -52,11 +52,11 @@ tokens against the unreachable Ory Hydra.
 * Backend boundary is Go-native: `ai-service` serves the AG-UI protocol
   (`POST /api/ai/agent`). The Node `ai-runtime` adapter and the earlier
   CopilotKit envelope (`/api/copilotkit`) are retired. Contract + verification
-  evidence: `docs/ai/go-native-copilotkit.md` in `arda-be`.
-* Gateway policy ids: `ai-agent-spike`, `ai-copilotkit-runtime`,
+  evidence: `docs/ai/architecture.md` in `arda-be`.
+* Gateway policy ids: `ai-agent`,
   `ai-conversations-read`, `ai-conversations-delete`, `ai-approvals-write`
   (all require permission `ai.assistant.use`). Gateway signs workload tokens
-  with audience `ai-service`; `COPILOTKIT_RUNTIME_URL=http://ai-service:8080`.
+  with audience `ai-service`; `AI_SERVICE_URL=http://ai-service:8080`.
 * Model config lives in secret `arda-app-secrets` (`AI_MODEL_API_KEY`) plus
   Deployment env (`AI_MODEL_BASE_URL=https://opencode.ai/zen/v1`,
   `AI_MODEL_ID=x-preview-f-free`, `AI_ENABLE_AGENT=true`). Never commit keys.

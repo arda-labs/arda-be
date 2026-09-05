@@ -1,22 +1,22 @@
 # Arda AI phase
 
-Status: the persistent read-only vertical slice is implemented and verified
-end-to-end on the real K3s cluster. The model-driven agent loop
-(OpenAI-compatible streaming provider behind a `model.Provider` interface),
-server-enforced approval proposals for `confirm`-kind tools, owner-triggered
-approval execution, owner-scoped conversation APIs with delete and auto-title,
-and the AG-UI streaming boundary (`POST /api/ai/agent`) are deployed; an
-authenticated browser request through the gateway streams AG-UI events
-(interrupts/resume included). Remaining: production knowledge content, vector
-retrieval, and any real mutation beyond `prepare`.
+Status: the persistent read-only RAG slice, model-driven agent loop, versioned
+AG-UI/SSE boundary, citation guard, quota reservation, cost ledger, and
+readiness diagnostics are implemented in code; deployment verification is
+environment-specific. The service enforces gateway identity and tenant scope,
+persists runs/conversations, exposes structured citations, and keeps write tools
+behind approval. Production readiness still requires a real model, published
+knowledge content, gateway smoke tests, provider health/failover, and the
+evaluation gate.
 
 This directory is the source of truth for the first AI phase across `arda-be`,
-`arda-mfe`, and `arda-infra`. The documents precede model-provider secrets,
-vector schema/index changes, and production workload expansion.
+`arda-mfe`, and `arda-infra`. The documents describe the committed baseline;
+provider secrets, production corpus, and workload expansion remain deployment
+gates.
 
 ## Master Specification
 
-👉 **[ARCHITECTURE.md](ARCHITECTURE.md)** là tài liệu đặc tả chuẩn xác và cập nhật nhất cho toàn bộ hệ thống AI & RAG hiện tại của Arda.
+👉 **[architecture.md](architecture.md)** là tài liệu đặc tả chuẩn xác và cập nhật nhất cho toàn bộ hệ thống AI & RAG hiện tại của Arda.
 
 ## Decision summary
 
@@ -44,38 +44,19 @@ vector schema/index changes, and production workload expansion.
 10. [database-design.md](database-design.md) — proposed schema and migration
     gates. No SQL migration is authorized by this document alone.
 11. [rollout-plan.md](rollout-plan.md) — staged implementation and rollback.
-12. [go-native-copilotkit.md](go-native-copilotkit.md) — historical CopilotKit
-    boundary in Go (superseded by AG-UI on 2026-08-31); retained as the
-    record of the gateway assertion and ops gotchas.
-13. [code-mode-design.md](code-mode-design.md) — 2 Meta-Tools architecture
-    (`search` & `execute` / Code Mode) using embedded Goja sandbox for scalable
-    cross-domain operations.
-14. [sandbox-threat-model.md](sandbox-threat-model.md) — attack scenarios,
-    mitigations, and security invariants for the Goja sandbox runtime.
-15. [sdk-catalog-design.md](sdk-catalog-design.md) — SDK catalog build pipeline,
-    BM25 search index, dispatcher registry, and CI consistency checks for the
-    `search` meta-tool.
-16. [performance-baseline.md](performance-baseline.md) — token cost model,
-    latency budgets, provider budget controls, and canary success criteria for
-    Code Mode rollout.
-17. [multi-provider-design.md](multi-provider-design.md) — multi-provider and
-    model routing design for tenant-plan-based and feature-flag-based provider
-    selection.
-18. [knowledge-ingestion.md](knowledge-ingestion.md) — knowledge source
+12. [knowledge-ingestion.md](knowledge-ingestion.md) — knowledge source
     registration, chunking policy, review gate, embedding pipeline, versioning,
     and retention.
-19. [nats-events.md](nats-events.md) — NATS JetStream event contracts for run,
-    approval, knowledge, and audit events consumed by notification, IAM, and
-    platform services.
-20. [enterprise-security-and-crypto.md](enterprise-security-and-crypto.md) —
-    Enterprise security tiers, AES-256-GCM envelope encryption, Blind Indexing
-    search, KeyProvider (KMS/Vault) integration, and SSRF egress filtering.
-21. [agent-evolution-roadmap.md](agent-evolution-roadmap.md) — work-package
-    roadmap (WP0–WP4) and the AG-UI / Code Mode / knowledge evolution plan.
-22. [catalog-scale-plan.md](catalog-scale-plan.md) — WP5–WP9 plan for scaling
-    the AI capability catalog: OpenAPI `x-ai-tool` annotations + `catalog-gen`
-    (catalog-as-data), context budget / compact SDK map, semantic re-ranking,
-    MCP exposure, and CI consistency checks.
+13. [evaluation-set.yaml](evaluation-set.yaml) — initial golden questions and
+    negative cases used to gate RAG quality and tenant isolation.
+14. [adr-001-rag-vertical-slice.md](adr-001-rag-vertical-slice.md) — the first
+    read-only RAG acceptance scope and release gates.
+
+The retrieval gate can be run with `go run ./cmd/ai-eval` from
+`apps/ai-service`; it consumes `evaluation-set.yaml` and exits non-zero in
+strict mode when expected evidence or no-answer cases fail.
+
+Deferred designs stay in this directory until their phase starts: [multi-provider-design.md](multi-provider-design.md), [nats-events.md](nats-events.md), [enterprise-security-and-crypto.md](enterprise-security-and-crypto.md), [agent-evolution-roadmap.md](agent-evolution-roadmap.md), [catalog-scale-plan.md](catalog-scale-plan.md), [code-mode-design.md](code-mode-design.md), [sandbox-threat-model.md](sandbox-threat-model.md), [sdk-catalog-design.md](sdk-catalog-design.md), and [performance-baseline.md](performance-baseline.md). The former CopilotKit spike is retained under [archive/](archive/).
 
 ## Current repository evidence
 
@@ -109,13 +90,20 @@ vector schema/index changes, and production workload expansion.
 
 ## Explicitly not done
 
-The rollout has the `vector` extension but no vector column/index, and no
-production knowledge content until an owner publishes approved sources.
-Knowledge retrieval uses PostgreSQL full-text search. `crm.customer.export.prepare`
-still creates no export artifact — it only verifies scope; a real export
-executor must be designed with the owning domain service. Multi-provider
-routing (cloud vs local model per tenant) is prepared through the
-`model.Provider` interface but not implemented; provider configuration is
-environment-based today (design in [multi-provider-design.md](multi-provider-design.md)).
-NATS event publishing is designed ([nats-events.md](nats-events.md)) but not yet
-wired into the service. The service executes no other side effects.
+There is still no production knowledge corpus until an owner publishes approved
+sources. Retrieval now supports PostgreSQL full-text plus optional vector search
+and an optional Cohere-compatible reranker; production automatically requires
+an embedding provider (or `AI_RAG_REQUIRE_EMBEDDING=true` in CI/staging) so an
+embedding failure fails closed instead of silently degrading to FTS-only. The vector
+extension, embedding dimension constraint, and operational queue indexes are
+managed by the AI migration, but production index/provider sizing still needs
+an environment-specific rollout check.
+
+`crm.customer.export.prepare` still creates no export artifact — it only
+verifies scope; a real export executor must be designed with the owning domain
+service. Multi-provider routing (cloud vs local model per tenant) is prepared
+through the `model.Provider` interface but not implemented; provider
+configuration is environment-based today (design in
+[multi-provider-design.md](multi-provider-design.md)). NATS event publishing is
+designed ([nats-events.md](nats-events.md)) but not yet wired into the service.
+The service executes no other side effects.

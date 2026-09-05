@@ -1,5 +1,5 @@
 routes:
-  - id: ai-agent-spike
+  - id: ai-agent
     path: /api/ai/agent
     methods: [POST]
     auth: true

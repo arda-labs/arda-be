@@ -63,22 +63,7 @@ func handleListConnectors(w http.ResponseWriter, r *http.Request, store runStore
 	}
 	connStore, ok := store.(repository.ConnectorStore)
 	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"result": []ConnectorDTO{
-				{
-					ID:           "conn-gdrive-hr",
-					Name:         "Google Drive - Sổ tay Nhân sự & Chính sách",
-					Provider:     "google_drive",
-					TargetSource: "Quy chế & Chế độ đãi ngộ 2026",
-					SyncSchedule: "Hourly (Mỗi giờ)",
-					Status:       "synced",
-					LastSyncAt:   time.Now().UTC().Format(time.RFC3339),
-					DocCount:     18,
-					TotalChunks:  342,
-				},
-			},
-		})
+		problem(w, http.StatusServiceUnavailable, "ai.connector_persistence_unavailable")
 		return
 	}
 
@@ -132,21 +117,7 @@ func handleCreateConnector(w http.ResponseWriter, r *http.Request, store runStor
 
 	connStore, ok := store.(repository.ConnectorStore)
 	if !ok {
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"success": true,
-			"result": ConnectorDTO{
-				ID:           "conn-mock-id",
-				TenantID:     scope.TenantID,
-				Name:         name,
-				Provider:     provider,
-				TargetSource: targetSource,
-				SyncSchedule: schedule,
-				Status:       "synced",
-				LastSyncAt:   time.Now().UTC().Format(time.RFC3339),
-				DocCount:     0,
-				TotalChunks:  0,
-			},
-		})
+		problem(w, http.StatusServiceUnavailable, "ai.connector_persistence_unavailable")
 		return
 	}
 
@@ -194,17 +165,7 @@ func handleConnectorSubtree(w http.ResponseWriter, r *http.Request, store runSto
 
 		connStore, ok := store.(repository.ConnectorStore)
 		if !ok {
-			writeJSON(w, http.StatusOK, map[string]any{
-				"success": true,
-				"result": ConnectorDTO{
-					ID:           connectorID,
-					Name:         "Synced Connector",
-					Status:       "synced",
-					LastSyncAt:   time.Now().UTC().Format(time.RFC3339),
-					DocCount:     1,
-					TotalChunks:  12,
-				},
-			})
+			problem(w, http.StatusServiceUnavailable, "ai.connector_persistence_unavailable")
 			return
 		}
 

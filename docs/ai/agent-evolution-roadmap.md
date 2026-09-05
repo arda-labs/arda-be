@@ -124,7 +124,7 @@ type Embedder interface {
 
   - **Bây giờ — `WorkersAIEmbedder`:** gọi REST `POST /api.cloudflare.com/client/v4/accounts/<account>/ai/run/@cf/qwen/qwen3-embedding-0.6b` (Bearer CF API token). Endpoint Workers AI **không** OpenAI-compatible nên cần client riêng (~80 dòng). Có thể định tuyến qua AI Gateway để được cache/analytics.
   - **Sau này — `OpenAIEmbedder`:** vLLM/Ollama trên k3s đều expose `/v1/embeddings` chuẩn OpenAI — implementation chỉ là http client thông thường. Khi có máy self-host, switch = đổi env, không đổi code.
-  - **Config env:** `AI_EMBEDDING_PROVIDER=workersai|openai`, `AI_EMBEDDING_MODEL`, `AI_EMBEDDING_API_TOKEN` (secret `arda-app-secrets`).
+  - **Config env:** `AI_RAG_EMBEDDING_BASE_URL`, `AI_RAG_EMBEDDING_API_KEY`, `AI_RAG_EMBEDDING_MODEL`, `AI_RAG_EMBEDDING_DIMENSIONS` (secret values live in `arda-app-secrets`).
   - **Bất biến:** search chỉ so vector khi `embedding_model` của query khớp chunk; đổi model = chạy lại job re-embed, không bao giờ so chéo hai không gian vector.
 - Embedding chạy **offline trong job**, không chạy lúc request. Query-time embed 1 câu là 1 call nhỏ.
 - Tenant scoping giữ nguyên logic hiện tại (`scope`, `tenant_id`) — pgvector không thay đổi phân quyền.
@@ -242,7 +242,7 @@ Mỗi mốc kết thúc bằng: green CI (`check-*.mjs` + `go test`), 1 demo end
 CF Dashboard (admin CF account)      ── giữ provider key THẬT (opencode/zen, OpenAI, Workers AI token)
                                         + cấu hình DLP/fallback/cache. Xoay: quarterly + khi nghi ngờ leak.
 arda-app-secrets (k8s, arda-infra)   ── chỉ giữ: AI_MODEL_API_KEY (gateway token),
-                                        AI_EMBEDDING_API_TOKEN (CF API token scope: Workers AI run).
+                                        AI_RAG_EMBEDDING_API_KEY (provider credential).
 ai_tenant_settings                   ── key tenant = key scope-gateway (LiteLLM gọi là virtual key).
 ```
 

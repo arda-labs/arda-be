@@ -25,20 +25,6 @@ type RoutingStore interface {
 	SaveRoutingRules(ctx context.Context, rules TenantRoutingRules) (*TenantRoutingRules, error)
 }
 
-func defaultRoutingRules(tenantID string) TenantRoutingRules {
-	return TenantRoutingRules{
-		TenantID:          tenantID,
-		FastModel:         "gemini-2.5-flash",
-		CodeModel:         "claude-3.5-sonnet",
-		SensitiveModel:    "qwen2.5:7b-instruct-q4_K_M",
-		PrimaryProvider:   "gemini",
-		SecondaryProvider: "openai",
-		FailoverProvider:  "ollama",
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
-	}
-}
-
 func (s *SQLRunStore) GetRoutingRules(ctx context.Context, tenantID string) (*TenantRoutingRules, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("database not available")
@@ -56,8 +42,7 @@ func (s *SQLRunStore) GetRoutingRules(ctx context.Context, tenantID string) (*Te
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
-		def := defaultRoutingRules(tenantID)
-		return &def, nil
+		return &TenantRoutingRules{TenantID: tenantID}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get tenant routing rules: %w", err)

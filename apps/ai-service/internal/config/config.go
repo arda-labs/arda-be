@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// Config controls the AI service runtime. Spike mode is intentionally the
-// default for local protocol tests; production mode requires a database.
+// Config controls the AI service runtime. Development mode is the default for
+// local runs; production mode requires a database.
 type Config struct {
 	AppName             string
 	HTTPAddr            string
@@ -37,12 +37,23 @@ type Config struct {
 	// ModelGatewayToken is the AI Gateway credential sent as the
 	// cf-aig-authorization header when the model base URL points at a
 	// Cloudflare AI Gateway with authentication enabled. Empty = direct.
-	ModelGatewayToken string
+	ModelGatewayToken      string
+	RAGRerankerBaseURL     string
+	RAGRerankerAPIKey      string
+	RAGRerankerModel       string
+	RAGRequireEmbedding    bool
+	RAGEmbeddingBaseURL    string
+	RAGEmbeddingAPIKey     string
+	RAGEmbeddingModel      string
+	RAGEmbeddingDimensions int
 
 	// ModelBaseURLAllowlist restricts which base URLs tenant settings may
 	// point at (gateway routing, §3.5 of docs/ai/agent-evolution-roadmap.md).
 	// Empty slice = enforcement disabled; only ValidateEgressURL applies.
 	ModelBaseURLAllowlist []string
+
+	NATSURL             string
+	ProvidersConfigFile string
 }
 
 const defaultDirectToolSystemPrompt = `Bạn là Olorin, trợ lý của nền tảng Arda. Bạn trả lời ngắn gọn, chính xác ` +
@@ -64,16 +75,23 @@ Quy tắc quan trọng:
 - Nếu một phương thức đọc dữ liệu trả về kết quả rỗng sau 2 lần thử với truy vấn khác nhau, hãy dừng và trả lời thẳng rằng hệ thống chưa có dữ liệu phù hợp (ví dụ: "Hiện chưa có nội dung nào được đăng tải cho yêu cầu này.") thay vì tiếp tục thử lại hay chuyển sang câu hỏi khác — kết quả rỗng không phải yêu cầu quá phức tạp.`
 
 func Load() Config {
+	mode := envOr("AI_MODE", "development")
 	enableCodeMode := envBoolOr("AI_ENABLE_CODE_MODE", true)
 	defaultPrompt := defaultDirectToolSystemPrompt
 	if enableCodeMode {
 		defaultPrompt = defaultCodeModeSystemPrompt
 	}
+	embeddingBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("AI_RAG_EMBEDDING_BASE_URL")), "/")
+	embeddingAPIKey := strings.TrimSpace(os.Getenv("AI_RAG_EMBEDDING_API_KEY"))
+	embeddingModel := strings.TrimSpace(os.Getenv("AI_RAG_EMBEDDING_MODEL"))
+	if embeddingModel == "" {
+		embeddingModel = "@cf/qwen/qwen3-embedding-0.6b"
+	}
 
 	return Config{
 		AppName:             envOr("APP_NAME", "ai-service"),
 		HTTPAddr:            envOr("HTTP_ADDR", "0.0.0.0:8098"),
-		Mode:                envOr("AI_MODE", "spike"),
+		Mode:                mode,
 		DatabaseDSN:         os.Getenv("DATABASE_DSN"),
 		ServiceAuthSecret:   os.Getenv("ARDA_SERVICE_AUTH_SECRET"),
 		CRMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("CRM_SERVICE_URL")), "/"),
@@ -96,8 +114,20 @@ func Load() Config {
 		AgentMaxSteps:      envIntOr("AI_AGENT_MAX_STEPS", 6),
 		RateLimitPerMinute: envIntOr("AI_RATE_LIMIT_PER_MINUTE", 30),
 		ModelGatewayToken:  strings.TrimSpace(os.Getenv("AI_MODEL_GATEWAY_TOKEN")),
+		RAGRerankerBaseURL: strings.TrimRight(strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_BASE_URL")), "/"),
+		RAGRerankerAPIKey:  strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_API_KEY")),
+		RAGRerankerModel:   strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_MODEL")),
+		// Production always fails closed when embeddings are unavailable. The
+		// environment flag allows CI/staging to opt into the same behavior.
+		RAGRequireEmbedding:    mode == "production" || envBoolOr("AI_RAG_REQUIRE_EMBEDDING", false),
+		RAGEmbeddingBaseURL:    embeddingBaseURL,
+		RAGEmbeddingAPIKey:     embeddingAPIKey,
+		RAGEmbeddingModel:      embeddingModel,
+		RAGEmbeddingDimensions: envIntOr("AI_RAG_EMBEDDING_DIMENSIONS", 1024),
 
 		ModelBaseURLAllowlist: envListOr("AI_MODEL_BASE_URL_ALLOWLIST"),
+		NATSURL:               envOr("NATS_URL", envOr("AI_NATS_URL", "")),
+		ProvidersConfigFile:   envOr("AI_PROVIDERS_CONFIG_FILE", "configs/providers.yaml"),
 	}
 }
 

@@ -148,7 +148,7 @@ func TestSettings_TestConnection(t *testing.T) {
 	defer mockServer.Close()
 
 	store := &fakeSettingsStore{}
-	router := NewRouterWithOptions(store, nil, RouterOptions{})
+	router := NewRouterWithOptions(store, nil, RouterOptions{AllowLocalModelURLs: true})
 
 	// Test with correct key
 	testBody := `{"baseUrl":"` + mockServer.URL + `","apiKey":"test-key","modelId":"gpt-4o-mini"}`
@@ -273,5 +273,14 @@ func TestSettings_TestConnectionRespectsAllowlist(t *testing.T) {
 	}
 	if !strings.Contains(envelope.Result.Error, "danh sách được phép") {
 		t.Fatalf("expected allowlist error message, got: %s", envelope.Result.Error)
+	}
+}
+
+func TestSettings_ProviderURLBlocksLocalByDefault(t *testing.T) {
+	if err := validateProviderURL("http://127.0.0.1:11434/v1", false); err == nil {
+		t.Fatal("provider URL validation must block loopback addresses by default")
+	}
+	if err := validateProviderURL("http://127.0.0.1:11434/v1", true); err != nil {
+		t.Fatalf("local development override should allow loopback: %v", err)
 	}
 }

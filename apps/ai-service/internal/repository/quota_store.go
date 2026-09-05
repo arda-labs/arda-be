@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
+
+var ErrQuotaExceeded = fmt.Errorf("AI quota exceeded")
 
 type DepartmentBudget struct {
 	ID           string    `json:"id"`
@@ -19,8 +22,11 @@ type DepartmentBudget struct {
 }
 
 type QuotaSettings struct {
-	TenantID   string `json:"tenantId"`
-	WebhookURL string `json:"webhookUrl"`
+	TenantID          string `json:"tenantId"`
+	WebhookURL        string `json:"webhookUrl"`
+	MonthlyTokenLimit int64  `json:"monthlyTokenLimit"`
+	TokensUsed        int64  `json:"tokensUsed"`
+	PeriodStart       string `json:"periodStart"`
 }
 
 type QuotaStore interface {
@@ -30,13 +36,12 @@ type QuotaStore interface {
 	SaveQuotaSettings(ctx context.Context, settings QuotaSettings) error
 }
 
-func defaultBudgets(tenantID string) []DepartmentBudget {
-	return []DepartmentBudget{
-		{TenantID: tenantID, Department: "Tech & DevOps", MonthlyLimit: 300, Spent: 118.2, RPMLimit: 120},
-		{TenantID: tenantID, Department: "Sales & Marketing", MonthlyLimit: 150, Spent: 42.5, RPMLimit: 60},
-		{TenantID: tenantID, Department: "HR & Internal Ops", MonthlyLimit: 80, Spent: 15.4, RPMLimit: 30},
-		{TenantID: tenantID, Department: "Finance & Accounting", MonthlyLimit: 100, Spent: 22.1, RPMLimit: 40},
-	}
+// QuotaGate reserves an estimated token allowance before a model run. The
+// reservation is keyed by external run id, so retries/replays cannot consume
+// the same allowance twice.
+type QuotaGate interface {
+	ReserveQuota(ctx context.Context, tenantID, externalRunID string, estimatedTokens int64) error
+	FinalizeQuota(ctx context.Context, tenantID, externalRunID string, actualTokens int64) error
 }
 
 func (s *SQLRunStore) ListDepartmentBudgets(ctx context.Context, tenantID string) ([]DepartmentBudget, error) {
@@ -63,9 +68,7 @@ func (s *SQLRunStore) ListDepartmentBudgets(ctx context.Context, tenantID string
 		list = append(list, b)
 	}
 	if len(list) == 0 {
-		defs := defaultBudgets(tenantID)
-		_ = s.SaveDepartmentBudgets(ctx, tenantID, defs)
-		return defs, nil
+		return []DepartmentBudget{}, nil
 	}
 	return list, nil
 }
@@ -83,14 +86,13 @@ func (s *SQLRunStore) SaveDepartmentBudgets(ctx context.Context, tenantID string
 	for _, b := range budgets {
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO public.ai_department_budgets (
-				tenant_id, department, monthly_limit, spent, rpm_limit, updated_at
-			) VALUES ($1, $2, $3, $4, $5, now())
+				tenant_id, department, monthly_limit, rpm_limit, updated_at
+			) VALUES ($1, $2, $3, $4, now())
 			ON CONFLICT (tenant_id, department) DO UPDATE SET
 				monthly_limit = EXCLUDED.monthly_limit,
-				spent = EXCLUDED.spent,
 				rpm_limit = EXCLUDED.rpm_limit,
 				updated_at = now()
-		`, tenantID, b.Department, b.MonthlyLimit, b.Spent, b.RPMLimit)
+		`, tenantID, b.Department, b.MonthlyLimit, b.RPMLimit)
 		if err != nil {
 			return fmt.Errorf("upsert department budget %s: %w", b.Department, err)
 		}
@@ -105,15 +107,12 @@ func (s *SQLRunStore) GetQuotaSettings(ctx context.Context, tenantID string) (*Q
 	}
 	var set QuotaSettings
 	err := s.db.QueryRowContext(ctx, `
-		SELECT tenant_id, webhook_url
+		SELECT tenant_id, webhook_url, monthly_token_limit, tokens_used, period_start::text
 		FROM public.ai_tenant_quota_settings
 		WHERE tenant_id = $1
-	`, tenantID).Scan(&set.TenantID, &set.WebhookURL)
+	`, tenantID).Scan(&set.TenantID, &set.WebhookURL, &set.MonthlyTokenLimit, &set.TokensUsed, &set.PeriodStart)
 	if err == sql.ErrNoRows {
-		return &QuotaSettings{
-			TenantID:   tenantID,
-			WebhookURL: "https://hooks.slack.com/services/T00/B00/XXXX",
-		}, nil
+		return &QuotaSettings{TenantID: tenantID}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get quota settings: %w", err)
@@ -126,14 +125,108 @@ func (s *SQLRunStore) SaveQuotaSettings(ctx context.Context, settings QuotaSetti
 		return fmt.Errorf("database not available")
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO public.ai_tenant_quota_settings (tenant_id, webhook_url, updated_at)
-		VALUES ($1, $2, now())
+		INSERT INTO public.ai_tenant_quota_settings (tenant_id, webhook_url, monthly_token_limit, updated_at)
+		VALUES ($1, $2, $3, now())
 		ON CONFLICT (tenant_id) DO UPDATE SET
 			webhook_url = EXCLUDED.webhook_url,
+			monthly_token_limit = EXCLUDED.monthly_token_limit,
 			updated_at = now()
-	`, settings.TenantID, settings.WebhookURL)
+	`, settings.TenantID, settings.WebhookURL, settings.MonthlyTokenLimit)
 	if err != nil {
 		return fmt.Errorf("save quota settings: %w", err)
 	}
 	return nil
+}
+
+func (s *SQLRunStore) ReserveQuota(ctx context.Context, tenantID, externalRunID string, estimatedTokens int64) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("database not available")
+	}
+	if estimatedTokens <= 0 {
+		estimatedTokens = 4096
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin quota reservation: %w", err)
+	}
+	defer tx.Rollback()
+	var limit, used int64
+	var period string
+	err = tx.QueryRowContext(ctx, `
+		SELECT monthly_token_limit, tokens_used, period_start::text
+		FROM public.ai_tenant_quota_settings
+		WHERE tenant_id = $1 FOR UPDATE`, tenantID).Scan(&limit, &used, &period)
+	if err == sql.ErrNoRows {
+		// No tenant quota configured means the platform default applies.
+		return tx.Commit()
+	}
+	if err != nil {
+		return fmt.Errorf("load quota settings: %w", err)
+	}
+	currentPeriod := time.Now().UTC().Format("2006-01-02")[:8] + "01"
+	if !strings.HasPrefix(period, currentPeriod[:7]) {
+		used = 0
+		period = currentPeriod
+		if _, err := tx.ExecContext(ctx, `UPDATE public.ai_tenant_quota_settings SET tokens_used = 0, period_start = $2::date, updated_at = now() WHERE tenant_id = $1`, tenantID, period); err != nil {
+			return fmt.Errorf("reset quota period: %w", err)
+		}
+	}
+	var existing string
+	err = tx.QueryRowContext(ctx, `SELECT status FROM public.ai_quota_reservations WHERE tenant_id = $1 AND external_run_id = $2 FOR UPDATE`, tenantID, externalRunID).Scan(&existing)
+	if err == nil {
+		if existing == "RESERVED" {
+			return tx.Commit()
+		}
+		return ErrQuotaExceeded
+	}
+	if err != sql.ErrNoRows {
+		return fmt.Errorf("load quota reservation: %w", err)
+	}
+	if limit > 0 && used+estimatedTokens > limit {
+		return ErrQuotaExceeded
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO public.ai_quota_reservations (tenant_id, external_run_id, period_start, reserved_tokens)
+		VALUES ($1, $2, $3::date, $4)`, tenantID, externalRunID, period, estimatedTokens); err != nil {
+		return fmt.Errorf("save quota reservation: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE public.ai_tenant_quota_settings SET tokens_used = tokens_used + $2, updated_at = now() WHERE tenant_id = $1`, tenantID, estimatedTokens); err != nil {
+		return fmt.Errorf("reserve quota tokens: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit quota reservation: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLRunStore) FinalizeQuota(ctx context.Context, tenantID, externalRunID string, actualTokens int64) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("database not available")
+	}
+	if actualTokens < 0 {
+		actualTokens = 0
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var reserved int64
+	err = tx.QueryRowContext(ctx, `SELECT reserved_tokens FROM public.ai_quota_reservations WHERE tenant_id = $1 AND external_run_id = $2 AND status = 'RESERVED' FOR UPDATE`, tenantID, externalRunID).Scan(&reserved)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	delta := actualTokens - reserved
+	if _, err := tx.ExecContext(ctx, `UPDATE public.ai_quota_reservations SET actual_tokens = $3, status = 'FINALIZED', finalized_at = now() WHERE tenant_id = $1 AND external_run_id = $2`, tenantID, externalRunID, actualTokens); err != nil {
+		return err
+	}
+	if delta != 0 {
+		if _, err := tx.ExecContext(ctx, `UPDATE public.ai_tenant_quota_settings SET tokens_used = GREATEST(0, tokens_used + $2), updated_at = now() WHERE tenant_id = $1`, tenantID, delta); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/events"
 	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
@@ -24,7 +25,6 @@ import (
 const assistantPermission = "ai.assistant.use"
 const approvalProposePermission = "ai.approval.propose"
 const approvalExecutePermission = "ai.approval.execute"
-const protocolSpikeMessage = "Arda AI protocol spike is connected. No model or tool was invoked."
 
 // ragFeedbacker is the RAG feedback surface used by the handler. Narrow
 // interface so the handler never imports the full svcclient package.
@@ -44,6 +44,9 @@ type RouterOptions struct {
 	ModelSDKTypes string
 	// ModelBaseURLAllowlist restricts tenant-provided base URLs; empty = disabled.
 	ModelBaseURLAllowlist []string
+	// AllowLocalModelURLs is intended for local development only. Production
+	// must keep private and loopback provider addresses blocked to prevent SSRF.
+	AllowLocalModelURLs bool
 	// Platform model config surfaced in GET /api/ai/settings when the tenant
 	// has no row, so admins see the configuration actually in effect.
 	PlatformModelBaseURL string
@@ -55,6 +58,13 @@ type RouterOptions struct {
 	RAGService *knowledge.Service
 	// CatalogTools is the list of SDK tools surfaced via GET /api/ai/tools.
 	CatalogTools []CatalogToolDTO
+	// ReadyCheck lets the process wire database/provider diagnostics into the
+	// Kubernetes readiness endpoint without exposing infrastructure details.
+	ReadyCheck func(context.Context) error
+	// EventPublisher publishes AI lifecycle and audit events (NATS JetStream).
+	EventPublisher events.Publisher
+	// ProviderRegistry enables dynamic multi-provider routing and fallback.
+	ProviderRegistry *model.ProviderRegistry
 }
 
 type CatalogToolDTO struct {
@@ -90,13 +100,17 @@ type toolResolver interface {
 }
 
 type runInput struct {
-	ThreadID string            `json:"threadId"`
-	RunID    string            `json:"runId"`
-	Messages []inputMessage    `json:"messages"`
-	State    json.RawMessage   `json:"state"`
-	Context  json.RawMessage   `json:"context"`
-	Tool     *toolCallInput    `json:"tool,omitempty"`
-	Resume   []agUiResumeEntry `json:"resume,omitempty"`
+	// ProtocolVersion is optional for compatibility with AG-UI clients that
+	// do not send an Arda extension. When present it is negotiated strictly so
+	// a newer client cannot silently interpret an older event contract.
+	ProtocolVersion string            `json:"protocolVersion,omitempty"`
+	ThreadID        string            `json:"threadId"`
+	RunID           string            `json:"runId"`
+	Messages        []inputMessage    `json:"messages"`
+	State           json.RawMessage   `json:"state"`
+	Context         json.RawMessage   `json:"context"`
+	Tool            *toolCallInput    `json:"tool,omitempty"`
+	Resume          []agUiResumeEntry `json:"resume,omitempty"`
 }
 
 type inputMessage struct {
@@ -151,7 +165,15 @@ func NewRouterWithOptions(store runStore, resolver toolResolver, options RouterO
 func newRouter(store runStore, resolver toolResolver, options RouterOptions) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", health)
-	mux.HandleFunc("/health/ready", health)
+	mux.HandleFunc("/health/ready", func(w http.ResponseWriter, r *http.Request) {
+		if options.ReadyCheck != nil {
+			if err := options.ReadyCheck(r.Context()); err != nil {
+				problem(w, http.StatusServiceUnavailable, "ai.not_ready")
+				return
+			}
+		}
+		health(w, r)
+	})
 	mux.HandleFunc("/api/ai/agent", func(w http.ResponseWriter, r *http.Request) {
 		run(w, r, store, resolver, options)
 	})
@@ -309,6 +331,10 @@ func run(w http.ResponseWriter, r *http.Request, store runStore, resolver toolRe
 		problem(w, http.StatusBadRequest, "ai.invalid_run_input")
 		return
 	}
+	if version := strings.TrimSpace(input.ProtocolVersion); version != "" && version != agUIProtocolVersion {
+		problem(w, http.StatusBadRequest, "ai.protocol_version_unsupported")
+		return
+	}
 	runInputFlow(w, r, store, resolver, input, options)
 }
 
@@ -352,7 +378,11 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 			}
 			return
 		}
-	} else if store != nil && options.ModelProvider != nil && resolver != nil {
+	} else if store != nil {
+		// A persisted run must always enter the model path. Provider selection
+		// is handled by runAgentStream (including tenant settings); falling
+		// through to a successful protocol placeholder hides configuration
+		// failures from both the user and operators.
 		runAgentStream(w, r, store, resolver, scope, input, options)
 		return
 	}
@@ -393,6 +423,19 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 		}
 
 		result, toolErr := selectedTool.Execute(r.Context(), scope, input.Tool.Arguments)
+		if r.Context().Err() != nil {
+			// A direct tool run can outlive the browser request just like the
+			// model loop. Preserve the terminal state with a detached timeout;
+			// there is no reliable response channel after a disconnect.
+			if toolStore != nil {
+				persistCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Second)
+				_ = toolStore.FinishTool(persistCtx, executionID, "FAILED", `{}`, "ai.run_cancelled")
+				cancel()
+			}
+			persistAgentRunTerminal(r.Context(), store, scopeRun, "Run cancelled by client.", "CANCELLED")
+			writeToolStream(w, input, definition, nil, "Run cancelled by client.", "ai.run_cancelled")
+			return
+		}
 		if toolErr != nil {
 			if toolStore != nil {
 				_ = toolStore.FinishTool(r.Context(), executionID, "FAILED", `{}`, toolErrorCode(toolErr))
@@ -424,24 +467,7 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 		return
 	}
 
-	if store != nil {
-		if err := store.Finish(r.Context(), scopeRun, protocolSpikeMessage, "SUCCEEDED"); err != nil {
-			problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
-			return
-		}
-	}
-	writeProtocolStream(w, input)
-}
-
-func writeProtocolStream(w http.ResponseWriter, input runInput) {
-	writeStream(w, func(writer *sseWriter) {
-		messageID := "msg-" + input.RunID
-		writer.event(agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
-		writer.event(agentEvent{Type: "TEXT_MESSAGE_START", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
-		writer.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: protocolSpikeMessage})
-		writer.event(agentEvent{Type: "TEXT_MESSAGE_END", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID})
-		writer.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
-	})
+	problem(w, http.StatusServiceUnavailable, "ai.model_unavailable")
 }
 
 func writeToolStream(w http.ResponseWriter, input runInput, definition tools.Definition, result *tools.Result, assistantMessage, toolError string) {
@@ -719,7 +745,11 @@ func handleGetAnalytics(w http.ResponseWriter, r *http.Request, store runStore, 
 		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
 		return
 	}
-	tenantID := r.Header.Get("X-Tenant-Id")
+	scope, ok := identityScope(w, r)
+	if !ok {
+		return
+	}
+	tenantID := scope.TenantID
 	if as, ok := store.(analyticsStore); ok {
 		summary, err := as.GetAnalytics(r.Context(), tenantID)
 		if err == nil && summary != nil {
@@ -727,7 +757,7 @@ func handleGetAnalytics(w http.ResponseWriter, r *http.Request, store runStore, 
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, repository.DefaultAnalyticsSummary())
+	problem(w, http.StatusServiceUnavailable, "ai.analytics_persistence_unavailable")
 }
 
 func handleListAgents(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
@@ -735,7 +765,11 @@ func handleListAgents(w http.ResponseWriter, r *http.Request, store runStore, op
 		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
 		return
 	}
-	tenantID := r.Header.Get("X-Tenant-Id")
+	scope, ok := identityScope(w, r)
+	if !ok {
+		return
+	}
+	tenantID := scope.TenantID
 	if as, ok := store.(agentStore); ok {
 		agents, err := as.ListAgents(r.Context(), tenantID)
 		if err == nil {
@@ -743,11 +777,15 @@ func handleListAgents(w http.ResponseWriter, r *http.Request, store runStore, op
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, repository.DefaultAgents(tenantID))
+	problem(w, http.StatusServiceUnavailable, "ai.agent_persistence_unavailable")
 }
 
 func handleSaveAgent(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
-	tenantID := r.Header.Get("X-Tenant-Id")
+	scope, ok := identityScope(w, r)
+	if !ok {
+		return
+	}
+	tenantID := scope.TenantID
 	var agent repository.AgentConfig
 	if err := json.NewDecoder(r.Body).Decode(&agent); err != nil {
 		problem(w, http.StatusBadRequest, "ai.invalid_json")
@@ -770,11 +808,15 @@ func handleSaveAgent(w http.ResponseWriter, r *http.Request, store runStore, opt
 		writeJSON(w, http.StatusOK, saved)
 		return
 	}
-	writeJSON(w, http.StatusOK, agent)
+	problem(w, http.StatusServiceUnavailable, "ai.agent_persistence_unavailable")
 }
 
 func handleDeleteAgent(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
-	tenantID := r.Header.Get("X-Tenant-Id")
+	scope, ok := identityScope(w, r)
+	if !ok {
+		return
+	}
+	tenantID := scope.TenantID
 	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(pathParts) < 4 || pathParts[3] == "" {
 		problem(w, http.StatusBadRequest, "ai.agent_id_required")

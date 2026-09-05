@@ -55,6 +55,10 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 	ctx := r.Context()
 	exec, err := executionStore.FetchApprovedExecution(ctx, scope.TenantID, parts[0], scope.ActorUserID)
 	if err != nil {
+		if errors.Is(err, repository.ErrApprovalExpired) {
+			problem(w, http.StatusConflict, "ai.approval_expired")
+			return
+		}
 		if errors.Is(err, repository.ErrApprovalNotFound) {
 			problem(w, http.StatusNotFound, "ai.approval_not_found")
 			return
@@ -67,6 +71,7 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 		Name: exec.ToolName, Version: exec.ToolVersion, Arguments: json.RawMessage(exec.Arguments),
 	}, scope)
 	if err != nil || definition.Kind != "confirm" {
+		failClaimedExecution(ctx, store, exec, "ai.tool_forbidden")
 		problem(w, http.StatusForbidden, "ai.tool_forbidden")
 		return
 	}
@@ -78,7 +83,10 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 	toolStore, hasToolStore := store.(repository.ToolExecutionStore)
 	if execErr != nil {
 		if hasToolStore {
-			_ = toolStore.FinishTool(ctx, exec.ExecutionID, "WAITING_APPROVAL", `{}`, toolErrorCode(execErr))
+			_ = toolStore.FinishTool(ctx, exec.ExecutionID, "FAILED", `{}`, toolErrorCode(execErr))
+		}
+		if failureStore, ok := store.(repository.RunFailureSetter); ok {
+			_ = failureStore.FailRun(ctx, exec.Run, toolErrorCode(execErr))
 		}
 		problem(w, http.StatusBadGateway, "ai.execution_failed")
 		return
@@ -93,7 +101,7 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 
 	resumeStore, hasResumeStore := store.(runResumeStore)
 	if !hasResumeStore {
-		// Minimal persistence (spike fakes): finish the run inline without a
+		// Minimal persistence: finish the run inline without a
 		// resumed agent loop and keep the plain JSON response.
 		recordRunOutcome("SUCCEEDED")
 		recordToolOutcome("SUCCEEDED", definition.Risk)
@@ -116,6 +124,9 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 	}
 
 	if err := resumeStore.ResumeRun(ctx, exec.Run); err != nil {
+		if failureStore, ok := store.(repository.RunFailureSetter); ok {
+			_ = failureStore.FailRun(ctx, exec.Run, "ai.resume_conflict")
+		}
 		problem(w, http.StatusConflict, "ai.resume_conflict")
 		return
 	}
@@ -126,12 +137,17 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 	}
 	sse, ok := newSSEWriter(w)
 	if !ok {
+		failClaimedExecution(ctx, store, exec, "ai.sse_unavailable")
 		return
 	}
 	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID})
+	if terminateAgentRunOnContext(ctx, store, exec.Run, resumeInput, sse) {
+		return
+	}
 
 	modelProvider := selectModelProvider(ctx, store, scope, options)
 	if modelProvider == nil {
+		failClaimedExecution(ctx, store, exec, "ai.model_unavailable")
 		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID, Error: "ai.model_unavailable"})
 		_ = store.Finish(ctx, exec.Run, "Chưa có cấu hình AI model nào được kích hoạt. Vui lòng cấu hình tại trang AI Settings.", "FAILED")
 		return
@@ -221,6 +237,10 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 		}
 		exec, err := executionStore.FetchApprovedExecution(ctx, scope.TenantID, entry.InterruptID, scope.ActorUserID)
 		if err != nil {
+			if errors.Is(err, repository.ErrApprovalExpired) {
+				problem(w, http.StatusConflict, "ai.approval_expired")
+				return
+			}
 			if errors.Is(err, repository.ErrApprovalNotFound) {
 				problem(w, http.StatusNotFound, "ai.approval_not_found")
 				return
@@ -232,6 +252,7 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 			Name: exec.ToolName, Version: exec.ToolVersion, Arguments: json.RawMessage(exec.Arguments),
 		}, scope)
 		if err != nil || definition.Kind != "confirm" {
+			failClaimedExecution(ctx, store, exec, "ai.tool_forbidden")
 			problem(w, http.StatusForbidden, "ai.tool_forbidden")
 			return
 		}
@@ -240,7 +261,10 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 		cancel()
 		if execErr != nil {
 			if toolStore, ok := store.(repository.ToolExecutionStore); ok {
-				_ = toolStore.FinishTool(ctx, exec.ExecutionID, "WAITING_APPROVAL", `{}`, toolErrorCode(execErr))
+				_ = toolStore.FinishTool(ctx, exec.ExecutionID, "FAILED", `{}`, toolErrorCode(execErr))
+			}
+			if failureStore, ok := store.(repository.RunFailureSetter); ok {
+				_ = failureStore.FailRun(ctx, exec.Run, toolErrorCode(execErr))
 			}
 			problem(w, http.StatusBadGateway, "ai.execution_failed")
 			return
@@ -262,11 +286,19 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 
 	resumeStore, hasResumeStore := store.(runResumeStore)
 	if !hasResumeStore {
+		for _, item := range executed {
+			if failureStore, ok := store.(repository.RunFailureSetter); ok {
+				_ = failureStore.FailRun(ctx, item.exec.Run, "ai.resume_unavailable")
+			}
+		}
 		problem(w, http.StatusServiceUnavailable, "ai.approval_persistence_unavailable")
 		return
 	}
 	run := executed[0].exec.Run
 	if err := resumeStore.ResumeRun(ctx, run); err != nil {
+		if failureStore, ok := store.(repository.RunFailureSetter); ok {
+			_ = failureStore.FailRun(ctx, run, "ai.resume_conflict")
+		}
 		problem(w, http.StatusConflict, "ai.resume_conflict")
 		return
 	}
@@ -277,12 +309,21 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 	}
 	sse, ok := newSSEWriter(w)
 	if !ok {
+		for _, item := range executed {
+			failClaimedExecution(ctx, store, item.exec, "ai.sse_unavailable")
+		}
 		return
 	}
 	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID})
+	if terminateAgentRunOnContext(ctx, store, run, resumeInput, sse) {
+		return
+	}
 
 	modelProvider := selectModelProvider(ctx, store, scope, options)
 	if modelProvider == nil {
+		for _, item := range executed {
+			failClaimedExecution(ctx, store, item.exec, "ai.model_unavailable")
+		}
 		sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID, Error: "ai.model_unavailable"})
 		_ = store.Finish(ctx, run, "Chưa có cấu hình AI model nào được kích hoạt. Vui lòng cấu hình tại trang AI Settings.", "FAILED")
 		return
@@ -290,4 +331,18 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 
 	messages := buildResumeMessages(ctx, resumeStore, options, scope, executed[0].exec, executed[0].content)
 	agentStepsLoop(w, r, store, resolver, scope, run, resumeInput, sse, options, modelProvider, messages)
+}
+
+// failClaimedExecution closes an approval execution after it has been claimed
+// but before the resumed model loop can finish it. Claiming is intentionally
+// atomic to prevent double execution; every subsequent failure must therefore
+// leave an auditable terminal state rather than a permanently RUNNING row.
+func failClaimedExecution(ctx context.Context, store runStore, exec repository.ApprovedExecution, code string) {
+	if toolStore, ok := store.(repository.ToolExecutionStore); ok {
+		_ = toolStore.FinishTool(ctx, exec.ExecutionID, "FAILED", `{}`, code)
+	}
+	if failureStore, ok := store.(repository.RunFailureSetter); ok {
+		_ = failureStore.FailRun(ctx, exec.Run, code)
+	}
+	finalizeQuotaReservation(ctx, store, exec.Run, 0)
 }

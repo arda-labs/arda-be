@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -97,7 +97,14 @@ func TestRunRequiresAssistantPermission(t *testing.T) {
 	}
 }
 
-func TestRunStreamsDeterministicUIStreamParts(t *testing.T) {
+func TestModelMessagesMarkRetrievedKnowledgeAsUntrusted(t *testing.T) {
+	messages := buildModelMessages(context.Background(), nil, RouterOptions{}, tools.Context{}, repository.RunContext{}, "policy")
+	if len(messages) == 0 || !strings.Contains(messages[0].Content, "untrusted evidence") {
+		t.Fatalf("knowledge safety policy missing from model context: %#v", messages)
+	}
+}
+
+func TestRunWithoutModelReturnsActionableConfigurationError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/ai/agent", strings.NewReader(`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"hello"}]}`))
 	req.Header.Set("X-Auth-Checked", "true")
 	req.Header.Set("X-User-Id", "user-1")
@@ -106,25 +113,8 @@ func TestRunStreamsDeterministicUIStreamParts(t *testing.T) {
 	res := httptest.NewRecorder()
 	NewRouter().ServeHTTP(res, req)
 
-	if res.Code != http.StatusOK || res.Header().Get("Content-Type") != "text/event-stream" {
-		t.Fatalf("status/content type = %d/%q", res.Code, res.Header().Get("Content-Type"))
-	}
-	var events []string
-	scanner := bufio.NewScanner(strings.NewReader(res.Body.String()))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "data: ") {
-			events = append(events, line)
-		}
-	}
-	want := []string{"RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"}
-	if len(events) != len(want) {
-		t.Fatalf("event count = %d, want %d: %s", len(events), len(want), res.Body.String())
-	}
-	for i, event := range want {
-		if !strings.Contains(events[i], `"type":"`+event+`"`) {
-			t.Fatalf("event %d = %s, want type %s", i, events[i], event)
-		}
+	if res.Code != http.StatusServiceUnavailable || !strings.Contains(res.Body.String(), "ai.model_unavailable") {
+		t.Fatalf("status/body = %d/%s", res.Code, res.Body.String())
 	}
 }
 
@@ -266,9 +256,10 @@ func TestListToolsEndpoint(t *testing.T) {
 func TestAnalyticsEndpoint(t *testing.T) {
 	router := NewRouter()
 	req := httptest.NewRequest(http.MethodGet, "/api/ai/analytics/overview", nil)
+	setAIIdentityHeaders(req)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
-	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"totalRuns"`) {
+	if res.Code != http.StatusServiceUnavailable || !strings.Contains(res.Body.String(), "ai.analytics_persistence_unavailable") {
 		t.Fatalf("analytics failed: code = %d, body = %s", res.Code, res.Body.String())
 	}
 }
@@ -276,16 +267,45 @@ func TestAnalyticsEndpoint(t *testing.T) {
 func TestAgentsEndpoints(t *testing.T) {
 	router := NewRouter()
 	req := httptest.NewRequest(http.MethodGet, "/api/ai/agents", nil)
+	setAIIdentityHeaders(req)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
-	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "HR Assistant") {
+	if res.Code != http.StatusServiceUnavailable || !strings.Contains(res.Body.String(), "ai.agent_persistence_unavailable") {
 		t.Fatalf("list agents failed: code = %d, body = %s", res.Code, res.Body.String())
 	}
 
 	saveReq := httptest.NewRequest(http.MethodPost, "/api/ai/agents", strings.NewReader(`{"name":"Custom Agent","department":"Tech","modelId":"gemini-2.5-flash","temperature":0.3,"systemPrompt":"test"}`))
+	setAIIdentityHeaders(saveReq)
 	saveRes := httptest.NewRecorder()
 	router.ServeHTTP(saveRes, saveReq)
-	if saveRes.Code != http.StatusOK || !strings.Contains(saveRes.Body.String(), "Custom Agent") {
+	if saveRes.Code != http.StatusServiceUnavailable || !strings.Contains(saveRes.Body.String(), "ai.agent_persistence_unavailable") {
 		t.Fatalf("save agent failed: code = %d, body = %s", saveRes.Code, saveRes.Body.String())
+	}
+}
+
+func setAIIdentityHeaders(req *http.Request) {
+	req.Header.Set("X-Auth-Checked", "true")
+	req.Header.Set("X-User-Id", "user-1")
+	req.Header.Set("X-Tenant-Id", "tenant-1")
+	req.Header.Set("X-Permissions", "ai.assistant.use")
+}
+
+func TestRouterReadinessUsesDependencyCheck(t *testing.T) {
+	router := NewRouterWithOptions(nil, nil, RouterOptions{
+		ReadyCheck: func(context.Context) error { return errors.New("database offline") },
+	})
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+	if res.Code != http.StatusServiceUnavailable || !strings.Contains(res.Body.String(), "ai.not_ready") {
+		t.Fatalf("expected readiness failure, got %d: %s", res.Code, res.Body.String())
+	}
+
+	router = NewRouterWithOptions(nil, nil, RouterOptions{
+		ReadyCheck: func(context.Context) error { return nil },
+	})
+	res = httptest.NewRecorder()
+	router.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected readiness success, got %d: %s", res.Code, res.Body.String())
 	}
 }

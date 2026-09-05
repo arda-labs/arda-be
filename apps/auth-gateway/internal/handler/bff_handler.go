@@ -1518,7 +1518,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	proxyReq.Header.Set(ardahttp.HeaderRequestID, requestID)
 	serviceAudience := ""
-	if strings.HasPrefix(r.URL.Path, "/api/ai/") || strings.HasPrefix(r.URL.Path, "/api/copilotkit") || strings.HasPrefix(r.URL.Path, "/api/rag/") {
+	if strings.HasPrefix(r.URL.Path, "/api/ai/") || strings.HasPrefix(r.URL.Path, "/api/rag/") {
 		serviceAudience = "ai-service"
 	}
 	if serviceAudience != "" {

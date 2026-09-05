@@ -2,11 +2,23 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+func TestMessageMarshalPreservesReasoningContent(t *testing.T) {
+	encoded, err := json.Marshal(Message{Role: "assistant", Content: "answer", Reasoning: "internal reasoning"})
+	if err != nil {
+		t.Fatalf("marshal message: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"reasoning_content":"internal reasoning"`) {
+		t.Fatalf("reasoning content was dropped: %s", encoded)
+	}
+}
 
 func TestStreamChatParsesTextDeltasToolCallsAndUsage(t *testing.T) {
 	var sseBody strings.Builder
@@ -33,7 +45,7 @@ func TestStreamChatParsesTextDeltasToolCallsAndUsage(t *testing.T) {
 
 	reason, usageResult, err := client.StreamChat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, StreamCallbacks{
 		OnTextDelta: func(delta string) { texts = append(texts, delta) },
-		OnToolCall: func(call ToolCall) { calls = append(calls, call) },
+		OnToolCall:  func(call ToolCall) { calls = append(calls, call) },
 		OnFinish: func(reason string, usage Usage) {
 			finish = reason
 			finishUsage = usage
@@ -93,5 +105,64 @@ func TestStreamChatSendsGatewayTokenHeader(t *testing.T) {
 	}
 	if gatewayHeader != "Bearer gw-token" {
 		t.Fatalf("cf-aig-authorization wrong: %q", gatewayHeader)
+	}
+}
+
+func TestStreamChatRetriesTransientProviderStatus(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "key", "model", server.Client())
+	_, _, err := client.StreamChat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, StreamCallbacks{})
+	if err != nil {
+		t.Fatalf("expected transient provider failure to recover: %v", err)
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("expected 3 provider attempts, got %d", calls.Load())
+	}
+}
+
+func TestClientValidateRejectsInsecureBaseURL(t *testing.T) {
+	if err := NewClient("ftp://provider.invalid/v1", "key", "model", nil).Validate(); err == nil {
+		t.Fatal("expected unsupported model URL scheme to be rejected")
+	}
+}
+
+func TestClientProbeSendsCredentialsAndAcceptsHealthyProvider(t *testing.T) {
+	var gotAuth, gotGateway string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Fatalf("unexpected probe path: %s", r.URL.Path)
+		}
+		gotAuth = r.Header.Get("Authorization")
+		gotGateway = r.Header.Get("cf-aig-authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "provider-key", "model", server.Client()).WithGatewayToken("gateway-key")
+	if err := client.Probe(context.Background()); err != nil {
+		t.Fatalf("probe failed: %v", err)
+	}
+	if gotAuth != "Bearer provider-key" || gotGateway != "Bearer gateway-key" {
+		t.Fatalf("probe credentials were not forwarded: auth=%q gateway=%q", gotAuth, gotGateway)
+	}
+}
+
+func TestClientProbeReportsUpstreamFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	if err := NewClient(server.URL, "key", "model", server.Client()).Probe(context.Background()); err == nil || !strings.Contains(err.Error(), "HTTP 401") {
+		t.Fatalf("expected probe status error, got %v", err)
 	}
 }

@@ -31,11 +31,19 @@ func (h *RAGHandler) handleQuery(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusMethodNotAllowed, "rag.method_not_allowed")
 		return
 	}
+	scope, ok := identityScope(w, r)
+	if !ok {
+		return
+	}
 
-	scope := scopeFromRequest(r)
 	var req knowledge.QueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		problem(w, http.StatusBadRequest, "rag.invalid_json")
+		return
+	}
+	req.Query = strings.TrimSpace(req.Query)
+	if req.Query == "" || len(req.Query) > 2000 {
+		problem(w, http.StatusBadRequest, "rag.invalid_query")
 		return
 	}
 
@@ -52,6 +60,10 @@ func (h *RAGHandler) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusMethodNotAllowed, "rag.method_not_allowed")
 		return
 	}
+	scope, ok := identityScope(w, r)
+	if !ok {
+		return
+	}
 
 	var req knowledge.FeedbackRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -59,7 +71,7 @@ func (h *RAGHandler) handleFeedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.svc.Repo().SaveFeedback(r.Context(), req.RunID, req.Helpful, req.Comment)
+	res, err := h.svc.Repo().SaveFeedback(r.Context(), scope.TenantID, req.RunID, req.Helpful, req.Comment)
 	if err != nil {
 		problem(w, http.StatusInternalServerError, "rag.feedback_failed")
 		return
@@ -68,11 +80,14 @@ func (h *RAGHandler) handleFeedback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RAGHandler) handleSourcesRoot(w http.ResponseWriter, r *http.Request) {
-	scope := scopeFromRequest(r)
+	scope, ok := identityScope(w, r)
+	if !ok {
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		includeDeleted := r.URL.Query().Get("include_deleted") == "true"
-		sources, err := h.svc.Repo().ListSources(r.Context(), includeDeleted)
+		sources, err := h.svc.Repo().ListSources(r.Context(), scope.TenantID, includeDeleted)
 		if err != nil {
 			problem(w, http.StatusInternalServerError, "rag.list_sources_failed")
 			return
@@ -88,6 +103,18 @@ func (h *RAGHandler) handleSourcesRoot(w http.ResponseWriter, r *http.Request) {
 			problem(w, http.StatusBadRequest, "rag.invalid_json")
 			return
 		}
+		data.Scope = strings.ToLower(strings.TrimSpace(data.Scope))
+		if data.Scope == "" {
+			data.Scope = "tenant"
+		}
+		if data.Scope != "tenant" && data.Scope != "global" && data.Scope != "system" {
+			problem(w, http.StatusBadRequest, "rag.invalid_scope")
+			return
+		}
+		if data.Scope != "tenant" && !scope.GlobalAdmin {
+			problem(w, http.StatusForbidden, "rag.scope_forbidden")
+			return
+		}
 		src, err := h.svc.Repo().CreateSource(r.Context(), data, scope.TenantID, scope.ActorUserID)
 		if err != nil {
 			problem(w, http.StatusInternalServerError, "rag.create_source_failed")
@@ -101,6 +128,10 @@ func (h *RAGHandler) handleSourcesRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RAGHandler) handleSourcesSubtree(w http.ResponseWriter, r *http.Request) {
+	scope, ok := identityScope(w, r)
+	if !ok {
+		return
+	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/rag/sources/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 
@@ -159,7 +190,7 @@ func (h *RAGHandler) handleSourcesSubtree(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if r.Method == http.MethodGet {
-			src, err := h.svc.Repo().GetSource(r.Context(), sourceID)
+			src, err := h.svc.Repo().GetSource(r.Context(), sourceID, scope.TenantID)
 			if err != nil {
 				problem(w, http.StatusNotFound, "rag.source_not_found")
 				return
@@ -168,7 +199,16 @@ func (h *RAGHandler) handleSourcesSubtree(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if r.Method == http.MethodDelete {
-			err := h.svc.Repo().SoftDeleteSource(r.Context(), sourceID)
+			src, err := h.svc.Repo().GetSource(r.Context(), sourceID, scope.TenantID)
+			if err != nil {
+				problem(w, http.StatusNotFound, "rag.source_not_found")
+				return
+			}
+			if src.Scope != "tenant" && !scope.GlobalAdmin {
+				problem(w, http.StatusForbidden, "rag.scope_forbidden")
+				return
+			}
+			err = h.svc.Repo().SoftDeleteSource(r.Context(), sourceID, scope.TenantID)
 			if err != nil {
 				problem(w, http.StatusNotFound, "rag.source_not_found")
 				return
@@ -187,9 +227,8 @@ func (h *RAGHandler) handleSourcesSubtree(w http.ResponseWriter, r *http.Request
 			problem(w, http.StatusBadRequest, "rag.invalid_source_id")
 			return
 		}
-		scope := scopeFromRequest(r)
 		if r.Method == http.MethodGet {
-			versions, err := h.svc.Repo().ListVersions(r.Context(), sourceID)
+			versions, err := h.svc.Repo().ListVersions(r.Context(), sourceID, scope.TenantID)
 			if err != nil {
 				problem(w, http.StatusInternalServerError, "rag.list_versions_failed")
 				return
@@ -206,7 +245,16 @@ func (h *RAGHandler) handleSourcesSubtree(w http.ResponseWriter, r *http.Request
 				problem(w, http.StatusBadRequest, "rag.invalid_json")
 				return
 			}
-			v, err := h.svc.Repo().CreateVersion(r.Context(), sourceID, data, scope.ActorUserID)
+			src, err := h.svc.Repo().GetSource(r.Context(), sourceID, scope.TenantID)
+			if err != nil {
+				problem(w, http.StatusNotFound, "rag.source_not_found")
+				return
+			}
+			if src.Scope != "tenant" && !scope.GlobalAdmin {
+				problem(w, http.StatusForbidden, "rag.scope_forbidden")
+				return
+			}
+			v, err := h.svc.Repo().CreateVersion(r.Context(), sourceID, scope.TenantID, data, scope.ActorUserID)
 			if err != nil {
 				problem(w, http.StatusInternalServerError, "rag.create_version_failed")
 				return
@@ -223,7 +271,7 @@ func (h *RAGHandler) handleSourcesSubtree(w http.ResponseWriter, r *http.Request
 		sourceID, _ := strconv.ParseInt(parts[0], 10, 64)
 		versionID, _ := strconv.ParseInt(parts[2], 10, 64)
 		if r.Method == http.MethodGet {
-			v, err := h.svc.Repo().GetVersion(r.Context(), sourceID, versionID)
+			v, err := h.svc.Repo().GetVersion(r.Context(), sourceID, versionID, scope.TenantID)
 			if err != nil {
 				problem(w, http.StatusNotFound, "rag.version_not_found")
 				return
@@ -239,14 +287,25 @@ func (h *RAGHandler) handleSourcesSubtree(w http.ResponseWriter, r *http.Request
 	if len(parts) == 4 && parts[1] == "versions" && parts[3] == "review" && r.Method == http.MethodPost {
 		sourceID, _ := strconv.ParseInt(parts[0], 10, 64)
 		versionID, _ := strconv.ParseInt(parts[2], 10, 64)
-		scope := scopeFromRequest(r)
-
 		var req knowledge.ReviewRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			problem(w, http.StatusBadRequest, "rag.invalid_json")
 			return
 		}
-		v, err := h.svc.Repo().ReviewVersion(r.Context(), sourceID, versionID, req, scope.ActorUserID)
+		src, err := h.svc.Repo().GetSource(r.Context(), sourceID, scope.TenantID)
+		if err != nil {
+			problem(w, http.StatusNotFound, "rag.source_not_found")
+			return
+		}
+		if src.Scope != "tenant" && !scope.GlobalAdmin {
+			problem(w, http.StatusForbidden, "rag.scope_forbidden")
+			return
+		}
+		if src.OwnerID != nil && strings.TrimSpace(*src.OwnerID) == scope.ActorUserID {
+			problem(w, http.StatusForbidden, "rag.self_review_forbidden")
+			return
+		}
+		v, err := h.svc.Repo().ReviewVersion(r.Context(), sourceID, versionID, scope.TenantID, req, scope.ActorUserID)
 		if err != nil {
 			problem(w, http.StatusInternalServerError, "rag.review_failed")
 			return
@@ -259,9 +318,16 @@ func (h *RAGHandler) handleSourcesSubtree(w http.ResponseWriter, r *http.Request
 	if len(parts) == 4 && parts[1] == "versions" && parts[3] == "publish" && r.Method == http.MethodPost {
 		sourceID, _ := strconv.ParseInt(parts[0], 10, 64)
 		versionID, _ := strconv.ParseInt(parts[2], 10, 64)
-		scope := scopeFromRequest(r)
-
-		res, err := h.svc.Repo().PublishVersion(r.Context(), sourceID, versionID, scope.ActorUserID)
+		src, err := h.svc.Repo().GetSource(r.Context(), sourceID, scope.TenantID)
+		if err != nil {
+			problem(w, http.StatusNotFound, "rag.source_not_found")
+			return
+		}
+		if src.Scope != "tenant" && !scope.GlobalAdmin {
+			problem(w, http.StatusForbidden, "rag.scope_forbidden")
+			return
+		}
+		res, err := h.svc.Repo().PublishVersion(r.Context(), sourceID, versionID, scope.TenantID, scope.ActorUserID)
 		if err != nil {
 			problem(w, http.StatusInternalServerError, "rag.publish_failed")
 			return
@@ -278,12 +344,16 @@ func (h *RAGHandler) handleJobs(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusMethodNotAllowed, "rag.method_not_allowed")
 		return
 	}
+	scope, ok := identityScope(w, r)
+	if !ok {
+		return
+	}
 	jobID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/rag/jobs/"), "/")
 	if jobID == "" {
 		problem(w, http.StatusBadRequest, "rag.invalid_job_id")
 		return
 	}
-	job, err := h.svc.Repo().GetJob(r.Context(), jobID)
+	job, err := h.svc.Repo().GetJob(r.Context(), jobID, scope.TenantID)
 	if err != nil {
 		problem(w, http.StatusNotFound, "rag.job_not_found")
 		return

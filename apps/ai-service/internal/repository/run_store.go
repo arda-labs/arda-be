@@ -45,6 +45,18 @@ type UsageSetter interface {
 	SetUsage(ctx context.Context, run RunContext, usageJSON string) error
 }
 
+type ModelSetter interface {
+	SetModel(ctx context.Context, run RunContext, provider, modelID string) error
+}
+
+type CostSetter interface {
+	SetCost(ctx context.Context, run RunContext, costUSD float64) error
+}
+
+type RunFailureSetter interface {
+	FailRun(ctx context.Context, run RunContext, errorCode string) error
+}
+
 type ConversationSummary struct {
 	ThreadID      string `json:"threadId"`
 	Title         string `json:"title"`
@@ -355,6 +367,59 @@ func (s *SQLRunStore) SetUsage(ctx context.Context, run RunContext, usageJSON st
 	return nil
 }
 
+func (s *SQLRunStore) SetCost(ctx context.Context, run RunContext, costUSD float64) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("AI run store is not configured")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE public.ai_runs SET cost_usd = GREATEST(0, $4)
+		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
+	`, run.TenantID, run.ActorUserID, run.ExternalRun, costUSD)
+	if err != nil {
+		return fmt.Errorf("persist AI run cost: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return fmt.Errorf("AI run not found for cost update")
+	}
+	return nil
+}
+
+func (s *SQLRunStore) SetModel(ctx context.Context, run RunContext, provider, modelID string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("AI run store is not configured")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE public.ai_runs SET provider = NULLIF($4, ''), model_id = NULLIF($5, '')
+		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
+	`, run.TenantID, run.ActorUserID, run.ExternalRun, strings.TrimSpace(provider), strings.TrimSpace(modelID))
+	if err != nil {
+		return fmt.Errorf("persist AI model metadata: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return fmt.Errorf("AI run not found for model metadata")
+	}
+	return nil
+}
+
+func (s *SQLRunStore) FailRun(ctx context.Context, run RunContext, errorCode string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("AI run store is not configured")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE public.ai_runs
+		SET status = 'FAILED', error_code = NULLIF($4, ''), finished_at = now()
+		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
+		  AND status IN ('WAITING_APPROVAL', 'RUNNING')
+	`, run.TenantID, run.ActorUserID, run.ExternalRun, strings.TrimSpace(errorCode))
+	if err != nil {
+		return fmt.Errorf("fail AI run: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return fmt.Errorf("AI run not found or already terminal")
+	}
+	return nil
+}
+
 func (s *SQLRunStore) ListConversations(ctx context.Context, tenantID, actorUserID string, limit int) ([]ConversationSummary, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("AI run store is not configured")
@@ -504,74 +569,94 @@ type ModelCost struct {
 	CostUSD  float64 `json:"costUsd"`
 }
 
-func DefaultAnalyticsSummary() *AnalyticsSummary {
-	return &AnalyticsSummary{
-		TotalRuns:        128,
-		SuccessfulRuns:   122,
-		FailedRuns:       6,
-		SuccessRate:      95.3,
-		TotalTokens:      84520,
-		PromptTokens:     52100,
-		CompletionTokens: 32420,
-		EstimatedCostUSD: 0.168,
-		Latency: LatencyStats{
-			P50Ms: 420,
-			P95Ms: 1250,
-			P99Ms: 2100,
-			AvgMs: 510,
-		},
-		Feedback: FeedbackStats{
-			Total:            45,
-			Positive:         39,
-			Negative:         6,
-			SatisfactionRate: 86.7,
-		},
-		RAGQuality: RAGQualityStats{
-			GroundednessScore:  0.92,
-			FaithfulnessScore:  0.94,
-			RetrievalPrecision: 0.89,
-		},
-		RunsByDay: []DayTrend{
-			{Date: "2026-08-28", Runs: 12, Tokens: 7800, CostUSD: 0.015, Errors: 0},
-			{Date: "2026-08-29", Runs: 18, Tokens: 12400, CostUSD: 0.024, Errors: 1},
-			{Date: "2026-08-30", Runs: 25, Tokens: 16900, CostUSD: 0.033, Errors: 1},
-			{Date: "2026-08-31", Runs: 30, Tokens: 19500, CostUSD: 0.039, Errors: 2},
-			{Date: "2026-09-01", Runs: 22, Tokens: 14200, CostUSD: 0.028, Errors: 0},
-			{Date: "2026-09-02", Runs: 28, Tokens: 18100, CostUSD: 0.036, Errors: 1},
-			{Date: "2026-09-03", Runs: 35, Tokens: 22600, CostUSD: 0.045, Errors: 1},
-		},
-		CostByModel: []ModelCost{
-			{ModelID: "gemini-2.5-flash", Provider: "google", Runs: 85, Tokens: 58000, CostUSD: 0.087},
-			{ModelID: "qwen2.5:7b-instruct-q4_K_M", Provider: "ollama", Runs: 43, Tokens: 26520, CostUSD: 0.000},
-		},
-	}
-}
-
 func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*AnalyticsSummary, error) {
 	if s == nil || s.db == nil {
-		return DefaultAnalyticsSummary(), nil
+		return nil, fmt.Errorf("analytics persistence is unavailable")
 	}
-	summary := DefaultAnalyticsSummary()
+	summary := &AnalyticsSummary{RunsByDay: []DayTrend{}, CostByModel: []ModelCost{}}
 
 	var totalRuns, successRuns, failedRuns int64
+	var totalTokens, promptTokens, completionTokens int64
+	var estimatedCost float64
 	var avgLatency float64
 	err := s.db.QueryRowContext(ctx, `
 		SELECT
 			count(*),
 			count(*) FILTER (WHERE status = 'SUCCEEDED'),
 			count(*) FILTER (WHERE status = 'FAILED'),
-			coalesce(avg(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000) FILTER (WHERE finished_at IS NOT NULL), 510)
+			coalesce(avg(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000) FILTER (WHERE finished_at IS NOT NULL), 0),
+			coalesce(sum(CASE WHEN usage->>'total_tokens' ~ '^[0-9]+$' THEN (usage->>'total_tokens')::bigint ELSE 0 END), 0),
+			coalesce(sum(CASE WHEN usage->>'prompt_tokens' ~ '^[0-9]+$' THEN (usage->>'prompt_tokens')::bigint ELSE 0 END), 0),
+			coalesce(sum(CASE WHEN usage->>'completion_tokens' ~ '^[0-9]+$' THEN (usage->>'completion_tokens')::bigint ELSE 0 END), 0),
+			coalesce(sum(cost_usd), 0)
 		FROM public.ai_runs
 		WHERE tenant_id = $1 OR $1 = ''
-	`, tenantID).Scan(&totalRuns, &successRuns, &failedRuns, &avgLatency)
+	`, tenantID).Scan(&totalRuns, &successRuns, &failedRuns, &avgLatency, &totalTokens, &promptTokens, &completionTokens, &estimatedCost)
 
-	if err == nil && totalRuns > 0 {
+	if err != nil {
+		return nil, fmt.Errorf("load analytics runs: %w", err)
+	}
+	if totalRuns > 0 {
 		summary.TotalRuns = totalRuns
 		summary.SuccessfulRuns = successRuns
 		summary.FailedRuns = failedRuns
 		summary.SuccessRate = float64(successRuns) / float64(totalRuns) * 100.0
 		summary.Latency.AvgMs = int64(avgLatency)
 	}
+	summary.TotalTokens = totalTokens
+	summary.PromptTokens = promptTokens
+	summary.CompletionTokens = completionTokens
+	summary.EstimatedCostUSD = estimatedCost
+
+	modelRows, modelErr := s.db.QueryContext(ctx, `
+		SELECT COALESCE(model_id, ''), COALESCE(provider, ''), count(*),
+		       COALESCE(sum(CASE WHEN usage->>'total_tokens' ~ '^[0-9]+$' THEN (usage->>'total_tokens')::bigint ELSE 0 END), 0)
+		FROM public.ai_runs
+		WHERE tenant_id = $1 OR $1 = ''
+		GROUP BY model_id, provider
+		ORDER BY count(*) DESC, model_id ASC
+	`, tenantID)
+	if modelErr != nil {
+		return nil, fmt.Errorf("load analytics models: %w", modelErr)
+	}
+	for modelRows.Next() {
+		var item ModelCost
+		if err := modelRows.Scan(&item.ModelID, &item.Provider, &item.Runs, &item.Tokens); err != nil {
+			modelRows.Close()
+			return nil, fmt.Errorf("scan analytics model: %w", err)
+		}
+		summary.CostByModel = append(summary.CostByModel, item)
+	}
+	if err := modelRows.Err(); err != nil {
+		modelRows.Close()
+		return nil, fmt.Errorf("iterate analytics models: %w", err)
+	}
+	modelRows.Close()
+
+	dayRows, dayErr := s.db.QueryContext(ctx, `
+		SELECT to_char(started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'), count(*),
+		       COALESCE(sum(CASE WHEN usage->>'total_tokens' ~ '^[0-9]+$' THEN (usage->>'total_tokens')::bigint ELSE 0 END), 0),
+		       count(*) FILTER (WHERE status = 'FAILED')
+		FROM public.ai_runs
+		WHERE (tenant_id = $1 OR $1 = '') AND started_at >= now() - interval '30 days'
+		GROUP BY 1 ORDER BY 1 ASC
+	`, tenantID)
+	if dayErr != nil {
+		return nil, fmt.Errorf("load analytics daily trend: %w", dayErr)
+	}
+	for dayRows.Next() {
+		var item DayTrend
+		if err := dayRows.Scan(&item.Date, &item.Runs, &item.Tokens, &item.Errors); err != nil {
+			dayRows.Close()
+			return nil, fmt.Errorf("scan analytics daily trend: %w", err)
+		}
+		summary.RunsByDay = append(summary.RunsByDay, item)
+	}
+	if err := dayRows.Err(); err != nil {
+		dayRows.Close()
+		return nil, fmt.Errorf("iterate analytics daily trend: %w", err)
+	}
+	dayRows.Close()
 
 	var fbTotal, fbPos, fbNeg int64
 	fbErr := s.db.QueryRowContext(ctx, `
@@ -579,8 +664,10 @@ func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*Analy
 			count(*),
 			count(*) FILTER (WHERE helpful = true),
 			count(*) FILTER (WHERE helpful = false)
-		FROM public.ai_rag_feedback
-	`).Scan(&fbTotal, &fbPos, &fbNeg)
+		FROM public.ai_rag_feedback f
+		JOIN public.ai_rag_runs r ON r.id = f.run_id
+		WHERE r.tenant_id = $1
+	`, tenantID).Scan(&fbTotal, &fbPos, &fbNeg)
 
 	if fbErr == nil && fbTotal > 0 {
 		summary.Feedback.Total = fbTotal
@@ -591,4 +678,3 @@ func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*Analy
 
 	return summary, nil
 }
-

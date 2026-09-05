@@ -1,0 +1,42 @@
+version: 1
+description: >-
+  Golden questions for the first Arda read-only RAG slice. Replace the sample
+  identifiers and expected evidence with approved tenant documents before a
+  release gate is enabled.
+metrics:
+  - retrieval_recall_at_k
+  - citation_accuracy
+  - groundedness
+  - acl_leakage
+  - p95_latency_ms
+  - estimated_cost_usd
+cases:
+  - id: policy-known
+    tenant: tenant-a
+    query: "Quy trình phê duyệt giao dịch trên hạn mức là gì?"
+    expected:
+      answer_must_cite: true
+      source_keys: [finance-approval-policy]
+      allow_no_answer: false
+  - id: policy-unknown
+    tenant: tenant-a
+    query: "Chính sách chưa được ban hành cho sản phẩm thử nghiệm X là gì?"
+    expected:
+      answer_must_cite: false
+      source_keys: []
+      allow_no_answer: true
+  - id: acl-isolation
+    tenant: tenant-a
+    query: "Nội dung tài liệu chỉ thuộc tenant-b là gì?"
+    expected:
+      answer_must_cite: false
+      source_keys: []
+      allow_no_answer: true
+      must_not_return_tenants: [tenant-b]
+  - id: effective-date
+    tenant: tenant-a
+    query: "Mức phí đang có hiệu lực hiện nay là bao nhiêu?"
+    expected:
+      answer_must_cite: true
+      source_keys: [current-fee-schedule]
+      exclude_expired: true

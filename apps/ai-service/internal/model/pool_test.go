@@ -38,3 +38,18 @@ func TestClientPool_MultiTenantIsolation(t *testing.T) {
 		t.Fatal("different tenants must receive different client instances")
 	}
 }
+
+func TestClientPool_ConfigurationChangeResetsCircuitGuard(t *testing.T) {
+	pool := NewClientPool(nil)
+	first := pool.GetProvider("tenant-1", "https://one.example/v1", "key-1", "model-a")
+	if len(pool.guards) != 1 {
+		t.Fatalf("expected one circuit guard, got %d", len(pool.guards))
+	}
+	second := pool.GetProvider("tenant-1", "https://two.example/v1", "key-2", "model-b")
+	if first == second {
+		t.Fatal("configuration change must create a new provider guard")
+	}
+	if len(pool.guards) != 1 {
+		t.Fatalf("expected stale guard to be removed, got %d guards", len(pool.guards))
+	}
+}

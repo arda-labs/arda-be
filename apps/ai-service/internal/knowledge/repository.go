@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -19,7 +20,7 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) ListSources(ctx context.Context, includeDeleted bool) ([]Source, error) {
+func (r *Repository) ListSources(ctx context.Context, tenantID string, includeDeleted bool) ([]Source, error) {
 	query := `
 		SELECT s.id, s.tenant_id, s.title, s.description, s.source_type, s.scope,
 		       s.classification, s.language, s.tags, s.owner_id, s.effective_from,
@@ -28,12 +29,13 @@ func (r *Repository) ListSources(ctx context.Context, includeDeleted bool) ([]So
 		  FROM public.ai_knowledge_sources s
 		  LEFT JOIN public.ai_knowledge_source_versions v ON v.id = s.active_version_id
 	`
+	query += " WHERE (s.tenant_id = $1 OR s.tenant_id IS NULL)"
 	if !includeDeleted {
-		query += " WHERE s.deleted_at IS NULL"
+		query += " AND s.deleted_at IS NULL"
 	}
 	query += " ORDER BY s.created_at DESC"
 
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list sources: %w", err)
 	}
@@ -55,10 +57,13 @@ func (r *Repository) ListSources(ctx context.Context, includeDeleted bool) ([]So
 		s.Tags = []string(tags)
 		sources = append(sources, s)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate sources: %w", err)
+	}
 	return sources, nil
 }
 
-func (r *Repository) GetSource(ctx context.Context, id int64) (*Source, error) {
+func (r *Repository) GetSource(ctx context.Context, id int64, tenantID string) (*Source, error) {
 	query := `
 		SELECT s.id, s.tenant_id, s.title, s.description, s.source_type, s.scope,
 		       s.classification, s.language, s.tags, s.owner_id, s.effective_from,
@@ -66,11 +71,11 @@ func (r *Repository) GetSource(ctx context.Context, id int64) (*Source, error) {
 		       s.created_at, s.updated_at, v.status, v.version
 		  FROM public.ai_knowledge_sources s
 		  LEFT JOIN public.ai_knowledge_source_versions v ON v.id = s.active_version_id
-		 WHERE s.id = $1 AND s.deleted_at IS NULL
+		 WHERE s.id = $1 AND (s.tenant_id = $2 OR s.tenant_id IS NULL) AND s.deleted_at IS NULL
 	`
 	var s Source
 	var tags pq.StringArray
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
+	err := r.db.QueryRowContext(ctx, query, id, tenantID).Scan(
 		&s.ID, &s.TenantID, &s.Title, &s.Description, &s.SourceType, &s.Scope,
 		&s.Classification, &s.Language, &tags, &s.OwnerID, &s.EffectiveFrom,
 		&s.EffectiveTo, &s.ActiveVersionID, &s.DeletedAt, &s.CreatedBy,
@@ -113,8 +118,8 @@ func (r *Repository) CreateSource(ctx context.Context, data SourceCreate, tenant
 	return &s, nil
 }
 
-func (r *Repository) SoftDeleteSource(ctx context.Context, id int64) error {
-	res, err := r.db.ExecContext(ctx, `UPDATE public.ai_knowledge_sources SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+func (r *Repository) SoftDeleteSource(ctx context.Context, id int64, tenantID string) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE public.ai_knowledge_sources SET deleted_at = now(), updated_at = now() WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenantID)
 	if err != nil {
 		return err
 	}
@@ -125,16 +130,17 @@ func (r *Repository) SoftDeleteSource(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *Repository) ListVersions(ctx context.Context, sourceID int64) ([]Version, error) {
+func (r *Repository) ListVersions(ctx context.Context, sourceID int64, tenantID string) ([]Version, error) {
 	query := `
-		SELECT id, source_id, version, status, content_type, content, content_url,
-		       chunker_version, chunk_size, chunk_overlap, content_hash, status_history,
-		       created_by, created_at, updated_at
-		  FROM public.ai_knowledge_source_versions
-		 WHERE source_id = $1
-		 ORDER BY created_at DESC
+		SELECT v.id, v.source_id, v.version, v.status, v.content_type, v.content, v.content_url,
+		       v.chunker_version, v.chunk_size, v.chunk_overlap, v.content_hash, v.status_history,
+		       v.created_by, v.created_at, v.updated_at
+		 FROM public.ai_knowledge_source_versions v
+		 JOIN public.ai_knowledge_sources s ON s.id = v.source_id
+		 WHERE v.source_id = $1 AND (s.tenant_id = $2 OR s.tenant_id IS NULL)
+		 ORDER BY v.created_at DESC
 	`
-	rows, err := r.db.QueryContext(ctx, query, sourceID)
+	rows, err := r.db.QueryContext(ctx, query, sourceID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list versions: %w", err)
 	}
@@ -157,20 +163,24 @@ func (r *Repository) ListVersions(ctx context.Context, sourceID int64) ([]Versio
 		}
 		versions = append(versions, v)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate versions: %w", err)
+	}
 	return versions, nil
 }
 
-func (r *Repository) GetVersion(ctx context.Context, sourceID, versionID int64) (*Version, error) {
+func (r *Repository) GetVersion(ctx context.Context, sourceID, versionID int64, tenantID string) (*Version, error) {
 	query := `
-		SELECT id, source_id, version, status, content_type, content, content_url,
-		       chunker_version, chunk_size, chunk_overlap, content_hash, status_history,
-		       created_by, created_at, updated_at
-		  FROM public.ai_knowledge_source_versions
-		 WHERE source_id = $1 AND id = $2
+		SELECT v.id, v.source_id, v.version, v.status, v.content_type, v.content, v.content_url,
+		       v.chunker_version, v.chunk_size, v.chunk_overlap, v.content_hash, v.status_history,
+		       v.created_by, v.created_at, v.updated_at
+		 FROM public.ai_knowledge_source_versions v
+		 JOIN public.ai_knowledge_sources s ON s.id = v.source_id
+		 WHERE v.source_id = $1 AND v.id = $2 AND (s.tenant_id = $3 OR s.tenant_id IS NULL)
 	`
 	var v Version
 	var rawHistory []byte
-	err := r.db.QueryRowContext(ctx, query, sourceID, versionID).Scan(
+	err := r.db.QueryRowContext(ctx, query, sourceID, versionID, tenantID).Scan(
 		&v.ID, &v.SourceID, &v.Version, &v.Status, &v.ContentType, &v.Content,
 		&v.ContentURL, &v.ChunkerVersion, &v.ChunkSize, &v.ChunkOverlap,
 		&v.ContentHash, &rawHistory, &v.CreatedBy, &v.CreatedAt, &v.UpdatedAt,
@@ -184,7 +194,7 @@ func (r *Repository) GetVersion(ctx context.Context, sourceID, versionID int64) 
 	return &v, nil
 }
 
-func (r *Repository) CreateVersion(ctx context.Context, sourceID int64, data VersionCreate, createdBy string) (*Version, error) {
+func (r *Repository) CreateVersion(ctx context.Context, sourceID int64, tenantID string, data VersionCreate, createdBy string) (*Version, error) {
 	var contentHash *string
 	if data.Content != nil && *data.Content != "" {
 		h := sha256Hash(*data.Content)
@@ -208,14 +218,15 @@ func (r *Repository) CreateVersion(ctx context.Context, sourceID int64, data Ver
 	query := `
 		INSERT INTO public.ai_knowledge_source_versions
 		       (source_id, version, status, content_type, content, content_url, chunker_version, chunk_size, chunk_overlap, content_hash, created_by)
-		VALUES ($1, $2, 'DRAFT', $3, $4, $5, $6, $7, $8, $9, $10)
+		SELECT $1, $2, 'DRAFT', $3, $4, $5, $6, $7, $8, $9, $10
+		 WHERE EXISTS (SELECT 1 FROM public.ai_knowledge_sources s WHERE s.id = $1 AND (s.tenant_id = $11 OR s.tenant_id IS NULL))
 		RETURNING id, source_id, version, status, content_type, content, content_url, chunker_version, chunk_size, chunk_overlap, content_hash, status_history, created_by, created_at, updated_at
 	`
 	var v Version
 	var rawHistory []byte
 	err := r.db.QueryRowContext(ctx, query,
 		sourceID, data.Version, data.ContentType, data.Content, data.ContentURL,
-		strategy, chunkSize, chunkOverlap, contentHash, createdBy,
+		strategy, chunkSize, chunkOverlap, contentHash, createdBy, tenantID,
 	).Scan(
 		&v.ID, &v.SourceID, &v.Version, &v.Status, &v.ContentType, &v.Content,
 		&v.ContentURL, &v.ChunkerVersion, &v.ChunkSize, &v.ChunkOverlap,
@@ -230,7 +241,7 @@ func (r *Repository) CreateVersion(ctx context.Context, sourceID int64, data Ver
 	return &v, nil
 }
 
-func (r *Repository) ReviewVersion(ctx context.Context, sourceID, versionID int64, req ReviewRequest, actor string) (*Version, error) {
+func (r *Repository) ReviewVersion(ctx context.Context, sourceID, versionID int64, tenantID string, req ReviewRequest, actor string) (*Version, error) {
 	status := "APPROVED"
 	if strings.ToLower(req.Decision) == "reject" {
 		status = "REJECTED"
@@ -246,12 +257,13 @@ func (r *Repository) ReviewVersion(ctx context.Context, sourceID, versionID int6
 		           'reason', $3::text
 		       )::jsonb,
 		       updated_at = now()
-		 WHERE source_id = $4 AND id = $5
+		 WHERE source_id = $4 AND id = $5 AND status IN ('DRAFT', 'PENDING_REVIEW')
+		   AND EXISTS (SELECT 1 FROM public.ai_knowledge_sources s WHERE s.id = $4 AND (s.tenant_id = $6 OR s.tenant_id IS NULL))
 		 RETURNING id, source_id, version, status, content_type, content, content_url, chunker_version, chunk_size, chunk_overlap, content_hash, status_history, created_by, created_at, updated_at
 	`
 	var v Version
 	var rawHistory []byte
-	err := r.db.QueryRowContext(ctx, query, status, actor, req.Reason, sourceID, versionID).Scan(
+	err := r.db.QueryRowContext(ctx, query, status, actor, req.Reason, sourceID, versionID, tenantID).Scan(
 		&v.ID, &v.SourceID, &v.Version, &v.Status, &v.ContentType, &v.Content,
 		&v.ContentURL, &v.ChunkerVersion, &v.ChunkSize, &v.ChunkOverlap,
 		&v.ContentHash, &rawHistory, &v.CreatedBy, &v.CreatedAt, &v.UpdatedAt,
@@ -265,7 +277,7 @@ func (r *Repository) ReviewVersion(ctx context.Context, sourceID, versionID int6
 	return &v, nil
 }
 
-func (r *Repository) PublishVersion(ctx context.Context, sourceID, versionID int64, actor string) (*PublishResult, error) {
+func (r *Repository) PublishVersion(ctx context.Context, sourceID, versionID int64, tenantID string, actor string) (*PublishResult, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -275,10 +287,11 @@ func (r *Repository) PublishVersion(ctx context.Context, sourceID, versionID int
 	// 1. Create ingestion job
 	var jobID string
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO public.ai_ingestion_jobs (source_version_id, status)
-		VALUES ($1, 'pending')
+	INSERT INTO public.ai_ingestion_jobs (source_version_id, status)
+		SELECT $1, 'pending'
+		 WHERE EXISTS (SELECT 1 FROM public.ai_knowledge_source_versions v JOIN public.ai_knowledge_sources s ON s.id = v.source_id WHERE v.id = $1 AND v.source_id = $2 AND v.status = 'APPROVED' AND (s.tenant_id = $3 OR s.tenant_id IS NULL))
 		RETURNING id::text
-	`, versionID).Scan(&jobID)
+	`, versionID, sourceID, tenantID).Scan(&jobID)
 	if err != nil {
 		return nil, fmt.Errorf("create ingestion job: %w", err)
 	}
@@ -289,8 +302,8 @@ func (r *Repository) PublishVersion(ctx context.Context, sourceID, versionID int
 		   SET status = 'PUBLISHED',
 		       status_history = status_history || jsonb_build_object('transition', 'PUBLISHED', 'at', now(), 'by', $1::text)::jsonb,
 		       updated_at = now()
-		 WHERE source_id = $2 AND id = $3
-	`, actor, sourceID, versionID)
+		 WHERE source_id = $2 AND id = $3 AND EXISTS (SELECT 1 FROM public.ai_knowledge_sources s WHERE s.id = $2 AND (s.tenant_id = $4 OR s.tenant_id IS NULL))
+	`, actor, sourceID, versionID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("update version status: %w", err)
 	}
@@ -299,8 +312,8 @@ func (r *Repository) PublishVersion(ctx context.Context, sourceID, versionID int
 	_, err = tx.ExecContext(ctx, `
 		UPDATE public.ai_knowledge_sources
 		   SET active_version_id = $1, updated_at = now()
-		 WHERE id = $2
-	`, versionID, sourceID)
+		 WHERE id = $2 AND (tenant_id = $3 OR tenant_id IS NULL)
+	`, versionID, sourceID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("update source active version: %w", err)
 	}
@@ -316,16 +329,18 @@ func (r *Repository) PublishVersion(ctx context.Context, sourceID, versionID int
 	}, nil
 }
 
-func (r *Repository) GetJob(ctx context.Context, jobID string) (*Job, error) {
+func (r *Repository) GetJob(ctx context.Context, jobID, tenantID string) (*Job, error) {
 	query := `
 		SELECT id::text, source_version_id, status, locked_by, locked_at,
 		       attempts, max_attempts, error_message, total_chunks, embedded_chunks,
 		       next_retry_at, created_at, updated_at
-		  FROM public.ai_ingestion_jobs
-		 WHERE id = $1
+		 FROM public.ai_ingestion_jobs j
+		 JOIN public.ai_knowledge_source_versions v ON v.id = j.source_version_id
+		 JOIN public.ai_knowledge_sources s ON s.id = v.source_id
+		 WHERE j.id = $1 AND (s.tenant_id = $2 OR s.tenant_id IS NULL)
 	`
 	var j Job
-	err := r.db.QueryRowContext(ctx, query, jobID).Scan(
+	err := r.db.QueryRowContext(ctx, query, jobID, tenantID).Scan(
 		&j.ID, &j.SourceVersionID, &j.Status, &j.LockedBy, &j.LockedAt,
 		&j.Attempts, &j.MaxAttempts, &j.ErrorMessage, &j.TotalChunks,
 		&j.EmbeddedChunks, &j.NextRetryAt, &j.CreatedAt, &j.UpdatedAt,
@@ -350,13 +365,17 @@ func (r *Repository) SaveRun(ctx context.Context, tenantID, query string, retrie
 	return runID, err
 }
 
-func (r *Repository) SaveFeedback(ctx context.Context, runID string, helpful bool, comment *string) (*FeedbackOut, error) {
+func (r *Repository) SaveFeedback(ctx context.Context, tenantID, runID string, helpful bool, comment *string) (*FeedbackOut, error) {
 	var out FeedbackOut
 	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO public.ai_rag_feedback (run_id, helpful, comment)
-		VALUES ($1, $2, $3)
+		SELECT $1, $2, $3
+		 WHERE EXISTS (
+			SELECT 1 FROM public.ai_rag_runs r
+			 WHERE r.id = $1 AND (r.tenant_id = $4 OR r.tenant_id IS NULL)
+		 )
 		RETURNING id::text, run_id::text, helpful, comment, created_at
-	`, runID, helpful, comment).Scan(&out.ID, &out.RunID, &out.Helpful, &out.Comment, &out.CreatedAt)
+	`, runID, helpful, comment, tenantID).Scan(&out.ID, &out.RunID, &out.Helpful, &out.Comment, &out.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -365,12 +384,16 @@ func (r *Repository) SaveFeedback(ctx context.Context, runID string, helpful boo
 
 type candidateHit struct {
 	SourceID        int64
+	SourceKey       string
 	SourceVersionID int64
 	Version         string
 	Title           string
 	Heading         string
 	Content         string
 	ChunkID         string
+	EffectiveFrom   *time.Time
+	EffectiveTo     *time.Time
+	URL             *string
 }
 
 func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVector []float32, tenantID string, topK int) ([]QueryHit, error) {
@@ -397,7 +420,8 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 	if len(queryVector) > 0 {
 		vecStr := floatVectorToString(queryVector)
 		vecQuery := `
-			SELECT c.chunk_id, c.source_version_id, s.id AS source_id, v.version, s.title, COALESCE(c.heading, ''), c.content
+			SELECT c.chunk_id, c.source_version_id, s.id AS source_id, s.source_key, v.version, s.title, COALESCE(c.heading, ''), c.content,
+			       s.effective_from, s.effective_to, v.content_url
 			  FROM public.ai_knowledge_chunks c
 			  JOIN public.ai_knowledge_source_versions v ON v.id = c.source_version_id
 			  JOIN public.ai_knowledge_sources s ON s.id = v.source_id
@@ -413,24 +437,30 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 			 LIMIT $3
 		`
 		rows, err := r.db.QueryContext(ctx, vecQuery, tID, vecStr, topK*2)
-		if err == nil {
-			defer rows.Close()
-			rank := 1
-			for rows.Next() {
-				var c candidateHit
-				if err := rows.Scan(&c.ChunkID, &c.SourceVersionID, &c.SourceID, &c.Version, &c.Title, &c.Heading, &c.Content); err == nil {
-					vectorRanks = append(vectorRanks, rankedID{chunkID: c.ChunkID, rank: rank})
-					candidateMap[c.ChunkID] = c
-					rank++
-				}
+		if err != nil {
+			return nil, fmt.Errorf("vector knowledge search: %w", err)
+		}
+		defer rows.Close()
+		rank := 1
+		for rows.Next() {
+			var c candidateHit
+			if err := rows.Scan(&c.ChunkID, &c.SourceVersionID, &c.SourceID, &c.SourceKey, &c.Version, &c.Title, &c.Heading, &c.Content, &c.EffectiveFrom, &c.EffectiveTo, &c.URL); err != nil {
+				return nil, fmt.Errorf("scan vector knowledge result: %w", err)
 			}
+			vectorRanks = append(vectorRanks, rankedID{chunkID: c.ChunkID, rank: rank})
+			candidateMap[c.ChunkID] = c
+			rank++
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("iterate vector knowledge results: %w", err)
 		}
 	}
 
 	// 2. FTS leg
 	var ftsRanks []rankedID
 	ftsQuery := `
-		SELECT c.chunk_id, c.source_version_id, s.id AS source_id, v.version, s.title, COALESCE(c.heading, ''), c.content
+		SELECT c.chunk_id, c.source_version_id, s.id AS source_id, s.source_key, v.version, s.title, COALESCE(c.heading, ''), c.content,
+		       s.effective_from, s.effective_to, v.content_url
 		  FROM public.ai_knowledge_chunks c
 		  JOIN public.ai_knowledge_source_versions v ON v.id = c.source_version_id
 		  JOIN public.ai_knowledge_sources s ON s.id = v.source_id
@@ -446,17 +476,22 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 		 LIMIT $3
 	`
 	rows, err := r.db.QueryContext(ctx, ftsQuery, tID, queryText, topK*2)
-	if err == nil {
-		defer rows.Close()
-		rank := 1
-		for rows.Next() {
-			var c candidateHit
-			if err := rows.Scan(&c.ChunkID, &c.SourceVersionID, &c.SourceID, &c.Version, &c.Title, &c.Heading, &c.Content); err == nil {
-				ftsRanks = append(ftsRanks, rankedID{chunkID: c.ChunkID, rank: rank})
-				candidateMap[c.ChunkID] = c
-				rank++
-			}
+	if err != nil {
+		return nil, fmt.Errorf("full-text knowledge search: %w", err)
+	}
+	defer rows.Close()
+	rank := 1
+	for rows.Next() {
+		var c candidateHit
+		if err := rows.Scan(&c.ChunkID, &c.SourceVersionID, &c.SourceID, &c.SourceKey, &c.Version, &c.Title, &c.Heading, &c.Content, &c.EffectiveFrom, &c.EffectiveTo, &c.URL); err != nil {
+			return nil, fmt.Errorf("scan full-text knowledge result: %w", err)
 		}
+		ftsRanks = append(ftsRanks, rankedID{chunkID: c.ChunkID, rank: rank})
+		candidateMap[c.ChunkID] = c
+		rank++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate full-text knowledge results: %w", err)
 	}
 
 	// 3. RRF Fusion
@@ -494,6 +529,7 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 		}
 		results = append(results, QueryHit{
 			SourceID:        c.SourceID,
+			SourceKey:       c.SourceKey,
 			SourceVersionID: c.SourceVersionID,
 			Version:         c.Version,
 			Title:           c.Title,
@@ -501,6 +537,12 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 			Content:         c.Content,
 			Score:           s.score,
 			Citation:        citation,
+			CitationRef: CitationRef{
+				SourceID: c.SourceID, SourceVersionID: c.SourceVersionID,
+				Title: c.Title, Version: c.Version, Heading: c.Heading,
+				EffectiveFrom: c.EffectiveFrom, EffectiveTo: c.EffectiveTo,
+				URL: c.URL, Locator: citation,
+			},
 		})
 	}
 

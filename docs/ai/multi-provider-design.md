@@ -1,8 +1,9 @@
 # Multi-Provider & Model Routing Design
 
-Status: **Design specification — implement after Code Mode Phase 2 (Gate 7)**.
-The single-provider config exists today; this document defines how to extend
-it to support multiple model providers and per-tenant/per-route routing.
+Status: **Phase 3 implementation in progress**. The service now has a
+pre-output failover chain, pooled circuit-breaker state, tenant model profiles,
+and routing rules. Health probing, richer routing context, and operational
+metrics remain rollout work described below.
 
 ---
 
@@ -21,9 +22,10 @@ AI_MODEL_GATEWAY_TOKEN=...
 AI_MODEL_BASE_URL_ALLOWLIST=...
 ```
 
-The `model.Client`/`ClientPool` types (`internal/model/client.go`,
-`internal/model/pool.go`) already abstract the provider, so a routing layer is a
-thin addition on top.
+The `model.Client`/`ClientPool` types (`internal/model/openai.go`,
+`internal/model/pool.go`) abstract the provider. Tenant profiles and routing
+rules are resolved by the handler; failover is limited to failures before the
+first streamed event.
 
 ---
 

@@ -29,17 +29,7 @@ func handleGetRouting(w http.ResponseWriter, r *http.Request, store runStore) {
 	}
 	routingStore, ok := store.(repository.RoutingStore)
 	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"result": RoutingRulesDTO{
-				FastModel:         "gemini-2.5-flash",
-				CodeModel:         "claude-3.5-sonnet",
-				SensitiveModel:    "qwen2.5:7b-instruct-q4_K_M",
-				PrimaryProvider:   "gemini",
-				SecondaryProvider: "openai",
-				FailoverProvider:  "ollama",
-			},
-		})
+		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
 		return
 	}
 	rules, err := routingStore.GetRoutingRules(r.Context(), scope.TenantID)

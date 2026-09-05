@@ -22,11 +22,11 @@ var (
 )
 
 type ApprovedExecution struct {
-	ExecutionID  string
-	Run          RunContext
-	ToolName     string
-	ToolVersion  int
-	Arguments    string
+	ExecutionID string
+	Run         RunContext
+	ToolName    string
+	ToolVersion int
+	Arguments   string
 }
 
 type ExecutionStore interface {
@@ -171,7 +171,8 @@ func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal Appro
 	return record, nil
 }
 
-func jsonEquivalent(left, right string) bool {	var leftValue, rightValue any
+func jsonEquivalent(left, right string) bool {
+	var leftValue, rightValue any
 	if json.Unmarshal([]byte(left), &leftValue) != nil || json.Unmarshal([]byte(right), &rightValue) != nil {
 		return left == right
 	}
@@ -254,12 +255,21 @@ func (s *SQLRunStore) FetchApprovedExecution(ctx context.Context, tenantID, appr
 	if s == nil || s.db == nil {
 		return ApprovedExecution{}, fmt.Errorf("AI approval store is not configured")
 	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ApprovedExecution{}, fmt.Errorf("begin approved AI execution claim: %w", err)
+	}
+	defer tx.Rollback()
 	var execution ApprovedExecution
+	var runDBID string
 	var versionText string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT e.id::text,
+	var runStatus, approvalStatus, executionStatus string
+	var expiresAt time.Time
+	err = tx.QueryRowContext(ctx, `
+		SELECT e.id::text, r.id::text,
 		       r.tenant_id, r.actor_user_id::text, r.external_thread_id, r.external_run_id,
-		       e.tool_name, e.tool_version, e.arguments_redacted::text
+		       e.tool_name, e.tool_version, e.arguments_redacted::text,
+		       a.status, e.status, r.status, a.expires_at
 		FROM public.ai_approvals a
 		JOIN public.ai_tool_executions e ON e.id = a.tool_execution_id
 		JOIN public.ai_runs r ON r.id = a.run_id
@@ -268,9 +278,10 @@ func (s *SQLRunStore) FetchApprovedExecution(ctx context.Context, tenantID, appr
 		  AND a.requester_user_id = $3::uuid
 		  AND e.status = 'WAITING_APPROVAL'
 		  AND r.status = 'WAITING_APPROVAL'
-		FOR UPDATE OF a, e
+		FOR UPDATE OF a, e, r
 	`, approvalID, tenantID, requesterUserID).Scan(
 		&execution.ExecutionID,
+		&runDBID,
 		&execution.Run.TenantID,
 		&execution.Run.ActorUserID,
 		&execution.Run.ExternalThread,
@@ -278,12 +289,62 @@ func (s *SQLRunStore) FetchApprovedExecution(ctx context.Context, tenantID, appr
 		&execution.ToolName,
 		&versionText,
 		&execution.Arguments,
+		&approvalStatus,
+		&executionStatus,
+		&runStatus,
+		&expiresAt,
 	)
 	if err == sql.ErrNoRows {
 		return ApprovedExecution{}, ErrApprovalNotFound
 	}
 	if err != nil {
 		return ApprovedExecution{}, fmt.Errorf("resolve approved AI execution: %w", err)
+	}
+	if !expiresAt.After(time.Now().UTC()) {
+		if _, updateErr := tx.ExecContext(ctx, `
+			UPDATE public.ai_approvals SET status = 'EXPIRED'
+			WHERE id = $1 AND status = 'APPROVED'`, approvalID); updateErr != nil {
+			return ApprovedExecution{}, fmt.Errorf("expire AI approval: %w", updateErr)
+		}
+		if _, updateErr := tx.ExecContext(ctx, `
+			UPDATE public.ai_tool_executions SET status = 'FAILED', error_code = 'ai.approval_expired', finished_at = now()
+			WHERE id = $1 AND status = 'WAITING_APPROVAL'`, execution.ExecutionID); updateErr != nil {
+			return ApprovedExecution{}, fmt.Errorf("finish expired AI approval tool: %w", updateErr)
+		}
+		if _, updateErr := tx.ExecContext(ctx, `
+			UPDATE public.ai_runs SET status = 'FAILED', finished_at = now()
+			WHERE id = $1 AND status = 'WAITING_APPROVAL'`, runDBID); updateErr != nil {
+			// The query above selected the database run id separately; a failed
+			// status update must not mask the expiry result. Roll back instead.
+			return ApprovedExecution{}, fmt.Errorf("finish expired AI approval run: %w", updateErr)
+		}
+		if err := tx.Commit(); err != nil {
+			return ApprovedExecution{}, fmt.Errorf("commit expired AI approval: %w", err)
+		}
+		return ApprovedExecution{}, ErrApprovalExpired
+	}
+	if approvalStatus != "APPROVED" || executionStatus != "WAITING_APPROVAL" || runStatus != "WAITING_APPROVAL" {
+		return ApprovedExecution{}, ErrApprovalNotFound
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE public.ai_approvals
+		SET status = 'CONSUMED', consumed_at = now()
+		WHERE id = $1 AND status = 'APPROVED' AND expires_at > now()
+	`, approvalID)
+	if err != nil {
+		return ApprovedExecution{}, fmt.Errorf("claim AI approval: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows != 1 {
+		return ApprovedExecution{}, ErrApprovalState
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE public.ai_tool_executions SET status = 'RUNNING'
+		WHERE id = $1 AND status = 'WAITING_APPROVAL'
+	`, execution.ExecutionID); err != nil {
+		return ApprovedExecution{}, fmt.Errorf("start approved AI execution: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return ApprovedExecution{}, fmt.Errorf("commit approved AI execution claim: %w", err)
 	}
 	version, parseErr := strconv.Atoi(versionText)
 	if parseErr != nil {
