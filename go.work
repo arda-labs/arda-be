@@ -4,6 +4,7 @@ use (
 	./apps/ai-service
 	./apps/auth-gateway
 	./apps/crm-service
+	./apps/deposit-service
 	./apps/finance-service
 	./apps/hrm-service
 	./apps/iam-service
