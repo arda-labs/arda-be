@@ -583,3 +583,51 @@ routes:
     risk: low
     permissions:
       - notification.manage
+
+  - id: deposit-read
+    path: /api/deposit/**
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - deposit.read
+
+  - id: deposit-write
+    path: /api/deposit/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - deposit.manage
+
+  - id: capital-read
+    path: /api/capital/**
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - capital.read
+
+  - id: capital-write
+    path: /api/capital/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - capital.manage
+
+  - id: statistical-read
+    path: /api/statistical/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - statistical.read
+
+  - id: statistical-write
+    path: /api/statistical/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+    permissions:
+      - statistical.manage

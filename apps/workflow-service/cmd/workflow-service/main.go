@@ -24,6 +24,7 @@ import (
 	transport "github.com/arda-labs/arda/apps/workflow-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/worker"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
+	depositclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/deposit"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	hrmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/hrm"
 	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
@@ -250,6 +251,17 @@ func main() {
 			logger.Info("workflow collection workers registered")
 		}
 
+		var depositSettler worker.DepositSettler
+		if cfg.DepositGRPCAddr != "" {
+			dc, err := depositclient.Dial(context.Background(), cfg.DepositGRPCAddr, cfg.AppName, logger)
+			if err != nil {
+				logger.Error("deposit grpc dial", "err", err)
+				os.Exit(1)
+			}
+			defer dc.Close()
+			depositSettler = dc
+		}
+
 		if hrmClient != nil {
 			hrmWorkers := worker.NewHRMRegisterWorkers(hrmClient, caseRepo)
 			hv, he, hc := hrmWorkers.Handlers()
@@ -260,6 +272,18 @@ func main() {
 			defer heE.Close()
 			defer hcc.Close()
 			logger.Info("workflow hrm registration workers registered")
+		}
+
+		if depositSettler != nil {
+			depWorkers := worker.NewDepositWorkers(depositSettler, caseRepo)
+			dv, de, dc := depWorkers.Handlers()
+			dvv := zeebeSvc.NewJobWorker("dpm.settle.validate", dv)
+			dee := zeebeSvc.NewJobWorker("dpm.settle.execute", de)
+			dcc := zeebeSvc.NewJobWorker("dpm.settle.cancel", dc)
+			defer dvv.Close()
+			defer dee.Close()
+			defer dcc.Close()
+			logger.Info("workflow deposit workers registered")
 		} else {
 			logger.Warn("disbursement workers skipped: finance grpc not configured")
 		}

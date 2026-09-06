@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package arda.deposit.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/deposit/v1;depositv1";
+
+// DepositCommandService is the callback surface workflow-service workers use
+// for the dpm-settle-v2 flow. Tenant scope arrives via gRPC metadata.
+service DepositCommandService {
+  rpc CheckSettle(CheckSettleRequest) returns (CheckSettleResponse);
+  rpc Settle(SettleRequest) returns (SettleResponse);
+}
+
+message CheckSettleRequest {
+  string savings_code = 1;
+}
+
+message CheckSettleResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message SettleRequest {
+  string savings_code = 1;
+  string actor = 2;
+}
+
+message SettleResponse {
+  bool ok = 1;
+}

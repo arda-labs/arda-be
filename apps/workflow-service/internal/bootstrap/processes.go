@@ -50,6 +50,9 @@ var lnmCollection []byte
 //go:embed hrm-employee-registration-v2.bpmn
 var hrmEmployeeRegistration []byte
 
+//go:embed dpm-settle-v2.bpmn
+var dpmSettle []byte
+
 type Process struct {
 	ProcessCode  string
 	Name         string
@@ -142,6 +145,12 @@ func BuiltInProcesses() []Process {
 			Name:         "Thu nợ (v2)",
 			ResourceName: "lnm-collection-v2.bpmn",
 			Content:      lnmCollection,
+		},
+		{
+			ProcessCode:  "DPM_SETTLE_V2",
+			Name:         "Tất toán sổ tiết kiệm (v2)",
+			ResourceName: "dpm-settle-v2.bpmn",
+			Content:      dpmSettle,
 		},
 		{
 			ProcessCode:  "HRM_EMPLOYEE_REGISTRATION",

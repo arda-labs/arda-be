@@ -226,3 +226,8 @@ func (s *SettlementService) ListProducts(ctx context.Context, tenantID string) (
 func (s *SettlementService) ListInterbank(ctx context.Context, tenantID string, orgCodes []string, status string) ([]repository.InterbankDeposit, error) {
 	return s.repo.ListInterbankDeposits(ctx, tenantID, orgCodes, status)
 }
+
+// GetSavingsByCode passthrough for the gRPC callback surface.
+func (s *SettlementService) GetSavingsByCode(ctx context.Context, tenantID, code string) (*repository.Savings, error) {
+	return s.repo.GetSavingsByCode(ctx, tenantID, code)
+}

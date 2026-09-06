@@ -20,6 +20,7 @@ type Config struct {
 	CRMGRPCAddr          string `yaml:"crm_grpc_addr"`
 	LoanGRPCAddr         string `yaml:"loan_grpc_addr"`
 	FinanceGRPCAddr      string `yaml:"finance_grpc_addr"`
+	DepositGRPCAddr      string `yaml:"deposit_grpc_addr"`
 	HRMGRPCAddr          string `yaml:"hrm_grpc_addr"`
 	IAMGRPCAddr          string `yaml:"iam_grpc_addr"`
 	NotificationGRPCAddr string `yaml:"notification_grpc_addr"`
@@ -36,6 +37,7 @@ func Load() Config {
 		CRMGRPCAddr:          "localhost:9094",
 		LoanGRPCAddr:         "localhost:9097",
 		FinanceGRPCAddr:      "localhost:9096",
+		DepositGRPCAddr:      "localhost:9100",
 		HRMGRPCAddr:          "localhost:8099",
 		NotificationGRPCAddr: "localhost:9095",
 	}
@@ -62,6 +64,7 @@ func Load() Config {
 	envStr("CRM_GRPC_ADDR", &cfg.CRMGRPCAddr)
 	envStr("LOAN_GRPC_ADDR", &cfg.LoanGRPCAddr)
 	envStr("FINANCE_GRPC_ADDR", &cfg.FinanceGRPCAddr)
+	envStr("DEPOSIT_GRPC_ADDR", &cfg.DepositGRPCAddr)
 	envStr("HRM_GRPC_ADDR", &cfg.HRMGRPCAddr)
 	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
 	envStr("NOTIFICATION_GRPC_ADDR", &cfg.NotificationGRPCAddr)

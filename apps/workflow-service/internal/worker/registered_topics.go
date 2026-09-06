@@ -24,6 +24,10 @@ var RegisteredJobTopics = []string{
 	"hrm.employee.register.validate",
 	"hrm.employee.register.execute",
 	"hrm.employee.register.cancel",
+	// Deposit settlement (dpm-settle-v2.bpmn)
+	"dpm.settle.validate",
+	"dpm.settle.execute",
+	"dpm.settle.cancel",
 	// Collection (lnm-collection-v2.bpmn)
 	"lnm.collection.validate",
 	"lnm.collection.execute",

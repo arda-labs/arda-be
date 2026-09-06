@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,9 +16,16 @@ import (
 	"github.com/arda-labs/arda/apps/deposit-service/internal/handler"
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
 	"github.com/arda-labs/arda/apps/deposit-service/internal/service"
+	grpcserver "github.com/arda-labs/arda/apps/deposit-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/deposit-service/internal/transport/http"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	depositv1 "github.com/arda-labs/arda/libs/go/arda-proto/deposit/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
@@ -47,6 +55,42 @@ func main() {
 	repo := repository.NewDepositRepository(db)
 	settlementSvc := service.NewSettlementService(repo, db, financeClient)
 	depositHandler := handler.NewDepositHandler(settlementSvc)
+
+	// ── gRPC server (DepositCommandService, port 9100) ──
+	serviceSecret, errSec := identity.SecretFromEnv()
+	if errSec != nil {
+		logger.Error("service identity is not configured", "err", errSec)
+		os.Exit(1)
+	}
+	transportCreds, errCreds := identity.ServerTransportCredentials()
+	if errCreds != nil {
+		logger.Error("grpc transport credentials", "err", errCreds)
+		os.Exit(1)
+	}
+	grpcSrv := grpc.NewServer(
+		grpc.Creds(transportCreds),
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerServiceAuth(serviceSecret, "deposit-service", map[string]struct{}{"workflow-service": {}}),
+			interceptors.UnaryServerLogging(logger),
+		),
+	)
+	depositv1.RegisterDepositCommandServiceServer(grpcSrv, grpcserver.NewDepositServer(settlementSvc))
+	healthSrv := health.NewServer()
+	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
+
+	go func() {
+		lis, err := net.Listen("tcp", cfg.GRPCAddr)
+		if err != nil {
+			logger.Error("grpc listen", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("grpc server started", "name", cfg.AppName, "addr", cfg.GRPCAddr)
+		if err := grpcSrv.Serve(lis); err != nil {
+			logger.Error("grpc server error", "err", err)
+		}
+	}()
+	defer grpcSrv.GracefulStop()
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
@@ -80,6 +124,7 @@ func main() {
 type config struct {
 	AppName         string
 	HTTPAddr        string
+	GRPCAddr        string
 	LogLevel        string
 	DatabaseDSN     string
 	FinanceGRPCAddr string
@@ -89,6 +134,7 @@ func loadConfig() config {
 	return config{
 		AppName:         "deposit-service",
 		HTTPAddr:        envOr("HTTP_ADDR", "0.0.0.0:8100"),
+		GRPCAddr:        envOr("GRPC_ADDR", "0.0.0.0:9100"),
 		LogLevel:        envOr("LOG_LEVEL", "info"),
 		DatabaseDSN:     envOr("DATABASE_DSN", ""),
 		FinanceGRPCAddr: envOr("FINANCE_GRPC_ADDR", "localhost:9096"),
