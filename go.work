@@ -3,6 +3,7 @@ go 1.27.1
 use (
 	./apps/ai-service
 	./apps/auth-gateway
+	./apps/capital-service
 	./apps/crm-service
 	./apps/deposit-service
 	./apps/finance-service
