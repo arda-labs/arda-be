@@ -72,10 +72,12 @@ func main() {
 	loanSvc := service.NewLoanService(repo, workflow)
 	adjSvc := service.NewAdjustmentService(repo, workflow)
 	loanHandler := handler.NewLoanHandler(loanSvc, adjSvc)
+	disbSvc := service.NewDisbursementService(repo, workflow)
+	disbHandler := handler.NewDisbursementHandler(disbSvc)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, loangrpc.Kinds)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, disbHandler, loangrpc.Kinds)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

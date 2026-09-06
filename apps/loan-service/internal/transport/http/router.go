@@ -10,7 +10,7 @@ import (
 
 // NewRouter wires the loan-service HTTP surface. Adjustment routes are
 // generated from the shared kind list so adding a flow never touches here.
-func NewRouter(h *handler.LoanHandler, kinds []string) http.Handler {
+func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, kinds []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -29,6 +29,19 @@ func NewRouter(h *handler.LoanHandler, kinds []string) http.Handler {
 	})
 	mux.HandleFunc("/api/loan/contracts/{id}", method("GET", h.GetContract))
 	mux.HandleFunc("/api/loan/contracts/{id}/submit", method("POST", h.SubmitContract))
+
+	// Disbursements (P1b drawdown flow, LNM.300.02)
+	mux.HandleFunc("/api/loan/disbursements", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			d.ListDisbursements(w, r)
+		case http.MethodPost:
+			d.CreateDisbursement(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/loan/disbursements/{id}/submit", method("POST", d.SubmitDisbursement))
 
 	// Agreements (disbursements)
 	mux.HandleFunc("/api/loan/agreements", func(w http.ResponseWriter, r *http.Request) {

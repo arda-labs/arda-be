@@ -987,3 +987,123 @@ func (r *LoanRepository) CreateVfuPlan(ctx context.Context, p *domain.VfuPlan) (
 	return out, nil
 }
 
+
+// ── Disbursements (P1b) ──
+
+func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID, status, contractCode string) ([]domain.Disbursement, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
+		       currency_code, COALESCE(fund_source_code,''), status, payload,
+		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at
+		FROM lnm_disbursements
+		WHERE tenant_id = $1
+		  AND ($2 = '' OR status = $2)
+		  AND ($3 = '' OR contract_code = $3)
+		ORDER BY created_at DESC LIMIT 200`, tenantID, status, contractCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Disbursement{}
+	for rows.Next() {
+		var d domain.Disbursement
+		var caseID, entryID sql.NullString
+		if err := rows.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
+			&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.Status, &d.Payload,
+			&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if caseID.Valid {
+			d.WorkflowCaseID = &caseID.String
+		}
+		if entryID.Valid {
+			d.JournalEntryID = &entryID.String
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (r *LoanRepository) CreateDisbursement(ctx context.Context, d *domain.Disbursement) (*domain.Disbursement, error) {
+	row := r.db.QueryRowContext(ctx, `
+		INSERT INTO lnm_disbursements
+			(tenant_id, contract_code, agreement_code, disburse_date, disburse_amt_minor,
+			 currency_code, fund_source_code, status, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8)
+		RETURNING id, created_at, updated_at`,
+		d.TenantID, d.ContractCode, d.AgreementCode, d.DisburseDate, d.DisburseAmtMinor,
+		d.CurrencyCode, nullText(d.FundSourceCode), d.CreatedBy)
+	if err := row.Scan(&d.ID, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id string) (*domain.Disbursement, error) {
+	var d domain.Disbursement
+	var caseID, entryID sql.NullString
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
+		       currency_code, COALESCE(fund_source_code,''), status, payload,
+		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at
+		FROM lnm_disbursements WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	err := row.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
+		&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.Status, &d.Payload,
+		&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, err
+	}
+	if err != nil {
+		return nil, err
+	}
+	if caseID.Valid {
+		d.WorkflowCaseID = &caseID.String
+	}
+	if entryID.Valid {
+		d.JournalEntryID = &entryID.String
+	}
+	return &d, nil
+}
+
+func (r *LoanRepository) SetDisbursementStatus(ctx context.Context, tenantID, id, status, updatedBy string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE lnm_disbursements SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status, updatedBy)
+	return err
+}
+
+func (r *LoanRepository) SetDisbursementCaseAndJournal(ctx context.Context, tenantID, id, caseID, journalEntryID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE lnm_disbursements SET workflow_case_id = $3, journal_entry_id = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullText(caseID), nullText(journalEntryID))
+	return err
+}
+
+// SettleDisbursement applies the posting side effect: outstanding principal
+// up on the agreement, first drawdown statuses the contract ACTIVE.
+func (r *LoanRepository) SettleDisbursement(ctx context.Context, tenantID, agreementCode string, amountMinor int64) error {
+	if _, err := r.db.ExecContext(ctx, `
+		UPDATE lnm_agreements
+		SET outstanding_amt_minor = outstanding_amt_minor + $3,
+		    status = CASE WHEN status = 'PENDING' THEN 'ACTIVE' ELSE status END,
+		    updated_at = now()
+		WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode, amountMinor); err != nil {
+		return err
+	}
+	if _, err := r.db.ExecContext(ctx, `
+		UPDATE lnm_contracts c SET status = 'ACTIVE', updated_at = now()
+		WHERE c.tenant_id = $1
+		  AND c.status IN ('DRAFT', 'PENDING')
+		  AND EXISTS (SELECT 1 FROM lnm_agreements a WHERE a.tenant_id = $1 AND a.contract_code = c.contract_code AND a.agreement_code = $2)`,
+		tenantID, agreementCode); err != nil {
+		return err
+	}
+	return nil
+}
+
+func nullText(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
