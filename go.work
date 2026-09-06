@@ -14,6 +14,7 @@ use (
 	./apps/media-service
 	./apps/notification-service
 	./apps/platform-service
+	./apps/statistical-service
 	./apps/workflow-service
 	./libs/go/arda-auth
 	./libs/go/arda-crypto
