@@ -122,6 +122,7 @@ type WorkItemFilter struct {
 	SLAStatus         string
 	TransactionStatus string
 	Node              string
+	Domain            string
 	UserID            string
 	CreatedBy         string
 	AssignedTo        string
@@ -461,6 +462,9 @@ func (r *CaseRepository) queryWorkItems(
 		args = append(args, f.Node, f.Node)
 		n := len(args)
 		where = append(where, fmt.Sprintf("(wt.step_code = $%d OR bc.current_step = $%d)", n-1, n))
+	}
+	if f.Domain != "" && f.Domain != "ALL" {
+		add("bc.case_type LIKE $%d", f.Domain+"%")
 	}
 	if f.SLAStatus != "" && f.SLAStatus != "ALL" {
 		switch f.SLAStatus {
