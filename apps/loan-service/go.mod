@@ -5,6 +5,7 @@ go 1.26.3
 require (
 	github.com/lib/pq v1.12.3
 	github.com/pressly/goose/v3 v3.27.1
+	github.com/shopspring/decimal v1.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -12,6 +13,7 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-money v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
 	google.golang.org/grpc v1.81.1
@@ -42,5 +44,7 @@ replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
 
 replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
+
+replace github.com/arda-labs/arda/libs/go/arda-money => ../../libs/go/arda-money
 
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres

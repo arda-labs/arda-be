@@ -78,6 +78,7 @@ type Agreement struct {
 	ColnPrincipalAmt     float64   `json:"coln_principal_amt"`
 	ColnInterestAmt      float64   `json:"coln_interest_amt"`
 	ProvisionAmt         float64   `json:"provision_amt"`
+	CurrencyCode         string    `json:"currency_code"`
 	AccClassification    string    `json:"acc_classification"`
 	Status               string    `json:"status"`
 	CreatedBy            string    `json:"created_by"`

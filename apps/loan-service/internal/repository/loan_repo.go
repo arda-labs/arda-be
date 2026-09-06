@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
+	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
+	"github.com/shopspring/decimal"
 )
 
 // Sentinel errors mapped to HTTP statuses by the service layer.
@@ -137,14 +139,14 @@ func (r *LoanRepository) SetContractWorkflowCase(ctx context.Context, tenantID, 
 const agreementColumns = `id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt,
 	interest_rate, over_interest_rate, loan_term, term_unit, maturity_date::text, debt_group_code,
 	interest_payment_freq, principal_payment_freq, outstanding_amt, coln_principal_amt, coln_interest_amt,
-	provision_amt, acc_classification, status, created_by, created_at, updated_at`
+	provision_amt, currency_code, acc_classification, status, created_by, created_at, updated_at`
 
 func scanAgreement(s interface{ Scan(...any) error }) (domain.Agreement, error) {
 	var a domain.Agreement
 	err := s.Scan(&a.ID, &a.TenantID, &a.ContractCode, &a.AgreementCode, &a.DisburseDate, &a.DisburseAmt,
 		&a.InterestRate, &a.OverInterestRate, &a.LoanTerm, &a.TermUnit, &a.MaturityDate, &a.DebtGroupCode,
 		&a.InterestPaymentFreq, &a.PrincipalPaymentFreq, &a.OutstandingAmt, &a.ColnPrincipalAmt, &a.ColnInterestAmt,
-		&a.ProvisionAmt, &a.AccClassification, &a.Status, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt)
+		&a.ProvisionAmt, &a.CurrencyCode, &a.AccClassification, &a.Status, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt)
 	return a, err
 }
 
@@ -188,16 +190,19 @@ func (r *LoanRepository) CreateAgreement(ctx context.Context, a *domain.Agreemen
 	if a.DebtGroupCode == "" {
 		a.DebtGroupCode = "GROUP_1"
 	}
+	if a.CurrencyCode == "" {
+		a.CurrencyCode = "VND"
+	}
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO lnm_agreements (id, tenant_id, contract_code, agreement_code, disburse_date, disburse_amt,
 			interest_rate, over_interest_rate, loan_term, term_unit, maturity_date, debt_group_code,
-			interest_payment_freq, principal_payment_freq, outstanding_amt, acc_classification, created_by)
-		VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11::date,$12,$13,$14,$15,$16,$17)
+			interest_payment_freq, principal_payment_freq, outstanding_amt, currency_code, acc_classification, created_by)
+		VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11::date,$12,$13,$14,$15,$16,$17,$18)
 		ON CONFLICT (tenant_id, agreement_code) DO NOTHING
 		RETURNING `+agreementColumns,
 		a.ID, a.TenantID, a.ContractCode, a.AgreementCode, a.DisburseDate, a.DisburseAmt,
 		a.InterestRate, a.OverInterestRate, a.LoanTerm, a.TermUnit, a.MaturityDate, a.DebtGroupCode,
-		a.InterestPaymentFreq, a.PrincipalPaymentFreq, a.OutstandingAmt, a.AccClassification, a.CreatedBy)
+		a.InterestPaymentFreq, a.PrincipalPaymentFreq, a.OutstandingAmt, a.CurrencyCode, a.AccClassification, a.CreatedBy)
 	out, err := scanAgreement(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w", ErrConflict)
@@ -742,9 +747,14 @@ func (r *LoanRepository) RegeneratePlans(ctx context.Context, tenantID, agreemen
 	if err != nil {
 		return err
 	}
-	outstanding := agreement.OutstandingAmt
-	rate := agreement.InterestRate
-	perTerm := outstanding / float64(termCount)
+	// Money math goes through arda-money (decimal + currency rounding), never float64.
+	currency := agreement.CurrencyCode
+	if currency == "" {
+		currency = "VND"
+	}
+	outstanding := decimal.NewFromFloat(agreement.OutstandingAmt)
+	rate := decimal.NewFromFloat(agreement.InterestRate)
+	shares := ardamoney.AllocateEven(outstanding, termCount, currency)
 
 	start, err := time.Parse("2006-01-02", startDate)
 	if err != nil {
@@ -753,10 +763,7 @@ func (r *LoanRepository) RegeneratePlans(ctx context.Context, tenantID, agreemen
 	plans := make([]domain.RepayPlan, 0, termCount)
 	remaining := outstanding
 	for i := 1; i <= termCount; i++ {
-		principal := perTerm
-		if i == termCount {
-			principal = remaining
-		}
+		principal := shares[i-1]
 		from := start.AddDate(0, i-1, 0)
 		to := start.AddDate(0, i, 0)
 		plans = append(plans, domain.RepayPlan{
@@ -766,11 +773,11 @@ func (r *LoanRepository) RegeneratePlans(ctx context.Context, tenantID, agreemen
 			TermNo:           i,
 			FromDate:         from.Format("2006-01-02"),
 			ToDate:           to.Format("2006-01-02"),
-			InterestRate:     rate,
-			PlanPrincipalAmt: principal,
-			PlanInterestAmt:  remaining * rate / 100 / 12,
+			InterestRate:     agreement.InterestRate,
+			PlanPrincipalAmt: principal.InexactFloat64(),
+			PlanInterestAmt:  ardamoney.MonthlyInterest(remaining, rate, currency).InexactFloat64(),
 		})
-		remaining -= principal
+		remaining = remaining.Sub(principal)
 	}
 	return r.ReplaceRepayPlans(ctx, tenantID, agreementCode, plans)
 }
