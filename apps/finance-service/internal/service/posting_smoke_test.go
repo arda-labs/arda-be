@@ -21,7 +21,7 @@ import (
 //
 //	local: docker run -d --name arda-finance-smoke -e POSTGRES_PASSWORD=smoke \
 //	         -p 55432:5432 postgres:16-alpine
-//	       FINANCE_SMOKE_DSN=postgres://postgres:smoke@localhost:55432/postgres \
+//	   FINANCE_SMOKE_DSN=<dsn-from-secret> \
 //	         go test ./internal/service -run TestPostingSmoke -v
 func TestPostingSmoke(t *testing.T) {
 	dsn := os.Getenv("FINANCE_SMOKE_DSN")
