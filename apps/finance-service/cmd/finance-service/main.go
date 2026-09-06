@@ -10,16 +10,27 @@ import (
 	"syscall"
 	"time"
 
+	"net"
+
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/config"
 	"github.com/arda-labs/arda/apps/finance-service/internal/handler"
 	"github.com/arda-labs/arda/apps/finance-service/internal/migration"
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 	"github.com/arda-labs/arda/apps/finance-service/internal/service"
+	grpcserver "github.com/arda-labs/arda/apps/finance-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/finance-service/internal/transport/http"
+	"github.com/nats-io/nats.go"
+
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
+	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 )
 
 func main() {
@@ -59,15 +70,64 @@ func main() {
 	trialBalanceSvc := service.NewTrialBalanceService(db)
 	accountingConfigSvc := service.NewAccountingConfigService(configRepo)
 	coaSvc := service.NewCoaService(coaRepo)
+	postingRepo := repository.NewPostingRepository(db)
+	postingSvc := service.NewPostingService(postingRepo, db)
 
 	// ── Handlers ──
 	financeHandler := handler.NewFinanceHandler(accountSvc, trialBalanceSvc, accountingConfigSvc)
 	coaHandler := handler.NewCoaHandler(coaSvc)
+	postingHandler := handler.NewPostingHandler(postingSvc)
+
+	// ── gRPC server (PostingService, port 9096) ──
+	serviceSecret, err := identity.SecretFromEnv()
+	if err != nil {
+		logger.Error("service identity is not configured", "err", err)
+		os.Exit(1)
+	}
+	transportCreds, err := identity.ServerTransportCredentials()
+	if err != nil {
+		logger.Error("grpc transport credentials", "err", err)
+		os.Exit(1)
+	}
+	grpcSrv := grpc.NewServer(
+		grpc.Creds(transportCreds),
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerServiceAuth(serviceSecret, "finance-service", map[string]struct{}{"workflow-service": {}}),
+			interceptors.UnaryServerLogging(logger),
+		),
+	)
+	financev1.RegisterPostingServiceServer(grpcSrv, grpcserver.NewPostingServer(postingSvc))
+	healthSrv := health.NewServer()
+	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
+
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+	if conn, err := nats.Connect(cfg.NATSURL); err != nil {
+		logger.Warn("outbox relay disabled: nats unavailable", "err", err)
+	} else {
+		defer conn.Close()
+		relay := service.NewOutboxRelay(db, conn, logger)
+		go relay.Run(appCtx)
+	}
+
+	go func() {
+		lis, err := net.Listen("tcp", cfg.GRPCAddr)
+		if err != nil {
+			logger.Error("grpc listen", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("grpc server started", "name", cfg.AppName, "addr", cfg.GRPCAddr)
+		if err := grpcSrv.Serve(lis); err != nil {
+			logger.Error("grpc server error", "err", err)
+		}
+	}()
+	defer grpcSrv.GracefulStop()
 
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, coaHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, coaHandler, postingHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

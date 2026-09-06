@@ -13,7 +13,7 @@ import (
 // NewRouter wires HTTP routes for the finance service. Posting endpoints do
 // NOT live here — the gRPC PostingService owns them (contract v0.2 §1);
 // HTTP is read/config surface for the finance remote.
-func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHandler) http.Handler {
+func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHandler, postingHandler *handler.PostingHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Health
@@ -51,6 +51,20 @@ func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHa
 
 	// Trial balance (journal-aggregated)
 	mux.HandleFunc("/api/finance/trial-balance", method("GET", financeHandler.TrialBalance))
+
+	// ── Posting stack (journal read + preview + opening balances) ──
+	mux.HandleFunc("/api/finance/journal-entries", method("GET", postingHandler.ListJournalEntries))
+	mux.HandleFunc("/api/finance/posting/validate", method("POST", postingHandler.ValidatePosting))
+	mux.HandleFunc("/api/finance/opening-balances", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			postingHandler.ListOpeningBalances(w, r)
+		case http.MethodPost:
+			postingHandler.UpsertOpeningBalance(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
 
 	// Accounting configuration
 	mux.HandleFunc("/api/finance/accounting/process-configs", method("GET", financeHandler.ListProcessConfigs))

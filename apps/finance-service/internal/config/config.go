@@ -11,6 +11,7 @@ import (
 type Config struct {
 	AppName  string `yaml:"app_name"`
 	HTTPAddr string `yaml:"http_addr"`
+	GRPCAddr string `yaml:"grpc_addr"`
 	LogLevel string `yaml:"log_level"`
 
 	DatabaseDSN      string `yaml:"database_dsn"`
@@ -25,6 +26,7 @@ func Load() Config {
 	cfg := Config{
 		AppName:  "finance-service",
 		HTTPAddr: "0.0.0.0:8090",
+		GRPCAddr: "0.0.0.0:9096",
 		LogLevel: "info",
 
 		DatabaseDSN:      "",
@@ -46,6 +48,7 @@ func Load() Config {
 
 	envStr("APP_NAME", &cfg.AppName)
 	envStr("HTTP_ADDR", &cfg.HTTPAddr)
+	envStr("GRPC_ADDR", &cfg.GRPCAddr)
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("PLATFORM_GRPC_ADDR", &cfg.PlatformGRPCAddr)
@@ -72,6 +75,7 @@ func (c *Config) loadYAML(path string) bool {
 	}
 	setStr("app_name", &c.AppName)
 	setStr("http_addr", &c.HTTPAddr)
+	setStr("grpc_addr", &c.GRPCAddr)
 	setStr("log_level", &c.LogLevel)
 	setStr("database_dsn", &c.DatabaseDSN)
 	setStr("platform_grpc_addr", &c.PlatformGRPCAddr)

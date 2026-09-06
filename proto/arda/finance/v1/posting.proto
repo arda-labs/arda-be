@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package arda.finance.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1;financev1";
+
+// PostingService is the single journal-entry gate for all Arda domains
+// (docs/accounting-posting-contract.md v0.2). Only workflow-service workers
+// (and finance itself for internal flows like opening balances) call it.
+// Money crosses as int64 minor units; accounts are resolved from analytics
+// via fin_acc_class_coa_maps at the accounting_date's COA version.
+service PostingService {
+  // Validate resolves accounts and reports per-line results without writing.
+  rpc ValidatePosting(PostingRequest) returns (ValidationResult);
+  // PostTransaction writes one balanced journal entry. Idempotent by
+  // (tenant_id, idempotency_key); replays return the original response.
+  rpc PostTransaction(PostingRequest) returns (PostingResponse);
+  // ReverseTransaction creates a reversal entry; the original is immutable.
+  rpc ReverseTransaction(ReverseRequest) returns (PostingResponse);
+}
+
+message BusinessReference {
+  string domain = 1;           // lnm | dpm | ibm | cfc | vcm | cob | fin
+  string document_type = 2;    // LNM_DISBURSEMENT | LNM_COLLECTION | ...
+  string document_id = 3;      // UUID of the domain document
+  string document_code = 4;    // business voucher number
+  string case_id = 5;          // workflow business case (when approval-driven)
+}
+
+message Analytics {
+  string acc_classification = 1;
+  string debt_group_code = 2;
+  string org_unit_code = 3;
+  string fund_source_code = 4;
+  string customer_code = 5;
+  string contract_code = 6;
+  map<string, string> dimensions = 7; // registry-validated extras (§8.2)
+}
+
+message PostingLine {
+  int32 line_no = 1;
+  string direction = 2;        // DEBIT | CREDIT
+  int64 amount_minor = 3;      // int64 minor units, > 0
+  string currency_code = 4;
+  Analytics analytics = 5;
+  string counterparty_code = 6;
+  string counterparty_name = 7;
+  string description = 8;
+}
+
+message PostingRequest {
+  string idempotency_key = 1;
+  BusinessReference business_reference = 2;
+  string accounting_date = 3;  // "YYYY-MM-DD" business date
+  string currency_code = 4;
+  string description = 5;
+  repeated PostingLine lines = 6;
+  map<string, string> metadata = 7;
+}
+
+message PostingResponse {
+  string journal_entry_id = 1;
+  int64 entry_no = 2;
+  int32 version = 3;
+  string posted_at = 4;
+  bool replayed = 5;           // idempotent replay of an existing entry
+}
+
+message ValidationLine {
+  int32 line_no = 1;
+  bool resolved = 2;
+  string account_code = 3;     // resolved COA account (empty when unresolved)
+  string account_name = 4;
+  string coa_version = 5;      // COA version the account resolved under
+  string direction = 6;
+  int64 amount_minor = 7;
+  string currency_code = 8;
+  Analytics resolved_analytics = 9;
+  repeated string errors = 10;
+  string description = 11;
+}
+
+message ValidationResult {
+  bool valid = 1;              // every line resolved AND entry balanced
+  repeated ValidationLine lines = 2;
+  repeated string global_errors = 3; // UNBALANCED, PERIOD_CLOSED, ...
+  string coa_version_id = 4;   // COA version applied for accounting_date
+}
+
+message ReverseRequest {
+  string tenant_id = 1;        // resolved from metadata in-process
+  string journal_entry_id = 2; // or business_reference lookup
+  string business_domain = 3;
+  string business_document_type = 4;
+  string business_document_id = 5;
+  string reason = 6;
+  string accounting_date = 7;  // reversal business date
+  string idempotency_key = 8;
+  string actor = 9;
+}
