@@ -69,6 +69,7 @@ jobs:
               { service: "notification-service", image: "notification-service", file: "apps/notification-service/Dockerfile", paths: ["apps/notification-service/"] },
               { service: "hrm-service", image: "hrm-service", file: "apps/hrm-service/Dockerfile", paths: ["apps/hrm-service/"] },
               { service: "mdm-service", image: "mdm-service", file: "apps/mdm-service/Dockerfile", paths: ["apps/mdm-service/"] },
+              { service: "loan-service", image: "loan-service", file: "apps/loan-service/Dockerfile", paths: ["apps/loan-service/"] },
             ];
             const sharedPrefixes = ["libs/go/"];
             const sharedFiles = ["go.work"];

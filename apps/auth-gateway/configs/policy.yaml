@@ -447,6 +447,22 @@ routes:
     permissions:
       - finance.manage
 
+  - id: loan-read
+    path: /api/loan/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - loan.read
+
+  - id: loan-write
+    path: /api/loan/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+    permissions:
+      - loan.manage
+
   - id: workflow-read
     path: /api/workflow/**
     methods: [GET]

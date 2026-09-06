@@ -12,7 +12,7 @@ import (
 )
 
 // NewRouter wires HTTP routes for the finance service.
-func NewRouter(financeHandler *handler.FinanceHandler, approvalHandler *handler.ApprovalHandler) http.Handler {
+func NewRouter(financeHandler *handler.FinanceHandler, approvalHandler *handler.ApprovalHandler, coaHandler *handler.CoaHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Health
@@ -97,6 +97,49 @@ func NewRouter(financeHandler *handler.FinanceHandler, approvalHandler *handler.
 	mux.HandleFunc("/api/finance/accounting/journal-definitions", method("GET", financeHandler.ListJournalDefinitions))
 	mux.HandleFunc("/api/finance/accounting/regulatory-accounts", method("GET", financeHandler.ListRegulatoryAccounts))
 	mux.HandleFunc("/api/finance/accounting/internal-accounts", method("GET", financeHandler.ListInternalAccounts))
+
+	// ── COA v2 definition layer (versions / chart / class maps / structures) ──
+	mux.HandleFunc("/api/finance/coa/versions", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			coaHandler.ListVersions(w, r)
+		case http.MethodPost, http.MethodPut:
+			coaHandler.UpsertVersion(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/finance/coa/accounts", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			coaHandler.ListAccounts(w, r)
+		case http.MethodPost, http.MethodPut:
+			coaHandler.UpsertAccount(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/finance/coa/class-maps", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			coaHandler.ListClassMaps(w, r)
+		case http.MethodPost, http.MethodPut:
+			coaHandler.UpsertClassMap(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/finance/coa/resolve", method("GET", coaHandler.ResolveClassification))
+	mux.HandleFunc("/api/finance/coa/structures", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			coaHandler.ListStructures(w, r)
+		case http.MethodPost, http.MethodPut:
+			coaHandler.UpsertStructure(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
 
 	// ── Approvals ──
 	mux.HandleFunc("/api/finance/approvals", func(w http.ResponseWriter, r *http.Request) {

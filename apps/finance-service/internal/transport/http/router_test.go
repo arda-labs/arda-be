@@ -8,5 +8,5 @@ import (
 
 func TestNewRouterRegistersFinanceRoutes(t *testing.T) {
 	t.Helper()
-	NewRouter(handler.NewFinanceHandler(nil, nil, nil), handler.NewApprovalHandler(nil))
+	NewRouter(handler.NewFinanceHandler(nil, nil, nil), handler.NewApprovalHandler(nil), handler.NewCoaHandler(nil))
 }

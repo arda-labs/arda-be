@@ -54,6 +54,7 @@ func main() {
 	accountRepo := repository.NewAccountRepository(db)
 	txnRepo := repository.NewTransactionRepository(db)
 	configRepo := repository.NewConfigRepository(db)
+	coaRepo := repository.NewCoaRepository(db)
 	approvalRepo := repository.NewApprovalRepository(db)
 
 	// ── Services ──
@@ -73,15 +74,17 @@ func main() {
 	approvalSvc := service.NewApprovalService(approvalRepo, txnRepo, nil)
 	operationSvc := service.NewFinanceOperationService(accountRepo, txnRepo, configRepo)
 	accountingConfigSvc := service.NewAccountingConfigService(configRepo)
+	coaSvc := service.NewCoaService(coaRepo)
 
 	// ── Handlers ──
 	financeHandler := handler.NewFinanceHandler(ledgerSvc, operationSvc, accountingConfigSvc)
 	approvalHandler := handler.NewApprovalHandler(approvalSvc)
+	coaHandler := handler.NewCoaHandler(coaSvc)
 
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, approvalHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, approvalHandler, coaHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
