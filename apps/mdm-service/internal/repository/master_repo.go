@@ -54,13 +54,14 @@ func scanCatalogItem(scanner interface{ Scan(...any) error }) (domain.CatalogIte
 	return item, nil
 }
 
-func (r *CatalogRepository) List(ctx context.Context, table, tenantID string, includeInactive bool) ([]domain.CatalogItem, error) {
+func (r *CatalogRepository) List(ctx context.Context, table, tenantID, q string, includeInactive bool) ([]domain.CatalogItem, error) {
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT %s
 		FROM %s
 		WHERE (tenant_id IS NULL OR tenant_id = $1)
 		  AND ($2 OR is_active)
-		ORDER BY code`, catalogColumns, table), tenantID, includeInactive)
+		  AND ($3 = '' OR code ILIKE '%%' || $3 || '%%' OR name ILIKE '%%' || $3 || '%%')
+		ORDER BY code`, catalogColumns, table), tenantID, includeInactive, q)
 	if err != nil {
 		return nil, err
 	}

@@ -25,13 +25,14 @@ func scanRate(scanner interface{ Scan(...any) error }) (domain.InterestRate, err
 	return item, err
 }
 
-func (r *InterestRateRepository) List(ctx context.Context, tenantID string, includeInactive bool) ([]domain.InterestRate, error) {
+func (r *InterestRateRepository) List(ctx context.Context, tenantID, q string, includeInactive bool) ([]domain.InterestRate, error) {
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT %s
 		FROM mdm_interest_rates
 		WHERE (tenant_id IS NULL OR tenant_id = $1)
 		  AND ($2 OR is_active)
-		ORDER BY code`, rateColumns), tenantID, includeInactive)
+		  AND ($3 = '' OR code ILIKE '%%' || $3 || '%%' OR name ILIKE '%%' || $3 || '%%')
+		ORDER BY code`, rateColumns), tenantID, includeInactive, q)
 	if err != nil {
 		return nil, err
 	}

@@ -72,13 +72,45 @@ func NewLoanHandler(svc *service.LoanService, adj *service.AdjustmentService) *L
 	return &LoanHandler{svc: svc, adj: adj}
 }
 
+// loanListSpec is the shared list contract for loan list endpoints:
+// sort whitelist and allow-all (client tables page/filter locally).
+var loanListSpec = ardahttp.ListSpec{
+	DefaultPerPage: 20,
+	MaxPerPage:     ardahttp.MaxPerPage,
+	SortFields:     []string{"code", "name", "amount", "created_at"},
+	AllowAll:       true,
+}
+
+// listEnvelope paginates the fetched slice per the parsed list request and
+// writes the canonical ListResponse envelope.
+func listEnvelope[T any](w http.ResponseWriter, r *http.Request, items []T, listReq ardahttp.ListRequest) {
+	paged, page, perPage, total := ardahttp.PageSlice(items, listReq.ListQuery)
+	perPageOut := perPage
+	if listReq.All {
+		perPageOut = len(items)
+		if perPageOut == 0 {
+			perPageOut = total
+		}
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPageOut, total, paged))
+}
+
 func (h *LoanHandler) ListContracts(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	items, err := h.svc.ListContracts(r.Context(), tenantID, r.URL.Query().Get("status"), r.URL.Query().Get("q"))
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *LoanHandler) GetContract(w http.ResponseWriter, r *http.Request) {
@@ -117,8 +149,17 @@ func (h *LoanHandler) ListAgreements(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	items, err := h.svc.ListAgreements(r.Context(), tenantID, r.URL.Query().Get("contract_code"))
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *LoanHandler) CreateAgreement(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +182,12 @@ func (h *LoanHandler) ListRepayPlans(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	items, err := h.svc.ListRepayPlans(r.Context(), tenantID, q.Get("contract_code"), q.Get("agreement_code"))
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	// Schedule rows are small and always consumed whole — unpaged envelope.
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
 }
 
 func (h *LoanHandler) ListMortgages(w http.ResponseWriter, r *http.Request) {
@@ -149,8 +195,17 @@ func (h *LoanHandler) ListMortgages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	items, err := h.svc.ListMortgages(r.Context(), tenantID, r.URL.Query().Get("q"))
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *LoanHandler) CreateMortgage(w http.ResponseWriter, r *http.Request) {
@@ -171,9 +226,18 @@ func (h *LoanHandler) ListCollaterals(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	q := r.URL.Query()
 	items, err := h.svc.ListCollaterals(r.Context(), tenantID, q.Get("mortgage_code"), q.Get("q"))
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *LoanHandler) CreateCollateral(w http.ResponseWriter, r *http.Request) {
@@ -194,8 +258,17 @@ func (h *LoanHandler) ListContractCollaterals(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	items, err := h.svc.ListContractCollaterals(r.Context(), tenantID, r.URL.Query().Get("contract_code"))
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *LoanHandler) AttachContractCollateral(w http.ResponseWriter, r *http.Request) {
@@ -218,9 +291,18 @@ func (h *LoanHandler) ListAdjustments(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	q := r.URL.Query()
 	items, err := h.adj.List(r.Context(), r.PathValue("kind"), tenantID, q.Get("contract_code"), q.Get("status"))
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *LoanHandler) GetAdjustment(w http.ResponseWriter, r *http.Request) {
@@ -261,9 +343,18 @@ func (h *LoanHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	includeInactive := r.URL.Query().Get("include_inactive") == "true"
 	items, err := h.svc.ListProducts(r.Context(), tenantID, includeInactive)
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *LoanHandler) UpsertProduct(w http.ResponseWriter, r *http.Request) {
@@ -286,8 +377,17 @@ func (h *LoanHandler) ListVfuParties(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	items, err := h.svc.ListVfuParties(r.Context(), tenantID, r.URL.Query().Get("q"))
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *LoanHandler) CreateVfuParty(w http.ResponseWriter, r *http.Request) {
@@ -308,8 +408,17 @@ func (h *LoanHandler) ListVfuMandates(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	items, err := h.svc.ListVfuMandates(r.Context(), tenantID, r.URL.Query().Get("q"))
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *LoanHandler) CreateVfuMandate(w http.ResponseWriter, r *http.Request) {
@@ -330,8 +439,17 @@ func (h *LoanHandler) ListVfuPlans(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	items, err := h.svc.ListVfuPlans(r.Context(), tenantID, r.URL.Query().Get("mandate_code"))
-	writeResult(w, r, items, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *LoanHandler) CreateVfuPlan(w http.ResponseWriter, r *http.Request) {

@@ -7,6 +7,7 @@ import (
 	"github.com/arda-labs/arda/apps/mdm-service/internal/domain"
 	"github.com/arda-labs/arda/apps/mdm-service/internal/service"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 type InterestRateHandler struct {
@@ -22,9 +23,18 @@ func (h *InterestRateHandler) List(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), mdmListSpec)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
+		return
+	}
 	includeInactive := r.URL.Query().Get("include_inactive") == "true"
-	items, err := h.svc.List(r.Context(), tenantID, includeInactive)
-	writeResult(w, r, items, err)
+	items, err := h.svc.List(r.Context(), tenantID, listReq.Q, includeInactive)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	listEnvelope(w, r, items, listReq)
 }
 
 func (h *InterestRateHandler) Get(w http.ResponseWriter, r *http.Request) {

@@ -205,12 +205,12 @@ func NewMasterService(repo *repository.CatalogRepository) *MasterService {
 	return &MasterService{repo: repo}
 }
 
-func (s *MasterService) List(ctx context.Context, catalog, tenantID string, includeInactive bool) ([]domain.CatalogItem, error) {
+func (s *MasterService) List(ctx context.Context, catalog, tenantID, q string, includeInactive bool) ([]domain.CatalogItem, error) {
 	def, err := resolveCatalog(catalog)
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.List(ctx, def.Table, tenantID, includeInactive)
+	return s.repo.List(ctx, def.Table, tenantID, q, includeInactive)
 }
 
 func (s *MasterService) Get(ctx context.Context, catalog, tenantID, id string) (domain.CatalogItem, error) {

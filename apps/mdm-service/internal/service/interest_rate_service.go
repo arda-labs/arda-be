@@ -23,8 +23,8 @@ func NewInterestRateService(repo *repository.InterestRateRepository) *InterestRa
 	return &InterestRateService{repo: repo}
 }
 
-func (s *InterestRateService) List(ctx context.Context, tenantID string, includeInactive bool) ([]domain.InterestRate, error) {
-	return s.repo.List(ctx, tenantID, includeInactive)
+func (s *InterestRateService) List(ctx context.Context, tenantID, q string, includeInactive bool) ([]domain.InterestRate, error) {
+	return s.repo.List(ctx, tenantID, q, includeInactive)
 }
 
 func (s *InterestRateService) Get(ctx context.Context, tenantID, id string) (domain.InterestRate, error) {
