@@ -106,7 +106,7 @@ func (r *InterestRateRepository) Delete(ctx context.Context, tenantID, id string
 	return nil
 }
 
-const tierColumns = `id, rate_id, effective_from::text, effective_to::text, amount_from, amount_to, rate_value, min_rate, max_rate, decision_no, decision_date::text, created_at, updated_at`
+const tierColumns = `id, rate_id, effective_from::text, effective_to::text, amount_from_minor, amount_to_minor, rate_value, min_rate, max_rate, decision_no, decision_date::text, created_at, updated_at`
 
 func scanTier(scanner interface{ Scan(...any) error }) (domain.InterestRateTier, error) {
 	var item domain.InterestRateTier
@@ -120,7 +120,7 @@ func (r *InterestRateRepository) ListTiers(ctx context.Context, tenantID, rateID
 		FROM mdm_interest_rate_tiers t
 		JOIN mdm_interest_rates h ON h.id = t.rate_id
 		WHERE t.rate_id = $1 AND (h.tenant_id IS NULL OR h.tenant_id = $2)
-		ORDER BY t.effective_from DESC, t.amount_from NULLS FIRST`, tierColumns), rateID, tenantID)
+		ORDER BY t.effective_from DESC, t.amount_from_minor NULLS FIRST`, tierColumns), rateID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func (r *InterestRateRepository) CreateTier(ctx context.Context, tenantID, rateI
 		return domain.InterestRateTier{}, err
 	}
 	row := r.db.QueryRowContext(ctx, fmt.Sprintf(`
-		INSERT INTO mdm_interest_rate_tiers (id, rate_id, effective_from, effective_to, amount_from, amount_to, rate_value, min_rate, max_rate, decision_no, decision_date)
+		INSERT INTO mdm_interest_rate_tiers (id, rate_id, effective_from, effective_to, amount_from_minor, amount_to_minor, rate_value, min_rate, max_rate, decision_no, decision_date)
 		VALUES ($1, $2, $3::date, $4::date, $5, $6, $7, $8, $9, $10, $11::date)
 		RETURNING %s`, tierColumns),
 		tier.ID, rateID, tier.EffectiveFrom, tier.EffectiveTo, tier.AmountFrom, tier.AmountTo, tier.RateValue, tier.MinRate, tier.MaxRate, tier.DecisionNo, tier.DecisionDate)
@@ -165,7 +165,7 @@ func (r *InterestRateRepository) CreateTier(ctx context.Context, tenantID, rateI
 func (r *InterestRateRepository) UpdateTier(ctx context.Context, tenantID, rateID, tierID string, tier domain.InterestRateTier) (domain.InterestRateTier, error) {
 	row := r.db.QueryRowContext(ctx, fmt.Sprintf(`
 		UPDATE mdm_interest_rate_tiers t
-		SET effective_from = $3::date, effective_to = $4::date, amount_from = $5, amount_to = $6,
+		SET effective_from = $3::date, effective_to = $4::date, amount_from_minor = $5, amount_to_minor = $6,
 		    rate_value = $7, min_rate = $8, max_rate = $9, decision_no = $10, decision_date = $11::date, updated_at = now()
 		FROM mdm_interest_rates h
 		WHERE h.id = t.rate_id AND t.id = $1 AND t.rate_id = $2 AND (h.tenant_id IS NULL OR h.tenant_id = $12)

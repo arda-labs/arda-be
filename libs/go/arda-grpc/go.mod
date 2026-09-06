@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/libs/go/arda-grpc
 
-go 1.26
+go 1.27.1
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0

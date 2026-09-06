@@ -45,7 +45,7 @@ type Contract struct {
 	TermUnit              string          `json:"term_unit"`
 	MaturityDate          string          `json:"maturity_date"`
 	InterestScheduleDay   int             `json:"interest_schedule_day"`
-	LoanAmt               float64         `json:"loan_amt"`
+	LoanAmt               int64           `json:"loan_amt_minor"`
 	InterestPaymentFreq   string          `json:"interest_payment_freq"`
 	PrincipalPaymentFreq  string          `json:"principal_payment_freq"`
 	InterestPaymentMethod string          `json:"interest_payment_method"`
@@ -65,7 +65,7 @@ type Agreement struct {
 	ContractCode         string    `json:"contract_code"`
 	AgreementCode        string    `json:"agreement_code"`
 	DisburseDate         string    `json:"disburse_date"`
-	DisburseAmt          float64   `json:"disburse_amt"`
+	DisburseAmt          int64     `json:"disburse_amt_minor"`
 	InterestRate         float64   `json:"interest_rate"`
 	OverInterestRate     float64   `json:"over_interest_rate"`
 	LoanTerm             int       `json:"loan_term"`
@@ -74,10 +74,10 @@ type Agreement struct {
 	DebtGroupCode        string    `json:"debt_group_code"`
 	InterestPaymentFreq  string    `json:"interest_payment_freq"`
 	PrincipalPaymentFreq string    `json:"principal_payment_freq"`
-	OutstandingAmt       float64   `json:"outstanding_amt"`
-	ColnPrincipalAmt     float64   `json:"coln_principal_amt"`
-	ColnInterestAmt      float64   `json:"coln_interest_amt"`
-	ProvisionAmt         float64   `json:"provision_amt"`
+	OutstandingAmt       int64     `json:"outstanding_amt_minor"`
+	ColnPrincipalAmt     int64     `json:"coln_principal_amt_minor"`
+	ColnInterestAmt      int64     `json:"coln_interest_amt_minor"`
+	ProvisionAmt         int64     `json:"provision_amt_minor"`
 	CurrencyCode         string    `json:"currency_code"`
 	AccClassification    string    `json:"acc_classification"`
 	Status               string    `json:"status"`
@@ -97,10 +97,10 @@ type RepayPlan struct {
 	FromDate         string    `json:"from_date"`
 	ToDate           string    `json:"to_date"`
 	InterestRate     float64   `json:"interest_rate"`
-	PlanPrincipalAmt float64   `json:"plan_principal_amt"`
-	PlanInterestAmt  float64   `json:"plan_interest_amt"`
-	ColnPrincipalAmt float64   `json:"coln_principal_amt"`
-	ColnInterestAmt  float64   `json:"coln_interest_amt"`
+	PlanPrincipalAmt int64     `json:"plan_principal_amt_minor"`
+	PlanInterestAmt  int64     `json:"plan_interest_amt_minor"`
+	ColnPrincipalAmt int64     `json:"coln_principal_amt_minor"`
+	ColnInterestAmt  int64     `json:"coln_interest_amt_minor"`
 	IsActive         bool      `json:"is_active"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
@@ -135,9 +135,9 @@ type Collateral struct {
 	OwnerName      string    `json:"owner_name"`
 	CollAddress    string    `json:"coll_address"`
 	Quantity       float64   `json:"quantity"`
-	UnitPrice      float64   `json:"unit_price"`
-	CollValue      float64   `json:"coll_value"`
-	CollUseValue   float64   `json:"coll_use_value"`
+	UnitPrice      int64     `json:"unit_price_minor"`
+	CollValue      int64     `json:"coll_value_minor"`
+	CollUseValue   int64     `json:"coll_use_value_minor"`
 	ValuationDate  string    `json:"valuation_date"`
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
@@ -151,7 +151,7 @@ type ContractCollateral struct {
 	TenantID    string    `json:"tenant_id"`
 	ContractCode string   `json:"contract_code"`
 	CollCode    string    `json:"coll_code"`
-	CollValue   float64   `json:"coll_value"`
+	CollValue   int64     `json:"coll_value_minor"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -168,7 +168,7 @@ type Adjustment struct {
 	ContractCode   string          `json:"contract_code"`
 	AgreementCode  *string         `json:"agreement_code,omitempty"`
 	EffectiveDate  *string         `json:"effective_date,omitempty"`
-	Amount         *float64        `json:"amount,omitempty"`
+	Amount         *int64          `json:"amount_minor,omitempty"`
 	Payload        json.RawMessage `json:"payload,omitempty"`
 	Status         string          `json:"status"`
 	WorkflowCaseID *string         `json:"workflow_case_id,omitempty"`
@@ -233,9 +233,9 @@ type VfuPlan struct {
 	PlanDate     string    `json:"plan_date"`
 	MandateCode  string    `json:"mandate_code"`
 	ContractCode string    `json:"contract_code"`
-	AllocatedAmt float64   `json:"allocated_amt"`
-	SettledAmt   float64   `json:"settled_amt"`
-	FeeAmt       float64   `json:"fee_amt"`
+	AllocatedAmt int64     `json:"allocated_amt_minor"`
+	SettledAmt   int64     `json:"settled_amt_minor"`
+	FeeAmt       int64     `json:"fee_amt_minor"`
 	Status       string    `json:"status"`
 	CreatedBy    string    `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`

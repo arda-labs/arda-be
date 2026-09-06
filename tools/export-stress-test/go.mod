@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/tools/export-stress-test
 
-go 1.26.3
+go 1.27.1
 
 require github.com/arda-labs/arda/libs/go/arda-export v0.0.0
 

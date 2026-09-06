@@ -114,7 +114,7 @@ func validateTier(tier *domain.InterestRateTier) error {
 		return ardaerrors.New(ardaerrors.CodeInvalidInput, "rate_value must be >= 0")
 	}
 	if tier.AmountFrom != nil && tier.AmountTo != nil && *tier.AmountTo <= *tier.AmountFrom {
-		return ardaerrors.New(ardaerrors.CodeInvalidInput, "amount_to must be greater than amount_from")
+		return ardaerrors.New(ardaerrors.CodeInvalidInput, "amount_to_minor must be greater than amount_from_minor")
 	}
 	return nil
 }

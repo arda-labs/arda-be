@@ -23,7 +23,7 @@ CREATE TABLE lnm_contracts (
     term_unit                VARCHAR(16),
     maturity_date            DATE,
     interest_schedule_day    INTEGER,
-    loan_amt                 NUMERIC(20,2) NOT NULL DEFAULT 0,
+    loan_amt_minor   BIGINT NOT NULL DEFAULT 0,
     interest_payment_freq    VARCHAR(16),
     principal_payment_freq   VARCHAR(16),
     interest_payment_method  VARCHAR(16),
@@ -43,7 +43,7 @@ CREATE TABLE lnm_agreements (
     contract_code         VARCHAR(64) NOT NULL,
     agreement_code        VARCHAR(64) NOT NULL,
     disburse_date         DATE,
-    disburse_amt          NUMERIC(20,2) NOT NULL DEFAULT 0,
+    disburse_amt_minor   BIGINT NOT NULL DEFAULT 0,
     interest_rate         NUMERIC(9,6),
     over_interest_rate    NUMERIC(9,6),
     loan_term             INTEGER,
@@ -52,10 +52,10 @@ CREATE TABLE lnm_agreements (
     debt_group_code       VARCHAR(32) NOT NULL DEFAULT 'GROUP_1',
     interest_payment_freq VARCHAR(16),
     principal_payment_freq VARCHAR(16),
-    outstanding_amt       NUMERIC(20,2) NOT NULL DEFAULT 0,
-    coln_principal_amt    NUMERIC(20,2) NOT NULL DEFAULT 0,
-    coln_interest_amt     NUMERIC(20,2) NOT NULL DEFAULT 0,
-    provision_amt         NUMERIC(20,2) NOT NULL DEFAULT 0,
+    outstanding_amt_minor   BIGINT NOT NULL DEFAULT 0,
+    coln_principal_amt_minor   BIGINT NOT NULL DEFAULT 0,
+    coln_interest_amt_minor   BIGINT NOT NULL DEFAULT 0,
+    provision_amt_minor   BIGINT NOT NULL DEFAULT 0,
     status                VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
     created_by            VARCHAR(64),
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -74,10 +74,10 @@ CREATE TABLE lnm_repay_plans (
     from_date          DATE,
     to_date            DATE,
     interest_rate      NUMERIC(9,6),
-    plan_principal_amt NUMERIC(20,2) NOT NULL DEFAULT 0,
-    plan_interest_amt  NUMERIC(20,2) NOT NULL DEFAULT 0,
-    coln_principal_amt NUMERIC(20,2) NOT NULL DEFAULT 0,
-    coln_interest_amt  NUMERIC(20,2) NOT NULL DEFAULT 0,
+    plan_principal_amt_minor   BIGINT NOT NULL DEFAULT 0,
+    plan_interest_amt_minor   BIGINT NOT NULL DEFAULT 0,
+    coln_principal_amt_minor   BIGINT NOT NULL DEFAULT 0,
+    coln_interest_amt_minor   BIGINT NOT NULL DEFAULT 0,
     is_active          BOOLEAN NOT NULL DEFAULT TRUE,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -113,9 +113,9 @@ CREATE TABLE lnm_collaterals (
     owner_name      VARCHAR(255),
     coll_address    VARCHAR(512),
     quantity        NUMERIC(20,4) NOT NULL DEFAULT 1,
-    unit_price      NUMERIC(20,2) NOT NULL DEFAULT 0,
-    coll_value      NUMERIC(20,2) NOT NULL DEFAULT 0,
-    coll_use_value  NUMERIC(20,2) NOT NULL DEFAULT 0,
+    unit_price_minor BIGINT NOT NULL DEFAULT 0,
+    coll_value_minor BIGINT NOT NULL DEFAULT 0,
+    coll_use_value_minor BIGINT NOT NULL DEFAULT 0,
     valuation_date  DATE,
     status          VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
     created_by      VARCHAR(64),
@@ -129,7 +129,7 @@ CREATE TABLE lnm_contract_collaterals (
     tenant_id     VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL,
     coll_code     VARCHAR(64) NOT NULL,
-    coll_value    NUMERIC(20,2) NOT NULL DEFAULT 0,
+    coll_value_minor BIGINT NOT NULL DEFAULT 0,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(tenant_id, contract_code, coll_code)
@@ -141,7 +141,7 @@ CREATE TABLE lnm_contract_collaterals (
 CREATE TABLE lnm_debt_changes (
     id VARCHAR(64) PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL, agreement_code VARCHAR(64),
-    effective_date DATE, amount NUMERIC(20,2),
+    effective_date DATE, amount_minor  BIGINT,
     payload JSONB, status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     workflow_case_id VARCHAR(64), decision_note TEXT, decided_by VARCHAR(64),
     created_by VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -151,7 +151,7 @@ CREATE INDEX lnm_debt_changes_lookup_idx ON lnm_debt_changes (tenant_id, contrac
 CREATE TABLE lnm_rate_changes (
     id VARCHAR(64) PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL, agreement_code VARCHAR(64),
-    effective_date DATE, amount NUMERIC(20,2),
+    effective_date DATE, amount_minor  BIGINT,
     payload JSONB, status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     workflow_case_id VARCHAR(64), decision_note TEXT, decided_by VARCHAR(64),
     created_by VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -161,7 +161,7 @@ CREATE INDEX lnm_rate_changes_lookup_idx ON lnm_rate_changes (tenant_id, contrac
 CREATE TABLE lnm_restructures (
     id VARCHAR(64) PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL, agreement_code VARCHAR(64),
-    effective_date DATE, amount NUMERIC(20,2),
+    effective_date DATE, amount_minor  BIGINT,
     payload JSONB, status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     workflow_case_id VARCHAR(64), decision_note TEXT, decided_by VARCHAR(64),
     created_by VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -171,7 +171,7 @@ CREATE INDEX lnm_restructures_lookup_idx ON lnm_restructures (tenant_id, contrac
 CREATE TABLE lnm_waivers (
     id VARCHAR(64) PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL, agreement_code VARCHAR(64),
-    effective_date DATE, amount NUMERIC(20,2),
+    effective_date DATE, amount_minor  BIGINT,
     payload JSONB, status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     workflow_case_id VARCHAR(64), decision_note TEXT, decided_by VARCHAR(64),
     created_by VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -181,7 +181,7 @@ CREATE INDEX lnm_waivers_lookup_idx ON lnm_waivers (tenant_id, contract_code, st
 CREATE TABLE lnm_writeoffs (
     id VARCHAR(64) PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL, agreement_code VARCHAR(64),
-    effective_date DATE, amount NUMERIC(20,2),
+    effective_date DATE, amount_minor  BIGINT,
     payload JSONB, status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     workflow_case_id VARCHAR(64), decision_note TEXT, decided_by VARCHAR(64),
     created_by VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -191,7 +191,7 @@ CREATE INDEX lnm_writeoffs_lookup_idx ON lnm_writeoffs (tenant_id, contract_code
 CREATE TABLE lnm_recoveries (
     id VARCHAR(64) PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL, agreement_code VARCHAR(64),
-    effective_date DATE, amount NUMERIC(20,2),
+    effective_date DATE, amount_minor  BIGINT,
     payload JSONB, status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     workflow_case_id VARCHAR(64), decision_note TEXT, decided_by VARCHAR(64),
     created_by VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -201,7 +201,7 @@ CREATE INDEX lnm_recoveries_lookup_idx ON lnm_recoveries (tenant_id, contract_co
 CREATE TABLE lnm_fund_checks (
     id VARCHAR(64) PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL, agreement_code VARCHAR(64),
-    effective_date DATE, amount NUMERIC(20,2),
+    effective_date DATE, amount_minor  BIGINT,
     payload JSONB, status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     workflow_case_id VARCHAR(64), decision_note TEXT, decided_by VARCHAR(64),
     created_by VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -211,7 +211,7 @@ CREATE INDEX lnm_fund_checks_lookup_idx ON lnm_fund_checks (tenant_id, contract_
 CREATE TABLE lnm_revenue_allocations (
     id VARCHAR(64) PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL, agreement_code VARCHAR(64),
-    effective_date DATE, amount NUMERIC(20,2),
+    effective_date DATE, amount_minor  BIGINT,
     payload JSONB, status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     workflow_case_id VARCHAR(64), decision_note TEXT, decided_by VARCHAR(64),
     created_by VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -221,7 +221,7 @@ CREATE INDEX lnm_revenue_allocations_lookup_idx ON lnm_revenue_allocations (tena
 CREATE TABLE lnm_vfu_fee_allocations (
     id VARCHAR(64) PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL, agreement_code VARCHAR(64),
-    effective_date DATE, amount NUMERIC(20,2),
+    effective_date DATE, amount_minor  BIGINT,
     payload JSONB, status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     workflow_case_id VARCHAR(64), decision_note TEXT, decided_by VARCHAR(64),
     created_by VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -231,7 +231,7 @@ CREATE INDEX lnm_vfu_fee_allocations_lookup_idx ON lnm_vfu_fee_allocations (tena
 CREATE TABLE lnm_off_balance_exports (
     id VARCHAR(64) PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL DEFAULT '',
     contract_code VARCHAR(64) NOT NULL, agreement_code VARCHAR(64),
-    effective_date DATE, amount NUMERIC(20,2),
+    effective_date DATE, amount_minor  BIGINT,
     payload JSONB, status VARCHAR(30) NOT NULL DEFAULT 'DRAFT',
     workflow_case_id VARCHAR(64), decision_note TEXT, decided_by VARCHAR(64),
     created_by VARCHAR(64), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

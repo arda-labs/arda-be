@@ -1,3 +1,3 @@
 module github.com/arda-labs/arda/libs/go/arda-errors
 
-go 1.26
+go 1.27.1

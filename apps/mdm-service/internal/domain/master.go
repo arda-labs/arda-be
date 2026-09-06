@@ -46,8 +46,8 @@ type InterestRateTier struct {
 	RateID        string     `json:"rate_id"`
 	EffectiveFrom string     `json:"effective_from"`
 	EffectiveTo   *string    `json:"effective_to,omitempty"`
-	AmountFrom    *float64   `json:"amount_from,omitempty"`
-	AmountTo      *float64   `json:"amount_to,omitempty"`
+	AmountFrom    *int64     `json:"amount_from_minor,omitempty"`
+	AmountTo      *int64     `json:"amount_to_minor,omitempty"`
 	RateValue     float64    `json:"rate_value"`
 	MinRate       *float64   `json:"min_rate,omitempty"`
 	MaxRate       *float64   `json:"max_rate,omitempty"`

@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/ai-service
 
-go 1.26
+go 1.27.1
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-crypto v0.0.0

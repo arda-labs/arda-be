@@ -63,3 +63,39 @@ func TestAllocateZeroParts(t *testing.T) {
 		t.Fatalf("expected nil for zero parts, got %v", shares)
 	}
 }
+
+func TestMinorUnitConversions(t *testing.T) {
+	if Exponent("VND") != 0 || Exponent("USD") != 2 || Exponent("XYZ") != 2 {
+		t.Fatalf("unexpected exponents: %d %d %d", Exponent("VND"), Exponent("USD"), Exponent("XYZ"))
+	}
+	// FromMinor: VND minor == major; USD cents → major.
+	mustEq(t, FromMinor(3541667, "VND"), "3541667")
+	mustEq(t, FromMinor(123456, "USD"), "1234.56")
+	mustEq(t, FromMinor(-500, "EUR"), "-5.00")
+
+	// ToMinor: rounds to exponent (half-away-from-zero), int64 both ways.
+	if got, err := ToMinor(MustFromString("1234.567"), "USD"); err != nil || got != 123457 {
+		t.Fatalf("got %d, %v; want 123457", got, err)
+	}
+	if got, err := ToMinor(MustFromString("-1234.5"), "USD"); err != nil || got != -123450 {
+		t.Fatalf("got %d, %v; want -123450", got, err)
+	}
+	if got, err := ToMinor(MustFromString("500000000"), "VND"); err != nil || got != 500000000 {
+		t.Fatalf("got %d, %v; want 500000000", got, err)
+	}
+	// Overflow guard.
+	if _, err := ToMinor(MustFromString("99999999999999999999"), "VND"); err == nil {
+		t.Fatal("expected overflow error")
+	}
+
+	// Round-trip identity on minor-exact values.
+	for _, tc := range []struct {
+		minor int64
+		cur   string
+	}{{3541667, "VND"}, {123456, "USD"}, {-9900, "JPY"}} {
+		got, err := ToMinor(FromMinor(tc.minor, tc.cur), tc.cur)
+		if err != nil || got != tc.minor {
+			t.Fatalf("round trip %d %s: got %d, %v", tc.minor, tc.cur, got, err)
+		}
+	}
+}

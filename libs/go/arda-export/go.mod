@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/libs/go/arda-export
 
-go 1.26.3
+go 1.27.1
 
 require github.com/xuri/excelize/v2 v2.9.0
 

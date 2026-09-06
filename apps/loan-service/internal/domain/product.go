@@ -17,8 +17,8 @@ type LoanProduct struct {
 	LoanTermFrom      *int      `json:"loan_term_from,omitempty"`
 	LoanTermTo        *int      `json:"loan_term_to,omitempty"`
 	TermUnit          string    `json:"term_unit"`
-	MinAmount         *float64  `json:"min_amount,omitempty"`
-	MaxAmount         *float64  `json:"max_amount,omitempty"`
+	MinAmount         *int64    `json:"min_amount_minor,omitempty"`
+	MaxAmount         *int64    `json:"max_amount_minor,omitempty"`
 	AccClassification string    `json:"acc_classification,omitempty"`
 	IsActive          bool      `json:"is_active"`
 	Description       *string   `json:"description,omitempty"`

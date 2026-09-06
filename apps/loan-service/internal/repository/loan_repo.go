@@ -51,7 +51,7 @@ func mapNoRows(err error) error {
 const contractColumns = `id, tenant_id, contract_code, contract_no, customer_code, employee_code,
 	contract_type_code, product_code, interest_rate, interest_rate_type, purpose_code, industry_code,
 	loan_method_code, contract_date::text, loan_term, term_unit, maturity_date::text,
-	interest_schedule_day, loan_amt, interest_payment_freq, principal_payment_freq,
+	interest_schedule_day, loan_amt_minor, interest_payment_freq, principal_payment_freq,
 	interest_payment_method, principal_payment_method, status, workflow_case_id, created_by, created_at, updated_at`
 
 func scanContract(s interface{ Scan(...any) error }) (domain.Contract, error) {
@@ -99,7 +99,7 @@ func (r *LoanRepository) CreateContract(ctx context.Context, c *domain.Contract)
 		INSERT INTO lnm_contracts (id, tenant_id, contract_code, contract_no, customer_code, employee_code,
 			contract_type_code, product_code, interest_rate, interest_rate_type, purpose_code, industry_code,
 			loan_method_code, contract_date, loan_term, term_unit, maturity_date, interest_schedule_day,
-			loan_amt, interest_payment_freq, principal_payment_freq, interest_payment_method,
+			loan_amt_minor, interest_payment_freq, principal_payment_freq, interest_payment_method,
 			principal_payment_method, status, created_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::date,$15,$16,$17::date,$18,$19,$20,$21,$22,$23,$24,$25)
 		ON CONFLICT (tenant_id, contract_code) DO NOTHING
@@ -136,10 +136,10 @@ func (r *LoanRepository) SetContractWorkflowCase(ctx context.Context, tenantID, 
 
 // ── Agreements (disbursements) ──
 
-const agreementColumns = `id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt,
+const agreementColumns = `id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
 	interest_rate, over_interest_rate, loan_term, term_unit, maturity_date::text, debt_group_code,
-	interest_payment_freq, principal_payment_freq, outstanding_amt, coln_principal_amt, coln_interest_amt,
-	provision_amt, currency_code, acc_classification, status, created_by, created_at, updated_at`
+	interest_payment_freq, principal_payment_freq, outstanding_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor,
+	provision_amt_minor, currency_code, acc_classification, status, created_by, created_at, updated_at`
 
 func scanAgreement(s interface{ Scan(...any) error }) (domain.Agreement, error) {
 	var a domain.Agreement
@@ -194,9 +194,9 @@ func (r *LoanRepository) CreateAgreement(ctx context.Context, a *domain.Agreemen
 		a.CurrencyCode = "VND"
 	}
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO lnm_agreements (id, tenant_id, contract_code, agreement_code, disburse_date, disburse_amt,
+		INSERT INTO lnm_agreements (id, tenant_id, contract_code, agreement_code, disburse_date, disburse_amt_minor,
 			interest_rate, over_interest_rate, loan_term, term_unit, maturity_date, debt_group_code,
-			interest_payment_freq, principal_payment_freq, outstanding_amt, currency_code, acc_classification, created_by)
+			interest_payment_freq, principal_payment_freq, outstanding_amt_minor, currency_code, acc_classification, created_by)
 		VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11::date,$12,$13,$14,$15,$16,$17,$18)
 		ON CONFLICT (tenant_id, agreement_code) DO NOTHING
 		RETURNING `+agreementColumns,
@@ -215,7 +215,7 @@ func (r *LoanRepository) CreateAgreement(ctx context.Context, a *domain.Agreemen
 func (r *LoanRepository) ListRepayPlans(ctx context.Context, tenantID, contractCode, agreementCode string) ([]domain.RepayPlan, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, plan_no, term_no, from_date::text, to_date::text,
-		       interest_rate, plan_principal_amt, plan_interest_amt, coln_principal_amt, coln_interest_amt,
+		       interest_rate, plan_principal_amt_minor, plan_interest_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor,
 		       is_active, created_at, updated_at
 		FROM lnm_repay_plans
 		WHERE tenant_id = $1 AND ($2 = '' OR contract_code = $2) AND ($3 = '' OR agreement_code = $3)
@@ -256,7 +256,7 @@ func (r *LoanRepository) ReplaceRepayPlans(ctx context.Context, tenantID, agreem
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO lnm_repay_plans (id, tenant_id, contract_code, agreement_code, plan_no, term_no,
-				from_date, to_date, interest_rate, plan_principal_amt, plan_interest_amt, coln_principal_amt, coln_interest_amt, is_active)
+				from_date, to_date, interest_rate, plan_principal_amt_minor, plan_interest_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor, is_active)
 			VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,$11,$12,$13,TRUE)`,
 			p.ID, tenantID, p.ContractCode, p.AgreementCode, p.PlanNo, p.TermNo,
 			p.FromDate, p.ToDate, p.InterestRate, p.PlanPrincipalAmt, p.PlanInterestAmt,
@@ -326,7 +326,7 @@ func (r *LoanRepository) CreateMortgage(ctx context.Context, m *domain.Mortgage)
 func (r *LoanRepository) ListCollaterals(ctx context.Context, tenantID, mortgageCode, q string) ([]domain.Collateral, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, coll_code, coll_name, coll_type_code, mortgage_code, owner_cif_code, owner_name,
-		       coll_address, quantity, unit_price, coll_value, coll_use_value, valuation_date::text, status,
+		       coll_address, quantity, unit_price_minor, coll_value_minor, coll_use_value_minor, valuation_date::text, status,
 		       created_at, updated_at
 		FROM lnm_collaterals
 		WHERE tenant_id = $1
@@ -353,12 +353,12 @@ func (r *LoanRepository) ListCollaterals(ctx context.Context, tenantID, mortgage
 func (r *LoanRepository) CreateCollateral(ctx context.Context, c *domain.Collateral) (*domain.Collateral, error) {
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO lnm_collaterals (id, tenant_id, coll_code, coll_name, coll_type_code, mortgage_code,
-			owner_cif_code, owner_name, coll_address, quantity, unit_price, coll_value, coll_use_value,
+			owner_cif_code, owner_name, coll_address, quantity, unit_price_minor, coll_value_minor, coll_use_value_minor,
 			valuation_date, status, created_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::date,$15,$16)
 		ON CONFLICT (tenant_id, coll_code) DO NOTHING
 		RETURNING id, tenant_id, coll_code, coll_name, coll_type_code, mortgage_code, owner_cif_code, owner_name,
-		          coll_address, quantity, unit_price, coll_value, coll_use_value, valuation_date::text, status,
+		          coll_address, quantity, unit_price_minor, coll_value_minor, coll_use_value_minor, valuation_date::text, status,
 		          created_at, updated_at`,
 		c.ID, c.TenantID, c.CollCode, c.CollName, c.CollTypeCode, c.MortgageCode, c.OwnerCifCode, c.OwnerName,
 		c.CollAddress, c.Quantity, c.UnitPrice, c.CollValue, c.CollUseValue, c.ValuationDate, c.Status, c.CreatedAt)
@@ -379,7 +379,7 @@ func scanCollateral(s interface{ Scan(...any) error }) (domain.Collateral, error
 
 func (r *LoanRepository) ListContractCollaterals(ctx context.Context, tenantID, contractCode string) ([]domain.ContractCollateral, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, tenant_id, contract_code, coll_code, coll_value, created_at, updated_at
+		SELECT id, tenant_id, contract_code, coll_code, coll_value_minor, created_at, updated_at
 		FROM lnm_contract_collaterals
 		WHERE tenant_id = $1 AND ($2 = '' OR contract_code = $2)
 		ORDER BY coll_code`, tenantID, contractCode)
@@ -400,10 +400,10 @@ func (r *LoanRepository) ListContractCollaterals(ctx context.Context, tenantID, 
 
 func (r *LoanRepository) AttachContractCollateral(ctx context.Context, cc *domain.ContractCollateral) (*domain.ContractCollateral, error) {
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO lnm_contract_collaterals (id, tenant_id, contract_code, coll_code, coll_value)
+		INSERT INTO lnm_contract_collaterals (id, tenant_id, contract_code, coll_code, coll_value_minor)
 		VALUES ($1,$2,$3,$4,$5)
-		ON CONFLICT (tenant_id, contract_code, coll_code) DO UPDATE SET coll_value = EXCLUDED.coll_value, updated_at = now()
-		RETURNING id, tenant_id, contract_code, coll_code, coll_value, created_at, updated_at`,
+		ON CONFLICT (tenant_id, contract_code, coll_code) DO UPDATE SET coll_value_minor = EXCLUDED.coll_value_minor, updated_at = now()
+		RETURNING id, tenant_id, contract_code, coll_code, coll_value_minor, created_at, updated_at`,
 		cc.ID, cc.TenantID, cc.ContractCode, cc.CollCode, cc.CollValue)
 	out := &domain.ContractCollateral{}
 	err := row.Scan(&out.ID, &out.TenantID, &out.ContractCode, &out.CollCode, &out.CollValue, &out.CreatedAt, &out.UpdatedAt)
@@ -428,13 +428,13 @@ var AdjustmentTables = map[string]string{
 	"off-balance-export": "lnm_off_balance_exports",
 }
 
-const adjustmentColumns = `id, tenant_id, contract_code, agreement_code, effective_date::text, amount,
+const adjustmentColumns = `id, tenant_id, contract_code, agreement_code, effective_date::text, amount_minor,
 	payload, status, workflow_case_id, decision_note, decided_by, created_by, created_at, updated_at`
 
 func scanAdjustment(s interface{ Scan(...any) error }) (domain.Adjustment, error) {
 	var a domain.Adjustment
 	var agreementCode, effectiveDate sql.NullString
-	var amount sql.NullFloat64
+	var amount sql.NullInt64
 	var payload []byte
 	var caseID, note, decidedBy sql.NullString
 	err := s.Scan(&a.ID, &a.TenantID, &a.ContractCode, &agreementCode, &effectiveDate, &amount,
@@ -446,7 +446,7 @@ func scanAdjustment(s interface{ Scan(...any) error }) (domain.Adjustment, error
 		a.EffectiveDate = &effectiveDate.String
 	}
 	if amount.Valid {
-		a.Amount = &amount.Float64
+		a.Amount = &amount.Int64
 	}
 	if len(payload) > 0 && string(payload) != "null" {
 		a.Payload = payload
@@ -616,20 +616,24 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 	case "lnm_waivers":
 		// Real waiver: shave unpaid interest across the schedule until the
 		// waiver amount (or percent of outstanding interest) is consumed.
-		amount := 0.0
+		amount := int64(0)
 		if item.Amount != nil {
 			amount = *item.Amount
 		} else if pct, ok := payloadInt("waiver_percent"); ok {
 			row := r.db.QueryRowContext(ctx, `
-				SELECT COALESCE(SUM(plan_interest_amt - coln_interest_amt), 0)
+				SELECT COALESCE(SUM(plan_interest_amt_minor - coln_interest_amt_minor), 0)
 				FROM lnm_repay_plans
-				WHERE tenant_id = $1 AND agreement_code = $2 AND is_active AND plan_interest_amt > coln_interest_amt`,
+				WHERE tenant_id = $1 AND agreement_code = $2 AND is_active AND plan_interest_amt_minor > coln_interest_amt_minor`,
 				tenantID, derefAgreement(item))
-			var total float64
+			var total int64
 			if err := row.Scan(&total); err != nil {
 				return err
 			}
-			amount = total * float64(pct) / 100
+			// Percent math in decimal — total*pct overflows int64 past ~9.2e16.
+			// Minor units are currency-agnostic here (pure ratio), so "USD" exponent
+			// cancels out in Mul/Div; ToMinor just re-quantizes the result.
+			amount = ardamoney.MustToMinor(
+				ardamoney.FromMinor(total, "USD").Mul(decimal.NewFromInt(int64(pct))).Div(decimal.NewFromInt(100)), "USD")
 		}
 		if amount > 0 && item.AgreementCode != nil && *item.AgreementCode != "" {
 			if _, err := r.ReducePlanInterest(ctx, tenantID, *item.AgreementCode, amount); err != nil {
@@ -642,8 +646,8 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 		if item.AgreementCode != nil && *item.AgreementCode != "" && item.Amount != nil {
 			if _, err := r.db.ExecContext(ctx, `
 				UPDATE lnm_agreements
-				SET outstanding_amt = GREATEST(outstanding_amt - $3, 0),
-				    status = CASE WHEN GREATEST(outstanding_amt - $3, 0) = 0 THEN 'CLOSED' ELSE status END,
+				SET outstanding_amt_minor = GREATEST(outstanding_amt_minor - $3, 0),
+				    status = CASE WHEN GREATEST(outstanding_amt_minor - $3, 0) = 0 THEN 'CLOSED' ELSE status END,
 				    updated_at = now()
 				WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, *item.AgreementCode, *item.Amount); err != nil {
 				return err
@@ -652,7 +656,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 	case "lnm_recoveries":
 		if item.AgreementCode != nil && *item.AgreementCode != "" && item.Amount != nil {
 			if _, err := r.db.ExecContext(ctx, `
-				UPDATE lnm_agreements SET outstanding_amt = GREATEST(outstanding_amt - $3, 0), coln_principal_amt = coln_principal_amt + $3, updated_at = now()
+				UPDATE lnm_agreements SET outstanding_amt_minor = GREATEST(outstanding_amt_minor - $3, 0), coln_principal_amt_minor = coln_principal_amt_minor + $3, updated_at = now()
 				WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, *item.AgreementCode, *item.Amount); err != nil {
 				return err
 			}
@@ -678,7 +682,7 @@ func nullIfEmpty(payload []byte) any {
 // ── Products ──
 
 const productColumns = `id, tenant_id, code, name, product_type, currency_code, interest_rate_code,
-	interest_rate, loan_term_from, loan_term_to, term_unit, min_amount, max_amount,
+	interest_rate, loan_term_from, loan_term_to, term_unit, min_amount_minor, max_amount_minor,
 	acc_classification, is_active, description, created_by, created_at, updated_at`
 
 func scanProduct(s interface{ Scan(...any) error }) (domain.LoanProduct, error) {
@@ -721,14 +725,14 @@ func (r *LoanRepository) GetProductByCode(ctx context.Context, tenantID, code st
 func (r *LoanRepository) UpsertProduct(ctx context.Context, p *domain.LoanProduct) (*domain.LoanProduct, error) {
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO lnm_products (id, tenant_id, code, name, product_type, currency_code, interest_rate_code,
-			interest_rate, loan_term_from, loan_term_to, term_unit, min_amount, max_amount,
+			interest_rate, loan_term_from, loan_term_to, term_unit, min_amount_minor, max_amount_minor,
 			acc_classification, is_active, description, created_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
 		ON CONFLICT (tenant_id, code) DO UPDATE SET
 			name = EXCLUDED.name, product_type = EXCLUDED.product_type, currency_code = EXCLUDED.currency_code,
 			interest_rate_code = EXCLUDED.interest_rate_code, interest_rate = EXCLUDED.interest_rate,
 			loan_term_from = EXCLUDED.loan_term_from, loan_term_to = EXCLUDED.loan_term_to,
-			term_unit = EXCLUDED.term_unit, min_amount = EXCLUDED.min_amount, max_amount = EXCLUDED.max_amount,
+			term_unit = EXCLUDED.term_unit, min_amount_minor = EXCLUDED.min_amount_minor, max_amount_minor = EXCLUDED.max_amount_minor,
 			acc_classification = EXCLUDED.acc_classification, is_active = EXCLUDED.is_active,
 			description = EXCLUDED.description, updated_at = now()
 		RETURNING `+productColumns,
@@ -752,7 +756,7 @@ func (r *LoanRepository) RegeneratePlans(ctx context.Context, tenantID, agreemen
 	if currency == "" {
 		currency = "VND"
 	}
-	outstanding := decimal.NewFromFloat(agreement.OutstandingAmt)
+	outstanding := ardamoney.FromMinor(agreement.OutstandingAmt, currency)
 	rate := decimal.NewFromFloat(agreement.InterestRate)
 	shares := ardamoney.AllocateEven(outstanding, termCount, currency)
 
@@ -774,8 +778,8 @@ func (r *LoanRepository) RegeneratePlans(ctx context.Context, tenantID, agreemen
 			FromDate:         from.Format("2006-01-02"),
 			ToDate:           to.Format("2006-01-02"),
 			InterestRate:     agreement.InterestRate,
-			PlanPrincipalAmt: principal.InexactFloat64(),
-			PlanInterestAmt:  ardamoney.MonthlyInterest(remaining, rate, currency).InexactFloat64(),
+			PlanPrincipalAmt: ardamoney.MustToMinor(principal, currency),
+			PlanInterestAmt:  ardamoney.MustToMinor(ardamoney.MonthlyInterest(remaining, rate, currency), currency),
 		})
 		remaining = remaining.Sub(principal)
 	}
@@ -784,19 +788,19 @@ func (r *LoanRepository) RegeneratePlans(ctx context.Context, tenantID, agreemen
 
 // ReducePlanInterest applies an interest waiver across unpaid schedule rows
 // (coln < plan), largest balance first, until the waiver amount is consumed.
-func (r *LoanRepository) ReducePlanInterest(ctx context.Context, tenantID, agreementCode string, waiverAmount float64) (float64, error) {
+func (r *LoanRepository) ReducePlanInterest(ctx context.Context, tenantID, agreementCode string, waiverAmountMinor int64) (int64, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, plan_interest_amt - coln_interest_amt
+		SELECT id, plan_interest_amt_minor - coln_interest_amt_minor
 		FROM lnm_repay_plans
 		WHERE tenant_id = $1 AND agreement_code = $2 AND is_active
-		  AND plan_interest_amt > coln_interest_amt
+		  AND plan_interest_amt_minor > coln_interest_amt_minor
 		ORDER BY to_date`, tenantID, agreementCode)
 	if err != nil {
 		return 0, err
 	}
 	type target struct {
-		id    string
-		due   float64
+		id  string
+		due int64
 	}
 	targets := []target{}
 	for rows.Next() {
@@ -809,8 +813,8 @@ func (r *LoanRepository) ReducePlanInterest(ctx context.Context, tenantID, agree
 	}
 	rows.Close()
 
-	remaining := waiverAmount
-	applied := 0.0
+	remaining := waiverAmountMinor
+	applied := int64(0)
 	for _, t := range targets {
 		if remaining <= 0 {
 			break
@@ -820,7 +824,7 @@ func (r *LoanRepository) ReducePlanInterest(ctx context.Context, tenantID, agree
 			reduce = remaining
 		}
 		if _, err := r.db.ExecContext(ctx, `
-			UPDATE lnm_repay_plans SET plan_interest_amt = plan_interest_amt - $3, updated_at = now()
+			UPDATE lnm_repay_plans SET plan_interest_amt_minor = plan_interest_amt_minor - $3, updated_at = now()
 			WHERE tenant_id = $1 AND id = $2`, tenantID, t.id, reduce); err != nil {
 			return applied, err
 		}
@@ -942,7 +946,7 @@ func (r *LoanRepository) CreateVfuMandate(ctx context.Context, m *domain.VfuMand
 func (r *LoanRepository) ListVfuPlans(ctx context.Context, tenantID, mandateCode string) ([]domain.VfuPlan, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, plan_code, COALESCE(plan_date::text,''), mandate_code, COALESCE(contract_code,''),
-		       allocated_amt, settled_amt, fee_amt, status, created_by, created_at, updated_at
+		       allocated_amt_minor, settled_amt_minor, fee_amt_minor, status, created_by, created_at, updated_at
 		FROM lnm_vfu_plans
 		WHERE tenant_id = $1 AND ($2 = '' OR mandate_code = $2)
 		ORDER BY plan_code LIMIT 500`, tenantID, mandateCode)
@@ -965,11 +969,11 @@ func (r *LoanRepository) ListVfuPlans(ctx context.Context, tenantID, mandateCode
 func (r *LoanRepository) CreateVfuPlan(ctx context.Context, p *domain.VfuPlan) (*domain.VfuPlan, error) {
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO lnm_vfu_plans (id, tenant_id, plan_code, plan_date, mandate_code, contract_code,
-			allocated_amt, settled_amt, fee_amt, status, created_by)
+			allocated_amt_minor, settled_amt_minor, fee_amt_minor, status, created_by)
 		VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10,$11)
 		ON CONFLICT (tenant_id, plan_code) DO NOTHING
 		RETURNING id, tenant_id, plan_code, COALESCE(plan_date::text,''), mandate_code, COALESCE(contract_code,''),
-		          allocated_amt, settled_amt, fee_amt, status, created_by, created_at, updated_at`,
+		          allocated_amt_minor, settled_amt_minor, fee_amt_minor, status, created_by, created_at, updated_at`,
 		p.ID, p.TenantID, p.PlanCode, p.PlanDate, p.MandateCode, p.ContractCode,
 		p.AllocatedAmt, p.SettledAmt, p.FeeAmt, p.Status, p.CreatedBy)
 	out := &domain.VfuPlan{}
