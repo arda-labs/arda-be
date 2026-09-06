@@ -26,6 +26,10 @@ const (
 	LoanCommandService_GetDisbursementPostingDetail_FullMethodName = "/arda.loan.v1.LoanCommandService/GetDisbursementPostingDetail"
 	LoanCommandService_SettleDisbursement_FullMethodName           = "/arda.loan.v1.LoanCommandService/SettleDisbursement"
 	LoanCommandService_ResolveDisbursement_FullMethodName          = "/arda.loan.v1.LoanCommandService/ResolveDisbursement"
+	LoanCommandService_CheckCollection_FullMethodName              = "/arda.loan.v1.LoanCommandService/CheckCollection"
+	LoanCommandService_GetCollectionPostingDetail_FullMethodName   = "/arda.loan.v1.LoanCommandService/GetCollectionPostingDetail"
+	LoanCommandService_SettleCollection_FullMethodName             = "/arda.loan.v1.LoanCommandService/SettleCollection"
+	LoanCommandService_ResolveCollection_FullMethodName            = "/arda.loan.v1.LoanCommandService/ResolveCollection"
 )
 
 // LoanCommandServiceClient is the client API for LoanCommandService service.
@@ -42,6 +46,10 @@ type LoanCommandServiceClient interface {
 	GetDisbursementPostingDetail(ctx context.Context, in *GetDisbursementPostingDetailRequest, opts ...grpc.CallOption) (*DisbursementPostingDetail, error)
 	SettleDisbursement(ctx context.Context, in *SettleDisbursementRequest, opts ...grpc.CallOption) (*SettleDisbursementResponse, error)
 	ResolveDisbursement(ctx context.Context, in *ResolveDisbursementRequest, opts ...grpc.CallOption) (*ResolveDisbursementResponse, error)
+	CheckCollection(ctx context.Context, in *CheckCollectionRequest, opts ...grpc.CallOption) (*CheckCollectionResponse, error)
+	GetCollectionPostingDetail(ctx context.Context, in *GetCollectionPostingDetailRequest, opts ...grpc.CallOption) (*CollectionPostingDetail, error)
+	SettleCollection(ctx context.Context, in *SettleCollectionRequest, opts ...grpc.CallOption) (*SettleCollectionResponse, error)
+	ResolveCollection(ctx context.Context, in *ResolveCollectionRequest, opts ...grpc.CallOption) (*ResolveCollectionResponse, error)
 }
 
 type loanCommandServiceClient struct {
@@ -122,6 +130,46 @@ func (c *loanCommandServiceClient) ResolveDisbursement(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *loanCommandServiceClient) CheckCollection(ctx context.Context, in *CheckCollectionRequest, opts ...grpc.CallOption) (*CheckCollectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckCollectionResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_CheckCollection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) GetCollectionPostingDetail(ctx context.Context, in *GetCollectionPostingDetailRequest, opts ...grpc.CallOption) (*CollectionPostingDetail, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CollectionPostingDetail)
+	err := c.cc.Invoke(ctx, LoanCommandService_GetCollectionPostingDetail_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) SettleCollection(ctx context.Context, in *SettleCollectionRequest, opts ...grpc.CallOption) (*SettleCollectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SettleCollectionResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_SettleCollection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) ResolveCollection(ctx context.Context, in *ResolveCollectionRequest, opts ...grpc.CallOption) (*ResolveCollectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveCollectionResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_ResolveCollection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LoanCommandServiceServer is the server API for LoanCommandService service.
 // All implementations must embed UnimplementedLoanCommandServiceServer
 // for forward compatibility.
@@ -136,6 +184,10 @@ type LoanCommandServiceServer interface {
 	GetDisbursementPostingDetail(context.Context, *GetDisbursementPostingDetailRequest) (*DisbursementPostingDetail, error)
 	SettleDisbursement(context.Context, *SettleDisbursementRequest) (*SettleDisbursementResponse, error)
 	ResolveDisbursement(context.Context, *ResolveDisbursementRequest) (*ResolveDisbursementResponse, error)
+	CheckCollection(context.Context, *CheckCollectionRequest) (*CheckCollectionResponse, error)
+	GetCollectionPostingDetail(context.Context, *GetCollectionPostingDetailRequest) (*CollectionPostingDetail, error)
+	SettleCollection(context.Context, *SettleCollectionRequest) (*SettleCollectionResponse, error)
+	ResolveCollection(context.Context, *ResolveCollectionRequest) (*ResolveCollectionResponse, error)
 	mustEmbedUnimplementedLoanCommandServiceServer()
 }
 
@@ -166,6 +218,18 @@ func (UnimplementedLoanCommandServiceServer) SettleDisbursement(context.Context,
 }
 func (UnimplementedLoanCommandServiceServer) ResolveDisbursement(context.Context, *ResolveDisbursementRequest) (*ResolveDisbursementResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveDisbursement not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) CheckCollection(context.Context, *CheckCollectionRequest) (*CheckCollectionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckCollection not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) GetCollectionPostingDetail(context.Context, *GetCollectionPostingDetailRequest) (*CollectionPostingDetail, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCollectionPostingDetail not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) SettleCollection(context.Context, *SettleCollectionRequest) (*SettleCollectionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SettleCollection not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) ResolveCollection(context.Context, *ResolveCollectionRequest) (*ResolveCollectionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveCollection not implemented")
 }
 func (UnimplementedLoanCommandServiceServer) mustEmbedUnimplementedLoanCommandServiceServer() {}
 func (UnimplementedLoanCommandServiceServer) testEmbeddedByValue()                            {}
@@ -314,6 +378,78 @@ func _LoanCommandService_ResolveDisbursement_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LoanCommandService_CheckCollection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckCollectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).CheckCollection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_CheckCollection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).CheckCollection(ctx, req.(*CheckCollectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_GetCollectionPostingDetail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCollectionPostingDetailRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).GetCollectionPostingDetail(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_GetCollectionPostingDetail_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).GetCollectionPostingDetail(ctx, req.(*GetCollectionPostingDetailRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_SettleCollection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SettleCollectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).SettleCollection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_SettleCollection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).SettleCollection(ctx, req.(*SettleCollectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_ResolveCollection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveCollectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).ResolveCollection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_ResolveCollection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).ResolveCollection(ctx, req.(*ResolveCollectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LoanCommandService_ServiceDesc is the grpc.ServiceDesc for LoanCommandService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -348,6 +484,22 @@ var LoanCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveDisbursement",
 			Handler:    _LoanCommandService_ResolveDisbursement_Handler,
+		},
+		{
+			MethodName: "CheckCollection",
+			Handler:    _LoanCommandService_CheckCollection_Handler,
+		},
+		{
+			MethodName: "GetCollectionPostingDetail",
+			Handler:    _LoanCommandService_GetCollectionPostingDetail_Handler,
+		},
+		{
+			MethodName: "SettleCollection",
+			Handler:    _LoanCommandService_SettleCollection_Handler,
+		},
+		{
+			MethodName: "ResolveCollection",
+			Handler:    _LoanCommandService_ResolveCollection_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -831,6 +831,486 @@ func (x *ResolveDisbursementResponse) GetOk() bool {
 	return false
 }
 
+type CheckCollectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CollectionId  string                 `protobuf:"bytes,1,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckCollectionRequest) Reset() {
+	*x = CheckCollectionRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckCollectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckCollectionRequest) ProtoMessage() {}
+
+func (x *CheckCollectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckCollectionRequest.ProtoReflect.Descriptor instead.
+func (*CheckCollectionRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *CheckCollectionRequest) GetCollectionId() string {
+	if x != nil {
+		return x.CollectionId
+	}
+	return ""
+}
+
+type CheckCollectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckCollectionResponse) Reset() {
+	*x = CheckCollectionResponse{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckCollectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckCollectionResponse) ProtoMessage() {}
+
+func (x *CheckCollectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckCollectionResponse.ProtoReflect.Descriptor instead.
+func (*CheckCollectionResponse) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *CheckCollectionResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *CheckCollectionResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type GetCollectionPostingDetailRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CollectionId  string                 `protobuf:"bytes,1,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCollectionPostingDetailRequest) Reset() {
+	*x = GetCollectionPostingDetailRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCollectionPostingDetailRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCollectionPostingDetailRequest) ProtoMessage() {}
+
+func (x *GetCollectionPostingDetailRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCollectionPostingDetailRequest.ProtoReflect.Descriptor instead.
+func (*GetCollectionPostingDetailRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *GetCollectionPostingDetailRequest) GetCollectionId() string {
+	if x != nil {
+		return x.CollectionId
+	}
+	return ""
+}
+
+type CollectionPostingDetail struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CollectionId   string                 `protobuf:"bytes,1,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
+	ContractCode   string                 `protobuf:"bytes,2,opt,name=contract_code,json=contractCode,proto3" json:"contract_code,omitempty"`
+	AgreementCode  string                 `protobuf:"bytes,3,opt,name=agreement_code,json=agreementCode,proto3" json:"agreement_code,omitempty"`
+	CollectionDate string                 `protobuf:"bytes,4,opt,name=collection_date,json=collectionDate,proto3" json:"collection_date,omitempty"`
+	PrincipalMinor int64                  `protobuf:"varint,5,opt,name=principal_minor,json=principalMinor,proto3" json:"principal_minor,omitempty"`
+	InterestMinor  int64                  `protobuf:"varint,6,opt,name=interest_minor,json=interestMinor,proto3" json:"interest_minor,omitempty"`
+	CurrencyCode   string                 `protobuf:"bytes,7,opt,name=currency_code,json=currencyCode,proto3" json:"currency_code,omitempty"`
+	DebtGroupCode  string                 `protobuf:"bytes,8,opt,name=debt_group_code,json=debtGroupCode,proto3" json:"debt_group_code,omitempty"`
+	OrgUnitCode    string                 `protobuf:"bytes,9,opt,name=org_unit_code,json=orgUnitCode,proto3" json:"org_unit_code,omitempty"`
+	CustomerCode   string                 `protobuf:"bytes,10,opt,name=customer_code,json=customerCode,proto3" json:"customer_code,omitempty"`
+	WorkflowCaseId string                 `protobuf:"bytes,11,opt,name=workflow_case_id,json=workflowCaseId,proto3" json:"workflow_case_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CollectionPostingDetail) Reset() {
+	*x = CollectionPostingDetail{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollectionPostingDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectionPostingDetail) ProtoMessage() {}
+
+func (x *CollectionPostingDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectionPostingDetail.ProtoReflect.Descriptor instead.
+func (*CollectionPostingDetail) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CollectionPostingDetail) GetCollectionId() string {
+	if x != nil {
+		return x.CollectionId
+	}
+	return ""
+}
+
+func (x *CollectionPostingDetail) GetContractCode() string {
+	if x != nil {
+		return x.ContractCode
+	}
+	return ""
+}
+
+func (x *CollectionPostingDetail) GetAgreementCode() string {
+	if x != nil {
+		return x.AgreementCode
+	}
+	return ""
+}
+
+func (x *CollectionPostingDetail) GetCollectionDate() string {
+	if x != nil {
+		return x.CollectionDate
+	}
+	return ""
+}
+
+func (x *CollectionPostingDetail) GetPrincipalMinor() int64 {
+	if x != nil {
+		return x.PrincipalMinor
+	}
+	return 0
+}
+
+func (x *CollectionPostingDetail) GetInterestMinor() int64 {
+	if x != nil {
+		return x.InterestMinor
+	}
+	return 0
+}
+
+func (x *CollectionPostingDetail) GetCurrencyCode() string {
+	if x != nil {
+		return x.CurrencyCode
+	}
+	return ""
+}
+
+func (x *CollectionPostingDetail) GetDebtGroupCode() string {
+	if x != nil {
+		return x.DebtGroupCode
+	}
+	return ""
+}
+
+func (x *CollectionPostingDetail) GetOrgUnitCode() string {
+	if x != nil {
+		return x.OrgUnitCode
+	}
+	return ""
+}
+
+func (x *CollectionPostingDetail) GetCustomerCode() string {
+	if x != nil {
+		return x.CustomerCode
+	}
+	return ""
+}
+
+func (x *CollectionPostingDetail) GetWorkflowCaseId() string {
+	if x != nil {
+		return x.WorkflowCaseId
+	}
+	return ""
+}
+
+type SettleCollectionRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CollectionId   string                 `protobuf:"bytes,1,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
+	JournalEntryId string                 `protobuf:"bytes,2,opt,name=journal_entry_id,json=journalEntryId,proto3" json:"journal_entry_id,omitempty"`
+	Actor          string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SettleCollectionRequest) Reset() {
+	*x = SettleCollectionRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettleCollectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettleCollectionRequest) ProtoMessage() {}
+
+func (x *SettleCollectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettleCollectionRequest.ProtoReflect.Descriptor instead.
+func (*SettleCollectionRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *SettleCollectionRequest) GetCollectionId() string {
+	if x != nil {
+		return x.CollectionId
+	}
+	return ""
+}
+
+func (x *SettleCollectionRequest) GetJournalEntryId() string {
+	if x != nil {
+		return x.JournalEntryId
+	}
+	return ""
+}
+
+func (x *SettleCollectionRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+type SettleCollectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SettleCollectionResponse) Reset() {
+	*x = SettleCollectionResponse{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettleCollectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettleCollectionResponse) ProtoMessage() {}
+
+func (x *SettleCollectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettleCollectionResponse.ProtoReflect.Descriptor instead.
+func (*SettleCollectionResponse) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *SettleCollectionResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+type ResolveCollectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CollectionId  string                 `protobuf:"bytes,1,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
+	Decision      string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"`
+	DecidedBy     string                 `protobuf:"bytes,3,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
+	Note          string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveCollectionRequest) Reset() {
+	*x = ResolveCollectionRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveCollectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveCollectionRequest) ProtoMessage() {}
+
+func (x *ResolveCollectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveCollectionRequest.ProtoReflect.Descriptor instead.
+func (*ResolveCollectionRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ResolveCollectionRequest) GetCollectionId() string {
+	if x != nil {
+		return x.CollectionId
+	}
+	return ""
+}
+
+func (x *ResolveCollectionRequest) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *ResolveCollectionRequest) GetDecidedBy() string {
+	if x != nil {
+		return x.DecidedBy
+	}
+	return ""
+}
+
+func (x *ResolveCollectionRequest) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type ResolveCollectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveCollectionResponse) Reset() {
+	*x = ResolveCollectionResponse{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveCollectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveCollectionResponse) ProtoMessage() {}
+
+func (x *ResolveCollectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveCollectionResponse.ProtoReflect.Descriptor instead.
+func (*ResolveCollectionResponse) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ResolveCollectionResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_arda_loan_v1_loan_proto protoreflect.FileDescriptor
 
 const file_arda_loan_v1_loan_proto_rawDesc = "" +
@@ -891,7 +1371,41 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"decided_by\x18\x03 \x01(\tR\tdecidedBy\x12\x12\n" +
 	"\x04note\x18\x04 \x01(\tR\x04note\"-\n" +
 	"\x1bResolveDisbursementResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\x80\x06\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"=\n" +
+	"\x16CheckCollectionRequest\x12#\n" +
+	"\rcollection_id\x18\x01 \x01(\tR\fcollectionId\"C\n" +
+	"\x17CheckCollectionResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"H\n" +
+	"!GetCollectionPostingDetailRequest\x12#\n" +
+	"\rcollection_id\x18\x01 \x01(\tR\fcollectionId\"\xc3\x03\n" +
+	"\x17CollectionPostingDetail\x12#\n" +
+	"\rcollection_id\x18\x01 \x01(\tR\fcollectionId\x12#\n" +
+	"\rcontract_code\x18\x02 \x01(\tR\fcontractCode\x12%\n" +
+	"\x0eagreement_code\x18\x03 \x01(\tR\ragreementCode\x12'\n" +
+	"\x0fcollection_date\x18\x04 \x01(\tR\x0ecollectionDate\x12'\n" +
+	"\x0fprincipal_minor\x18\x05 \x01(\x03R\x0eprincipalMinor\x12%\n" +
+	"\x0einterest_minor\x18\x06 \x01(\x03R\rinterestMinor\x12#\n" +
+	"\rcurrency_code\x18\a \x01(\tR\fcurrencyCode\x12&\n" +
+	"\x0fdebt_group_code\x18\b \x01(\tR\rdebtGroupCode\x12\"\n" +
+	"\rorg_unit_code\x18\t \x01(\tR\vorgUnitCode\x12#\n" +
+	"\rcustomer_code\x18\n" +
+	" \x01(\tR\fcustomerCode\x12(\n" +
+	"\x10workflow_case_id\x18\v \x01(\tR\x0eworkflowCaseId\"~\n" +
+	"\x17SettleCollectionRequest\x12#\n" +
+	"\rcollection_id\x18\x01 \x01(\tR\fcollectionId\x12(\n" +
+	"\x10journal_entry_id\x18\x02 \x01(\tR\x0ejournalEntryId\x12\x14\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\"*\n" +
+	"\x18SettleCollectionResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x8e\x01\n" +
+	"\x18ResolveCollectionRequest\x12#\n" +
+	"\rcollection_id\x18\x01 \x01(\tR\fcollectionId\x12\x1a\n" +
+	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x1d\n" +
+	"\n" +
+	"decided_by\x18\x03 \x01(\tR\tdecidedBy\x12\x12\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\"+\n" +
+	"\x19ResolveCollectionResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\x9f\t\n" +
 	"\x12LoanCommandService\x12m\n" +
 	"\x14UpdateContractStatus\x12).arda.loan.v1.UpdateContractStatusRequest\x1a*.arda.loan.v1.UpdateContractStatusResponse\x12^\n" +
 	"\x0fCheckAdjustment\x12$.arda.loan.v1.CheckAdjustmentRequest\x1a%.arda.loan.v1.CheckAdjustmentResponse\x12d\n" +
@@ -899,7 +1413,11 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"\x11CheckDisbursement\x12&.arda.loan.v1.CheckDisbursementRequest\x1a'.arda.loan.v1.CheckDisbursementResponse\x12z\n" +
 	"\x1cGetDisbursementPostingDetail\x121.arda.loan.v1.GetDisbursementPostingDetailRequest\x1a'.arda.loan.v1.DisbursementPostingDetail\x12g\n" +
 	"\x12SettleDisbursement\x12'.arda.loan.v1.SettleDisbursementRequest\x1a(.arda.loan.v1.SettleDisbursementResponse\x12j\n" +
-	"\x13ResolveDisbursement\x12(.arda.loan.v1.ResolveDisbursementRequest\x1a).arda.loan.v1.ResolveDisbursementResponseB=Z;github.com/arda-labs/arda/libs/go/arda-proto/loan/v1;loanv1b\x06proto3"
+	"\x13ResolveDisbursement\x12(.arda.loan.v1.ResolveDisbursementRequest\x1a).arda.loan.v1.ResolveDisbursementResponse\x12^\n" +
+	"\x0fCheckCollection\x12$.arda.loan.v1.CheckCollectionRequest\x1a%.arda.loan.v1.CheckCollectionResponse\x12t\n" +
+	"\x1aGetCollectionPostingDetail\x12/.arda.loan.v1.GetCollectionPostingDetailRequest\x1a%.arda.loan.v1.CollectionPostingDetail\x12a\n" +
+	"\x10SettleCollection\x12%.arda.loan.v1.SettleCollectionRequest\x1a&.arda.loan.v1.SettleCollectionResponse\x12d\n" +
+	"\x11ResolveCollection\x12&.arda.loan.v1.ResolveCollectionRequest\x1a'.arda.loan.v1.ResolveCollectionResponseB=Z;github.com/arda-labs/arda/libs/go/arda-proto/loan/v1;loanv1b\x06proto3"
 
 var (
 	file_arda_loan_v1_loan_proto_rawDescOnce sync.Once
@@ -913,7 +1431,7 @@ func file_arda_loan_v1_loan_proto_rawDescGZIP() []byte {
 	return file_arda_loan_v1_loan_proto_rawDescData
 }
 
-var file_arda_loan_v1_loan_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_arda_loan_v1_loan_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_arda_loan_v1_loan_proto_goTypes = []any{
 	(*UpdateContractStatusRequest)(nil),         // 0: arda.loan.v1.UpdateContractStatusRequest
 	(*UpdateContractStatusResponse)(nil),        // 1: arda.loan.v1.UpdateContractStatusResponse
@@ -929,6 +1447,14 @@ var file_arda_loan_v1_loan_proto_goTypes = []any{
 	(*SettleDisbursementResponse)(nil),          // 11: arda.loan.v1.SettleDisbursementResponse
 	(*ResolveDisbursementRequest)(nil),          // 12: arda.loan.v1.ResolveDisbursementRequest
 	(*ResolveDisbursementResponse)(nil),         // 13: arda.loan.v1.ResolveDisbursementResponse
+	(*CheckCollectionRequest)(nil),              // 14: arda.loan.v1.CheckCollectionRequest
+	(*CheckCollectionResponse)(nil),             // 15: arda.loan.v1.CheckCollectionResponse
+	(*GetCollectionPostingDetailRequest)(nil),   // 16: arda.loan.v1.GetCollectionPostingDetailRequest
+	(*CollectionPostingDetail)(nil),             // 17: arda.loan.v1.CollectionPostingDetail
+	(*SettleCollectionRequest)(nil),             // 18: arda.loan.v1.SettleCollectionRequest
+	(*SettleCollectionResponse)(nil),            // 19: arda.loan.v1.SettleCollectionResponse
+	(*ResolveCollectionRequest)(nil),            // 20: arda.loan.v1.ResolveCollectionRequest
+	(*ResolveCollectionResponse)(nil),           // 21: arda.loan.v1.ResolveCollectionResponse
 }
 var file_arda_loan_v1_loan_proto_depIdxs = []int32{
 	0,  // 0: arda.loan.v1.LoanCommandService.UpdateContractStatus:input_type -> arda.loan.v1.UpdateContractStatusRequest
@@ -938,15 +1464,23 @@ var file_arda_loan_v1_loan_proto_depIdxs = []int32{
 	8,  // 4: arda.loan.v1.LoanCommandService.GetDisbursementPostingDetail:input_type -> arda.loan.v1.GetDisbursementPostingDetailRequest
 	10, // 5: arda.loan.v1.LoanCommandService.SettleDisbursement:input_type -> arda.loan.v1.SettleDisbursementRequest
 	12, // 6: arda.loan.v1.LoanCommandService.ResolveDisbursement:input_type -> arda.loan.v1.ResolveDisbursementRequest
-	1,  // 7: arda.loan.v1.LoanCommandService.UpdateContractStatus:output_type -> arda.loan.v1.UpdateContractStatusResponse
-	3,  // 8: arda.loan.v1.LoanCommandService.CheckAdjustment:output_type -> arda.loan.v1.CheckAdjustmentResponse
-	5,  // 9: arda.loan.v1.LoanCommandService.ResolveAdjustment:output_type -> arda.loan.v1.ResolveAdjustmentResponse
-	7,  // 10: arda.loan.v1.LoanCommandService.CheckDisbursement:output_type -> arda.loan.v1.CheckDisbursementResponse
-	9,  // 11: arda.loan.v1.LoanCommandService.GetDisbursementPostingDetail:output_type -> arda.loan.v1.DisbursementPostingDetail
-	11, // 12: arda.loan.v1.LoanCommandService.SettleDisbursement:output_type -> arda.loan.v1.SettleDisbursementResponse
-	13, // 13: arda.loan.v1.LoanCommandService.ResolveDisbursement:output_type -> arda.loan.v1.ResolveDisbursementResponse
-	7,  // [7:14] is the sub-list for method output_type
-	0,  // [0:7] is the sub-list for method input_type
+	14, // 7: arda.loan.v1.LoanCommandService.CheckCollection:input_type -> arda.loan.v1.CheckCollectionRequest
+	16, // 8: arda.loan.v1.LoanCommandService.GetCollectionPostingDetail:input_type -> arda.loan.v1.GetCollectionPostingDetailRequest
+	18, // 9: arda.loan.v1.LoanCommandService.SettleCollection:input_type -> arda.loan.v1.SettleCollectionRequest
+	20, // 10: arda.loan.v1.LoanCommandService.ResolveCollection:input_type -> arda.loan.v1.ResolveCollectionRequest
+	1,  // 11: arda.loan.v1.LoanCommandService.UpdateContractStatus:output_type -> arda.loan.v1.UpdateContractStatusResponse
+	3,  // 12: arda.loan.v1.LoanCommandService.CheckAdjustment:output_type -> arda.loan.v1.CheckAdjustmentResponse
+	5,  // 13: arda.loan.v1.LoanCommandService.ResolveAdjustment:output_type -> arda.loan.v1.ResolveAdjustmentResponse
+	7,  // 14: arda.loan.v1.LoanCommandService.CheckDisbursement:output_type -> arda.loan.v1.CheckDisbursementResponse
+	9,  // 15: arda.loan.v1.LoanCommandService.GetDisbursementPostingDetail:output_type -> arda.loan.v1.DisbursementPostingDetail
+	11, // 16: arda.loan.v1.LoanCommandService.SettleDisbursement:output_type -> arda.loan.v1.SettleDisbursementResponse
+	13, // 17: arda.loan.v1.LoanCommandService.ResolveDisbursement:output_type -> arda.loan.v1.ResolveDisbursementResponse
+	15, // 18: arda.loan.v1.LoanCommandService.CheckCollection:output_type -> arda.loan.v1.CheckCollectionResponse
+	17, // 19: arda.loan.v1.LoanCommandService.GetCollectionPostingDetail:output_type -> arda.loan.v1.CollectionPostingDetail
+	19, // 20: arda.loan.v1.LoanCommandService.SettleCollection:output_type -> arda.loan.v1.SettleCollectionResponse
+	21, // 21: arda.loan.v1.LoanCommandService.ResolveCollection:output_type -> arda.loan.v1.ResolveCollectionResponse
+	11, // [11:22] is the sub-list for method output_type
+	0,  // [0:11] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
@@ -963,7 +1497,7 @@ func file_arda_loan_v1_loan_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_loan_v1_loan_proto_rawDesc), len(file_arda_loan_v1_loan_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

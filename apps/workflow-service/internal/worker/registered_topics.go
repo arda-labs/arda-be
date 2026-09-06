@@ -20,6 +20,10 @@ var RegisteredJobTopics = []string{
 	"lnm.disbursement.validate",
 	"lnm.disbursement.execute",
 	"lnm.disbursement.cancel",
+	// Collection (lnm-collection-v2.bpmn)
+	"lnm.collection.validate",
+	"lnm.collection.execute",
+	"lnm.collection.cancel",
 	// Notification (no BPMN service task yet; registered for future flows)
 	"notification.email",
 	"notification.sms",

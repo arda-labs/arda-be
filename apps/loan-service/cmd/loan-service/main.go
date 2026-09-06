@@ -74,10 +74,12 @@ func main() {
 	loanHandler := handler.NewLoanHandler(loanSvc, adjSvc)
 	disbSvc := service.NewDisbursementService(repo, workflow)
 	disbHandler := handler.NewDisbursementHandler(disbSvc)
+	colSvc := service.NewCollectionService(repo, workflow)
+	colHandler := handler.NewCollectionHandler(colSvc)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, disbHandler, loangrpc.Kinds)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, disbHandler, colHandler, loangrpc.Kinds)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -100,7 +102,7 @@ func main() {
 			interceptors.UnaryServerLogging(logger),
 		),
 	)
-	loanv1.RegisterLoanCommandServiceServer(grpcSrv, grpcserver.NewLoanServer(loanSvc, adjSvc, disbSvc))
+	loanv1.RegisterLoanCommandServiceServer(grpcSrv, grpcserver.NewLoanServer(loanSvc, adjSvc, disbSvc, colSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)

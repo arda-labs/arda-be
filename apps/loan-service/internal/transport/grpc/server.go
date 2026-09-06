@@ -22,10 +22,11 @@ type LoanServer struct {
 	contracts     *service.LoanService
 	adj           *service.AdjustmentService
 	disbursements *service.DisbursementService
+	collections   *service.CollectionService
 }
 
-func NewLoanServer(contracts *service.LoanService, adj *service.AdjustmentService, disbursements *service.DisbursementService) *LoanServer {
-	return &LoanServer{contracts: contracts, adj: adj, disbursements: disbursements}
+func NewLoanServer(contracts *service.LoanService, adj *service.AdjustmentService, disbursements *service.DisbursementService, collections *service.CollectionService) *LoanServer {
+	return &LoanServer{contracts: contracts, adj: adj, disbursements: disbursements, collections: collections}
 }
 
 func tenantFromContext(ctx context.Context) (string, error) {
@@ -129,4 +130,56 @@ func (s *LoanServer) ResolveDisbursement(ctx context.Context, req *loanv1.Resolv
 		return &loanv1.ResolveDisbursementResponse{Ok: false}, nil
 	}
 	return &loanv1.ResolveDisbursementResponse{Ok: true}, nil
+}
+
+
+// ── Collection flow (P1b.4, LNM.301.02) ──
+
+func (s *LoanServer) CheckCollection(ctx context.Context, req *loanv1.CheckCollectionRequest) (*loanv1.CheckCollectionResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	ok, message, err := s.collections.Check(ctx, tenantID, req.GetCollectionId())
+	if err != nil {
+		return &loanv1.CheckCollectionResponse{Ok: false, Message: err.Error()}, nil
+	}
+	return &loanv1.CheckCollectionResponse{Ok: ok, Message: message}, nil
+}
+
+func (s *LoanServer) GetCollectionPostingDetail(ctx context.Context, req *loanv1.GetCollectionPostingDetailRequest) (*loanv1.CollectionPostingDetail, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	detail, err := s.collections.PostingDetail(ctx, tenantID, req.GetCollectionId())
+	if err != nil {
+		slog.Warn("loan grpc: collection detail failed", "id", req.GetCollectionId(), "err", err)
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return detail, nil
+}
+
+func (s *LoanServer) SettleCollection(ctx context.Context, req *loanv1.SettleCollectionRequest) (*loanv1.SettleCollectionResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if err := s.collections.Settle(ctx, tenantID, req.GetCollectionId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
+		slog.Warn("loan grpc: settle collection failed", "id", req.GetCollectionId(), "err", err)
+		return &loanv1.SettleCollectionResponse{Ok: false}, nil
+	}
+	return &loanv1.SettleCollectionResponse{Ok: true}, nil
+}
+
+func (s *LoanServer) ResolveCollection(ctx context.Context, req *loanv1.ResolveCollectionRequest) (*loanv1.ResolveCollectionResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if err := s.collections.Resolve(ctx, tenantID, req.GetCollectionId(), req.GetDecision(), req.GetDecidedBy(), req.GetNote()); err != nil {
+		slog.Warn("loan grpc: resolve collection failed", "id", req.GetCollectionId(), "err", err)
+		return &loanv1.ResolveCollectionResponse{Ok: false}, nil
+	}
+	return &loanv1.ResolveCollectionResponse{Ok: true}, nil
 }

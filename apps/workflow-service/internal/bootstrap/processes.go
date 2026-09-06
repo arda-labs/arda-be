@@ -44,6 +44,9 @@ var lnmLoanFormationV2 []byte
 //go:embed lnm-disbursement-v2.bpmn
 var lnmDisbursement []byte
 
+//go:embed lnm-collection-v2.bpmn
+var lnmCollection []byte
+
 type Process struct {
 	ProcessCode  string
 	Name         string
@@ -130,6 +133,12 @@ func BuiltInProcesses() []Process {
 			Name:         "Giải ngân (v2)",
 			ResourceName: "lnm-disbursement-v2.bpmn",
 			Content:      lnmDisbursement,
+		},
+		{
+			ProcessCode:  "LNM_COLLECTION_V2",
+			Name:         "Thu nợ (v2)",
+			ResourceName: "lnm-collection-v2.bpmn",
+			Content:      lnmCollection,
 		},
 		{
 			// Multi-level approval sample derived from EPAS LNM.201.01 —

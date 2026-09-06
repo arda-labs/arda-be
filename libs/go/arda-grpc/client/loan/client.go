@@ -196,3 +196,63 @@ func (c *Client) ResolveDisbursement(ctx context.Context, disbursementID, decisi
 	})
 	return err
 }
+
+
+// CheckCollection validates the collection is actionable (BPMN validate).
+func (c *Client) CheckCollection(ctx context.Context, collectionID string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckCollection(callCtx, &loanv1.CheckCollectionRequest{
+		CollectionId: collectionID,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+// GetCollectionPostingDetail returns everything the posting step needs.
+func (c *Client) GetCollectionPostingDetail(ctx context.Context, collectionID string) (*loanv1.CollectionPostingDetail, error) {
+	if c == nil {
+		return nil, errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	return c.api.GetCollectionPostingDetail(callCtx, &loanv1.GetCollectionPostingDetailRequest{
+		CollectionId: collectionID,
+	})
+}
+
+// SettleCollection marks the collection POSTED with its journal entry.
+func (c *Client) SettleCollection(ctx context.Context, collectionID, journalEntryID, actor string) error {
+	if c == nil {
+		return errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.SettleCollection(callCtx, &loanv1.SettleCollectionRequest{
+		CollectionId:   collectionID,
+		JournalEntryId: journalEntryID,
+		Actor:          actor,
+	})
+	return err
+}
+
+// ResolveCollection applies APPROVE/REJECT without posting.
+func (c *Client) ResolveCollection(ctx context.Context, collectionID, decision, decidedBy, note string) error {
+	if c == nil {
+		return errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.ResolveCollection(callCtx, &loanv1.ResolveCollectionRequest{
+		CollectionId: collectionID,
+		Decision:     decision,
+		DecidedBy:    decidedBy,
+		Note:         note,
+	})
+	return err
+}

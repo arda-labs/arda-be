@@ -14,6 +14,10 @@ service LoanCommandService {
   rpc GetDisbursementPostingDetail(GetDisbursementPostingDetailRequest) returns (DisbursementPostingDetail);
   rpc SettleDisbursement(SettleDisbursementRequest) returns (SettleDisbursementResponse);
   rpc ResolveDisbursement(ResolveDisbursementRequest) returns (ResolveDisbursementResponse);
+  rpc CheckCollection(CheckCollectionRequest) returns (CheckCollectionResponse);
+  rpc GetCollectionPostingDetail(GetCollectionPostingDetailRequest) returns (CollectionPostingDetail);
+  rpc SettleCollection(SettleCollectionRequest) returns (SettleCollectionResponse);
+  rpc ResolveCollection(ResolveCollectionRequest) returns (ResolveCollectionResponse);
 }
 
 message UpdateContractStatusRequest {
@@ -97,5 +101,56 @@ message ResolveDisbursementRequest {
 }
 
 message ResolveDisbursementResponse {
+  bool ok = 1;
+}
+
+
+// ── Collection flow (P1b.4, LNM.301.02) ──
+
+message CheckCollectionRequest {
+  string collection_id = 1;
+}
+
+message CheckCollectionResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message GetCollectionPostingDetailRequest {
+  string collection_id = 1;
+}
+
+message CollectionPostingDetail {
+  string collection_id = 1;
+  string contract_code = 2;
+  string agreement_code = 3;
+  string collection_date = 4;
+  int64 principal_minor = 5;
+  int64 interest_minor = 6;
+  string currency_code = 7;
+  string debt_group_code = 8;
+  string org_unit_code = 9;
+  string customer_code = 10;
+  string workflow_case_id = 11;
+}
+
+message SettleCollectionRequest {
+  string collection_id = 1;
+  string journal_entry_id = 2;
+  string actor = 3;
+}
+
+message SettleCollectionResponse {
+  bool ok = 1;
+}
+
+message ResolveCollectionRequest {
+  string collection_id = 1;
+  string decision = 2;
+  string decided_by = 3;
+  string note = 4;
+}
+
+message ResolveCollectionResponse {
   bool ok = 1;
 }

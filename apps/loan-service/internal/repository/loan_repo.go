@@ -1138,3 +1138,116 @@ func (r *LoanRepository) GetContractByCode(ctx context.Context, tenantID, code s
 	}
 	return c, err
 }
+
+// ── Collections (P1b.4a) ──
+
+const collectionColumns = `id, tenant_id, contract_code, agreement_code, collection_date::text,
+	principal_minor, interest_minor, currency_code, status, payload,
+	workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at`
+
+func (r *LoanRepository) ListCollections(ctx context.Context, tenantID, status, contractCode string) ([]domain.Collection, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+collectionColumns+`
+		FROM lnm_collections
+		WHERE tenant_id = $1
+		  AND ($2 = '' OR status = $2)
+		  AND ($3 = '' OR contract_code = $3)
+		ORDER BY created_at DESC LIMIT 200`, tenantID, status, contractCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Collection{}
+	for rows.Next() {
+		var c domain.Collection
+		var caseID, entryID sql.NullString
+		var payload []byte
+		if err := rows.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.AgreementCode, &c.CollectionDate,
+			&c.PrincipalMinor, &c.InterestMinor, &c.CurrencyCode, &c.Status, &payload,
+			&caseID, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if len(payload) > 0 && string(payload) != "null" {
+			c.Payload = payload
+		}
+		if caseID.Valid {
+			c.WorkflowCaseID = &caseID.String
+		}
+		if entryID.Valid {
+			c.JournalEntryID = &entryID.String
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (r *LoanRepository) CreateCollection(ctx context.Context, c *domain.Collection) (*domain.Collection, error) {
+	row := r.db.QueryRowContext(ctx, `
+		INSERT INTO lnm_collections
+			(tenant_id, contract_code, agreement_code, collection_date, principal_minor,
+			 interest_minor, currency_code, status, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8)
+		RETURNING id, created_at, updated_at`,
+		c.TenantID, c.ContractCode, c.AgreementCode, c.CollectionDate, c.PrincipalMinor,
+		c.InterestMinor, c.CurrencyCode, c.CreatedBy)
+	if err := row.Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func (r *LoanRepository) GetCollection(ctx context.Context, tenantID, id string) (*domain.Collection, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT `+collectionColumns+` FROM lnm_collections WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	var c domain.Collection
+	var caseID, entryID sql.NullString
+	var payload []byte
+	err := row.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.AgreementCode, &c.CollectionDate,
+		&c.PrincipalMinor, &c.InterestMinor, &c.CurrencyCode, &c.Status, &payload,
+		&caseID, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, err
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(payload) > 0 && string(payload) != "null" {
+		c.Payload = payload
+	}
+	if caseID.Valid {
+		c.WorkflowCaseID = &caseID.String
+	}
+	if entryID.Valid {
+		c.JournalEntryID = &entryID.String
+	}
+	return &c, nil
+}
+
+func (r *LoanRepository) SetCollectionStatus(ctx context.Context, tenantID, id, status, updatedBy string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE lnm_collections SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status, updatedBy)
+	return err
+}
+
+func (r *LoanRepository) SetCollectionCaseAndJournal(ctx context.Context, tenantID, id, caseID, journalEntryID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE lnm_collections SET workflow_case_id = $3, journal_entry_id = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullText(caseID), nullText(journalEntryID))
+	return err
+}
+
+// ApplyCollection applies the posting side effect: reduce outstanding
+// principal, accumulate collected principal/interest.
+func (r *LoanRepository) ApplyCollection(ctx context.Context, tenantID, agreementCode string, principalMinor, interestMinor int64) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE lnm_agreements
+		SET outstanding_amt_minor = GREATEST(outstanding_amt_minor - $3, 0),
+		    coln_principal_amt_minor = coln_principal_amt_minor + $3,
+		    coln_interest_amt_minor = coln_interest_amt_minor + $4,
+		    status = CASE WHEN GREATEST(outstanding_amt_minor - $3, 0) = 0 THEN 'CLOSED' ELSE status END,
+		    updated_at = now()
+		WHERE tenant_id = $1 AND agreement_code = $2`,
+		tenantID, agreementCode, principalMinor, interestMinor)
+	return err
+}

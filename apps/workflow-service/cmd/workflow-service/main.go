@@ -226,6 +226,16 @@ func main() {
 			defer deE.Close()
 			defer dcC.Close()
 			logger.Info("workflow disbursement workers registered")
+
+			colWorkers := worker.NewCollectionWorkers(loanClient, financeClient, caseRepo)
+			cv, ce, cc := colWorkers.Handlers()
+			cvv := zeebeSvc.NewJobWorker("lnm.collection.validate", cv)
+			ceE := zeebeSvc.NewJobWorker("lnm.collection.execute", ce)
+			ccc := zeebeSvc.NewJobWorker("lnm.collection.cancel", cc)
+			defer cvv.Close()
+			defer ceE.Close()
+			defer ccc.Close()
+			logger.Info("workflow collection workers registered")
 		} else {
 			logger.Warn("disbursement workers skipped: finance grpc not configured")
 		}
