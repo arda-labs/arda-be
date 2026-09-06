@@ -106,12 +106,14 @@ func main() {
 
 	// Handlers
 	customerHandler := handler.NewCustomerHandler(customerRepo, workflowClient)
+	projectRepo := repository.NewProjectRepository(db)
+	projectHandler := handler.NewProjectHandler(projectRepo)
 	amendmentHandler := handler.NewAmendmentHandler(customerRepo, amendmentRepo, workflowClient)
 
 	// Router and HTTP Server
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(customerHandler, amendmentHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(customerHandler, amendmentHandler, projectHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

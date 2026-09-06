@@ -5,8 +5,10 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/crm-service/internal/handler"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 type Router struct {
@@ -14,7 +16,7 @@ type Router struct {
 	amendmentHandler *handler.AmendmentHandler
 }
 
-func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handler.AmendmentHandler) http.Handler {
+func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handler.AmendmentHandler, projectHandler *handler.ProjectHandler) http.Handler {
 	r := &Router{
 		customerHandler:  customerHandler,
 		amendmentHandler: amendmentHandler,
@@ -34,6 +36,36 @@ func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handl
 
 	mux.HandleFunc("/api/crm/customers", customerHandler.Customers)
 	mux.HandleFunc("/api/crm/customers/", r.customerByID)
+	mux.HandleFunc("/api/crm/project-types", func(w http.ResponseWriter, req *http.Request) {
+		switch req.Method {
+		case http.MethodGet:
+			projectHandler.ListProjectTypes(w, req)
+		case http.MethodPost, http.MethodPut:
+			projectHandler.UpsertProjectType(w, req)
+		default:
+			writeMethodNotAllowed(w, req)
+		}
+	})
+	mux.HandleFunc("/api/crm/customers/{id}/risk-flags", func(w http.ResponseWriter, req *http.Request) {
+		switch req.Method {
+		case http.MethodGet:
+			projectHandler.ListRiskFlags(w, req)
+		case http.MethodPost:
+			projectHandler.AddRiskFlag(w, req)
+		default:
+			writeMethodNotAllowed(w, req)
+		}
+	})
+	mux.HandleFunc("/api/crm/projects", func(w http.ResponseWriter, req *http.Request) {
+		switch req.Method {
+		case http.MethodGet:
+			projectHandler.ListProjects(w, req)
+		case http.MethodPost:
+			projectHandler.CreateProject(w, req)
+		default:
+			writeMethodNotAllowed(w, req)
+		}
+	})
 
 	// Internal AI surface: ai-service calls here with a signed caller
 	// assertion and the delegated subject as headers. Resource-level scoping
@@ -63,4 +95,8 @@ func internalAIService(next http.Handler) http.Handler {
 		})
 	}
 	return identity.RequireServiceAuth(secret, "crm-service", identity.AllowedSources("ai-service"))(next)
+}
+
+func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
 }

@@ -74,3 +74,8 @@ func splitCSVHeader(value string) []string {
 	}
 	return out
 }
+
+// Stamp fills common audit fields on new records.
+func (s RequestScope) Stamp() (orgCode, actor string) {
+	return s.ResolveOrgID(), s.UserID
+}
