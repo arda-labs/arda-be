@@ -241,3 +241,17 @@ type VfuPlan struct {
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
+
+// Accrual is one computed interest accrual row (EOD batch, P1b.4b).
+type Accrual struct {
+	ID             string    `json:"id"`
+	TenantID       string    `json:"tenant_id"`
+	AgreementCode  string    `json:"agreement_code"`
+	FromDate       string    `json:"from_date"`
+	ToDate         string    `json:"to_date"`
+	InterestMinor  int64     `json:"interest_minor"`
+	CurrencyCode   string    `json:"currency_code"`
+	JournalEntryID *string   `json:"journal_entry_id,omitempty"`
+	CreatedBy      string    `json:"created_by"`
+	CreatedAt      time.Time `json:"created_at"`
+}

@@ -15,6 +15,7 @@ type Config struct {
 	LogLevel         string `yaml:"log_level"`
 	DatabaseDSN      string `yaml:"database_dsn"`
 	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr"`
+	FinanceGRPCAddr  string `yaml:"finance_grpc_addr"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -26,6 +27,7 @@ func Load() Config {
 		LogLevel:         "info",
 		DatabaseDSN:      "",
 		WorkflowGRPCAddr: "",
+		FinanceGRPCAddr:  "localhost:9096",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -44,6 +46,7 @@ func Load() Config {
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("WORKFLOW_GRPC_ADDR", &cfg.WorkflowGRPCAddr)
+	envStr("FINANCE_GRPC_ADDR", &cfg.FinanceGRPCAddr)
 
 	return cfg
 }

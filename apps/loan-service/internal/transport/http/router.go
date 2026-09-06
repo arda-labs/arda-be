@@ -10,7 +10,7 @@ import (
 
 // NewRouter wires the loan-service HTTP surface. Adjustment routes are
 // generated from the shared kind list so adding a flow never touches here.
-func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, kinds []string) http.Handler {
+func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, kinds []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -42,6 +42,10 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 		}
 	})
 	mux.HandleFunc("/api/loan/disbursements/{id}/submit", method("POST", d.SubmitDisbursement))
+
+	// Accruals (P1b.4b): EOD job trigger + read API
+	mux.HandleFunc("/internal/jobs/accrual-daily", a.RunDailyAccrual)
+	mux.HandleFunc("/api/loan/accruals", method("GET", a.ListAccruals))
 
 	// Collections (P1b.4a receipt flow, LNM.301.02)
 	mux.HandleFunc("/api/loan/collections", func(w http.ResponseWriter, r *http.Request) {

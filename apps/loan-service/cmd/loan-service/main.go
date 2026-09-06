@@ -23,6 +23,7 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/service"
 	grpcserver "github.com/arda-labs/arda/apps/loan-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/loan-service/internal/transport/http"
+	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	loangrpc "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
@@ -74,12 +75,25 @@ func main() {
 	loanHandler := handler.NewLoanHandler(loanSvc, adjSvc)
 	disbSvc := service.NewDisbursementService(repo, workflow)
 	disbHandler := handler.NewDisbursementHandler(disbSvc)
+	var financeClient *financeclient.Client
+	if cfg.FinanceGRPCAddr != "" {
+		fc, err := financeclient.Dial(context.Background(), cfg.FinanceGRPCAddr, "loan-service", logger)
+		if err != nil {
+			logger.Error("finance grpc dial", "err", err)
+			os.Exit(1)
+		}
+		defer fc.Close()
+		financeClient = fc
+	}
+
 	colSvc := service.NewCollectionService(repo, workflow)
 	colHandler := handler.NewCollectionHandler(colSvc)
+	accrualSvc := service.NewAccrualService(repo, db, financeClient)
+	accrualHandler := handler.NewAccrualHandler(accrualSvc)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, disbHandler, colHandler, loangrpc.Kinds)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, loangrpc.Kinds)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
