@@ -1008,10 +1008,14 @@ func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID, status
 	for rows.Next() {
 		var d domain.Disbursement
 		var caseID, entryID sql.NullString
+		var payload []byte
 		if err := rows.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
-			&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.Status, &d.Payload,
+			&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.Status, &payload,
 			&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			return nil, err
+		}
+		if len(payload) > 0 && string(payload) != "null" {
+			d.Payload = payload
 		}
 		if caseID.Valid {
 			d.WorkflowCaseID = &caseID.String
@@ -1047,14 +1051,18 @@ func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id strin
 		       currency_code, COALESCE(fund_source_code,''), status, payload,
 		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at
 		FROM lnm_disbursements WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	var payload []byte
 	err := row.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
-		&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.Status, &d.Payload,
+		&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.Status, &payload,
 		&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, err
 	}
 	if err != nil {
 		return nil, err
+	}
+	if len(payload) > 0 && string(payload) != "null" {
+		d.Payload = payload
 	}
 	if caseID.Valid {
 		d.WorkflowCaseID = &caseID.String
