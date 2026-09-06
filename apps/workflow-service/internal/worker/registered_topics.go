@@ -20,6 +20,10 @@ var RegisteredJobTopics = []string{
 	"lnm.disbursement.validate",
 	"lnm.disbursement.execute",
 	"lnm.disbursement.cancel",
+	// HRM employee registration (hrm-employee-registration-v2.bpmn)
+	"hrm.employee.register.validate",
+	"hrm.employee.register.execute",
+	"hrm.employee.register.cancel",
 	// Collection (lnm-collection-v2.bpmn)
 	"lnm.collection.validate",
 	"lnm.collection.execute",

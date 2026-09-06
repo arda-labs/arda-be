@@ -10,6 +10,7 @@ import (
 type Config struct {
 	AppName          string `yaml:"app_name"`
 	HTTPAddr         string `yaml:"http_addr"`
+	GRPCAddr         string `yaml:"grpc_addr"`
 	LogLevel         string `yaml:"log_level"`
 	DatabaseDSN      string `yaml:"database_dsn"`
 	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr"`
@@ -19,6 +20,7 @@ func Load() Config {
 	cfg := Config{
 		AppName:          "hrm-service",
 		HTTPAddr:         "0.0.0.0:8099",
+		GRPCAddr:         "0.0.0.0:9099",
 		LogLevel:         "info",
 		DatabaseDSN:      "",
 		WorkflowGRPCAddr: "localhost:9093",
@@ -36,6 +38,7 @@ func Load() Config {
 
 	envStr("APP_NAME", &cfg.AppName)
 	envStr("HTTP_ADDR", &cfg.HTTPAddr)
+	envStr("GRPC_ADDR", &cfg.GRPCAddr)
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("WORKFLOW_GRPC_ADDR", &cfg.WorkflowGRPCAddr)

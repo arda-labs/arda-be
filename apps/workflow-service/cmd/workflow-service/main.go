@@ -25,6 +25,7 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/worker"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
+	hrmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/hrm"
 	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
 	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
@@ -190,6 +191,17 @@ func main() {
 	defer notificationCustomerResultWorker.Close()
 	logger.Info("workflow notification job workers registered")
 
+	var hrmClient *hrmclient.Client
+	if cfg.HRMGRPCAddr != "" {
+		hc, err := hrmclient.Dial(context.Background(), cfg.HRMGRPCAddr, cfg.AppName, logger)
+		if err != nil {
+			logger.Error("hrm grpc dial", "err", err)
+			os.Exit(1)
+		}
+		defer hc.Close()
+		hrmClient = hc
+	}
+
 	var financeClient *financeclient.Client
 	if cfg.FinanceGRPCAddr != "" {
 		fc, err := financeclient.Dial(context.Background(), cfg.FinanceGRPCAddr, cfg.AppName, logger)
@@ -236,6 +248,18 @@ func main() {
 			defer ceE.Close()
 			defer ccc.Close()
 			logger.Info("workflow collection workers registered")
+		}
+
+		if hrmClient != nil {
+			hrmWorkers := worker.NewHRMRegisterWorkers(hrmClient, caseRepo)
+			hv, he, hc := hrmWorkers.Handlers()
+			hvv := zeebeSvc.NewJobWorker(worker.JobHRMRegisterValidate, hv)
+			heE := zeebeSvc.NewJobWorker(worker.JobHRMRegisterExecute, he)
+			hcc := zeebeSvc.NewJobWorker(worker.JobHRMRegisterCancel, hc)
+			defer hvv.Close()
+			defer heE.Close()
+			defer hcc.Close()
+			logger.Info("workflow hrm registration workers registered")
 		} else {
 			logger.Warn("disbursement workers skipped: finance grpc not configured")
 		}

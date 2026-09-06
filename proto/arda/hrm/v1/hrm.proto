@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package arda.hrm.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/hrm/v1;hrmv1";
+
+// EmployeeCommandService is the callback surface workflow-service workers
+// use to execute HRM employee-registration steps (mirror of crm
+// CustomerCommandService). Tenant scope arrives via gRPC metadata.
+service EmployeeCommandService {
+  rpc CheckRegistration(CheckRegistrationRequest) returns (CheckRegistrationResponse);
+  rpc SettleRegistration(SettleRegistrationRequest) returns (SettleRegistrationResponse);
+  rpc RejectRegistration(RejectRegistrationRequest) returns (RejectRegistrationResponse);
+}
+
+message CheckRegistrationRequest {
+  string registration_id = 1;
+}
+
+message CheckRegistrationResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message SettleRegistrationRequest {
+  string registration_id = 1;
+  string approved_by = 2;
+}
+
+message SettleRegistrationResponse {
+  bool ok = 1;
+  string employee_id = 2;
+}
+
+message RejectRegistrationRequest {
+  string registration_id = 1;
+  string decided_by = 2;
+  string note = 3;
+}
+
+message RejectRegistrationResponse {
+  bool ok = 1;
+}

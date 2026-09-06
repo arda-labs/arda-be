@@ -47,6 +47,9 @@ var lnmDisbursement []byte
 //go:embed lnm-collection-v2.bpmn
 var lnmCollection []byte
 
+//go:embed hrm-employee-registration-v2.bpmn
+var hrmEmployeeRegistration []byte
+
 type Process struct {
 	ProcessCode  string
 	Name         string
@@ -139,6 +142,12 @@ func BuiltInProcesses() []Process {
 			Name:         "Thu nợ (v2)",
 			ResourceName: "lnm-collection-v2.bpmn",
 			Content:      lnmCollection,
+		},
+		{
+			ProcessCode:  "HRM_EMPLOYEE_REGISTRATION",
+			Name:         "Đăng ký nhân sự (v2)",
+			ResourceName: "hrm-employee-registration-v2.bpmn",
+			Content:      hrmEmployeeRegistration,
 		},
 		{
 			// Multi-level approval sample derived from EPAS LNM.201.01 —
