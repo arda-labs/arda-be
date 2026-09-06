@@ -68,10 +68,13 @@ func (r *MenuRepository) ListEffective(ctx context.Context, tenantID string) ([]
 	return items, rows.Err()
 }
 
+// List returns menu rows visible to the tenant: global default rows plus
+// tenant-owned rows (overrides). The admin CRUD surface needs both to show
+// the full tree and to allow overriding global entries by code.
 func (r *MenuRepository) List(ctx context.Context, tenantID string) ([]domain.MenuItem, error) {
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT %s FROM plt_menus
-		WHERE ($1 = '' OR COALESCE(tenant_id, '') = $1)
+		WHERE tenant_id IS NULL OR ($1 <> '' AND tenant_id = $1)
 		ORDER BY sort_order, code`, menuColumns), tenantID)
 	if err != nil {
 		return nil, err
