@@ -1,3 +1,4 @@
 app_name: mdm-service
 http_addr: 0.0.0.0:8096
 log_level: info
+database_dsn: ""

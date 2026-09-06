@@ -361,6 +361,14 @@ routes:
     permissions:
       - mdm.read
 
+  - id: mdm-write
+    path: /api/mdm/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+    permissions:
+      - mdm.manage
+
   - id: platform-public-branding
     path: /api/platform/public/branding
     methods: [GET]
