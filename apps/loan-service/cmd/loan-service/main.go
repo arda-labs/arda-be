@@ -90,10 +90,12 @@ func main() {
 	colHandler := handler.NewCollectionHandler(colSvc)
 	accrualSvc := service.NewAccrualService(repo, db, financeClient)
 	accrualHandler := handler.NewAccrualHandler(accrualSvc)
+	provisionSvc := service.NewProvisionService(repo, db, financeClient)
+	provisionHandler := handler.NewProvisionHandler(provisionSvc)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, loangrpc.Kinds)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, loangrpc.Kinds)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
