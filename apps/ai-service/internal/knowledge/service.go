@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"uuid"
 )
 
 type Service struct {
@@ -39,7 +39,7 @@ func NewService(repo *Repository, embedder Embedder, logger *slog.Logger) *Servi
 	if workerID == "" {
 		workerID = "ai-service"
 	}
-	workerID += "-" + uuid.NewString()
+	workerID += "-" + uuid.New().String()
 	return &Service{
 		repo:     repo,
 		embedder: embedder,

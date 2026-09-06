@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/bootstrap"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/config"
@@ -45,7 +45,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Database Connection
-	db, err := sql.Open("postgres", cfg.DatabaseDSN)
+	db, err := sql.Open("pgx/v5", cfg.DatabaseDSN)
 	if err != nil {
 		logger.Error("Failed to open database", "err", err)
 		os.Exit(1)

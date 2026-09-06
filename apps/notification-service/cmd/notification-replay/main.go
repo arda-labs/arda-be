@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
 )
@@ -29,7 +29,7 @@ func main() {
 	}
 	dsn := strings.TrimSpace(os.Getenv("DATABASE_DSN"))
 
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("pgx/v5", dsn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open database: %v\n", err)
 		os.Exit(1)

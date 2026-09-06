@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
+	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
 type Customer struct {
@@ -119,7 +120,7 @@ func (r *CustomerRepository) GetScoped(ctx context.Context, scope CustomerScope,
 	}
 	args := []any{scope.TenantID, id}
 	where := "tenant_id = $1 AND id = $2"
-	args = append(args, pq.Array(scope.OrgIDs))
+	args = append(args, ardapg.Driver.NotNil(scope.OrgIDs))
 	where += " AND org_id = ANY($3)"
 	row := r.db.QueryRowContext(ctx, customerSelect()+" WHERE "+where, args...)
 	return scanCustomer(row)
@@ -146,7 +147,7 @@ func (r *CustomerRepository) ListCustomers(ctx context.Context, f CustomerListFi
 		add("tenant_id = $%d", f.TenantID)
 	}
 	if len(f.OrgIDs) > 0 {
-		args = append(args, pq.Array(f.OrgIDs))
+		args = append(args, ardapg.Driver.NotNil(f.OrgIDs))
 		n := len(args)
 		where = append(where, fmt.Sprintf("(org_id = ANY($%d) OR org_id = '')", n))
 	}
@@ -311,7 +312,7 @@ func (r *CustomerRepository) AttachWorkflowCase(ctx context.Context, scope Custo
 	}
 	args := []any{scope.TenantID, id, workflowCaseID}
 	where := "tenant_id = $1 AND id = $2"
-	args = append(args, pq.Array(scope.OrgIDs))
+	args = append(args, ardapg.Driver.NotNil(scope.OrgIDs))
 	where += " AND org_id = ANY($4)"
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE customers
@@ -357,7 +358,7 @@ func (r *CustomerRepository) AssignOfficialCustomerCodeScoped(ctx context.Contex
 		}
 		args := []any{code, id, scope.TenantID}
 		where := "id = $2 AND tenant_id = $3"
-		args = append(args, pq.Array(scope.OrgIDs))
+		args = append(args, ardapg.Driver.NotNil(scope.OrgIDs))
 		where += " AND org_id = ANY($4)"
 		_, err = r.db.ExecContext(ctx, `
 			UPDATE customers
@@ -377,7 +378,7 @@ func (r *CustomerRepository) AssignOfficialCustomerCodeScoped(ctx context.Contex
 func (r *CustomerRepository) customerCodeUsedByOtherScoped(ctx context.Context, scope CustomerScope, code, id string) (bool, error) {
 	args := []any{code, id, scope.TenantID}
 	where := "customer_code = $1 AND id <> $2 AND tenant_id = $3"
-	args = append(args, pq.Array(scope.OrgIDs))
+	args = append(args, ardapg.Driver.NotNil(scope.OrgIDs))
 	where += " AND org_id = ANY($4)"
 	var exists bool
 	err := r.db.QueryRowContext(ctx, `
@@ -389,8 +390,8 @@ func (r *CustomerRepository) customerCodeUsedByOtherScoped(ctx context.Context, 
 }
 
 func isPgUniqueViolation(err error) bool {
-	var pqErr *pq.Error
-	return errors.As(err, &pqErr) && pqErr.Code == "23505"
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 func (r *CustomerRepository) CancelDraft(ctx context.Context, scope CustomerScope, id string) error {
@@ -399,7 +400,7 @@ func (r *CustomerRepository) CancelDraft(ctx context.Context, scope CustomerScop
 	}
 	args := []any{scope.TenantID, id}
 	where := "tenant_id = $1 AND id = $2"
-	args = append(args, pq.Array(scope.OrgIDs))
+	args = append(args, ardapg.Driver.NotNil(scope.OrgIDs))
 	where += " AND org_id = ANY($3)"
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE customers
@@ -425,7 +426,7 @@ func (r *CustomerRepository) UpdateStatusScoped(ctx context.Context, scope Custo
 	}
 	args := []any{status, id, scope.TenantID}
 	where := "id = $2 AND tenant_id = $3"
-	args = append(args, pq.Array(scope.OrgIDs))
+	args = append(args, ardapg.Driver.NotNil(scope.OrgIDs))
 	where += " AND org_id = ANY($4)"
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE customers
@@ -478,7 +479,7 @@ func (r *CustomerRepository) ListRelationshipsScoped(ctx context.Context, scope 
 			  AND owner.tenant_id = $2 AND owner.org_id = ANY($3)
 		  )
 		ORDER BY rel.created_at DESC
-	`, customerID, scope.TenantID, pq.Array(scope.OrgIDs))
+	`, customerID, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs))
 	if err != nil {
 		return nil, err
 	}

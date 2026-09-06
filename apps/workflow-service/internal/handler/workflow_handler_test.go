@@ -139,27 +139,3 @@ func TestTaskTypeForRequest(t *testing.T) {
 		t.Fatalf("legacy explicit task type = %q, want empty", got)
 	}
 }
-
-func TestWorkItemSeedFromCaseSkipsLegacy(t *testing.T) {
-	bpmnV2 := "crm-customer-registration-v2"
-	_, ok := workItemSeedFromCase(repository.BusinessCase{
-		CaseType:      "CUSTOMER_REGISTRATION",
-		BpmnProcessID: &bpmnV2,
-		CurrentStep:   "UT_MakerRevise",
-		Status:        repository.CaseStatusInReview,
-	})
-	if ok {
-		t.Fatal("expected v2 case to skip legacy work item seed")
-	}
-
-	legacyProcess := "legacy-process"
-	_, ok = workItemSeedFromCase(repository.BusinessCase{
-		CaseType:      "CUSTOMER_REGISTRATION",
-		BpmnProcessID: &legacyProcess,
-		CurrentStep:   "Activity_MakerRevise",
-		Status:        repository.CaseStatusInReview,
-	})
-	if ok {
-		t.Fatal("expected v1 case to skip legacy work item seed")
-	}
-}

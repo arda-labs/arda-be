@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // Session holds the BFF session state — access/refresh tokens + user context.
@@ -91,7 +91,7 @@ type Store interface {
 
 // NewID generates a UUID v7 session ID.
 func NewID() string {
-	return uuid.NewString()
+	return uuid.New().String()
 }
 
 // ── In-memory store (for dev / single-instance) ──

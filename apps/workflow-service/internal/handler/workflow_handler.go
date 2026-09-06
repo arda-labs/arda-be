@@ -697,13 +697,91 @@ func (h *WorkflowHandler) Cases(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+// CompleteUserTask completes a native BPMN user task (Zeebe REST) or falls
+// back to the job-based path. CRM v2 registration/adjustment and the
+// workbench both post here.
+func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Request) {
+	jobKey, action := taskPath(r.URL.Path)
+	if jobKey == 0 || action != "complete" {
+		writeAPIError(w, r, http.StatusNotFound, "route not found")
+		return
+	}
+	if r.Method != http.MethodPost {
 		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
-	if err := h.seedWorkItems(r.Context(), r.URL.Query().Get("direction")); err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to prepare work items: "+err.Error())
+	if h.zeebeSvc == nil {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
+		return
+	}
+	var req struct {
+		ProcessInstanceKey flexInt64      `json:"processInstanceKey"`
+		ElementID          string         `json:"elementId"`
+		Variables          map[string]any `json:"variables"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
+		return
+	}
+	actor := strings.TrimSpace(r.Header.Get("X-User-Id"))
+	if actor == "" {
+		actor = strings.TrimSpace(r.Header.Get("X-User-Email"))
+	}
+	elementID := normalizeUserTaskElementID(req.ElementID)
+	decision := reviewDecisionFromVariables(req.Variables)
+	comment := reviewCommentFromVariables(req.Variables)
+	if elementID == "UT_CheckerReview" {
+		if err := requireReviewComment(decision, comment); err != nil {
+			writeAPIError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if err := h.enforceMakerChecker(r, req.ProcessInstanceKey.Int64(), req.ElementID, actor); err != nil {
+		slog.Warn("workflow task complete forbidden",
+			"actor", actor,
+			"jobKey", jobKey,
+			"processInstanceKey", req.ProcessInstanceKey.Int64(),
+			"elementId", req.ElementID,
+			"err", err,
+		)
+		writeAPIError(w, r, http.StatusForbidden, err.Error())
+		return
+	}
+	slog.Info("workflow task complete requested",
+		"actor", actor,
+		"jobKey", jobKey,
+		"processInstanceKey", req.ProcessInstanceKey.Int64(),
+		"elementId", req.ElementID,
+	)
+	if h.shouldUseNativeUserTaskComplete(r.Context(), req.ElementID, req.ProcessInstanceKey.Int64()) {
+		if err := h.completeNativeUserTask(r.Context(), jobKey, req.ElementID, req.Variables, req.ProcessInstanceKey.Int64()); err != nil {
+			slog.Error("workflow native user task complete failed",
+				"actor", actor,
+				"jobKey", jobKey,
+				"processInstanceKey", req.ProcessInstanceKey.Int64(),
+				"elementId", req.ElementID,
+				"err", err,
+			)
+			writeAPIError(w, r, http.StatusBadGateway, "Failed to complete user task: "+err.Error())
+			return
+		}
+	} else if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, req.Variables); err != nil {
+		slog.Error("workflow task complete failed in zeebe",
+			"actor", actor,
+			"jobKey", jobKey,
+			"processInstanceKey", req.ProcessInstanceKey.Int64(),
+			"elementId", req.ElementID,
+			"err", err,
+		)
+		writeAPIError(w, r, http.StatusBadGateway, "Failed to complete task: "+err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"status": "completed"})
+}
+
+func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	items, err := h.caseRepo.ListWorkItems(r.Context(), workItemFilter(r))
@@ -728,10 +806,6 @@ func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
 func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	if err := h.seedWorkItems(r.Context(), r.URL.Query().Get("direction")); err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to prepare work items: "+err.Error())
 		return
 	}
 	filter := workItemFilter(r)
@@ -911,124 +985,6 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, map[string]any{"workItem": claimed, "claimedBy": userID, "claimedAt": time.Now()})
 }
 
-func (h *WorkflowHandler) Tasks(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	role := r.URL.Query().Get("role")
-	jobType := taskTypeForRequest(role, r.URL.Query().Get("task_type"))
-	if jobType == "" {
-		writeAPIError(w, r, http.StatusBadRequest, "Unsupported task role or task_type")
-		return
-	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	tasks, err := h.listTaskCandidates(r.Context(), role, jobType, limit)
-	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query task candidates: "+err.Error())
-		return
-	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"items": tasks})
-}
-
-func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	if h.zeebeSvc == nil {
-		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
-		return
-	}
-	var req struct {
-		Role               string    `json:"role"`
-		TaskType           string    `json:"taskType"`
-		ProcessInstanceKey flexInt64 `json:"processInstanceKey"`
-		CaseID             string    `json:"caseId"`
-		ElementID          string    `json:"elementId"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
-		return
-	}
-	jobType := taskTypeForRequest(req.Role, req.TaskType)
-	if jobType == "" && req.ProcessInstanceKey.Int64() == 0 && strings.TrimSpace(req.CaseID) == "" {
-		writeAPIError(w, r, http.StatusBadRequest, "Unsupported task role or taskType")
-		return
-	}
-	filter := service.TaskClaimFilter{
-		ProcessInstanceKey: req.ProcessInstanceKey.Int64(),
-		CaseID:             strings.TrimSpace(req.CaseID),
-		ElementID:          strings.TrimSpace(req.ElementID),
-	}
-	actor := currentUserID(r)
-	slog.Info("workflow task claim requested",
-		"actor", actor,
-		"role", req.Role,
-		"taskType", req.TaskType,
-		"resolvedJobType", jobType,
-		"caseId", filter.CaseID,
-		"elementId", filter.ElementID,
-		"processInstanceKey", filter.ProcessInstanceKey,
-	)
-
-	if task, source, err := h.tryCachedClaimTask(r.Context(), jobType, filter); err != nil {
-		slog.Error("workflow task claim failed resolving cached work task",
-			"caseId", filter.CaseID,
-			"processInstanceKey", filter.ProcessInstanceKey,
-			"err", err,
-		)
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve work task: "+err.Error())
-		return
-	} else if task != nil {
-		slog.Info("workflow task claim served from cache",
-			"source", source,
-			"caseId", task.CaseID,
-			"jobKey", task.JobKey,
-			"processInstanceKey", task.ProcessInstanceKey,
-			"stepCode", task.ElementID,
-		)
-		writeJSON(w, r, http.StatusOK, task)
-		return
-	}
-
-	claimCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	startedAt := time.Now()
-	if task, err := h.tryNativeUserTaskClaim(claimCtx, filter, filter.ElementID, actor); err != nil {
-		slog.Warn("native user task claim failed", "err", err)
-		if h.usesNativeUserTaskRuntime(r.Context(), filter) {
-			writeJSON(w, r, http.StatusBadGateway, map[string]any{
-				"error": nativeClaimUnavailableMessage(filter, err),
-			})
-			return
-		}
-	} else if task != nil {
-		h.persistInboxClaim(r.Context(), *task)
-		writeJSON(w, r, http.StatusOK, task)
-		return
-	}
-
-	if h.usesNativeUserTaskRuntime(r.Context(), filter) {
-		writeJSON(w, r, http.StatusNotFound, map[string]any{
-			"error": nativeClaimUnavailableMessage(filter, fmt.Errorf("no active native user task for element %q", filter.ElementID)),
-		})
-		return
-	}
-
-	err := fmt.Errorf("legacy parked user-task runtime has been removed; migrate this process to native BPMN userTask")
-	slog.Warn("workflow task claim unavailable",
-		"actor", actor,
-		"role", req.Role,
-		"processInstanceKey", filter.ProcessInstanceKey,
-		"duration_ms", time.Since(startedAt).Milliseconds(),
-		"err", err,
-	)
-	writeJSON(w, r, http.StatusGone, map[string]any{
-		"error": claimUnavailableMessage(r.Context(), h.caseRepo, filter, jobType, err),
-	})
-}
-
 func workItemToWorkflowTask(item repository.WorkItem) service.WorkflowTask {
 	task := service.WorkflowTask{
 		CaseID:        item.CaseID,
@@ -1060,74 +1016,6 @@ func (h *WorkflowHandler) persistInboxClaim(ctx context.Context, task service.Wo
 		CandidateRole:      task.CandidateRole,
 		Title:              taskLabelForType(task.Type),
 	})
-}
-
-func (h *WorkflowHandler) listTaskCandidates(ctx context.Context, role string, jobType string, limit int) ([]service.WorkflowTask, error) {
-	cases, err := h.caseRepo.ListCases(ctx, repository.CaseListFilter{
-		CandidateRole: role,
-		Limit:         limit,
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]service.WorkflowTask, 0, len(cases))
-	for _, item := range cases {
-		if item.Status != repository.CaseStatusSubmitted && item.Status != repository.CaseStatusInReview {
-			continue
-		}
-		processInstanceKey := int64(0)
-		if item.ProcessInstanceKey != nil {
-			processInstanceKey = *item.ProcessInstanceKey
-		}
-		out = append(out, service.WorkflowTask{
-			Type:               jobType,
-			ElementID:          item.CurrentStep,
-			ProcessInstanceKey: processInstanceKey,
-			CaseID:             item.ID,
-			CaseCode:           item.CaseCode,
-			CustomerID:         item.PrimaryObjectID,
-			CandidateRole:      role,
-			SLADueAt:           item.SLADueAt,
-			Variables: map[string]any{
-				"caseId":            item.ID,
-				"caseCode":          item.CaseCode,
-				"caseType":          item.CaseType,
-				"domainService":     item.DomainService,
-				"primaryObjectType": item.PrimaryObjectType,
-				"primaryObjectId":   item.PrimaryObjectID,
-			},
-		})
-	}
-	return out, nil
-}
-
-func (h *WorkflowHandler) seedWorkItems(ctx context.Context, direction string) error {
-	for _, caseType := range caseTypesForWorkItemDirection(direction) {
-		cases, err := h.caseRepo.ListCases(ctx, repository.CaseListFilter{
-			CaseType: caseType,
-			Limit:    200,
-		})
-		if err != nil {
-			return err
-		}
-		for _, item := range cases {
-			if item.Status != repository.CaseStatusSubmitted && item.Status != repository.CaseStatusInReview {
-				continue
-			}
-			seed, ok := workItemSeedFromCase(item)
-			if !ok {
-				continue
-			}
-			if _, err := h.caseRepo.UpsertWorkItem(ctx, seed); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func workItemSeedFromCase(item repository.BusinessCase) (repository.WorkItemSeed, bool) {
-	return repository.WorkItemSeed{}, false
 }
 
 func workItemFilter(r *http.Request) repository.WorkItemFilter {
@@ -1239,110 +1127,6 @@ func workItemSummary(items []repository.WorkItem, userID string) []repository.Wo
 		out = append(out, *node)
 	}
 	return out
-}
-
-func (h *WorkflowHandler) TaskByID(w http.ResponseWriter, r *http.Request) {
-	jobKey, action := taskPath(r.URL.Path)
-	if jobKey == 0 || action != "complete" {
-		writeAPIError(w, r, http.StatusNotFound, "route not found")
-		return
-	}
-	if r.Method != http.MethodPost {
-		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	if h.zeebeSvc == nil {
-		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
-		return
-	}
-	var req struct {
-		ProcessInstanceKey flexInt64      `json:"processInstanceKey"`
-		ElementID          string         `json:"elementId"`
-		Variables          map[string]any `json:"variables"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
-		return
-	}
-	actor := strings.TrimSpace(r.Header.Get("X-User-Id"))
-	if actor == "" {
-		actor = strings.TrimSpace(r.Header.Get("X-User-Email"))
-	}
-	elementID := normalizeUserTaskElementID(req.ElementID)
-	decision := reviewDecisionFromVariables(req.Variables)
-	comment := reviewCommentFromVariables(req.Variables)
-	if elementID == "UT_CheckerReview" {
-		if err := requireReviewComment(decision, comment); err != nil {
-			writeAPIError(w, r, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-	if err := h.enforceMakerChecker(r, req.ProcessInstanceKey.Int64(), req.ElementID, actor); err != nil {
-		slog.Warn("workflow task complete forbidden",
-			"actor", actor,
-			"jobKey", jobKey,
-			"processInstanceKey", req.ProcessInstanceKey.Int64(),
-			"elementId", req.ElementID,
-			"err", err,
-		)
-		writeAPIError(w, r, http.StatusForbidden, err.Error())
-		return
-	}
-	slog.Info("workflow task complete requested",
-		"actor", actor,
-		"jobKey", jobKey,
-		"processInstanceKey", req.ProcessInstanceKey.Int64(),
-		"elementId", req.ElementID,
-	)
-	if h.shouldUseNativeUserTaskComplete(r.Context(), req.ElementID, req.ProcessInstanceKey.Int64()) {
-		if err := h.completeNativeUserTask(r.Context(), jobKey, req.ElementID, req.Variables, req.ProcessInstanceKey.Int64()); err != nil {
-			slog.Error("workflow native user task complete failed",
-				"actor", actor,
-				"jobKey", jobKey,
-				"processInstanceKey", req.ProcessInstanceKey.Int64(),
-				"elementId", req.ElementID,
-				"err", err,
-			)
-			writeAPIError(w, r, http.StatusBadGateway, "Failed to complete user task: "+err.Error())
-			return
-		}
-	} else if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, req.Variables); err != nil {
-		slog.Error("workflow task complete failed in zeebe",
-			"actor", actor,
-			"jobKey", jobKey,
-			"processInstanceKey", req.ProcessInstanceKey.Int64(),
-			"elementId", req.ElementID,
-			"err", err,
-		)
-		writeAPIError(w, r, http.StatusBadGateway, "Failed to complete task: "+err.Error())
-		return
-	}
-	if err := h.caseRepo.CompleteWorkItemByJob(r.Context(), jobKey); err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to update work item: "+err.Error())
-		return
-	}
-	if err := h.caseRepo.MarkCaseStepCompleted(r.Context(), req.ProcessInstanceKey.Int64(), req.ElementID); err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to update completed task step: "+err.Error())
-		return
-	}
-	h.seedEagerNextUserTask(r.Context(), req.ProcessInstanceKey.Int64(), req.ElementID, req.Variables)
-	if elementID == "UT_CheckerReview" && decision != "" {
-		var bc *repository.BusinessCase
-		if req.ProcessInstanceKey.Int64() > 0 {
-			bc, _ = h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), req.ProcessInstanceKey.Int64())
-		}
-		if bc != nil {
-			h.recordCheckerDecisionTimeline(r.Context(), bc.ID, decision, comment, actor)
-			h.notifyCheckerDecision(r.Context(), bc, jobKey, decision, comment)
-		}
-	}
-	slog.Info("workflow task complete succeeded",
-		"actor", actor,
-		"jobKey", jobKey,
-		"processInstanceKey", req.ProcessInstanceKey.Int64(),
-		"elementId", req.ElementID,
-	)
-	writeJSON(w, r, http.StatusOK, map[string]any{"status": "completed"})
 }
 
 func (h *WorkflowHandler) ProcessInstanceByKey(w http.ResponseWriter, r *http.Request) {
@@ -1970,17 +1754,6 @@ func taskClaimFilterForWorkItem(ctx context.Context, caseRepo *repository.CaseRe
 
 func int64Ptr(value int64) *int64 {
 	return &value
-}
-
-func caseTypesForWorkItemDirection(direction string) []string {
-	switch strings.ToUpper(direction) {
-	case "INCOMING":
-		return []string{"CUSTOMER_REGISTRATION", "CUSTOMER_ADJUSTMENT", "FINANCE_INCOMING_TRANSACTION", "HRM_EMPLOYEE_REGISTRATION"}
-	case "OUTGOING":
-		return []string{"FINANCE_OUTGOING_TRANSACTION"}
-	default:
-		return []string{"CUSTOMER_REGISTRATION", "CUSTOMER_ADJUSTMENT", "FINANCE_INCOMING_TRANSACTION", "FINANCE_OUTGOING_TRANSACTION", "HRM_EMPLOYEE_REGISTRATION"}
-	}
 }
 
 func defaultStepForCaseType(caseType string) string {

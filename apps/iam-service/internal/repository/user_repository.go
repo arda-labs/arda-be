@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
+
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
-	"github.com/lib/pq"
 )
 
 // UserRepository provides persistence for users and their context.
@@ -700,7 +701,7 @@ func (r *UserRepository) GetUsersByIDs(ctx context.Context, ids []string) ([]dom
 		       created_at, updated_at
 		FROM iam_users
 		WHERE id = ANY($1)
-	`, pq.Array(ids))
+	`, ardapg.Driver.NotNil(ids))
 	if err != nil {
 		return nil, fmt.Errorf("get users by ids: %w", err)
 	}
@@ -1064,7 +1065,7 @@ func (r *UserRepository) GetUserRoleCodesByUserIDs(ctx context.Context, userIDs 
 		FROM effective_roles er
 		JOIN iam_roles r ON r.id = er.role_id
 		ORDER BY er.user_id, r.code
-	`, pq.Array(userIDs))
+	`, ardapg.Driver.NotNil(userIDs))
 	if err != nil {
 		return nil, fmt.Errorf("get user role codes by user ids: %w", err)
 	}
@@ -1094,7 +1095,7 @@ func (r *UserRepository) GetDirectUserRoleCodesByUserIDs(ctx context.Context, us
 		  AND ra.scope_type = 'global'
 		  AND ra.scope_id IS NULL
 		ORDER BY ra.principal_id, r.code
-	`, pq.Array(userIDs))
+	`, ardapg.Driver.NotNil(userIDs))
 	if err != nil {
 		return nil, fmt.Errorf("get direct user role codes by user ids: %w", err)
 	}

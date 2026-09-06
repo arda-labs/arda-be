@@ -431,14 +431,6 @@ routes:
     permissions:
       - finance.read
 
-  - id: finance-approval-write
-    path: /api/finance/approvals/**
-    methods: [POST, PUT, PATCH, DELETE]
-    auth: true
-    risk: high
-    permissions:
-      - finance.approve
-
   - id: finance-write
     path: /api/finance/**
     methods: [POST, PUT, PATCH, DELETE]

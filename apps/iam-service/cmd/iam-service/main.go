@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/audit"
 	"github.com/arda-labs/arda/apps/iam-service/internal/bootstrap"
@@ -38,7 +38,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// ── Database ──
-	db, err := sql.Open("postgres", cfg.DatabaseDSN)
+	db, err := sql.Open("pgx/v5", cfg.DatabaseDSN)
 	if err != nil {
 		logger.Error("open database", "err", err)
 		os.Exit(1)

@@ -9,8 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lib/pq"
+	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
+
 
 type Repository struct {
 	db *sql.DB
@@ -44,10 +45,10 @@ func (r *Repository) ListSources(ctx context.Context, tenantID string, includeDe
 	var sources []Source
 	for rows.Next() {
 		var s Source
-		var tags pq.StringArray
+		var tags []string
 		err := rows.Scan(
 			&s.ID, &s.TenantID, &s.Title, &s.Description, &s.SourceType, &s.Scope,
-			&s.Classification, &s.Language, &tags, &s.OwnerID, &s.EffectiveFrom,
+			&s.Classification, &s.Language, ardapg.Driver.Scanner(&tags), &s.OwnerID, &s.EffectiveFrom,
 			&s.EffectiveTo, &s.ActiveVersionID, &s.DeletedAt, &s.CreatedBy,
 			&s.CreatedAt, &s.UpdatedAt, &s.Status, &s.Version,
 		)
@@ -74,10 +75,10 @@ func (r *Repository) GetSource(ctx context.Context, id int64, tenantID string) (
 		 WHERE s.id = $1 AND (s.tenant_id = $2 OR s.tenant_id IS NULL) AND s.deleted_at IS NULL
 	`
 	var s Source
-	var tags pq.StringArray
+	var tags []string
 	err := r.db.QueryRowContext(ctx, query, id, tenantID).Scan(
 		&s.ID, &s.TenantID, &s.Title, &s.Description, &s.SourceType, &s.Scope,
-		&s.Classification, &s.Language, &tags, &s.OwnerID, &s.EffectiveFrom,
+		&s.Classification, &s.Language, ardapg.Driver.Scanner(&tags), &s.OwnerID, &s.EffectiveFrom,
 		&s.EffectiveTo, &s.ActiveVersionID, &s.DeletedAt, &s.CreatedBy,
 		&s.CreatedAt, &s.UpdatedAt, &s.Status, &s.Version,
 	)
@@ -96,18 +97,18 @@ func (r *Repository) CreateSource(ctx context.Context, data SourceCreate, tenant
 		RETURNING id, tenant_id, title, description, source_type, scope, classification, language, tags, owner_id, effective_from, effective_to, active_version_id, deleted_at, created_by, created_at, updated_at
 	`
 	var s Source
-	var tags pq.StringArray
+	var tags []string
 	var tID *string
 	if tenantID != "" {
 		tID = &tenantID
 	}
 	err := r.db.QueryRowContext(ctx, query,
 		tID, data.Title, data.Description, data.SourceType, data.Scope,
-		data.Classification, data.Language, pq.Array(data.Tags), data.OwnerID,
+		data.Classification, data.Language, ardapg.Driver.NotNil(data.Tags), data.OwnerID,
 		data.EffectiveFrom, data.EffectiveTo, createdBy,
 	).Scan(
 		&s.ID, &s.TenantID, &s.Title, &s.Description, &s.SourceType, &s.Scope,
-		&s.Classification, &s.Language, &tags, &s.OwnerID, &s.EffectiveFrom,
+		&s.Classification, &s.Language, ardapg.Driver.Scanner(&tags), &s.OwnerID, &s.EffectiveFrom,
 		&s.EffectiveTo, &s.ActiveVersionID, &s.DeletedAt, &s.CreatedBy,
 		&s.CreatedAt, &s.UpdatedAt,
 	)
@@ -361,7 +362,7 @@ func (r *Repository) SaveRun(ctx context.Context, tenantID, query string, retrie
 		INSERT INTO public.ai_rag_runs (tenant_id, query, retrieved_count, reranked_count, hit_ids, latency_ms, model_used)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id::text
-	`, tID, query, retrievedCount, rerankedCount, pq.Array(hitIDs), latencyMs, modelUsed).Scan(&runID)
+	`, tID, query, retrievedCount, rerankedCount, ardapg.Driver.NotNil(hitIDs), latencyMs, modelUsed).Scan(&runID)
 	return runID, err
 }
 

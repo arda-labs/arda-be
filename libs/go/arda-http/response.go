@@ -8,7 +8,7 @@ import (
 
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 
-	"github.com/google/uuid"
+	"uuid"
 )
 
 const HeaderRequestID = "X-Request-Id"
@@ -50,7 +50,7 @@ type Problem struct {
 // RequestID returns the correlation id from the request or generates one.
 func RequestID(r *http.Request) string {
 	if r == nil {
-		return uuid.NewString()
+		return uuid.New().String()
 	}
 	for _, key := range []string{HeaderRequestID, "X-Correlation-Id", "Request-Id"} {
 		if id := strings.TrimSpace(r.Header.Get(key)); validCorrelationValue(id) {
@@ -59,7 +59,7 @@ func RequestID(r *http.Request) string {
 	}
 	// Persist the generated ID on the request so every helper invoked during
 	// this request observes the same correlation value.
-	id := uuid.NewString()
+	id := uuid.New().String()
 	r.Header.Set(HeaderRequestID, id)
 	return id
 }

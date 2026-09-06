@@ -5,8 +5,6 @@ import (
 
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
-
-	"github.com/arda-labs/arda/apps/finance-service/internal/domain"
 )
 
 func respondJSON(w http.ResponseWriter, r *http.Request, status int, data any) {
@@ -20,10 +18,6 @@ func respondError(w http.ResponseWriter, r *http.Request, status int, msg string
 		code = ardaerrors.CodeInvalidJSON
 	}
 	ardahttp.WriteProblem(w, r, status, ardaerrors.New(code, msg))
-}
-
-func respondPaged(w http.ResponseWriter, r *http.Request, txns []domain.Transaction, total, page, perPage int) {
-	ardahttp.WriteEnvelopeList(w, r, http.StatusOK, page, perPage, total, txns)
 }
 
 // respondList replaces the previous `any` + per-domain lenItems type switch:

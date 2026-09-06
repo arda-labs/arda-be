@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -50,7 +50,7 @@ func main() {
 	}
 	defer workflow.Close()
 
-	db, err := sql.Open("postgres", cfg.DatabaseDSN)
+	db, err := sql.Open("pgx/v5", cfg.DatabaseDSN)
 	if err != nil {
 		logger.Error("open database", "err", err)
 		os.Exit(1)

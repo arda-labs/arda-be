@@ -9,7 +9,6 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-redis v0.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.21.0
 	gopkg.in/yaml.v3 v3.0.1

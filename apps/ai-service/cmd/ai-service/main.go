@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/catalog"
 	"github.com/arda-labs/arda/apps/ai-service/internal/config"
@@ -39,7 +39,7 @@ func main() {
 	var store *repository.SQLRunStore
 	if cfg.DatabaseDSN != "" {
 		var err error
-		db, err = sql.Open("postgres", cfg.DatabaseDSN)
+		db, err = sql.Open("pgx/v5", cfg.DatabaseDSN)
 		if err != nil {
 			logger.Error("failed to open AI database", "err", err)
 			os.Exit(1)

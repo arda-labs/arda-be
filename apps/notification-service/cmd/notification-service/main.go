@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/nats-io/nats.go"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/config"
@@ -42,7 +42,7 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	db, err := sql.Open("postgres", cfg.DatabaseDSN)
+	db, err := sql.Open("pgx/v5", cfg.DatabaseDSN)
 	if err != nil {
 		logger.Error("Failed to open database", "err", err)
 		os.Exit(1)

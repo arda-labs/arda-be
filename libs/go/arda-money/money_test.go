@@ -70,7 +70,7 @@ func TestMinorUnitConversions(t *testing.T) {
 	}
 	// FromMinor: VND minor == major; USD cents → major.
 	mustEq(t, FromMinor(3541667, "VND"), "3541667")
-	mustEq(t, FromMinor(123456, "USD"), "1234.56")
+	mustEq(t, FromMinor(770055, "USD"), "7700.55")
 	mustEq(t, FromMinor(-500, "EUR"), "-5.00")
 
 	// ToMinor: rounds to exponent (half-away-from-zero), int64 both ways.
@@ -92,7 +92,7 @@ func TestMinorUnitConversions(t *testing.T) {
 	for _, tc := range []struct {
 		minor int64
 		cur   string
-	}{{3541667, "VND"}, {123456, "USD"}, {-9900, "JPY"}} {
+	}{{3541667, "VND"}, {770055, "USD"}, {-9900, "JPY"}} {
 		got, err := ToMinor(FromMinor(tc.minor, tc.cur), tc.cur)
 		if err != nil || got != tc.minor {
 			t.Fatalf("round trip %d %s: got %d, %v", tc.minor, tc.cur, got, err)

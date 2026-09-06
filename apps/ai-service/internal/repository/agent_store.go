@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lib/pq"
+	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
+
 
 type AgentConfig struct {
 	ID           string    `json:"id"`
@@ -49,14 +50,14 @@ func (s *SQLRunStore) ListAgents(ctx context.Context, tenantID string) ([]AgentC
 	agents := make([]AgentConfig, 0)
 	for rows.Next() {
 		var a AgentConfig
-		var tools pq.StringArray
+		var tools []string
 		if err := rows.Scan(
 			&a.ID, &a.TenantID, &a.Name, &a.Department, &a.Description, &a.SystemPrompt,
-			&a.ModelID, &a.Temperature, &tools, &a.IsActive, &a.CreatedAt, &a.UpdatedAt,
+			&a.ModelID, &a.Temperature, ardapg.Driver.Scanner(&tools), &a.IsActive, &a.CreatedAt, &a.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan agent config: %w", err)
 		}
-		a.AllowedTools = []string(tools)
+		a.AllowedTools = tools
 		agents = append(agents, a)
 	}
 
@@ -104,7 +105,7 @@ func (s *SQLRunStore) SaveAgent(ctx context.Context, agent AgentConfig) (*AgentC
 			is_active = EXCLUDED.is_active,
 			updated_at = EXCLUDED.updated_at
 	`, agent.ID, agent.TenantID, agent.Name, agent.Department, agent.Description, agent.SystemPrompt,
-		agent.ModelID, agent.Temperature, pq.Array(agent.AllowedTools), agent.IsActive, now)
+		agent.ModelID, agent.Temperature, ardapg.Driver.NotNil(agent.AllowedTools), agent.IsActive, now)
 	if err != nil {
 		return nil, fmt.Errorf("save agent: %w", err)
 	}

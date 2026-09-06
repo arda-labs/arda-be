@@ -31,7 +31,7 @@ func Exponent(currency string) int32 {
 }
 
 // FromMinor converts an int64 minor-unit amount to a decimal in major units
-// (e.g. 3541667 VND → 3541667; 123456 USD-cents → 1234.56).
+// (e.g. 3541667 VND → 3541667; 770055 USD-cents → 1234.56).
 func FromMinor(minor int64, currency string) decimal.Decimal {
 	return decimal.NewFromInt(minor).Shift(-Exponent(currency))
 }

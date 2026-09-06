@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lib/pq"
+	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
+
 
 const (
 	TaskStatusRouting   = "ROUTING"
@@ -221,7 +222,7 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 			updated_at = CURRENT_TIMESTAMP
 		RETURNING id
 	`, id, seed.CaseID, seed.ProcessInstanceKey, seed.JobKey, seed.TaskType, seed.StepCode,
-		seed.Title, seed.Description, workItemSeedStatus(seed), seed.CandidateRole, pq.Array(seed.CandidateUsers), seed.CandidateGroupID,
+		seed.Title, seed.Description, workItemSeedStatus(seed), seed.CandidateRole, ardapg.Driver.NotNil(seed.CandidateUsers), seed.CandidateGroupID,
 		seed.CandidateOrgUnitID, seed.SLADueAt)
 	var workItemID string
 	if err := row.Scan(&workItemID); err != nil {
@@ -700,7 +701,7 @@ func scanWorkItem(s scanner) (WorkItem, error) {
 		&item.ID, &item.CaseID, &item.TenantID, &item.CaseCode, &item.CaseType, &item.PrimaryObjectType, &item.PrimaryObjectID,
 		&processInstanceKey, &jobKey, &item.TaskType, &item.StepCode,
 		&item.Title, &item.Description, &item.Status, &item.TransactionStatus, &item.CreatedBy,
-		&item.CandidateRole, pq.Array(&item.CandidateUsers), &item.CandidateGroupID,
+		&item.CandidateRole, ardapg.Driver.Scanner(&item.CandidateUsers), &item.CandidateGroupID,
 		&item.AssignedTo, &assignedAt, &claimExpiresAt,
 		&item.PreviousAssignedTo,
 		&slaDueAt, &item.CreatedAt, &item.UpdatedAt,

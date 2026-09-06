@@ -5,11 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
-	"github.com/lib/pq"
+	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
 type CustomerAmendment struct {
@@ -55,7 +54,7 @@ func (r *AmendmentRepository) HasPendingScoped(ctx context.Context, scope Custom
 				WHERE c.id = a.customer_id AND c.tenant_id = $1 AND c.org_id = ANY($3)
 			  )
 		)
-	`, scope.TenantID, customerID, pq.Array(scope.OrgIDs)).Scan(&exists)
+	`, scope.TenantID, customerID, ardapg.Driver.NotNil(scope.OrgIDs)).Scan(&exists)
 	return exists, err
 }
 
@@ -76,7 +75,7 @@ func (r *AmendmentRepository) CreateDraftScoped(ctx context.Context, scope Custo
 		          before_snapshot, after_snapshot, changed_fields,
 		          applied_at, applied_by, rejected_at, rejected_by,
 		          created_at, updated_at
-	`, id, customerID, workflowCaseID, scope.TenantID, pq.Array(scope.OrgIDs))
+	`, id, customerID, workflowCaseID, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs))
 	return scanAmendment(row)
 }
 
@@ -88,7 +87,7 @@ func (r *AmendmentRepository) GetScoped(ctx context.Context, scope CustomerScope
 		AND EXISTS (
 			SELECT 1 FROM customers c
 			WHERE c.id = a.customer_id AND c.tenant_id = $1 AND c.org_id = ANY($3)
-		)`, scope.TenantID, id, pq.Array(scope.OrgIDs))
+		)`, scope.TenantID, id, ardapg.Driver.NotNil(scope.OrgIDs))
 	item, err := scanAmendment(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -108,7 +107,7 @@ func (r *AmendmentRepository) GetPendingByCustomerScoped(ctx context.Context, sc
 		  )
 		ORDER BY updated_at DESC
 		LIMIT 1
-	`, scope.TenantID, customerID, pq.Array(scope.OrgIDs))
+	`, scope.TenantID, customerID, ardapg.Driver.NotNil(scope.OrgIDs))
 	item, err := scanAmendment(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -138,7 +137,7 @@ func (r *AmendmentRepository) UpdateDraftScoped(ctx context.Context, scope Custo
 		          before_snapshot, after_snapshot, changed_fields,
 		          applied_at, applied_by, rejected_at, rejected_by,
 		          created_at, updated_at
-	`, id, after, pqStringArray(in.ChangedFields), scope.TenantID, pq.Array(scope.OrgIDs))
+	`, id, after, ardapg.Driver.NotNil(in.ChangedFields), scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs))
 	return scanAmendment(row)
 }
 
@@ -168,7 +167,7 @@ func (r *AmendmentRepository) SubmitScoped(ctx context.Context, scope CustomerSc
 			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $3 AND c.org_id = ANY($4)
 		  )
 		RETURNING customer_id
-	`, id, beforeJSON, scope.TenantID, pq.Array(scope.OrgIDs)).Scan(&customerID)
+	`, id, beforeJSON, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs)).Scan(&customerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("amendment not found or not in DRAFT status")
 	}
@@ -179,7 +178,7 @@ func (r *AmendmentRepository) SubmitScoped(ctx context.Context, scope CustomerSc
 		UPDATE customers
 		SET status = 'PENDING_AMENDMENT', updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND tenant_id = $2 AND org_id = ANY($3) AND status = 'ACTIVE'
-	`, customerID, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
+	`, customerID, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs)); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -200,7 +199,7 @@ func (r *AmendmentRepository) GetPendingForWorkflowScoped(ctx context.Context, s
 		  )
 		ORDER BY updated_at DESC
 		LIMIT 1
-	`, scope.TenantID, customerID, pq.Array(scope.OrgIDs))
+	`, scope.TenantID, customerID, ardapg.Driver.NotNil(scope.OrgIDs))
 	item, err := scanAmendment(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -227,7 +226,7 @@ func (r *AmendmentRepository) CancelDraftScoped(ctx context.Context, scope Custo
 			SELECT 1 FROM customers c
 			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $3 AND c.org_id = ANY($4)
 		  )
-	`, id, customerID, scope.TenantID, pq.Array(scope.OrgIDs))
+	`, id, customerID, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs))
 	if err != nil {
 		return err
 	}
@@ -263,14 +262,14 @@ func (r *AmendmentRepository) DiscardScoped(ctx context.Context, scope CustomerS
 			SELECT 1 FROM customers c
 			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $3 AND c.org_id = ANY($4)
 		  )
-	`, amendment.ID, actor, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
+	`, amendment.ID, actor, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE customers
 		SET status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND tenant_id = $2 AND org_id = ANY($3)
-	`, customerID, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
+	`, customerID, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs)); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -309,7 +308,7 @@ func (r *AmendmentRepository) applyAmendment(ctx context.Context, scope Customer
 		    status = 'ACTIVE',
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND tenant_id = $10 AND org_id = ANY($11)
-	`, amendment.CustomerID, name, email, mobile, identityNo, address, personal, business, extended, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
+	`, amendment.CustomerID, name, email, mobile, identityNo, address, personal, business, extended, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -323,7 +322,7 @@ func (r *AmendmentRepository) applyAmendment(ctx context.Context, scope Customer
 			SELECT 1 FROM customers c
 			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $3 AND c.org_id = ANY($4)
 		  )
-	`, amendment.ID, actor, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
+	`, amendment.ID, actor, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs)); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -349,14 +348,14 @@ func (r *AmendmentRepository) ReopenPendingScoped(ctx context.Context, scope Cus
 			SELECT 1 FROM customers c
 			WHERE c.id = customer_amendments.customer_id AND c.tenant_id = $2 AND c.org_id = ANY($3)
 		  )
-	`, amendment.ID, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
+	`, amendment.ID, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE customers
 		SET status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND tenant_id = $2 AND org_id = ANY($3) AND status = 'PENDING_AMENDMENT'
-	`, customerID, scope.TenantID, pq.Array(scope.OrgIDs)); err != nil {
+	`, customerID, scope.TenantID, ardapg.Driver.NotNil(scope.OrgIDs)); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -393,12 +392,12 @@ func scanAmendment(row interface {
 }) (*CustomerAmendment, error) {
 	var item CustomerAmendment
 	var beforeRaw, afterRaw []byte
-	var changed pq.StringArray
+	var changed []string
 	var appliedAt, rejectedAt sql.NullTime
 	var appliedBy, rejectedBy sql.NullString
 	if err := row.Scan(
 		&item.ID, &item.CustomerID, &item.WorkflowCaseID, &item.Status,
-		&beforeRaw, &afterRaw, &changed,
+		&beforeRaw, &afterRaw, ardapg.Driver.Scanner(&changed),
 		&appliedAt, &appliedBy, &rejectedAt, &rejectedBy,
 		&item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
@@ -420,17 +419,6 @@ func scanAmendment(row interface {
 		item.RejectedBy = rejectedBy.String
 	}
 	return &item, nil
-}
-
-func pqStringArray(values []string) interface{} {
-	if len(values) == 0 {
-		return "{}"
-	}
-	quoted := make([]string, len(values))
-	for i, v := range values {
-		quoted[i] = fmt.Sprintf(`"%s"`, strings.ReplaceAll(v, `"`, `\"`))
-	}
-	return "{" + strings.Join(quoted, ",") + "}"
 }
 
 func stringField(m map[string]any, key string) string {

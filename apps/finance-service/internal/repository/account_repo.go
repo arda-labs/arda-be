@@ -10,7 +10,7 @@ import (
 	"github.com/arda-labs/arda/apps/finance-service/internal/domain"
 )
 
-// AccountRepository persists accounts and balances.
+// AccountRepository persists the account master.
 type AccountRepository struct {
 	db *sql.DB
 }
@@ -38,11 +38,6 @@ func (r *AccountRepository) Create(ctx context.Context, a *domain.Account) (*dom
 		return nil, fmt.Errorf("create account: %w", err)
 	}
 
-	// Init balance
-	_, _ = r.db.ExecContext(ctx, `
-		INSERT INTO fin_account_balances (account_id, balance, currency)
-		VALUES ($1, 0, $2) ON CONFLICT DO NOTHING
-	`, a.ID, a.Currency)
 
 	return a, nil
 }
@@ -92,23 +87,6 @@ func (r *AccountRepository) List(ctx context.Context, tenantID string) ([]domain
 	return accounts, rows.Err()
 }
 
-func (r *AccountRepository) GetBalance(ctx context.Context, tenantID, accountID string) (*domain.AccountBalance, error) {
-	row := r.db.QueryRowContext(ctx, `
-		SELECT b.account_id, b.balance, b.updated_at
-		FROM fin_account_balances b
-		JOIN fin_accounts a ON a.id = b.account_id
-		WHERE a.tenant_id = $1 AND b.account_id = $2
-	`, tenantID, accountID)
-	var b domain.AccountBalance
-	err := row.Scan(&b.AccountID, &b.Balance, &b.AsOf)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &b, nil
-}
 
 func scanAccount(row *sql.Row) (*domain.Account, error) {
 	var a domain.Account

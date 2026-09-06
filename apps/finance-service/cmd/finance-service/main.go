@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/config"
 	"github.com/arda-labs/arda/apps/finance-service/internal/handler"
@@ -18,7 +18,6 @@ import (
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 	"github.com/arda-labs/arda/apps/finance-service/internal/service"
 	transport "github.com/arda-labs/arda/apps/finance-service/internal/transport/http"
-	platformclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/platform"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
@@ -31,7 +30,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// ── Database ──
-	db, err := sql.Open("postgres", cfg.DatabaseDSN)
+	db, err := sql.Open("pgx/v5", cfg.DatabaseDSN)
 	if err != nil {
 		logger.Error("open database", "err", err)
 		os.Exit(1)
@@ -52,39 +51,23 @@ func main() {
 
 	// ── Repositories ──
 	accountRepo := repository.NewAccountRepository(db)
-	txnRepo := repository.NewTransactionRepository(db)
 	configRepo := repository.NewConfigRepository(db)
 	coaRepo := repository.NewCoaRepository(db)
-	approvalRepo := repository.NewApprovalRepository(db)
 
 	// ── Services ──
-	ledgerSvc := service.NewLedgerService(accountRepo, txnRepo)
-	if cfg.PlatformGRPCAddr == "" {
-		logger.Error("finance service requires PLATFORM_GRPC_ADDR")
-		os.Exit(1)
-	}
-	platformClient, err := platformclient.Dial(context.Background(), cfg.PlatformGRPCAddr, cfg.AppName, logger)
-	if err != nil {
-		logger.Error("platform grpc is required", "addr", cfg.PlatformGRPCAddr, "err", err)
-		os.Exit(1)
-	}
-	defer platformClient.Close()
-	ledgerSvc.WithParameterResolver(platformClient)
-	logger.Info("platform grpc configured", "addr", cfg.PlatformGRPCAddr)
-	approvalSvc := service.NewApprovalService(approvalRepo, txnRepo, nil)
-	operationSvc := service.NewFinanceOperationService(accountRepo, txnRepo, configRepo)
+	accountSvc := service.NewAccountService(accountRepo)
+	trialBalanceSvc := service.NewTrialBalanceService(db)
 	accountingConfigSvc := service.NewAccountingConfigService(configRepo)
 	coaSvc := service.NewCoaService(coaRepo)
 
 	// ── Handlers ──
-	financeHandler := handler.NewFinanceHandler(ledgerSvc, operationSvc, accountingConfigSvc)
-	approvalHandler := handler.NewApprovalHandler(approvalSvc)
+	financeHandler := handler.NewFinanceHandler(accountSvc, trialBalanceSvc, accountingConfigSvc)
 	coaHandler := handler.NewCoaHandler(coaSvc)
 
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, approvalHandler, coaHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, coaHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

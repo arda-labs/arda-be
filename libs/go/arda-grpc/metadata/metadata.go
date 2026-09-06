@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
+	"uuid"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -69,7 +69,7 @@ func FromOutgoing(ctx context.Context) Context {
 func FromHTTPHeaders(headers http.Header) Context {
 	requestID := strings.TrimSpace(headers.Get("X-Request-Id"))
 	if requestID == "" {
-		requestID = uuid.NewString()
+		requestID = uuid.New().String()
 	}
 	return Context{
 		RequestID:      requestID,
