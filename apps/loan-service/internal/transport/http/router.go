@@ -77,6 +77,50 @@ func NewRouter(h *handler.LoanHandler, kinds []string) http.Handler {
 		}
 	})
 
+	// Products
+	mux.HandleFunc("/api/loan/products", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.ListProducts(w, r)
+		case http.MethodPost, http.MethodPut:
+			h.UpsertProduct(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+
+	// VFU (ủy thác)
+	mux.HandleFunc("/api/loan/vfu/parties", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.ListVfuParties(w, r)
+		case http.MethodPost:
+			h.CreateVfuParty(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/loan/vfu/mandates", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.ListVfuMandates(w, r)
+		case http.MethodPost:
+			h.CreateVfuMandate(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/loan/vfu/plans", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.ListVfuPlans(w, r)
+		case http.MethodPost:
+			h.CreateVfuPlan(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+
 	// Adjustment flows — uniform per kind
 	for _, kind := range kinds {
 		base := "/api/loan/adjustments/" + kind

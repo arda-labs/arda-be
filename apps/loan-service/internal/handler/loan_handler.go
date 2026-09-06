@@ -253,3 +253,96 @@ func (h *LoanHandler) SubmitAdjustment(w http.ResponseWriter, r *http.Request) {
 	item, err := h.adj.Submit(r.Context(), r.PathValue("kind"), tenantID, actorOf(r), r.PathValue("id"))
 	writeResult(w, r, item, err)
 }
+
+// ── Products ──
+
+func (h *LoanHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	includeInactive := r.URL.Query().Get("include_inactive") == "true"
+	items, err := h.svc.ListProducts(r.Context(), tenantID, includeInactive)
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) UpsertProduct(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.LoanProduct
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.svc.UpsertProduct(r.Context(), tenantID, actorOf(r), &req)
+	writeResult(w, r, item, err)
+}
+
+// ── VFU (ủy thác) ──
+
+func (h *LoanHandler) ListVfuParties(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListVfuParties(r.Context(), tenantID, r.URL.Query().Get("q"))
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) CreateVfuParty(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.VfuParty
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.svc.CreateVfuParty(r.Context(), tenantID, actorOf(r), &req)
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) ListVfuMandates(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListVfuMandates(r.Context(), tenantID, r.URL.Query().Get("q"))
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) CreateVfuMandate(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.VfuMandate
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.svc.CreateVfuMandate(r.Context(), tenantID, actorOf(r), &req)
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) ListVfuPlans(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListVfuPlans(r.Context(), tenantID, r.URL.Query().Get("mandate_code"))
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) CreateVfuPlan(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.VfuPlan
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.svc.CreateVfuPlan(r.Context(), tenantID, actorOf(r), &req)
+	writeResult(w, r, item, err)
+}

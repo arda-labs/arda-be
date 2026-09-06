@@ -78,6 +78,7 @@ type Agreement struct {
 	ColnPrincipalAmt     float64   `json:"coln_principal_amt"`
 	ColnInterestAmt      float64   `json:"coln_interest_amt"`
 	ProvisionAmt         float64   `json:"provision_amt"`
+	AccClassification    string    `json:"acc_classification"`
 	Status               string    `json:"status"`
 	CreatedBy            string    `json:"created_by"`
 	CreatedAt            time.Time `json:"created_at"`
@@ -175,4 +176,67 @@ type Adjustment struct {
 	CreatedBy      string          `json:"created_by"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
+}
+
+// Agreement gains the product's accounting classification for COA resolution.
+// (See lnm_agreements.acc_classification.)
+
+// VfuParty is a trust/mandate counterparty (EPAS lnm_inf_vfu_party).
+type VfuParty struct {
+	ID                 string    `json:"id"`
+	TenantID           string    `json:"tenant_id"`
+	PartyCode          string    `json:"party_code"`
+	PartyName          string    `json:"party_name"`
+	PartyType          string    `json:"party_type"`
+	GenderCode         string    `json:"gender_code"`
+	DateOfBirth        string    `json:"date_of_birth"`
+	IdentificationID   string    `json:"identification_id"`
+	IssueDate          string    `json:"issue_date"`
+	IssuePlace         string    `json:"issue_place"`
+	MobileNumber       string    `json:"mobile_number"`
+	PermanentAddress   string    `json:"permanent_address"`
+	CustomerRelnCode   string    `json:"customer_reln_code"`
+	Status             string    `json:"status"`
+	CreatedBy          string    `json:"created_by"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+// VfuMandate is a trust mandate contract (EPAS lnm_inf_vfu_contract_mandate).
+type VfuMandate struct {
+	ID             string    `json:"id"`
+	TenantID       string    `json:"tenant_id"`
+	MandateCode    string    `json:"mandate_code"`
+	MandateNo      string    `json:"mandate_no"`
+	MandateDate    string    `json:"mandate_date"`
+	PartyCode      string    `json:"party_code"`
+	OrgCode        string    `json:"org_code"`
+	RepName        string    `json:"rep_name"`
+	RepPhone       string    `json:"rep_phone"`
+	RepAddress     string    `json:"rep_address"`
+	BankName       string    `json:"bank_name"`
+	BankAccount    string    `json:"bank_account"`
+	FeePaymentFreq string    `json:"fee_payment_freq"`
+	RateValue      *float64  `json:"rate_value,omitempty"`
+	Status         string    `json:"status"`
+	CreatedBy      string    `json:"created_by"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// VfuPlan is a funding plan row under a mandate (EPAS lnm_inf_vfu_plan).
+type VfuPlan struct {
+	ID           string    `json:"id"`
+	TenantID     string    `json:"tenant_id"`
+	PlanCode     string    `json:"plan_code"`
+	PlanDate     string    `json:"plan_date"`
+	MandateCode  string    `json:"mandate_code"`
+	ContractCode string    `json:"contract_code"`
+	AllocatedAmt float64   `json:"allocated_amt"`
+	SettledAmt   float64   `json:"settled_amt"`
+	FeeAmt       float64   `json:"fee_amt"`
+	Status       string    `json:"status"`
+	CreatedBy    string    `json:"created_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }

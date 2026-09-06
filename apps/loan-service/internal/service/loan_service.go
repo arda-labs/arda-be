@@ -166,3 +166,96 @@ func (s *LoanService) AttachContractCollateral(ctx context.Context, tenantID str
 	in.TenantID = tenantID
 	return s.repo.AttachContractCollateral(ctx, in)
 }
+
+// ── Products ──
+
+var productTypes = map[string]bool{"TERM": true, "LIMIT": true}
+
+func (s *LoanService) ListProducts(ctx context.Context, tenantID string, includeInactive bool) ([]domain.LoanProduct, error) {
+	items, err := s.repo.ListProducts(ctx, tenantID, includeInactive)
+	return items, mapRepoError(err)
+}
+
+func (s *LoanService) UpsertProduct(ctx context.Context, tenantID, createdBy string, in *domain.LoanProduct) (*domain.LoanProduct, error) {
+	if strings.TrimSpace(in.Code) == "" || !codePattern.MatchString(in.Code) {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "product_code is required")
+	}
+	if strings.TrimSpace(in.Name) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "name is required")
+	}
+	if !productTypes[in.ProductType] {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "product_type must be TERM or LIMIT")
+	}
+	if in.ProductType == "" {
+		in.ProductType = "TERM"
+	}
+	if in.CurrencyCode == "" {
+		in.CurrencyCode = "VND"
+	}
+	if in.TermUnit == "" {
+		in.TermUnit = "MONTH"
+	}
+	in.ID = repository.NewID("prd")
+	in.TenantID = tenantID
+	in.CreatedBy = createdBy
+	return s.repo.UpsertProduct(ctx, in)
+}
+
+// ── VFU (ủy thác) ──
+
+func (s *LoanService) ListVfuParties(ctx context.Context, tenantID, q string) ([]domain.VfuParty, error) {
+	items, err := s.repo.ListVfuParties(ctx, tenantID, q)
+	return items, mapRepoError(err)
+}
+
+func (s *LoanService) CreateVfuParty(ctx context.Context, tenantID, createdBy string, in *domain.VfuParty) (*domain.VfuParty, error) {
+	if strings.TrimSpace(in.PartyCode) == "" || !codePattern.MatchString(in.PartyCode) {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "party_code is required")
+	}
+	if strings.TrimSpace(in.PartyName) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "party_name is required")
+	}
+	in.ID = repository.NewID("vparty")
+	in.TenantID = tenantID
+	in.Status = "ACTIVE"
+	in.CreatedBy = createdBy
+	return s.repo.CreateVfuParty(ctx, in)
+}
+
+func (s *LoanService) ListVfuMandates(ctx context.Context, tenantID, q string) ([]domain.VfuMandate, error) {
+	items, err := s.repo.ListVfuMandates(ctx, tenantID, q)
+	return items, mapRepoError(err)
+}
+
+func (s *LoanService) CreateVfuMandate(ctx context.Context, tenantID, createdBy string, in *domain.VfuMandate) (*domain.VfuMandate, error) {
+	if strings.TrimSpace(in.MandateCode) == "" || !codePattern.MatchString(in.MandateCode) {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "mandate_code is required")
+	}
+	if strings.TrimSpace(in.PartyCode) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "party_code is required")
+	}
+	in.ID = repository.NewID("vmand")
+	in.TenantID = tenantID
+	in.Status = "ACTIVE"
+	in.CreatedBy = createdBy
+	return s.repo.CreateVfuMandate(ctx, in)
+}
+
+func (s *LoanService) ListVfuPlans(ctx context.Context, tenantID, mandateCode string) ([]domain.VfuPlan, error) {
+	items, err := s.repo.ListVfuPlans(ctx, tenantID, mandateCode)
+	return items, mapRepoError(err)
+}
+
+func (s *LoanService) CreateVfuPlan(ctx context.Context, tenantID, createdBy string, in *domain.VfuPlan) (*domain.VfuPlan, error) {
+	if strings.TrimSpace(in.PlanCode) == "" || !codePattern.MatchString(in.PlanCode) {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "plan_code is required")
+	}
+	if strings.TrimSpace(in.MandateCode) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "mandate_code is required")
+	}
+	in.ID = repository.NewID("vplan")
+	in.TenantID = tenantID
+	in.Status = "ACTIVE"
+	in.CreatedBy = createdBy
+	return s.repo.CreateVfuPlan(ctx, in)
+}
