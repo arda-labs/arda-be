@@ -81,7 +81,7 @@ func Load() Config {
 		MediaServiceURL:           "http://localhost:8092",
 		WorkflowServiceURL:        "http://localhost:8093",
 		CRMServiceURL:             "http://localhost:8094",
-		HRMServiceURL:             "http://localhost:8097",
+		HRMServiceURL:             "http://localhost:8099",
 		NotificationURL:           "http://localhost:8095",
 		MDMServiceURL:             "http://localhost:8096",
 		AIServiceURL:              "http://localhost:8098",

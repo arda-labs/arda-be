@@ -20,13 +20,13 @@ workflow_grpc_addr: "127.0.0.1:9093"
 	}
 
 	t.Setenv("CONFIG_FILE", path)
-	t.Setenv("HTTP_ADDR", "0.0.0.0:8097")
+	t.Setenv("HTTP_ADDR", "0.0.0.0:8099")
 
 	cfg := Load()
 	if cfg.AppName != "hrm-test" {
 		t.Fatalf("AppName = %q", cfg.AppName)
 	}
-	if cfg.HTTPAddr != "0.0.0.0:8097" {
+	if cfg.HTTPAddr != "0.0.0.0:8099" {
 		t.Fatalf("HTTPAddr = %q", cfg.HTTPAddr)
 	}
 	if cfg.WorkflowGRPCAddr != "127.0.0.1:9093" {

@@ -18,7 +18,7 @@ type Config struct {
 func Load() Config {
 	cfg := Config{
 		AppName:          "hrm-service",
-		HTTPAddr:         "0.0.0.0:8097",
+		HTTPAddr:         "0.0.0.0:8099",
 		LogLevel:         "info",
 		DatabaseDSN:      "",
 		WorkflowGRPCAddr: "localhost:9093",
