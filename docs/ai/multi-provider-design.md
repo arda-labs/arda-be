@@ -1,9 +1,8 @@
 # Multi-Provider & Model Routing Design
 
-Status: **Phase 3 implementation in progress**. The service now has a
+Status: **Implemented in code (`internal/model/registry.go`, `configs/providers.yaml`)**. The service has a
 pre-output failover chain, pooled circuit-breaker state, tenant model profiles,
-and routing rules. Health probing, richer routing context, and operational
-metrics remain rollout work described below.
+routing rules, background health probing, and routing context matching. Runtime provider credential provisioning and cluster metrics remain external rollout gates.
 
 ---
 
@@ -44,10 +43,9 @@ Provider selection must support four dimensions:
 
 ## 3. Provider Registry
 
-> **Note:** This section is forward-looking design, not yet implemented.
-> Current code (`internal/model/client.go`, `internal/model/pool.go`) provides a
-> single OpenAI-compatible `Client` behind a `ClientPool`; the `ProviderRegistry`
-> below describes the intended multi-provider extension.
+> **Note:** Implemented in `internal/model/registry.go`.
+> The `ProviderRegistry` supports priority matching by tenant plan, risk level,
+> and feature flags, backed by `configs/providers.yaml` and active health probing.
 
 ```go
 // internal/model/registry.go

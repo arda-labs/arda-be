@@ -387,3 +387,71 @@ func (r *HRMRepository) SubmitEmployeeRegistration(ctx context.Context, id, work
 	).Scan(&item.ID, &item.TenantID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
+
+func (r *HRMRepository) ListEmployeeStatuses(ctx context.Context, q string) ([]domain.EmployeeStatus, error) {
+	tenant, err := tenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, code, name, description, created_at, updated_at
+		FROM hrm_employee_statuses
+		WHERE tenant_id = $1 AND ($2 = '' OR code ILIKE '%' || $2 || '%' OR name ILIKE '%' || $2 || '%')
+		ORDER BY code`, tenant, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]domain.EmployeeStatus, 0)
+	for rows.Next() {
+		var item domain.EmployeeStatus
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Description, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *HRMRepository) CreateEmployeeStatus(ctx context.Context, item domain.EmployeeStatus) (domain.EmployeeStatus, error) {
+	tenant, err := tenantID(ctx)
+	if err != nil {
+		return item, err
+	}
+	item.TenantID = tenant
+	if item.ID == "" {
+		item.ID = newID("estat")
+	}
+	err = r.db.QueryRowContext(ctx, `
+		INSERT INTO hrm_employee_statuses (id, tenant_id, code, name, description)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, tenant_id, code, name, description, created_at, updated_at`,
+		item.ID, item.TenantID, item.Code, item.Name, item.Description,
+	).Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Description, &item.CreatedAt, &item.UpdatedAt)
+	return item, err
+}
+
+func (r *HRMRepository) UpdateEmployeeStatus(ctx context.Context, item domain.EmployeeStatus) (domain.EmployeeStatus, error) {
+	tenant, err := tenantID(ctx)
+	if err != nil {
+		return item, err
+	}
+	item.TenantID = tenant
+	err = r.db.QueryRowContext(ctx, `
+		UPDATE hrm_employee_statuses
+		SET code = $3, name = $4, description = $5, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2
+		RETURNING id, tenant_id, code, name, description, created_at, updated_at`,
+		tenant, item.ID, item.Code, item.Name, item.Description,
+	).Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Description, &item.CreatedAt, &item.UpdatedAt)
+	return item, err
+}
+
+func (r *HRMRepository) DeleteEmployeeStatus(ctx context.Context, id string) error {
+	tenant, err := tenantID(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `DELETE FROM hrm_employee_statuses WHERE tenant_id = $1 AND id = $2`, tenant, id)
+	return err
+}

@@ -66,3 +66,14 @@ type EmployeeRegistration struct {
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
+
+// EmployeeStatus is the working-status catalog (EPAS HrmCfgStatus parity).
+type EmployeeStatus struct {
+	ID          string    `json:"id"`
+	TenantID    string    `json:"tenant_id"`
+	Code        string    `json:"code"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}

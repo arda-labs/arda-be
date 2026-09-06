@@ -59,9 +59,11 @@ func main() {
 
 	repo := repository.NewPlatformRepository(db)
 	calendarRepo := repository.NewCalendarRepository(db)
+	menuRepo := repository.NewMenuRepository(db)
 
 	platformSvc := service.NewPlatformService(repo)
 	calendarSvc := service.NewCalendarService(calendarRepo)
+	menuSvc := service.NewMenuService(menuRepo)
 
 	mediaClient, err := ardamedia.NewClient("platform-service")
 	if err != nil {
@@ -71,10 +73,11 @@ func main() {
 	defer mediaClient.Close()
 	platformHandler := handler.NewPlatformHandler(platformSvc, mediaClient)
 	calendarHandler := handler.NewCalendarHandler(calendarSvc)
+	menuHandler := handler.NewMenuHandler(menuSvc)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(platformHandler, calendarHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(platformHandler, calendarHandler, menuHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

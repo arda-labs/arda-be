@@ -58,6 +58,27 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 		}
 	})
 
+	mux.HandleFunc("/api/hrm/employee-statuses", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			hrm.ListEmployeeStatuses(w, r)
+		case http.MethodPost:
+			hrm.CreateEmployeeStatus(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/hrm/employee-statuses/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			hrm.UpdateEmployeeStatus(w, r)
+		case http.MethodDelete:
+			hrm.DeleteEmployeeStatus(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+
 	mux.HandleFunc("/api/hrm/org-units", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

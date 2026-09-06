@@ -9,11 +9,37 @@ import (
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
-func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handler.CalendarHandler) http.Handler {
+func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handler.CalendarHandler, menuHandler *handler.MenuHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
 	mux.HandleFunc("/health/ready", health("ready"))
+
+	// DB-driven navigation (MFE shell sidebar)
+	mux.HandleFunc("/api/platform/menus/effective", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, r)
+			return
+		}
+		menuHandler.GetEffectiveMenu(w, r)
+	})
+	mux.HandleFunc("/api/platform/menus", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			menuHandler.ListMenuItems(w, r)
+		case http.MethodPost, http.MethodPut:
+			menuHandler.UpsertMenuItem(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/platform/menus/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			methodNotAllowed(w, r)
+			return
+		}
+		menuHandler.DeleteMenuItem(w, r)
+	})
 
 	mux.HandleFunc("/api/platform/public/branding", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

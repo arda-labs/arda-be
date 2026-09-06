@@ -263,3 +263,43 @@ func headerPtr(r *http.Request, key string) *string {
 	}
 	return &v
 }
+
+func (h *HRMHandler) ListEmployeeStatuses(w http.ResponseWriter, r *http.Request) {
+	items, err := h.repo.ListEmployeeStatuses(r.Context(), r.URL.Query().Get("q"))
+	if err != nil {
+		writeResult(w, r, nil, err)
+		return
+	}
+	writeListAll(w, r, items)
+}
+
+func (h *HRMHandler) CreateEmployeeStatus(w http.ResponseWriter, r *http.Request) {
+	var req domain.EmployeeStatus
+	if !decode(w, r, &req) {
+		return
+	}
+	if req.Code == "" || req.Name == "" {
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "code and name are required")
+		return
+	}
+	item, err := h.repo.CreateEmployeeStatus(r.Context(), req)
+	writeResult(w, r, item, err)
+}
+
+func (h *HRMHandler) UpdateEmployeeStatus(w http.ResponseWriter, r *http.Request) {
+	var req domain.EmployeeStatus
+	if !decode(w, r, &req) {
+		return
+	}
+	req.ID = r.PathValue("id")
+	if req.ID == "" || req.Code == "" || req.Name == "" {
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "id, code and name are required")
+		return
+	}
+	item, err := h.repo.UpdateEmployeeStatus(r.Context(), req)
+	writeResult(w, r, item, err)
+}
+
+func (h *HRMHandler) DeleteEmployeeStatus(w http.ResponseWriter, r *http.Request) {
+	writeResult(w, r, map[string]bool{"ok": true}, h.repo.DeleteEmployeeStatus(r.Context(), r.PathValue("id")))
+}

@@ -1,8 +1,8 @@
 # NATS Event Contracts — AI Service
 
-Status: **Design specification — implement when NATS integration is enabled**.
+Status: **Implemented in code (`internal/events/events.go`, `internal/events/publisher.go`)**.
 Defines the AI domain events published to NATS for consumption by other Arda
-services (IAM, Audit, Notification, Analytics).
+services (IAM, Audit, Notification, Analytics). Implemented with non-blocking JetStream publisher and in-memory buffered fallback.
 
 ---
 
