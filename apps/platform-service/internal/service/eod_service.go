@@ -64,10 +64,18 @@ func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
 	return nil
 }
 
-// Run executes the enabled COB sequence for one business date. Each step
-// posts to the domain service internal endpoint with the tenant + date;
-// the unique (tenant, job, business_date) run row makes it idempotent.
+// Run executes the enabled COB sequence for one business date under a
+// Postgres advisory lock (single-runner guarantee across replicas — §6
+// leader lock). Each step posts to the domain service internal endpoint
+// with the tenant + date; the unique (tenant, job, business_date) run row
+// makes each step idempotent.
 func (s *EODService) Run(ctx context.Context, tenantID, businessDate string) (*RunResult, error) {
+	lockConn, err := s.acquireLeaderLock(ctx, tenantID, businessDate)
+	if err != nil {
+		return nil, err
+	}
+	defer lockConn.Close()
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT code, endpoint FROM plt_job_definitions
 		WHERE tenant_id = $1 AND is_enabled
@@ -113,6 +121,29 @@ func (s *EODService) Run(ctx context.Context, tenantID, businessDate string) (*R
 		result.Steps = append(result.Steps, step)
 	}
 	return result, nil
+}
+
+// acquireLeaderLock takes a session-level advisory lock on a dedicated
+// connection; only one EOD run per tenant+date proceeds cluster-wide. The
+// lock is released when the connection closes.
+func (s *EODService) acquireLeaderLock(ctx context.Context, tenantID, businessDate string) (*sql.Conn, error) {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquire lock connection: %w", err)
+	}
+	lockKey := fmt.Sprintf("eod:%s:%s", tenantID, businessDate)
+	var acquired bool
+	err = conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(hashtext($1))`, lockKey).Scan(&acquired)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("advisory lock: %w", err)
+	}
+	if !acquired {
+		conn.Close()
+		return nil, fmt.Errorf("another EOD run holds the lock for %s %s", tenantID, businessDate)
+	}
+	s.logger.Info("eod leader lock acquired", "lock", lockKey)
+	return conn, nil
 }
 
 func (s *EODService) runStep(ctx context.Context, tenantID, code, endpoint, businessDate string) StepResult {

@@ -284,10 +284,20 @@ func main() {
 			defer dee.Close()
 			defer dcc.Close()
 			logger.Info("workflow deposit workers registered")
-		} else {
-			logger.Warn("disbursement workers skipped: finance grpc not configured")
 		}
 	}
+
+	// RPT submit workers: always registered — the submission case needs no
+	// domain callback (statistical-service owns the lifecycle).
+	rptWorkers := worker.NewRPTSubmitWorkers(caseRepo)
+	rv, re, rc := rptWorkers.Handlers()
+	rvv := zeebeSvc.NewJobWorker("rpt.submit.validate", rv)
+	ree := zeebeSvc.NewJobWorker("rpt.submit.execute", re)
+	rcc := zeebeSvc.NewJobWorker("rpt.submit.cancel", rc)
+	defer rvv.Close()
+	defer ree.Close()
+	defer rcc.Close()
+	logger.Info("workflow rpt submit workers registered")
 
 	// Handlers
 	workflowCmd := service.NewWorkflowCommandService(caseRepo, zeebeSvc)

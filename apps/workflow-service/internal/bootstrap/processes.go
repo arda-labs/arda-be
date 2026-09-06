@@ -53,6 +53,9 @@ var hrmEmployeeRegistration []byte
 //go:embed dpm-settle-v2.bpmn
 var dpmSettle []byte
 
+//go:embed rpt-submit-v2.bpmn
+var rptSubmit []byte
+
 type Process struct {
 	ProcessCode  string
 	Name         string
@@ -145,6 +148,12 @@ func BuiltInProcesses() []Process {
 			Name:         "Thu nợ (v2)",
 			ResourceName: "lnm-collection-v2.bpmn",
 			Content:      lnmCollection,
+		},
+		{
+			ProcessCode:  "RPT_SUBMIT_V2",
+			Name:         "Nộp báo cáo (v2)",
+			ResourceName: "rpt-submit-v2.bpmn",
+			Content:      rptSubmit,
 		},
 		{
 			ProcessCode:  "DPM_SETTLE_V2",
