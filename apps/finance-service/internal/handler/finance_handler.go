@@ -17,10 +17,25 @@ type FinanceHandler struct {
 	accounts  *service.AccountService
 	trialBal  *service.TrialBalanceService
 	configSvc *service.AccountingConfigService
+	cash      *service.CashService
 }
 
-func NewFinanceHandler(accounts *service.AccountService, trialBal *service.TrialBalanceService, configSvc *service.AccountingConfigService) *FinanceHandler {
-	return &FinanceHandler{accounts: accounts, trialBal: trialBal, configSvc: configSvc}
+func NewFinanceHandler(accounts *service.AccountService, trialBal *service.TrialBalanceService, configSvc *service.AccountingConfigService, cash *service.CashService) *FinanceHandler {
+	return &FinanceHandler{accounts: accounts, trialBal: trialBal, configSvc: configSvc, cash: cash}
+}
+
+// ListCashPosition handles GET /api/finance/cash-position (VCM aggregate).
+func (h *FinanceHandler) ListCashPosition(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.cash.Position(r.Context(), tenantID)
+	if err != nil {
+		respondError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, r, http.StatusOK, map[string]any{"rows": rows})
 }
 
 // ── Accounts ──

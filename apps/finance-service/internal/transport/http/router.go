@@ -13,7 +13,7 @@ import (
 // NewRouter wires HTTP routes for the finance service. Posting endpoints do
 // NOT live here — the gRPC PostingService owns them (contract v0.2 §1);
 // HTTP is read/config surface for the finance remote.
-func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHandler, postingHandler *handler.PostingHandler) http.Handler {
+func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHandler, postingHandler *handler.PostingHandler, cashHandler *handler.CashHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Health
@@ -51,6 +51,24 @@ func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHa
 
 	// Trial balance (journal-aggregated)
 	mux.HandleFunc("/api/finance/trial-balance", method("GET", financeHandler.TrialBalance))
+
+	// VCM cash treasury (P2.4b)
+	mux.HandleFunc("/api/finance/cash", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			cashHandler.RecordCash(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/finance/cash-position", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			cashHandler.Position(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
 
 	// ── Posting stack (journal read + preview + opening balances) ──
 	mux.HandleFunc("/api/finance/journal-entries", method("GET", postingHandler.ListJournalEntries))

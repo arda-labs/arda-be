@@ -74,10 +74,12 @@ func main() {
 	platformHandler := handler.NewPlatformHandler(platformSvc, mediaClient)
 	calendarHandler := handler.NewCalendarHandler(calendarSvc)
 	menuHandler := handler.NewMenuHandler(menuSvc)
+	eodSvc := service.NewEODService(db, logger)
+	eodHandler := handler.NewEODHandler(eodSvc)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(platformHandler, calendarHandler, menuHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(platformHandler, calendarHandler, menuHandler, eodHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

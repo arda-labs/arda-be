@@ -72,11 +72,13 @@ func main() {
 	coaSvc := service.NewCoaService(coaRepo)
 	postingRepo := repository.NewPostingRepository(db)
 	postingSvc := service.NewPostingService(postingRepo, db)
+	cashSvc := service.NewCashService(db, postingSvc)
 
 	// ── Handlers ──
-	financeHandler := handler.NewFinanceHandler(accountSvc, trialBalanceSvc, accountingConfigSvc)
+	financeHandler := handler.NewFinanceHandler(accountSvc, trialBalanceSvc, accountingConfigSvc, cashSvc)
 	coaHandler := handler.NewCoaHandler(coaSvc)
 	postingHandler := handler.NewPostingHandler(postingSvc)
+	cashHandler := handler.NewCashHandler(cashSvc)
 
 	// ── gRPC server (PostingService, port 9096) ──
 	serviceSecret, err := identity.SecretFromEnv()
@@ -127,7 +129,7 @@ func main() {
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, coaHandler, postingHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, coaHandler, postingHandler, cashHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

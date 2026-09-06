@@ -9,7 +9,7 @@ import (
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
-func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handler.CalendarHandler, menuHandler *handler.MenuHandler) http.Handler {
+func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handler.CalendarHandler, menuHandler *handler.MenuHandler, eodHandler *handler.EODHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -40,6 +40,9 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		}
 		menuHandler.DeleteMenuItem(w, r)
 	})
+
+	mux.HandleFunc("/api/platform/eod/run", eodHandler.RunCOB)
+	mux.HandleFunc("/api/platform/eod/seed", eodHandler.SeedCOBJobs)
 
 	mux.HandleFunc("/api/platform/public/branding", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
