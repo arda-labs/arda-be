@@ -256,7 +256,8 @@ func (r *PostingRepository) GetEntryForReversal(ctx context.Context, tenantID, e
 // MarkReversed links the original entry to its reversal.
 func (r *PostingRepository) MarkReversed(ctx context.Context, tx *sql.Tx, tenantID, originalID, reversalID string) error {
 	_, err := tx.ExecContext(ctx, `
-		UPDATE fin_journal_entries SET reversed_by_entry_id = $3, updated_at = now()
+		UPDATE fin_journal_entries
+		SET reversed_by_entry_id = $3, status = 'REVERSED', updated_at = now()
 		WHERE tenant_id = $1 AND id = $2`, tenantID, originalID, reversalID)
 	return err
 }

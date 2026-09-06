@@ -145,7 +145,7 @@ func (r *ConfigRepository) ListJournalLines(ctx context.Context, journalDefiniti
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, journal_definition_id, line_seq, entry_type, account_resolution_type,
 		       account_ref, amount_source, description_template, status
-		FROM fin_journal_lines
+		FROM fin_journal_definition_lines
 		WHERE journal_definition_id = $1 AND status = 'ACTIVE'
 		ORDER BY line_seq
 	`, journalDefinitionID)
@@ -183,7 +183,7 @@ func (r *ConfigRepository) listJournalLinesByDefinitionIDs(ctx context.Context, 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, journal_definition_id, line_seq, entry_type, account_resolution_type,
 		       account_ref, amount_source, description_template, status
-		FROM fin_journal_lines
+		FROM fin_journal_definition_lines
 		WHERE journal_definition_id IN (`+strings.Join(placeholders, ",")+`) AND status = 'ACTIVE'
 		ORDER BY journal_definition_id, line_seq
 	`, args...)

@@ -11,6 +11,11 @@ DROP TABLE IF EXISTS fin_ledger_entries;
 DROP TABLE IF EXISTS fin_account_balances;
 DROP TABLE IF EXISTS fin_transactions;
 
+-- Free the fin_journal_lines name for the posted-entry lines table: the old
+-- config table (journal definition lines) is renamed to match its parent
+-- fin_journal_definitions.
+ALTER TABLE fin_journal_lines RENAME TO fin_journal_definition_lines;
+
 -- +goose Down
 -- No down: rebuild mode — the dropped schema is superseded, not replaced.
 SELECT 1;

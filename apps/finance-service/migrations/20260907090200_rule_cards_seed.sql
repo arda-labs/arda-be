@@ -11,7 +11,7 @@ VALUES
   (NULL, 'debt_group_code', 'CODE',   '{LNM_DISBURSEMENT,LNM_ACCRUAL}',                'Nhóm nợ (TT 02/2023)'),
   (NULL, 'customer_code',   'STRING', '{LNM_DISBURSEMENT,LNM_COLLECTION}',             'Mã khách hàng'),
   (NULL, 'org_unit_code',   'CODE',   '{}',                                            'Đơn vị org bắt buộc mọi luồng')
-ON CONFLICT (COALESCE(tenant_id,''), key) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO fin_accounting_rules (tenant_id, document_type, line_no, direction, resolution_type, acc_classification, required_dimensions, description_template)
 VALUES

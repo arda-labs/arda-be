@@ -117,9 +117,11 @@ CREATE TABLE IF NOT EXISTS fin_dimension_keys (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_by      TEXT,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    version         INTEGER NOT NULL DEFAULT 1,
-    UNIQUE (COALESCE(tenant_id, ''), key)
+    version         INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fin_dimension_keys_key
+    ON fin_dimension_keys (COALESCE(tenant_id, ''), key);
 
 CREATE TABLE IF NOT EXISTS fin_accounting_rules (
     id                   UUID PRIMARY KEY DEFAULT uuidv7(),
