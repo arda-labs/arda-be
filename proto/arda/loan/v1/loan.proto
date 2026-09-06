@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package arda.loan.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1;loanv1";
+
+// LoanCommandService is the callback surface workflow-service workers use to
+// execute loan business steps (mirror of crm CustomerCommandService).
+service LoanCommandService {
+  rpc UpdateContractStatus(UpdateContractStatusRequest) returns (UpdateContractStatusResponse);
+  rpc CheckAdjustment(CheckAdjustmentRequest) returns (CheckAdjustmentResponse);
+  rpc ResolveAdjustment(ResolveAdjustmentRequest) returns (ResolveAdjustmentResponse);
+}
+
+message UpdateContractStatusRequest {
+  string contract_id = 1;
+  string status = 2;
+}
+
+message UpdateContractStatusResponse {
+  bool ok = 1;
+}
+
+message CheckAdjustmentRequest {
+  string kind = 1;
+  string adjustment_id = 2;
+}
+
+message CheckAdjustmentResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message ResolveAdjustmentRequest {
+  string kind = 1;
+  string adjustment_id = 2;
+  string decision = 3; // APPROVE | REJECT | CANCEL
+  string decided_by = 4;
+  string note = 5;
+}
+
+message ResolveAdjustmentResponse {
+  bool ok = 1;
+}

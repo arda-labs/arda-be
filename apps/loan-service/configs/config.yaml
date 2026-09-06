@@ -1,0 +1,6 @@
+app_name: loan-service
+http_addr: 0.0.0.0:8097
+grpc_addr: 0.0.0.0:9097
+log_level: info
+database_dsn: ""
+workflow_grpc_addr: ""

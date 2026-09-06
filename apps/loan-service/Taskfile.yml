@@ -1,0 +1,15 @@
+version: "3"
+
+tasks:
+  build:
+    cmds:
+      - go build -o bin/loan-service ./cmd/loan-service
+  run:
+    cmds:
+      - go run ./cmd/loan-service
+  test:
+    cmds:
+      - go test ./...
+  lint:
+    cmds:
+      - go vet ./...

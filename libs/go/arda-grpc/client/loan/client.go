@@ -1,0 +1,135 @@
+package loan
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
+	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
+	"google.golang.org/grpc"
+)
+
+const defaultTimeout = 5 * time.Second
+
+// Kinds enumerates the loan adjustment flow kinds; workflow-service workers
+// and loan-service case-types share this list so job types never drift.
+var Kinds = []string{
+	"debt-change",
+	"rate-change",
+	"restructure",
+	"waiver",
+	"writeoff",
+	"recovery",
+	"fund-check",
+	"revenue-allocation",
+	"vfu-fee-allocation",
+	"off-balance-export",
+}
+
+// IsValidKind reports whether kind is a registered loan adjustment flow.
+func IsValidKind(kind string) bool {
+	for _, k := range Kinds {
+		if k == kind {
+			return true
+		}
+	}
+	return false
+}
+
+type Client struct {
+	conn    *grpc.ClientConn
+	api     loanv1.LoanCommandServiceClient
+	timeout time.Duration
+}
+
+func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) (*Client, error) {
+	_ = ctx
+	_ = logger
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return nil, errors.New("loan grpc address is required")
+	}
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return nil, errors.New("loan grpc service identity is not configured: " + err.Error())
+	}
+	transportCreds, err := identity.ClientTransportCredentials("loan-service")
+	if err != nil {
+		return nil, errors.New("loan grpc tls is not configured: " + err.Error())
+	}
+	conn, err := grpc.NewClient(
+		addr,
+		grpc.WithTransportCredentials(transportCreds),
+		grpc.WithChainUnaryInterceptor(
+			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
+			interceptors.UnaryClientServiceAuth(secret, sourceService, "loan-service"),
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	client := &Client{
+		conn:    conn,
+		api:     loanv1.NewLoanCommandServiceClient(conn),
+		timeout: defaultTimeout,
+	}
+	conn.Connect()
+	return client, nil
+}
+
+func (c *Client) Close() error {
+	if c == nil || c.conn == nil {
+		return nil
+	}
+	return c.conn.Close()
+}
+
+func (c *Client) UpdateContractStatus(ctx context.Context, contractID, status string) error {
+	if c == nil {
+		return errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.UpdateContractStatus(callCtx, &loanv1.UpdateContractStatusRequest{
+		ContractId: contractID,
+		Status:     status,
+	})
+	return err
+}
+
+func (c *Client) CheckAdjustment(ctx context.Context, kind, adjustmentID string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckAdjustment(callCtx, &loanv1.CheckAdjustmentRequest{
+		Kind:         kind,
+		AdjustmentId: adjustmentID,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+func (c *Client) ResolveAdjustment(ctx context.Context, kind, adjustmentID, decision, decidedBy, note string) error {
+	if c == nil {
+		return errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.ResolveAdjustment(callCtx, &loanv1.ResolveAdjustmentRequest{
+		Kind:         kind,
+		AdjustmentId: adjustmentID,
+		Decision:     decision,
+		DecidedBy:    decidedBy,
+		Note:         note,
+	})
+	return err
+}

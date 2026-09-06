@@ -7,6 +7,7 @@ use (
 	./apps/finance-service
 	./apps/hrm-service
 	./apps/iam-service
+	./apps/loan-service
 	./apps/mdm-service
 	./apps/media-service
 	./apps/notification-service

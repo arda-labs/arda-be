@@ -1,0 +1,255 @@
+package handler
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
+	"github.com/arda-labs/arda/apps/loan-service/internal/service"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+)
+
+func requireTenantID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeRequired, "verified tenant scope is required")
+		return "", false
+	}
+	return tenantID, true
+}
+
+func writeErrorCode(w http.ResponseWriter, status int, code, message string) {
+	ardahttp.WriteProblem(w, nil, status, ardaerrors.New(code, message))
+}
+
+func writeResult(w http.ResponseWriter, r *http.Request, data any, err error) {
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, data)
+}
+
+func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
+	var appErr *ardaerrors.Error
+	if errors.As(err, &appErr) {
+		status := http.StatusBadRequest
+		switch appErr.Code {
+		case ardaerrors.CodeNotFound:
+			status = http.StatusNotFound
+		case ardaerrors.CodeConflict:
+			status = http.StatusConflict
+		case ardaerrors.CodeBadGateway:
+			status = http.StatusBadGateway
+		}
+		ardahttp.WriteProblem(w, r, status, appErr)
+		return
+	}
+	ardahttp.WriteProblem(w, r, http.StatusInternalServerError, ardaerrors.New(ardaerrors.CodeInternal, err.Error()))
+}
+
+func decodeBody(w http.ResponseWriter, r *http.Request, target any) bool {
+	if err := json.NewDecoder(r.Body).Decode(target); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "invalid json")
+		return false
+	}
+	return true
+}
+
+func actorOf(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get("X-User-Id"))
+}
+
+type LoanHandler struct {
+	svc *service.LoanService
+	adj *service.AdjustmentService
+}
+
+func NewLoanHandler(svc *service.LoanService, adj *service.AdjustmentService) *LoanHandler {
+	return &LoanHandler{svc: svc, adj: adj}
+}
+
+func (h *LoanHandler) ListContracts(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListContracts(r.Context(), tenantID, r.URL.Query().Get("status"), r.URL.Query().Get("q"))
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) GetContract(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.GetContract(r.Context(), tenantID, r.PathValue("id"))
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) CreateContract(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.Contract
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.svc.CreateContract(r.Context(), tenantID, actorOf(r), &req)
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) SubmitContract(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.SubmitContract(r.Context(), tenantID, actorOf(r), r.PathValue("id"))
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) ListAgreements(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListAgreements(r.Context(), tenantID, r.URL.Query().Get("contract_code"))
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) CreateAgreement(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.Agreement
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.svc.CreateAgreement(r.Context(), tenantID, actorOf(r), &req)
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) ListRepayPlans(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.svc.ListRepayPlans(r.Context(), tenantID, q.Get("contract_code"), q.Get("agreement_code"))
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) ListMortgages(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListMortgages(r.Context(), tenantID, r.URL.Query().Get("q"))
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) CreateMortgage(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.Mortgage
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.svc.CreateMortgage(r.Context(), tenantID, actorOf(r), &req)
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) ListCollaterals(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.svc.ListCollaterals(r.Context(), tenantID, q.Get("mortgage_code"), q.Get("q"))
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) CreateCollateral(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.Collateral
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.svc.CreateCollateral(r.Context(), tenantID, actorOf(r), &req)
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) ListContractCollaterals(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListContractCollaterals(r.Context(), tenantID, r.URL.Query().Get("contract_code"))
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) AttachContractCollateral(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.ContractCollateral
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.svc.AttachContractCollateral(r.Context(), tenantID, &req)
+	writeResult(w, r, item, err)
+}
+
+// Adjustment endpoints — one uniform set for every registered kind.
+
+func (h *LoanHandler) ListAdjustments(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.adj.List(r.Context(), r.PathValue("kind"), tenantID, q.Get("contract_code"), q.Get("status"))
+	writeResult(w, r, items, err)
+}
+
+func (h *LoanHandler) GetAdjustment(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.adj.Get(r.Context(), r.PathValue("kind"), tenantID, r.PathValue("id"))
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) CreateAdjustment(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.Adjustment
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.adj.Create(r.Context(), r.PathValue("kind"), tenantID, actorOf(r), &req)
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) SubmitAdjustment(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.adj.Submit(r.Context(), r.PathValue("kind"), tenantID, actorOf(r), r.PathValue("id"))
+	writeResult(w, r, item, err)
+}

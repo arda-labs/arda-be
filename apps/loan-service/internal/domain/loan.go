@@ -1,0 +1,178 @@
+package domain
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// Contract statuses.
+const (
+	ContractDraft   = "DRAFT"
+	ContractPending = "PENDING"
+	ContractActive  = "ACTIVE"
+	ContractRejected = "REJECTED"
+	ContractClosed  = "CLOSED"
+)
+
+// Adjustment statuses.
+const (
+	AdjustmentDraft    = "DRAFT"
+	AdjustmentPending  = "PENDING"
+	AdjustmentActive   = "ACTIVE"
+	AdjustmentRejected = "REJECTED"
+	AdjustmentCancelled = "CANCELLED"
+)
+
+// Contract is the credit contract header (EPAS lnm_inf_contract subset — the
+// snapshot tables _a/_h are deliberate P1 omissions; balances live on
+// agreements and are computed on demand).
+type Contract struct {
+	ID                    string          `json:"id"`
+	TenantID              string          `json:"tenant_id"`
+	ContractCode          string          `json:"contract_code"`
+	ContractNo            string          `json:"contract_no"`
+	CustomerCode          string          `json:"customer_code"`
+	EmployeeCode          string          `json:"employee_code"`
+	ContractTypeCode      string          `json:"contract_type_code"`
+	ProductCode           string          `json:"product_code"`
+	InterestRate          float64         `json:"interest_rate"`
+	InterestRateType      string          `json:"interest_rate_type"`
+	PurposeCode           string          `json:"purpose_code"`
+	IndustryCode          string          `json:"industry_code"`
+	LoanMethodCode        string          `json:"loan_method_code"`
+	ContractDate          string          `json:"contract_date"`
+	LoanTerm              int             `json:"loan_term"`
+	TermUnit              string          `json:"term_unit"`
+	MaturityDate          string          `json:"maturity_date"`
+	InterestScheduleDay   int             `json:"interest_schedule_day"`
+	LoanAmt               float64         `json:"loan_amt"`
+	InterestPaymentFreq   string          `json:"interest_payment_freq"`
+	PrincipalPaymentFreq  string          `json:"principal_payment_freq"`
+	InterestPaymentMethod string          `json:"interest_payment_method"`
+	PrincipalPaymentMethod string         `json:"principal_payment_method"`
+	Status                string          `json:"status"`
+	WorkflowCaseID        *string         `json:"workflow_case_id,omitempty"`
+	CreatedBy             string          `json:"created_by"`
+	CreatedAt             time.Time       `json:"created_at"`
+	UpdatedAt             time.Time       `json:"updated_at"`
+}
+
+// Agreement is one drawdown (disbursement) against a contract, carrying the
+// running balances EPAS kept on lnm_inf_agreement (core subset).
+type Agreement struct {
+	ID                   string    `json:"id"`
+	TenantID             string    `json:"tenant_id"`
+	ContractCode         string    `json:"contract_code"`
+	AgreementCode        string    `json:"agreement_code"`
+	DisburseDate         string    `json:"disburse_date"`
+	DisburseAmt          float64   `json:"disburse_amt"`
+	InterestRate         float64   `json:"interest_rate"`
+	OverInterestRate     float64   `json:"over_interest_rate"`
+	LoanTerm             int       `json:"loan_term"`
+	TermUnit             string    `json:"term_unit"`
+	MaturityDate         string    `json:"maturity_date"`
+	DebtGroupCode        string    `json:"debt_group_code"`
+	InterestPaymentFreq  string    `json:"interest_payment_freq"`
+	PrincipalPaymentFreq string    `json:"principal_payment_freq"`
+	OutstandingAmt       float64   `json:"outstanding_amt"`
+	ColnPrincipalAmt     float64   `json:"coln_principal_amt"`
+	ColnInterestAmt      float64   `json:"coln_interest_amt"`
+	ProvisionAmt         float64   `json:"provision_amt"`
+	Status               string    `json:"status"`
+	CreatedBy            string    `json:"created_by"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
+}
+
+// RepayPlan is one schedule row (EPAS lnm_inf_repay_plan).
+type RepayPlan struct {
+	ID               string    `json:"id"`
+	TenantID         string    `json:"tenant_id"`
+	ContractCode     string    `json:"contract_code"`
+	AgreementCode    string    `json:"agreement_code"`
+	PlanNo           int       `json:"plan_no"`
+	TermNo           int       `json:"term_no"`
+	FromDate         string    `json:"from_date"`
+	ToDate           string    `json:"to_date"`
+	InterestRate     float64   `json:"interest_rate"`
+	PlanPrincipalAmt float64   `json:"plan_principal_amt"`
+	PlanInterestAmt  float64   `json:"plan_interest_amt"`
+	ColnPrincipalAmt float64   `json:"coln_principal_amt"`
+	ColnInterestAmt  float64   `json:"coln_interest_amt"`
+	IsActive         bool      `json:"is_active"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// Mortgage is the collateral registration envelope (EPAS lnm_inf_mortgage).
+type Mortgage struct {
+	ID               string    `json:"id"`
+	TenantID         string    `json:"tenant_id"`
+	MortgageCode     string    `json:"mortgage_code"`
+	MortgageNo       string    `json:"mortgage_no"`
+	CustomerCode     string    `json:"customer_code"`
+	MortgageDate     string    `json:"mortgage_date"`
+	NotarizationDate string    `json:"notarization_date"`
+	RegistrationDate string    `json:"registration_date"`
+	ExpireDate       string    `json:"expire_date"`
+	Status           string    `json:"status"`
+	Description      *string   `json:"description,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// Collateral is one collateral asset (EPAS lnm_inf_coll).
+type Collateral struct {
+	ID             string    `json:"id"`
+	TenantID       string    `json:"tenant_id"`
+	CollCode       string    `json:"coll_code"`
+	CollName       string    `json:"coll_name"`
+	CollTypeCode   string    `json:"coll_type_code"`
+	MortgageCode   string    `json:"mortgage_code"`
+	OwnerCifCode   string    `json:"owner_cif_code"`
+	OwnerName      string    `json:"owner_name"`
+	CollAddress    string    `json:"coll_address"`
+	Quantity       float64   `json:"quantity"`
+	UnitPrice      float64   `json:"unit_price"`
+	CollValue      float64   `json:"coll_value"`
+	CollUseValue   float64   `json:"coll_use_value"`
+	ValuationDate  string    `json:"valuation_date"`
+	Status         string    `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// ContractCollateral links a contract to a collateral asset with an
+// allocated value (EPAS lnm_inf_contract_coll).
+type ContractCollateral struct {
+	ID          string    `json:"id"`
+	TenantID    string    `json:"tenant_id"`
+	ContractCode string   `json:"contract_code"`
+	CollCode    string    `json:"coll_code"`
+	CollValue   float64   `json:"coll_value"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Adjustment is the uniform shape of every loan adjustment flow (debt group
+// change, rate change, restructure, waiver, writeoff, recovery, fund check,
+// revenue allocation, VFU fee allocation, off-balance export). Flow-specific
+// fields live in `payload` (jsonb) validated per kind by the service layer —
+// same uniform-catalog pattern as mdm-service.
+type Adjustment struct {
+	ID             string          `json:"id"`
+	TenantID       string          `json:"tenant_id"`
+	Kind           string          `json:"kind"`
+	ContractCode   string          `json:"contract_code"`
+	AgreementCode  *string         `json:"agreement_code,omitempty"`
+	EffectiveDate  *string         `json:"effective_date,omitempty"`
+	Amount         *float64        `json:"amount,omitempty"`
+	Payload        json.RawMessage `json:"payload,omitempty"`
+	Status         string          `json:"status"`
+	WorkflowCaseID *string         `json:"workflow_case_id,omitempty"`
+	DecisionNote   *string         `json:"decision_note,omitempty"`
+	DecidedBy      *string         `json:"decided_by,omitempty"`
+	CreatedBy      string          `json:"created_by"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+}
