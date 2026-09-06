@@ -30,6 +30,10 @@ type WorkflowHandler struct {
 	mappingRepo        *repository.MappingRepository
 	caseRepo           *repository.CaseRepository
 	processDefinition  *repository.ProcessDefinitionRepository
+	// AssignmentResolver and IncidentIndex are optional integrations wired
+	// from main; both nil-safe (features degrade instead of failing).
+	AssignmentResolver *service.AssignmentResolver
+	IncidentIndex      *service.ZeebeIncidentIndex
 }
 
 func NewWorkflowHandler(

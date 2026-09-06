@@ -16,10 +16,11 @@ type UserTaskProjector struct {
 	rest       *service.ZeebeRestClient
 	caseRepo   *repository.CaseRepository
 	projection *CaseProjection
+	assign     *service.AssignmentResolver
 	interval   time.Duration
 }
 
-func NewUserTaskProjector(rest *service.ZeebeRestClient, caseRepo *repository.CaseRepository) *UserTaskProjector {
+func NewUserTaskProjector(rest *service.ZeebeRestClient, caseRepo *repository.CaseRepository, assign *service.AssignmentResolver) *UserTaskProjector {
 	if rest == nil || !rest.Enabled() {
 		return nil
 	}
@@ -27,6 +28,7 @@ func NewUserTaskProjector(rest *service.ZeebeRestClient, caseRepo *repository.Ca
 		rest:       rest,
 		caseRepo:   caseRepo,
 		projection: NewCaseProjection(caseRepo),
+		assign:     assign,
 		interval:   2 * time.Second,
 	}
 }
@@ -75,7 +77,30 @@ func (p *UserTaskProjector) projectOnce(ctx context.Context) {
 			if !service.IsNativeUserTaskElement(ut.ElementID) {
 				continue
 			}
+			// Assignment rules (case_type + step_code → role/memberships)
+			// win over BPMN-declared candidate groups when configured.
 			candidateRole := firstCandidateGroup(ut.CandidateGroups)
+			var candidateUsers []string
+			if p.assign.Enabled() {
+				result := p.assign.Resolve(ctx, service.AssignmentRequest{
+					CaseType:  bc.CaseType,
+					StepCode:  ut.ElementID,
+					TenantID:  bc.TenantID,
+					CreatedBy: bc.CreatedBy,
+				})
+				if result.Resolved {
+					candidateRole = result.RoleCode
+					candidateUsers = result.CandidateUsers
+					// DIRECT mode pins the task to a single user right away;
+					// CANDIDATE_POOL mode keeps it claimable by the pool.
+					if strings.EqualFold(result.AssignmentMode, "DIRECT") && len(candidateUsers) > 0 && ut.Assignee == "" {
+						if err := p.rest.AssignUserTask(ctx, ut.UserTaskKey, candidateUsers[0]); err != nil {
+							slog.Debug("user task projector: direct assignment skipped",
+								"userTaskKey", ut.UserTaskKey, "assignee", candidateUsers[0], "err", err)
+						}
+					}
+				}
+			}
 			title := userTaskTitle(ut.ElementID)
 			key := ut.UserTaskKey
 			pik := ut.ProcessInstanceKey
@@ -86,6 +111,7 @@ func (p *UserTaskProjector) projectOnce(ctx context.Context) {
 				TaskType:           "zeebe.userTask",
 				StepCode:           ut.ElementID,
 				CandidateRole:      candidateRole,
+				CandidateUsers:     candidateUsers,
 				Title:              title,
 				Description:        bc.Title,
 			})

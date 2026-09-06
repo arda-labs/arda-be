@@ -158,7 +158,8 @@ func main() {
 
 	syncCtx, syncCancel := context.WithCancel(context.Background())
 	defer syncCancel()
-	if projector := worker.NewUserTaskProjector(zeebeRest, caseRepo); projector != nil {
+	assignmentResolver := service.NewAssignmentResolver(caseRepo)
+	if projector := worker.NewUserTaskProjector(zeebeRest, caseRepo, assignmentResolver); projector != nil {
 		go projector.Run(syncCtx)
 	}
 
@@ -214,6 +215,8 @@ func main() {
 	}()
 
 	wfHandler := handler.NewWorkflowHandler(zeebeSvc, zeebeRest, crmClient, mappingRepo, caseRepo, processDefinitionRepo)
+	wfHandler.AssignmentResolver = assignmentResolver
+	wfHandler.IncidentIndex = service.NewZeebeIncidentIndex(esURL)
 	notiClient, err := notificationclient.New(cfg.NotificationGRPCAddr)
 	if err != nil {
 		logger.Error("notification grpc client is required; refusing to start", "err", err)

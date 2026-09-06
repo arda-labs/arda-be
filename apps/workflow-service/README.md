@@ -118,5 +118,13 @@ From the backend workspace root, run service-specific tests instead of `go test 
 
 - No runtime task claim/complete/reassign facade yet.
 - No incident retry/suspend/resume APIs yet.
-- Role membership and assignment rules are persisted but not yet used to resolve task candidates.
-- Process definitions can be deployed, but monitor panels still need real incident/job/called-instance data from Zeebe.
+- ~~Role membership and assignment rules are persisted but not yet used to resolve task candidates.~~
+  Resolved 2026-09-06: `AssignmentResolver` resolves the active rule for
+  (case_type, step_code), applies role memberships + delegations + separation
+  of duties, persists `workflow_tasks.candidate_users`, and auto-assigns in
+  `DIRECT` mode. Dry-run: `GET /api/workflow/assignment-rules/resolve`.
+- ~~Process definitions can be deployed, but monitor panels still need real incident/job/called-instance data from Zeebe.~~
+  Partially resolved 2026-09-06: `GET /api/workflow/cases/{id}/monitor` returns
+  real open incidents from the Zeebe Elasticsearch exporter plus live user
+  tasks; `POST /api/workflow/cases/{id}/incidents/{incidentKey}/resolve`
+  resolves through the Zeebe gateway. Called-instance data still pending.

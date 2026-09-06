@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_LNMLoanFormationV2" targetNamespace="https://arda.io.vn/bpmn/loan" exporter="Arda" exporterVersion="2.0">
+  <bpmn:error id="Error_ValidationFailed" name="VALIDATION_FAILED" errorCode="VALIDATION_FAILED" />
+
+  <!--
+    Multi-level approval sample derived from EPAS LNM.201.01 (Hình thành khoản vay):
+    fund source (TW revalidation vs branch) × approval tier (PGD → GĐ → Hội đồng)
+    by amount against pgdLimit/gdLimit process variables. Reference flow only —
+    the loan domain service is P1 scope.
+  -->
+  <bpmn:process id="lnm-loan-formation-v2" name="Hình thành khoản vay đa cấp (v2 mẫu)" isExecutable="true">
+    <bpmn:startEvent id="Start_Submitted" name="Hồ sơ đã khởi tạo">
+      <bpmn:outgoing>Flow_Start_Maker</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="UT_MakerInput" name="Nhập hồ sơ khoản vay">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="LNM_MAKER" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="stepCode" value="maker_input" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_Maker</bpmn:incoming>
+      <bpmn:incoming>Flow_ValidateError_Maker</bpmn:incoming>
+      <bpmn:incoming>Flow_GD_Supplement</bpmn:incoming>
+      <bpmn:incoming>Flow_Board_Supplement</bpmn:incoming>
+      <bpmn:outgoing>Flow_Maker_Validate</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="ST_Validate" name="Kiểm tra quy định tín dụng">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="lnm.loan.formation.validate" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Maker_Validate</bpmn:incoming>
+      <bpmn:outgoing>Flow_Validate_FundSource</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:boundaryEvent id="Err_Validate" attachedToRef="ST_Validate">
+      <bpmn:outgoing>Flow_ValidateError_Maker</bpmn:outgoing>
+      <bpmn:errorEventDefinition errorRef="Error_ValidationFailed" />
+    </bpmn:boundaryEvent>
+
+    <bpmn:exclusiveGateway id="GW_FundSource" name="Nguồn vốn" default="Flow_FundSource_Branch">
+      <bpmn:incoming>Flow_Validate_FundSource</bpmn:incoming>
+      <bpmn:outgoing>Flow_FundSource_TW</bpmn:outgoing>
+      <bpmn:outgoing>Flow_FundSource_Branch</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="UT_TWRevalidate" name="Tái thẩm định - Trung ương">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="LNM_TWTD" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="stepCode" value="tw_revalidate" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_FundSource_TW</bpmn:incoming>
+      <bpmn:outgoing>Flow_TW_PGD</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="UT_PGDReview" name="Xem xét cấp Phó giám đốc">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="LNM_POGD" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="stepCode" value="pgd_review" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_FundSource_Branch</bpmn:incoming>
+      <bpmn:incoming>Flow_TW_PGD</bpmn:incoming>
+      <bpmn:outgoing>Flow_PGD_Level</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_ApprovalLevel" name="Cấp duyệt theo hạn mức" default="Flow_Level_Execute">
+      <bpmn:incoming>Flow_PGD_Level</bpmn:incoming>
+      <bpmn:outgoing>Flow_Level_Board</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Level_GD</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Level_Execute</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="UT_GDReview" name="Phê duyệt cấp Giám đốc">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="LNM_GIDO" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="stepCode" value="gd_review" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Level_GD</bpmn:incoming>
+      <bpmn:outgoing>Flow_GD_Decision</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="GW_GDDecision" name="Kết quả Giám đốc" default="Flow_GD_Supplement">
+      <bpmn:incoming>Flow_GD_Decision</bpmn:incoming>
+      <bpmn:outgoing>Flow_GD_Approve</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GD_Reject</bpmn:outgoing>
+      <bpmn:outgoing>Flow_GD_Supplement</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="UT_BoardReview" name="Phê duyệt Hội đồng tín dụng">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="LNM_HODO" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="stepCode" value="board_review" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Level_Board</bpmn:incoming>
+      <bpmn:outgoing>Flow_Board_Decision</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="GW_BoardDecision" name="Kết quả Hội đồng" default="Flow_Board_Supplement">
+      <bpmn:incoming>Flow_Board_Decision</bpmn:incoming>
+      <bpmn:outgoing>Flow_Board_Approve</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Board_Reject</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Board_Supplement</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="ST_Execute" name="Lập hợp đồng tín dụng">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="lnm.loan.formation.execute" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Level_Execute</bpmn:incoming>
+      <bpmn:incoming>Flow_GD_Approve</bpmn:incoming>
+      <bpmn:incoming>Flow_Board_Approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_Execute_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="ST_Cancel" name="Từ chối hồ sơ khoản vay">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="lnm.loan.formation.cancel" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_GD_Reject</bpmn:incoming>
+      <bpmn:incoming>Flow_Board_Reject</bpmn:incoming>
+      <bpmn:outgoing>Flow_Cancel_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="End_Approved" name="Đã lập hợp đồng">
+      <bpmn:incoming>Flow_Execute_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="End_Rejected" name="Đã từ chối">
+      <bpmn:incoming>Flow_Cancel_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="Flow_Start_Maker" sourceRef="Start_Submitted" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_Maker_Validate" sourceRef="UT_MakerInput" targetRef="ST_Validate" />
+    <bpmn:sequenceFlow id="Flow_ValidateError_Maker" sourceRef="Err_Validate" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_Validate_FundSource" sourceRef="ST_Validate" targetRef="GW_FundSource" />
+    <bpmn:sequenceFlow id="Flow_FundSource_TW" sourceRef="GW_FundSource" targetRef="UT_TWRevalidate">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=fundSource = "TW"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_FundSource_Branch" sourceRef="GW_FundSource" targetRef="UT_PGDReview" />
+    <bpmn:sequenceFlow id="Flow_TW_PGD" sourceRef="UT_TWRevalidate" targetRef="UT_PGDReview" />
+    <bpmn:sequenceFlow id="Flow_PGD_Level" sourceRef="UT_PGDReview" targetRef="GW_ApprovalLevel" />
+    <bpmn:sequenceFlow id="Flow_Level_Board" sourceRef="GW_ApprovalLevel" targetRef="UT_BoardReview">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=amount &gt; gdLimit</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Level_GD" sourceRef="GW_ApprovalLevel" targetRef="UT_GDReview">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=amount &gt; pgdLimit</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Level_Execute" sourceRef="GW_ApprovalLevel" targetRef="ST_Execute" />
+    <bpmn:sequenceFlow id="Flow_GD_Decision" sourceRef="UT_GDReview" targetRef="GW_GDDecision" />
+    <bpmn:sequenceFlow id="Flow_GD_Approve" sourceRef="GW_GDDecision" targetRef="ST_Execute">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "APPROVE"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_GD_Reject" sourceRef="GW_GDDecision" targetRef="ST_Cancel">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "REJECT"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_GD_Supplement" sourceRef="GW_GDDecision" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_Board_Decision" sourceRef="UT_BoardReview" targetRef="GW_BoardDecision" />
+    <bpmn:sequenceFlow id="Flow_Board_Approve" sourceRef="GW_BoardDecision" targetRef="ST_Execute">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "APPROVE"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Board_Reject" sourceRef="GW_BoardDecision" targetRef="ST_Cancel">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "REJECT"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Board_Supplement" sourceRef="GW_BoardDecision" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_Execute_End" sourceRef="ST_Execute" targetRef="End_Approved" />
+    <bpmn:sequenceFlow id="Flow_Cancel_End" sourceRef="ST_Cancel" targetRef="End_Rejected" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_LNMLoanFormationV2">
+    <bpmndi:BPMNPlane id="BPMNPlane_LNMLoanFormationV2" bpmnElement="lnm-loan-formation-v2">
+      <bpmndi:BPMNShape id="Shape_Start_Submitted" bpmnElement="Start_Submitted"><dc:Bounds x="120" y="200" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UT_MakerInput" bpmnElement="UT_MakerInput"><dc:Bounds x="200" y="180" width="150" height="76" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ST_Validate" bpmnElement="ST_Validate"><dc:Bounds x="400" y="180" width="150" height="76" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_GW_FundSource" bpmnElement="GW_FundSource" isMarkerVisible="true"><dc:Bounds x="600" y="193" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UT_TWRevalidate" bpmnElement="UT_TWRevalidate"><dc:Bounds x="700" y="320" width="160" height="76" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UT_PGDReview" bpmnElement="UT_PGDReview"><dc:Bounds x="700" y="180" width="160" height="76" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_GW_ApprovalLevel" bpmnElement="GW_ApprovalLevel" isMarkerVisible="true"><dc:Bounds x="910" y="193" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UT_GDReview" bpmnElement="UT_GDReview"><dc:Bounds x="1020" y="180" width="160" height="76" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UT_BoardReview" bpmnElement="UT_BoardReview"><dc:Bounds x="1020" y="60" width="170" height="76" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_GW_GDDecision" bpmnElement="GW_GDDecision" isMarkerVisible="true"><dc:Bounds x="1230" y="193" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_GW_BoardDecision" bpmnElement="GW_BoardDecision" isMarkerVisible="true"><dc:Bounds x="1240" y="73" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ST_Execute" bpmnElement="ST_Execute"><dc:Bounds x="1400" y="180" width="160" height="76" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ST_Cancel" bpmnElement="ST_Cancel"><dc:Bounds x="1400" y="440" width="160" height="76" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_Approved" bpmnElement="End_Approved"><dc:Bounds x="1620" y="200" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_Rejected" bpmnElement="End_Rejected"><dc:Bounds x="1620" y="460" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Err_Validate" bpmnElement="Err_Validate"><dc:Bounds x="462" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_Start_Maker" bpmnElement="Flow_Start_Maker"><di:waypoint x="156" y="218" /><di:waypoint x="200" y="218" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Maker_Validate" bpmnElement="Flow_Maker_Validate"><di:waypoint x="350" y="218" /><di:waypoint x="400" y="218" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Validate_FundSource" bpmnElement="Flow_Validate_FundSource"><di:waypoint x="550" y="218" /><di:waypoint x="600" y="218" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_FundSource_TW" bpmnElement="Flow_FundSource_TW"><di:waypoint x="625" y="243" /><di:waypoint x="625" y="358" /><di:waypoint x="700" y="358" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_FundSource_Branch" bpmnElement="Flow_FundSource_Branch"><di:waypoint x="650" y="218" /><di:waypoint x="700" y="218" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_TW_PGD" bpmnElement="Flow_TW_PGD"><di:waypoint x="860" y="358" /><di:waypoint x="880" y="358" /><di:waypoint x="880" y="256" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_PGD_Level" bpmnElement="Flow_PGD_Level"><di:waypoint x="860" y="218" /><di:waypoint x="910" y="218" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Level_Board" bpmnElement="Flow_Level_Board"><di:waypoint x="935" y="193" /><di:waypoint x="935" y="98" /><di:waypoint x="1020" y="98" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Level_GD" bpmnElement="Flow_Level_GD"><di:waypoint x="960" y="218" /><di:waypoint x="1020" y="218" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Level_Execute" bpmnElement="Flow_Level_Execute"><di:waypoint x="935" y="243" /><di:waypoint x="935" y="470" /><di:waypoint x="1560" y="470" /><di:waypoint x="1560" y="256" /><di:waypoint x="1400" y="256" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_GD_Decision" bpmnElement="Flow_GD_Decision"><di:waypoint x="1180" y="218" /><di:waypoint x="1230" y="218" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_GD_Approve" bpmnElement="Flow_GD_Approve"><di:waypoint x="1280" y="218" /><di:waypoint x="1400" y="218" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_GD_Reject" bpmnElement="Flow_GD_Reject"><di:waypoint x="1255" y="243" /><di:waypoint x="1255" y="500" /><di:waypoint x="1400" y="500" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_GD_Supplement" bpmnElement="Flow_GD_Supplement"><di:waypoint x="1255" y="193" /><di:waypoint x="1255" y="150" /><di:waypoint x="275" y="150" /><di:waypoint x="275" y="180" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Board_Decision" bpmnElement="Flow_Board_Decision"><di:waypoint x="1190" y="98" /><di:waypoint x="1240" y="98" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Board_Approve" bpmnElement="Flow_Board_Approve"><di:waypoint x="1290" y="98" /><di:waypoint x="1340" y="98" /><di:waypoint x="1340" y="160" /><di:waypoint x="1480" y="160" /><di:waypoint x="1480" y="180" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Board_Reject" bpmnElement="Flow_Board_Reject"><di:waypoint x="1265" y="123" /><di:waypoint x="1265" y="478" /><di:waypoint x="1400" y="478" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Board_Supplement" bpmnElement="Flow_Board_Supplement"><di:waypoint x="1240" y="98" /><di:waypoint x="1200" y="98" /><di:waypoint x="1200" y="30" /><di:waypoint x="240" y="30" /><di:waypoint x="240" y="180" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Execute_End" bpmnElement="Flow_Execute_End"><di:waypoint x="1560" y="218" /><di:waypoint x="1620" y="218" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Cancel_End" bpmnElement="Flow_Cancel_End"><di:waypoint x="1560" y="478" /><di:waypoint x="1620" y="478" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ValidateError_Maker" bpmnElement="Flow_ValidateError_Maker"><di:waypoint x="480" y="178" /><di:waypoint x="480" y="120" /><di:waypoint x="300" y="120" /><di:waypoint x="300" y="180" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

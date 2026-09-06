@@ -54,6 +54,12 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 	mux.HandleFunc("/api/workflow/cases", wfHandler.Cases)
 	mux.HandleFunc("/api/workflow/cases/", wfHandler.CaseByID)
 
+	// Case-scoped runtime monitoring + incident resolution (real Zeebe data)
+	mux.HandleFunc("/api/workflow/cases/{id}/monitor", wfHandler.CaseMonitor)
+	mux.HandleFunc("/api/workflow/cases/{id}/incidents/{incidentKey}/resolve", wfHandler.ResolveCaseIncident)
+	// Assignment-rule dry-run for admins
+	mux.HandleFunc("/api/workflow/assignment-rules/resolve", wfHandler.ResolveAssignmentRules)
+
 	// Operate APIs
 	mux.HandleFunc("/api/workflow/operate/process-definitions", wfHandler.OperateProcessDefinitions)
 	mux.HandleFunc("/api/workflow/operate/process-instances", wfHandler.OperateProcessInstances)

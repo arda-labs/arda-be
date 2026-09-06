@@ -13,6 +13,7 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 	want := map[string]string{
 		"CUSTOMER_REGISTRATION": "crm-customer-registration-v2",
 		"CUSTOMER_ADJUSTMENT":   "customer-adjustment-v2",
+		"LOAN_FORMATION_V2":     "lnm-loan-formation-v2",
 	}
 	if len(processes) != len(want) {
 		t.Fatalf("BuiltInProcesses() len = %d, want %d", len(processes), len(want))
@@ -24,6 +25,23 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 		}
 		if got != want[process.ProcessCode] {
 			t.Fatalf("process id for %s = %q, want %q", process.ProcessCode, got, want[process.ProcessCode])
+		}
+	}
+}
+
+func TestLoanFormationMultiLevelApproval(t *testing.T) {
+	content := builtInProcessContent(t, "LOAN_FORMATION_V2")
+	for _, fragment := range []string{
+		`candidateGroups="LNM_MAKER"`,
+		`candidateGroups="LNM_TWTD"`,
+		`candidateGroups="LNM_POGD"`,
+		`candidateGroups="LNM_GIDO"`,
+		`candidateGroups="LNM_HODO"`,
+		`sourceRef="GW_ApprovalLevel" targetRef="UT_BoardReview"`,
+		`sourceRef="GW_ApprovalLevel" targetRef="UT_GDReview"`,
+	} {
+		if !strings.Contains(content, fragment) {
+			t.Fatalf("loan formation process missing %q", fragment)
 		}
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 const (
@@ -41,6 +43,7 @@ type WorkItem struct {
 	CreatedByName            string     `json:"createdByName,omitempty"`
 	CreatedByAvatar          string     `json:"createdByAvatar,omitempty"`
 	CandidateRole            string     `json:"candidateRole"`
+	CandidateUsers           []string   `json:"candidateUsers,omitempty"`
 	CandidateGroupID         string     `json:"candidateGroupId,omitempty"`
 	CandidateOrgUnitID       string     `json:"candidateOrgUnitId,omitempty"`
 	AssignedTo               string     `json:"assignedTo,omitempty"`
@@ -139,6 +142,7 @@ type WorkItemSeed struct {
 	TaskType           string
 	StepCode           string
 	CandidateRole      string
+	CandidateUsers     []string
 	CandidateGroupID   string
 	CandidateOrgUnitID string
 	SLADueAt           *time.Time
@@ -171,16 +175,20 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO workflow_tasks (
 			id, case_id, process_instance_key, job_key, task_type, step_code,
-			title, description, status, candidate_role, candidate_group_id,
+			title, description, status, candidate_role, candidate_users, candidate_group_id,
 			candidate_org_unit_id, sla_due_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		ON CONFLICT (case_id, task_type, step_code) DO UPDATE SET
 			process_instance_key = COALESCE(EXCLUDED.process_instance_key, workflow_tasks.process_instance_key),
 			job_key = COALESCE(EXCLUDED.job_key, workflow_tasks.job_key),
 			title = COALESCE(NULLIF(EXCLUDED.title, ''), workflow_tasks.title),
 			description = COALESCE(NULLIF(EXCLUDED.description, ''), workflow_tasks.description),
 			candidate_role = COALESCE(NULLIF(EXCLUDED.candidate_role, ''), workflow_tasks.candidate_role),
+			candidate_users = CASE
+				WHEN cardinality(EXCLUDED.candidate_users) > 0 THEN EXCLUDED.candidate_users
+				ELSE workflow_tasks.candidate_users
+			END,
 			candidate_group_id = COALESCE(NULLIF(EXCLUDED.candidate_group_id, ''), workflow_tasks.candidate_group_id),
 			candidate_org_unit_id = COALESCE(NULLIF(EXCLUDED.candidate_org_unit_id, ''), workflow_tasks.candidate_org_unit_id),
 			status = CASE
@@ -213,7 +221,7 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 			updated_at = CURRENT_TIMESTAMP
 		RETURNING id
 	`, id, seed.CaseID, seed.ProcessInstanceKey, seed.JobKey, seed.TaskType, seed.StepCode,
-		seed.Title, seed.Description, workItemSeedStatus(seed), seed.CandidateRole, seed.CandidateGroupID,
+		seed.Title, seed.Description, workItemSeedStatus(seed), seed.CandidateRole, pq.Array(seed.CandidateUsers), seed.CandidateGroupID,
 		seed.CandidateOrgUnitID, seed.SLADueAt)
 	var workItemID string
 	if err := row.Scan(&workItemID); err != nil {
@@ -479,7 +487,7 @@ func (r *CaseRepository) queryWorkItems(
 					wt.id, bc.id, bc.tenant_id, bc.case_code, bc.case_type, bc.primary_object_type, bc.primary_object_id,
 					bc.process_instance_key, wt.job_key, wt.task_type, wt.step_code,
 					wt.title, wt.description, wt.status, bc.status, bc.created_by,
-					wt.candidate_role, wt.candidate_group_id, wt.candidate_org_unit_id,
+					wt.candidate_role, wt.candidate_users, wt.candidate_group_id, wt.candidate_org_unit_id,
 					wt.assigned_to, wt.assigned_at, wt.claim_expires_at,
 					COALESCE((
 						SELECT prev.assigned_to
@@ -666,7 +674,7 @@ func workItemSelectSQL() string {
 			wt.id, bc.id, bc.tenant_id, bc.case_code, bc.case_type, bc.primary_object_type, bc.primary_object_id,
 			bc.process_instance_key, wt.job_key, wt.task_type, wt.step_code,
 			wt.title, wt.description, wt.status, bc.status, bc.created_by,
-			wt.candidate_role, wt.candidate_group_id, wt.candidate_org_unit_id,
+			wt.candidate_role, wt.candidate_users, wt.candidate_group_id, wt.candidate_org_unit_id,
 			wt.assigned_to, wt.assigned_at, wt.claim_expires_at,
 			COALESCE((
 				SELECT prev.assigned_to
@@ -692,7 +700,7 @@ func scanWorkItem(s scanner) (WorkItem, error) {
 		&item.ID, &item.CaseID, &item.TenantID, &item.CaseCode, &item.CaseType, &item.PrimaryObjectType, &item.PrimaryObjectID,
 		&processInstanceKey, &jobKey, &item.TaskType, &item.StepCode,
 		&item.Title, &item.Description, &item.Status, &item.TransactionStatus, &item.CreatedBy,
-		&item.CandidateRole, &item.CandidateGroupID, &item.CandidateOrgUnitID,
+		&item.CandidateRole, pq.Array(&item.CandidateUsers), &item.CandidateGroupID,
 		&item.AssignedTo, &assignedAt, &claimExpiresAt,
 		&item.PreviousAssignedTo,
 		&slaDueAt, &item.CreatedAt, &item.UpdatedAt,
