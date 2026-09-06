@@ -1,12 +1,13 @@
 -- +goose Up
 -- Legacy rows belong to the original Arda business tenant — the same id the
 -- follow-up backfill_legacy_tenant migration assigns (no safe per-row tenant
--- signal exists in the old schema).
-ALTER TABLE hrm_positions ADD COLUMN tenant_id text;
-ALTER TABLE hrm_job_titles ADD COLUMN tenant_id text;
-ALTER TABLE hrm_org_units ADD COLUMN tenant_id text;
-ALTER TABLE hrm_employees ADD COLUMN tenant_id text;
-ALTER TABLE hrm_employee_registrations ADD COLUMN tenant_id text;
+-- signal exists in the old schema). Every statement is idempotent so
+-- concurrently-starting replicas cannot poison each other's run.
+ALTER TABLE hrm_positions ADD COLUMN IF NOT EXISTS tenant_id text;
+ALTER TABLE hrm_job_titles ADD COLUMN IF NOT EXISTS tenant_id text;
+ALTER TABLE hrm_org_units ADD COLUMN IF NOT EXISTS tenant_id text;
+ALTER TABLE hrm_employees ADD COLUMN IF NOT EXISTS tenant_id text;
+ALTER TABLE hrm_employee_registrations ADD COLUMN IF NOT EXISTS tenant_id text;
 
 -- +goose StatementBegin
 DO $$
@@ -46,17 +47,17 @@ ALTER TABLE hrm_org_units DROP CONSTRAINT IF EXISTS hrm_org_units_code_key;
 ALTER TABLE hrm_employees DROP CONSTRAINT IF EXISTS hrm_employees_employee_code_key;
 ALTER TABLE hrm_employee_registrations DROP CONSTRAINT IF EXISTS hrm_employee_registrations_registration_code_key;
 
-CREATE UNIQUE INDEX hrm_positions_tenant_code_uq ON hrm_positions(tenant_id, code);
-CREATE UNIQUE INDEX hrm_job_titles_tenant_code_uq ON hrm_job_titles(tenant_id, code);
-CREATE UNIQUE INDEX hrm_org_units_tenant_code_uq ON hrm_org_units(tenant_id, code);
-CREATE UNIQUE INDEX hrm_employees_tenant_code_uq ON hrm_employees(tenant_id, employee_code);
-CREATE UNIQUE INDEX hrm_employee_registrations_tenant_code_uq ON hrm_employee_registrations(tenant_id, registration_code);
+CREATE UNIQUE INDEX IF NOT EXISTS hrm_positions_tenant_code_uq ON hrm_positions(tenant_id, code);
+CREATE UNIQUE INDEX IF NOT EXISTS hrm_job_titles_tenant_code_uq ON hrm_job_titles(tenant_id, code);
+CREATE UNIQUE INDEX IF NOT EXISTS hrm_org_units_tenant_code_uq ON hrm_org_units(tenant_id, code);
+CREATE UNIQUE INDEX IF NOT EXISTS hrm_employees_tenant_code_uq ON hrm_employees(tenant_id, employee_code);
+CREATE UNIQUE INDEX IF NOT EXISTS hrm_employee_registrations_tenant_code_uq ON hrm_employee_registrations(tenant_id, registration_code);
 
-CREATE INDEX hrm_positions_tenant_idx ON hrm_positions(tenant_id);
-CREATE INDEX hrm_job_titles_tenant_idx ON hrm_job_titles(tenant_id);
-CREATE INDEX hrm_org_units_tenant_idx ON hrm_org_units(tenant_id);
-CREATE INDEX hrm_employees_tenant_idx ON hrm_employees(tenant_id);
-CREATE INDEX hrm_employee_registrations_tenant_idx ON hrm_employee_registrations(tenant_id);
+CREATE INDEX IF NOT EXISTS hrm_positions_tenant_idx ON hrm_positions(tenant_id);
+CREATE INDEX IF NOT EXISTS hrm_job_titles_tenant_idx ON hrm_job_titles(tenant_id);
+CREATE INDEX IF NOT EXISTS hrm_org_units_tenant_idx ON hrm_org_units(tenant_id);
+CREATE INDEX IF NOT EXISTS hrm_employees_tenant_idx ON hrm_employees(tenant_id);
+CREATE INDEX IF NOT EXISTS hrm_employee_registrations_tenant_idx ON hrm_employee_registrations(tenant_id);
 
 -- +goose Down
 DROP INDEX IF EXISTS hrm_employee_registrations_tenant_idx;
