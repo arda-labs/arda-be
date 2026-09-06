@@ -29,6 +29,7 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 	})
 	mux.HandleFunc("/api/loan/contracts/{id}", method("GET", h.GetContract))
 	mux.HandleFunc("/api/loan/contracts/{id}/submit", method("POST", h.SubmitContract))
+	mux.HandleFunc("/api/loan/contracts/{id}/dossier", method("GET", h.GetDossier))
 
 	// Disbursements (P1b drawdown flow, LNM.300.02)
 	mux.HandleFunc("/api/loan/disbursements", func(w http.ResponseWriter, r *http.Request) {

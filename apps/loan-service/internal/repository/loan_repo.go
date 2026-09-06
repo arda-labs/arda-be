@@ -426,6 +426,7 @@ var AdjustmentTables = map[string]string{
 	"revenue-allocation": "lnm_revenue_allocations",
 	"vfu-fee-allocation": "lnm_vfu_fee_allocations",
 	"off-balance-export": "lnm_off_balance_exports",
+	"mortgage-adjust":    "lnm_mortgage_adjustments",
 }
 
 const adjustmentColumns = `id, tenant_id, contract_code, agreement_code, effective_date::text, amount_minor,
@@ -1308,4 +1309,44 @@ func orgCodesToAny(orgCodes []string) any {
 		return nil
 	}
 	return orgCodes
+}
+
+// ── Composite dossier (P1b residue) ──
+
+// ListContractCodesByIDs is unused; kept empty to document intent.
+
+// Dossier aggregates one contract's full record set for the composite
+// dossier page (fe_loan loan-management parity).
+type Dossier struct {
+	Contract      domain.Contract            `json:"contract"`
+	Agreements    []domain.Agreement         `json:"agreements"`
+	RepayPlans    []domain.RepayPlan         `json:"repay_plans"`
+	Disbursements []domain.Disbursement      `json:"disbursements"`
+	Collections   []domain.Collection        `json:"collections"`
+	Mortgages     []domain.Mortgage          `json:"mortgages"`
+	Collaterals   []domain.Collateral        `json:"collaterals"`
+	CaseIDs       []string                   `json:"workflow_case_ids"`
+}
+
+// ListContractCaseIDs returns workflow case ids linked to a contract's
+// transactions (adjustments + disbursements + collections).
+func (r *LoanRepository) ListContractCaseIDs(ctx context.Context, tenantID, contractID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT workflow_case_id::text FROM lnm_disbursements WHERE tenant_id = $1 AND contract_code = (SELECT contract_code FROM lnm_contracts WHERE id = $2) AND workflow_case_id IS NOT NULL
+		UNION ALL
+		SELECT workflow_case_id::text FROM lnm_collections WHERE tenant_id = $1 AND contract_code = (SELECT contract_code FROM lnm_contracts WHERE id = $2) AND workflow_case_id IS NOT NULL
+		LIMIT 200`, tenantID, contractID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }

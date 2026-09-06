@@ -29,6 +29,7 @@ var Kinds = []string{
 	"revenue-allocation",
 	"vfu-fee-allocation",
 	"off-balance-export",
+	"mortgage-adjust",
 }
 
 // IsValidKind reports whether kind is a registered loan adjustment flow.

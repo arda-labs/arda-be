@@ -464,3 +464,14 @@ func (h *LoanHandler) CreateVfuPlan(w http.ResponseWriter, r *http.Request) {
 	item, err := h.svc.CreateVfuPlan(r.Context(), tenantID, actorOf(r), &req)
 	writeResult(w, r, item, err)
 }
+
+// GetDossier handles GET /api/loan/contracts/{id}/dossier — the composite
+// dossier view (contract + agreements + plans + movements + TSBĐ + cases).
+func (h *LoanHandler) GetDossier(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	dossier, err := h.svc.Dossier(r.Context(), tenantID, r.PathValue("id"))
+	writeResult(w, r, dossier, err)
+}

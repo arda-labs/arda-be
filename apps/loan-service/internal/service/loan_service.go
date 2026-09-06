@@ -259,3 +259,53 @@ func (s *LoanService) CreateVfuPlan(ctx context.Context, tenantID, createdBy str
 	in.CreatedBy = createdBy
 	return s.repo.CreateVfuPlan(ctx, in)
 }
+
+// Dossier builds the composite view for one contract.
+func (s *LoanService) Dossier(ctx context.Context, tenantID, contractID string) (*repository.Dossier, error) {
+	contract, err := s.repo.GetContract(ctx, tenantID, contractID)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	agreements, err := s.repo.ListAgreements(ctx, tenantID, contract.ContractCode)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	plans, err := s.repo.ListRepayPlans(ctx, tenantID, contract.ContractCode, "")
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	disbursements, err := s.repo.ListDisbursements(ctx, tenantID, nil, "", contract.ContractCode)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	collections, err := s.repo.ListCollections(ctx, tenantID, nil, "", contract.ContractCode)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	mortgages, err := s.repo.ListMortgages(ctx, tenantID, contract.ContractCode)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	var collaterals []domain.Collateral
+	for _, m := range mortgages {
+		rows, err := s.repo.ListCollaterals(ctx, tenantID, m.MortgageCode, "")
+		if err != nil {
+			return nil, mapRepoError(err)
+		}
+		collaterals = append(collaterals, rows...)
+	}
+	caseIDs, err := s.repo.ListContractCaseIDs(ctx, tenantID, contract.ID)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	return &repository.Dossier{
+		Contract:      contract,
+		Agreements:    agreements,
+		RepayPlans:    plans,
+		Disbursements: disbursements,
+		Collections:   collections,
+		Mortgages:     mortgages,
+		Collaterals:   collaterals,
+		CaseIDs:       caseIDs,
+	}, nil
+}
