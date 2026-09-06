@@ -124,12 +124,16 @@ func main() {
 
 	caseRepo.SetIAMClient(&iamAdapter{client: iamClient})
 
-	// CRM v1 job workers — legacy flows only (not CRM native user-task v2 processes).
+	// CRM adjustment job workers. crm.approve_customer / crm.reject_customer
+	// are the terminal service tasks of customer-adjustment-v2.bpmn — both
+	// must stay registered or the adjustment case hangs at APPROVE/REJECT.
 	crmWorkers := worker.NewCRMWorkers(crmClient, caseRepo)
 	crmRequestChangesWorker := zeebeSvc.NewJobWorker("crm.request_customer_changes", crmWorkers.RequestChangesHandler)
 	defer crmRequestChangesWorker.Close()
 	crmRejectWorker := zeebeSvc.NewJobWorker("crm.reject_customer", crmWorkers.RejectCustomerHandler)
 	defer crmRejectWorker.Close()
+	crmApproveWorker := zeebeSvc.NewJobWorker("crm.approve_customer", crmWorkers.ApproveCustomerHandler)
+	defer crmApproveWorker.Close()
 	crmUpdateWorker := zeebeSvc.NewJobWorker("crm.update_customer", crmWorkers.UpdateCustomerHandler)
 	defer crmUpdateWorker.Close()
 	logger.Info("workflow CRM adjustment job workers registered")
