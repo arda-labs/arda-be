@@ -14,6 +14,16 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 		"CUSTOMER_REGISTRATION": "crm-customer-registration-v2",
 		"CUSTOMER_ADJUSTMENT":   "customer-adjustment-v2",
 		"LOAN_FORMATION_V2":     "lnm-loan-formation-v2",
+		"LNM_DEBT_CHANGE_V2":        "lnm-debt-change-v2",
+		"LNM_RATE_CHANGE_V2":        "lnm-rate-change-v2",
+		"LNM_RESTRUCTURE_V2":        "lnm-restructure-v2",
+		"LNM_WAIVER_V2":             "lnm-waiver-v2",
+		"LNM_WRITEOFF_V2":           "lnm-writeoff-v2",
+		"LNM_RECOVERY_V2":           "lnm-recovery-v2",
+		"LNM_FUND_CHECK_V2":         "lnm-fund-check-v2",
+		"LNM_REVENUE_ALLOCATION_V2": "lnm-revenue-allocation-v2",
+		"LNM_VFU_FEE_ALLOCATION_V2": "lnm-vfu-fee-allocation-v2",
+		"LNM_OFF_BALANCE_EXPORT_V2": "lnm-off-balance-export-v2",
 	}
 	if len(processes) != len(want) {
 		t.Fatalf("BuiltInProcesses() len = %d, want %d", len(processes), len(want))

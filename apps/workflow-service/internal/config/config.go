@@ -18,6 +18,7 @@ type Config struct {
 	ZeebeTasklistAddr    string `yaml:"zeebe_tasklist_addr"`
 	ZeebeESURL           string `yaml:"zeebe_es_url"`
 	CRMGRPCAddr          string `yaml:"crm_grpc_addr"`
+	LoanGRPCAddr         string `yaml:"loan_grpc_addr"`
 	IAMGRPCAddr          string `yaml:"iam_grpc_addr"`
 	NotificationGRPCAddr string `yaml:"notification_grpc_addr"`
 }
@@ -31,6 +32,7 @@ func Load() Config {
 		DatabaseDSN:          "",
 		ZeebeAddr:            "192.168.100.201:30650",
 		CRMGRPCAddr:          "localhost:9094",
+		LoanGRPCAddr:         "localhost:9097",
 		NotificationGRPCAddr: "localhost:9095",
 	}
 
@@ -54,6 +56,7 @@ func Load() Config {
 	envStr("ZEEBE_TASKLIST_ADDR", &cfg.ZeebeTasklistAddr)
 	envStr("ZEEBE_ES_URL", &cfg.ZeebeESURL)
 	envStr("CRM_GRPC_ADDR", &cfg.CRMGRPCAddr)
+	envStr("LOAN_GRPC_ADDR", &cfg.LoanGRPCAddr)
 	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
 	envStr("NOTIFICATION_GRPC_ADDR", &cfg.NotificationGRPCAddr)
 
@@ -85,6 +88,7 @@ func (c *Config) loadYAML(path string) bool {
 	set("zeebe_tasklist_addr", &c.ZeebeTasklistAddr)
 	set("zeebe_es_url", &c.ZeebeESURL)
 	set("crm_grpc_addr", &c.CRMGRPCAddr)
+	set("loan_grpc_addr", &c.LoanGRPCAddr)
 	set("iam_grpc_addr", &c.IAMGRPCAddr)
 	set("notification_grpc_addr", &c.NotificationGRPCAddr)
 	return true

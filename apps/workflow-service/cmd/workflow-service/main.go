@@ -24,6 +24,7 @@ import (
 	transport "github.com/arda-labs/arda/apps/workflow-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/worker"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
+	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
 	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
@@ -103,6 +104,16 @@ func main() {
 	defer crmClient.Close()
 	logger.Info("crm grpc configured", "addr", cfg.CRMGRPCAddr)
 
+	// Loan client is optional: adjustment workers register only when
+	// loan-service is reachable.
+	loanClient, loanErr := loanclient.Dial(context.Background(), cfg.LoanGRPCAddr, cfg.AppName, logger)
+	if loanErr != nil {
+		logger.Warn("loan grpc unavailable — lnm.* workers disabled", "addr", cfg.LoanGRPCAddr, "err", loanErr)
+	} else {
+		defer loanClient.Close()
+		logger.Info("loan grpc configured", "addr", cfg.LoanGRPCAddr)
+	}
+
 	iamClient, err := iamclient.Dial(context.Background(), cfg.IAMGRPCAddr, cfg.AppName)
 	if err != nil {
 		logger.Error("iam grpc unavailable", "addr", cfg.IAMGRPCAddr, "err", err)
@@ -173,6 +184,20 @@ func main() {
 	notificationCustomerResultWorker := zeebeSvc.NewJobWorker("notification.customer_registration_result", notificationWorkers.CustomerRegistrationResultHandler)
 	defer notificationCustomerResultWorker.Close()
 	logger.Info("workflow notification job workers registered")
+
+	if loanErr == nil {
+		loanWorkers := worker.NewLoanWorkers(loanClient, caseRepo)
+		for _, kind := range loanclient.Kinds {
+			validateH, executeH, cancelH := loanWorkers.Handlers(kind)
+			v := zeebeSvc.NewJobWorker("lnm."+kind+".validate", validateH)
+			e := zeebeSvc.NewJobWorker("lnm."+kind+".execute", executeH)
+			c := zeebeSvc.NewJobWorker("lnm."+kind+".cancel", cancelH)
+			defer v.Close()
+			defer e.Close()
+			defer c.Close()
+		}
+		logger.Info("workflow loan adjustment workers registered", "kinds", len(loanclient.Kinds))
+	}
 
 	// Handlers
 	workflowCmd := service.NewWorkflowCommandService(caseRepo, zeebeSvc)

@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_LNMRecovery" targetNamespace="https://arda.io.vn/bpmn/loan" exporter="Arda" exporterVersion="2.0">
+  <bpmn:error id="Error_ValidationFailed" name="VALIDATION_FAILED" errorCode="VALIDATION_FAILED" />
+
+  <bpmn:process id="lnm-recovery-v2" name="Thu hồi nợ (v2)" isExecutable="true">
+    <bpmn:startEvent id="Start_Submitted" name="Đã khởi tạo">
+      <bpmn:outgoing>Flow_Start_Maker</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="UT_MakerInput" name="Nhập hồ sơ thu hồi nợ">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="LNM_MAKER" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="stepCode" value="maker_input" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_Maker</bpmn:incoming>
+      <bpmn:incoming>Flow_ValidateError_Maker</bpmn:incoming>
+      <bpmn:incoming>Flow_Decision_Supplement</bpmn:incoming>
+      <bpmn:outgoing>Flow_Maker_Validate</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="ST_Validate" name="Kiểm tra điều kiện nghiệp vụ">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="lnm.recovery.validate" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Maker_Validate</bpmn:incoming>
+      <bpmn:outgoing>Flow_Validate_Checker</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:boundaryEvent id="Err_Validate" attachedToRef="ST_Validate">
+      <bpmn:outgoing>Flow_ValidateError_Maker</bpmn:outgoing>
+      <bpmn:errorEventDefinition errorRef="Error_ValidationFailed" />
+    </bpmn:boundaryEvent>
+
+    <bpmn:userTask id="UT_CheckerReview" name="Phê duyệt thu hồi nợ">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="LNM_CHECKER" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="stepCode" value="checker_review" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Validate_Checker</bpmn:incoming>
+      <bpmn:outgoing>Flow_Checker_Decision</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_Decision" name="Kết quả phê duyệt" default="Flow_Decision_Supplement">
+      <bpmn:incoming>Flow_Checker_Decision</bpmn:incoming>
+      <bpmn:outgoing>Flow_Decision_Approve</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Decision_Reject</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Decision_Supplement</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:serviceTask id="ST_Execute" name="Thực hiện thu hồi nợ">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="lnm.recovery.execute" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Decision_Approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_Execute_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="ST_Cancel" name="Ghi nhận từ chối">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="lnm.recovery.cancel" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Decision_Reject</bpmn:incoming>
+      <bpmn:outgoing>Flow_Cancel_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="End_Approved" name="Đã phê duyệt">
+      <bpmn:incoming>Flow_Execute_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="End_Rejected" name="Đã từ chối">
+      <bpmn:incoming>Flow_Cancel_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="Flow_Start_Maker" sourceRef="Start_Submitted" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_Maker_Validate" sourceRef="UT_MakerInput" targetRef="ST_Validate" />
+    <bpmn:sequenceFlow id="Flow_ValidateError_Maker" sourceRef="Err_Validate" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_Validate_Checker" sourceRef="ST_Validate" targetRef="UT_CheckerReview" />
+    <bpmn:sequenceFlow id="Flow_Checker_Decision" sourceRef="UT_CheckerReview" targetRef="GW_Decision" />
+    <bpmn:sequenceFlow id="Flow_Decision_Approve" sourceRef="GW_Decision" targetRef="ST_Execute">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "APPROVE"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Decision_Reject" sourceRef="GW_Decision" targetRef="ST_Cancel">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "REJECT"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Decision_Supplement" sourceRef="GW_Decision" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_Execute_End" sourceRef="ST_Execute" targetRef="End_Approved" />
+    <bpmn:sequenceFlow id="Flow_Cancel_End" sourceRef="ST_Cancel" targetRef="End_Rejected" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Definitions_LNMRecovery">
+    <bpmndi:BPMNPlane id="BPMNPlane_Definitions_LNMRecovery" bpmnElement="lnm-recovery-v2">
+      <bpmndi:BPMNShape id="Shape_Start_Submitted" bpmnElement="Start_Submitted"><dc:Bounds x="120" y="180" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UT_MakerInput" bpmnElement="UT_MakerInput"><dc:Bounds x="200" y="320" width="160" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ST_Validate" bpmnElement="ST_Validate"><dc:Bounds x="210" y="158" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UT_CheckerReview" bpmnElement="UT_CheckerReview"><dc:Bounds x="400" y="158" width="170" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_GW_Decision" bpmnElement="GW_Decision" isMarkerVisible="true"><dc:Bounds x="620" y="173" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ST_Execute" bpmnElement="ST_Execute"><dc:Bounds x="730" y="158" width="170" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ST_Cancel" bpmnElement="ST_Cancel"><dc:Bounds x="730" y="30" width="170" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_Approved" bpmnElement="End_Approved"><dc:Bounds x="950" y="180" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_Rejected" bpmnElement="End_Rejected"><dc:Bounds x="950" y="52" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Err_Validate" bpmnElement="Err_Validate"><dc:Bounds x="292" y="120" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_Start_Maker" bpmnElement="Flow_Start_Maker"><di:waypoint x="156" y="198" /><di:waypoint x="156" y="360" /><di:waypoint x="200" y="360" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Maker_Validate" bpmnElement="Flow_Maker_Validate"><di:waypoint x="280" y="320" /><di:waypoint x="280" y="238" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ValidateError_Maker" bpmnElement="Flow_ValidateError_Maker"><di:waypoint x="310" y="156" /><di:waypoint x="310" y="280" /><di:waypoint x="280" y="280" /><di:waypoint x="280" y="320" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Validate_Checker" bpmnElement="Flow_Validate_Checker"><di:waypoint x="350" y="198" /><di:waypoint x="400" y="198" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Checker_Decision" bpmnElement="Flow_Checker_Decision"><di:waypoint x="570" y="198" /><di:waypoint x="620" y="198" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Decision_Approve" bpmnElement="Flow_Decision_Approve"><di:waypoint x="670" y="198" /><di:waypoint x="730" y="198" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Decision_Reject" bpmnElement="Flow_Decision_Reject"><di:waypoint x="645" y="173" /><di:waypoint x="645" y="70" /><di:waypoint x="730" y="70" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Decision_Supplement" bpmnElement="Flow_Decision_Supplement"><di:waypoint x="645" y="223" /><di:waypoint x="645" y="360" /><di:waypoint x="360" y="360" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Execute_End" bpmnElement="Flow_Execute_End"><di:waypoint x="900" y="198" /><di:waypoint x="950" y="198" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Cancel_End" bpmnElement="Flow_Cancel_End"><di:waypoint x="900" y="70" /><di:waypoint x="950" y="70" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
