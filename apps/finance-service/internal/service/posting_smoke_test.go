@@ -68,8 +68,11 @@ func TestPostingSmoke(t *testing.T) {
 	ctx := context.Background()
 	svc := NewPostingService(repository.NewPostingRepository(db), db)
 
+	// Unique-per-run idempotency keys so the smoke can re-run on a live DB.
+	runKey := "smoke-" + time.Now().UTC().Format("20060102T150405.000000000")
+
 	req := &financev1.PostingRequest{
-		IdempotencyKey: "smoke-001",
+		IdempotencyKey: runKey,
 		AccountingDate: "2026-09-07",
 		CurrencyCode:   "VND",
 		Description:    "Giải ngân HD-001",
@@ -171,7 +174,7 @@ func TestPostingSmoke(t *testing.T) {
 		TenantId:       tenantID,
 		JournalEntryId: resp.GetJournalEntryId(),
 		Reason:         "smoke",
-		IdempotencyKey: "smoke-001-rev",
+		IdempotencyKey:  runKey + "-rev",
 		Actor:          "smoke",
 		AccountingDate: "2026-09-07",
 	})
