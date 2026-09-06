@@ -37,6 +37,7 @@ CREATE INDEX IF NOT EXISTS ai_knowledge_sources_effective_idx
     ON public.ai_knowledge_sources (tenant_id, scope, effective_from, effective_to)
     WHERE deleted_at IS NULL;
 
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -47,6 +48,7 @@ BEGIN
             CHECK (embedding IS NULL OR embedding_dimensions = 1024);
     END IF;
 END $$;
+-- +goose StatementEnd
 
 -- +goose Down
 DROP INDEX IF EXISTS public.ai_quota_reservations_period_idx;

@@ -1,12 +1,17 @@
 -- +goose Up
--- Existing rows must be assigned by an explicit data-owner migration before
--- this schema change is deployed. There is intentionally no synthetic tenant
--- fallback because that would merge unrelated HRM data.
+-- Legacy rows belong to the original Arda business tenant — the same id the
+-- follow-up backfill_legacy_tenant migration assigns (no safe per-row tenant
+-- signal exists in the old schema).
+ALTER TABLE hrm_positions ADD COLUMN tenant_id text;
+ALTER TABLE hrm_job_titles ADD COLUMN tenant_id text;
+ALTER TABLE hrm_org_units ADD COLUMN tenant_id text;
+ALTER TABLE hrm_employees ADD COLUMN tenant_id text;
+ALTER TABLE hrm_employee_registrations ADD COLUMN tenant_id text;
+
 -- +goose StatementBegin
 DO $$
 DECLARE
     table_name text;
-    remaining bigint;
 BEGIN
     FOREACH table_name IN ARRAY ARRAY[
         'hrm_positions',
@@ -15,15 +20,15 @@ BEGIN
         'hrm_employees',
         'hrm_employee_registrations'
     ] LOOP
-        EXECUTE format('SELECT count(*) FROM %I', table_name) INTO remaining;
-        IF remaining > 0 THEN
-            RAISE EXCEPTION 'HRM tenant migration requires explicit backfill for table %; found % rows', table_name, remaining;
-        END IF;
+        EXECUTE format(
+            'UPDATE %I SET tenant_id = ''00000000-0000-0000-0000-000000000010'' WHERE tenant_id IS NULL OR lower(btrim(tenant_id)) IN ('''', ''default'')',
+            table_name
+        );
     END LOOP;
 END $$;
 -- +goose StatementEnd
 
-ALTER TABLE hrm_positions ADD COLUMN tenant_id text;
+ALTER TABLE hrm_positions ALTER COLUMN tenant_id SET NOT NULL;
 ALTER TABLE hrm_job_titles ADD COLUMN tenant_id text;
 ALTER TABLE hrm_org_units ADD COLUMN tenant_id text;
 ALTER TABLE hrm_employees ADD COLUMN tenant_id text;

@@ -24,7 +24,7 @@ CREATE TABLE fin_coa_versions (
 CREATE TABLE fin_coa_accounts (
     id             UUID PRIMARY KEY DEFAULT uuidv7(),
     tenant_id      VARCHAR(64) NOT NULL DEFAULT 'default',
-    version_code   VARCHAR(64) NOT NULL REFERENCES fin_coa_versions(code),
+    version_code   VARCHAR(64) NOT NULL,
     acc_code       VARCHAR(64) NOT NULL,
     name           VARCHAR(255) NOT NULL,
     acc_type       VARCHAR(32) NOT NULL,   -- ASSET, LIABILITY, EQUITY, INCOME, EXPENSE
@@ -37,7 +37,8 @@ CREATE TABLE fin_coa_accounts (
     description    TEXT,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(tenant_id, version_code, acc_code)
+    UNIQUE(tenant_id, version_code, acc_code),
+    FOREIGN KEY (tenant_id, version_code) REFERENCES fin_coa_versions(tenant_id, code)
 );
 CREATE INDEX fin_coa_accounts_version_idx ON fin_coa_accounts (tenant_id, version_code, parent_code);
 
