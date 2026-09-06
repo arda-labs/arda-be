@@ -16,6 +16,10 @@ var RegisteredJobTopics = []string{
 	"crm.customer.register.validate",
 	"crm.customer.register.execute",
 	"crm.customer.register.cancel",
+	// Disbursement (lnm-disbursement-v2.bpmn)
+	"lnm.disbursement.validate",
+	"lnm.disbursement.execute",
+	"lnm.disbursement.cancel",
 	// Notification (no BPMN service task yet; registered for future flows)
 	"notification.email",
 	"notification.sms",

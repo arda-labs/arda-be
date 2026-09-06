@@ -341,6 +341,496 @@ func (x *ResolveAdjustmentResponse) GetOk() bool {
 	return false
 }
 
+type CheckDisbursementRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	DisbursementId string                 `protobuf:"bytes,1,opt,name=disbursement_id,json=disbursementId,proto3" json:"disbursement_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CheckDisbursementRequest) Reset() {
+	*x = CheckDisbursementRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckDisbursementRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckDisbursementRequest) ProtoMessage() {}
+
+func (x *CheckDisbursementRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckDisbursementRequest.ProtoReflect.Descriptor instead.
+func (*CheckDisbursementRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CheckDisbursementRequest) GetDisbursementId() string {
+	if x != nil {
+		return x.DisbursementId
+	}
+	return ""
+}
+
+type CheckDisbursementResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckDisbursementResponse) Reset() {
+	*x = CheckDisbursementResponse{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckDisbursementResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckDisbursementResponse) ProtoMessage() {}
+
+func (x *CheckDisbursementResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckDisbursementResponse.ProtoReflect.Descriptor instead.
+func (*CheckDisbursementResponse) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CheckDisbursementResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *CheckDisbursementResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type GetDisbursementPostingDetailRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	DisbursementId string                 `protobuf:"bytes,1,opt,name=disbursement_id,json=disbursementId,proto3" json:"disbursement_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetDisbursementPostingDetailRequest) Reset() {
+	*x = GetDisbursementPostingDetailRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDisbursementPostingDetailRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDisbursementPostingDetailRequest) ProtoMessage() {}
+
+func (x *GetDisbursementPostingDetailRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDisbursementPostingDetailRequest.ProtoReflect.Descriptor instead.
+func (*GetDisbursementPostingDetailRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetDisbursementPostingDetailRequest) GetDisbursementId() string {
+	if x != nil {
+		return x.DisbursementId
+	}
+	return ""
+}
+
+// Everything the workflow worker needs to build the LNM_DISBURSEMENT
+// PostingRequest without reaching into loan-service internals.
+type DisbursementPostingDetail struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	DisbursementId   string                 `protobuf:"bytes,1,opt,name=disbursement_id,json=disbursementId,proto3" json:"disbursement_id,omitempty"`
+	DisbursementCode string                 `protobuf:"bytes,2,opt,name=disbursement_code,json=disbursementCode,proto3" json:"disbursement_code,omitempty"`
+	ContractCode     string                 `protobuf:"bytes,3,opt,name=contract_code,json=contractCode,proto3" json:"contract_code,omitempty"`
+	AgreementCode    string                 `protobuf:"bytes,4,opt,name=agreement_code,json=agreementCode,proto3" json:"agreement_code,omitempty"`
+	DisburseDate     string                 `protobuf:"bytes,5,opt,name=disburse_date,json=disburseDate,proto3" json:"disburse_date,omitempty"`
+	DisburseAmtMinor int64                  `protobuf:"varint,6,opt,name=disburse_amt_minor,json=disburseAmtMinor,proto3" json:"disburse_amt_minor,omitempty"`
+	CurrencyCode     string                 `protobuf:"bytes,7,opt,name=currency_code,json=currencyCode,proto3" json:"currency_code,omitempty"`
+	DebtGroupCode    string                 `protobuf:"bytes,8,opt,name=debt_group_code,json=debtGroupCode,proto3" json:"debt_group_code,omitempty"`
+	OrgUnitCode      string                 `protobuf:"bytes,9,opt,name=org_unit_code,json=orgUnitCode,proto3" json:"org_unit_code,omitempty"`
+	CustomerCode     string                 `protobuf:"bytes,10,opt,name=customer_code,json=customerCode,proto3" json:"customer_code,omitempty"`
+	FundSourceCode   string                 `protobuf:"bytes,11,opt,name=fund_source_code,json=fundSourceCode,proto3" json:"fund_source_code,omitempty"`
+	WorkflowCaseId   string                 `protobuf:"bytes,12,opt,name=workflow_case_id,json=workflowCaseId,proto3" json:"workflow_case_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DisbursementPostingDetail) Reset() {
+	*x = DisbursementPostingDetail{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DisbursementPostingDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DisbursementPostingDetail) ProtoMessage() {}
+
+func (x *DisbursementPostingDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DisbursementPostingDetail.ProtoReflect.Descriptor instead.
+func (*DisbursementPostingDetail) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DisbursementPostingDetail) GetDisbursementId() string {
+	if x != nil {
+		return x.DisbursementId
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetDisbursementCode() string {
+	if x != nil {
+		return x.DisbursementCode
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetContractCode() string {
+	if x != nil {
+		return x.ContractCode
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetAgreementCode() string {
+	if x != nil {
+		return x.AgreementCode
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetDisburseDate() string {
+	if x != nil {
+		return x.DisburseDate
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetDisburseAmtMinor() int64 {
+	if x != nil {
+		return x.DisburseAmtMinor
+	}
+	return 0
+}
+
+func (x *DisbursementPostingDetail) GetCurrencyCode() string {
+	if x != nil {
+		return x.CurrencyCode
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetDebtGroupCode() string {
+	if x != nil {
+		return x.DebtGroupCode
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetOrgUnitCode() string {
+	if x != nil {
+		return x.OrgUnitCode
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetCustomerCode() string {
+	if x != nil {
+		return x.CustomerCode
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetFundSourceCode() string {
+	if x != nil {
+		return x.FundSourceCode
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetWorkflowCaseId() string {
+	if x != nil {
+		return x.WorkflowCaseId
+	}
+	return ""
+}
+
+type SettleDisbursementRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	DisbursementId string                 `protobuf:"bytes,1,opt,name=disbursement_id,json=disbursementId,proto3" json:"disbursement_id,omitempty"`
+	JournalEntryId string                 `protobuf:"bytes,2,opt,name=journal_entry_id,json=journalEntryId,proto3" json:"journal_entry_id,omitempty"`
+	Actor          string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SettleDisbursementRequest) Reset() {
+	*x = SettleDisbursementRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettleDisbursementRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettleDisbursementRequest) ProtoMessage() {}
+
+func (x *SettleDisbursementRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettleDisbursementRequest.ProtoReflect.Descriptor instead.
+func (*SettleDisbursementRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SettleDisbursementRequest) GetDisbursementId() string {
+	if x != nil {
+		return x.DisbursementId
+	}
+	return ""
+}
+
+func (x *SettleDisbursementRequest) GetJournalEntryId() string {
+	if x != nil {
+		return x.JournalEntryId
+	}
+	return ""
+}
+
+func (x *SettleDisbursementRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+type SettleDisbursementResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SettleDisbursementResponse) Reset() {
+	*x = SettleDisbursementResponse{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettleDisbursementResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettleDisbursementResponse) ProtoMessage() {}
+
+func (x *SettleDisbursementResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettleDisbursementResponse.ProtoReflect.Descriptor instead.
+func (*SettleDisbursementResponse) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SettleDisbursementResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+type ResolveDisbursementRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	DisbursementId string                 `protobuf:"bytes,1,opt,name=disbursement_id,json=disbursementId,proto3" json:"disbursement_id,omitempty"`
+	Decision       string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
+	DecidedBy      string                 `protobuf:"bytes,3,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
+	Note           string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ResolveDisbursementRequest) Reset() {
+	*x = ResolveDisbursementRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveDisbursementRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveDisbursementRequest) ProtoMessage() {}
+
+func (x *ResolveDisbursementRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveDisbursementRequest.ProtoReflect.Descriptor instead.
+func (*ResolveDisbursementRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ResolveDisbursementRequest) GetDisbursementId() string {
+	if x != nil {
+		return x.DisbursementId
+	}
+	return ""
+}
+
+func (x *ResolveDisbursementRequest) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *ResolveDisbursementRequest) GetDecidedBy() string {
+	if x != nil {
+		return x.DecidedBy
+	}
+	return ""
+}
+
+func (x *ResolveDisbursementRequest) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type ResolveDisbursementResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveDisbursementResponse) Reset() {
+	*x = ResolveDisbursementResponse{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveDisbursementResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveDisbursementResponse) ProtoMessage() {}
+
+func (x *ResolveDisbursementResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveDisbursementResponse.ProtoReflect.Descriptor instead.
+func (*ResolveDisbursementResponse) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ResolveDisbursementResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_arda_loan_v1_loan_proto protoreflect.FileDescriptor
 
 const file_arda_loan_v1_loan_proto_rawDesc = "" +
@@ -366,11 +856,50 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"decided_by\x18\x04 \x01(\tR\tdecidedBy\x12\x12\n" +
 	"\x04note\x18\x05 \x01(\tR\x04note\"+\n" +
 	"\x19ResolveAdjustmentResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xc9\x02\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"C\n" +
+	"\x18CheckDisbursementRequest\x12'\n" +
+	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\"E\n" +
+	"\x19CheckDisbursementResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"N\n" +
+	"#GetDisbursementPostingDetailRequest\x12'\n" +
+	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\"\xfa\x03\n" +
+	"\x19DisbursementPostingDetail\x12'\n" +
+	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\x12+\n" +
+	"\x11disbursement_code\x18\x02 \x01(\tR\x10disbursementCode\x12#\n" +
+	"\rcontract_code\x18\x03 \x01(\tR\fcontractCode\x12%\n" +
+	"\x0eagreement_code\x18\x04 \x01(\tR\ragreementCode\x12#\n" +
+	"\rdisburse_date\x18\x05 \x01(\tR\fdisburseDate\x12,\n" +
+	"\x12disburse_amt_minor\x18\x06 \x01(\x03R\x10disburseAmtMinor\x12#\n" +
+	"\rcurrency_code\x18\a \x01(\tR\fcurrencyCode\x12&\n" +
+	"\x0fdebt_group_code\x18\b \x01(\tR\rdebtGroupCode\x12\"\n" +
+	"\rorg_unit_code\x18\t \x01(\tR\vorgUnitCode\x12#\n" +
+	"\rcustomer_code\x18\n" +
+	" \x01(\tR\fcustomerCode\x12(\n" +
+	"\x10fund_source_code\x18\v \x01(\tR\x0efundSourceCode\x12(\n" +
+	"\x10workflow_case_id\x18\f \x01(\tR\x0eworkflowCaseId\"\x84\x01\n" +
+	"\x19SettleDisbursementRequest\x12'\n" +
+	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\x12(\n" +
+	"\x10journal_entry_id\x18\x02 \x01(\tR\x0ejournalEntryId\x12\x14\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\",\n" +
+	"\x1aSettleDisbursementResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x94\x01\n" +
+	"\x1aResolveDisbursementRequest\x12'\n" +
+	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\x12\x1a\n" +
+	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x1d\n" +
+	"\n" +
+	"decided_by\x18\x03 \x01(\tR\tdecidedBy\x12\x12\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\"-\n" +
+	"\x1bResolveDisbursementResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\x80\x06\n" +
 	"\x12LoanCommandService\x12m\n" +
 	"\x14UpdateContractStatus\x12).arda.loan.v1.UpdateContractStatusRequest\x1a*.arda.loan.v1.UpdateContractStatusResponse\x12^\n" +
 	"\x0fCheckAdjustment\x12$.arda.loan.v1.CheckAdjustmentRequest\x1a%.arda.loan.v1.CheckAdjustmentResponse\x12d\n" +
-	"\x11ResolveAdjustment\x12&.arda.loan.v1.ResolveAdjustmentRequest\x1a'.arda.loan.v1.ResolveAdjustmentResponseB=Z;github.com/arda-labs/arda/libs/go/arda-proto/loan/v1;loanv1b\x06proto3"
+	"\x11ResolveAdjustment\x12&.arda.loan.v1.ResolveAdjustmentRequest\x1a'.arda.loan.v1.ResolveAdjustmentResponse\x12d\n" +
+	"\x11CheckDisbursement\x12&.arda.loan.v1.CheckDisbursementRequest\x1a'.arda.loan.v1.CheckDisbursementResponse\x12z\n" +
+	"\x1cGetDisbursementPostingDetail\x121.arda.loan.v1.GetDisbursementPostingDetailRequest\x1a'.arda.loan.v1.DisbursementPostingDetail\x12g\n" +
+	"\x12SettleDisbursement\x12'.arda.loan.v1.SettleDisbursementRequest\x1a(.arda.loan.v1.SettleDisbursementResponse\x12j\n" +
+	"\x13ResolveDisbursement\x12(.arda.loan.v1.ResolveDisbursementRequest\x1a).arda.loan.v1.ResolveDisbursementResponseB=Z;github.com/arda-labs/arda/libs/go/arda-proto/loan/v1;loanv1b\x06proto3"
 
 var (
 	file_arda_loan_v1_loan_proto_rawDescOnce sync.Once
@@ -384,27 +913,43 @@ func file_arda_loan_v1_loan_proto_rawDescGZIP() []byte {
 	return file_arda_loan_v1_loan_proto_rawDescData
 }
 
-var file_arda_loan_v1_loan_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_arda_loan_v1_loan_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_arda_loan_v1_loan_proto_goTypes = []any{
-	(*UpdateContractStatusRequest)(nil),  // 0: arda.loan.v1.UpdateContractStatusRequest
-	(*UpdateContractStatusResponse)(nil), // 1: arda.loan.v1.UpdateContractStatusResponse
-	(*CheckAdjustmentRequest)(nil),       // 2: arda.loan.v1.CheckAdjustmentRequest
-	(*CheckAdjustmentResponse)(nil),      // 3: arda.loan.v1.CheckAdjustmentResponse
-	(*ResolveAdjustmentRequest)(nil),     // 4: arda.loan.v1.ResolveAdjustmentRequest
-	(*ResolveAdjustmentResponse)(nil),    // 5: arda.loan.v1.ResolveAdjustmentResponse
+	(*UpdateContractStatusRequest)(nil),         // 0: arda.loan.v1.UpdateContractStatusRequest
+	(*UpdateContractStatusResponse)(nil),        // 1: arda.loan.v1.UpdateContractStatusResponse
+	(*CheckAdjustmentRequest)(nil),              // 2: arda.loan.v1.CheckAdjustmentRequest
+	(*CheckAdjustmentResponse)(nil),             // 3: arda.loan.v1.CheckAdjustmentResponse
+	(*ResolveAdjustmentRequest)(nil),            // 4: arda.loan.v1.ResolveAdjustmentRequest
+	(*ResolveAdjustmentResponse)(nil),           // 5: arda.loan.v1.ResolveAdjustmentResponse
+	(*CheckDisbursementRequest)(nil),            // 6: arda.loan.v1.CheckDisbursementRequest
+	(*CheckDisbursementResponse)(nil),           // 7: arda.loan.v1.CheckDisbursementResponse
+	(*GetDisbursementPostingDetailRequest)(nil), // 8: arda.loan.v1.GetDisbursementPostingDetailRequest
+	(*DisbursementPostingDetail)(nil),           // 9: arda.loan.v1.DisbursementPostingDetail
+	(*SettleDisbursementRequest)(nil),           // 10: arda.loan.v1.SettleDisbursementRequest
+	(*SettleDisbursementResponse)(nil),          // 11: arda.loan.v1.SettleDisbursementResponse
+	(*ResolveDisbursementRequest)(nil),          // 12: arda.loan.v1.ResolveDisbursementRequest
+	(*ResolveDisbursementResponse)(nil),         // 13: arda.loan.v1.ResolveDisbursementResponse
 }
 var file_arda_loan_v1_loan_proto_depIdxs = []int32{
-	0, // 0: arda.loan.v1.LoanCommandService.UpdateContractStatus:input_type -> arda.loan.v1.UpdateContractStatusRequest
-	2, // 1: arda.loan.v1.LoanCommandService.CheckAdjustment:input_type -> arda.loan.v1.CheckAdjustmentRequest
-	4, // 2: arda.loan.v1.LoanCommandService.ResolveAdjustment:input_type -> arda.loan.v1.ResolveAdjustmentRequest
-	1, // 3: arda.loan.v1.LoanCommandService.UpdateContractStatus:output_type -> arda.loan.v1.UpdateContractStatusResponse
-	3, // 4: arda.loan.v1.LoanCommandService.CheckAdjustment:output_type -> arda.loan.v1.CheckAdjustmentResponse
-	5, // 5: arda.loan.v1.LoanCommandService.ResolveAdjustment:output_type -> arda.loan.v1.ResolveAdjustmentResponse
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0,  // 0: arda.loan.v1.LoanCommandService.UpdateContractStatus:input_type -> arda.loan.v1.UpdateContractStatusRequest
+	2,  // 1: arda.loan.v1.LoanCommandService.CheckAdjustment:input_type -> arda.loan.v1.CheckAdjustmentRequest
+	4,  // 2: arda.loan.v1.LoanCommandService.ResolveAdjustment:input_type -> arda.loan.v1.ResolveAdjustmentRequest
+	6,  // 3: arda.loan.v1.LoanCommandService.CheckDisbursement:input_type -> arda.loan.v1.CheckDisbursementRequest
+	8,  // 4: arda.loan.v1.LoanCommandService.GetDisbursementPostingDetail:input_type -> arda.loan.v1.GetDisbursementPostingDetailRequest
+	10, // 5: arda.loan.v1.LoanCommandService.SettleDisbursement:input_type -> arda.loan.v1.SettleDisbursementRequest
+	12, // 6: arda.loan.v1.LoanCommandService.ResolveDisbursement:input_type -> arda.loan.v1.ResolveDisbursementRequest
+	1,  // 7: arda.loan.v1.LoanCommandService.UpdateContractStatus:output_type -> arda.loan.v1.UpdateContractStatusResponse
+	3,  // 8: arda.loan.v1.LoanCommandService.CheckAdjustment:output_type -> arda.loan.v1.CheckAdjustmentResponse
+	5,  // 9: arda.loan.v1.LoanCommandService.ResolveAdjustment:output_type -> arda.loan.v1.ResolveAdjustmentResponse
+	7,  // 10: arda.loan.v1.LoanCommandService.CheckDisbursement:output_type -> arda.loan.v1.CheckDisbursementResponse
+	9,  // 11: arda.loan.v1.LoanCommandService.GetDisbursementPostingDetail:output_type -> arda.loan.v1.DisbursementPostingDetail
+	11, // 12: arda.loan.v1.LoanCommandService.SettleDisbursement:output_type -> arda.loan.v1.SettleDisbursementResponse
+	13, // 13: arda.loan.v1.LoanCommandService.ResolveDisbursement:output_type -> arda.loan.v1.ResolveDisbursementResponse
+	7,  // [7:14] is the sub-list for method output_type
+	0,  // [0:7] is the sub-list for method input_type
+	0,  // [0:0] is the sub-list for extension type_name
+	0,  // [0:0] is the sub-list for extension extendee
+	0,  // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_arda_loan_v1_loan_proto_init() }
@@ -418,7 +963,7 @@ func file_arda_loan_v1_loan_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_loan_v1_loan_proto_rawDesc), len(file_arda_loan_v1_loan_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

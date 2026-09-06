@@ -24,8 +24,9 @@ import (
 	transport "github.com/arda-labs/arda/apps/workflow-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/worker"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
-	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
+	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
+	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -189,6 +190,17 @@ func main() {
 	defer notificationCustomerResultWorker.Close()
 	logger.Info("workflow notification job workers registered")
 
+	var financeClient *financeclient.Client
+	if cfg.FinanceGRPCAddr != "" {
+		fc, err := financeclient.Dial(context.Background(), cfg.FinanceGRPCAddr, cfg.AppName, logger)
+		if err != nil {
+			logger.Error("finance grpc dial", "err", err)
+			os.Exit(1)
+		}
+		defer fc.Close()
+		financeClient = fc
+	}
+
 	if loanErr == nil {
 		loanWorkers := worker.NewLoanWorkers(loanClient, caseRepo)
 		for _, kind := range loanclient.Kinds {
@@ -201,6 +213,22 @@ func main() {
 			defer c.Close()
 		}
 		logger.Info("workflow loan adjustment workers registered", "kinds", len(loanclient.Kinds))
+
+		// Disbursement flow workers (P1b): posting step runs through the
+		// finance PostingService when the finance client is configured.
+		if financeClient != nil {
+			disbWorkers := worker.NewDisbursementWorkers(loanClient, financeClient, caseRepo)
+			dv, de, dc := disbWorkers.Handlers()
+			dvv := zeebeSvc.NewJobWorker("lnm.disbursement.validate", dv)
+			deE := zeebeSvc.NewJobWorker("lnm.disbursement.execute", de)
+			dcC := zeebeSvc.NewJobWorker("lnm.disbursement.cancel", dc)
+			defer dvv.Close()
+			defer deE.Close()
+			defer dcC.Close()
+			logger.Info("workflow disbursement workers registered")
+		} else {
+			logger.Warn("disbursement workers skipped: finance grpc not configured")
+		}
 	}
 
 	// Handlers

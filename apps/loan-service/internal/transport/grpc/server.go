@@ -19,12 +19,13 @@ import (
 // arrives via propagated gRPC metadata (X-Tenant-Id), same as CRM.
 type LoanServer struct {
 	loanv1.UnimplementedLoanCommandServiceServer
-	contracts *service.LoanService
-	adj       *service.AdjustmentService
+	contracts     *service.LoanService
+	adj           *service.AdjustmentService
+	disbursements *service.DisbursementService
 }
 
-func NewLoanServer(contracts *service.LoanService, adj *service.AdjustmentService) *LoanServer {
-	return &LoanServer{contracts: contracts, adj: adj}
+func NewLoanServer(contracts *service.LoanService, adj *service.AdjustmentService, disbursements *service.DisbursementService) *LoanServer {
+	return &LoanServer{contracts: contracts, adj: adj, disbursements: disbursements}
 }
 
 func tenantFromContext(ctx context.Context) (string, error) {
@@ -77,4 +78,55 @@ func (s *LoanServer) ResolveAdjustment(ctx context.Context, req *loanv1.ResolveA
 		return &loanv1.ResolveAdjustmentResponse{Ok: false}, nil
 	}
 	return &loanv1.ResolveAdjustmentResponse{Ok: true}, nil
+}
+
+// ── Disbursement flow (P1b, LNM.300.02) ──
+
+func (s *LoanServer) CheckDisbursement(ctx context.Context, req *loanv1.CheckDisbursementRequest) (*loanv1.CheckDisbursementResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	ok, message, err := s.disbursements.Check(ctx, tenantID, req.GetDisbursementId())
+	if err != nil {
+		return &loanv1.CheckDisbursementResponse{Ok: false, Message: err.Error()}, nil
+	}
+	return &loanv1.CheckDisbursementResponse{Ok: ok, Message: message}, nil
+}
+
+func (s *LoanServer) GetDisbursementPostingDetail(ctx context.Context, req *loanv1.GetDisbursementPostingDetailRequest) (*loanv1.DisbursementPostingDetail, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	detail, err := s.disbursements.PostingDetail(ctx, tenantID, req.GetDisbursementId())
+	if err != nil {
+		slog.Warn("loan grpc: posting detail failed", "id", req.GetDisbursementId(), "err", err)
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return detail, nil
+}
+
+func (s *LoanServer) SettleDisbursement(ctx context.Context, req *loanv1.SettleDisbursementRequest) (*loanv1.SettleDisbursementResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if err := s.disbursements.Settle(ctx, tenantID, req.GetDisbursementId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
+		slog.Warn("loan grpc: settle failed", "id", req.GetDisbursementId(), "err", err)
+		return &loanv1.SettleDisbursementResponse{Ok: false}, nil
+	}
+	return &loanv1.SettleDisbursementResponse{Ok: true}, nil
+}
+
+func (s *LoanServer) ResolveDisbursement(ctx context.Context, req *loanv1.ResolveDisbursementRequest) (*loanv1.ResolveDisbursementResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if err := s.disbursements.Resolve(ctx, tenantID, req.GetDisbursementId(), req.GetDecision(), req.GetDecidedBy(), req.GetNote()); err != nil {
+		slog.Warn("loan grpc: resolve disbursement failed", "id", req.GetDisbursementId(), "err", err)
+		return &loanv1.ResolveDisbursementResponse{Ok: false}, nil
+	}
+	return &loanv1.ResolveDisbursementResponse{Ok: true}, nil
 }

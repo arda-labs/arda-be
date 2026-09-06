@@ -100,7 +100,7 @@ func main() {
 			interceptors.UnaryServerLogging(logger),
 		),
 	)
-	loanv1.RegisterLoanCommandServiceServer(grpcSrv, grpcserver.NewLoanServer(loanSvc, adjSvc))
+	loanv1.RegisterLoanCommandServiceServer(grpcSrv, grpcserver.NewLoanServer(loanSvc, adjSvc, disbSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)

@@ -10,6 +10,10 @@ service LoanCommandService {
   rpc UpdateContractStatus(UpdateContractStatusRequest) returns (UpdateContractStatusResponse);
   rpc CheckAdjustment(CheckAdjustmentRequest) returns (CheckAdjustmentResponse);
   rpc ResolveAdjustment(ResolveAdjustmentRequest) returns (ResolveAdjustmentResponse);
+  rpc CheckDisbursement(CheckDisbursementRequest) returns (CheckDisbursementResponse);
+  rpc GetDisbursementPostingDetail(GetDisbursementPostingDetailRequest) returns (DisbursementPostingDetail);
+  rpc SettleDisbursement(SettleDisbursementRequest) returns (SettleDisbursementResponse);
+  rpc ResolveDisbursement(ResolveDisbursementRequest) returns (ResolveDisbursementResponse);
 }
 
 message UpdateContractStatusRequest {
@@ -40,5 +44,58 @@ message ResolveAdjustmentRequest {
 }
 
 message ResolveAdjustmentResponse {
+  bool ok = 1;
+}
+
+// ── Disbursement flow (P1b, LNM.300.02) ──
+
+message CheckDisbursementRequest {
+  string disbursement_id = 1;
+}
+
+message CheckDisbursementResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message GetDisbursementPostingDetailRequest {
+  string disbursement_id = 1;
+}
+
+// Everything the workflow worker needs to build the LNM_DISBURSEMENT
+// PostingRequest without reaching into loan-service internals.
+message DisbursementPostingDetail {
+  string disbursement_id = 1;
+  string disbursement_code = 2;
+  string contract_code = 3;
+  string agreement_code = 4;
+  string disburse_date = 5;
+  int64 disburse_amt_minor = 6;
+  string currency_code = 7;
+  string debt_group_code = 8;
+  string org_unit_code = 9;
+  string customer_code = 10;
+  string fund_source_code = 11;
+  string workflow_case_id = 12;
+}
+
+message SettleDisbursementRequest {
+  string disbursement_id = 1;
+  string journal_entry_id = 2;
+  string actor = 3;
+}
+
+message SettleDisbursementResponse {
+  bool ok = 1;
+}
+
+message ResolveDisbursementRequest {
+  string disbursement_id = 1;
+  string decision = 2; // APPROVE | REJECT
+  string decided_by = 3;
+  string note = 4;
+}
+
+message ResolveDisbursementResponse {
   bool ok = 1;
 }

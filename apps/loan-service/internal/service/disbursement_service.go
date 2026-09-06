@@ -9,10 +9,11 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
 )
 
 // DisbursementService runs the LNM.300.02 drawdown flow: create DRAFT →
-// submit case (LNM_DISBURSEMENT_V1) → workflow approval → posting step
+// submit case (LNM_DISBURSEMENT_V2) → workflow approval → posting step
 // executes LNM_DISBURSEMENT via the finance PostingService (worker side).
 type DisbursementService struct {
 	repo     *repository.LoanRepository
@@ -24,7 +25,7 @@ func NewDisbursementService(repo *repository.LoanRepository, workflow Adjustment
 }
 
 // CaseType is the BPMN case type for the disbursement flow.
-const CaseType = "LNM_DISBURSEMENT_V1"
+const CaseType = "LNM_DISBURSEMENT_V2"
 
 func (s *DisbursementService) List(ctx context.Context, tenantID, status, contractCode string) ([]domain.Disbursement, error) {
 	items, err := s.repo.ListDisbursements(ctx, tenantID, status, contractCode)
@@ -68,7 +69,7 @@ func (s *DisbursementService) Create(ctx context.Context, tenantID, createdBy st
 	return created, nil
 }
 
-// Submit pushes the DRAFT disbursement into the LNM_DISBURSEMENT_V1 case.
+// Submit pushes the DRAFT disbursement into the LNM_DISBURSEMENT_V2 case.
 func (s *DisbursementService) Submit(ctx context.Context, tenantID, actor, id string) (domain.Disbursement, error) {
 	item, err := s.repo.GetDisbursement(ctx, tenantID, id)
 	if err != nil {
@@ -175,4 +176,38 @@ func isValidISODate(v string) bool {
 		}
 	}
 	return true
+}
+
+// PostingDetail is everything the workflow worker needs to build the
+// LNM_DISBURSEMENT PostingRequest (agreement + contract joined).
+func (s *DisbursementService) PostingDetail(ctx context.Context, tenantID, id string) (*loanv1.DisbursementPostingDetail, error) {
+	item, err := s.repo.GetDisbursement(ctx, tenantID, id)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	agreement, err := s.repo.GetAgreementByCode(ctx, tenantID, item.AgreementCode)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	contract, err := s.repo.GetContractByCode(ctx, tenantID, item.ContractCode)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	detail := &loanv1.DisbursementPostingDetail{
+		DisbursementId:   item.ID,
+		DisbursementCode: item.ID,
+		ContractCode:     item.ContractCode,
+		AgreementCode:    item.AgreementCode,
+		DisburseDate:     item.DisburseDate,
+		DisburseAmtMinor: item.DisburseAmtMinor,
+		CurrencyCode:     item.CurrencyCode,
+		DebtGroupCode:    agreement.DebtGroupCode,
+		OrgUnitCode:      contract.EmployeeCode,
+		CustomerCode:     contract.CustomerCode,
+		FundSourceCode:   item.FundSourceCode,
+	}
+	if item.WorkflowCaseID != nil {
+		detail.WorkflowCaseId = *item.WorkflowCaseID
+	}
+	return detail, nil
 }

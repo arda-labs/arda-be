@@ -19,9 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	LoanCommandService_UpdateContractStatus_FullMethodName = "/arda.loan.v1.LoanCommandService/UpdateContractStatus"
-	LoanCommandService_CheckAdjustment_FullMethodName      = "/arda.loan.v1.LoanCommandService/CheckAdjustment"
-	LoanCommandService_ResolveAdjustment_FullMethodName    = "/arda.loan.v1.LoanCommandService/ResolveAdjustment"
+	LoanCommandService_UpdateContractStatus_FullMethodName         = "/arda.loan.v1.LoanCommandService/UpdateContractStatus"
+	LoanCommandService_CheckAdjustment_FullMethodName              = "/arda.loan.v1.LoanCommandService/CheckAdjustment"
+	LoanCommandService_ResolveAdjustment_FullMethodName            = "/arda.loan.v1.LoanCommandService/ResolveAdjustment"
+	LoanCommandService_CheckDisbursement_FullMethodName            = "/arda.loan.v1.LoanCommandService/CheckDisbursement"
+	LoanCommandService_GetDisbursementPostingDetail_FullMethodName = "/arda.loan.v1.LoanCommandService/GetDisbursementPostingDetail"
+	LoanCommandService_SettleDisbursement_FullMethodName           = "/arda.loan.v1.LoanCommandService/SettleDisbursement"
+	LoanCommandService_ResolveDisbursement_FullMethodName          = "/arda.loan.v1.LoanCommandService/ResolveDisbursement"
 )
 
 // LoanCommandServiceClient is the client API for LoanCommandService service.
@@ -34,6 +38,10 @@ type LoanCommandServiceClient interface {
 	UpdateContractStatus(ctx context.Context, in *UpdateContractStatusRequest, opts ...grpc.CallOption) (*UpdateContractStatusResponse, error)
 	CheckAdjustment(ctx context.Context, in *CheckAdjustmentRequest, opts ...grpc.CallOption) (*CheckAdjustmentResponse, error)
 	ResolveAdjustment(ctx context.Context, in *ResolveAdjustmentRequest, opts ...grpc.CallOption) (*ResolveAdjustmentResponse, error)
+	CheckDisbursement(ctx context.Context, in *CheckDisbursementRequest, opts ...grpc.CallOption) (*CheckDisbursementResponse, error)
+	GetDisbursementPostingDetail(ctx context.Context, in *GetDisbursementPostingDetailRequest, opts ...grpc.CallOption) (*DisbursementPostingDetail, error)
+	SettleDisbursement(ctx context.Context, in *SettleDisbursementRequest, opts ...grpc.CallOption) (*SettleDisbursementResponse, error)
+	ResolveDisbursement(ctx context.Context, in *ResolveDisbursementRequest, opts ...grpc.CallOption) (*ResolveDisbursementResponse, error)
 }
 
 type loanCommandServiceClient struct {
@@ -74,6 +82,46 @@ func (c *loanCommandServiceClient) ResolveAdjustment(ctx context.Context, in *Re
 	return out, nil
 }
 
+func (c *loanCommandServiceClient) CheckDisbursement(ctx context.Context, in *CheckDisbursementRequest, opts ...grpc.CallOption) (*CheckDisbursementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckDisbursementResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_CheckDisbursement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) GetDisbursementPostingDetail(ctx context.Context, in *GetDisbursementPostingDetailRequest, opts ...grpc.CallOption) (*DisbursementPostingDetail, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DisbursementPostingDetail)
+	err := c.cc.Invoke(ctx, LoanCommandService_GetDisbursementPostingDetail_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) SettleDisbursement(ctx context.Context, in *SettleDisbursementRequest, opts ...grpc.CallOption) (*SettleDisbursementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SettleDisbursementResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_SettleDisbursement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) ResolveDisbursement(ctx context.Context, in *ResolveDisbursementRequest, opts ...grpc.CallOption) (*ResolveDisbursementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveDisbursementResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_ResolveDisbursement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LoanCommandServiceServer is the server API for LoanCommandService service.
 // All implementations must embed UnimplementedLoanCommandServiceServer
 // for forward compatibility.
@@ -84,6 +132,10 @@ type LoanCommandServiceServer interface {
 	UpdateContractStatus(context.Context, *UpdateContractStatusRequest) (*UpdateContractStatusResponse, error)
 	CheckAdjustment(context.Context, *CheckAdjustmentRequest) (*CheckAdjustmentResponse, error)
 	ResolveAdjustment(context.Context, *ResolveAdjustmentRequest) (*ResolveAdjustmentResponse, error)
+	CheckDisbursement(context.Context, *CheckDisbursementRequest) (*CheckDisbursementResponse, error)
+	GetDisbursementPostingDetail(context.Context, *GetDisbursementPostingDetailRequest) (*DisbursementPostingDetail, error)
+	SettleDisbursement(context.Context, *SettleDisbursementRequest) (*SettleDisbursementResponse, error)
+	ResolveDisbursement(context.Context, *ResolveDisbursementRequest) (*ResolveDisbursementResponse, error)
 	mustEmbedUnimplementedLoanCommandServiceServer()
 }
 
@@ -102,6 +154,18 @@ func (UnimplementedLoanCommandServiceServer) CheckAdjustment(context.Context, *C
 }
 func (UnimplementedLoanCommandServiceServer) ResolveAdjustment(context.Context, *ResolveAdjustmentRequest) (*ResolveAdjustmentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveAdjustment not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) CheckDisbursement(context.Context, *CheckDisbursementRequest) (*CheckDisbursementResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckDisbursement not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) GetDisbursementPostingDetail(context.Context, *GetDisbursementPostingDetailRequest) (*DisbursementPostingDetail, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDisbursementPostingDetail not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) SettleDisbursement(context.Context, *SettleDisbursementRequest) (*SettleDisbursementResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SettleDisbursement not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) ResolveDisbursement(context.Context, *ResolveDisbursementRequest) (*ResolveDisbursementResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveDisbursement not implemented")
 }
 func (UnimplementedLoanCommandServiceServer) mustEmbedUnimplementedLoanCommandServiceServer() {}
 func (UnimplementedLoanCommandServiceServer) testEmbeddedByValue()                            {}
@@ -178,6 +242,78 @@ func _LoanCommandService_ResolveAdjustment_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LoanCommandService_CheckDisbursement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckDisbursementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).CheckDisbursement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_CheckDisbursement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).CheckDisbursement(ctx, req.(*CheckDisbursementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_GetDisbursementPostingDetail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDisbursementPostingDetailRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).GetDisbursementPostingDetail(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_GetDisbursementPostingDetail_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).GetDisbursementPostingDetail(ctx, req.(*GetDisbursementPostingDetailRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_SettleDisbursement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SettleDisbursementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).SettleDisbursement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_SettleDisbursement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).SettleDisbursement(ctx, req.(*SettleDisbursementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_ResolveDisbursement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveDisbursementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).ResolveDisbursement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_ResolveDisbursement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).ResolveDisbursement(ctx, req.(*ResolveDisbursementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LoanCommandService_ServiceDesc is the grpc.ServiceDesc for LoanCommandService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -196,6 +332,22 @@ var LoanCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveAdjustment",
 			Handler:    _LoanCommandService_ResolveAdjustment_Handler,
+		},
+		{
+			MethodName: "CheckDisbursement",
+			Handler:    _LoanCommandService_CheckDisbursement_Handler,
+		},
+		{
+			MethodName: "GetDisbursementPostingDetail",
+			Handler:    _LoanCommandService_GetDisbursementPostingDetail_Handler,
+		},
+		{
+			MethodName: "SettleDisbursement",
+			Handler:    _LoanCommandService_SettleDisbursement_Handler,
+		},
+		{
+			MethodName: "ResolveDisbursement",
+			Handler:    _LoanCommandService_ResolveDisbursement_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

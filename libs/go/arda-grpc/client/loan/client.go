@@ -133,3 +133,66 @@ func (c *Client) ResolveAdjustment(ctx context.Context, kind, adjustmentID, deci
 	})
 	return err
 }
+
+// CheckDisbursement validates the disbursement is actionable (BPMN validate).
+func (c *Client) CheckDisbursement(ctx context.Context, disbursementID string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckDisbursement(callCtx, &loanv1.CheckDisbursementRequest{
+		DisbursementId: disbursementID,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+// GetDisbursementPostingDetail returns everything the posting step needs.
+func (c *Client) GetDisbursementPostingDetail(ctx context.Context, disbursementID string) (*loanv1.DisbursementPostingDetail, error) {
+	if c == nil {
+		return nil, errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.GetDisbursementPostingDetail(callCtx, &loanv1.GetDisbursementPostingDetailRequest{
+		DisbursementId: disbursementID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// SettleDisbursement marks the disbursement POSTED with its journal entry.
+func (c *Client) SettleDisbursement(ctx context.Context, disbursementID, journalEntryID, actor string) error {
+	if c == nil {
+		return errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.SettleDisbursement(callCtx, &loanv1.SettleDisbursementRequest{
+		DisbursementId: disbursementID,
+		JournalEntryId: journalEntryID,
+		Actor:          actor,
+	})
+	return err
+}
+
+// ResolveDisbursement applies APPROVE/REJECT without posting.
+func (c *Client) ResolveDisbursement(ctx context.Context, disbursementID, decision, decidedBy, note string) error {
+	if c == nil {
+		return errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.ResolveDisbursement(callCtx, &loanv1.ResolveDisbursementRequest{
+		DisbursementId: disbursementID,
+		Decision:       decision,
+		DecidedBy:      decidedBy,
+		Note:           note,
+	})
+	return err
+}

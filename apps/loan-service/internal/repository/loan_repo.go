@@ -1107,3 +1107,26 @@ func nullText(s string) any {
 	}
 	return s
 }
+
+// GetContractByCode loads the contract header by business code.
+func (r *LoanRepository) GetContractByCode(ctx context.Context, tenantID, code string) (domain.Contract, error) {
+	var c domain.Contract
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, contract_code, COALESCE(contract_no,''), customer_code, employee_code,
+		       contract_type_code, product_code, interest_rate, interest_rate_type, purpose_code,
+		       industry_code, loan_method_code, contract_date::text, loan_term, term_unit,
+		       COALESCE(maturity_date::text,''), interest_schedule_day, loan_amt_minor,
+		       interest_payment_freq, principal_payment_freq, interest_payment_method,
+		       principal_payment_method, status, created_by, created_at, updated_at
+		FROM lnm_contracts WHERE tenant_id = $1 AND contract_code = $2`, tenantID, code)
+	err := row.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.ContractNo, &c.CustomerCode, &c.EmployeeCode,
+		&c.ContractTypeCode, &c.ProductCode, &c.InterestRate, &c.InterestRateType, &c.PurposeCode,
+		&c.IndustryCode, &c.LoanMethodCode, &c.ContractDate, &c.LoanTerm, &c.TermUnit,
+		&c.MaturityDate, &c.InterestScheduleDay, &c.LoanAmt,
+		&c.InterestPaymentFreq, &c.PrincipalPaymentFreq, &c.InterestPaymentMethod,
+		&c.PrincipalPaymentMethod, &c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return c, fmt.Errorf("contract %s not found", code)
+	}
+	return c, err
+}

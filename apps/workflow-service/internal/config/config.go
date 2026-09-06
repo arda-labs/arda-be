@@ -19,6 +19,7 @@ type Config struct {
 	ZeebeESURL           string `yaml:"zeebe_es_url"`
 	CRMGRPCAddr          string `yaml:"crm_grpc_addr"`
 	LoanGRPCAddr         string `yaml:"loan_grpc_addr"`
+	FinanceGRPCAddr      string `yaml:"finance_grpc_addr"`
 	IAMGRPCAddr          string `yaml:"iam_grpc_addr"`
 	NotificationGRPCAddr string `yaml:"notification_grpc_addr"`
 }
@@ -33,6 +34,7 @@ func Load() Config {
 		ZeebeAddr:            "192.168.100.201:30650",
 		CRMGRPCAddr:          "localhost:9094",
 		LoanGRPCAddr:         "localhost:9097",
+		FinanceGRPCAddr:      "localhost:9096",
 		NotificationGRPCAddr: "localhost:9095",
 	}
 
@@ -57,6 +59,7 @@ func Load() Config {
 	envStr("ZEEBE_ES_URL", &cfg.ZeebeESURL)
 	envStr("CRM_GRPC_ADDR", &cfg.CRMGRPCAddr)
 	envStr("LOAN_GRPC_ADDR", &cfg.LoanGRPCAddr)
+	envStr("FINANCE_GRPC_ADDR", &cfg.FinanceGRPCAddr)
 	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
 	envStr("NOTIFICATION_GRPC_ADDR", &cfg.NotificationGRPCAddr)
 
