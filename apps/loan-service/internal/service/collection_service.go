@@ -27,8 +27,8 @@ func NewCollectionService(repo *repository.LoanRepository, workflow AdjustmentSu
 // CaseType is the BPMN case type for the collection flow.
 const CollectionCaseType = "LNM_COLLECTION_V2"
 
-func (s *CollectionService) List(ctx context.Context, tenantID, status, contractCode string) ([]domain.Collection, error) {
-	items, err := s.repo.ListCollections(ctx, tenantID, status, contractCode)
+func (s *CollectionService) List(ctx context.Context, tenantID string, orgCodes []string, status, contractCode string) ([]domain.Collection, error) {
+	items, err := s.repo.ListCollections(ctx, tenantID, orgCodes, status, contractCode)
 	return items, mapRepoError(err)
 }
 

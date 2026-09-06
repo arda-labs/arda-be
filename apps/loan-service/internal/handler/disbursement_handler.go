@@ -22,7 +22,7 @@ func (h *DisbursementHandler) ListDisbursements(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	items, err := h.svc.List(r.Context(), tenantID, r.URL.Query().Get("status"), r.URL.Query().Get("contract_code"))
+	items, err := h.svc.List(r.Context(), tenantID, orgScopeFromRequest(r).ListFilter(), r.URL.Query().Get("status"), r.URL.Query().Get("contract_code"))
 	writeResult(w, r, items, err)
 }
 
@@ -36,6 +36,7 @@ func (h *DisbursementHandler) CreateDisbursement(w http.ResponseWriter, r *http.
 	if !decodeBody(w, r, &req) {
 		return
 	}
+	req.OrgCode = orgScopeFromRequest(r).ActiveOrg()
 	created, err := h.svc.Create(r.Context(), tenantID, actorOf(r), &req)
 	writeResult(w, r, created, err)
 }

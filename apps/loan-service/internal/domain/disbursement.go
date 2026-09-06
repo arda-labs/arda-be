@@ -31,6 +31,7 @@ type Disbursement struct {
 	Payload          json.RawMessage `json:"payload,omitempty"`
 	WorkflowCaseID   *string   `json:"workflow_case_id,omitempty"`
 	JournalEntryID   *string   `json:"journal_entry_id,omitempty"`
+	OrgCode          string    `json:"org_code,omitempty"`
 	CreatedBy        string    `json:"created_by"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`

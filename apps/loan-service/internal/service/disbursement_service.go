@@ -27,8 +27,8 @@ func NewDisbursementService(repo *repository.LoanRepository, workflow Adjustment
 // CaseType is the BPMN case type for the disbursement flow.
 const CaseType = "LNM_DISBURSEMENT_V2"
 
-func (s *DisbursementService) List(ctx context.Context, tenantID, status, contractCode string) ([]domain.Disbursement, error) {
-	items, err := s.repo.ListDisbursements(ctx, tenantID, status, contractCode)
+func (s *DisbursementService) List(ctx context.Context, tenantID string, orgCodes []string, status, contractCode string) ([]domain.Disbursement, error) {
+	items, err := s.repo.ListDisbursements(ctx, tenantID, orgCodes, status, contractCode)
 	return items, mapRepoError(err)
 }
 

@@ -990,16 +990,19 @@ func (r *LoanRepository) CreateVfuPlan(ctx context.Context, p *domain.VfuPlan) (
 
 // ── Disbursements (P1b) ──
 
-func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID, status, contractCode string) ([]domain.Disbursement, error) {
+func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string, orgCodes []string, status, contractCode string) ([]domain.Disbursement, error) {
+	orgAny := orgCodesToAny(orgCodes)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
 		       currency_code, COALESCE(fund_source_code,''), status, payload,
 		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at
 		FROM lnm_disbursements
 		WHERE tenant_id = $1
-		  AND ($2 = '' OR status = $2)
-		  AND ($3 = '' OR contract_code = $3)
-		ORDER BY created_at DESC LIMIT 200`, tenantID, status, contractCode)
+		  AND ($4::text = '' OR status = $4::text)
+		  AND ($5::text = '' OR contract_code = $5::text)
+		  AND ($6::text[] IS NULL OR org_code = ANY($6::text[]))
+		ORDER BY created_at DESC LIMIT 200`,
+		tenantID, orgAny, status, contractCode)
 	if err != nil {
 		return nil, err
 	}
@@ -1032,11 +1035,11 @@ func (r *LoanRepository) CreateDisbursement(ctx context.Context, d *domain.Disbu
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO lnm_disbursements
 			(tenant_id, contract_code, agreement_code, disburse_date, disburse_amt_minor,
-			 currency_code, fund_source_code, status, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8)
+			 currency_code, fund_source_code, status, org_code, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9)
 		RETURNING id, created_at, updated_at`,
 		d.TenantID, d.ContractCode, d.AgreementCode, d.DisburseDate, d.DisburseAmtMinor,
-		d.CurrencyCode, nullText(d.FundSourceCode), d.CreatedBy)
+		d.CurrencyCode, nullText(d.FundSourceCode), nullText(d.OrgCode), d.CreatedBy)
 	if err := row.Scan(&d.ID, &d.CreatedAt, &d.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -1145,14 +1148,17 @@ const collectionColumns = `id, tenant_id, contract_code, agreement_code, collect
 	principal_minor, interest_minor, currency_code, status, payload,
 	workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at`
 
-func (r *LoanRepository) ListCollections(ctx context.Context, tenantID, status, contractCode string) ([]domain.Collection, error) {
+func (r *LoanRepository) ListCollections(ctx context.Context, tenantID string, orgCodes []string, status, contractCode string) ([]domain.Collection, error) {
+	orgAny := orgCodesToAny(orgCodes)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT `+collectionColumns+`
 		FROM lnm_collections
 		WHERE tenant_id = $1
-		  AND ($2 = '' OR status = $2)
-		  AND ($3 = '' OR contract_code = $3)
-		ORDER BY created_at DESC LIMIT 200`, tenantID, status, contractCode)
+		  AND ($4::text = '' OR status = $4::text)
+		  AND ($5::text = '' OR contract_code = $5::text)
+		  AND ($6::text[] IS NULL OR org_code = ANY($6::text[]))
+		ORDER BY created_at DESC LIMIT 200`,
+		tenantID, orgAny, status, contractCode)
 	if err != nil {
 		return nil, err
 	}
@@ -1185,11 +1191,11 @@ func (r *LoanRepository) CreateCollection(ctx context.Context, c *domain.Collect
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO lnm_collections
 			(tenant_id, contract_code, agreement_code, collection_date, principal_minor,
-			 interest_minor, currency_code, status, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8)
+			 interest_minor, currency_code, status, org_code, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9)
 		RETURNING id, created_at, updated_at`,
 		c.TenantID, c.ContractCode, c.AgreementCode, c.CollectionDate, c.PrincipalMinor,
-		c.InterestMinor, c.CurrencyCode, c.CreatedBy)
+		c.InterestMinor, c.CurrencyCode, nullText(c.OrgCode), c.CreatedBy)
 	if err := row.Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -1293,4 +1299,13 @@ func (r *LoanRepository) ListActiveAgreementsForAccrual(ctx context.Context, ten
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+
+// orgCodesToAny: nil slice -> nil (unrestricted); slice -> []string for ANY().
+func orgCodesToAny(orgCodes []string) any {
+	if len(orgCodes) == 0 {
+		return nil
+	}
+	return orgCodes
 }
