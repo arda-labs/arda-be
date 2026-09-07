@@ -75,7 +75,7 @@ jobs:
               { service: "statistical-service", image: "statistical-service", file: "apps/statistical-service/Dockerfile", paths: ["apps/statistical-service/"] },
             ];
             const sharedPrefixes = ["libs/go/"];
-            const sharedFiles = ["go.work"];
+            const sharedFiles = ["go.work", ".github/workflows/images.yml"];
             const changed = (process.env.CHANGED || "").split(/\r?\n/).filter(Boolean);
             const buildAll = process.env.ALL === "true" ||
               changed.some(path => sharedPrefixes.some(prefix => path.startsWith(prefix)) || sharedFiles.includes(path));
