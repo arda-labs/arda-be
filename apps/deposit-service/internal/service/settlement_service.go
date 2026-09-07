@@ -98,18 +98,18 @@ func (s *SettlementService) Open(ctx context.Context, tenantID string, in *OpenS
 			return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "deposit posting failed", err)
 		}
 		if _, err := s.repo.RecordTxn(ctx, &repository.DepositTxn{
-			TenantID:     tenantID,
-			SavingsID:    savings.ID,
-			TxnType:      "OPEN_POSTED",
-			AmountMinor:  in.PrincipalMinor,
-			CurrencyCode: currency,
-			TxnDate:      openDate,
-			Status:       "POSTED",
-			CreatedBy:    in.Actor,
+			TenantID:       tenantID,
+			SavingsID:      savings.ID,
+			TxnType:        "OPEN_POSTED",
+			AmountMinor:    in.PrincipalMinor,
+			CurrencyCode:   currency,
+			TxnDate:        openDate,
+			Status:         "POSTED",
+			JournalEntryID: &entryID,
+			CreatedBy:      in.Actor,
 		}); err != nil {
 			return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
-		_ = entryID
 	}
 	return savings, nil
 }
@@ -125,14 +125,17 @@ func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, a
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "only ACTIVE savings can be settled")
 	}
 	payoutMinor := savings.PrincipalMinor + savings.AccruedMinor
+	var entryID string
 	if s.finance != nil {
-		if _, err := s.post(ctx, tenantID, "DPM_SETTLE", savings.SavingsCode, savings.CustomerCode,
+		var err error
+		entryID, err = s.post(ctx, tenantID, "DPM_SETTLE", savings.SavingsCode, savings.CustomerCode,
 			todayDep(), savings.CurrencyCode, payoutMinor,
-			"DPM_DEPOSIT_LIABILITY", "CASH_SETTLEMENT_ACCOUNT"); err != nil {
+			"DPM_DEPOSIT_LIABILITY", "CASH_SETTLEMENT_ACCOUNT")
+		if err != nil {
 			return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "settlement posting failed", err)
 		}
 	}
-	if err := s.repo.CloseSavings(ctx, tenantID, savings.ID, "", actor); err != nil {
+	if err := s.repo.CloseSavings(ctx, tenantID, savings.ID, entryID, actor); err != nil {
 		return nil, mapErr(err)
 	}
 	return savings, nil

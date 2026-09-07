@@ -2,9 +2,12 @@
 
 -- P2.1: deposit-service schema (DPM + IBM, Q3). Tables per
 -- docs/db-schema-conventions.md; amounts int64 minor.
+-- IDs are app-generated prefixed strings (NewDepositID), so PKs/FKs are
+-- VARCHAR(64) per loan-service convention, not UUID. journal_entry_id stays
+-- UUID because finance-service journal entries are UUID PKs.
 
 CREATE TABLE IF NOT EXISTS dpm_products (
-    id               UUID PRIMARY KEY DEFAULT uuidv7(),
+    id               VARCHAR(64) PRIMARY KEY,
     tenant_id        VARCHAR(64) NOT NULL,
     code             VARCHAR(64) NOT NULL,
     name             VARCHAR(255) NOT NULL,
@@ -21,7 +24,7 @@ CREATE TABLE IF NOT EXISTS dpm_products (
 );
 
 CREATE TABLE IF NOT EXISTS dpm_savings (
-    id                UUID PRIMARY KEY DEFAULT uuidv7(),
+    id                VARCHAR(64) PRIMARY KEY,
     tenant_id         VARCHAR(64) NOT NULL,
     savings_code      VARCHAR(64) NOT NULL,
     customer_code     VARCHAR(64) NOT NULL,
@@ -33,7 +36,7 @@ CREATE TABLE IF NOT EXISTS dpm_savings (
     currency_code     VARCHAR(3) NOT NULL DEFAULT 'VND',
     org_code          VARCHAR(64),
     status            VARCHAR(16) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE|CLOSED
-    workflow_case_id  UUID,
+    workflow_case_id  VARCHAR(64),
     journal_entry_id  UUID,
     created_by        TEXT NOT NULL,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -46,15 +49,15 @@ CREATE TABLE IF NOT EXISTS dpm_savings (
 CREATE INDEX IF NOT EXISTS idx_dpm_savings_tenant ON dpm_savings (tenant_id, status);
 
 CREATE TABLE IF NOT EXISTS dpm_transactions (
-    id             UUID PRIMARY KEY DEFAULT uuidv7(),
+    id             VARCHAR(64) PRIMARY KEY,
     tenant_id      VARCHAR(64) NOT NULL,
-    savings_id     UUID NOT NULL REFERENCES dpm_savings(id),
+    savings_id     VARCHAR(64) NOT NULL REFERENCES dpm_savings(id),
     txn_type       VARCHAR(32) NOT NULL,   -- OPEN|TOP_UP|WITHDRAW|SETTLE|INTEREST
     amount_minor   BIGINT NOT NULL CHECK (amount_minor > 0),
     currency_code  VARCHAR(3) NOT NULL DEFAULT 'VND',
     txn_date       DATE NOT NULL,
     status         VARCHAR(16) NOT NULL DEFAULT 'DRAFT',
-    workflow_case_id UUID,
+    workflow_case_id VARCHAR(64),
     journal_entry_id UUID,
     created_by     TEXT NOT NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -66,7 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_dpm_txn_tenant ON dpm_transactions (tenant_id, sa
 
 -- IBM: interbank deposits (simpler: contract + transactions)
 CREATE TABLE IF NOT EXISTS ibm_deposits (
-    id                UUID PRIMARY KEY DEFAULT uuidv7(),
+    id                VARCHAR(64) PRIMARY KEY,
     tenant_id         VARCHAR(64) NOT NULL,
     deposit_code      VARCHAR(64) NOT NULL,
     counterparty_code VARCHAR(64) NOT NULL,   -- tổ chức tín dụng đối tác

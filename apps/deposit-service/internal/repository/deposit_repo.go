@@ -219,11 +219,19 @@ func (r *DepositRepository) RecordTxn(ctx context.Context, t *DepositTxn) (*Depo
 	if t.ID == "" {
 		t.ID = NewDepositID("dpmtx")
 	}
+	status := t.Status
+	if status == "" {
+		status = "DRAFT"
+	}
+	var entryID any
+	if t.JournalEntryID != nil && *t.JournalEntryID != "" {
+		entryID = *t.JournalEntryID
+	}
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO dpm_transactions (id, tenant_id, savings_id, txn_type, amount_minor, currency_code, txn_date, status, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8)
+		INSERT INTO dpm_transactions (id, tenant_id, savings_id, txn_type, amount_minor, currency_code, txn_date, status, journal_entry_id, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		RETURNING created_at`,
-		t.ID, t.TenantID, t.SavingsID, t.TxnType, t.AmountMinor, t.CurrencyCode, t.TxnDate, t.CreatedBy)
+		t.ID, t.TenantID, t.SavingsID, t.TxnType, t.AmountMinor, t.CurrencyCode, t.TxnDate, status, entryID, t.CreatedBy)
 	if err := row.Scan(&t.CreatedAt); err != nil {
 		return nil, err
 	}
