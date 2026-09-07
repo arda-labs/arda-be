@@ -34,7 +34,7 @@ func Load() Config {
 	cfg := Config{
 		AppName:               "media-service",
 		HTTPAddr:              "0.0.0.0:8092",
-		GRPCAddr:              "0.0.0.0:9092",
+		GRPCAddr:              "0.0.0.0:9090",
 		LogLevel:              "info",
 		DatabaseDSN:           "",
 		NATSURL:               "",

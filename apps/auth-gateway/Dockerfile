@@ -10,5 +10,5 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/bin/auth-gateway /app/auth-gateway
 COPY apps/auth-gateway/configs /app/configs
-EXPOSE 8080
+EXPOSE 8080 9090
 ENTRYPOINT ["/app/auth-gateway"]

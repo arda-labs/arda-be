@@ -1,12 +1,12 @@
 app_name: workflow-service
 http_addr: 0.0.0.0:8093
-grpc_addr: 0.0.0.0:9093
+grpc_addr: 0.0.0.0:9090
 log_level: info
 database_dsn: ""
 zeebe_addr: 192.168.100.201:30650
-crm_grpc_addr: "localhost:9094"
-iam_grpc_addr: "localhost:9095"
+crm_grpc_addr: "localhost:9090"
+iam_grpc_addr: "localhost:9090"
 zeebe_rest_addr: "http://192.168.100.201:30080"
-notification_grpc_addr: "localhost:9095"
+notification_grpc_addr: "localhost:9090"
 # Dev only: allow same user to complete checker/risk after submitting as maker
 # relax_maker_checker_sod: true

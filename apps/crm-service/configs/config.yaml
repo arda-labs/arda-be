@@ -1,6 +1,6 @@
 app_name: crm-service
 http_addr: 0.0.0.0:8094
-grpc_addr: 0.0.0.0:9094
+grpc_addr: 0.0.0.0:9090
 log_level: info
 database_dsn: ""
-workflow_grpc_addr: "localhost:9093"
+workflow_grpc_addr: "localhost:9090"

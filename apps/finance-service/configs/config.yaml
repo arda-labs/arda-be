@@ -1,5 +1,5 @@
 app_name: "finance-service"
-http_addr: "0.0.0.0:8090"
+http_addr: "0.0.0.0:8080"
 log_level: "info"
 database_dsn: ""
 platform_grpc_addr: "localhost:9090"

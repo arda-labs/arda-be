@@ -26,7 +26,7 @@ func Load() Config {
 	cfg := Config{
 		AppName:  "finance-service",
 		HTTPAddr: "0.0.0.0:8090",
-		GRPCAddr: "0.0.0.0:9096",
+		GRPCAddr: "0.0.0.0:9090",
 		LogLevel: "info",
 
 		DatabaseDSN:      "",

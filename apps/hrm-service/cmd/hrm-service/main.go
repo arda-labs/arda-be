@@ -64,7 +64,7 @@ func main() {
 	logger.Info("workflow grpc configured", "addr", cfg.WorkflowGRPCAddr)
 
 	hrmHandler := handler.NewHRMHandler(repository.NewHRMRepository(db), workflowClient)
-	// ── gRPC server (EmployeeCommandService, port 9099) ──
+	// ── gRPC server (EmployeeCommandService, port 9090) ──
 	serviceSecret, err2 := identity.SecretFromEnv()
 	if err2 != nil {
 		logger.Error("service identity is not configured", "err", err2)

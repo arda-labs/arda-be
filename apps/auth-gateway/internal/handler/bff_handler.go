@@ -1751,6 +1751,10 @@ func (h *BFFHandler) upstreamBaseURL(path string) string {
 		{"/api/mdm", h.cfg.MDMServiceURL},
 		{"/api/ai", h.cfg.AIServiceURL},
 		{"/api/rag", h.cfg.RAGServiceURL},
+		{"/api/loan", h.cfg.LoanServiceURL},
+		{"/api/deposit", h.cfg.DepositServiceURL},
+		{"/api/capital", h.cfg.CapitalServiceURL},
+		{"/api/statistical", h.cfg.StatisticalServiceURL},
 	} {
 		if strings.HasPrefix(path, route.prefix) && strings.TrimSpace(route.url) != "" {
 			return route.url

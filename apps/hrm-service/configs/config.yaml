@@ -1,5 +1,5 @@
 app_name: hrm-service
-http_addr: 0.0.0.0:8099
+http_addr: 0.0.0.0:8080
 log_level: info
 database_dsn: ""
-workflow_grpc_addr: "localhost:9093"
+workflow_grpc_addr: "localhost:9090"

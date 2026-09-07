@@ -9,5 +9,5 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/bin/finance-service /app/finance-service
-EXPOSE 8080
+EXPOSE 8080 9090
 ENTRYPOINT ["/app/finance-service"]

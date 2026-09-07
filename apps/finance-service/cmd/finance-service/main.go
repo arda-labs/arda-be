@@ -80,7 +80,7 @@ func main() {
 	postingHandler := handler.NewPostingHandler(postingSvc)
 	cashHandler := handler.NewCashHandler(cashSvc)
 
-	// ── gRPC server (PostingService, port 9096) ──
+	// ── gRPC server (PostingService, port 9090) ──
 	serviceSecret, err := identity.SecretFromEnv()
 	if err != nil {
 		logger.Error("service identity is not configured", "err", err)
@@ -94,7 +94,7 @@ func main() {
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
-			interceptors.UnaryServerServiceAuth(serviceSecret, "finance-service", map[string]struct{}{"workflow-service": {}}),
+			interceptors.UnaryServerServiceAuth(serviceSecret, "finance-service", map[string]struct{}{"workflow-service": {}, "deposit-service": {}, "capital-service": {}}),
 			interceptors.UnaryServerLogging(logger),
 		),
 	)

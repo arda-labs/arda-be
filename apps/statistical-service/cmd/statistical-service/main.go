@@ -103,10 +103,10 @@ func (a StatisticalSubmitterAdapter) SubmitCase(ctx context.Context, caseID, act
 func loadConfig() config {
 	return config{
 		AppName:          "statistical-service",
-		HTTPAddr:         envOr("HTTP_ADDR", "0.0.0.0:8102"),
+		HTTPAddr:         envOr("HTTP_ADDR", "0.0.0.0:8080"),
 		LogLevel:         envOr("LOG_LEVEL", "info"),
 		DatabaseDSN:      envOr("DATABASE_DSN", ""),
-		WorkflowGRPCAddr: envOr("WORKFLOW_GRPC_ADDR", "localhost:9093"),
+		WorkflowGRPCAddr: envOr("WORKFLOW_GRPC_ADDR", "localhost:9090"),
 	}
 }
 

@@ -56,7 +56,7 @@ func main() {
 	settlementSvc := service.NewSettlementService(repo, db, financeClient)
 	depositHandler := handler.NewDepositHandler(settlementSvc)
 
-	// ── gRPC server (DepositCommandService, port 9100) ──
+	// ── gRPC server (DepositCommandService, port 9090) ──
 	serviceSecret, errSec := identity.SecretFromEnv()
 	if errSec != nil {
 		logger.Error("service identity is not configured", "err", errSec)
@@ -133,11 +133,11 @@ type config struct {
 func loadConfig() config {
 	return config{
 		AppName:         "deposit-service",
-		HTTPAddr:        envOr("HTTP_ADDR", "0.0.0.0:8100"),
-		GRPCAddr:        envOr("GRPC_ADDR", "0.0.0.0:9100"),
+		HTTPAddr:        envOr("HTTP_ADDR", "0.0.0.0:8080"),
+		GRPCAddr:        envOr("GRPC_ADDR", "0.0.0.0:9090"),
 		LogLevel:        envOr("LOG_LEVEL", "info"),
 		DatabaseDSN:     envOr("DATABASE_DSN", ""),
-		FinanceGRPCAddr: envOr("FINANCE_GRPC_ADDR", "localhost:9096"),
+		FinanceGRPCAddr: envOr("FINANCE_GRPC_ADDR", "localhost:9090"),
 	}
 }
 

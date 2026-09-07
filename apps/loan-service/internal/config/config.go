@@ -23,11 +23,11 @@ func Load() Config {
 	cfg := Config{
 		AppName:          "loan-service",
 		HTTPAddr:         "0.0.0.0:8097",
-		GRPCAddr:         "0.0.0.0:9097",
+		GRPCAddr:         "0.0.0.0:9090",
 		LogLevel:         "info",
 		DatabaseDSN:      "",
 		WorkflowGRPCAddr: "",
-		FinanceGRPCAddr:  "localhost:9096",
+		FinanceGRPCAddr:  "localhost:9090",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {

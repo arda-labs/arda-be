@@ -39,6 +39,10 @@ type Config struct {
 	MDMServiceURL             string `yaml:"mdm_service_url"`
 	AIServiceURL              string `yaml:"ai_service_url"`
 	RAGServiceURL             string `yaml:"rag_service_url"`
+	LoanServiceURL            string `yaml:"loan_service_url"`
+	DepositServiceURL         string `yaml:"deposit_service_url"`
+	CapitalServiceURL         string `yaml:"capital_service_url"`
+	StatisticalServiceURL     string `yaml:"statistical_service_url"`
 	ServiceAuthSecret         string `yaml:"-"`
 	PolicyFile                string `yaml:"policy_file"`
 
@@ -138,6 +142,10 @@ func Load() Config {
 	envStr("MDM_SERVICE_URL", &cfg.MDMServiceURL)
 	envStr("AI_SERVICE_URL", &cfg.AIServiceURL)
 	envStr("RAG_SERVICE_URL", &cfg.RAGServiceURL)
+	envStr("LOAN_SERVICE_URL", &cfg.LoanServiceURL)
+	envStr("DEPOSIT_SERVICE_URL", &cfg.DepositServiceURL)
+	envStr("CAPITAL_SERVICE_URL", &cfg.CapitalServiceURL)
+	envStr("STATISTICAL_SERVICE_URL", &cfg.StatisticalServiceURL)
 	envStr("ARDA_SERVICE_AUTH_SECRET", &cfg.ServiceAuthSecret)
 	envStr("POLICY_FILE", &cfg.PolicyFile)
 	envStr("REDIS_URL", &cfg.RedisURL)

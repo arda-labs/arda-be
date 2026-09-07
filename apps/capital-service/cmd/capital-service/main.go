@@ -113,10 +113,10 @@ type config struct {
 func loadConfig() config {
 	return config{
 		AppName:         "capital-service",
-		HTTPAddr:        envOr("HTTP_ADDR", "0.0.0.0:8101"),
+		HTTPAddr:        envOr("HTTP_ADDR", "0.0.0.0:8080"),
 		LogLevel:        envOr("LOG_LEVEL", "info"),
 		DatabaseDSN:     envOr("DATABASE_DSN", ""),
-		FinanceGRPCAddr: envOr("FINANCE_GRPC_ADDR", "localhost:9096"),
+		FinanceGRPCAddr: envOr("FINANCE_GRPC_ADDR", "localhost:9090"),
 	}
 }
 

@@ -9,5 +9,5 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/bin/statistical-service /app/statistical-service
-EXPOSE 8100
+EXPOSE 8080 9090
 ENTRYPOINT ["/app/statistical-service"]

@@ -20,10 +20,10 @@ func Load() Config {
 	cfg := Config{
 		AppName:          "hrm-service",
 		HTTPAddr:         "0.0.0.0:8099",
-		GRPCAddr:         "0.0.0.0:9099",
+		GRPCAddr:         "0.0.0.0:9090",
 		LogLevel:         "info",
 		DatabaseDSN:      "",
-		WorkflowGRPCAddr: "localhost:9093",
+		WorkflowGRPCAddr: "localhost:9090",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {

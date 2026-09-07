@@ -30,16 +30,16 @@ func Load() Config {
 	cfg := Config{
 		AppName:              "workflow-service",
 		HTTPAddr:             "0.0.0.0:8093",
-		GRPCAddr:             "0.0.0.0:9093",
+		GRPCAddr:             "0.0.0.0:9090",
 		LogLevel:             "info",
 		DatabaseDSN:          "",
 		ZeebeAddr:            "192.168.100.201:30650",
-		CRMGRPCAddr:          "localhost:9094",
-		LoanGRPCAddr:         "localhost:9097",
-		FinanceGRPCAddr:      "localhost:9096",
-		DepositGRPCAddr:      "localhost:9100",
-		HRMGRPCAddr:          "localhost:8099",
-		NotificationGRPCAddr: "localhost:9095",
+		CRMGRPCAddr:          "localhost:9090",
+		LoanGRPCAddr:         "localhost:9090",
+		FinanceGRPCAddr:      "localhost:9090",
+		DepositGRPCAddr:      "localhost:9090",
+		HRMGRPCAddr:          "localhost:9090",
+		NotificationGRPCAddr: "localhost:9090",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {

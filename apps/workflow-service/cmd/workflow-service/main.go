@@ -315,8 +315,10 @@ func main() {
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
 			interceptors.UnaryServerServiceAuth(serviceSecret, "workflow-service", map[string]struct{}{
-				"crm-service": {},
-				"hrm-service": {},
+				"crm-service":         {},
+				"hrm-service":         {},
+				"loan-service":        {},
+				"statistical-service": {},
 			}),
 			interceptors.UnaryServerLogging(logger),
 		),
