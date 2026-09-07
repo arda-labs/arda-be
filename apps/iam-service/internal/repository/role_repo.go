@@ -26,6 +26,7 @@ type ListRolesParams struct {
 	Size     int
 	TenantID string
 	Search   string
+	Status   string
 }
 
 func (r *RoleRepository) Create(ctx context.Context, role *domain.Role) error {
@@ -65,6 +66,11 @@ func (r *RoleRepository) List(ctx context.Context, params ListRolesParams) ([]do
 	if params.Search != "" {
 		where = append(where, fmt.Sprintf("(code ILIKE $%d OR name ILIKE $%d)", idx, idx))
 		args = append(args, "%"+params.Search+"%")
+		idx++
+	}
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("status = $%d", idx))
+		args = append(args, params.Status)
 		idx++
 	}
 
@@ -114,6 +120,11 @@ func (r *RoleRepository) StreamRoles(ctx context.Context, params ListRolesParams
 		args = append(args, "%"+params.Search+"%")
 		idx++
 	}
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("status = $%d", idx))
+		args = append(args, params.Status)
+		idx++
+	}
 
 	wc := strings.Join(where, " AND ")
 	query := fmt.Sprintf(`
@@ -140,10 +151,12 @@ func (r *RoleRepository) DeleteScoped(ctx context.Context, id, tenantID string) 
 // ── Permissions ──
 
 type ListPermissionsParams struct {
-	Page     int
-	Size     int
-	Module   string
-	TenantID string
+	Page   int
+	Size   int
+	Module string
+	Search string
+	Sort   string
+	Order  string
 }
 
 func (r *RoleRepository) CreatePermission(ctx context.Context, p *domain.Permission) error {
@@ -173,6 +186,11 @@ func (r *RoleRepository) ListPermissions(ctx context.Context, params ListPermiss
 		args = append(args, params.Module)
 		idx++
 	}
+	if params.Search != "" {
+		where = append(where, fmt.Sprintf("(code ILIKE $%d OR name ILIKE $%d OR module_code ILIKE $%d OR resource_code ILIKE $%d OR operation_code ILIKE $%d)", idx, idx, idx, idx, idx))
+		args = append(args, "%"+params.Search+"%")
+		idx++
+	}
 
 	wc := strings.Join(where, " AND ")
 
@@ -184,8 +202,8 @@ func (r *RoleRepository) ListPermissions(ctx context.Context, params ListPermiss
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
 		SELECT id, code, name, module_code, resource_code, operation_code, created_at
-		FROM iam_permissions WHERE %s ORDER BY module_code, resource_code LIMIT $%d OFFSET $%d
-	`, wc, idx, idx+1)
+		FROM iam_permissions WHERE %s ORDER BY %s %s LIMIT $%d OFFSET $%d
+	`, wc, permissionsSortCol(params.Sort), listSortDirection(params.Order), idx, idx+1)
 	allArgs := append(args, params.Size, offset)
 
 	rows, err := r.db.QueryContext(ctx, query, allArgs...)
@@ -215,14 +233,40 @@ func (r *RoleRepository) StreamPermissions(ctx context.Context, params ListPermi
 		args = append(args, params.Module)
 		idx++
 	}
+	if params.Search != "" {
+		where = append(where, fmt.Sprintf("(code ILIKE $%d OR name ILIKE $%d OR module_code ILIKE $%d OR resource_code ILIKE $%d OR operation_code ILIKE $%d)", idx, idx, idx, idx, idx))
+		args = append(args, "%"+params.Search+"%")
+		idx++
+	}
 
 	wc := strings.Join(where, " AND ")
 	query := fmt.Sprintf(`
 		SELECT id, code, name, module_code, resource_code, operation_code, created_at
-		FROM iam_permissions WHERE %s ORDER BY module_code, resource_code
-	`, wc)
+		FROM iam_permissions WHERE %s ORDER BY %s %s
+	`, wc, permissionsSortCol(params.Sort), listSortDirection(params.Order))
 
 	return r.db.QueryContext(ctx, query, args...)
+}
+
+// permissionsSortCol maps the FE sort param to a whitelisted column.
+func permissionsSortCol(sort string) string {
+	switch sort {
+	case "code":
+		return "code"
+	case "name":
+		return "name"
+	case "created_at":
+		return "created_at"
+	default:
+		return "module_code, resource_code"
+	}
+}
+
+func listSortDirection(order string) string {
+	if strings.EqualFold(order, "desc") {
+		return "DESC"
+	}
+	return "ASC"
 }
 
 func (r *RoleRepository) DeletePermission(ctx context.Context, id string) error {

@@ -17,8 +17,8 @@ func NewTenantService(repo *repository.TenantRepository) *TenantService {
 	return &TenantService{repo: repo}
 }
 
-func (s *TenantService) List(ctx context.Context) ([]domain.Tenant, error) {
-	return s.repo.List(ctx)
+func (s *TenantService) List(ctx context.Context, params repository.ListTenantsParams) ([]domain.Tenant, int, error) {
+	return s.repo.List(ctx, params)
 }
 
 func (s *TenantService) ListForUser(ctx context.Context, userID string) ([]domain.TenantMembership, error) {

@@ -407,6 +407,38 @@ routes:
     permissions:
       - crm.customer.manage
 
+  - id: crm-project-read
+    path: /api/crm/projects/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - crm.project.read
+
+  - id: crm-project-write
+    path: /api/crm/projects/**
+    methods: [POST]
+    auth: true
+    risk: medium
+    permissions:
+      - crm.project.manage
+
+  - id: crm-project-type-read
+    path: /api/crm/project-types
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - crm.project.read
+
+  - id: crm-project-type-write
+    path: /api/crm/project-types
+    methods: [POST, PUT]
+    auth: true
+    risk: medium
+    permissions:
+      - crm.project.manage
+
   - id: hrm-read
     path: /api/hrm/**
     methods: [GET]

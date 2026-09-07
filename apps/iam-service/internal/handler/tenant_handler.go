@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	"github.com/arda-labs/arda/apps/iam-service/internal/service"
 )
 
@@ -35,12 +36,15 @@ func (h *TenantHandler) ListAdmin(w http.ResponseWriter, r *http.Request) {
 		respondAdminRequestErrorCode(w, r, http.StatusForbidden, "common.error.forbidden", "global tenant administration is required")
 		return
 	}
-	items, err := h.svc.List(r.Context())
+	listQuery := parseAdminListQuery(r)
+	items, total, err := h.svc.List(r.Context(), repository.ListTenantsParams{
+		Page: listQuery.Page, Size: listQuery.PerPage, Search: listQuery.Q, Sort: listQuery.Sort, Order: listQuery.Order,
+	})
 	if err != nil {
 		respondAdminError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondAdminJSON(w, r, http.StatusOK, items)
+	respondAdminList(w, r, items, total, listQuery.Page, listQuery.PerPage)
 }
 
 func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {

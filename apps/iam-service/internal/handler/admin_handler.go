@@ -1013,7 +1013,7 @@ func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	roles, total, err := h.roleRepo.List(r.Context(), repository.ListRolesParams{
-		Page: listQuery.Page, Size: listQuery.PerPage, TenantID: tenantID, Search: listQuery.Q,
+		Page: listQuery.Page, Size: listQuery.PerPage, TenantID: tenantID, Search: listQuery.Q, Status: r.URL.Query().Get("status"),
 	})
 	if err != nil {
 		respondAdminError(w, r, http.StatusInternalServerError, err.Error())
@@ -1065,6 +1065,7 @@ func (h *AdminHandler) ExportRoles(w http.ResponseWriter, r *http.Request) {
 		rows, err := h.roleRepo.StreamRoles(ctx, repository.ListRolesParams{
 			TenantID: tenantID,
 			Search:   listQuery.Q,
+			Status:   r.URL.Query().Get("status"),
 		})
 		if err != nil {
 			return err
@@ -1300,7 +1301,7 @@ func (h *AdminHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 	mod := r.URL.Query().Get("module")
 
 	perms, total, err := h.roleRepo.ListPermissions(r.Context(), repository.ListPermissionsParams{
-		Page: listQuery.Page, Size: listQuery.PerPage, Module: mod,
+		Page: listQuery.Page, Size: listQuery.PerPage, Module: mod, Search: listQuery.Q, Sort: listQuery.Sort, Order: listQuery.Order,
 	})
 	if err != nil {
 		respondAdminError(w, r, http.StatusInternalServerError, err.Error())
@@ -1311,6 +1312,7 @@ func (h *AdminHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 
 // ExportPermissions handles direct streaming export of permissions in XLSX or CSV format.
 func (h *AdminHandler) ExportPermissions(w http.ResponseWriter, r *http.Request) {
+	listQuery := parseAdminListQuery(r)
 	mod := r.URL.Query().Get("module")
 	formatStr := r.URL.Query().Get("format")
 
@@ -1336,6 +1338,9 @@ func (h *AdminHandler) ExportPermissions(w http.ResponseWriter, r *http.Request)
 	err := ardaexport.ServeStreamHTTP(w, r, format, filename, func(ctx context.Context, out io.Writer) error {
 		rows, err := h.roleRepo.StreamPermissions(ctx, repository.ListPermissionsParams{
 			Module: mod,
+			Search: listQuery.Q,
+			Sort:   listQuery.Sort,
+			Order:  listQuery.Order,
 		})
 		if err != nil {
 			return err

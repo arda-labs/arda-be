@@ -17,15 +17,77 @@ func NewTenantRepository(db *sql.DB) *TenantRepository {
 	return &TenantRepository{db: db}
 }
 
-func (r *TenantRepository) List(ctx context.Context) ([]domain.Tenant, error) {
-	rows, err := r.db.QueryContext(ctx, `
+type ListTenantsParams struct {
+	Page   int
+	Size   int
+	Search string
+	Sort   string
+	Order  string
+}
+
+func (r *TenantRepository) List(ctx context.Context, params ListTenantsParams) ([]domain.Tenant, int, error) {
+	where := []string{"status <> 'DELETING'"}
+	args := []any{}
+	idx := 1
+
+	if params.Search != "" {
+		where = append(where, fmt.Sprintf("(code ILIKE $%d OR name ILIKE $%d)", idx, idx))
+		args = append(args, "%"+params.Search+"%")
+		idx++
+	}
+
+	wc := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM iam_tenants WHERE "+wc, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count tenants: %w", err)
+	}
+
+	sortCol := "code"
+	switch params.Sort {
+	case "name":
+		sortCol = "name"
+	case "created_at":
+		sortCol = "created_at"
+	}
+	sortDir := "ASC"
+	if strings.EqualFold(params.Order, "desc") {
+		sortDir = "DESC"
+	}
+
+	if params.Size <= 0 {
+		rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+			SELECT id, code, name, status, created_at, updated_at
+			FROM iam_tenants
+			WHERE %s
+			ORDER BY %s %s
+		`, wc, sortCol, sortDir), args...)
+		if err != nil {
+			return nil, 0, fmt.Errorf("list tenants: %w", err)
+		}
+		defer rows.Close()
+
+		var tenants []domain.Tenant
+		for rows.Next() {
+			var tenant domain.Tenant
+			if err := rows.Scan(&tenant.ID, &tenant.Code, &tenant.Name, &tenant.Status, &tenant.CreatedAt, &tenant.UpdatedAt); err != nil {
+				return nil, 0, err
+			}
+			tenants = append(tenants, tenant)
+		}
+		return tenants, total, rows.Err()
+	}
+
+	offset := (params.Page - 1) * params.Size
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, code, name, status, created_at, updated_at
 		FROM iam_tenants
-		WHERE status <> 'DELETING'
-		ORDER BY code
-	`)
+		WHERE %s
+		ORDER BY %s %s
+		LIMIT $%d OFFSET $%d
+	`, wc, sortCol, sortDir, idx, idx+1), append(args, params.Size, offset)...)
 	if err != nil {
-		return nil, fmt.Errorf("list tenants: %w", err)
+		return nil, 0, fmt.Errorf("list tenants: %w", err)
 	}
 	defer rows.Close()
 
@@ -33,11 +95,11 @@ func (r *TenantRepository) List(ctx context.Context) ([]domain.Tenant, error) {
 	for rows.Next() {
 		var tenant domain.Tenant
 		if err := rows.Scan(&tenant.ID, &tenant.Code, &tenant.Name, &tenant.Status, &tenant.CreatedAt, &tenant.UpdatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		tenants = append(tenants, tenant)
 	}
-	return tenants, rows.Err()
+	return tenants, total, rows.Err()
 }
 
 func (r *TenantRepository) GetForUser(ctx context.Context, userID, tenantID string) (*domain.TenantMembership, error) {
