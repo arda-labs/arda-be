@@ -598,6 +598,8 @@ func (h *AdminHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		TenantID: tenantID,
 		Status:   r.URL.Query().Get("status"),
 		Search:   listQuery.Q,
+		Sort:     listQuery.Sort,
+		Order:    listQuery.Order,
 	})
 	if err != nil {
 		respondAdminError(w, r, http.StatusInternalServerError, err.Error())
@@ -1014,6 +1016,7 @@ func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 
 	roles, total, err := h.roleRepo.List(r.Context(), repository.ListRolesParams{
 		Page: listQuery.Page, Size: listQuery.PerPage, TenantID: tenantID, Search: listQuery.Q, Status: r.URL.Query().Get("status"),
+		Sort: listQuery.Sort, Order: listQuery.Order,
 	})
 	if err != nil {
 		respondAdminError(w, r, http.StatusInternalServerError, err.Error())

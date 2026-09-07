@@ -60,7 +60,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, params ListUsersParams) 
 	argIdx := 1
 
 	if params.Status != "" {
-		where = append(where, fmt.Sprintf("status = $%d", argIdx))
+		where = append(where, fmt.Sprintf("status = ANY(string_to_array($%d, ','))", argIdx))
 		args = append(args, params.Status)
 		argIdx++
 	}
@@ -1258,7 +1258,7 @@ func (r *UserRepository) StreamUsers(ctx context.Context, params ListUsersParams
 	argIdx := 1
 
 	if params.Status != "" {
-		where = append(where, fmt.Sprintf("status = $%d", argIdx))
+		where = append(where, fmt.Sprintf("status = ANY(string_to_array($%d, ','))", argIdx))
 		args = append(args, params.Status)
 		argIdx++
 	}

@@ -27,6 +27,8 @@ type ListRolesParams struct {
 	TenantID string
 	Search   string
 	Status   string
+	Sort     string
+	Order    string
 }
 
 func (r *RoleRepository) Create(ctx context.Context, role *domain.Role) error {
@@ -69,7 +71,7 @@ func (r *RoleRepository) List(ctx context.Context, params ListRolesParams) ([]do
 		idx++
 	}
 	if params.Status != "" {
-		where = append(where, fmt.Sprintf("status = $%d", idx))
+		where = append(where, fmt.Sprintf("status = ANY(string_to_array($%d, ','))", idx))
 		args = append(args, params.Status)
 		idx++
 	}
@@ -84,8 +86,8 @@ func (r *RoleRepository) List(ctx context.Context, params ListRolesParams) ([]do
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
 		SELECT id, code, name, status, tenant_id, created_at, updated_at
-		FROM iam_roles WHERE %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d
-	`, wc, idx, idx+1)
+		FROM iam_roles WHERE %s ORDER BY %s %s LIMIT $%d OFFSET $%d
+	`, wc, roleSortCol(params.Sort), listSortDirection(params.Order), idx, idx+1)
 	allArgs := append(args, params.Size, offset)
 
 	rows, err := r.db.QueryContext(ctx, query, allArgs...)
@@ -121,7 +123,7 @@ func (r *RoleRepository) StreamRoles(ctx context.Context, params ListRolesParams
 		idx++
 	}
 	if params.Status != "" {
-		where = append(where, fmt.Sprintf("status = $%d", idx))
+		where = append(where, fmt.Sprintf("status = ANY(string_to_array($%d, ','))", idx))
 		args = append(args, params.Status)
 		idx++
 	}
@@ -129,8 +131,8 @@ func (r *RoleRepository) StreamRoles(ctx context.Context, params ListRolesParams
 	wc := strings.Join(where, " AND ")
 	query := fmt.Sprintf(`
 		SELECT id, code, name, status, created_at
-		FROM iam_roles WHERE %s ORDER BY created_at DESC
-	`, wc)
+		FROM iam_roles WHERE %s ORDER BY %s %s
+	`, wc, roleSortCol(params.Sort), listSortDirection(params.Order))
 
 	return r.db.QueryContext(ctx, query, args...)
 }
@@ -257,8 +259,28 @@ func permissionsSortCol(sort string) string {
 		return "name"
 	case "created_at":
 		return "created_at"
+	case "module":
+		return "module_code"
+	case "resource":
+		return "resource_code"
+	case "action":
+		return "operation_code"
 	default:
 		return "module_code, resource_code"
+	}
+}
+
+// roleSortCol maps the FE sort param to a whitelisted column.
+func roleSortCol(sort string) string {
+	switch sort {
+	case "code":
+		return "code"
+	case "name":
+		return "name"
+	case "status":
+		return "status"
+	default:
+		return "created_at"
 	}
 }
 

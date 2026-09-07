@@ -23,6 +23,8 @@ type ListGroupsParams struct {
 	TenantID string
 	Status   string
 	Search   string
+	Sort     string
+	Order    string
 }
 
 func (r *GroupRepository) List(ctx context.Context, params ListGroupsParams) ([]domain.Group, int, error) {
@@ -35,7 +37,7 @@ func (r *GroupRepository) List(ctx context.Context, params ListGroupsParams) ([]
 		idx++
 	}
 	if params.Status != "" {
-		where = append(where, fmt.Sprintf("g.status = $%d", idx))
+		where = append(where, fmt.Sprintf("g.status = ANY(string_to_array($%d, ','))", idx))
 		args = append(args, params.Status)
 		idx++
 	}
@@ -54,15 +56,15 @@ func (r *GroupRepository) List(ctx context.Context, params ListGroupsParams) ([]
 	offset := (params.Page - 1) * params.Size
 	query := fmt.Sprintf(`
 		SELECT g.id, g.code, g.name, COALESCE(g.description, ''), g.status, g.tenant_id, g.is_system,
-		       COUNT(DISTINCT gm.user_id), COUNT(DISTINCT ra.role_id), g.created_at, g.updated_at
+		       COUNT(DISTINCT gm.user_id) AS member_count, COUNT(DISTINCT ra.role_id) AS role_count, g.created_at, g.updated_at
 		FROM iam_groups g
 		LEFT JOIN iam_group_members gm ON gm.group_id = g.id
 		LEFT JOIN iam_role_assignments ra ON ra.principal_type = 'GROUP' AND ra.principal_id = g.id
 		WHERE %s
 		GROUP BY g.id
-		ORDER BY g.created_at DESC
+		ORDER BY %s %s
 		LIMIT $%d OFFSET $%d
-	`, wc, idx, idx+1)
+	`, wc, groupSortCol(params.Sort), listSortDirection(params.Order), idx, idx+1)
 	rows, err := r.db.QueryContext(ctx, query, append(args, params.Size, offset)...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list groups: %w", err)
@@ -90,7 +92,7 @@ func (r *GroupRepository) StreamGroups(ctx context.Context, params ListGroupsPar
 		idx++
 	}
 	if params.Status != "" {
-		where = append(where, fmt.Sprintf("g.status = $%d", idx))
+		where = append(where, fmt.Sprintf("g.status = ANY(string_to_array($%d, ','))", idx))
 		args = append(args, params.Status)
 		idx++
 	}
@@ -103,15 +105,33 @@ func (r *GroupRepository) StreamGroups(ctx context.Context, params ListGroupsPar
 	wc := strings.Join(where, " AND ")
 	query := fmt.Sprintf(`
 		SELECT g.id, g.code, g.name, COALESCE(g.description, ''), g.status,
-		       COUNT(DISTINCT gm.user_id), COUNT(DISTINCT ra.role_id), g.created_at
+		       COUNT(DISTINCT gm.user_id) AS member_count, COUNT(DISTINCT ra.role_id) AS role_count, g.created_at
 		FROM iam_groups g
 		LEFT JOIN iam_group_members gm ON gm.group_id = g.id
 		LEFT JOIN iam_role_assignments ra ON ra.principal_type = 'GROUP' AND ra.principal_id = g.id
 		WHERE %s
 		GROUP BY g.id
-		ORDER BY g.created_at DESC
-	`, wc)
+		ORDER BY %s %s
+	`, wc, groupSortCol(params.Sort), listSortDirection(params.Order))
 	return r.db.QueryContext(ctx, query, args...)
+}
+
+// groupSortCol maps the FE sort param to a whitelisted column.
+func groupSortCol(sort string) string {
+	switch sort {
+	case "code":
+		return "g.code"
+	case "name":
+		return "g.name"
+	case "status":
+		return "g.status"
+	case "memberCount", "member_count":
+		return "member_count"
+	case "roleCount", "role_count":
+		return "role_count"
+	default:
+		return "g.created_at"
+	}
 }
 
 func (r *GroupRepository) GetByIDScoped(ctx context.Context, id, tenantID string) (*domain.Group, error) {
