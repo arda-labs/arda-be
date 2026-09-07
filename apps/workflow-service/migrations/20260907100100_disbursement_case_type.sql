@@ -36,8 +36,8 @@ INSERT INTO business_sla_task_policies (
     id, sla_policy_id, step_code, task_name, duration_value, duration_unit,
     warning_mode, warning_value, warning_unit, escalation_role, sort_order, status
 ) VALUES
-    ('SLA_LNM_DISBURSEMENT_MAKER',   'SLA_LNM_DISBURSEMENT_V2_48H', 'maker_input',    'Nhập hồ sơ giải ngân', 4, 'HOURS', 'AFTER', 3, 'HOURS', '', 10, 'ACTIVE'),
-    ('SLA_LNM_DISBURSEMENT_CHECKER', 'SLA_LNM_DISBURSEMENT_V2_48H', 'checker_review', 'Phê duyệt giải ngân',  8, 'HOURS', 'AFTER', 6, 'HOURS', 'LNM_POGD', 20, 'ACTIVE')
+    ('SLA_LNM_DISBURSEMENT_MAKER',   'SLA_LNM_DISBURSEMENT_V2_48H', 'maker_input',    'Nhập hồ sơ giải ngân', 4, 'HOUR', 'PERCENT', 75, 'PERCENT', '', 10, 'ACTIVE'),
+    ('SLA_LNM_DISBURSEMENT_CHECKER', 'SLA_LNM_DISBURSEMENT_V2_48H', 'checker_review', 'Phê duyệt giải ngân',  8, 'HOUR', 'PERCENT', 75, 'PERCENT', 'LNM_POGD', 20, 'ACTIVE')
 ON CONFLICT (id) DO NOTHING;
 
 -- +goose Down

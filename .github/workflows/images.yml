@@ -70,6 +70,9 @@ jobs:
               { service: "hrm-service", image: "hrm-service", file: "apps/hrm-service/Dockerfile", paths: ["apps/hrm-service/"] },
               { service: "mdm-service", image: "mdm-service", file: "apps/mdm-service/Dockerfile", paths: ["apps/mdm-service/"] },
               { service: "loan-service", image: "loan-service", file: "apps/loan-service/Dockerfile", paths: ["apps/loan-service/"] },
+              { service: "deposit-service", image: "deposit-service", file: "apps/deposit-service/Dockerfile", paths: ["apps/deposit-service/"] },
+              { service: "capital-service", image: "capital-service", file: "apps/capital-service/Dockerfile", paths: ["apps/capital-service/"] },
+              { service: "statistical-service", image: "statistical-service", file: "apps/statistical-service/Dockerfile", paths: ["apps/statistical-service/"] },
             ];
             const sharedPrefixes = ["libs/go/"];
             const sharedFiles = ["go.work"];
