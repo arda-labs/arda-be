@@ -1,6 +1,6 @@
 # Backend Roadmap
 
-Last updated: 2026-07-04
+Last updated: 2026-09-07
 
 Root long-term plan. The detailed sub-documents below previously lived under
 `docs/roadmap/`, `docs/planning/`, `docs/infra/`, and `docs/architecture/`
@@ -68,65 +68,47 @@ Business logic should live under `internal/service`. HTTP handlers and gRPC serv
 
 ## Proto Strategy
 
-Use the existing root `proto/` folder for source `.proto` files:
+Use the existing root `proto/` folder for source `.proto` files. Current domains
+under `proto/arda/**/v1` (11): common, crm, deposit, finance/posting, hrm, iam,
+loan, media, notification, platform, workflow.
 
 ```txt
 proto/
   arda/
-    platform/
-      v1/platform.proto
-    iam/
-      v1/iam.proto
-    finance/
-      v1/finance.proto
+    platform/v1/platform.proto
+    iam/v1/iam.proto
+    finance/v1/posting.proto
+    crm/v1/...
+    hrm/v1/...
+    loan/v1/...
+    deposit/v1/...
+    workflow/v1/...
+    media/v1/...
+    notification/v1/...
+    common/v1/...
 ```
 
-Generated Go code can either be:
-
-- committed under `libs/go/arda-proto`, preferred once contracts stabilize
-- generated inside each service while contracts are still moving
-
-Preferred long-term package:
-
-```txt
-libs/go/arda-proto/
-  platform/v1/
-  iam/v1/
-  finance/v1/
-```
+Generated Go code is committed under `libs/go/arda-proto`. Regenerate with
+`scripts/proto-generate.ps1` after editing any proto (enforced by
+`scripts/check-proto.mjs` in CI; protoc-gen-go is pinned to v1.36.11).
 
 ## First gRPC Milestone
 
 Start with `platform-service` because it owns shared reference data and will naturally be called by many services.
 
-Milestone 1:
+Milestone 1: **landed** — `proto/arda/platform/v1/platform.proto`, generated
+stubs, `internal/transport/grpc` in platform-service alongside the existing
+HTTP routes (parameters, lookups, organizations, administrative units).
 
-- Add `proto/arda/platform/v1/platform.proto`
-- Generate Go stubs
-- Add `internal/transport/grpc`
-- Keep current HTTP routes
-- Add gRPC methods for:
-  - list/upsert parameters
-  - list lookup categories
-  - list lookup values
-  - list organizations
-  - list administrative units
+Milestone 2: **landed** — platform gRPC client package; `finance-service` calls
+`platform-service` through gRPC; request metadata propagation implemented as a
+superset of the original list (request id, user id, tenant id, roles,
+permissions, orgs, actor, assurance level, traceparent).
 
-Milestone 2:
-
-- Add a platform gRPC client package
-- Make `finance-service` call `platform-service` through gRPC for organization/branch/reference data
-- Add request metadata propagation:
-  - `x-request-id`
-  - `x-user-id`
-  - `x-tenant-id`
-  - `x-roles`
-  - `x-permissions`
-
-Milestone 3:
-
-- Add IAM gRPC internal API for user context and permission checks
-- Move auth-gateway internal IAM calls from ad hoc HTTP client to generated gRPC client
+Milestone 3: **partially landed** — IAM exposes a gRPC internal API
+(`iam_grpc_addr` consumed by workflow-service and others). auth-gateway
+intentionally remains an HTTP adapter at the browser edge; moving its internal
+IAM calls to gRPC is deferred, not in progress.
 
 ## Workflow Boundary Refactor
 
@@ -174,7 +156,7 @@ Every database-backed service should use:
 
 ## Open Decisions
 
-- Whether generated proto code is committed immediately or generated in CI.
-- Whether to use ConnectRPC for HTTP/gRPC compatibility or plain `grpc-go`.
-- Whether service-to-service authorization uses IAM permission strings, SPIFFE/service identity, or both.
+- Whether generated proto code is committed immediately or generated in CI. — **decided**: committed under `libs/go/arda-proto`, regenerated via `scripts/proto-generate.ps1`.
+- ~~Whether to use ConnectRPC for HTTP/gRPC compatibility or plain `grpc-go`.~~ — **decided**: plain `grpc-go` everywhere; no ConnectRPC dependency exists in any module.
+- Whether service-to-service authorization uses IAM permission strings, SPIFFE/service identity, or both. — current practice: mTLS + signed workload assertions with `ARDA_SERVICE_AUTH_SECRET`; IAM permission checks remain at auth-gateway.
 - Whether platform reference data should publish cache invalidation events later.

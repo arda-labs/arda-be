@@ -13,6 +13,11 @@ ghcr.io/arda-labs/arda-be/workflow-service:<tag>
 ghcr.io/arda-labs/arda-be/crm-service:<tag>
 ghcr.io/arda-labs/arda-be/notification-service:<tag>
 ghcr.io/arda-labs/arda-be/hrm-service:<tag>
+ghcr.io/arda-labs/arda-be/mdm-service:<tag>
+ghcr.io/arda-labs/arda-be/loan-service:<tag>
+ghcr.io/arda-labs/arda-be/deposit-service:<tag>
+ghcr.io/arda-labs/arda-be/capital-service:<tag>
+ghcr.io/arda-labs/arda-be/statistical-service:<tag>
 ```
 
 Tags:
@@ -52,17 +57,9 @@ kubectl -n arda-web create secret docker-registry ghcr-pull \
 
 ## Deploy Backend
 
-Replace `arda-labs` in manifests once:
-
-```bash
-rg -l "arda-labs" deployments/k8s | xargs sed -i "s/arda-labs/<github-owner-or-org>/g"
-```
-
-Then apply:
-
-```bash
-kubectl apply -k deployments/k8s
-```
+Kubernetes/Argo CD manifests and deployment bootstrap scripts live in the
+sibling repo **`arda-infra`** (not in `arda-be`). Argo CD syncs from that repo;
+do not `kubectl apply -k` from here.
 
 Keep runtime secrets out of git:
 
@@ -76,6 +73,11 @@ kubectl -n arda-app create secret generic arda-app-secrets \
   --from-literal=CRM_DATABASE_DSN='<dsn>' \
   --from-literal=HRM_DATABASE_DSN='<dsn>' \
   --from-literal=NOTIFICATION_DATABASE_DSN='<dsn>' \
+  --from-literal=MDM_DATABASE_DSN='<dsn>' \
+  --from-literal=LOAN_DATABASE_DSN='<dsn>' \
+  --from-literal=DEPOSIT_DATABASE_DSN='<dsn>' \
+  --from-literal=CAPITAL_DATABASE_DSN='<dsn>' \
+  --from-literal=STATISTICAL_DATABASE_DSN='<dsn>' \
   --from-literal=ARDA_SERVICE_AUTH_SECRET='<random-workload-secret>' \
   --from-literal=INTROSPECTION_CLIENT_ID='<oauth-client-id>' \
   --from-literal=INTROSPECTION_CLIENT_SECRET='<oauth-client-secret>' \
@@ -107,11 +109,5 @@ kubectl -n arda-app patch secret arda-app-secrets --type merge -p '{
 ```
 
 The databases and roles must exist before the services start. The services run
-their own schema migrations on startup.
-
-Bootstrap the new app databases with:
-
-```bash
-cd deployments/k8s
-./bootstrap-app-databases.sh
-```
+their own schema migrations on startup. Database bootstrap is handled by the
+scripts under `arda-infra/database/`.

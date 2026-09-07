@@ -32,7 +32,7 @@ mỗi kind, payload jsonb được validate theo kind ở service layer; thêm f
 
 ```bash
 export DATABASE_DSN="$(cat /path/to/loan_dsn)"   # DB `loan`, role `arda_loan`
-export WORKFLOW_GRPC_ADDR="workflow-service:9093"
-go run ./cmd/loan-service    # HTTP :8097, gRPC :9097
+export WORKFLOW_GRPC_ADDR="workflow-service:9090"
+go run ./cmd/loan-service    # HTTP :8097 (container: 8080), gRPC :9090
 go test ./...
 ```

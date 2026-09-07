@@ -1,6 +1,6 @@
 # Backend Current State
 
-Last updated: 2026-08-22
+Last updated: 2026-09-07
 
 ## Overview
 
@@ -28,7 +28,14 @@ Current services:
 | `notification-service` | active | notification inbox and streams |
 | `ai-service` | active (flagged) | AG-UI assistant boundary: Go AG-UI endpoint, model agent loop, allowlisted tools, HITL approvals, conversation persistence |
 | ~~`ai-runtime`~~ | retired | Node/CopilotKit adapter removed from the kustomization and pruned by ArgoCD; source kept for reference only |
-| `mdm-service` | scaffold | placeholder service |
+| `mdm-service` | active | master data management: currencies, countries, and other reference data under `/api/mdm/*` |
+| `loan-service` | active | loan lifecycle: origination, collections, disbursements |
+| `deposit-service` | active | deposit accounts and term deposits |
+| `capital-service` | active | capital management domain |
+| `statistical-service` | active | statistical reporting and analytics |
+
+Container ports are unified at HTTP 8080 / gRPC 9090 (commit `a3a8b136`).
+Bare-metal configs may still carry legacy per-service ports.
 
 ## Current Edge Flow
 
@@ -315,9 +322,9 @@ Not verified locally:
 
 - `platform-service` runtime migration from this Codex session, because direct `localhost:5432` was not reachable here. The intended dev DB can still be the k3s/LAN PostgreSQL endpoint configured through `DATABASE_DSN`.
 
-## Cross-Cutting Concerns To Track
+## Cross-Cutting Concerns
 
-- gRPC for service-to-service communication.
-- NATS for async events, cache invalidation, and future workflow/event use cases.
+- gRPC (grpc-go, mTLS + signed workload assertions) is the primary internal transport — 11 proto domains under `proto/arda/**/v1` (common, crm, deposit, finance/posting, hrm, iam, loan, media, notification, platform, workflow).
+- NATS (JetStream + outbox) handles async events, cache invalidation, and workflow/event use cases.
 - Multilingual support through stable error codes, locale metadata, and translatable platform reference data.
-- BPMN direction is Zeebe 8.5 with Arda-owned UI, workflow-service facade APIs, Arda workers, and gRPC domain service calls.
+- BPMN direction is Zeebe 8.5 with Arda-owned UI, workflow-service facade APIs, Arda workers, and gRPC domain service calls. Workers currently allowlisted: crm, hrm, loan, statistical.

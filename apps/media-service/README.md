@@ -17,8 +17,8 @@ Required local env example:
 ```env
 DATABASE_DSN=<database-dsn-from-local-secret>
 NATS_URL=nats://192.168.10.201:30222,nats://192.168.10.202:30222,nats://192.168.10.203:30222
-GRPC_ADDR=0.0.0.0:9092
-MEDIA_GRPC_ADDR=media-service:9092
+GRPC_ADDR=0.0.0.0:9090
+MEDIA_GRPC_ADDR=media-service:9090
 ARDA_SERVICE_AUTH_SECRET=<local-workload-secret>
 ARDA_GRPC_CA_FILE=<local-ca-file>
 ARDA_GRPC_CERT_FILE=<media-certificate-file>

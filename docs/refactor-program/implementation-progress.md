@@ -5,6 +5,23 @@ Snapshot: 2026-08-25
 This is the execution companion to the plan. It records only changes that have
 landed in code and their verification; it does not replace the phase gates.
 
+## Post-snapshot updates (2026-09-07)
+
+Work landed after the 2026-08-25 snapshot, not yet folded into the sections
+below:
+
+- Proto sources now cover **11 domains** — `deposit` and `loan` protos were
+  added after the snapshot alongside the original set.
+- Container ports unified repo-wide at HTTP 8080 / gRPC 9090 (commits
+  `a3a8b136`, `0f70c702`); dev compose aligned and Dockerfiles switched to
+  repo-root build context (`5d4bdbfd`).
+- `mdm-service` graduated from scaffold to a real domain (currencies,
+  countries, seed data, CI image, Argo CD/ImageUpdater tracking).
+- New P1/P2 domains deployed: `loan-service`, `deposit-service`,
+  `capital-service`, `statistical-service` — all built by `images.yml`,
+  manifested in `arda-infra` and tracked by the image updater.
+- AI/RAG vertical-slice rollout landed (`30a75c6e`, 2026-09-06).
+
 ## Landed foundations
 
 - The internal interaction policy is now a versioned machine-readable contract

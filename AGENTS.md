@@ -5,7 +5,7 @@
 Durable, non-obvious notes for running this Go backend inside a Cursor Cloud VM.
 Standard build/test/lint/run commands are documented in `README.md` and each
 `apps/<service>/Makefile` (`make build|run|test|lint`); `finance-service` and `ai-service` have no
-Makefile, use `go` directly. The Go toolchain (`go 1.26.3`, see `go.work`) is
+Makefile, use `go` directly. The Go toolchain (`go 1.27.1`, see `go.work`) is
 downloaded automatically via `GOTOOLCHAIN=auto`.
 
 ### The shared k3s LAN dev infra is NOT reachable from the Cloud VM
@@ -35,7 +35,10 @@ DATABASE_DSN="postgres://arda_platform:<password>@127.0.0.1:5432/platform?sslmod
 - `iam-service` (HTTP :8080): set `KRATOS_ADMIN_URL=` empty when Ory is
   unavailable. Migrations/casbin still load; browser auth is owned by
   `auth-gateway`.
-- `finance-service` (HTTP :8090): needs Postgres only; platform gRPC dial is optional.
+- `finance-service`: needs Postgres only; platform gRPC dial is optional.
+  Bare-metal `go run` listens on the port in `configs/config.yaml` (HTTP 8080);
+  container ports are unified at HTTP 8080 / gRPC 9090, with legacy host-port
+  mappings in `docker-compose.yml`.
 - `platform-service` needs Postgres only — the simplest service to smoke-test
   (e.g. `POST /api/platform/organizations` then `GET /api/platform/organizations`).
 - Services that need infra unavailable in the VM will not fully run:

@@ -16,7 +16,19 @@ Go workspace for Arda backend services.
 | `apps/hrm-service` | Positions, job titles, org units, employees, registrations |
 | `apps/media-service` | Media assets on S3/Garage |
 | `apps/notification-service` | Notification inbox and streams |
-| `apps/mdm-service` | MDM scaffold |
+| `apps/mdm-service` | Master data management: currencies, countries, and other reference data under `/api/mdm/*` |
+| `apps/loan-service` | Loan lifecycle: origination, collections, disbursements |
+| `apps/deposit-service` | Deposit accounts and term deposits |
+| `apps/capital-service` | Capital management domain |
+| `apps/statistical-service` | Statistical reporting and analytics |
+
+## Container ports
+
+All services unify container ports at **HTTP 8080 / gRPC 9090** (commit `a3a8b136`).
+Host ports in `docker-compose.yml` keep legacy mappings (`8090:8080`, `8091:8080`,
+...) for local access. Bare-metal `go run` still uses each service's legacy
+`configs/config.yaml` ports (e.g. platform `:8091`, crm `:8094`, mdm `:8096`,
+loan `:8097`, ai `:8098`) — check the per-service config when running outside containers.
 
 ## Docs
 
@@ -32,8 +44,9 @@ Go workspace for Arda backend services.
 - Argo CD and Kubernetes manifests live in sibling repo `arda-infra`.
 - [Platform Service](docs/platform-service.md)
 - [Calendar & Cut-off Design](docs/calendar-cutoff-design.md)
+- [CRM/HRM BPM Data Design](docs/crm-hrm-bpm-data-design.md)
 - `apps/workflow-service/README.md`
 
 ## Direction
 
-The backend remains HTTP/JSON at the edge and will evolve toward gRPC for internal service-to-service communication. BPM runtime targets Zeebe 8.5 through `workflow-service`; Arda owns the product UI in `arda-mfe`.
+The backend is HTTP/JSON at the edge and gRPC (grpc-go with mTLS + signed workload assertions) for internal service-to-service communication across 11 proto domains under `proto/arda/**/v1`. BPM runtime targets Zeebe 8.5 through `workflow-service`; Arda owns the product UI in `arda-mfe`.
