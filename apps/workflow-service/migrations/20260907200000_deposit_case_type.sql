@@ -2,6 +2,13 @@
 
 -- P2.8a: DPM_SETTLE_V2 case-type + assignment rules + SLA.
 
+-- Role catalog rows must exist first: workflow_assignment_rules.role_code
+-- carries an FK to workflow_role_catalog (same pattern as the loan seeds).
+INSERT INTO workflow_role_catalog (role_code, role_name, role_type, business_subsystem, status) VALUES
+    ('DPM_MAKER',  'Deposit maker - lập phiếu tất toán',   'MAKER',  'DPM', 'ACTIVE'),
+    ('DPM_CHECKER','Deposit checker - phê duyệt tất toán', 'CHECKER','DPM', 'ACTIVE')
+ON CONFLICT (role_code) DO NOTHING;
+
 INSERT INTO business_operation_types (
     case_type, business_area, operation_name, bpmn_process_id, bpmn_version,
     workflow_enabled, maker_role, checker_role, owner_service, status

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 )
@@ -104,7 +105,10 @@ func (p *UserTaskProjector) projectOnce(ctx context.Context) {
 			title := userTaskTitle(ut.ElementID)
 			key := ut.UserTaskKey
 			pik := ut.ProcessInstanceKey
-			p.projection.UpsertUserTaskWorkItem(ctx, repository.WorkItemSeed{
+			// The projector runs on a system context without request
+			// metadata; scope repo writes to the case's own tenant.
+			tenantCtx := ardametadata.AppendToOutgoing(ctx, ardametadata.Context{TenantID: bc.TenantID})
+			p.projection.UpsertUserTaskWorkItem(tenantCtx, repository.WorkItemSeed{
 				CaseID:             bc.ID,
 				ProcessInstanceKey: &pik,
 				JobKey:             &key,
