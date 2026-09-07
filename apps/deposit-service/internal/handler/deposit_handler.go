@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
 	"github.com/arda-labs/arda/apps/deposit-service/internal/service"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -71,13 +72,44 @@ func (h *DepositHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	// svc.ListProducts via repo passthrough — exposed for the deposit remote.
-	items, err := h.svc.ListProducts(r.Context(), tenantID)
+	list := ardahttp.ParseListQuery(r.URL.Query())
+	params := repository.ListProductsParams{
+		TenantID: tenantID,
+		Q:        list.Q,
+		Sort:     list.Sort,
+		Order:    list.Order,
+	}
+	if active, err := ardahttp.ParseOptionalBool(r.URL.Query(), "is_active"); err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error()))
+		return
+	} else {
+		params.IsActive = active
+	}
+	items, err := h.svc.ListProducts(r.Context(), params)
 	if err != nil {
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
 	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// UpsertProduct handles POST/PUT /api/deposit/products.
+func (h *DepositHandler) UpsertProduct(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	var in repository.SavingsProduct
+	if !decodeDepositBody(w, r, &in) {
+		return
+	}
+	created, err := h.svc.UpsertProduct(r.Context(), tenantID, r.Header.Get("X-User-Id"), &in)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
 }
 
 // OpenSavings handles POST /api/deposit/savings/open.

@@ -17,6 +17,7 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -246,12 +247,15 @@ func (h *WorkflowHandler) GetMapping(w http.ResponseWriter, r *http.Request) {
 func (h *WorkflowHandler) CaseTypes(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		caseTypes, err := h.caseRepo.ListCaseTypes(r.Context())
+		// Catalog lookup: unpaged (table < ~500 rows) but q-searchable and
+		// sortable via the shared list contract.
+		q := ardahttp.ParseListQuery(r.URL.Query())
+		caseTypes, err := h.caseRepo.ListCaseTypes(r.Context(), q.Q, q.Sort, q.Order)
 		if err != nil {
 			writeAPIError(w, r, http.StatusInternalServerError, "Failed to query case types: "+err.Error())
 			return
 		}
-		writeJSON(w, r, http.StatusOK, caseTypes)
+		ardahttp.WriteEnvelopeUnpaged(w, r, caseTypes)
 	case http.MethodPost:
 		var req repository.CaseTypeUpsert
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -307,8 +311,13 @@ func (h *WorkflowHandler) CaseTypeByID(w http.ResponseWriter, r *http.Request) {
 func (h *WorkflowHandler) SLAPolicies(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		items, err := h.caseRepo.ListSLAPolicies(r.Context())
-		writeListOrError(w, r, items, err)
+		q := ardahttp.ParseListQuery(r.URL.Query())
+		items, err := h.caseRepo.ListSLAPolicies(r.Context(), q.Q, q.Sort, q.Order)
+		if err != nil {
+			writeAPIError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+		ardahttp.WriteEnvelopeUnpaged(w, r, items)
 	case http.MethodPost:
 		var req repository.SLAPolicy
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -344,8 +353,13 @@ func (h *WorkflowHandler) SLAPolicyByID(w http.ResponseWriter, r *http.Request) 
 func (h *WorkflowHandler) DescriptionTemplates(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		items, err := h.caseRepo.ListDescriptionTemplates(r.Context())
-		writeListOrError(w, r, items, err)
+		q := ardahttp.ParseListQuery(r.URL.Query())
+		items, err := h.caseRepo.ListDescriptionTemplates(r.Context(), q.Q, q.Sort, q.Order)
+		if err != nil {
+			writeAPIError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+		ardahttp.WriteEnvelopeUnpaged(w, r, items)
 	case http.MethodPost:
 		var req repository.DescriptionTemplate
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

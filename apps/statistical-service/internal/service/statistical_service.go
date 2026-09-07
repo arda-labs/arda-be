@@ -32,8 +32,8 @@ func NewStatisticalService(repo *repository.StatisticalRepository, workflow Stat
 const CaseType = "RPT_SUBMIT_V2"
 
 // ListReportDefinitions returns active report definitions.
-func (s *StatisticalService) ListReportDefinitions(ctx context.Context, tenantID string) ([]repository.ReportDefinition, error) {
-	return s.repo.ListReportDefinitions(ctx, tenantID)
+func (s *StatisticalService) ListReportDefinitions(ctx context.Context, params repository.ListReportDefinitionsParams) ([]repository.ReportDefinition, error) {
+	return s.repo.ListReportDefinitions(ctx, params)
 }
 
 // UpsertReportDefinition creates or updates one definition.
@@ -48,8 +48,8 @@ func (s *StatisticalService) UpsertReportDefinition(ctx context.Context, tenantI
 }
 
 // ListIndicators returns the indicator catalog.
-func (s *StatisticalService) ListIndicators(ctx context.Context, tenantID string) ([]repository.Indicator, error) {
-	return s.repo.ListIndicators(ctx, tenantID)
+func (s *StatisticalService) ListIndicators(ctx context.Context, params repository.ListIndicatorsParams) ([]repository.Indicator, error) {
+	return s.repo.ListIndicators(ctx, params)
 }
 
 // UpsertIndicator creates or updates one indicator.
@@ -111,21 +111,19 @@ func (s *StatisticalService) SubmitSubmission(ctx context.Context, tenantID, act
 	return existing, nil
 }
 
-// findSubmission locates one submission by id across the list filter.
+// findSubmission locates one submission by id.
 func (s *StatisticalService) findSubmission(ctx context.Context, tenantID, id string) (*repository.ReportSubmission, error) {
-	all, err := s.repo.ListSubmissions(ctx, tenantID, "", "", "")
+	sub, err := s.repo.GetSubmissionByID(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
-	for i := range all {
-		if all[i].ID == id {
-			return &all[i], nil
-		}
+	if sub == nil {
+		return nil, ardaerrors.New(ardaerrors.CodeNotFound, "submission not found")
 	}
-	return nil, ardaerrors.New(ardaerrors.CodeNotFound, "submission not found")
+	return sub, nil
 }
 
 // ListSubmissions passthrough for the read API.
-func (s *StatisticalService) ListSubmissions(ctx context.Context, tenantID, reportCode, periodCode, status string) ([]repository.ReportSubmission, error) {
-	return s.repo.ListSubmissions(ctx, tenantID, reportCode, periodCode, status)
+func (s *StatisticalService) ListSubmissions(ctx context.Context, params repository.ListSubmissionsParams) ([]repository.ReportSubmission, int, error) {
+	return s.repo.ListSubmissions(ctx, params)
 }

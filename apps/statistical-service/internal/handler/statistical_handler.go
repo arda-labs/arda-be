@@ -26,7 +26,13 @@ func (h *StatisticalHandler) ListReportDefinitions(w http.ResponseWriter, r *htt
 		writeForbiddenStat(w, r)
 		return
 	}
-	items, err := h.svc.ListReportDefinitions(r.Context(), tenantID)
+	list := ardahttp.ParseListQuery(r.URL.Query())
+	items, err := h.svc.ListReportDefinitions(r.Context(), repository.ListReportDefinitionsParams{
+		TenantID: tenantID,
+		Q:        list.Q,
+		Sort:     list.Sort,
+		Order:    list.Order,
+	})
 	if err != nil {
 		ardahttp.WriteServiceError(w, r, err)
 		return
@@ -61,7 +67,13 @@ func (h *StatisticalHandler) ListIndicators(w http.ResponseWriter, r *http.Reque
 		writeForbiddenStat(w, r)
 		return
 	}
-	items, err := h.svc.ListIndicators(r.Context(), tenantID)
+	list := ardahttp.ParseListQuery(r.URL.Query())
+	items, err := h.svc.ListIndicators(r.Context(), repository.ListIndicatorsParams{
+		TenantID: tenantID,
+		Q:        list.Q,
+		Sort:     list.Sort,
+		Order:    list.Order,
+	})
 	if err != nil {
 		ardahttp.WriteServiceError(w, r, err)
 		return
@@ -96,13 +108,26 @@ func (h *StatisticalHandler) ListSubmissions(w http.ResponseWriter, r *http.Requ
 		writeForbiddenStat(w, r)
 		return
 	}
-	items, err := h.svc.ListSubmissions(r.Context(), tenantID,
-		r.URL.Query().Get("report_code"), r.URL.Query().Get("period_code"), r.URL.Query().Get("status"))
+	list := ardahttp.ParseListQuery(r.URL.Query())
+	page := list.Page
+	if page < 1 {
+		page = 1
+	}
+	items, total, err := h.svc.ListSubmissions(r.Context(), repository.ListSubmissionsParams{
+		TenantID:   tenantID,
+		ReportCode: r.URL.Query().Get("report_code"),
+		PeriodCode: r.URL.Query().Get("period_code"),
+		Status:     r.URL.Query().Get("status"),
+		Sort:       list.Sort,
+		Order:      list.Order,
+		Page:       (page - 1) * list.PerPage,
+		Size:       list.PerPage,
+	})
 	if err != nil {
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+	ardahttp.WriteEnvelopeList(w, r, http.StatusOK, page, list.PerPage, total, items)
 }
 
 // CreateSubmission handles POST /api/statistical/submissions.

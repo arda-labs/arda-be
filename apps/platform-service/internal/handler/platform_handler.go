@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -256,10 +257,38 @@ func (h *PlatformHandler) CreateOrganization(w http.ResponseWriter, r *http.Requ
 	writeResultWithRequest(w, r, item, err)
 }
 
+// isPagedListQuery reports whether the caller explicitly asked for the paged
+// list contract. Legacy consumers (dropdowns, tree pickers) send no page/per_page
+// and keep receiving the full result set as a bare array, so existing callers
+// are never broken by the paged envelope.
+func isPagedListQuery(values url.Values) bool {
+	return values.Get("page") != "" || values.Get("per_page") != ""
+}
+
 func (h *PlatformHandler) ListGeoAdminUnits(w http.ResponseWriter, r *http.Request) {
-	level, _ := strconv.Atoi(r.URL.Query().Get("level"))
-	items, err := h.svc.ListGeoAdminUnits(r.Context(), r.URL.Query().Get("parent_code"), level)
-	writeResultWithRequest(w, r, items, err)
+	query := r.URL.Query()
+	level, _ := strconv.Atoi(query.Get("level"))
+	if !isPagedListQuery(query) {
+		items, err := h.svc.ListGeoAdminUnits(r.Context(), query.Get("parent_code"), level)
+		writeResultWithRequest(w, r, items, err)
+		return
+	}
+	listQuery := ardahttp.ParseListQuery(query)
+	items, total, err := h.svc.ListGeoAdminUnitsPaged(r.Context(), repository.ListGeoAdminUnitsParams{
+		Page:       listQuery.Page,
+		PerPage:    listQuery.PerPage,
+		Offset:     listQuery.Offset(),
+		Query:      listQuery.Q,
+		ParentCode: query.Get("parent_code"),
+		Level:      level,
+		Sort:       listQuery.Sort,
+		Order:      listQuery.Order,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listQuery.Page, listQuery.PerPage, total, items))
 }
 
 func (h *PlatformHandler) UpsertGeoAdminUnit(w http.ResponseWriter, r *http.Request) {
@@ -374,13 +403,33 @@ func (h *PlatformHandler) ListCreditInstitutions(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	items, err := h.svc.ListCreditInstitutions(
-		r.Context(),
-		tenantID,
-		r.URL.Query().Get("status"),
-		r.URL.Query().Get("q"),
-	)
-	writeResultWithRequest(w, r, items, err)
+	query := r.URL.Query()
+	if !isPagedListQuery(query) {
+		items, err := h.svc.ListCreditInstitutions(
+			r.Context(),
+			tenantID,
+			query.Get("status"),
+			query.Get("q"),
+		)
+		writeResultWithRequest(w, r, items, err)
+		return
+	}
+	listQuery := ardahttp.ParseListQuery(query)
+	items, total, err := h.svc.ListCreditInstitutionsPaged(r.Context(), repository.ListCreditInstitutionsParams{
+		TenantID: tenantID,
+		Page:     listQuery.Page,
+		PerPage:  listQuery.PerPage,
+		Offset:   listQuery.Offset(),
+		Query:    listQuery.Q,
+		Status:   query.Get("status"),
+		Sort:     listQuery.Sort,
+		Order:    listQuery.Order,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listQuery.Page, listQuery.PerPage, total, items))
 }
 
 func (h *PlatformHandler) GetCreditInstitution(w http.ResponseWriter, r *http.Request) {
@@ -456,15 +505,37 @@ func (h *PlatformHandler) ListAreas(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := h.svc.ListAreas(
-		r.Context(),
-		tenantID,
-		r.URL.Query().Get("status"),
-		r.URL.Query().Get("area_type_code"),
-		r.URL.Query().Get("parent_id"),
-		r.URL.Query().Get("q"),
-	)
-	writeResultWithRequest(w, r, items, err)
+	query := r.URL.Query()
+	if !isPagedListQuery(query) {
+		items, err := h.svc.ListAreas(
+			r.Context(),
+			tenantID,
+			query.Get("status"),
+			query.Get("area_type_code"),
+			query.Get("parent_id"),
+			query.Get("q"),
+		)
+		writeResultWithRequest(w, r, items, err)
+		return
+	}
+	listQuery := ardahttp.ParseListQuery(query)
+	items, total, err := h.svc.ListAreasPaged(r.Context(), repository.ListAreasParams{
+		TenantID:     tenantID,
+		Page:         listQuery.Page,
+		PerPage:      listQuery.PerPage,
+		Offset:       listQuery.Offset(),
+		Query:        listQuery.Q,
+		Status:       query.Get("status"),
+		AreaTypeCode: query.Get("area_type_code"),
+		ParentID:     query.Get("parent_id"),
+		Sort:         listQuery.Sort,
+		Order:        listQuery.Order,
+	})
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listQuery.Page, listQuery.PerPage, total, items))
 }
 
 func (h *PlatformHandler) GetArea(w http.ResponseWriter, r *http.Request) {

@@ -6,10 +6,19 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/hrm-service/internal/domain"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
+
+// listSortDirection maps the FE order param to a SQL direction.
+func listSortDirection(order string) string {
+	if strings.EqualFold(order, "desc") {
+		return "DESC"
+	}
+	return "ASC"
+}
 
 type HRMRepository struct {
 	db *sql.DB
@@ -42,30 +51,83 @@ func tenantID(ctx context.Context) (string, error) {
 	return tenant, nil
 }
 
-func (r *HRMRepository) ListPositions(ctx context.Context, status, q string) ([]domain.Position, error) {
+// ListPositionsParams is the parsed list contract for hrm_positions. All is
+// set for lookup consumers (all=1) which receive the full result set.
+type ListPositionsParams struct {
+	Status  string
+	Q       string
+	Sort    string
+	Order   string
+	Page    int
+	PerPage int
+	All     bool
+}
+
+func (r *HRMRepository) ListPositions(ctx context.Context, params ListPositionsParams) ([]domain.Position, int, error) {
 	tenant, err := tenantID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	where := []string{"tenant_id = $1"}
+	args := []any{tenant}
+	idx := 2
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("status = ANY(string_to_array($%d, ','))", idx))
+		args = append(args, params.Status)
+		idx++
+	}
+	if params.Q != "" {
+		where = append(where, fmt.Sprintf("(code ILIKE $%d OR name ILIKE $%d)", idx, idx))
+		args = append(args, "%"+params.Q+"%")
+		idx++
+	}
+	wc := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM hrm_positions WHERE "+wc, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count positions: %w", err)
+	}
+
+	query := fmt.Sprintf(`
 		SELECT id, tenant_id, code, name, status, is_manager, description, created_at, updated_at
 		FROM hrm_positions
-		WHERE tenant_id = $1 AND ($2 = '' OR status = $2)
-		  AND ($3 = '' OR code ILIKE '%' || $3 || '%' OR name ILIKE '%' || $3 || '%')
-		ORDER BY code`, tenant, status, q)
+		WHERE %s
+		ORDER BY %s %s`, wc, positionSortCol(params.Sort), listSortDirection(params.Order))
+	if !params.All {
+		query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", idx, idx+1)
+		args = append(args, params.PerPage, (params.Page-1)*params.PerPage)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	items := make([]domain.Position, 0)
 	for rows.Next() {
 		var item domain.Position
 		if err := rows.Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Status, &item.IsManager, &item.Description, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	return items, total, rows.Err()
+}
+
+// positionSortCol maps the FE sort param to a whitelisted column; unknown or
+// empty sorts fall back to the legacy default order (code).
+func positionSortCol(sort string) string {
+	switch sort {
+	case "code":
+		return "code"
+	case "name":
+		return "name"
+	case "status":
+		return "status"
+	case "created_at":
+		return "created_at"
+	default:
+		return "code"
+	}
 }
 
 func (r *HRMRepository) CreatePosition(ctx context.Context, item domain.Position) (domain.Position, error) {
@@ -113,29 +175,74 @@ func (r *HRMRepository) DeletePosition(ctx context.Context, id string) error {
 	return err
 }
 
-func (r *HRMRepository) ListJobTitles(ctx context.Context, q string) ([]domain.JobTitle, error) {
+// ListJobTitlesParams is the parsed list contract for hrm_job_titles.
+type ListJobTitlesParams struct {
+	Q       string
+	Sort    string
+	Order   string
+	Page    int
+	PerPage int
+	All     bool
+}
+
+func (r *HRMRepository) ListJobTitles(ctx context.Context, params ListJobTitlesParams) ([]domain.JobTitle, int, error) {
 	tenant, err := tenantID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	where := []string{"tenant_id = $1"}
+	args := []any{tenant}
+	idx := 2
+	if params.Q != "" {
+		where = append(where, fmt.Sprintf("(code ILIKE $%d OR name ILIKE $%d)", idx, idx))
+		args = append(args, "%"+params.Q+"%")
+		idx++
+	}
+	wc := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM hrm_job_titles WHERE "+wc, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count job titles: %w", err)
+	}
+
+	query := fmt.Sprintf(`
 		SELECT id, tenant_id, code, name, description, created_at, updated_at
 		FROM hrm_job_titles
-		WHERE tenant_id = $1 AND ($2 = '' OR code ILIKE '%' || $2 || '%' OR name ILIKE '%' || $2 || '%')
-		ORDER BY code`, tenant, q)
+		WHERE %s
+		ORDER BY %s %s`, wc, jobTitleSortCol(params.Sort), listSortDirection(params.Order))
+	if !params.All {
+		query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", idx, idx+1)
+		args = append(args, params.PerPage, (params.Page-1)*params.PerPage)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	items := make([]domain.JobTitle, 0)
 	for rows.Next() {
 		var item domain.JobTitle
 		if err := rows.Scan(&item.ID, &item.TenantID, &item.Code, &item.Name, &item.Description, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	return items, total, rows.Err()
+}
+
+// jobTitleSortCol maps the FE sort param to a whitelisted column; unknown or
+// empty sorts fall back to the legacy default order (code).
+func jobTitleSortCol(sort string) string {
+	switch sort {
+	case "code":
+		return "code"
+	case "name":
+		return "name"
+	case "created_at":
+		return "created_at"
+	default:
+		return "code"
+	}
 }
 
 func (r *HRMRepository) CreateJobTitle(ctx context.Context, item domain.JobTitle) (domain.JobTitle, error) {
@@ -181,31 +288,94 @@ func (r *HRMRepository) DeleteJobTitle(ctx context.Context, id string) error {
 	return err
 }
 
-func (r *HRMRepository) ListOrgUnits(ctx context.Context, organizationID, status, q string) ([]domain.OrgUnit, error) {
+// ListOrgUnitsParams is the parsed list contract for hrm_org_units. All is
+// set for tree/lookup consumers (all=1, view=tree) which receive the full
+// result set.
+type ListOrgUnitsParams struct {
+	OrganizationID string
+	Status         string
+	Q              string
+	Sort           string
+	Order          string
+	Page           int
+	PerPage        int
+	All            bool
+}
+
+func (r *HRMRepository) ListOrgUnits(ctx context.Context, params ListOrgUnitsParams) ([]domain.OrgUnit, int, error) {
 	tenant, err := tenantID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	where := []string{"tenant_id = $1"}
+	args := []any{tenant}
+	idx := 2
+	if params.OrganizationID != "" {
+		where = append(where, fmt.Sprintf("organization_id = $%d", idx))
+		args = append(args, params.OrganizationID)
+		idx++
+	}
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("status = ANY(string_to_array($%d, ','))", idx))
+		args = append(args, params.Status)
+		idx++
+	}
+	if params.Q != "" {
+		where = append(where, fmt.Sprintf("(code ILIKE $%d OR name ILIKE $%d)", idx, idx))
+		args = append(args, "%"+params.Q+"%")
+		idx++
+	}
+	wc := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM hrm_org_units WHERE "+wc, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count org units: %w", err)
+	}
+
+	query := fmt.Sprintf(`
 		SELECT id, tenant_id, code, organization_id, name, org_level, parent_id, department_type, status, description, created_at, updated_at
 		FROM hrm_org_units
-		WHERE tenant_id = $1 AND ($2 = '' OR organization_id = $2)
-		  AND ($3 = '' OR status = $3)
-		  AND ($4 = '' OR code ILIKE '%' || $4 || '%' OR name ILIKE '%' || $4 || '%')
-		ORDER BY parent_id NULLS FIRST, code`, tenant, organizationID, status, q)
+		WHERE %s
+		ORDER BY %s`, wc, orgUnitOrderBy(params.Sort, params.Order))
+	if !params.All {
+		query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", idx, idx+1)
+		args = append(args, params.PerPage, (params.Page-1)*params.PerPage)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	items := make([]domain.OrgUnit, 0)
 	for rows.Next() {
 		var item domain.OrgUnit
 		if err := rows.Scan(&item.ID, &item.TenantID, &item.Code, &item.OrganizationID, &item.Name, &item.OrgLevel, &item.ParentID, &item.DepartmentType, &item.Status, &item.Description, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	return items, total, rows.Err()
+}
+
+// orgUnitOrderBy maps the FE sort param to a whitelisted ORDER BY expression;
+// unknown or empty sorts fall back to the legacy parent-first tree order so
+// tree/lookup consumers keep receiving parents before children.
+func orgUnitOrderBy(sort, order string) string {
+	direction := listSortDirection(order)
+	switch sort {
+	case "code":
+		return "code " + direction
+	case "name":
+		return "name " + direction
+	case "status":
+		return "status " + direction
+	case "org_level":
+		return "org_level " + direction
+	case "created_at":
+		return "created_at " + direction
+	default:
+		return "parent_id NULLS FIRST, code"
+	}
 }
 
 func (r *HRMRepository) CreateOrgUnit(ctx context.Context, item domain.OrgUnit) (domain.OrgUnit, error) {
@@ -254,29 +424,126 @@ func (r *HRMRepository) DeleteOrgUnit(ctx context.Context, id string) error {
 	return err
 }
 
-func (r *HRMRepository) ListEmployees(ctx context.Context, q string) ([]domain.Employee, error) {
+// ListEmployeesParams is the parsed list contract for hrm_employees.
+type ListEmployeesParams struct {
+	Status  string
+	Q       string
+	Sort    string
+	Order   string
+	Page    int
+	PerPage int
+	All     bool
+}
+
+func (r *HRMRepository) ListEmployees(ctx context.Context, params ListEmployeesParams) ([]domain.Employee, int, error) {
 	tenant, err := tenantID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	where := []string{"tenant_id = $1"}
+	args := []any{tenant}
+	idx := 2
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("status = ANY(string_to_array($%d, ','))", idx))
+		args = append(args, params.Status)
+		idx++
+	}
+	if params.Q != "" {
+		where = append(where, fmt.Sprintf("(employee_code ILIKE $%d OR full_name ILIKE $%d)", idx, idx))
+		args = append(args, "%"+params.Q+"%")
+		idx++
+	}
+	wc := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM hrm_employees WHERE "+wc, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count employees: %w", err)
+	}
+
+	query := fmt.Sprintf(`
 		SELECT id, tenant_id, employee_code, full_name, org_unit_id, position_id, job_title_id, iam_user_id, status, created_at, updated_at
 		FROM hrm_employees
-		WHERE tenant_id = $1 AND ($2 = '' OR employee_code ILIKE '%' || $2 || '%' OR full_name ILIKE '%' || $2 || '%')
-		ORDER BY employee_code`, tenant, q)
+		WHERE %s
+		ORDER BY %s %s`, wc, employeeSortCol(params.Sort), listSortDirection(params.Order))
+	if !params.All {
+		query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", idx, idx+1)
+		args = append(args, params.PerPage, (params.Page-1)*params.PerPage)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	items := make([]domain.Employee, 0)
 	for rows.Next() {
 		var item domain.Employee
 		if err := rows.Scan(&item.ID, &item.TenantID, &item.EmployeeCode, &item.FullName, &item.OrgUnitID, &item.PositionID, &item.JobTitleID, &item.IAMUserID, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	return items, total, rows.Err()
+}
+
+// employeeSortCol maps the FE sort param to a whitelisted column; unknown or
+// empty sorts fall back to the legacy default order (employee_code).
+func employeeSortCol(sort string) string {
+	switch sort {
+	case "employee_code":
+		return "employee_code"
+	case "full_name":
+		return "full_name"
+	case "created_at":
+		return "created_at"
+	default:
+		return "employee_code"
+	}
+}
+
+func (r *HRMRepository) CreateEmployee(ctx context.Context, item domain.Employee) (domain.Employee, error) {
+	tenant, err := tenantID(ctx)
+	if err != nil {
+		return item, err
+	}
+	item.TenantID = tenant
+	if item.ID == "" {
+		item.ID = newID("emp")
+	}
+	item.Status = active(item.Status)
+	err = r.db.QueryRowContext(ctx, `
+		INSERT INTO hrm_employees (id, tenant_id, employee_code, full_name, org_unit_id, position_id, job_title_id, iam_user_id, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, tenant_id, employee_code, full_name, org_unit_id, position_id, job_title_id, iam_user_id, status, created_at, updated_at`,
+		item.ID, item.TenantID, item.EmployeeCode, item.FullName, item.OrgUnitID, item.PositionID, item.JobTitleID, item.IAMUserID, item.Status,
+	).Scan(&item.ID, &item.TenantID, &item.EmployeeCode, &item.FullName, &item.OrgUnitID, &item.PositionID, &item.JobTitleID, &item.IAMUserID, &item.Status, &item.CreatedAt, &item.UpdatedAt)
+	return item, err
+}
+
+func (r *HRMRepository) UpdateEmployee(ctx context.Context, item domain.Employee) (domain.Employee, error) {
+	tenant, err := tenantID(ctx)
+	if err != nil {
+		return item, err
+	}
+	item.TenantID = tenant
+	item.Status = active(item.Status)
+	err = r.db.QueryRowContext(ctx, `
+		UPDATE hrm_employees
+		SET employee_code = $3, full_name = $4, org_unit_id = $5, position_id = $6, job_title_id = $7,
+			iam_user_id = $8, status = $9, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2
+		RETURNING id, tenant_id, employee_code, full_name, org_unit_id, position_id, job_title_id, iam_user_id, status, created_at, updated_at`,
+		tenant, item.ID, item.EmployeeCode, item.FullName, item.OrgUnitID, item.PositionID, item.JobTitleID, item.IAMUserID, item.Status,
+	).Scan(&item.ID, &item.TenantID, &item.EmployeeCode, &item.FullName, &item.OrgUnitID, &item.PositionID, &item.JobTitleID, &item.IAMUserID, &item.Status, &item.CreatedAt, &item.UpdatedAt)
+	return item, err
+}
+
+func (r *HRMRepository) DeleteEmployee(ctx context.Context, id string) error {
+	tenant, err := tenantID(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `DELETE FROM hrm_employees WHERE tenant_id = $1 AND id = $2`, tenant, id)
+	return err
 }
 
 func (r *HRMRepository) ListEmployeeRegistrations(ctx context.Context, status string) ([]domain.EmployeeRegistration, error) {

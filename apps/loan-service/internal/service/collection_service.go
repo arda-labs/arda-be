@@ -27,9 +27,18 @@ func NewCollectionService(repo *repository.LoanRepository, workflow AdjustmentSu
 // CaseType is the BPMN case type for the collection flow.
 const CollectionCaseType = "LNM_COLLECTION_V2"
 
-func (s *CollectionService) List(ctx context.Context, tenantID string, orgCodes []string, status, contractCode string) ([]domain.Collection, error) {
-	items, err := s.repo.ListCollections(ctx, tenantID, orgCodes, status, contractCode)
-	return items, mapRepoError(err)
+// List returns one page of the collection ledger. q matches the
+// agreement/contract codes (ILIKE), sort/order are the whitelisted keys
+// validated by the handler's ListSpec.
+func (s *CollectionService) List(ctx context.Context, tenantID string, orgCodes []string, status, contractCode, q, sort, order string, page, perPage int) ([]domain.Collection, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 20
+	}
+	items, total, err := s.repo.ListCollections(ctx, tenantID, orgCodes, status, contractCode, q, sort, order, perPage, (page-1)*perPage)
+	return items, total, mapRepoError(err)
 }
 
 func (s *CollectionService) Get(ctx context.Context, tenantID, id string) (domain.Collection, error) {

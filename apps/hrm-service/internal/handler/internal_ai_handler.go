@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/hrm-service/internal/domain"
+	"github.com/arda-labs/arda/apps/hrm-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
@@ -46,19 +47,14 @@ func (h *HRMHandler) InternalAIListEmployees(w http.ResponseWriter, r *http.Requ
 	}
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	status := strings.TrimSpace(strings.ToUpper(r.URL.Query().Get("status")))
-	items, err := h.repo.ListEmployees(r.Context(), search)
+	items, _, err := h.repo.ListEmployees(r.Context(), repository.ListEmployeesParams{
+		Q:      search,
+		Status: status,
+		All:    true,
+	})
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
-	}
-	if status != "" {
-		filtered := make([]domain.Employee, 0, len(items))
-		for _, item := range items {
-			if strings.EqualFold(item.Status, status) {
-				filtered = append(filtered, item)
-			}
-		}
-		items = filtered
 	}
 	writeListAll(w, r, toAIEmployees(items))
 }

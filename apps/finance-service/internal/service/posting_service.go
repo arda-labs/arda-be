@@ -359,6 +359,34 @@ type JournalFilter struct {
 	Limit        int
 }
 
+// JournalListFilter is the paged journal-list contract for the HTTP read
+// surface: q ILIKEs document type / document code / description, sort is a
+// whitelist key (entry_no | accounting_date), paging is SQL LIMIT/OFFSET.
+type JournalListFilter struct {
+	FromDate     string
+	ToDate       string
+	DocumentType string
+	Search       string
+	Sort         string
+	Order        string
+	Page         int
+	PerPage      int
+}
+
+// journalOrderClause maps the parsed sort onto a whitelisted ORDER BY. The
+// ledger default stays newest-first (entry_no DESC); a whitelisted sort key
+// with an explicit order overrides it.
+func journalOrderClause(sort, order string) string {
+	column := "entry_no"
+	if sort == "accounting_date" {
+		column = "accounting_date"
+	}
+	if sort != "" && order == "asc" {
+		return column + " ASC"
+	}
+	return column + " DESC"
+}
+
 // JournalEntryRow is one listed entry header.
 type JournalEntryRow struct {
 	ID             string `json:"id"`
@@ -404,6 +432,72 @@ func (s *PostingService) ListJournal(ctx context.Context, tenantID string, f Jou
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// ListJournalPaged is the paged journal-list contract: same narrowing as
+// ListJournal plus q ILIKE (document type / document code / description),
+// a whitelisted ORDER BY, SQL LIMIT/OFFSET and the unfiltered total.
+func (s *PostingService) ListJournalPaged(ctx context.Context, tenantID string, f JournalListFilter) ([]JournalEntryRow, int, error) {
+	page := f.Page
+	if page < 1 {
+		page = 1
+	}
+	perPage := f.PerPage
+	if perPage < 1 || perPage > 200 {
+		perPage = 50
+	}
+
+	where := []string{"tenant_id = $1"}
+	args := []any{tenantID}
+	if f.FromDate != "" {
+		args = append(args, f.FromDate)
+		where = append(where, fmt.Sprintf("accounting_date >= $%d::date", len(args)))
+	}
+	if f.ToDate != "" {
+		args = append(args, f.ToDate)
+		where = append(where, fmt.Sprintf("accounting_date <= $%d::date", len(args)))
+	}
+	if f.DocumentType != "" {
+		args = append(args, f.DocumentType)
+		where = append(where, fmt.Sprintf("business_doc_type = $%d", len(args)))
+	}
+	if f.Search != "" {
+		args = append(args, "%"+f.Search+"%")
+		where = append(where, fmt.Sprintf(
+			"(business_doc_type ILIKE $%d OR COALESCE(business_doc_code,'') ILIKE $%d OR COALESCE(description,'') ILIKE $%d)",
+			len(args), len(args), len(args)))
+	}
+
+	wc := strings.Join(where, " AND ")
+	var total int
+	if err := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM fin_journal_entries WHERE "+wc, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count journal entries: %w", err)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, entry_no, accounting_date::text, currency_code, status,
+		       COALESCE(description,''), business_domain, business_doc_type,
+		       COALESCE(business_doc_code,''), COALESCE(case_id::text,''), created_at::text
+		FROM fin_journal_entries
+		WHERE %s
+		ORDER BY %s
+		LIMIT %d OFFSET %d`, wc, journalOrderClause(f.Sort, f.Order), perPage, (page-1)*perPage)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list journal entries: %w", err)
+	}
+	defer rows.Close()
+	out := []JournalEntryRow{}
+	for rows.Next() {
+		var e JournalEntryRow
+		if err := rows.Scan(&e.ID, &e.EntryNo, &e.AccountingDate, &e.CurrencyCode, &e.Status,
+			&e.Description, &e.BusinessDomain, &e.DocumentType, &e.DocumentCode, &e.CaseID, &e.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, e)
+	}
+	return out, total, rows.Err()
 }
 
 // OpeningBalanceInput is one opening-balance line (per account+currency).

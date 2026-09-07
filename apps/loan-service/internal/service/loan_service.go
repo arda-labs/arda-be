@@ -171,8 +171,8 @@ func (s *LoanService) AttachContractCollateral(ctx context.Context, tenantID str
 
 var productTypes = map[string]bool{"TERM": true, "LIMIT": true}
 
-func (s *LoanService) ListProducts(ctx context.Context, tenantID string, includeInactive bool) ([]domain.LoanProduct, error) {
-	items, err := s.repo.ListProducts(ctx, tenantID, includeInactive)
+func (s *LoanService) ListProducts(ctx context.Context, tenantID string, includeInactive bool, isActive, q, sort, order string) ([]domain.LoanProduct, error) {
+	items, err := s.repo.ListProducts(ctx, tenantID, includeInactive, isActive, q, sort, order)
 	return items, mapRepoError(err)
 }
 
@@ -274,11 +274,11 @@ func (s *LoanService) Dossier(ctx context.Context, tenantID, contractID string) 
 	if err != nil {
 		return nil, mapRepoError(err)
 	}
-	disbursements, err := s.repo.ListDisbursements(ctx, tenantID, nil, "", contract.ContractCode)
+	disbursements, _, err := s.repo.ListDisbursements(ctx, tenantID, nil, "", contract.ContractCode, "", "", "", 500, 0)
 	if err != nil {
 		return nil, mapRepoError(err)
 	}
-	collections, err := s.repo.ListCollections(ctx, tenantID, nil, "", contract.ContractCode)
+	collections, _, err := s.repo.ListCollections(ctx, tenantID, nil, "", contract.ContractCode, "", "", "", 500, 0)
 	if err != nil {
 		return nil, mapRepoError(err)
 	}

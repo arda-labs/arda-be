@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -89,12 +90,56 @@ func NewDepositRepository(db *sql.DB) *DepositRepository {
 	return &DepositRepository{db: db}
 }
 
-// ListProducts returns active products.
-func (r *DepositRepository) ListProducts(ctx context.Context, tenantID string) ([]SavingsProduct, error) {
-	rows, err := r.db.QueryContext(ctx, `
+// ListProductsParams carries the parsed list query for the product catalog.
+// The table is a small catalog, so the list stays unpaged; q narrows the set
+// and sort is a repo-whitelisted column so export and table stay consistent.
+type ListProductsParams struct {
+	TenantID string
+	Q        string
+	IsActive *bool
+	Sort     string
+	Order    string
+}
+
+// productSortCol maps the FE sort param to a whitelisted column.
+func productSortCol(sort string) string {
+	switch sort {
+	case "code":
+		return "code"
+	case "name":
+		return "name"
+	case "created_at":
+		return "created_at"
+	default:
+		return "code"
+	}
+}
+
+func listDepOrder(order string) string {
+	if order == "desc" {
+		return "DESC"
+	}
+	return "ASC"
+}
+
+// ListProducts returns active products filtered by q and is_active, sorted by
+// the whitelisted column.
+func (r *DepositRepository) ListProducts(ctx context.Context, params ListProductsParams) ([]SavingsProduct, error) {
+	where := []string{"tenant_id = $1"}
+	args := []any{params.TenantID}
+	if params.Q != "" {
+		args = append(args, "%"+params.Q+"%")
+		where = append(where, fmt.Sprintf("(code ILIKE $%d OR name ILIKE $%d)", len(args), len(args)))
+	}
+	if params.IsActive != nil {
+		args = append(args, *params.IsActive)
+		where = append(where, fmt.Sprintf("is_active = $%d", len(args)))
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, code, name, term_months, interest_rate, currency_code, is_active,
 		       COALESCE(created_by,''), created_at, updated_at
-		FROM dpm_products WHERE tenant_id = $1 AND is_active ORDER BY code`, tenantID)
+		FROM dpm_products WHERE %s ORDER BY %s %s`,
+		strings.Join(where, " AND "), productSortCol(params.Sort), listDepOrder(params.Order)), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -129,22 +174,30 @@ func (r *DepositRepository) UpsertProduct(ctx context.Context, p *SavingsProduct
 	return p, nil
 }
 
-// ListSavings returns savings accounts filtered by status.
+// ListSavings returns savings accounts filtered by status, org scope and q.
 func (r *DepositRepository) ListSavings(ctx context.Context, tenantID string, orgCodes []string, status, q string) ([]Savings, error) {
-	orgAny := any(nil)
+	where := []string{"tenant_id = $1"}
+	args := []any{tenantID}
 	if len(orgCodes) > 0 {
-		orgAny = orgCodes
+		args = append(args, orgCodes)
+		where = append(where, fmt.Sprintf("org_code = ANY($%d::text[])", len(args)))
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	if status != "" {
+		args = append(args, status)
+		where = append(where, fmt.Sprintf("status = $%d::text", len(args)))
+	}
+	if q != "" {
+		args = append(args, "%"+q+"%")
+		where = append(where, fmt.Sprintf(
+			"(savings_code ILIKE $%d OR customer_code ILIKE $%d)", len(args), len(args)))
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, savings_code, customer_code, product_code, open_date::text, maturity_date::text,
 		       principal_minor, accrued_minor, currency_code, COALESCE(org_code,''), status,
 		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at
 		FROM dpm_savings
-		WHERE tenant_id = $1
-		  AND ($4::text = '' OR status = $4::text)
-		  AND ($5::text = '' OR savings_code ILIKE '%'||$5::text||'%' OR customer_code ILIKE '%'||$5::text||'%')
-		  AND ($6::text[] IS NULL OR org_code = ANY($6::text[]))
-		ORDER BY open_date DESC LIMIT 200`, tenantID, orgAny, status, q)
+		WHERE %s
+		ORDER BY open_date DESC LIMIT 200`, strings.Join(where, " AND ")), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -276,21 +329,25 @@ func (r *DepositRepository) ApplyWithdraw(ctx context.Context, tenantID, savings
 	return nil
 }
 
-// ListInterbankDeposits returns IBM contracts.
+// ListInterbankDeposits returns IBM contracts filtered by status and org scope.
 func (r *DepositRepository) ListInterbankDeposits(ctx context.Context, tenantID string, orgCodes []string, status string) ([]InterbankDeposit, error) {
-	orgAny := any(nil)
+	where := []string{"tenant_id = $1"}
+	args := []any{tenantID}
 	if len(orgCodes) > 0 {
-		orgAny = orgCodes
+		args = append(args, orgCodes)
+		where = append(where, fmt.Sprintf("org_code = ANY($%d::text[])", len(args)))
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	if status != "" {
+		args = append(args, status)
+		where = append(where, fmt.Sprintf("status = $%d::text", len(args)))
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, deposit_code, counterparty_code, deposit_date::text, maturity_date::text,
 		       principal_minor, interest_rate, accrued_minor, currency_code, COALESCE(org_code,''), status,
 		       COALESCE(created_by,''), created_at, updated_at
 		FROM ibm_deposits
-		WHERE tenant_id = $1
-		  AND ($4::text = '' OR status = $4::text)
-		  AND ($5::text[] IS NULL OR org_code = ANY($5::text[]))
-		ORDER BY deposit_date DESC LIMIT 200`, tenantID, orgAny, status)
+		WHERE %s
+		ORDER BY deposit_date DESC LIMIT 200`, strings.Join(where, " AND ")), args...)
 	if err != nil {
 		return nil, err
 	}

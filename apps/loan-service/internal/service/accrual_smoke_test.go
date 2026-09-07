@@ -62,10 +62,11 @@ func TestAccrualSmoke(t *testing.T) {
 		t.Fatal("nil finance client must fail RunDaily (fail closed)")
 	}
 
-	listed, err := accrualSvc.ListAccruals(ctx, tenantID, 10)
+	listed, total, err := accrualSvc.ListAccruals(ctx, tenantID, "", "", "", 1, 10)
 	if err != nil {
 		t.Fatalf("list accruals: %v", err)
 	}
 	_ = listed
+	_ = total
 	_ = agreementCode
 }

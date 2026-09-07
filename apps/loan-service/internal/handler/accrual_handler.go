@@ -45,6 +45,15 @@ func (h *AccrualHandler) RunDailyAccrual(w http.ResponseWriter, r *http.Request)
 	ardahttp.WriteSuccess(w, r, http.StatusOK, result)
 }
 
+// accrualListSpec is the ParseListRequest contract for the accrual read API:
+// q matches the agreement code; sort whitelist covers the accrual date
+// (stored as to_date), the agreement code and creation time.
+var accrualListSpec = ardahttp.ListSpec{
+	DefaultPerPage: 20,
+	MaxPerPage:     ardahttp.MaxPerPage,
+	SortFields:     []string{"agreement_code", "accrual_date", "created_at"},
+}
+
 // ListAccruals handles GET /api/loan/accruals.
 func (h *AccrualHandler) ListAccruals(w http.ResponseWriter, r *http.Request) {
 	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
@@ -52,10 +61,15 @@ func (h *AccrualHandler) ListAccruals(w http.ResponseWriter, r *http.Request) {
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	items, err := h.svc.ListAccruals(r.Context(), tenantID, 200)
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), accrualListSpec)
+	if err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error()))
+		return
+	}
+	items, total, err := h.svc.ListAccruals(r.Context(), tenantID, listReq.Q, listReq.Sort, listReq.Order, listReq.Page, listReq.PerPage)
 	if err != nil {
 		ardahttp.WriteProblem(w, r, http.StatusInternalServerError, ardaerrors.New(ardaerrors.CodeInternal, err.Error()))
 		return
 	}
-	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listReq.Page, listReq.PerPage, total, items))
 }

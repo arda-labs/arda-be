@@ -166,34 +166,58 @@ func (s *AccrualService) lastAccrualDate(ctx context.Context, tenantID, agreemen
 	return last.String, nil
 }
 
-// ListAccruals returns recent accrual rows for the loan UI.
-func (s *AccrualService) ListAccruals(ctx context.Context, tenantID string, limit int) ([]domain.Accrual, error) {
-	if limit <= 0 || limit > 500 {
-		limit = 100
+// ListAccruals returns one page of accrual rows for the loan UI. q matches
+// the agreement code (ILIKE); sort/order are whitelisted by the handler's
+// ListSpec (agreement_code, accrual_date, created_at).
+func (s *AccrualService) ListAccruals(ctx context.Context, tenantID, q, sort, order string, page, perPage int) ([]domain.Accrual, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 20
+	}
+	sortCol := "created_at"
+	switch sort {
+	case "agreement_code":
+		sortCol = "agreement_code"
+	case "accrual_date":
+		sortCol = "to_date"
+	}
+	direction := "DESC"
+	if sort != "" && order != "desc" {
+		direction = "ASC"
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, tenant_id, agreement_code, from_date::text, to_date::text,
-		       interest_minor, currency_code, journal_entry_id::text, created_by, created_at
-		FROM lnm_accruals WHERE tenant_id = $1
-		ORDER BY to_date DESC, agreement_code LIMIT $2`, tenantID, limit)
+		       interest_minor, currency_code, journal_entry_id::text, created_by, created_at,
+		       count(*) OVER() AS total_count
+		FROM lnm_accruals
+		WHERE tenant_id = $1
+		  AND ($2::text = '' OR agreement_code ILIKE '%' || $2::text || '%')
+		ORDER BY `+sortCol+` `+direction+`, id
+		LIMIT $3::int OFFSET $4::int`, tenantID, q, perPage, (page-1)*perPage)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := []domain.Accrual{}
+	total := 0
 	for rows.Next() {
 		var a domain.Accrual
 		var entry sql.NullString
 		if err := rows.Scan(&a.ID, &a.TenantID, &a.AgreementCode, &a.FromDate, &a.ToDate,
-			&a.InterestMinor, &a.CurrencyCode, &entry, &a.CreatedBy, &a.CreatedAt); err != nil {
-			return nil, err
+			&a.InterestMinor, &a.CurrencyCode, &entry, &a.CreatedBy, &a.CreatedAt, &total); err != nil {
+			return nil, 0, err
 		}
 		if entry.Valid {
 			a.JournalEntryID = &entry.String
 		}
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
 
 // daysBetween counts whole days from a to b (both YYYY-MM-DD).

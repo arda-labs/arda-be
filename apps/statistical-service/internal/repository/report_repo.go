@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -66,12 +68,45 @@ func NewStatisticalRepository(db *sql.DB) *StatisticalRepository {
 	return &StatisticalRepository{db: db}
 }
 
-// ListReportDefinitions returns active report definitions.
-func (r *StatisticalRepository) ListReportDefinitions(ctx context.Context, tenantID string) ([]ReportDefinition, error) {
-	rows, err := r.db.QueryContext(ctx, `
+// ListReportDefinitionsParams carries the parsed list query for report
+// definitions (same small-catalog unpaged contract as indicators).
+type ListReportDefinitionsParams struct {
+	TenantID string
+	Q        string
+	Sort     string
+	Order    string
+}
+
+// reportDefinitionSortCol maps the FE sort param to a whitelisted column.
+func reportDefinitionSortCol(sort string) string {
+	switch sort {
+	case "code":
+		return "code"
+	case "name":
+		return "name"
+	case "created_at":
+		return "created_at"
+	default:
+		return "code"
+	}
+}
+
+// ListReportDefinitions returns active report definitions filtered by q,
+// sorted by the whitelisted column.
+func (r *StatisticalRepository) ListReportDefinitions(ctx context.Context, params ListReportDefinitionsParams) ([]ReportDefinition, error) {
+	where := "tenant_id = $1 AND is_active"
+	args := []any{params.TenantID}
+	if params.Q != "" {
+		args = append(args, "%"+params.Q+"%")
+		where = fmt.Sprintf(
+			"tenant_id = $1 AND is_active AND (code ILIKE $%d OR name ILIKE $%d)",
+			len(args), len(args))
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, code, name, COALESCE(group_code,''), query_id, param_schema,
 		       template_file_id::text, output_format, is_active, COALESCE(created_by,''), created_at, updated_at
-		FROM rpt_report_definitions WHERE tenant_id = $1 AND is_active ORDER BY code`, tenantID)
+		FROM rpt_report_definitions WHERE %s ORDER BY %s %s`,
+		where, reportDefinitionSortCol(params.Sort), listStatOrder(params.Order)), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -115,12 +150,53 @@ func (r *StatisticalRepository) UpsertReportDefinition(ctx context.Context, d *R
 	return d, nil
 }
 
-// ListIndicators returns indicator catalog rows.
-func (r *StatisticalRepository) ListIndicators(ctx context.Context, tenantID string) ([]Indicator, error) {
-	rows, err := r.db.QueryContext(ctx, `
+// ListIndicatorsParams carries the parsed list query for indicators.
+// Both catalog tables are small, so the list stays unpaged; q narrows the set
+// and sort is a repo-whitelisted column so export and table stay consistent.
+type ListIndicatorsParams struct {
+	TenantID string
+	Q        string
+	Sort     string
+	Order    string
+}
+
+// indicatorSortCol maps the FE sort param to a whitelisted column.
+func indicatorSortCol(sort string) string {
+	switch sort {
+	case "code":
+		return "code"
+	case "name":
+		return "name"
+	case "created_at":
+		return "created_at"
+	default:
+		return "code"
+	}
+}
+
+func listStatOrder(order string) string {
+	if order == "desc" {
+		return "DESC"
+	}
+	return "ASC"
+}
+
+// ListIndicators returns indicator catalog rows filtered by q, sorted by the
+// whitelisted column.
+func (r *StatisticalRepository) ListIndicators(ctx context.Context, params ListIndicatorsParams) ([]Indicator, error) {
+	where := "tenant_id = $1 AND is_active"
+	args := []any{params.TenantID}
+	if params.Q != "" {
+		args = append(args, "%"+params.Q+"%")
+		where = fmt.Sprintf(
+			"tenant_id = $1 AND is_active AND (code ILIKE $%d OR name ILIKE $%d)",
+			len(args), len(args))
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, code, name, COALESCE(unit,''), COALESCE(group_code,''), is_active,
 		       COALESCE(created_by,''), created_at, updated_at
-		FROM rpt_indicators WHERE tenant_id = $1 AND is_active ORDER BY code`, tenantID)
+		FROM rpt_indicators WHERE %s ORDER BY %s %s`,
+		where, indicatorSortCol(params.Sort), listStatOrder(params.Order)), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -172,19 +248,81 @@ func (r *StatisticalRepository) CreateSubmission(ctx context.Context, sub *Repor
 	return sub, nil
 }
 
-// ListSubmissions returns submissions filtered by report/period/status.
-func (r *StatisticalRepository) ListSubmissions(ctx context.Context, tenantID, reportCode, periodCode, status string) ([]ReportSubmission, error) {
-	rows, err := r.db.QueryContext(ctx, `
+// ListSubmissionsParams carries the parsed list query for submissions.
+type ListSubmissionsParams struct {
+	TenantID   string
+	ReportCode string
+	PeriodCode string
+	Status     string // comma list of DRAFT|SUBMITTED|APPROVED|REJECTED
+	Sort       string
+	Order      string
+	Page       int
+	Size       int
+}
+
+// submissionSortCol maps the FE sort param to a whitelisted column.
+func submissionSortCol(sort string) string {
+	switch sort {
+	case "report_code":
+		return "report_code"
+	case "period_code":
+		return "period_code"
+	case "status":
+		return "status"
+	case "created_at":
+		return "created_at"
+	default:
+		return "created_at"
+	}
+}
+
+// ListSubmissions returns a paged slice of submissions filtered by report,
+// period and status (comma list).
+func (r *StatisticalRepository) ListSubmissions(ctx context.Context, params ListSubmissionsParams) ([]ReportSubmission, int, error) {
+	where := []string{"tenant_id = $1"}
+	args := []any{params.TenantID}
+	idx := 2
+	if params.ReportCode != "" {
+		where = append(where, fmt.Sprintf("report_code ILIKE '%%' || $%d::text || '%%'", idx))
+		args = append(args, params.ReportCode)
+		idx++
+	}
+	if params.PeriodCode != "" {
+		where = append(where, fmt.Sprintf("period_code ILIKE '%%' || $%d::text || '%%'", idx))
+		args = append(args, params.PeriodCode)
+		idx++
+	}
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("status = ANY(string_to_array($%d, ','))", idx))
+		args = append(args, params.Status)
+		idx++
+	}
+	wc := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM rpt_report_submissions WHERE "+wc, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	size := params.Size
+	if size < 1 || size > 100 {
+		size = 100
+	}
+	offset := params.Page
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, report_code, period_code, status, payload,
 		       workflow_case_id::text, COALESCE(submitted_by,''), submitted_at, COALESCE(created_by,''), created_at, updated_at
 		FROM rpt_report_submissions
-		WHERE tenant_id = $1
-		  AND ($2::text = '' OR report_code = $2::text)
-		  AND ($3::text = '' OR period_code = $3::text)
-		  AND ($4::text = '' OR status = $4::text)
-		ORDER BY created_at DESC LIMIT 200`, tenantID, reportCode, periodCode, status)
+		WHERE %s
+		ORDER BY %s %s LIMIT $%d OFFSET $%d`,
+		wc, submissionSortCol(params.Sort), listStatOrder(params.Order), idx, idx+1),
+		append(args, size, offset)...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := []ReportSubmission{}
@@ -194,7 +332,7 @@ func (r *StatisticalRepository) ListSubmissions(ctx context.Context, tenantID, r
 		var submittedAt sql.NullTime
 		if err := rows.Scan(&sub.ID, &sub.TenantID, &sub.ReportCode, &sub.PeriodCode, &sub.Status,
 			&sub.Payload, &caseID, &sub.SubmittedBy, &submittedAt, &sub.CreatedBy, &sub.CreatedAt, &sub.UpdatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if caseID.Valid {
 			sub.WorkflowCaseID = &caseID.String
@@ -204,7 +342,33 @@ func (r *StatisticalRepository) ListSubmissions(ctx context.Context, tenantID, r
 		}
 		out = append(out, sub)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
+}
+
+// GetSubmissionByID loads one submission by id.
+func (r *StatisticalRepository) GetSubmissionByID(ctx context.Context, tenantID, id string) (*ReportSubmission, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, report_code, period_code, status, payload,
+		       workflow_case_id::text, COALESCE(submitted_by,''), submitted_at, COALESCE(created_by,''), created_at, updated_at
+		FROM rpt_report_submissions WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	var sub ReportSubmission
+	var caseID sql.NullString
+	var submittedAt sql.NullTime
+	err := row.Scan(&sub.ID, &sub.TenantID, &sub.ReportCode, &sub.PeriodCode, &sub.Status,
+		&sub.Payload, &caseID, &sub.SubmittedBy, &submittedAt, &sub.CreatedBy, &sub.CreatedAt, &sub.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if caseID.Valid {
+		sub.WorkflowCaseID = &caseID.String
+	}
+	if submittedAt.Valid {
+		sub.SubmittedAt = &submittedAt.Time
+	}
+	return &sub, nil
 }
 
 // NewStatisticalID generates a prefixed random id.

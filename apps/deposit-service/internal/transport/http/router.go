@@ -24,6 +24,8 @@ func NewRouter(h *handler.DepositHandler) http.Handler {
 		switch r.Method {
 		case http.MethodGet:
 			h.ListProducts(w, r)
+		case http.MethodPost, http.MethodPut:
+			h.UpsertProduct(w, r)
 		default:
 			writeMethodNotAllowed(w, r)
 		}

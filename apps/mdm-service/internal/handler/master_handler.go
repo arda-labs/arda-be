@@ -60,13 +60,17 @@ func NewCatalogHandler(svc *service.MasterService) *CatalogHandler {
 }
 
 // mdmListSpec is the shared list contract: sort whitelist and allow-all for
-// the client-side tables (is_active filtering stays client-side, and
-// include_inactive widens the server query).
+// the client-side tables. is_active is an optional CSV filter ("true"/"false")
+// applied in memory next to the sort; include_inactive still widens the
+// server query for legacy callers.
 var mdmListSpec = ardahttp.ListSpec{
 	DefaultPerPage: 20,
 	MaxPerPage:     ardahttp.MaxPerPage,
 	SortFields:     []string{"code", "name", "created_at"},
 	AllowAll:       true,
+	Filters: map[string]ardahttp.QueryFilterSpec{
+		"is_active": ardahttp.CSVFilter(2, "true", "false"),
+	},
 }
 
 // listEnvelope paginates the fetched slice per the parsed list request and
@@ -94,12 +98,17 @@ func (h *CatalogHandler) List(catalog string) http.HandlerFunc {
 			writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
 			return
 		}
-		includeInactive := r.URL.Query().Get("include_inactive") == "true"
+		activeSelected := listReq.Strings("is_active")
+		includeInactive := r.URL.Query().Get("include_inactive") == "true" || len(activeSelected) > 0
 		items, err := h.svc.List(r.Context(), catalog, tenantID, listReq.Q, includeInactive)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
+		items = filterByActive(items, activeSelected, func(item domain.CatalogItem) bool {
+			return item.IsActive
+		})
+		applyListSort(items, listReq.Sort, listReq.Order, catalogSortStringKeys(), catalogSortTimeKeys())
 		listEnvelope(w, r, items, listReq)
 	}
 }

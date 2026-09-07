@@ -7,7 +7,18 @@ import (
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/domain"
 	"github.com/arda-labs/arda/apps/finance-service/internal/service"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
+
+// accountListSpec is the public list contract for the account master: q,
+// page/per_page, and a sort whitelist kept in sync with the FE list
+// definition (code | name | created_at).
+var accountListSpec = ardahttp.ListSpec{
+	DefaultPerPage: 20,
+	MaxPerPage:     ardahttp.MaxPerPage,
+	SortFields:     []string{"code", "name", "created_at"},
+	AllowAll:       true,
+}
 
 // FinanceHandler exposes the finance API: account master, trial balance
 // (journal-aggregated) and accounting configuration. Posting lives on the
@@ -40,17 +51,38 @@ func (h *FinanceHandler) ListCashPosition(w http.ResponseWriter, r *http.Request
 
 // ── Accounts ──
 
+// ListAccounts handles GET /api/finance/accounts. The endpoint accepts the
+// standard list contract (ardahttp.ParseListRequest): q ILIKEs code+name,
+// sort is whitelisted to code|name|created_at in the repo, paging via
+// page/per_page. Write envelope is unchanged (accounts list stays the
+// SuccessEnvelope shape for legacy callers).
 func (h *FinanceHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
-	accounts, err := h.accounts.ListAccounts(r.Context(), tenantID)
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), accountListSpec)
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	accounts, total, err := h.accounts.ListAccountsPaged(r.Context(), tenantID, service.AccountListParams{
+		Page:   listReq.Page,
+		Size:   listReq.PerPage,
+		Search: listReq.Q,
+		Sort:   listReq.Sort,
+		Order:  listReq.Order,
+	})
 	if err != nil {
 		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondJSON(w, r, http.StatusOK, map[string]any{"accounts": accounts})
+	respondJSON(w, r, http.StatusOK, map[string]any{
+		"accounts": accounts,
+		"page":     listReq.Page,
+		"per_page": listReq.PerPage,
+		"total":    total,
+	})
 }
 
 func (h *FinanceHandler) CreateAccount(w http.ResponseWriter, r *http.Request) {

@@ -23,6 +23,29 @@ func (s *AccountService) ListAccounts(ctx context.Context, tenantID string) ([]d
 	return s.repo.List(ctx, tenantID)
 }
 
+// AccountListParams is the handler-facing paged list request. Sort is a
+// whitelist key resolved in the repository (code | name | created_at).
+type AccountListParams struct {
+	Page   int
+	Size   int
+	Search string
+	Sort   string
+	Order  string
+}
+
+// ListAccountsPaged is the HTTP list contract: q ILIKE (code+name), sort
+// whitelist in the repo, SQL paging, plus the unfiltered total for the FE.
+func (s *AccountService) ListAccountsPaged(ctx context.Context, tenantID string, params AccountListParams) ([]domain.Account, int, error) {
+	return s.repo.ListPaged(ctx, repository.ListAccountsParams{
+		Page:     params.Page,
+		Size:     params.Size,
+		TenantID: tenantID,
+		Search:   params.Search,
+		Sort:     params.Sort,
+		Order:    params.Order,
+	})
+}
+
 func (s *AccountService) GetAccount(ctx context.Context, tenantID, id string) (*domain.Account, error) {
 	return s.repo.GetByID(ctx, tenantID, id)
 }

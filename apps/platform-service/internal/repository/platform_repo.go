@@ -401,6 +401,90 @@ func (r *PlatformRepository) ListGeoAdminUnits(ctx context.Context, parentCode s
 	return items, rows.Err()
 }
 
+type ListGeoAdminUnitsParams struct {
+	Page       int
+	PerPage    int
+	Offset     int
+	Query      string
+	ParentCode string
+	Level      int
+	Sort       string
+	Order      string
+}
+
+// pickAdminUnitSort maps the FE sort param to a whitelisted column; unknown
+// values fall back to code so no arbitrary column can reach ORDER BY.
+func pickAdminUnitSort(field string) string {
+	switch strings.TrimSpace(field) {
+	case "name":
+		return "name"
+	case "created_at":
+		return "created_at"
+	default:
+		return "code"
+	}
+}
+
+// ListGeoAdminUnitsPaged is the SQL-paged variant used by the admin wards
+// catalog (level=2, ~10k rows). q matches code/name via ILIKE; parent_code and
+// level keep the same semantics as the unpaged lookup variant.
+func (r *PlatformRepository) ListGeoAdminUnitsPaged(ctx context.Context, params ListGeoAdminUnitsParams) ([]domain.GeoAdminUnit, int, error) {
+	where := []string{"is_active = true"}
+	args := []any{}
+	argN := 1
+	if params.ParentCode != "" {
+		where = append(where, fmt.Sprintf("COALESCE(parent_code, '') = $%d", argN))
+		args = append(args, params.ParentCode)
+		argN++
+	}
+	if params.Level != 0 {
+		where = append(where, fmt.Sprintf("level = $%d", argN))
+		args = append(args, params.Level)
+		argN++
+	}
+	if params.Query != "" {
+		where = append(where, fmt.Sprintf("(code ILIKE $%d OR name ILIKE $%d)", argN, argN))
+		args = append(args, "%"+params.Query+"%")
+		argN++
+	}
+	whereClause := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM geo_admin_units WHERE "+whereClause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	order := "ASC"
+	if strings.EqualFold(params.Order, "desc") {
+		order = "DESC"
+	}
+	listQuery := fmt.Sprintf(`
+		SELECT code, name, full_name, parent_code, level, unit_type, country_code, region_code,
+			effective_from::text, effective_to::text, is_active, metadata::text, created_at, updated_at
+		FROM geo_admin_units
+		WHERE %s
+		ORDER BY %s %s
+		LIMIT $%d OFFSET $%d`, whereClause, pickAdminUnitSort(params.Sort), order, argN, argN+1)
+	listArgs := append([]any{}, args...)
+	listArgs = append(listArgs, params.PerPage, params.Offset)
+
+	rows, err := r.db.QueryContext(ctx, listQuery, listArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.GeoAdminUnit, 0)
+	for rows.Next() {
+		var item domain.GeoAdminUnit
+		if err := rows.Scan(&item.Code, &item.Name, &item.FullName, &item.ParentCode, &item.Level, &item.UnitType, &item.CountryCode, &item.RegionCode, &item.EffectiveFrom, &item.EffectiveTo, &item.IsActive, &item.Metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, item)
+	}
+	return items, total, rows.Err()
+}
+
 func (r *PlatformRepository) UpsertGeoAdminUnit(ctx context.Context, item domain.GeoAdminUnit) (domain.GeoAdminUnit, error) {
 	if item.CountryCode == "" {
 		item.CountryCode = "VN"
@@ -543,6 +627,111 @@ func (r *PlatformRepository) ListCreditInstitutions(ctx context.Context, tenantI
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+type ListCreditInstitutionsParams struct {
+	TenantID string
+	Page     int
+	PerPage  int
+	Offset   int
+	Query    string
+	Status   string
+	Sort     string
+	Order    string
+}
+
+// pickCreditInstitutionSort maps the FE sort param to a whitelisted column;
+// unknown values fall back to code.
+func pickCreditInstitutionSort(field string) string {
+	switch strings.TrimSpace(field) {
+	case "name":
+		return "name"
+	case "status":
+		return "status"
+	case "created_at":
+		return "created_at"
+	default:
+		return "code"
+	}
+}
+
+// ListCreditInstitutionsPaged is the SQL-paged variant of ListCreditInstitutions
+// with the same tenant/status/q semantics plus sort whitelist and paging.
+// status accepts a comma list ("active,inactive") via ANY(string_to_array),
+// matching the standard list contract; a single value behaves identically.
+func (r *PlatformRepository) ListCreditInstitutionsPaged(ctx context.Context, params ListCreditInstitutionsParams) ([]domain.CreditInstitution, int, error) {
+	if err := requireTenantID(params.TenantID); err != nil {
+		return nil, 0, err
+	}
+	where := []string{"($1 = '' OR tenant_id = $1)"}
+	args := []any{params.TenantID}
+	argN := 2
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("status = ANY(string_to_array($%d, ','))", argN))
+		args = append(args, params.Status)
+		argN++
+	}
+	if params.Query != "" {
+		where = append(where, fmt.Sprintf(
+			"(code ILIKE $%d OR name ILIKE $%d OR COALESCE(short_name, '') ILIKE $%d OR COALESCE(tax_code, '') ILIKE $%d OR COALESCE(license_no, '') ILIKE $%d)",
+			argN, argN, argN, argN, argN))
+		args = append(args, "%"+params.Query+"%")
+		argN++
+	}
+	whereClause := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM plt_credit_institutions WHERE "+whereClause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	order := "ASC"
+	if strings.EqualFold(params.Order, "desc") {
+		order = "DESC"
+	}
+	listQuery := fmt.Sprintf(`
+		SELECT id, tenant_id, code, name, address, status, effective_from::text, short_name, phone, email,
+			license_no, license_date::text, tax_code, website, note, created_at, updated_at
+		FROM plt_credit_institutions
+		WHERE %s
+		ORDER BY %s %s
+		LIMIT $%d OFFSET $%d`, whereClause, pickCreditInstitutionSort(params.Sort), order, argN, argN+1)
+	listArgs := append([]any{}, args...)
+	listArgs = append(listArgs, params.PerPage, params.Offset)
+
+	rows, err := r.db.QueryContext(ctx, listQuery, listArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.CreditInstitution, 0)
+	for rows.Next() {
+		var item domain.CreditInstitution
+		if err := rows.Scan(
+			&item.ID,
+			&item.TenantID,
+			&item.Code,
+			&item.Name,
+			&item.Address,
+			&item.Status,
+			&item.EffectiveFrom,
+			&item.ShortName,
+			&item.Phone,
+			&item.Email,
+			&item.LicenseNo,
+			&item.LicenseDate,
+			&item.TaxCode,
+			&item.Website,
+			&item.Note,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, item)
+	}
+	return items, total, rows.Err()
 }
 
 func (r *PlatformRepository) GetCreditInstitutionByID(ctx context.Context, tenantID, id string) (domain.CreditInstitution, error) {
@@ -713,6 +902,121 @@ func (r *PlatformRepository) ListAreas(ctx context.Context, tenantID, status, ar
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+type ListAreasParams struct {
+	TenantID     string
+	Page         int
+	PerPage      int
+	Offset       int
+	Query        string
+	Status       string
+	AreaTypeCode string
+	ParentID     string
+	Sort         string
+	Order        string
+}
+
+// pickAreaSort maps the FE sort param to a whitelisted column; unknown values
+// fall back to code.
+func pickAreaSort(field string) string {
+	switch strings.TrimSpace(field) {
+	case "name":
+		return "name"
+	case "status":
+		return "status"
+	case "area_type_code":
+		return "area_type_code"
+	case "created_at":
+		return "created_at"
+	default:
+		return "code"
+	}
+}
+
+// ListAreasPaged is the SQL-paged variant of ListAreas with the same filter
+// semantics plus sort whitelist and paging. status accepts a comma list
+// ("active,inactive") via ANY(string_to_array); a single value behaves
+// identically.
+func (r *PlatformRepository) ListAreasPaged(ctx context.Context, params ListAreasParams) ([]domain.Area, int, error) {
+	if err := requireTenantID(params.TenantID); err != nil {
+		return nil, 0, err
+	}
+	where := []string{"($1 = '' OR tenant_id = $1)"}
+	args := []any{params.TenantID}
+	argN := 2
+	if params.Status != "" {
+		where = append(where, fmt.Sprintf("status = ANY(string_to_array($%d, ','))", argN))
+		args = append(args, params.Status)
+		argN++
+	}
+	if params.AreaTypeCode != "" {
+		where = append(where, fmt.Sprintf("area_type_code = $%d", argN))
+		args = append(args, params.AreaTypeCode)
+		argN++
+	}
+	if params.ParentID != "" {
+		where = append(where, fmt.Sprintf("COALESCE(parent_id, '') = $%d", argN))
+		args = append(args, params.ParentID)
+		argN++
+	}
+	if params.Query != "" {
+		where = append(where, fmt.Sprintf(
+			"(code ILIKE $%d OR name ILIKE $%d OR COALESCE(description, '') ILIKE $%d)",
+			argN, argN, argN))
+		args = append(args, "%"+params.Query+"%")
+		argN++
+	}
+	whereClause := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM plt_areas WHERE "+whereClause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	order := "ASC"
+	if strings.EqualFold(params.Order, "desc") {
+		order = "DESC"
+	}
+	listQuery := fmt.Sprintf(`
+		SELECT id, tenant_id, parent_id, code, name, area_type_code, admin_unit_code, description, status,
+			effective_from::text, effective_to::text, created_at, updated_at
+		FROM plt_areas
+		WHERE %s
+		ORDER BY %s %s
+		LIMIT $%d OFFSET $%d`, whereClause, pickAreaSort(params.Sort), order, argN, argN+1)
+	listArgs := append([]any{}, args...)
+	listArgs = append(listArgs, params.PerPage, params.Offset)
+
+	rows, err := r.db.QueryContext(ctx, listQuery, listArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.Area, 0)
+	for rows.Next() {
+		var item domain.Area
+		if err := rows.Scan(
+			&item.ID,
+			&item.TenantID,
+			&item.ParentID,
+			&item.Code,
+			&item.Name,
+			&item.AreaTypeCode,
+			&item.AdminUnitCode,
+			&item.Description,
+			&item.Status,
+			&item.EffectiveFrom,
+			&item.EffectiveTo,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, item)
+	}
+	return items, total, rows.Err()
 }
 
 func (r *PlatformRepository) GetAreaByID(ctx context.Context, tenantID, id string) (domain.Area, error) {

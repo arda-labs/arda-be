@@ -78,6 +78,11 @@ func (s *PlatformService) ListGeoAdminUnits(ctx context.Context, parentCode stri
 	return s.repo.ListGeoAdminUnits(ctx, parentCode, level)
 }
 
+// ListGeoAdminUnitsPaged is the SQL-paged list used by the admin wards catalog.
+func (s *PlatformService) ListGeoAdminUnitsPaged(ctx context.Context, params repository.ListGeoAdminUnitsParams) ([]domain.GeoAdminUnit, int, error) {
+	return s.repo.ListGeoAdminUnitsPaged(ctx, params)
+}
+
 func (s *PlatformService) UpsertGeoAdminUnit(ctx context.Context, item domain.GeoAdminUnit) (domain.GeoAdminUnit, error) {
 	return s.repo.UpsertGeoAdminUnit(ctx, item)
 }
@@ -110,6 +115,11 @@ func (s *PlatformService) ListCreditInstitutions(ctx context.Context, tenantID, 
 	return s.repo.ListCreditInstitutions(ctx, tenantID, status, query)
 }
 
+// ListCreditInstitutionsPaged is the SQL-paged list used by the admin catalog.
+func (s *PlatformService) ListCreditInstitutionsPaged(ctx context.Context, params repository.ListCreditInstitutionsParams) ([]domain.CreditInstitution, int, error) {
+	return s.repo.ListCreditInstitutionsPaged(ctx, params)
+}
+
 func (s *PlatformService) GetCreditInstitutionByID(ctx context.Context, tenantID, id string) (domain.CreditInstitution, error) {
 	return s.repo.GetCreditInstitutionByID(ctx, tenantID, id)
 }
@@ -128,6 +138,11 @@ func (s *PlatformService) DeleteCreditInstitution(ctx context.Context, tenantID,
 
 func (s *PlatformService) ListAreas(ctx context.Context, tenantID, status, areaTypeCode, parentID, query string) ([]domain.Area, error) {
 	return s.repo.ListAreas(ctx, tenantID, status, areaTypeCode, parentID, query)
+}
+
+// ListAreasPaged is the SQL-paged list used by the admin catalog.
+func (s *PlatformService) ListAreasPaged(ctx context.Context, params repository.ListAreasParams) ([]domain.Area, int, error) {
+	return s.repo.ListAreasPaged(ctx, params)
 }
 
 func (s *PlatformService) GetAreaByID(ctx context.Context, tenantID, id string) (domain.Area, error) {

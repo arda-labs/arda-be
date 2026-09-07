@@ -78,12 +78,26 @@ func (h *CapitalHandler) ListContracts(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, r)
 		return
 	}
-	items, err := h.svc.ListContracts(r.Context(), tenantID, orgScopeFromCap(r).listFilter(), r.URL.Query().Get("status"))
+	list := ardahttp.ParseListQuery(r.URL.Query())
+	page := list.Page
+	if page < 1 {
+		page = 1
+	}
+	items, total, err := h.svc.ListContracts(r.Context(), repository.ListContractsParams{
+		TenantID: tenantID,
+		OrgCodes: orgScopeFromCap(r).listFilter(),
+		Status:   r.URL.Query().Get("status"),
+		Q:        list.Q,
+		Sort:     list.Sort,
+		Order:    list.Order,
+		Page:     (page - 1) * list.PerPage,
+		Size:     list.PerPage,
+	})
 	if err != nil {
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+	ardahttp.WriteEnvelopeList(w, r, http.StatusOK, page, list.PerPage, total, items)
 }
 
 // CreateContract handles POST /api/capital/contracts.

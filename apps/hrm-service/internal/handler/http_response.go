@@ -36,6 +36,20 @@ func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
 	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, paged))
 }
 
+// writeListPage writes the same NewListResponse envelope for repo-side SQL
+// paging; all=1/tree lookups pass the full set with per_page sized to the
+// result, matching PageSlice semantics so the envelope shape is unchanged.
+func writeListPage[T any](w http.ResponseWriter, r *http.Request, items []T, total int, listQuery ardahttp.ListQuery) {
+	perPage := listQuery.PerPage
+	if listQuery.All || listQuery.View != "" {
+		perPage = total
+		if perPage == 0 {
+			perPage = 1
+		}
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listQuery.Page, perPage, total, items))
+}
+
 func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
 		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "invalid json")

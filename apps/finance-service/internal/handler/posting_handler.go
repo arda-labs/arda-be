@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/service"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -54,27 +55,50 @@ func (h *PostingHandler) ValidatePosting(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, r, http.StatusOK, json.RawMessage(protojson.Format(result)))
 }
 
-// ListJournalEntries handles GET /api/finance/journal-entries.
+// journalListSpec is the public list contract for GET /api/finance/
+// journal-entries: q + page/per_page + a sort whitelist kept in sync with the
+// FE list definition (entry_no | accounting_date).
+var journalListSpec = ardahttp.ListSpec{
+	DefaultPerPage: 50,
+	MaxPerPage:     200,
+	SortFields:     []string{"entry_no", "accounting_date"},
+}
+
+// ListJournalEntries handles GET /api/finance/journal-entries. Adds the
+// standard list contract (q ILIKE document type / document code /
+// description, whitelisted sort, page/per_page) on top of the legacy
+// `limit` param, which stays honored when no paging params are given.
 func (h *PostingHandler) ListJournalEntries(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit <= 0 || limit > 200 {
-		limit = 50
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), journalListSpec)
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
 	}
-	fromDate := r.URL.Query().Get("from")
-	toDate := r.URL.Query().Get("to")
-	docType := r.URL.Query().Get("document_type")
-	entries, err := h.svc.ListJournal(r.Context(), tenantID, service.JournalFilter{
-		FromDate: fromDate, ToDate: toDate, DocumentType: docType, Limit: limit,
+	perPage := listReq.PerPage
+	if r.URL.Query().Get("per_page") == "" && r.URL.Query().Get("page") == "" {
+		if legacy, convErr := strconv.Atoi(r.URL.Query().Get("limit")); convErr == nil && legacy > 0 {
+			perPage = min(legacy, 200)
+		}
+	}
+	entries, total, err := h.svc.ListJournalPaged(r.Context(), tenantID, service.JournalListFilter{
+		FromDate:     r.URL.Query().Get("from"),
+		ToDate:       r.URL.Query().Get("to"),
+		DocumentType: r.URL.Query().Get("document_type"),
+		Search:       listReq.Q,
+		Sort:         listReq.Sort,
+		Order:        listReq.Order,
+		Page:         listReq.Page,
+		PerPage:      perPage,
 	})
 	if err != nil {
 		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondList(w, r, entries, nil)
+	respondJSON(w, r, http.StatusOK, ardahttp.NewListResponse(listReq.Page, perPage, total, entries))
 }
 
 // UpsertOpeningBalance handles POST /api/finance/opening-balances (P1a.5).

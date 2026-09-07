@@ -149,14 +149,55 @@ func (r *CaseRepository) SetIAMClient(client UserLookupClient) {
 	r.iamClient = client
 }
 
-func (r *CaseRepository) ListCaseTypes(ctx context.Context) ([]CaseType, error) {
-	rows, err := r.db.QueryContext(ctx, `
+// listSortDirection maps the order param onto an SQL direction.
+func listSortDirection(order string) string {
+	if strings.EqualFold(order, "desc") {
+		return "DESC"
+	}
+	return "ASC"
+}
+
+// caseTypeSortCol maps the FE sort param to a whitelisted column.
+// Unknown or empty values fall back to the historical composite default.
+func caseTypeSortCol(sort string) string {
+	switch sort {
+	case "case_type":
+		return "case_type"
+	case "business_area":
+		return "business_area"
+	case "operation_name":
+		return "operation_name"
+	case "status":
+		return "status"
+	case "created_at":
+		return "created_at"
+	default:
+		return ""
+	}
+}
+
+// ListCaseTypes returns every catalog row (the table is a small, near-static
+// lookup — deliberately unpaged) with optional q search and whitelisted sort.
+func (r *CaseRepository) ListCaseTypes(ctx context.Context, search, sort, order string) ([]CaseType, error) {
+	where := "TRUE"
+	args := []any{}
+	if strings.TrimSpace(search) != "" {
+		// q matches the code (case_type) and name (operation_name) columns.
+		where = "(case_type ILIKE $1 OR operation_name ILIKE $1)"
+		args = append(args, "%"+strings.TrimSpace(search)+"%")
+	}
+	orderSQL := "business_area, operation_name"
+	if col := caseTypeSortCol(sort); col != "" {
+		orderSQL = fmt.Sprintf("%s %s", col, listSortDirection(order))
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT case_type, business_area, operation_name, bpmn_process_id, bpmn_version,
 		       workflow_enabled, default_sla_policy_id, maker_role, checker_role,
 		       owner_service, status, effective_from, effective_to
 		FROM business_operation_types
-		ORDER BY business_area, operation_name
-	`)
+		WHERE %s
+		ORDER BY %s
+	`, where, orderSQL), args...)
 	if err != nil {
 		return nil, err
 	}

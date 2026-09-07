@@ -28,12 +28,17 @@ func (h *InterestRateHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
 		return
 	}
-	includeInactive := r.URL.Query().Get("include_inactive") == "true"
+	activeSelected := listReq.Strings("is_active")
+	includeInactive := r.URL.Query().Get("include_inactive") == "true" || len(activeSelected) > 0
 	items, err := h.svc.List(r.Context(), tenantID, listReq.Q, includeInactive)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
 	}
+	items = filterByActive(items, activeSelected, func(item domain.InterestRate) bool {
+		return item.IsActive
+	})
+	applyListSort(items, listReq.Sort, listReq.Order, interestRateSortStringKeys(), interestRateSortTimeKeys())
 	listEnvelope(w, r, items, listReq)
 }
 

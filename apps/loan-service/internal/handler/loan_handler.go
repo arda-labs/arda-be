@@ -81,6 +81,19 @@ var loanListSpec = ardahttp.ListSpec{
 	AllowAll:       true,
 }
 
+// productListSpec narrows the list contract to the product catalog: q is
+// applied in SQL (code + name ILIKE), is_active accepts a true/false CSV
+// filter, and the sort whitelist matches the ORDER BY switch in the repo.
+var productListSpec = ardahttp.ListSpec{
+	DefaultPerPage: 20,
+	MaxPerPage:     ardahttp.MaxPerPage,
+	SortFields:     []string{"code", "name", "created_at"},
+	AllowAll:       true,
+	Filters: map[string]ardahttp.QueryFilterSpec{
+		"is_active": ardahttp.CSVFilter(2, "true", "false"),
+	},
+}
+
 // listEnvelope paginates the fetched slice per the parsed list request and
 // writes the canonical ListResponse envelope.
 func listEnvelope[T any](w http.ResponseWriter, r *http.Request, items []T, listReq ardahttp.ListRequest) {
@@ -343,13 +356,15 @@ func (h *LoanHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), productListSpec)
 	if err != nil {
 		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
 		return
 	}
 	includeInactive := r.URL.Query().Get("include_inactive") == "true"
-	items, err := h.svc.ListProducts(r.Context(), tenantID, includeInactive)
+	// "true,false" (both selected) means no active-state filter.
+	isActive := strings.Join(listReq.Strings("is_active"), ",")
+	items, err := h.svc.ListProducts(r.Context(), tenantID, includeInactive, isActive, listReq.Q, listReq.Sort, listReq.Order)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return

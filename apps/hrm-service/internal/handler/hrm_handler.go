@@ -8,6 +8,7 @@ import (
 	"github.com/arda-labs/arda/apps/hrm-service/internal/domain"
 	"github.com/arda-labs/arda/apps/hrm-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 )
 
@@ -21,12 +22,21 @@ func NewHRMHandler(repo *repository.HRMRepository, workflowClient *workflowclien
 }
 
 func (h *HRMHandler) ListPositions(w http.ResponseWriter, r *http.Request) {
-	items, err := h.repo.ListPositions(r.Context(), r.URL.Query().Get("status"), r.URL.Query().Get("q"))
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	items, total, err := h.repo.ListPositions(r.Context(), repository.ListPositionsParams{
+		Status:  r.URL.Query().Get("status"),
+		Q:       listQuery.Q,
+		Sort:    listQuery.Sort,
+		Order:   listQuery.Order,
+		Page:    listQuery.Page,
+		PerPage: listQuery.PerPage,
+		All:     listQuery.All,
+	})
 	if err != nil {
 		writeResult(w, r, nil, err)
 		return
 	}
-	writeListAll(w, r, items)
+	writeListPage(w, r, items, total, listQuery)
 }
 
 func (h *HRMHandler) CreatePosition(w http.ResponseWriter, r *http.Request) {
@@ -61,12 +71,20 @@ func (h *HRMHandler) DeletePosition(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HRMHandler) ListJobTitles(w http.ResponseWriter, r *http.Request) {
-	items, err := h.repo.ListJobTitles(r.Context(), r.URL.Query().Get("q"))
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	items, total, err := h.repo.ListJobTitles(r.Context(), repository.ListJobTitlesParams{
+		Q:       listQuery.Q,
+		Sort:    listQuery.Sort,
+		Order:   listQuery.Order,
+		Page:    listQuery.Page,
+		PerPage: listQuery.PerPage,
+		All:     listQuery.All,
+	})
 	if err != nil {
 		writeResult(w, r, nil, err)
 		return
 	}
-	writeListAll(w, r, items)
+	writeListPage(w, r, items, total, listQuery)
 }
 
 func (h *HRMHandler) CreateJobTitle(w http.ResponseWriter, r *http.Request) {
@@ -101,12 +119,22 @@ func (h *HRMHandler) DeleteJobTitle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HRMHandler) ListOrgUnits(w http.ResponseWriter, r *http.Request) {
-	items, err := h.repo.ListOrgUnits(r.Context(), r.URL.Query().Get("organization_id"), r.URL.Query().Get("status"), r.URL.Query().Get("q"))
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	items, total, err := h.repo.ListOrgUnits(r.Context(), repository.ListOrgUnitsParams{
+		OrganizationID: r.URL.Query().Get("organization_id"),
+		Status:         r.URL.Query().Get("status"),
+		Q:              listQuery.Q,
+		Sort:           listQuery.Sort,
+		Order:          listQuery.Order,
+		Page:           listQuery.Page,
+		PerPage:        listQuery.PerPage,
+		All:            listQuery.All,
+	})
 	if err != nil {
 		writeResult(w, r, nil, err)
 		return
 	}
-	writeListAll(w, r, items)
+	writeListPage(w, r, items, total, listQuery)
 }
 
 func (h *HRMHandler) CreateOrgUnit(w http.ResponseWriter, r *http.Request) {
@@ -141,12 +169,52 @@ func (h *HRMHandler) DeleteOrgUnit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HRMHandler) ListEmployees(w http.ResponseWriter, r *http.Request) {
-	items, err := h.repo.ListEmployees(r.Context(), r.URL.Query().Get("q"))
+	listQuery := ardahttp.ParseListQuery(r.URL.Query())
+	items, total, err := h.repo.ListEmployees(r.Context(), repository.ListEmployeesParams{
+		Status:  r.URL.Query().Get("status"),
+		Q:       listQuery.Q,
+		Sort:    listQuery.Sort,
+		Order:   listQuery.Order,
+		Page:    listQuery.Page,
+		PerPage: listQuery.PerPage,
+		All:     listQuery.All,
+	})
 	if err != nil {
 		writeResult(w, r, nil, err)
 		return
 	}
-	writeListAll(w, r, items)
+	writeListPage(w, r, items, total, listQuery)
+}
+
+func (h *HRMHandler) CreateEmployee(w http.ResponseWriter, r *http.Request) {
+	var req domain.Employee
+	if !decode(w, r, &req) {
+		return
+	}
+	if req.EmployeeCode == "" || req.FullName == "" {
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "employee_code and full_name are required")
+		return
+	}
+	item, err := h.repo.CreateEmployee(r.Context(), req)
+	writeResult(w, r, item, err)
+}
+
+func (h *HRMHandler) UpdateEmployee(w http.ResponseWriter, r *http.Request) {
+	var req domain.Employee
+	if !decode(w, r, &req) {
+		return
+	}
+	req.ID = r.PathValue("id")
+	if req.ID == "" || req.EmployeeCode == "" || req.FullName == "" {
+		writeErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "id, employee_code and full_name are required")
+		return
+	}
+	item, err := h.repo.UpdateEmployee(r.Context(), req)
+	writeResult(w, r, item, err)
+}
+
+func (h *HRMHandler) DeleteEmployee(w http.ResponseWriter, r *http.Request) {
+	writeResult(w, r, map[string]bool{"ok": true}, h.repo.DeleteEmployee(r.Context(), r.PathValue("id")))
 }
 
 func (h *HRMHandler) ListEmployeeRegistrations(w http.ResponseWriter, r *http.Request) {

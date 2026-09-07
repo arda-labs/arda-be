@@ -695,12 +695,31 @@ func scanProduct(s interface{ Scan(...any) error }) (domain.LoanProduct, error) 
 	return p, err
 }
 
-func (r *LoanRepository) ListProducts(ctx context.Context, tenantID string, includeInactive bool) ([]domain.LoanProduct, error) {
+// productOrderBy maps the whitelisted sort field for the product catalog;
+// the historical default is code ASC.
+func productOrderBy(sort, order string) string {
+	col := "code"
+	switch sort {
+	case "name":
+		col = "name"
+	case "created_at":
+		col = "created_at"
+	}
+	if sort != "" && order == "desc" {
+		return col + " DESC"
+	}
+	return col + " ASC"
+}
+
+func (r *LoanRepository) ListProducts(ctx context.Context, tenantID string, includeInactive bool, isActive string, q, sort, order string) ([]domain.LoanProduct, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT `+productColumns+`
 		FROM lnm_products
-		WHERE tenant_id = $1 AND ($2 OR is_active)
-		ORDER BY code`, tenantID, includeInactive)
+		WHERE tenant_id = $1
+		  AND ($2 OR is_active)
+		  AND ($3::text = '' OR is_active::text = ANY(string_to_array($3::text, ',')))
+		  AND ($4::text = '' OR code ILIKE '%' || $4 || '%' OR name ILIKE '%' || $4 || '%')
+		ORDER BY `+productOrderBy(sort, order), tenantID, includeInactive, isActive, q)
 	if err != nil {
 		return nil, err
 	}
@@ -991,32 +1010,70 @@ func (r *LoanRepository) CreateVfuPlan(ctx context.Context, p *domain.VfuPlan) (
 
 // ── Disbursements (P1b) ──
 
-func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string, orgCodes []string, status, contractCode string) ([]domain.Disbursement, error) {
+// disbursementSortCol maps the public sort key (whitelisted in the handler
+// ListSpec) to a SQL column; unknown keys fall back to created_at.
+func disbursementSortCol(field string) string {
+	switch field {
+	case "agreement_code":
+		return "agreement_code"
+	case "contract_code":
+		return "contract_code"
+	case "disburse_date":
+		return "disburse_date"
+	case "created_at":
+		return "created_at"
+	default:
+		return "created_at"
+	}
+}
+
+func sortDirection(order string) string {
+	if order == "desc" {
+		return "DESC"
+	}
+	return "ASC"
+}
+
+// cashFlowDirection defaults to DESC (historical most-recent-first) until an
+// explicit sort field arrives with its own direction.
+func cashFlowDirection(sort, order string) string {
+	if sort == "" {
+		return "DESC"
+	}
+	return sortDirection(order)
+}
+
+func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string, orgCodes []string, status, contractCode, q, sort, order string, limit, offset int) ([]domain.Disbursement, int, error) {
 	orgAny := orgCodesToAny(orgCodes)
+	sortCol := disbursementSortCol(sort)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
 		       currency_code, COALESCE(fund_source_code,''), status, payload,
-		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at
+		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at,
+		       count(*) OVER() AS total_count
 		FROM lnm_disbursements
-		WHERE tenant_id = $1
-		  AND ($4::text = '' OR status = $4::text)
-		  AND ($5::text = '' OR contract_code = $5::text)
-		  AND ($6::text[] IS NULL OR org_code = ANY($6::text[]))
-		ORDER BY created_at DESC LIMIT 200`,
-		tenantID, orgAny, status, contractCode)
+		WHERE tenant_id = $1::text
+		  AND ($2::text = '' OR status = $2::text)
+		  AND ($3::text = '' OR contract_code = $3::text)
+		  AND ($4::text = '' OR agreement_code ILIKE '%' || $4::text || '%' OR contract_code ILIKE '%' || $4::text || '%')
+		  AND ($5::text[] IS NULL OR org_code = ANY($5::text[]))
+		ORDER BY `+sortCol+` `+cashFlowDirection(sort, order)+`, id
+		LIMIT $6::int OFFSET $7::int`,
+		tenantID, status, contractCode, q, orgAny, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := []domain.Disbursement{}
+	total := 0
 	for rows.Next() {
 		var d domain.Disbursement
 		var caseID, entryID sql.NullString
 		var payload []byte
 		if err := rows.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
 			&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.Status, &payload,
-			&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt); err != nil {
-			return nil, err
+			&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &total); err != nil {
+			return nil, 0, err
 		}
 		if len(payload) > 0 && string(payload) != "null" {
 			d.Payload = payload
@@ -1029,7 +1086,10 @@ func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string,
 		}
 		out = append(out, d)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
 
 func (r *LoanRepository) CreateDisbursement(ctx context.Context, d *domain.Disbursement) (*domain.Disbursement, error) {
@@ -1149,30 +1209,51 @@ const collectionColumns = `id, tenant_id, contract_code, agreement_code, collect
 	principal_minor, interest_minor, currency_code, status, payload,
 	workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at`
 
-func (r *LoanRepository) ListCollections(ctx context.Context, tenantID string, orgCodes []string, status, contractCode string) ([]domain.Collection, error) {
+// collectionSortCol maps the public sort key (whitelisted in the handler
+// ListSpec) to a SQL column; unknown keys fall back to created_at.
+func collectionSortCol(field string) string {
+	switch field {
+	case "agreement_code":
+		return "agreement_code"
+	case "contract_code":
+		return "contract_code"
+	case "collection_date":
+		return "collection_date"
+	case "created_at":
+		return "created_at"
+	default:
+		return "created_at"
+	}
+}
+
+func (r *LoanRepository) ListCollections(ctx context.Context, tenantID string, orgCodes []string, status, contractCode, q, sort, order string, limit, offset int) ([]domain.Collection, int, error) {
 	orgAny := orgCodesToAny(orgCodes)
+	sortCol := collectionSortCol(sort)
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT `+collectionColumns+`
+		SELECT `+collectionColumns+`, count(*) OVER() AS total_count
 		FROM lnm_collections
-		WHERE tenant_id = $1
-		  AND ($4::text = '' OR status = $4::text)
-		  AND ($5::text = '' OR contract_code = $5::text)
-		  AND ($6::text[] IS NULL OR org_code = ANY($6::text[]))
-		ORDER BY created_at DESC LIMIT 200`,
-		tenantID, orgAny, status, contractCode)
+		WHERE tenant_id = $1::text
+		  AND ($2::text = '' OR status = $2::text)
+		  AND ($3::text = '' OR contract_code = $3::text)
+		  AND ($4::text = '' OR agreement_code ILIKE '%' || $4::text || '%' OR contract_code ILIKE '%' || $4::text || '%')
+		  AND ($5::text[] IS NULL OR org_code = ANY($5::text[]))
+		ORDER BY `+sortCol+` `+cashFlowDirection(sort, order)+`, id
+		LIMIT $6::int OFFSET $7::int`,
+		tenantID, status, contractCode, q, orgAny, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := []domain.Collection{}
+	total := 0
 	for rows.Next() {
 		var c domain.Collection
 		var caseID, entryID sql.NullString
 		var payload []byte
 		if err := rows.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.AgreementCode, &c.CollectionDate,
 			&c.PrincipalMinor, &c.InterestMinor, &c.CurrencyCode, &c.Status, &payload,
-			&caseID, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
-			return nil, err
+			&caseID, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &total); err != nil {
+			return nil, 0, err
 		}
 		if len(payload) > 0 && string(payload) != "null" {
 			c.Payload = payload
@@ -1185,7 +1266,10 @@ func (r *LoanRepository) ListCollections(ctx context.Context, tenantID string, o
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
 
 func (r *LoanRepository) CreateCollection(ctx context.Context, c *domain.Collection) (*domain.Collection, error) {

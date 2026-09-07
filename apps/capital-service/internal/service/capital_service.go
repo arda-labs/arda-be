@@ -31,8 +31,8 @@ func (s *CapitalService) ListFundTypes(ctx context.Context, tenantID string) ([]
 }
 
 // ListContracts returns fund contracts.
-func (s *CapitalService) ListContracts(ctx context.Context, tenantID string, orgCodes []string, status string) ([]repository.CapitalContract, error) {
-	return s.repo.ListContracts(ctx, tenantID, orgCodes, status)
+func (s *CapitalService) ListContracts(ctx context.Context, params repository.ListContractsParams) ([]repository.CapitalContract, int, error) {
+	return s.repo.ListContracts(ctx, params)
 }
 
 // CreateContract registers a fund contract.

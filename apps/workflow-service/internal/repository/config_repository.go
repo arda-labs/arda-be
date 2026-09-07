@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -112,13 +114,45 @@ func (r *CaseRepository) UpdateProcessConfig(ctx context.Context, caseType strin
 	return &ct, nil
 }
 
-func (r *CaseRepository) ListSLAPolicies(ctx context.Context) ([]SLAPolicy, error) {
-	rows, err := r.db.QueryContext(ctx, `
+// slaPolicySortCol maps the FE sort param to a whitelisted column.
+func slaPolicySortCol(sort string) string {
+	switch sort {
+	case "code":
+		return "code"
+	case "name":
+		return "name"
+	case "case_type":
+		return "case_type"
+	case "status":
+		return "status"
+	case "created_at":
+		return "created_at"
+	default:
+		return ""
+	}
+}
+
+// ListSLAPolicies returns every catalog row (small near-static lookup —
+// deliberately unpaged) with optional q search and whitelisted sort.
+func (r *CaseRepository) ListSLAPolicies(ctx context.Context, search, sort, order string) ([]SLAPolicy, error) {
+	where := "TRUE"
+	args := []any{}
+	if strings.TrimSpace(search) != "" {
+		// q matches the code and name columns.
+		where = "(code ILIKE $1 OR name ILIKE $1)"
+		args = append(args, "%"+strings.TrimSpace(search)+"%")
+	}
+	orderSQL := "case_type, code"
+	if col := slaPolicySortCol(sort); col != "" {
+		orderSQL = fmt.Sprintf("%s %s", col, listSortDirection(order))
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, code, name, case_type, due_in_hours, warning_in_hours,
 		       escalation_role, status, effective_from, effective_to, created_at, updated_at
 		FROM business_sla_policies
-		ORDER BY case_type, code
-	`)
+		WHERE %s
+		ORDER BY %s
+	`, where, orderSQL), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -245,12 +279,45 @@ func (r *CaseRepository) UpdateSLAPolicy(ctx context.Context, id string, in SLAP
 	return &item, err
 }
 
-func (r *CaseRepository) ListDescriptionTemplates(ctx context.Context) ([]DescriptionTemplate, error) {
-	rows, err := r.db.QueryContext(ctx, `
+// descriptionTemplateSortCol maps the FE sort param to a whitelisted column.
+// The table has no name column, so q/sort fall back to code + case_type.
+func descriptionTemplateSortCol(sort string) string {
+	switch sort {
+	case "code":
+		return "code"
+	case "case_type":
+		return "case_type"
+	case "business_subsystem":
+		return "business_subsystem"
+	case "status":
+		return "status"
+	case "created_at":
+		return "created_at"
+	default:
+		return ""
+	}
+}
+
+// ListDescriptionTemplates returns every catalog row (small near-static lookup
+// — deliberately unpaged) with optional q search and whitelisted sort.
+func (r *CaseRepository) ListDescriptionTemplates(ctx context.Context, search, sort, order string) ([]DescriptionTemplate, error) {
+	where := "TRUE"
+	args := []any{}
+	if strings.TrimSpace(search) != "" {
+		// q matches the code column and the name-like case_type column.
+		where = "(code ILIKE $1 OR case_type ILIKE $1)"
+		args = append(args, "%"+strings.TrimSpace(search)+"%")
+	}
+	orderSQL := "business_subsystem, case_type, code"
+	if col := descriptionTemplateSortCol(sort); col != "" {
+		orderSQL = fmt.Sprintf("%s %s", col, listSortDirection(order))
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, code, business_subsystem, case_type, pattern, preview, status, created_at, updated_at
 		FROM business_description_templates
-		ORDER BY business_subsystem, case_type, code
-	`)
+		WHERE %s
+		ORDER BY %s
+	`, where, orderSQL), args...)
 	if err != nil {
 		return nil, err
 	}

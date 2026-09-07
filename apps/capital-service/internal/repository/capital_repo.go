@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -86,23 +87,85 @@ func (r *CapitalRepository) ListFundTypes(ctx context.Context, tenantID string) 
 	return out, rows.Err()
 }
 
-// ListContracts returns fund contracts.
-func (r *CapitalRepository) ListContracts(ctx context.Context, tenantID string, orgCodes []string, status string) ([]CapitalContract, error) {
-	orgAny := any(nil)
-	if len(orgCodes) > 0 {
-		orgAny = orgCodes
+// ListContractsParams carries the parsed list query for fund contracts.
+type ListContractsParams struct {
+	TenantID string
+	OrgCodes []string
+	Status   string
+	Q        string
+	Sort     string
+	Order    string
+	Page     int // 0-based row offset * size supplied by the handler
+	Size     int
+}
+
+// contractSortCol maps the FE sort param to a whitelisted column.
+func contractSortCol(sort string) string {
+	switch sort {
+	case "contract_code":
+		return "contract_code"
+	case "contract_date":
+		return "contract_date"
+	case "created_at":
+		return "created_at"
+	default:
+		return "contract_date"
 	}
-	rows, err := r.db.QueryContext(ctx, `
+}
+
+func listCapOrder(order string) string {
+	if order == "desc" {
+		return "DESC"
+	}
+	return "ASC"
+}
+
+// ListContracts returns a paged slice of fund contracts filtered by status,
+// org scope and q (contract_code / counterparty_code / fund_type_code ILIKE).
+func (r *CapitalRepository) ListContracts(ctx context.Context, params ListContractsParams) ([]CapitalContract, int, error) {
+	where := []string{"tenant_id = $1"}
+	args := []any{params.TenantID}
+	if len(params.OrgCodes) > 0 {
+		args = append(args, params.OrgCodes)
+		where = append(where, fmt.Sprintf("org_code = ANY($%d::text[])", len(args)))
+	}
+	if params.Status != "" {
+		args = append(args, params.Status)
+		where = append(where, fmt.Sprintf("status = $%d::text", len(args)))
+	}
+	if params.Q != "" {
+		args = append(args, "%"+params.Q+"%")
+		where = append(where, fmt.Sprintf(
+			"(contract_code ILIKE $%d OR counterparty_code ILIKE $%d OR fund_type_code ILIKE $%d)",
+			len(args), len(args), len(args)))
+	}
+	wc := strings.Join(where, " AND ")
+
+	var total int
+	if err := r.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM cfc_contracts WHERE "+wc, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	size := params.Size
+	if size < 1 || size > 100 {
+		size = 100
+	}
+	offset := params.Page
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, contract_code, fund_type_code, counterparty_code, contract_date::text,
 		       amount_minor, interest_rate, currency_code, status, COALESCE(org_code,''),
 		       workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at
 		FROM cfc_contracts
-		WHERE tenant_id = $1
-		  AND ($4::text = '' OR status = $4::text)
-		  AND ($5::text[] IS NULL OR org_code = ANY($5::text[]))
-		ORDER BY contract_date DESC LIMIT 200`, tenantID, orgAny, status)
+		WHERE %s
+		ORDER BY %s %s LIMIT $%d OFFSET $%d`,
+		wc, contractSortCol(params.Sort), listCapOrder(params.Order), len(args)+1, len(args)+2),
+		append(args, size, offset)...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := []CapitalContract{}
@@ -112,7 +175,7 @@ func (r *CapitalRepository) ListContracts(ctx context.Context, tenantID string, 
 		if err := rows.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.FundTypeCode, &c.CounterpartyCode,
 			&c.ContractDate, &c.AmountMinor, &c.InterestRate, &c.CurrencyCode, &c.Status, &c.OrgCode,
 			&caseID, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if caseID.Valid {
 			c.WorkflowCaseID = &caseID.String
@@ -122,7 +185,7 @@ func (r *CapitalRepository) ListContracts(ctx context.Context, tenantID string, 
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 // CreateContract inserts a fund contract.

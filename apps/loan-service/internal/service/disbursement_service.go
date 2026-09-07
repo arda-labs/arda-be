@@ -27,9 +27,18 @@ func NewDisbursementService(repo *repository.LoanRepository, workflow Adjustment
 // CaseType is the BPMN case type for the disbursement flow.
 const CaseType = "LNM_DISBURSEMENT_V2"
 
-func (s *DisbursementService) List(ctx context.Context, tenantID string, orgCodes []string, status, contractCode string) ([]domain.Disbursement, error) {
-	items, err := s.repo.ListDisbursements(ctx, tenantID, orgCodes, status, contractCode)
-	return items, mapRepoError(err)
+// List returns one page of the disbursement ledger. q matches the
+// agreement/contract codes (ILIKE), sort/order are the whitelisted keys
+// validated by the handler's ListSpec.
+func (s *DisbursementService) List(ctx context.Context, tenantID string, orgCodes []string, status, contractCode, q, sort, order string, page, perPage int) ([]domain.Disbursement, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 20
+	}
+	items, total, err := s.repo.ListDisbursements(ctx, tenantID, orgCodes, status, contractCode, q, sort, order, perPage, (page-1)*perPage)
+	return items, total, mapRepoError(err)
 }
 
 func (s *DisbursementService) Get(ctx context.Context, tenantID, id string) (domain.Disbursement, error) {

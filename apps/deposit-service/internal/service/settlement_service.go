@@ -187,7 +187,8 @@ func (s *SettlementService) post(ctx context.Context, tenantID, docType, savings
 }
 
 func (s *SettlementService) findProduct(ctx context.Context, tenantID, code string) (*repository.SavingsProduct, error) {
-	products, err := s.repo.ListProducts(ctx, tenantID)
+	active := true
+	products, err := s.repo.ListProducts(ctx, repository.ListProductsParams{TenantID: tenantID, IsActive: &active})
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -221,8 +222,19 @@ func (s *SettlementService) ListSavings(ctx context.Context, tenantID string, or
 }
 
 // ListProducts passthrough.
-func (s *SettlementService) ListProducts(ctx context.Context, tenantID string) ([]repository.SavingsProduct, error) {
-	return s.repo.ListProducts(ctx, tenantID)
+func (s *SettlementService) ListProducts(ctx context.Context, params repository.ListProductsParams) ([]repository.SavingsProduct, error) {
+	return s.repo.ListProducts(ctx, params)
+}
+
+// UpsertProduct creates or updates one deposit product.
+func (s *SettlementService) UpsertProduct(ctx context.Context, tenantID, actor string, in *repository.SavingsProduct) (*repository.SavingsProduct, error) {
+	if in.Code == "" || in.Name == "" || in.TermMonths <= 0 {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "code, name and a positive term_months are required")
+	}
+	in.ID = ""
+	in.TenantID = tenantID
+	in.CreatedBy = actor
+	return s.repo.UpsertProduct(ctx, in)
 }
 
 // ListInterbank passthrough.
