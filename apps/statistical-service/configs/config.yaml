@@ -1,7 +1,5 @@
-app:
-  name: statistical-service
-  http_addr: 0.0.0.0:8080
-
-log:
-  level: info
-  format: json
+app_name: statistical-service
+http_addr: 0.0.0.0:8080
+log_level: info
+database_dsn: ""
+workflow_grpc_addr: "localhost:9090"

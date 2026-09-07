@@ -1,0 +1,27 @@
+// Package migration applies the service's embedded goose migrations on
+// startup. Every service owns its schema; see workflow-service for the
+// reference implementation.
+package migration
+
+import (
+	"database/sql"
+	"fmt"
+
+	"github.com/arda-labs/arda/apps/statistical-service/migrations"
+	"github.com/pressly/goose/v3"
+)
+
+// Run applies pending migrations from the embedded migrations directory.
+func Run(db *sql.DB, dialect string) error {
+	goose.SetBaseFS(migrations.FS)
+
+	if err := goose.SetDialect(dialect); err != nil {
+		return fmt.Errorf("set migration dialect: %w", err)
+	}
+
+	if err := goose.Up(db, "."); err != nil {
+		return fmt.Errorf("run migrations: %w", err)
+	}
+
+	return nil
+}

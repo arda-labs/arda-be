@@ -13,7 +13,9 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	appconfig "github.com/arda-labs/arda/apps/capital-service/internal/config"
 	"github.com/arda-labs/arda/apps/capital-service/internal/handler"
+	"github.com/arda-labs/arda/apps/capital-service/internal/migration"
 	"github.com/arda-labs/arda/apps/capital-service/internal/repository"
 	"github.com/arda-labs/arda/apps/capital-service/internal/service"
 	transport "github.com/arda-labs/arda/apps/capital-service/internal/transport/http"
@@ -33,6 +35,12 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	if err := migration.Run(db, "postgres"); err != nil {
+		logger.Error("Failed to run migrations", "err", err)
+		os.Exit(1)
+	}
+	logger.Info("Database migrations applied successfully")
 
 	var financeClient *financeclient.Client
 	if cfg.FinanceGRPCAddr != "" {
@@ -99,12 +107,13 @@ type config struct {
 }
 
 func loadConfig() config {
+	base := appconfig.Load()
 	return config{
-		AppName:         "capital-service",
-		HTTPAddr:        envOr("HTTP_ADDR", "0.0.0.0:8080"),
-		LogLevel:        envOr("LOG_LEVEL", "info"),
-		DatabaseDSN:     envOr("DATABASE_DSN", ""),
-		FinanceGRPCAddr: envOr("FINANCE_GRPC_ADDR", "localhost:9090"),
+		AppName:         base.AppName,
+		HTTPAddr:        base.HTTPAddr,
+		LogLevel:        base.LogLevel,
+		DatabaseDSN:     base.DatabaseDSN,
+		FinanceGRPCAddr: base.FinanceGRPCAddr,
 	}
 }
 

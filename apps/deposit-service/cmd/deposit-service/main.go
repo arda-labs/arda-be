@@ -13,7 +13,9 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	appconfig "github.com/arda-labs/arda/apps/deposit-service/internal/config"
 	"github.com/arda-labs/arda/apps/deposit-service/internal/handler"
+	"github.com/arda-labs/arda/apps/deposit-service/internal/migration"
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
 	"github.com/arda-labs/arda/apps/deposit-service/internal/service"
 	grpcserver "github.com/arda-labs/arda/apps/deposit-service/internal/transport/grpc"
@@ -40,6 +42,12 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	if err := migration.Run(db, "postgres"); err != nil {
+		logger.Error("Failed to run migrations", "err", err)
+		os.Exit(1)
+	}
+	logger.Info("Database migrations applied successfully")
 
 	var financeClient *financeclient.Client
 	if cfg.FinanceGRPCAddr != "" {
@@ -131,13 +139,14 @@ type config struct {
 }
 
 func loadConfig() config {
+	base := appconfig.Load()
 	return config{
-		AppName:         "deposit-service",
-		HTTPAddr:        envOr("HTTP_ADDR", "0.0.0.0:8080"),
+		AppName:         base.AppName,
+		HTTPAddr:        base.HTTPAddr,
 		GRPCAddr:        envOr("GRPC_ADDR", "0.0.0.0:9090"),
-		LogLevel:        envOr("LOG_LEVEL", "info"),
-		DatabaseDSN:     envOr("DATABASE_DSN", ""),
-		FinanceGRPCAddr: envOr("FINANCE_GRPC_ADDR", "localhost:9090"),
+		LogLevel:        base.LogLevel,
+		DatabaseDSN:     base.DatabaseDSN,
+		FinanceGRPCAddr: base.FinanceGRPCAddr,
 	}
 }
 
