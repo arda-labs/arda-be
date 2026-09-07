@@ -48,6 +48,7 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 	mux.HandleFunc("/api/workflow/work-items/", wfHandler.WorkItemByID)
 	mux.HandleFunc("/api/workflow/process-instances/", wfHandler.ProcessInstanceByKey)
 	mux.HandleFunc("/api/workflow/jobs/", wfHandler.JobByKey)
+	mux.HandleFunc("/api/workflow/tasks/claim", wfHandler.ClaimTask)
 	mux.HandleFunc("/api/workflow/tasks/", wfHandler.CompleteUserTask)
 	mux.HandleFunc("/api/workflow/cases", wfHandler.Cases)
 	mux.HandleFunc("/api/workflow/cases/", wfHandler.CaseByID)

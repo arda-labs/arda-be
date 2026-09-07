@@ -779,6 +779,64 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, r, http.StatusOK, map[string]any{"status": "completed"})
 }
 
+// ClaimTask claims a workflow task by context (process instance / case /
+// element) for domain remotes that run their approval inside the business
+// page (CRM v2 flow). Native userTask claim only — the legacy parked
+// runtime stays removed.
+func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	if h.zeebeSvc == nil {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
+		return
+	}
+	var req struct {
+		Role               string `json:"role"`
+		TaskType           string `json:"taskType"`
+		ProcessInstanceKey flexInt64 `json:"processInstanceKey"`
+		CaseID             string `json:"caseId"`
+		ElementID          string `json:"elementId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
+		return
+	}
+	filter := service.TaskClaimFilter{
+		ProcessInstanceKey: req.ProcessInstanceKey.Int64(),
+		CaseID:             strings.TrimSpace(req.CaseID),
+		ElementID:          strings.TrimSpace(req.ElementID),
+	}
+	actor := currentUserID(r)
+	slog.Info("workflow task claim requested",
+		"actor", actor,
+		"role", req.Role,
+		"caseId", filter.CaseID,
+		"elementId", filter.ElementID,
+		"processInstanceKey", filter.ProcessInstanceKey,
+	)
+
+	claimCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	task, err := h.tryNativeUserTaskClaim(claimCtx, filter, filter.ElementID, actor)
+	if err != nil {
+		slog.Warn("native user task claim failed", "err", err)
+		writeJSON(w, r, http.StatusBadGateway, map[string]any{
+			"error": nativeClaimUnavailableMessage(filter, err),
+		})
+		return
+	}
+	if task == nil {
+		writeJSON(w, r, http.StatusNotFound, map[string]any{
+			"error": nativeClaimUnavailableMessage(filter, fmt.Errorf("no active native user task for element %q", filter.ElementID)),
+		})
+		return
+	}
+	h.persistInboxClaim(r.Context(), *task)
+	writeJSON(w, r, http.StatusOK, task)
+}
+
 func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
