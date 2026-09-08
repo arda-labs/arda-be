@@ -142,20 +142,23 @@ func (r *PostingRepository) EnsurePeriodOpen(ctx context.Context, tenantID, acco
 	return nil
 }
 
-// FindEntryByIdempotencyKey returns the entry id + entry_no of a previously
-// posted entry, or nil when the key is unused.
+// FindEntryByIdempotencyKey returns the response of the entry currently
+// holding the key (any status: PENDING / POSTED / VOID / REVERSED), or nil
+// when the key is unused.
 func (r *PostingRepository) FindEntryByIdempotencyKey(ctx context.Context, tenantID, key string) (*financev1.PostingResponse, error) {
 	if key == "" {
 		return nil, nil
 	}
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, entry_no, version, created_at FROM fin_journal_entries
+		SELECT id, entry_no, version, COALESCE(posted_at, created_at), status
+		FROM fin_journal_entries
 		WHERE tenant_id = $1 AND idempotency_key = $2`, tenantID, key)
 	var id string
 	var entryNo int64
 	var version int32
 	var postedAt time.Time
-	err := row.Scan(&id, &entryNo, &version, &postedAt)
+	var status string
+	err := row.Scan(&id, &entryNo, &version, &postedAt, &status)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -167,6 +170,7 @@ func (r *PostingRepository) FindEntryByIdempotencyKey(ctx context.Context, tenan
 		EntryNo:        entryNo,
 		Version:        version,
 		PostedAt:       postedAt.Format(time.RFC3339),
+		Status:         status,
 		Replayed:       true,
 	}, nil
 }

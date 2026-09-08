@@ -74,7 +74,7 @@ func TestCollectionSmoke(t *testing.T) {
 		t.Fatalf("seed agreement: %v", err)
 	}
 	// Drawdown first so the collection has outstanding to reduce.
-	if err := repo.SettleDisbursement(ctx, tenantID, agreementCode, 500_000_000); err != nil {
+	if err := repo.SettleRegisterDisbursement(ctx, tenantID, agreementCode, 500_000_000); err != nil {
 		t.Fatalf("seed drawdown: %v", err)
 	}
 

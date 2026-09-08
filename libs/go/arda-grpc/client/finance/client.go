@@ -80,6 +80,8 @@ func (c *Client) Validate(ctx context.Context, req *financev1.PostingRequest) (*
 }
 
 // Post writes one balanced journal entry. Idempotent per idempotency_key.
+// With a matching PENDING entry (created by Reserve) it converts that entry
+// to POSTED; direct posts book straight to POSTED without a hold.
 func (c *Client) Post(ctx context.Context, req *financev1.PostingRequest) (*financev1.PostingResponse, error) {
 	if c == nil {
 		return nil, errors.New("finance client is nil")
@@ -87,6 +89,30 @@ func (c *Client) Post(ctx context.Context, req *financev1.PostingRequest) (*fina
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	return c.api.PostTransaction(callCtx, req)
+}
+
+// Reserve creates the PENDING entry and holds its amounts on the account
+// balances (two-phase balance: available drops at reserve, actual moves at
+// Post). Idempotent per idempotency_key; editing the proposal releases the
+// stale hold and re-reserves automatically.
+func (c *Client) Reserve(ctx context.Context, req *financev1.PostingRequest) (*financev1.PostingResponse, error) {
+	if c == nil {
+		return nil, errors.New("finance client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	return c.api.ReservePosting(callCtx, req)
+}
+
+// Release frees the reserved amounts of a PENDING entry and stamps it VOID
+// (maker-checker reject path). Posted entries must be reversed instead.
+func (c *Client) Release(ctx context.Context, req *financev1.ReleaseRequest) (*financev1.PostingResponse, error) {
+	if c == nil {
+		return nil, errors.New("finance client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	return c.api.ReleasePosting(callCtx, req)
 }
 
 // Reverse creates the reversal entry for a posted journal entry.

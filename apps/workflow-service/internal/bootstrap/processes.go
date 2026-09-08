@@ -41,8 +41,11 @@ var customerAdjustmentV2 []byte
 //go:embed lnm-loan-formation-v2.bpmn
 var lnmLoanFormationV2 []byte
 
-//go:embed lnm-disbursement-v2.bpmn
-var lnmDisbursement []byte
+//go:embed lnm-disbursement-register-v2.bpmn
+var lnmDisbursementRegister []byte
+
+//go:embed lnm-disbursement-complete-v2.bpmn
+var lnmDisbursementComplete []byte
 
 //go:embed lnm-collection-v2.bpmn
 var lnmCollection []byte
@@ -138,10 +141,16 @@ func BuiltInProcesses() []Process {
 			Content:      lnmOffBalanceExport,
 		},
 		{
-			ProcessCode:  "LNM_DISBURSEMENT_V2",
-			Name:         "Giải ngân (v2)",
-			ResourceName: "lnm-disbursement-v2.bpmn",
-			Content:      lnmDisbursement,
+			ProcessCode:  "LNM_DISB_REGISTER_V2",
+			Name:         "Đăng ký giải ngân (v2)",
+			ResourceName: "lnm-disbursement-register-v2.bpmn",
+			Content:      lnmDisbursementRegister,
+		},
+		{
+			ProcessCode:  "LNM_DISB_COMPLETE_V2",
+			Name:         "Hoàn tất giải ngân (v2)",
+			ResourceName: "lnm-disbursement-complete-v2.bpmn",
+			Content:      lnmDisbursementComplete,
 		},
 		{
 			ProcessCode:  "LNM_COLLECTION_V2",

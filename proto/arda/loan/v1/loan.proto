@@ -66,8 +66,9 @@ message GetDisbursementPostingDetailRequest {
   string disbursement_id = 1;
 }
 
-// Everything the workflow worker needs to build the LNM_DISBURSEMENT
-// PostingRequest without reaching into loan-service internals.
+// Everything the workflow worker needs to build the LNM_DISB_REGISTER /
+// LNM_DISB_COMPLETE PostingRequest without reaching into loan-service
+// internals. flow_type selects the rule card legs.
 message DisbursementPostingDetail {
   string disbursement_id = 1;
   string disbursement_code = 2;
@@ -81,6 +82,9 @@ message DisbursementPostingDetail {
   string customer_code = 10;
   string fund_source_code = 11;
   string workflow_case_id = 12;
+  // REGISTER (default): DEBIT LNM_LOAN_PRINCIPAL / CREDIT FUND_DISBURSEMENT_IN_TRANSIT.
+  // COMPLETE: DEBIT FUND_DISBURSEMENT_IN_TRANSIT / CREDIT CASH_SETTLEMENT_ACCOUNT.
+  string flow_type = 13;
 }
 
 message SettleDisbursementRequest {

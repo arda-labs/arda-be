@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
@@ -36,14 +37,31 @@ func (s *PostingService) ValidatePosting(ctx context.Context, tenantID string, r
 }
 
 // PostTransaction persists one balanced entry. Idempotency: when the
-// idempotency key was used before, the original response replays.
+// idempotency key already belongs to a POSTED/REVERSED entry, that response
+// replays; when it belongs to a PENDING entry (created by ReservePosting),
+// the pending entry converts to POSTED — its reserved amounts graduate to
+// posted counters and the outbox event fires. Direct posts (no pending twin)
+// book straight to posted counters without an availability check — they are
+// system-executed decisions (EOD jobs, cash, synchronous settles); flows
+// with a human approval window must go through ReservePosting.
 func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, req *financev1.PostingRequest) (*financev1.PostingResponse, error) {
 	if err := requireTenant(tenantID); err != nil {
 		return nil, err
 	}
 	if req.GetIdempotencyKey() != "" {
-		if previous, err := s.repo.FindEntryByIdempotencyKey(ctx, tenantID, req.GetIdempotencyKey()); err == nil && previous != nil {
-			return previous, nil
+		previous, err := s.repo.FindEntryByIdempotencyKey(ctx, tenantID, req.GetIdempotencyKey())
+		if err != nil {
+			return nil, err
+		}
+		if previous != nil {
+			switch previous.GetStatus() {
+			case "PENDING":
+				return s.postPendingEntry(ctx, tenantID, previous.GetJournalEntryId(), req.GetMetadata()["actor"])
+			case "VOID":
+				return nil, fmt.Errorf("idempotency key %q was released (VOID); issue a new posting", req.GetIdempotencyKey())
+			default:
+				return previous, nil
+			}
 		}
 	}
 	result, resolved, err := s.resolve(ctx, tenantID, req)
@@ -65,13 +83,13 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 		INSERT INTO fin_journal_entries
 			(tenant_id, accounting_date, currency_code, status, description,
 			 business_domain, business_doc_type, business_doc_id, business_doc_code, case_id,
-			 idempotency_key, created_by)
-		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9,$10,$11)`,
+			 idempotency_key, created_by, posted_at)
+		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9,$10,$11,now())`,
 		tenantID, req.GetAccountingDate(), req.GetCurrencyCode(), req.GetDescription(),
 		ref.GetDomain(), ref.GetDocumentType(),
 		nullUUIDText(ref.GetDocumentId()), ref.GetDocumentCode(),
 		nullUUIDText(ref.GetCaseId()), nullText(req.GetIdempotencyKey()),
-		ref.GetDocumentCode()); err != nil {
+		metadataActor(req, ref.GetDocumentCode())); err != nil {
 		return nil, fmt.Errorf("insert entry: %w", err)
 	}
 
@@ -100,6 +118,10 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 		}
 	}
 
+	if err := s.postLinesToBalances(ctx, tx, tenantID, resolved); err != nil {
+		return nil, err
+	}
+
 	if err := s.repo.InsertOutbox(ctx, tx, tenantID, entryID, outboxPayload(entryID, req)); err != nil {
 		return nil, fmt.Errorf("enqueue outbox: %w", err)
 	}
@@ -111,8 +133,473 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 		JournalEntryId: entryID,
 		EntryNo:        parseI64(entryNo),
 		PostedAt:       createdAt,
+		Status:         "POSTED",
 		Replayed:       false,
 	}, nil
+}
+
+// ReservePosting creates the PENDING entry and holds its amounts on
+// fin_account_balances (the two-phase balance reservation). Every outflow
+// line must fit inside the account's available value — opening + posted +
+// reserved — so N pending proposals cannot together overdraft an account.
+// Idempotency: replaying the same content returns the pending entry; a
+// changed proposal releases the stale hold and re-reserves (the EPAS
+// updateTransaction rebuild semantics that make the maker-edit loop safe).
+func (s *PostingService) ReservePosting(ctx context.Context, tenantID string, req *financev1.PostingRequest) (*financev1.PostingResponse, error) {
+	if err := requireTenant(tenantID); err != nil {
+		return nil, err
+	}
+	if key := req.GetIdempotencyKey(); key != "" {
+		previous, err := s.repo.FindEntryByIdempotencyKey(ctx, tenantID, key)
+		if err != nil {
+			return nil, err
+		}
+		if previous != nil {
+			handled, err := s.handleExistingForReserve(ctx, tenantID, req, previous)
+			if err != nil || handled {
+				return previous, err
+			}
+		}
+	}
+
+	result, resolved, err := s.resolve(ctx, tenantID, req)
+	if err != nil {
+		return nil, err
+	}
+	if !result.GetValid() {
+		return nil, fmt.Errorf("posting rejected: %s", strings.Join(result.GetGlobalErrors(), "; "))
+	}
+
+	ref := req.GetBusinessReference()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO fin_journal_entries
+			(tenant_id, accounting_date, currency_code, status, description,
+			 business_domain, business_doc_type, business_doc_id, business_doc_code, case_id,
+			 idempotency_key, created_by)
+		VALUES ($1,$2,$3,'PENDING',$4,$5,$6,$7,$8,$9,$10,$11)`,
+		tenantID, req.GetAccountingDate(), req.GetCurrencyCode(), req.GetDescription(),
+		ref.GetDomain(), ref.GetDocumentType(),
+		nullUUIDText(ref.GetDocumentId()), ref.GetDocumentCode(),
+		nullUUIDText(ref.GetCaseId()), nullText(req.GetIdempotencyKey()),
+		metadataActor(req, ref.GetDocumentCode())); err != nil {
+		return nil, fmt.Errorf("insert pending entry: %w", err)
+	}
+
+	var entryID string
+	var entryNo, createdAt string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id, entry_no, created_at FROM fin_journal_entries
+		WHERE tenant_id = $1 AND idempotency_key = $2 AND business_doc_type = $3
+		ORDER BY entry_no DESC LIMIT 1`,
+		tenantID, req.GetIdempotencyKey(), ref.GetDocumentType(),
+	).Scan(&entryID, &entryNo, &createdAt); err != nil {
+		return nil, fmt.Errorf("fetch pending entry: %w", err)
+	}
+
+	for _, l := range resolved {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO fin_journal_lines
+				(tenant_id, entry_id, line_no, direction, coa_version, account_code, account_name,
+				 amount_minor, currency_code, counterparty_code, counterparty_name, description, analytics)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+			tenantID, entryID, l.GetLineNo(), l.GetDirection(),
+			l.GetCoaVersion(), l.GetAccountCode(), l.GetAccountName(), l.GetAmountMinor(),
+			l.GetCurrencyCode(), nullText(l.GetResolvedAnalytics().GetCustomerCode()), "",
+			l.GetDescription(), analyticsJSON(l.GetResolvedAnalytics())); err != nil {
+			return nil, fmt.Errorf("insert line %d: %w", l.GetLineNo(), err)
+		}
+	}
+
+	if err := s.reserveLines(ctx, tx, tenantID, resolved, req.GetAccountingDate()); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &financev1.PostingResponse{
+		JournalEntryId: entryID,
+		EntryNo:        parseI64(entryNo),
+		PostedAt:       createdAt,
+		Status:         "PENDING",
+		Replayed:       false,
+	}, nil
+}
+
+// handleExistingForReserve resolves what an existing idempotency-key holder
+// means for a new ReservePosting call: replay (returns handled=true), rebuild
+// (releases the stale hold, handled=false → caller creates fresh), or an
+// error. POSTED/REVERSED holders always replay.
+func (s *PostingService) handleExistingForReserve(ctx context.Context, tenantID string, req *financev1.PostingRequest, previous *financev1.PostingResponse) (bool, error) {
+	switch previous.GetStatus() {
+	case "PENDING":
+		stored, err := s.repo.ListEntryLines(ctx, tenantID, previous.GetJournalEntryId())
+		if err != nil {
+			return false, err
+		}
+		result, resolved, err := s.resolve(ctx, tenantID, req)
+		if err != nil {
+			return false, err
+		}
+		if !result.GetValid() {
+			return false, fmt.Errorf("posting rejected: %s", strings.Join(result.GetGlobalErrors(), "; "))
+		}
+		if pendingLinesMatch(stored, resolved) {
+			return true, nil
+		}
+		if _, err := s.releasePendingEntry(ctx, tenantID, previous.GetJournalEntryId(),
+			"reserve rebuilt: proposal edited", "reserve-rebuild"); err != nil {
+			return false, err
+		}
+		return false, nil
+	case "VOID":
+		// release freed the key — re-reserve fresh.
+		return false, nil
+	default:
+		return true, nil
+	}
+}
+
+// ReleasePosting frees the reserved amounts of a PENDING entry and stamps it
+// VOID (the maker-checker reject/cancel path). Releasing an already-VOID
+// entry replays; POSTED entries are immutable — reverse them instead.
+func (s *PostingService) ReleasePosting(ctx context.Context, tenantID string, req *financev1.ReleaseRequest) (*financev1.PostingResponse, error) {
+	if err := requireTenant(tenantID); err != nil {
+		return nil, err
+	}
+	if req.GetJournalEntryId() == "" {
+		return nil, fmt.Errorf("journal_entry_id is required")
+	}
+	return s.releasePendingEntry(ctx, tenantID, req.GetJournalEntryId(), req.GetReason(), req.GetActor())
+}
+
+// postPendingEntry converts a PENDING entry to POSTED inside one transaction:
+// re-checks the period, re-validates actual balances (money may have really
+// left via other posted paths while the entry sat pending), moves the holds
+// to posted counters and fires the outbox event. Idempotent: an already
+// POSTED entry replays; a VOID entry is a caller error.
+func (s *PostingService) postPendingEntry(ctx context.Context, tenantID, entryID, actor string) (*financev1.PostingResponse, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var accountingDate, currency, status, voidReason string
+	var entryNo int64
+	var createdAt string
+	err = tx.QueryRowContext(ctx, `
+		SELECT entry_no, accounting_date::text, currency_code, status, COALESCE(void_reason,''), created_at::text
+		FROM fin_journal_entries WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+		tenantID, entryID).Scan(&entryNo, &accountingDate, &currency, &status, &voidReason, &createdAt)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("journal entry not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch status {
+	case "POSTED":
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return &financev1.PostingResponse{JournalEntryId: entryID, EntryNo: entryNo, PostedAt: createdAt, Status: "POSTED", Replayed: true}, nil
+	case "VOID":
+		return nil, fmt.Errorf("entry %s is VOID (%s) and cannot be posted", entryID, voidReason)
+	case "PENDING":
+	default:
+		return nil, fmt.Errorf("entry status %s cannot be posted", status)
+	}
+
+	if err := s.repo.EnsurePeriodOpen(ctx, tenantID, accountingDate); err != nil {
+		return nil, fmt.Errorf("PERIOD_CLOSED: %w", err)
+	}
+
+	lines, err := s.repo.ListEntryLines(ctx, tenantID, entryID)
+	if err != nil {
+		return nil, err
+	}
+	if len(lines) == 0 {
+		return nil, fmt.Errorf("entry %s has no lines", entryID)
+	}
+
+	if err := s.moveLinesToPosted(ctx, tx, tenantID, lines, accountingDate); err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE fin_journal_entries SET status = 'POSTED', posted_at = now(), updated_by = $3, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2`, tenantID, entryID, nullText(actor)); err != nil {
+		return nil, fmt.Errorf("mark entry posted: %w", err)
+	}
+
+	if err := s.repo.InsertOutbox(ctx, tx, tenantID, entryID, outboxPayloadFromEntry(entryID, accountingDate, currency, lines)); err != nil {
+		return nil, fmt.Errorf("enqueue outbox: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &financev1.PostingResponse{
+		JournalEntryId: entryID,
+		EntryNo:        entryNo,
+		PostedAt:       time.Now().UTC().Format(time.RFC3339),
+		Status:         "POSTED",
+		Replayed:       false,
+	}, nil
+}
+
+// releasePendingEntry voids a PENDING entry: reserved counters are freed and
+// the idempotency key is released so the document can re-reserve later.
+func (s *PostingService) releasePendingEntry(ctx context.Context, tenantID, entryID, reason, actor string) (*financev1.PostingResponse, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var status, createdAt string
+	var entryNo int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT entry_no, status, created_at::text
+		FROM fin_journal_entries WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+		tenantID, entryID).Scan(&entryNo, &status, &createdAt)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("journal entry not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch status {
+	case "VOID":
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return &financev1.PostingResponse{JournalEntryId: entryID, EntryNo: entryNo, PostedAt: createdAt, Status: "VOID", Replayed: true}, nil
+	case "PENDING":
+	case "POSTED", "REVERSED":
+		return nil, fmt.Errorf("posted entry %s cannot be released; reverse it instead", entryID)
+	default:
+		return nil, fmt.Errorf("entry status %s cannot be released", status)
+	}
+
+	lines, err := s.repo.ListEntryLines(ctx, tenantID, entryID)
+	if err != nil {
+		return nil, err
+	}
+	if len(lines) > 0 {
+		keys := balanceKeysFromRows(lines)
+		balances, err := s.repo.EnsureAndLockBalances(ctx, tx, tenantID, keys)
+		if err != nil {
+			return nil, err
+		}
+		byKey := balanceIndex(balances)
+		for _, l := range lines {
+			row := byKey[repository.BalanceKey{CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}]
+			applyRelease(row, l.Direction, l.AmountMinor)
+		}
+		for _, row := range byKey {
+			if err := s.repo.SaveBalance(ctx, tx, tenantID, *row); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE fin_journal_entries
+		SET status = 'VOID', void_reason = $3, idempotency_key = NULL,
+		    updated_by = $4, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2`,
+		tenantID, entryID, nullText(reason), nullText(actor)); err != nil {
+		return nil, fmt.Errorf("void entry: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &financev1.PostingResponse{
+		JournalEntryId: entryID,
+		EntryNo:        entryNo,
+		PostedAt:       createdAt,
+		Status:         "VOID",
+		Replayed:       false,
+	}, nil
+}
+
+// reserveLines locks the balance rows for the resolved lines and applies the
+// availability reservation, checking every outflow line against the
+// account's effective available value (opening + posted + reserved).
+func (s *PostingService) reserveLines(ctx context.Context, tx *sql.Tx, tenantID string, lines []*financev1.ValidationLine, accountingDate string) error {
+	keys := balanceKeysFromLines(lines)
+	balances, err := s.repo.EnsureAndLockBalances(ctx, tx, tenantID, keys)
+	if err != nil {
+		return err
+	}
+	byKey := balanceIndex(balances)
+	natures, err := s.repo.LoadAccountNatures(ctx, tenantID, keys)
+	if err != nil {
+		return err
+	}
+	openings, err := s.repo.LoadOpeningSides(ctx, tenantID, keys, accountingDate)
+	if err != nil {
+		return err
+	}
+	for _, l := range lines {
+		k := repository.BalanceKey{CoaVersion: l.GetCoaVersion(), AccountCode: l.GetAccountCode(), CurrencyCode: l.GetCurrencyCode()}
+		row := byKey[k]
+		nature := natures[k]
+		opening := naturalSignedOpening(openings[k], nature)
+		if err := checkReserve(*row, opening, nature, l.GetDirection(), l.GetAmountMinor()); err != nil {
+			return err
+		}
+		applyReserve(row, l.GetDirection(), l.GetAmountMinor())
+	}
+	for _, row := range byKey {
+		if err := s.repo.SaveBalance(ctx, tx, tenantID, *row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// moveLinesToPosted graduates the holds of a pending entry to posted
+// counters, re-validating actual coverage per outflow line (belt-and-braces
+// — the move itself never changes availability).
+func (s *PostingService) moveLinesToPosted(ctx context.Context, tx *sql.Tx, tenantID string, lines []repository.JournalLineRow, accountingDate string) error {
+	keys := balanceKeysFromRows(lines)
+	balances, err := s.repo.EnsureAndLockBalances(ctx, tx, tenantID, keys)
+	if err != nil {
+		return err
+	}
+	byKey := balanceIndex(balances)
+	natures, err := s.repo.LoadAccountNatures(ctx, tenantID, keys)
+	if err != nil {
+		return err
+	}
+	openings, err := s.repo.LoadOpeningSides(ctx, tenantID, keys, accountingDate)
+	if err != nil {
+		return err
+	}
+	for _, l := range lines {
+		k := repository.BalanceKey{CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}
+		row := byKey[k]
+		nature := natures[k]
+		opening := naturalSignedOpening(openings[k], nature)
+		if err := checkPostActual(*row, opening, nature, l.Direction, l.AmountMinor); err != nil {
+			return err
+		}
+		applyPost(row, l.Direction, l.AmountMinor)
+	}
+	for _, row := range byKey {
+		if err := s.repo.SaveBalance(ctx, tx, tenantID, *row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// postLinesToBalances books direct-post lines straight to the posted
+// counters — no availability check by design (system-executed decisions).
+func (s *PostingService) postLinesToBalances(ctx context.Context, tx *sql.Tx, tenantID string, lines []*financev1.ValidationLine) error {
+	keys := balanceKeysFromLines(lines)
+	if len(keys) == 0 {
+		return nil
+	}
+	balances, err := s.repo.EnsureAndLockBalances(ctx, tx, tenantID, keys)
+	if err != nil {
+		return err
+	}
+	byKey := balanceIndex(balances)
+	for _, l := range lines {
+		k := repository.BalanceKey{CoaVersion: l.GetCoaVersion(), AccountCode: l.GetAccountCode(), CurrencyCode: l.GetCurrencyCode()}
+		applyDirectPost(byKey[k], l.GetDirection(), l.GetAmountMinor())
+	}
+	for _, row := range byKey {
+		if err := s.repo.SaveBalance(ctx, tx, tenantID, *row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func balanceKeysFromLines(lines []*financev1.ValidationLine) []repository.BalanceKey {
+	seen := map[repository.BalanceKey]struct{}{}
+	out := make([]repository.BalanceKey, 0, len(lines))
+	for _, l := range lines {
+		k := repository.BalanceKey{CoaVersion: l.GetCoaVersion(), AccountCode: l.GetAccountCode(), CurrencyCode: l.GetCurrencyCode()}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
+}
+
+func balanceKeysFromRows(rows []repository.JournalLineRow) []repository.BalanceKey {
+	seen := map[repository.BalanceKey]struct{}{}
+	out := make([]repository.BalanceKey, 0, len(rows))
+	for _, l := range rows {
+		k := repository.BalanceKey{CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
+}
+
+func balanceIndex(rows []repository.BalanceRow) map[repository.BalanceKey]*repository.BalanceRow {
+	out := make(map[repository.BalanceKey]*repository.BalanceRow, len(rows))
+	for i := range rows {
+		out[rows[i].Key] = &rows[i]
+	}
+	return out
+}
+
+// pendingLinesMatch compares a pending entry's stored lines with a freshly
+// resolved request (line_no, direction, account, coa version, amount,
+// currency) — equal content means the reserve replay is safe.
+func pendingLinesMatch(stored []repository.JournalLineRow, resolved []*financev1.ValidationLine) bool {
+	if len(stored) != len(resolved) {
+		return false
+	}
+	for i, l := range stored {
+		r := resolved[i]
+		if l.LineNo != r.GetLineNo() || l.Direction != r.GetDirection() ||
+			l.AccountCode != r.GetAccountCode() || l.CoaVersion != r.GetCoaVersion() ||
+			l.AmountMinor != r.GetAmountMinor() || l.Currency != r.GetCurrencyCode() {
+			return false
+		}
+	}
+	return true
+}
+
+func metadataActor(req *financev1.PostingRequest, fallback string) string {
+	if actor := req.GetMetadata()["actor"]; actor != "" {
+		return actor
+	}
+	return fallback
+}
+
+func outboxPayloadFromEntry(entryID, accountingDate, currency string, lines []repository.JournalLineRow) []byte {
+	debit, credit := int64(0), int64(0)
+	for _, l := range lines {
+		if l.Direction == "DEBIT" {
+			debit += l.AmountMinor
+		} else {
+			credit += l.AmountMinor
+		}
+	}
+	tmpl := `{"entry_id":%q,"accounting_date":%q,"currency_code":%q,"debit_minor":%d,"credit_minor":%d}`
+	return fmtBytes(fmt.Sprintf(tmpl, entryID, accountingDate, currency, debit, credit))
 }
 
 // ReverseTransaction creates the mirrored entry and marks the original
@@ -174,6 +661,28 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 		}
 	}
 
+	// Reversal lines post straight to the posted counters (nature-free — the
+	// flipped directions net the original entry out of the balances).
+	reversalKeys := balanceKeysFromRows(original.Lines)
+	reversalBalances, err := s.repo.EnsureAndLockBalances(ctx, tx, tenantID, reversalKeys)
+	if err != nil {
+		return nil, err
+	}
+	reversalIndex := balanceIndex(reversalBalances)
+	for _, l := range original.Lines {
+		flipped := "CREDIT"
+		if l.Direction == "CREDIT" {
+			flipped = "DEBIT"
+		}
+		k := repository.BalanceKey{CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}
+		applyDirectPost(reversalIndex[k], flipped, l.AmountMinor)
+	}
+	for _, row := range reversalIndex {
+		if err := s.repo.SaveBalance(ctx, tx, tenantID, *row); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := s.repo.MarkReversed(ctx, tx, tenantID, req.GetJournalEntryId(), entryID); err != nil {
 		return nil, err
 	}
@@ -188,6 +697,7 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 		JournalEntryId: entryID,
 		EntryNo:        parseI64(entryNo),
 		PostedAt:       createdAt,
+		Status:         "POSTED",
 		Replayed:       false,
 	}, nil
 }

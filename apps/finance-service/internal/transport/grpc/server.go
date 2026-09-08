@@ -69,3 +69,29 @@ func (s *PostingServer) ReverseTransaction(ctx context.Context, req *financev1.R
 	}
 	return resp, nil
 }
+
+func (s *PostingServer) ReservePosting(ctx context.Context, req *financev1.PostingRequest) (*financev1.PostingResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	resp, err := s.posting.ReservePosting(ctx, tenantID, req)
+	if err != nil {
+		slog.Warn("posting grpc: reserve failed", "docType", req.GetBusinessReference().GetDocumentType(), "err", err)
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return resp, nil
+}
+
+func (s *PostingServer) ReleasePosting(ctx context.Context, req *financev1.ReleaseRequest) (*financev1.PostingResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	resp, err := s.posting.ReleasePosting(ctx, tenantID, req)
+	if err != nil {
+		slog.Warn("posting grpc: release failed", "entryId", req.GetJournalEntryId(), "err", err)
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return resp, nil
+}

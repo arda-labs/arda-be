@@ -481,8 +481,9 @@ func (x *GetDisbursementPostingDetailRequest) GetDisbursementId() string {
 	return ""
 }
 
-// Everything the workflow worker needs to build the LNM_DISBURSEMENT
-// PostingRequest without reaching into loan-service internals.
+// Everything the workflow worker needs to build the LNM_DISB_REGISTER /
+// LNM_DISB_COMPLETE PostingRequest without reaching into loan-service
+// internals. flow_type selects the rule card legs.
 type DisbursementPostingDetail struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	DisbursementId   string                 `protobuf:"bytes,1,opt,name=disbursement_id,json=disbursementId,proto3" json:"disbursement_id,omitempty"`
@@ -497,8 +498,11 @@ type DisbursementPostingDetail struct {
 	CustomerCode     string                 `protobuf:"bytes,10,opt,name=customer_code,json=customerCode,proto3" json:"customer_code,omitempty"`
 	FundSourceCode   string                 `protobuf:"bytes,11,opt,name=fund_source_code,json=fundSourceCode,proto3" json:"fund_source_code,omitempty"`
 	WorkflowCaseId   string                 `protobuf:"bytes,12,opt,name=workflow_case_id,json=workflowCaseId,proto3" json:"workflow_case_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// REGISTER (default): DEBIT LNM_LOAN_PRINCIPAL / CREDIT FUND_DISBURSEMENT_IN_TRANSIT.
+	// COMPLETE: DEBIT FUND_DISBURSEMENT_IN_TRANSIT / CREDIT CASH_SETTLEMENT_ACCOUNT.
+	FlowType      string `protobuf:"bytes,13,opt,name=flow_type,json=flowType,proto3" json:"flow_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DisbursementPostingDetail) Reset() {
@@ -611,6 +615,13 @@ func (x *DisbursementPostingDetail) GetFundSourceCode() string {
 func (x *DisbursementPostingDetail) GetWorkflowCaseId() string {
 	if x != nil {
 		return x.WorkflowCaseId
+	}
+	return ""
+}
+
+func (x *DisbursementPostingDetail) GetFlowType() string {
+	if x != nil {
+		return x.FlowType
 	}
 	return ""
 }
@@ -1343,7 +1354,7 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"N\n" +
 	"#GetDisbursementPostingDetailRequest\x12'\n" +
-	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\"\xfa\x03\n" +
+	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\"\x97\x04\n" +
 	"\x19DisbursementPostingDetail\x12'\n" +
 	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\x12+\n" +
 	"\x11disbursement_code\x18\x02 \x01(\tR\x10disbursementCode\x12#\n" +
@@ -1357,7 +1368,8 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"\rcustomer_code\x18\n" +
 	" \x01(\tR\fcustomerCode\x12(\n" +
 	"\x10fund_source_code\x18\v \x01(\tR\x0efundSourceCode\x12(\n" +
-	"\x10workflow_case_id\x18\f \x01(\tR\x0eworkflowCaseId\"\x84\x01\n" +
+	"\x10workflow_case_id\x18\f \x01(\tR\x0eworkflowCaseId\x12\x1b\n" +
+	"\tflow_type\x18\r \x01(\tR\bflowType\"\x84\x01\n" +
 	"\x19SettleDisbursementRequest\x12'\n" +
 	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\x12(\n" +
 	"\x10journal_entry_id\x18\x02 \x01(\tR\x0ejournalEntryId\x12\x14\n" +

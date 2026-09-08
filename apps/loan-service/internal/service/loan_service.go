@@ -274,7 +274,7 @@ func (s *LoanService) Dossier(ctx context.Context, tenantID, contractID string) 
 	if err != nil {
 		return nil, mapRepoError(err)
 	}
-	disbursements, _, err := s.repo.ListDisbursements(ctx, tenantID, nil, "", contract.ContractCode, "", "", "", 500, 0)
+	disbursements, _, err := s.repo.ListDisbursements(ctx, tenantID, nil, "", contract.ContractCode, "", "", "", "", 500, 0)
 	if err != nil {
 		return nil, mapRepoError(err)
 	}

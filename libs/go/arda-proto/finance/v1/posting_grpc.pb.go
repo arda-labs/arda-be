@@ -21,6 +21,8 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	PostingService_ValidatePosting_FullMethodName    = "/arda.finance.v1.PostingService/ValidatePosting"
 	PostingService_PostTransaction_FullMethodName    = "/arda.finance.v1.PostingService/PostTransaction"
+	PostingService_ReservePosting_FullMethodName     = "/arda.finance.v1.PostingService/ReservePosting"
+	PostingService_ReleasePosting_FullMethodName     = "/arda.finance.v1.PostingService/ReleasePosting"
 	PostingService_ReverseTransaction_FullMethodName = "/arda.finance.v1.PostingService/ReverseTransaction"
 )
 
@@ -29,16 +31,35 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // PostingService is the single journal-entry gate for all Arda domains
-// (docs/accounting-posting-contract.md v0.2). Only workflow-service workers
-// (and finance itself for internal flows like opening balances) call it.
-// Money crosses as int64 minor units; accounts are resolved from analytics
-// via fin_acc_class_coa_maps at the accounting_date's COA version.
+// (docs/accounting-posting-contract.md v0.3 + P1b v2 two-phase balance,
+// docs/epas-survey/disbursement-flow-deep-dive.md). Only workflow-service
+// workers (and finance itself for internal flows like opening balances and
+// cash) call it. Money crosses as int64 minor units; accounts are resolved
+// from analytics via fin_acc_class_coa_maps at the accounting_date's COA
+// version.
+//
+// Lifecycle (contract §4): Reserve creates a PENDING entry and holds the
+// amounts on fin_account_balances (reserved_*); Post moves the hold to
+// posted_* and stamps the entry POSTED; Release frees the hold and stamps
+// the entry VOID. Direct posts (accrual/provision/cash/...) skip the hold —
+// PostTransaction on a request without a PENDING twin books straight to
+// posted_*.
 type PostingServiceClient interface {
 	// Validate resolves accounts and reports per-line results without writing.
 	ValidatePosting(ctx context.Context, in *PostingRequest, opts ...grpc.CallOption) (*ValidationResult, error)
-	// PostTransaction writes one balanced journal entry. Idempotent by
-	// (tenant_id, idempotency_key); replays return the original response.
+	// PostTransaction writes one balanced journal entry (direct posts book
+	// POSTED; a request matching an existing PENDING entry — same tenant +
+	// idempotency key — moves that entry's hold to posted instead).
+	// Idempotent by (tenant_id, idempotency_key); replays return the original
+	// response.
 	PostTransaction(ctx context.Context, in *PostingRequest, opts ...grpc.CallOption) (*PostingResponse, error)
+	// ReservePosting creates the PENDING entry and holds its amounts
+	// (available-balance reservation for approval flows). Idempotent by
+	// (tenant_id, idempotency_key).
+	ReservePosting(ctx context.Context, in *PostingRequest, opts ...grpc.CallOption) (*PostingResponse, error)
+	// ReleasePosting frees the reserved amounts of a PENDING entry and stamps
+	// it VOID (the maker-checker reject path).
+	ReleasePosting(ctx context.Context, in *ReleaseRequest, opts ...grpc.CallOption) (*PostingResponse, error)
 	// ReverseTransaction creates a reversal entry; the original is immutable.
 	ReverseTransaction(ctx context.Context, in *ReverseRequest, opts ...grpc.CallOption) (*PostingResponse, error)
 }
@@ -71,6 +92,26 @@ func (c *postingServiceClient) PostTransaction(ctx context.Context, in *PostingR
 	return out, nil
 }
 
+func (c *postingServiceClient) ReservePosting(ctx context.Context, in *PostingRequest, opts ...grpc.CallOption) (*PostingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PostingResponse)
+	err := c.cc.Invoke(ctx, PostingService_ReservePosting_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *postingServiceClient) ReleasePosting(ctx context.Context, in *ReleaseRequest, opts ...grpc.CallOption) (*PostingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PostingResponse)
+	err := c.cc.Invoke(ctx, PostingService_ReleasePosting_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *postingServiceClient) ReverseTransaction(ctx context.Context, in *ReverseRequest, opts ...grpc.CallOption) (*PostingResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PostingResponse)
@@ -86,16 +127,35 @@ func (c *postingServiceClient) ReverseTransaction(ctx context.Context, in *Rever
 // for forward compatibility.
 //
 // PostingService is the single journal-entry gate for all Arda domains
-// (docs/accounting-posting-contract.md v0.2). Only workflow-service workers
-// (and finance itself for internal flows like opening balances) call it.
-// Money crosses as int64 minor units; accounts are resolved from analytics
-// via fin_acc_class_coa_maps at the accounting_date's COA version.
+// (docs/accounting-posting-contract.md v0.3 + P1b v2 two-phase balance,
+// docs/epas-survey/disbursement-flow-deep-dive.md). Only workflow-service
+// workers (and finance itself for internal flows like opening balances and
+// cash) call it. Money crosses as int64 minor units; accounts are resolved
+// from analytics via fin_acc_class_coa_maps at the accounting_date's COA
+// version.
+//
+// Lifecycle (contract §4): Reserve creates a PENDING entry and holds the
+// amounts on fin_account_balances (reserved_*); Post moves the hold to
+// posted_* and stamps the entry POSTED; Release frees the hold and stamps
+// the entry VOID. Direct posts (accrual/provision/cash/...) skip the hold —
+// PostTransaction on a request without a PENDING twin books straight to
+// posted_*.
 type PostingServiceServer interface {
 	// Validate resolves accounts and reports per-line results without writing.
 	ValidatePosting(context.Context, *PostingRequest) (*ValidationResult, error)
-	// PostTransaction writes one balanced journal entry. Idempotent by
-	// (tenant_id, idempotency_key); replays return the original response.
+	// PostTransaction writes one balanced journal entry (direct posts book
+	// POSTED; a request matching an existing PENDING entry — same tenant +
+	// idempotency key — moves that entry's hold to posted instead).
+	// Idempotent by (tenant_id, idempotency_key); replays return the original
+	// response.
 	PostTransaction(context.Context, *PostingRequest) (*PostingResponse, error)
+	// ReservePosting creates the PENDING entry and holds its amounts
+	// (available-balance reservation for approval flows). Idempotent by
+	// (tenant_id, idempotency_key).
+	ReservePosting(context.Context, *PostingRequest) (*PostingResponse, error)
+	// ReleasePosting frees the reserved amounts of a PENDING entry and stamps
+	// it VOID (the maker-checker reject path).
+	ReleasePosting(context.Context, *ReleaseRequest) (*PostingResponse, error)
 	// ReverseTransaction creates a reversal entry; the original is immutable.
 	ReverseTransaction(context.Context, *ReverseRequest) (*PostingResponse, error)
 	mustEmbedUnimplementedPostingServiceServer()
@@ -113,6 +173,12 @@ func (UnimplementedPostingServiceServer) ValidatePosting(context.Context, *Posti
 }
 func (UnimplementedPostingServiceServer) PostTransaction(context.Context, *PostingRequest) (*PostingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PostTransaction not implemented")
+}
+func (UnimplementedPostingServiceServer) ReservePosting(context.Context, *PostingRequest) (*PostingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReservePosting not implemented")
+}
+func (UnimplementedPostingServiceServer) ReleasePosting(context.Context, *ReleaseRequest) (*PostingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReleasePosting not implemented")
 }
 func (UnimplementedPostingServiceServer) ReverseTransaction(context.Context, *ReverseRequest) (*PostingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReverseTransaction not implemented")
@@ -174,6 +240,42 @@ func _PostingService_PostTransaction_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PostingService_ReservePosting_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PostingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PostingServiceServer).ReservePosting(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PostingService_ReservePosting_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PostingServiceServer).ReservePosting(ctx, req.(*PostingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PostingService_ReleasePosting_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PostingServiceServer).ReleasePosting(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PostingService_ReleasePosting_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PostingServiceServer).ReleasePosting(ctx, req.(*ReleaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PostingService_ReverseTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReverseRequest)
 	if err := dec(in); err != nil {
@@ -206,6 +308,14 @@ var PostingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PostTransaction",
 			Handler:    _PostingService_PostTransaction_Handler,
+		},
+		{
+			MethodName: "ReservePosting",
+			Handler:    _PostingService_ReservePosting_Handler,
+		},
+		{
+			MethodName: "ReleasePosting",
+			Handler:    _PostingService_ReleasePosting_Handler,
 		},
 		{
 			MethodName: "ReverseTransaction",

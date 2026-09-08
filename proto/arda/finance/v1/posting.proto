@@ -5,16 +5,35 @@ package arda.finance.v1;
 option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1;financev1";
 
 // PostingService is the single journal-entry gate for all Arda domains
-// (docs/accounting-posting-contract.md v0.2). Only workflow-service workers
-// (and finance itself for internal flows like opening balances) call it.
-// Money crosses as int64 minor units; accounts are resolved from analytics
-// via fin_acc_class_coa_maps at the accounting_date's COA version.
+// (docs/accounting-posting-contract.md v0.3 + P1b v2 two-phase balance,
+// docs/epas-survey/disbursement-flow-deep-dive.md). Only workflow-service
+// workers (and finance itself for internal flows like opening balances and
+// cash) call it. Money crosses as int64 minor units; accounts are resolved
+// from analytics via fin_acc_class_coa_maps at the accounting_date's COA
+// version.
+//
+// Lifecycle (contract §4): Reserve creates a PENDING entry and holds the
+// amounts on fin_account_balances (reserved_*); Post moves the hold to
+// posted_* and stamps the entry POSTED; Release frees the hold and stamps
+// the entry VOID. Direct posts (accrual/provision/cash/...) skip the hold —
+// PostTransaction on a request without a PENDING twin books straight to
+// posted_*.
 service PostingService {
   // Validate resolves accounts and reports per-line results without writing.
   rpc ValidatePosting(PostingRequest) returns (ValidationResult);
-  // PostTransaction writes one balanced journal entry. Idempotent by
-  // (tenant_id, idempotency_key); replays return the original response.
+  // PostTransaction writes one balanced journal entry (direct posts book
+  // POSTED; a request matching an existing PENDING entry — same tenant +
+  // idempotency key — moves that entry's hold to posted instead).
+  // Idempotent by (tenant_id, idempotency_key); replays return the original
+  // response.
   rpc PostTransaction(PostingRequest) returns (PostingResponse);
+  // ReservePosting creates the PENDING entry and holds its amounts
+  // (available-balance reservation for approval flows). Idempotent by
+  // (tenant_id, idempotency_key).
+  rpc ReservePosting(PostingRequest) returns (PostingResponse);
+  // ReleasePosting frees the reserved amounts of a PENDING entry and stamps
+  // it VOID (the maker-checker reject path).
+  rpc ReleasePosting(ReleaseRequest) returns (PostingResponse);
   // ReverseTransaction creates a reversal entry; the original is immutable.
   rpc ReverseTransaction(ReverseRequest) returns (PostingResponse);
 }
@@ -64,6 +83,13 @@ message PostingResponse {
   int32 version = 3;
   string posted_at = 4;
   bool replayed = 5;           // idempotent replay of an existing entry
+  string status = 6;           // PENDING | POSTED | VOID | REVERSED
+}
+
+message ReleaseRequest {
+  string journal_entry_id = 1; // the PENDING entry to void
+  string reason = 2;
+  string actor = 3;
 }
 
 message ValidationLine {

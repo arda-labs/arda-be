@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/service"
@@ -27,7 +28,8 @@ var disbursementListSpec = ardahttp.ListSpec{
 	SortFields:     []string{"agreement_code", "contract_code", "disburse_date", "created_at"},
 }
 
-// ListDisbursements handles GET /api/loan/disbursements.
+// ListDisbursements handles GET /api/loan/disbursements. Optional filters:
+// status, contract_code, flow_type (REGISTER|COMPLETE).
 func (h *DisbursementHandler) ListDisbursements(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
@@ -38,8 +40,16 @@ func (h *DisbursementHandler) ListDisbursements(w http.ResponseWriter, r *http.R
 		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
 		return
 	}
+	flowType := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("flow_type")))
+	switch flowType {
+	case "", domain.FlowRegister, domain.FlowComplete:
+	default:
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput,
+			"flow_type must be one of: REGISTER, COMPLETE")
+		return
+	}
 	items, total, err := h.svc.List(r.Context(), tenantID, orgScopeFromRequest(r).ListFilter(),
-		r.URL.Query().Get("status"), r.URL.Query().Get("contract_code"),
+		r.URL.Query().Get("status"), r.URL.Query().Get("contract_code"), flowType,
 		listReq.Q, listReq.Sort, listReq.Order, listReq.Page, listReq.PerPage)
 	if err != nil {
 		writeServiceError(w, r, err)
@@ -48,7 +58,9 @@ func (h *DisbursementHandler) ListDisbursements(w http.ResponseWriter, r *http.R
 	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listReq.Page, listReq.PerPage, total, items))
 }
 
-// CreateDisbursement handles POST /api/loan/disbursements.
+// CreateDisbursement handles POST /api/loan/disbursements. The JSON body
+// carries the disbursement shape; flow_type (REGISTER|COMPLETE, REGISTER
+// default) and source_register_id (COMPLETE only) select the two-phase flow.
 func (h *DisbursementHandler) CreateDisbursement(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {

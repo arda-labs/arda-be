@@ -1043,23 +1043,24 @@ func cashFlowDirection(sort, order string) string {
 	return sortDirection(order)
 }
 
-func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string, orgCodes []string, status, contractCode, q, sort, order string, limit, offset int) ([]domain.Disbursement, int, error) {
+func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string, orgCodes []string, status, contractCode, flowType, q, sort, order string, limit, offset int) ([]domain.Disbursement, int, error) {
 	orgAny := orgCodesToAny(orgCodes)
 	sortCol := disbursementSortCol(sort)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
-		       currency_code, COALESCE(fund_source_code,''), status, payload,
+		       currency_code, COALESCE(fund_source_code,''), flow_type, source_register_id::text, status, payload,
 		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at,
 		       count(*) OVER() AS total_count
 		FROM lnm_disbursements
 		WHERE tenant_id = $1::text
 		  AND ($2::text = '' OR status = $2::text)
 		  AND ($3::text = '' OR contract_code = $3::text)
-		  AND ($4::text = '' OR agreement_code ILIKE '%' || $4::text || '%' OR contract_code ILIKE '%' || $4::text || '%')
-		  AND ($5::text[] IS NULL OR org_code = ANY($5::text[]))
+		  AND ($4::text = '' OR flow_type = $4::text)
+		  AND ($5::text = '' OR agreement_code ILIKE '%' || $5::text || '%' OR contract_code ILIKE '%' || $5::text || '%')
+		  AND ($6::text[] IS NULL OR org_code = ANY($6::text[]))
 		ORDER BY `+sortCol+` `+cashFlowDirection(sort, order)+`, id
-		LIMIT $6::int OFFSET $7::int`,
-		tenantID, status, contractCode, q, orgAny, limit, offset)
+		LIMIT $7::int OFFSET $8::int`,
+		tenantID, status, contractCode, flowType, q, orgAny, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1068,10 +1069,10 @@ func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string,
 	total := 0
 	for rows.Next() {
 		var d domain.Disbursement
-		var caseID, entryID sql.NullString
+		var caseID, entryID, sourceID sql.NullString
 		var payload []byte
 		if err := rows.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
-			&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.Status, &payload,
+			&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.FlowType, &sourceID, &d.Status, &payload,
 			&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &total); err != nil {
 			return nil, 0, err
 		}
@@ -1084,6 +1085,9 @@ func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string,
 		if entryID.Valid {
 			d.JournalEntryID = &entryID.String
 		}
+		if sourceID.Valid {
+			d.SourceRegisterID = sourceID.String
+		}
 		out = append(out, d)
 	}
 	if err := rows.Err(); err != nil {
@@ -1093,14 +1097,18 @@ func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string,
 }
 
 func (r *LoanRepository) CreateDisbursement(ctx context.Context, d *domain.Disbursement) (*domain.Disbursement, error) {
+	flowType := d.FlowType
+	if flowType == "" {
+		flowType = domain.FlowRegister
+	}
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO lnm_disbursements
 			(tenant_id, contract_code, agreement_code, disburse_date, disburse_amt_minor,
-			 currency_code, fund_source_code, status, org_code, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,$9)
+			 currency_code, fund_source_code, flow_type, source_register_id, status, org_code, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'DRAFT',$10,$11)
 		RETURNING id, created_at, updated_at`,
 		d.TenantID, d.ContractCode, d.AgreementCode, d.DisburseDate, d.DisburseAmtMinor,
-		d.CurrencyCode, nullText(d.FundSourceCode), nullText(d.OrgCode), d.CreatedBy)
+		d.CurrencyCode, nullText(d.FundSourceCode), flowType, nullText(d.SourceRegisterID), nullText(d.OrgCode), d.CreatedBy)
 	if err := row.Scan(&d.ID, &d.CreatedAt, &d.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -1109,15 +1117,15 @@ func (r *LoanRepository) CreateDisbursement(ctx context.Context, d *domain.Disbu
 
 func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id string) (*domain.Disbursement, error) {
 	var d domain.Disbursement
-	var caseID, entryID sql.NullString
+	var caseID, entryID, sourceID sql.NullString
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
-		       currency_code, COALESCE(fund_source_code,''), status, payload,
+		       currency_code, COALESCE(fund_source_code,''), flow_type, source_register_id::text, status, payload,
 		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at
 		FROM lnm_disbursements WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	var payload []byte
 	err := row.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
-		&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.Status, &payload,
+		&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.FlowType, &sourceID, &d.Status, &payload,
 		&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, err
@@ -1133,6 +1141,9 @@ func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id strin
 	}
 	if entryID.Valid {
 		d.JournalEntryID = &entryID.String
+	}
+	if sourceID.Valid {
+		d.SourceRegisterID = sourceID.String
 	}
 	return &d, nil
 }
@@ -1151,26 +1162,67 @@ func (r *LoanRepository) SetDisbursementCaseAndJournal(ctx context.Context, tena
 	return err
 }
 
-// SettleDisbursement applies the posting side effect: outstanding principal
-// up on the agreement, first drawdown statuses the contract ACTIVE.
-func (r *LoanRepository) SettleDisbursement(ctx context.Context, tenantID, agreementCode string, amountMinor int64) error {
-	if _, err := r.db.ExecContext(ctx, `
+// SettleRegisterDisbursement applies the REGISTER posting side effect: the
+// drawdown becomes real outstanding and parks in pending (in-transit) until
+// the COMPLETE flow settles the cash movement. Contract status is
+// deliberately untouched — that belongs to the COMPLETE settle.
+func (r *LoanRepository) SettleRegisterDisbursement(ctx context.Context, tenantID, agreementCode string, amountMinor int64) error {
+	_, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_agreements
 		SET outstanding_amt_minor = outstanding_amt_minor + $3,
+		    pending_disburse_amt_minor = pending_disburse_amt_minor + $3,
 		    status = CASE WHEN status = 'PENDING' THEN 'ACTIVE' ELSE status END,
+		    updated_at = now()
+		WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode, amountMinor)
+	return err
+}
+
+// SettleCompleteDisbursement applies the COMPLETE posting side effect: cash
+// actually moved, so the in-transit pending drops (never below zero), and
+// the first completed drawdown statuses the contract ACTIVE.
+func (r *LoanRepository) SettleCompleteDisbursement(ctx context.Context, tenantID, contractCode, agreementCode string, amountMinor int64) error {
+	if _, err := r.db.ExecContext(ctx, `
+		UPDATE lnm_agreements
+		SET pending_disburse_amt_minor = GREATEST(pending_disburse_amt_minor - $3, 0),
 		    updated_at = now()
 		WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode, amountMinor); err != nil {
 		return err
 	}
-	if _, err := r.db.ExecContext(ctx, `
+	_, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_contracts c SET status = 'ACTIVE', updated_at = now()
 		WHERE c.tenant_id = $1
+		  AND c.contract_code = $2
 		  AND c.status IN ('DRAFT', 'PENDING')
-		  AND EXISTS (SELECT 1 FROM lnm_agreements a WHERE a.tenant_id = $1 AND a.contract_code = c.contract_code AND a.agreement_code = $2)`,
-		tenantID, agreementCode); err != nil {
-		return err
-	}
-	return nil
+		  AND EXISTS (
+		        SELECT 1 FROM lnm_disbursements d
+		        WHERE d.tenant_id = $1 AND d.contract_code = c.contract_code
+		          AND d.flow_type = 'COMPLETE' AND d.status = 'POSTED')`,
+		tenantID, contractCode)
+	return err
+}
+
+// SumAgreementOutstanding totals the settled principal across one contract's
+// agreements — the consumed share of the contract's loan-amount headroom
+// (register over-limit guard).
+func (r *LoanRepository) SumAgreementOutstanding(ctx context.Context, tenantID, contractCode string) (int64, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(outstanding_amt_minor), 0)
+		FROM lnm_agreements WHERE tenant_id = $1 AND contract_code = $2`, tenantID, contractCode)
+	var total int64
+	return total, row.Scan(&total)
+}
+
+// SumCompleteForSource totals the COMPLETE drawdowns already booked against
+// one REGISTER source — in-flight cases (SUBMITTED/APPROVED) count too, so
+// concurrent completes cannot overshoot the register (complete remainder guard).
+func (r *LoanRepository) SumCompleteForSource(ctx context.Context, tenantID, sourceRegisterID string) (int64, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(disburse_amt_minor), 0)
+		FROM lnm_disbursements
+		WHERE tenant_id = $1 AND source_register_id = $2 AND flow_type = 'COMPLETE'
+		  AND status IN ('SUBMITTED', 'APPROVED', 'POSTED')`, tenantID, sourceRegisterID)
+	var total int64
+	return total, row.Scan(&total)
 }
 
 func nullText(s string) any {

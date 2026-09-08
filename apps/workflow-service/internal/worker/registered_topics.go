@@ -16,10 +16,16 @@ var RegisteredJobTopics = []string{
 	"crm.customer.register.validate",
 	"crm.customer.register.execute",
 	"crm.customer.register.cancel",
-	// Disbursement (lnm-disbursement-v2.bpmn)
-	"lnm.disbursement.validate",
-	"lnm.disbursement.execute",
-	"lnm.disbursement.cancel",
+	// Disbursement two-flow (lnm-disbursement-register-v2.bpmn +
+	// lnm-disbursement-complete-v2.bpmn)
+	"lnm.disb-register.init",
+	"lnm.disb-register.validate",
+	"lnm.disb-register.execute",
+	"lnm.disb-register.cancel",
+	"lnm.disb-complete.init",
+	"lnm.disb-complete.validate",
+	"lnm.disb-complete.execute",
+	"lnm.disb-complete.cancel",
 	// HRM employee registration (hrm-employee-registration-v2.bpmn)
 	"hrm.employee.register.validate",
 	"hrm.employee.register.execute",

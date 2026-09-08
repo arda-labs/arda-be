@@ -227,18 +227,32 @@ func main() {
 		}
 		logger.Info("workflow loan adjustment workers registered", "kinds", len(loanclient.Kinds))
 
-		// Disbursement flow workers (P1b): posting step runs through the
-		// finance PostingService when the finance client is configured.
+		// Disbursement two-flow workers (P1b v2): the register leg reserves
+		// the posting at init and posts on approve; the complete leg
+		// settles the in-transit hold against cash.
 		if financeClient != nil {
-			disbWorkers := worker.NewDisbursementWorkers(loanClient, financeClient, caseRepo)
-			dv, de, dc := disbWorkers.Handlers()
-			dvv := zeebeSvc.NewJobWorker("lnm.disbursement.validate", dv)
-			deE := zeebeSvc.NewJobWorker("lnm.disbursement.execute", de)
-			dcC := zeebeSvc.NewJobWorker("lnm.disbursement.cancel", dc)
-			defer dvv.Close()
-			defer deE.Close()
-			defer dcC.Close()
-			logger.Info("workflow disbursement workers registered")
+			disbRegister := worker.NewDisbursementWorkers(worker.RegisterFlow, loanClient, financeClient, caseRepo)
+			ri, rv, re, rc := disbRegister.Handlers()
+			riw := zeebeSvc.NewJobWorker("lnm.disb-register.init", ri)
+			rvw := zeebeSvc.NewJobWorker("lnm.disb-register.validate", rv)
+			rew := zeebeSvc.NewJobWorker("lnm.disb-register.execute", re)
+			rcw := zeebeSvc.NewJobWorker("lnm.disb-register.cancel", rc)
+			defer riw.Close()
+			defer rvw.Close()
+			defer rew.Close()
+			defer rcw.Close()
+
+			disbComplete := worker.NewDisbursementWorkers(worker.CompleteFlow, loanClient, financeClient, caseRepo)
+			ciH, cvH, ceH, ccH := disbComplete.Handlers()
+			ciw := zeebeSvc.NewJobWorker("lnm.disb-complete.init", ciH)
+			cvw := zeebeSvc.NewJobWorker("lnm.disb-complete.validate", cvH)
+			cew := zeebeSvc.NewJobWorker("lnm.disb-complete.execute", ceH)
+			ccw := zeebeSvc.NewJobWorker("lnm.disb-complete.cancel", ccH)
+			defer ciw.Close()
+			defer cvw.Close()
+			defer cew.Close()
+			defer ccw.Close()
+			logger.Info("workflow disbursement register/complete workers registered")
 
 			colWorkers := worker.NewCollectionWorkers(loanClient, financeClient, caseRepo)
 			cv, ce, cc := colWorkers.Handlers()
