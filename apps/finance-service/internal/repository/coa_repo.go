@@ -82,6 +82,22 @@ func (r *CoaRepository) ListAccounts(ctx context.Context, tenantID, versionCode,
 	if err := requireTenant(tenantID); err != nil {
 		return nil, err
 	}
+	// Empty version resolves to the tenant's active default (same semantics
+	// as posting ResolveAccountDirect) — the off-balance picker calls
+	// nature=B without pinning a version.
+	if versionCode == "" {
+		err := r.db.QueryRowContext(ctx, `
+			SELECT code FROM fin_coa_versions
+			WHERE tenant_id = $1 AND is_active
+			ORDER BY is_default DESC, effective_date DESC
+			LIMIT 1`, tenantID).Scan(&versionCode)
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no active COA version for tenant")
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, version_code, acc_code, name, acc_type, acc_nature, parent_code,
 		       is_internal, is_postable, effective_date::text, expiry_date::text, description, created_at, updated_at
