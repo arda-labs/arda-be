@@ -160,8 +160,10 @@ func buildIdentityContext(scope tools.Context) string {
 }
 
 // selectModelProvider resolves the provider for a run. A saved tenant
-// configuration overrides the deployment platform provider; when no tenant
-// row exists, the platform provider is used. Nil means "not configured".
+// configuration is the model source of truth; the platform provider wired
+// from env only exists as a development fallback for stores without
+// persistence (production never wires it, see cmd/ai-service/main.go).
+// Nil means "not configured" and the run fails closed.
 func selectModelProvider(ctx context.Context, store runStore, scope tools.Context, options RouterOptions) model.Provider {
 	settingsStore, ok := store.(repository.TenantSettingsStore)
 	if !ok {

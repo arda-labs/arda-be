@@ -86,10 +86,18 @@ Direct:         https://opencode.ai/zen/v1   (hiện tại)
 
 Thiết kế lại `ai_tenant_settings` (không cần migration schema):
 
-1. **Platform route** — `AI_MODEL_BASE_URL` trong Deployment (`arda-infra`) là điểm chuyển duy nhất. Đổi gateway = đổi env + rollout; tenant không phải làm gì.
-2. **Allowlist mới:** env `AI_MODEL_BASE_URL_ALLOWLIST` (comma-separated domain, mặc định = platform gateway URL). Validate **ở cả hai chỗ**: upsert `/api/ai/settings` (reject 400 + audit) và tại use trong `agent.go` trước khi tạo client (defense in depth). Đây đồng thời là bản vá SSRF.
+1. **Tenant route là bắt buộc (chốt 2026-09-08):** production không còn wire
+   `AI_MODEL_BASE_URL/ID/API_KEY` vào Deployment — `cmd/ai-service/main.go`
+   chỉ dựng platform provider ở non-production (dev local không DB). Mọi
+   model config nằm trong `ai_tenant_settings` (AI Settings UI), key mã hóa
+   `enc:v1:` bằng `ARDA_SERVICE_AUTH_SECRET`. Tenant chưa cấu hình → run
+   FAILED với hướng dẫn vào AI Settings (`ai.model_unavailable`).
+2. **Allowlist:** env `AI_MODEL_BASE_URL_ALLOWLIST` (comma-separated domain).
+   Validate **ở cả hai chỗ**: upsert `/api/ai/settings` (reject 400 + audit)
+   và tại use trong `agent.go` trước khi tạo client (defense in depth). Đây
+   đồng thời là bản vá SSRF. Hiện chưa set = không enforce.
 3. **API key tenant** trở thành key scope-gateway — provider key thật nằm ở gateway, ai-service không bao giờ thấy (mã hóa `enc:v1:` hiện có giữ nguyên).
-4. Khi chuyển gateway→LiteLLM: thêm domain LiteLLM vào allowlist, đổi env platform, rollout. Tenant rows giữ nguyên, vẫn hợp lệ.
+4. Khi chuyển gateway→LiteLLM: thêm domain LiteLLM vào allowlist, tenant rows đổi base_url trong UI, không đổi code.
 
 **Quyết định Data-flow: ĐÃ CHỐT (2026-08-29)** — chấp nhận luồng model qua CF account (chỉ prompt, không raw customer data), thiết kế switchable theo §3.5 để quay về LiteLLM self-host bất cứ lúc nào mà không đổi code.
 

@@ -67,18 +67,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	// The deployment model is the platform fallback. A tenant can override it
-	// through ai_tenant_settings; keeping the platform client available avoids
-	// making every tenant configure an identical provider before first use.
+	// Model configuration is tenant-managed: production always resolves the
+	// provider from ai_tenant_settings (AI Settings UI; API keys encrypted at
+	// rest via ARDA_SERVICE_AUTH_SECRET) and fails closed when a tenant has
+	// no active configuration. The deployment env model is a development
+	// fallback for local runs without a database only.
 	var ModelProvider model.Provider
-	if cfg.ModelReady() {
-		client := model.NewClient(cfg.ModelBaseURL, cfg.ModelAPIKey, cfg.ModelID, nil)
-		if cfg.ModelGatewayToken != "" {
-			client.WithGatewayToken(cfg.ModelGatewayToken)
+	if cfg.Mode != "production" {
+		if cfg.ModelReady() {
+			client := model.NewClient(cfg.ModelBaseURL, cfg.ModelAPIKey, cfg.ModelID, nil)
+			if cfg.ModelGatewayToken != "" {
+				client.WithGatewayToken(cfg.ModelGatewayToken)
+			}
+			ModelProvider = model.NewCircuitBreakerProvider(client, 3, 30*time.Second)
+		} else if cfg.ModelEnabled {
+			logger.Warn("model provider is not configured; tenants must provide an active model setting")
 		}
-		ModelProvider = model.NewCircuitBreakerProvider(client, 3, 30*time.Second)
 	} else if cfg.ModelEnabled {
-		logger.Warn("model provider is not configured; tenants must provide an active model setting")
+		logger.Info("model provider is tenant-managed; configure it per tenant in AI Settings")
 	}
 
 	var knowledgeSvc *knowledge.Service

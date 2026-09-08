@@ -11,9 +11,11 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
-// With persistence, an active tenant setting overrides the platform provider;
-// a missing row uses the platform fallback so first use does not require
-// duplicating deployment configuration per tenant.
+// With persistence, an active tenant setting is the model source of truth;
+// the platform provider fallback only serves non-persistent development
+// stores. Production never wires an env provider (cmd/ai-service/main.go),
+// so a missing tenant row fails the run with the "configure in AI Settings"
+// guidance instead of silently using deployment config.
 func TestAgentLoopUsesPlatformFallbackWhenTenantSettingsMissing(t *testing.T) {
 	server := newModelServer(t, [][]string{{
 		`{"choices":[{"delta":{"content":"fallback"}}]}`,
