@@ -274,6 +274,30 @@ func (h *BFFHandler) Login(w http.ResponseWriter, r *http.Request) {
 	h.redirectToAuthUI(w, r, "login", "login_challenge")
 }
 
+// ValidateLoginChallenge reports whether a Hydra login challenge is still
+// usable, so the login UI can re-mint a fresh flow instead of surfacing an
+// expired challenge. Challenge lifecycle is Hydra state: 404/409/410 mean the
+// request was consumed or expired and the whole flow must restart, while any
+// other Hydra failure is a transient gateway problem.
+func (h *BFFHandler) ValidateLoginChallenge(w http.ResponseWriter, r *http.Request) {
+	challenge := r.URL.Query().Get("login_challenge")
+	if challenge == "" {
+		respondError(w, http.StatusBadRequest, "missing login_challenge")
+		return
+	}
+	_, status, err := h.getHydraAuthRequest(r.Context(), "login", "login_challenge", challenge)
+	if err == nil {
+		respondJSON(w, http.StatusOK, map[string]any{"valid": true})
+		return
+	}
+	if status == http.StatusNotFound || status == http.StatusConflict || status == http.StatusGone {
+		respondJSON(w, http.StatusOK, map[string]any{"valid": false})
+		return
+	}
+	h.logger.Warn("login challenge validation failed", "err", err)
+	respondError(w, http.StatusBadGateway, "auth request unavailable")
+}
+
 func (h *BFFHandler) Consent(w http.ResponseWriter, r *http.Request) {
 	challenge := r.URL.Query().Get("consent_challenge")
 	if challenge == "" {
@@ -324,7 +348,7 @@ func (h *BFFHandler) redirectToAuthUI(w http.ResponseWriter, r *http.Request, fl
 		respondError(w, http.StatusBadRequest, "missing "+challengeParam)
 		return
 	}
-	req, err := h.getHydraAuthRequest(r.Context(), flow, challengeParam, challenge)
+	req, _, err := h.getHydraAuthRequest(r.Context(), flow, challengeParam, challenge)
 	if err != nil {
 		h.logger.Warn("get hydra auth request failed", "flow", flow, "err", err)
 		respondError(w, http.StatusBadGateway, "auth request unavailable")
@@ -349,26 +373,26 @@ func (h *BFFHandler) redirectToAuthUI(w http.ResponseWriter, r *http.Request, fl
 	http.Redirect(w, r, target.String(), http.StatusFound)
 }
 
-func (h *BFFHandler) getHydraAuthRequest(ctx context.Context, flow, challengeParam, challenge string) (*hydraAuthRequest, error) {
+func (h *BFFHandler) getHydraAuthRequest(ctx context.Context, flow, challengeParam, challenge string) (*hydraAuthRequest, int, error) {
 	getURL := fmt.Sprintf("%s/admin/oauth2/auth/requests/%s?%s=%s", h.cfg.HydraAdminURL, flow, challengeParam, url.QueryEscape(challenge))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, getURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("hydra returned %d: %s", resp.StatusCode, string(body))
+		return nil, resp.StatusCode, fmt.Errorf("hydra returned %d: %s", resp.StatusCode, string(body))
 	}
 	var data hydraAuthRequest
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
+		return nil, resp.StatusCode, err
 	}
-	return &data, nil
+	return &data, resp.StatusCode, nil
 }
 
 func (h *BFFHandler) acceptHydraLogin(w http.ResponseWriter, r *http.Request, req loginAcceptRequest) {
@@ -390,6 +414,10 @@ func (h *BFFHandler) acceptHydraLoginURL(w http.ResponseWriter, r *http.Request,
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusGone {
+			respondError(w, http.StatusConflict, "login_challenge_expired")
+			return "", false
+		}
 		respondError(w, resp.StatusCode, string(body))
 		return "", false
 	}
