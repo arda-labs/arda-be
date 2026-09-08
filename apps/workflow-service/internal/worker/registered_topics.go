@@ -52,6 +52,16 @@ var RegisteredJobTopics = []string{
 	"fin.double-entry.validate",
 	"fin.double-entry.execute",
 	"fin.double-entry.cancel",
+	// Off-balance memo posting (fin-off-balance-v2.bpmn, iteration 10)
+	"fin.off-balance.init",
+	"fin.off-balance.validate",
+	"fin.off-balance.execute",
+	"fin.off-balance.cancel",
+	// Transaction cancellation (fin-txn-cancel-v2.bpmn, iteration 10)
+	"fin.txn-cancel.init",
+	"fin.txn-cancel.validate",
+	"fin.txn-cancel.execute",
+	"fin.txn-cancel.cancel",
 	// Notification (no BPMN service task yet; registered for future flows)
 	"notification.email",
 	"notification.sms",

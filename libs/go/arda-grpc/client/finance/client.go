@@ -124,3 +124,16 @@ func (c *Client) Reverse(ctx context.Context, req *financev1.ReverseRequest) (*f
 	defer cancel()
 	return c.api.ReverseTransaction(callCtx, req)
 }
+
+// GetJournalEntry reads one entry (header + lines) by entry_no — the
+// cancellation flow's init/validate guards (status POSTED, not yet
+// reversed). Unknown or non-readable entries surface as a NotFound gRPC
+// error.
+func (c *Client) GetJournalEntry(ctx context.Context, req *financev1.GetJournalEntryRequest) (*financev1.JournalEntryDetail, error) {
+	if c == nil {
+		return nil, errors.New("finance client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	return c.api.GetJournalEntry(callCtx, req)
+}

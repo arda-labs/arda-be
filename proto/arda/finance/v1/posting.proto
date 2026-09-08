@@ -36,6 +36,11 @@ service PostingService {
   rpc ReleasePosting(ReleaseRequest) returns (PostingResponse);
   // ReverseTransaction creates a reversal entry; the original is immutable.
   rpc ReverseTransaction(ReverseRequest) returns (PostingResponse);
+  // GetJournalEntry reads one entry (header + lines) by entry_no for the
+  // accountant cancellation flow: the workflow init/validate steps guard on
+  // its status and reversed_by_entry_id before reversing. Only POSTED and
+  // REVERSED entries are readable; anything else is NOT_FOUND.
+  rpc GetJournalEntry(GetJournalEntryRequest) returns (JournalEntryDetail);
 }
 
 message BusinessReference {
@@ -124,10 +129,48 @@ message ReverseRequest {
   string tenant_id = 1;        // resolved from metadata in-process
   string journal_entry_id = 2; // or business_reference lookup
   string business_domain = 3;
+  // business_document_type overrides the doc type stamped on the reversal
+  // entry. Empty keeps the original's doc type (plain correction); the
+  // cancellation flow sets FIN_TXN_CANCEL so the journal list can filter the
+  // cancel-driven reversals.
   string business_document_type = 4;
   string business_document_id = 5;
   string reason = 6;
   string accounting_date = 7;  // reversal business date
   string idempotency_key = 8;
   string actor = 9;
+}
+
+message GetJournalEntryRequest {
+  string tenant_id = 1;        // resolved from metadata in-process
+  string entry_no = 2;         // human journal number, e.g. "42" (JE-nn)
+  string entry_id = 3;         // optional direct UUID lookup
+}
+
+message JournalEntryDetailLine {
+  int32 line_no = 1;
+  string direction = 2;        // DEBIT | CREDIT
+  string account_code = 3;
+  string account_name = 4;
+  int64 amount_minor = 5;
+  string currency_code = 6;
+  string description = 7;
+}
+
+message JournalEntryDetail {
+  string journal_entry_id = 1;
+  int64 entry_no = 2;
+  string accounting_date = 3;       // "YYYY-MM-DD"
+  string currency_code = 4;
+  string status = 5;                // POSTED | REVERSED (readable states)
+  string description = 6;
+  string business_domain = 7;
+  string business_doc_type = 8;
+  string business_doc_id = 9;
+  string case_id = 10;
+  string reversed_by_entry_id = 11; // set once the entry was reversed
+  int64 total_amount_minor = 12;    // Σ debit (== Σ credit) of the lines
+  string created_by = 13;
+  string created_at = 14;
+  repeated JournalEntryDetailLine lines = 15;
 }

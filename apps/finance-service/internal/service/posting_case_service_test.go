@@ -26,7 +26,7 @@ func TestValidateManualPostingFlowRejectsUnknownFlow(t *testing.T) {
 		},
 	}
 	err := validateManualPostingFlow("TRIPLE_ENTRY", req)
-	if err == nil || !strings.Contains(err.Error(), "SINGLE_ENTRY or DOUBLE_ENTRY") {
+	if err == nil || !strings.Contains(err.Error(), "SINGLE_ENTRY, DOUBLE_ENTRY or OFF_BALANCE") {
 		t.Fatalf("unknown flow error = %v, want flow rejection", err)
 	}
 }
@@ -108,6 +108,102 @@ func TestValidateManualPostingFlowSingleEntry(t *testing.T) {
 	}
 	if err := validateManualPostingFlow(FlowSingleEntry, unequal); err == nil || !strings.Contains(err.Error(), "equal debit and credit amounts") {
 		t.Fatalf("unequal single entry error = %v", err)
+	}
+}
+
+func TestValidateManualPostingFlowOffBalance(t *testing.T) {
+	validDebit := &financev1.PostingRequest{
+		AccountingDate: "2026-09-08",
+		Lines: []*financev1.PostingLine{
+			line(1, "DEBIT", 100_000, "091", "VND"),
+			line(2, "DEBIT", 100_000, "092", "VND"),
+			line(3, "DEBIT", 100_000, "091", "VND"),
+		},
+	}
+	if err := validateManualPostingFlow(FlowOffBalance, validDebit); err != nil {
+		t.Fatalf("valid off-balance debit rejected: %v", err)
+	}
+	validCredit := &financev1.PostingRequest{
+		AccountingDate: "2026-09-08",
+		Lines:          []*financev1.PostingLine{line(1, "CREDIT", 500, "092", "VND")},
+	}
+	if err := validateManualPostingFlow(FlowOffBalance, validCredit); err != nil {
+		t.Fatalf("valid off-balance single credit line rejected: %v", err)
+	}
+
+	// Mixed directions are the same-line memo rule violation.
+	mixed := &financev1.PostingRequest{
+		AccountingDate: "2026-09-08",
+		Lines: []*financev1.PostingLine{
+			line(1, "DEBIT", 100_000, "091", "VND"),
+			line(2, "CREDIT", 100_000, "092", "VND"),
+		},
+	}
+	if err := validateManualPostingFlow(FlowOffBalance, mixed); err == nil || !strings.Contains(err.Error(), "one direction") {
+		t.Fatalf("mixed-direction off-balance error = %v", err)
+	}
+
+	unequal := &financev1.PostingRequest{
+		AccountingDate: "2026-09-08",
+		Lines: []*financev1.PostingLine{
+			line(1, "DEBIT", 100_000, "091", "VND"),
+			line(2, "DEBIT", 90_000, "092", "VND"),
+		},
+	}
+	if err := validateManualPostingFlow(FlowOffBalance, unequal); err == nil || !strings.Contains(err.Error(), "equal amounts") {
+		t.Fatalf("unequal off-balance amounts error = %v", err)
+	}
+}
+
+func TestValidateCancellationShape(t *testing.T) {
+	if err := validateCancellationShape(nil); err == nil || !strings.Contains(err.Error(), "cancellation_request is required") {
+		t.Fatalf("nil cancellation error = %v", err)
+	}
+	if err := validateCancellationShape(&CancellationCaseInput{ReferenceEntryNo: "1"}); err == nil || !strings.Contains(err.Error(), "reason is required") {
+		t.Fatalf("missing reason error = %v", err)
+	}
+	if err := validateCancellationShape(&CancellationCaseInput{Reason: "sai số liệu"}); err == nil || !strings.Contains(err.Error(), "reference_entry_no is required") {
+		t.Fatalf("missing reference error = %v", err)
+	}
+	if err := validateCancellationShape(&CancellationCaseInput{ReferenceEntryNo: "42", Reason: "sai số liệu", AccountingDate: "09/2026"}); err == nil || !strings.Contains(err.Error(), "YYYY-MM-DD") {
+		t.Fatalf("bad accounting date error = %v", err)
+	}
+	valid := &CancellationCaseInput{ReferenceEntryNo: "42", Reason: "sai số liệu", AccountingDate: "2026-09-08"}
+	if err := validateCancellationShape(valid); err != nil {
+		t.Fatalf("valid cancellation rejected: %v", err)
+	}
+}
+
+func TestCancellationRequestVariablesSerialization(t *testing.T) {
+	in := &CancellationCaseInput{
+		ReferenceEntryNo: "42",
+		Reason:           "hủy sai số liệu",
+		AccountingDate:   "2026-09-08",
+		IdempotencyKey:   "fin-cancellation-abc",
+		Trader: &CancellationTrader{
+			ObjectType: "EMPLOYEE",
+			ObjectCode: "NV001",
+			ObjectName: "Nguyễn Văn A",
+		},
+	}
+	vars := cancellationRequestVariables(in)
+	if vars["referenceEntryNo"] != "42" || vars["reason"] != "hủy sai số liệu" || vars["idempotencyKey"] != "fin-cancellation-abc" {
+		t.Fatalf("cancellation variables mismatch: %v", vars)
+	}
+	trader, ok := vars["trader"].(map[string]any)
+	if !ok || trader["objectType"] != "EMPLOYEE" || trader["objectCode"] != "NV001" || trader["objectName"] != "Nguyễn Văn A" {
+		t.Fatalf("trader variables mismatch: %v", trader)
+	}
+	if _, ok := trader["address"]; ok {
+		t.Fatal("empty trader fields must be omitted from case variables")
+	}
+
+	minimal := cancellationRequestVariables(&CancellationCaseInput{ReferenceEntryNo: "1", Reason: "r"})
+	if _, ok := minimal["accountingDate"]; ok {
+		t.Fatal("empty accountingDate must be omitted from case variables")
+	}
+	if _, ok := minimal["trader"]; ok {
+		t.Fatal("nil trader must be omitted from case variables")
 	}
 }
 

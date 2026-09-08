@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,12 +19,19 @@ import (
 // accountant-picked lines (account_code on every line, no classification);
 // the case rides the standard finance two-phase posting lifecycle:
 // Reserve at init → Validate at validate → Post on approve → Release on reject.
+// Iteration 10 adds OFF_BALANCE (nhập/xuất ngoại bảng — same-shape lines on
+// nature-B accounts) and CANCELLATION (hủy giao dịch — reverse a POSTED
+// entry on checker approval; no posting_request, the original is referenced).
 const (
-	FlowSingleEntry = "SINGLE_ENTRY"
-	FlowDoubleEntry = "DOUBLE_ENTRY"
+	FlowSingleEntry  = "SINGLE_ENTRY"
+	FlowDoubleEntry  = "DOUBLE_ENTRY"
+	FlowOffBalance   = "OFF_BALANCE"
+	FlowCancellation = "CANCELLATION"
 
-	CaseTypeFinSingleEntry = "FIN_SINGLE_ENTRY_V2"
-	CaseTypeFinDoubleEntry = "FIN_DOUBLE_ENTRY_V2"
+	CaseTypeFinSingleEntry  = "FIN_SINGLE_ENTRY_V2"
+	CaseTypeFinDoubleEntry  = "FIN_DOUBLE_ENTRY_V2"
+	CaseTypeFinOffBalance   = "FIN_OFF_BALANCE_V2"
+	CaseTypeFinCancellation = "FIN_TXN_CANCEL_V2"
 
 	primaryObjectTypeFinPosting = "fin.posting"
 	domainServiceFinance        = "finance-service"
@@ -47,9 +56,36 @@ func NewPostingCaseService(posting *PostingService, workflow WorkflowCaseClient)
 }
 
 // PostingCaseInput is the HTTP contract body of POST /api/finance/posting-cases.
+// PostingRequest backs SINGLE_ENTRY / DOUBLE_ENTRY / OFF_BALANCE; Cancellation
+// backs CANCELLATION (no posting request — the original entry is referenced).
 type PostingCaseInput struct {
 	Flow           string
 	PostingRequest *financev1.PostingRequest
+	Cancellation   *CancellationCaseInput
+}
+
+// CancellationTrader is the person raising the cancellation (mirror of the
+// trader block the FE already sends for manual postings).
+type CancellationTrader struct {
+	ObjectType string
+	ObjectCode string
+	ObjectName string
+	IDNumber   string
+	IssueDate  string
+	IssuePlace string
+	Address    string
+}
+
+// CancellationCaseInput is the CANCELLATION flow body: which POSTED journal
+// entry to reverse (by human entry_no) and why. AccountingDate is the
+// reversal business date — empty defaults to the original entry's date at
+// execute time.
+type CancellationCaseInput struct {
+	ReferenceEntryNo string
+	Reason           string
+	AccountingDate   string
+	Trader           *CancellationTrader
+	IdempotencyKey   string
 }
 
 // PostingCaseResult is the HTTP contract response: the created workflow case.
@@ -58,14 +94,16 @@ type PostingCaseResult struct {
 	CaseCode string `json:"case_code"`
 }
 
-// validateManualPostingFlow is the structural pre-check for manual posting
-// flows, before any resolvable-account work happens. SINGLE_ENTRY is the
-// two-line "bút toán lẻ" pair (one DEBIT + one CREDIT, equal amounts);
-// DOUBLE_ENTRY ("bút toán kép") accepts any ≥2-line entry balanced per
-// currency — the same ΣDEBIT=ΣCREDIT rule PostingService enforces later.
+// validateManualPostingFlow is the structural pre-check for the line-carrying
+// manual posting flows, before any resolvable-account work happens.
+// SINGLE_ENTRY is the two-line "bút toán lẻ" pair (one DEBIT + one CREDIT,
+// equal amounts); DOUBLE_ENTRY ("bút toán kép") accepts any ≥2-line entry
+// balanced per currency — the same ΣDEBIT=ΣCREDIT rule PostingService enforces
+// later; OFF_BALANCE (nhập/xuất ngoại bảng) is N same-direction lines of one
+// equal amount on nature-B accounts (balances skip the availability check).
 func validateManualPostingFlow(flow string, req *financev1.PostingRequest) error {
-	if flow != FlowSingleEntry && flow != FlowDoubleEntry {
-		return fmt.Errorf("flow must be SINGLE_ENTRY or DOUBLE_ENTRY")
+	if flow != FlowSingleEntry && flow != FlowDoubleEntry && flow != FlowOffBalance {
+		return fmt.Errorf("flow must be SINGLE_ENTRY, DOUBLE_ENTRY or OFF_BALANCE (CANCELLATION uses cancellation_request)")
 	}
 	if req == nil {
 		return fmt.Errorf("posting_request is required")
@@ -87,6 +125,8 @@ func validateManualPostingFlow(flow string, req *financev1.PostingRequest) error
 	switch flow {
 	case FlowSingleEntry:
 		return validateSingleEntryShape(req.GetLines())
+	case FlowOffBalance:
+		return validateOffBalanceShape(req.GetLines())
 	default:
 		return validateDoubleEntryShape(req.GetLines())
 	}
@@ -146,12 +186,67 @@ func validateDoubleEntryShape(lines []*financev1.PostingLine) error {
 	return nil
 }
 
+// validateOffBalanceShape: ≥1 line, every line the same direction (Nhập →
+// DEBIT, Xuất → CREDIT), every amount equal, every line carries an
+// account_code (already enforced for manual posting). Off-balance lines sit
+// on nature-B accounts whose availability is never checked, so no balance
+// rule applies here — only the same-direction memo shape.
+func validateOffBalanceShape(lines []*financev1.PostingLine) error {
+	if len(lines) == 0 {
+		return fmt.Errorf("OFF_BALANCE requires at least 1 line")
+	}
+	direction := lines[0].GetDirection()
+	if direction != "DEBIT" && direction != "CREDIT" {
+		return fmt.Errorf("OFF_BALANCE requires DEBIT or CREDIT lines, got %q", direction)
+	}
+	amount := lines[0].GetAmountMinor()
+	if amount <= 0 {
+		return fmt.Errorf("OFF_BALANCE requires positive amounts, line 1 is %d", amount)
+	}
+	for i, l := range lines {
+		if l.GetDirection() != direction {
+			return fmt.Errorf("OFF_BALANCE requires all lines in one direction (%s), line %d is %s", direction, i+1, l.GetDirection())
+		}
+		if l.GetAmountMinor() != amount {
+			return fmt.Errorf("OFF_BALANCE requires equal amounts on every line (line 1 is %d, line %d is %d)", amount, i+1, l.GetAmountMinor())
+		}
+	}
+	return nil
+}
+
+// validateCancellationShape: no posting request — the flow references a
+// POSTED journal entry by its human entry_no and carries a reason (the
+// reversal description). AccountingDate, when sent, must be a real date.
+func validateCancellationShape(in *CancellationCaseInput) error {
+	if in == nil {
+		return fmt.Errorf("cancellation_request is required")
+	}
+	if strings.TrimSpace(in.ReferenceEntryNo) == "" {
+		return fmt.Errorf("cancellation_request.reference_entry_no is required")
+	}
+	if strings.TrimSpace(in.Reason) == "" {
+		return fmt.Errorf("cancellation_request.reason is required")
+	}
+	if in.AccountingDate != "" {
+		if _, err := time.Parse("2006-01-02", in.AccountingDate); err != nil {
+			return fmt.Errorf("cancellation_request.accounting_date must be YYYY-MM-DD")
+		}
+	}
+	return nil
+}
+
 // CreatePostingCase validates the posting structurally, previews it through
 // PostingService.ValidatePosting (COA resolution + balance rules), then
 // creates and submits the maker-checker workflow case. The case idempotency
 // key is generated BEFORE CreateCase so a retry after a partial failure
-// replays instead of opening a second case.
+// replays instead of opening a second case. CANCELLATION skips the posting
+// preview (there is no posting request) and instead fails fast on an
+// unknown reference entry — the authoritative status check still happens in
+// the workflow init/validate workers.
 func (s *PostingCaseService) CreatePostingCase(ctx context.Context, tenantID, actor string, in PostingCaseInput) (*PostingCaseResult, error) {
+	if in.Flow == FlowCancellation {
+		return s.createCancellationCase(ctx, tenantID, actor, in)
+	}
 	if err := validateManualPostingFlow(in.Flow, in.PostingRequest); err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
 	}
@@ -173,9 +268,13 @@ func (s *PostingCaseService) CreatePostingCase(ctx context.Context, tenantID, ac
 	}
 	caseType := CaseTypeFinSingleEntry
 	title := "Bút toán lẻ — "
-	if in.Flow == FlowDoubleEntry {
+	switch in.Flow {
+	case FlowDoubleEntry:
 		caseType = CaseTypeFinDoubleEntry
 		title = "Bút toán kép — "
+	case FlowOffBalance:
+		caseType = CaseTypeFinOffBalance
+		title = "Ngoại bảng — "
 	}
 	title += truncateDescription(in.PostingRequest.GetDescription())
 
@@ -208,6 +307,118 @@ func (s *PostingCaseService) CreatePostingCase(ctx context.Context, tenantID, ac
 	}, nil
 }
 
+// createCancellationCase creates the FIN_TXN_CANCEL_V2 maker-checker case
+// that reverses one POSTED journal entry on approval. There is no posting
+// request to preview; the reference entry is looked up here only to fail
+// fast on a typo — the init/validate workers re-check status/reversal
+// against the authoritative read.
+func (s *PostingCaseService) createCancellationCase(ctx context.Context, tenantID, actor string, in PostingCaseInput) (*PostingCaseResult, error) {
+	if err := validateCancellationShape(in.Cancellation); err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
+	}
+	if s.workflow == nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, "workflow client is not configured")
+	}
+	// Fail fast: the referenced entry must exist for this tenant. Status /
+	// reversed_by guards run in the workflow workers (GetJournalEntry), which
+	// re-check right before the reversal.
+	entryNo, err := strconv.ParseInt(strings.TrimSpace(in.Cancellation.ReferenceEntryNo), 10, 64)
+	if err != nil || entryNo <= 0 {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput,
+			fmt.Sprintf("cancellation_request.reference_entry_no %q is not a valid journal entry number", in.Cancellation.ReferenceEntryNo))
+	}
+	ref, err := s.posting.FindEntryRefByNo(ctx, tenantID, entryNo)
+	if err != nil {
+		if errors.Is(err, ErrJournalEntryNotFound) {
+			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput,
+				fmt.Sprintf("cancellation_request.reference_entry_no %d does not exist", entryNo))
+		}
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	if ref.Status != "POSTED" {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput,
+			fmt.Sprintf("cancellation_request.reference_entry_no %d has status %s; only POSTED entries can be cancelled", entryNo, ref.Status))
+	}
+
+	// The FE may pin the idempotency key; otherwise generate one so a partial
+	// create+submit failure never opens a second case for one attempt.
+	idempotencyKey := in.Cancellation.IdempotencyKey
+	if idempotencyKey == "" {
+		idempotencyKey = fmt.Sprintf("fin-cancellation-%s", newRandomUUID())
+	}
+	title := "Hủy giao dịch — JE-" + in.Cancellation.ReferenceEntryNo
+
+	caseCreated, err := s.workflow.CreateCase(ctx, workflowclient.CaseCreate{
+		TenantID:          tenantID,
+		CaseType:          CaseTypeFinCancellation,
+		CaseCode:          "",
+		Title:             title,
+		PrimaryObjectType: primaryObjectTypeFinPosting,
+		PrimaryObjectID:   in.Cancellation.ReferenceEntryNo,
+		DomainService:     domainServiceFinance,
+		Priority:          "NORMAL",
+		CreatedBy:         actor,
+		IdempotencyKey:    idempotencyKey,
+	})
+	if err != nil {
+		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
+	}
+
+	if _, err := s.workflow.SubmitCase(ctx, caseCreated.GetId(), actor, map[string]any{
+		"flow":                  FlowCancellation,
+		"postingIdempotencyKey": idempotencyKey,
+		"cancellationRequest":   cancellationRequestVariables(in.Cancellation),
+	}, idempotencyKey+"-submit"); err != nil {
+		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
+	}
+	return &PostingCaseResult{
+		CaseID:   caseCreated.GetId(),
+		CaseCode: caseCreated.GetCaseCode(),
+	}, nil
+}
+
+// cancellationRequestVariables serializes the cancellation request into the
+// camelCase JSON object the cancellation workers deserialize (mirror of
+// postingRequestVariables).
+func cancellationRequestVariables(in *CancellationCaseInput) map[string]any {
+	vars := map[string]any{
+		"referenceEntryNo": in.ReferenceEntryNo,
+		"reason":           in.Reason,
+	}
+	if v := in.AccountingDate; v != "" {
+		vars["accountingDate"] = v
+	}
+	if v := in.IdempotencyKey; v != "" {
+		vars["idempotencyKey"] = v
+	}
+	if t := in.Trader; t != nil {
+		trader := map[string]any{}
+		if v := t.ObjectType; v != "" {
+			trader["objectType"] = v
+		}
+		if v := t.ObjectCode; v != "" {
+			trader["objectCode"] = v
+		}
+		if v := t.ObjectName; v != "" {
+			trader["objectName"] = v
+		}
+		if v := t.IDNumber; v != "" {
+			trader["idNumber"] = v
+		}
+		if v := t.IssueDate; v != "" {
+			trader["issueDate"] = v
+		}
+		if v := t.IssuePlace; v != "" {
+			trader["issuePlace"] = v
+		}
+		if v := t.Address; v != "" {
+			trader["address"] = v
+		}
+		vars["trader"] = trader
+	}
+	return vars
+}
+
 // postingRequestVariables serializes the posting request into the camelCase
 // JSON object the manual posting workers deserialize (map[string]any keeps
 // structpb happy in SubmitCase).
@@ -215,10 +426,10 @@ func postingRequestVariables(req *financev1.PostingRequest) map[string]any {
 	lines := make([]any, 0, len(req.GetLines()))
 	for _, l := range req.GetLines() {
 		line := map[string]any{
-			"lineNo":       l.GetLineNo(),
-			"direction":    l.GetDirection(),
-			"amountMinor":  l.GetAmountMinor(),
-			"accountCode":  l.GetAccountCode(),
+			"lineNo":      l.GetLineNo(),
+			"direction":   l.GetDirection(),
+			"amountMinor": l.GetAmountMinor(),
+			"accountCode": l.GetAccountCode(),
 		}
 		if v := l.GetCurrencyCode(); v != "" {
 			line["currencyCode"] = v

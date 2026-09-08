@@ -78,7 +78,7 @@ func (r *CoaRepository) UpsertVersion(ctx context.Context, v *domain.CoaVersion)
 	return out, nil
 }
 
-func (r *CoaRepository) ListAccounts(ctx context.Context, tenantID, versionCode string) ([]domain.CoaAccount, error) {
+func (r *CoaRepository) ListAccounts(ctx context.Context, tenantID, versionCode, nature string) ([]domain.CoaAccount, error) {
 	if err := requireTenant(tenantID); err != nil {
 		return nil, err
 	}
@@ -87,7 +87,8 @@ func (r *CoaRepository) ListAccounts(ctx context.Context, tenantID, versionCode 
 		       is_internal, is_postable, effective_date::text, expiry_date::text, description, created_at, updated_at
 		FROM fin_coa_accounts
 		WHERE tenant_id = $1 AND version_code = $2
-		ORDER BY acc_code`, tenantID, versionCode)
+		  AND ($3 = '' OR acc_nature = $3)
+		ORDER BY acc_code`, tenantID, versionCode, nature)
 	if err != nil {
 		return nil, err
 	}

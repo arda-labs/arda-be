@@ -302,11 +302,11 @@ func main() {
 	}
 
 	// Manual posting two-flow workers (FAC-native bút toán lẻ / bút toán
-	// kép): the case variables carry the FE-submitted posting; init reserves,
-	// validate re-checks, execute posts on approve, cancel releases on reject.
-	// Registered only when finance-service is reachable.
+	// kép / ngoại bảng): the case variables carry the FE-submitted posting;
+	// init reserves, validate re-checks, execute posts on approve, cancel
+	// releases on reject. Registered only when finance-service is reachable.
 	if financeClient != nil {
-		for _, flow := range []worker.ManualPostingFlow{worker.SingleEntryFlow, worker.DoubleEntryFlow} {
+		for _, flow := range []worker.ManualPostingFlow{worker.SingleEntryFlow, worker.DoubleEntryFlow, worker.OffBalanceFlow} {
 			manualPosting := worker.NewManualPostingWorkers(flow, financeClient, caseRepo)
 			mi, mv, me, mc := manualPosting.Handlers()
 			miw := zeebeSvc.NewJobWorker(flow.TopicPrefix+".init", mi)
@@ -319,6 +319,21 @@ func main() {
 			defer mcw.Close()
 		}
 		logger.Info("workflow manual posting workers registered")
+
+		// Transaction cancellation (hủy giao dịch): no posting request —
+		// init/validate guard the referenced POSTED entry via
+		// GetJournalEntry, execute reverses it (FIN_TXN_CANCEL) on approve.
+		cancellation := worker.NewCancellationWorkers(worker.TxnCancelFlow, financeClient, caseRepo)
+		ci, cv, ce, cc := cancellation.Handlers()
+		ciw := zeebeSvc.NewJobWorker(worker.TxnCancelFlow.TopicPrefix+".init", ci)
+		cvw := zeebeSvc.NewJobWorker(worker.TxnCancelFlow.TopicPrefix+".validate", cv)
+		cew := zeebeSvc.NewJobWorker(worker.TxnCancelFlow.TopicPrefix+".execute", ce)
+		ccw := zeebeSvc.NewJobWorker(worker.TxnCancelFlow.TopicPrefix+".cancel", cc)
+		defer ciw.Close()
+		defer cvw.Close()
+		defer cew.Close()
+		defer ccw.Close()
+		logger.Info("workflow cancellation workers registered")
 	}
 
 	// RPT submit workers: always registered — the submission case needs no

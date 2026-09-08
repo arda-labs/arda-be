@@ -24,6 +24,7 @@ const (
 	PostingService_ReservePosting_FullMethodName     = "/arda.finance.v1.PostingService/ReservePosting"
 	PostingService_ReleasePosting_FullMethodName     = "/arda.finance.v1.PostingService/ReleasePosting"
 	PostingService_ReverseTransaction_FullMethodName = "/arda.finance.v1.PostingService/ReverseTransaction"
+	PostingService_GetJournalEntry_FullMethodName    = "/arda.finance.v1.PostingService/GetJournalEntry"
 )
 
 // PostingServiceClient is the client API for PostingService service.
@@ -62,6 +63,11 @@ type PostingServiceClient interface {
 	ReleasePosting(ctx context.Context, in *ReleaseRequest, opts ...grpc.CallOption) (*PostingResponse, error)
 	// ReverseTransaction creates a reversal entry; the original is immutable.
 	ReverseTransaction(ctx context.Context, in *ReverseRequest, opts ...grpc.CallOption) (*PostingResponse, error)
+	// GetJournalEntry reads one entry (header + lines) by entry_no for the
+	// accountant cancellation flow: the workflow init/validate steps guard on
+	// its status and reversed_by_entry_id before reversing. Only POSTED and
+	// REVERSED entries are readable; anything else is NOT_FOUND.
+	GetJournalEntry(ctx context.Context, in *GetJournalEntryRequest, opts ...grpc.CallOption) (*JournalEntryDetail, error)
 }
 
 type postingServiceClient struct {
@@ -122,6 +128,16 @@ func (c *postingServiceClient) ReverseTransaction(ctx context.Context, in *Rever
 	return out, nil
 }
 
+func (c *postingServiceClient) GetJournalEntry(ctx context.Context, in *GetJournalEntryRequest, opts ...grpc.CallOption) (*JournalEntryDetail, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JournalEntryDetail)
+	err := c.cc.Invoke(ctx, PostingService_GetJournalEntry_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PostingServiceServer is the server API for PostingService service.
 // All implementations must embed UnimplementedPostingServiceServer
 // for forward compatibility.
@@ -158,6 +174,11 @@ type PostingServiceServer interface {
 	ReleasePosting(context.Context, *ReleaseRequest) (*PostingResponse, error)
 	// ReverseTransaction creates a reversal entry; the original is immutable.
 	ReverseTransaction(context.Context, *ReverseRequest) (*PostingResponse, error)
+	// GetJournalEntry reads one entry (header + lines) by entry_no for the
+	// accountant cancellation flow: the workflow init/validate steps guard on
+	// its status and reversed_by_entry_id before reversing. Only POSTED and
+	// REVERSED entries are readable; anything else is NOT_FOUND.
+	GetJournalEntry(context.Context, *GetJournalEntryRequest) (*JournalEntryDetail, error)
 	mustEmbedUnimplementedPostingServiceServer()
 }
 
@@ -182,6 +203,9 @@ func (UnimplementedPostingServiceServer) ReleasePosting(context.Context, *Releas
 }
 func (UnimplementedPostingServiceServer) ReverseTransaction(context.Context, *ReverseRequest) (*PostingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReverseTransaction not implemented")
+}
+func (UnimplementedPostingServiceServer) GetJournalEntry(context.Context, *GetJournalEntryRequest) (*JournalEntryDetail, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetJournalEntry not implemented")
 }
 func (UnimplementedPostingServiceServer) mustEmbedUnimplementedPostingServiceServer() {}
 func (UnimplementedPostingServiceServer) testEmbeddedByValue()                        {}
@@ -294,6 +318,24 @@ func _PostingService_ReverseTransaction_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PostingService_GetJournalEntry_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetJournalEntryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PostingServiceServer).GetJournalEntry(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PostingService_GetJournalEntry_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PostingServiceServer).GetJournalEntry(ctx, req.(*GetJournalEntryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PostingService_ServiceDesc is the grpc.ServiceDesc for PostingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -320,6 +362,10 @@ var PostingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReverseTransaction",
 			Handler:    _PostingService_ReverseTransaction_Handler,
+		},
+		{
+			MethodName: "GetJournalEntry",
+			Handler:    _PostingService_GetJournalEntry_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

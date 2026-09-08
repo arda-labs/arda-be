@@ -43,6 +43,16 @@ var DoubleEntryFlow = ManualPostingFlow{
 	DocumentType:      "FIN_DOUBLE_ENTRY",
 }
 
+// OffBalanceFlow is the off-balance memo leg (FIN_OFF_BALANCE_V2, iteration
+// 10 — nhập xuất ngoại bảng). Pure mirror of the manual posting legs: N
+// same-direction equal-amount lines on nature-B accounts (availability-
+// exempt in balance_math), Reserve → Validate → Post / Release.
+var OffBalanceFlow = ManualPostingFlow{
+	TopicPrefix:       "fin.off-balance",
+	IdempotencyPrefix: "fin-off-balance",
+	DocumentType:      "FIN_OFF_BALANCE",
+}
+
 // ManualPostingWorkers run the FIN_SINGLE_ENTRY_V2 / FIN_DOUBLE_ENTRY_V2
 // flow jobs, mirroring DisbursementWorkers but sourcing the posting request
 // from case variables (the FE-submitted accountant-picked lines) instead of

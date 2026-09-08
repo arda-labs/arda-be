@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -68,6 +69,25 @@ func (s *PostingServer) ReverseTransaction(ctx context.Context, req *financev1.R
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return resp, nil
+}
+
+// GetJournalEntry serves the cancellation flow's init/validate guards: the
+// workers check status + reversed_by_entry_id before reversing. Unknown or
+// non-readable (PENDING/VOID) entries map to NotFound.
+func (s *PostingServer) GetJournalEntry(ctx context.Context, req *financev1.GetJournalEntryRequest) (*financev1.JournalEntryDetail, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	detail, err := s.posting.GetJournalEntry(ctx, tenantID, req.GetEntryNo(), req.GetEntryId())
+	if err != nil {
+		slog.Warn("posting grpc: get journal entry failed", "entryNo", req.GetEntryNo(), "err", err)
+		if errors.Is(err, service.ErrJournalEntryNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return detail, nil
 }
 
 func (s *PostingServer) ReservePosting(ctx context.Context, req *financev1.PostingRequest) (*financev1.PostingResponse, error) {

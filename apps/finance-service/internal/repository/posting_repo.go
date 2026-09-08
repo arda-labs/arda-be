@@ -305,6 +305,27 @@ func (r *PostingRepository) MarkReversed(ctx context.Context, tx *sql.Tx, tenant
 	return err
 }
 
+// JournalEntryRef is the minimal header the posting-case service reads to
+// fail fast when a cancellation case references a missing entry.
+type JournalEntryRef struct {
+	ID     string
+	EntryNo int64
+	Status string
+}
+
+// FindEntryByEntryNo resolves a human journal number to its entry id/status.
+// ErrNoRows (wrapped) means the entry_no does not exist for the tenant.
+func (r *PostingRepository) FindEntryByEntryNo(ctx context.Context, tenantID string, entryNo int64) (*JournalEntryRef, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, entry_no, status FROM fin_journal_entries
+		WHERE tenant_id = $1 AND entry_no = $2`, tenantID, entryNo)
+	var out JournalEntryRef
+	if err := row.Scan(&out.ID, &out.EntryNo, &out.Status); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // InsertOutbox enqueues the journal.posted event in the same tx.
 func (r *PostingRepository) InsertOutbox(ctx context.Context, tx *sql.Tx, tenantID, entryID string, payload []byte) error {
 	_, err := tx.ExecContext(ctx, `

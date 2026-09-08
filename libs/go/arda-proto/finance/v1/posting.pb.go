@@ -739,16 +739,20 @@ func (x *ValidationResult) GetCoaVersionId() string {
 }
 
 type ReverseRequest struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	TenantId             string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`                     // resolved from metadata in-process
-	JournalEntryId       string                 `protobuf:"bytes,2,opt,name=journal_entry_id,json=journalEntryId,proto3" json:"journal_entry_id,omitempty"` // or business_reference lookup
-	BusinessDomain       string                 `protobuf:"bytes,3,opt,name=business_domain,json=businessDomain,proto3" json:"business_domain,omitempty"`
-	BusinessDocumentType string                 `protobuf:"bytes,4,opt,name=business_document_type,json=businessDocumentType,proto3" json:"business_document_type,omitempty"`
-	BusinessDocumentId   string                 `protobuf:"bytes,5,opt,name=business_document_id,json=businessDocumentId,proto3" json:"business_document_id,omitempty"`
-	Reason               string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
-	AccountingDate       string                 `protobuf:"bytes,7,opt,name=accounting_date,json=accountingDate,proto3" json:"accounting_date,omitempty"` // reversal business date
-	IdempotencyKey       string                 `protobuf:"bytes,8,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	Actor                string                 `protobuf:"bytes,9,opt,name=actor,proto3" json:"actor,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TenantId       string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`                     // resolved from metadata in-process
+	JournalEntryId string                 `protobuf:"bytes,2,opt,name=journal_entry_id,json=journalEntryId,proto3" json:"journal_entry_id,omitempty"` // or business_reference lookup
+	BusinessDomain string                 `protobuf:"bytes,3,opt,name=business_domain,json=businessDomain,proto3" json:"business_domain,omitempty"`
+	// business_document_type overrides the doc type stamped on the reversal
+	// entry. Empty keeps the original's doc type (plain correction); the
+	// cancellation flow sets FIN_TXN_CANCEL so the journal list can filter the
+	// cancel-driven reversals.
+	BusinessDocumentType string `protobuf:"bytes,4,opt,name=business_document_type,json=businessDocumentType,proto3" json:"business_document_type,omitempty"`
+	BusinessDocumentId   string `protobuf:"bytes,5,opt,name=business_document_id,json=businessDocumentId,proto3" json:"business_document_id,omitempty"`
+	Reason               string `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	AccountingDate       string `protobuf:"bytes,7,opt,name=accounting_date,json=accountingDate,proto3" json:"accounting_date,omitempty"` // reversal business date
+	IdempotencyKey       string `protobuf:"bytes,8,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Actor                string `protobuf:"bytes,9,opt,name=actor,proto3" json:"actor,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -846,6 +850,314 @@ func (x *ReverseRequest) GetActor() string {
 	return ""
 }
 
+type GetJournalEntryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"` // resolved from metadata in-process
+	EntryNo       string                 `protobuf:"bytes,2,opt,name=entry_no,json=entryNo,proto3" json:"entry_no,omitempty"`    // human journal number, e.g. "42" (JE-nn)
+	EntryId       string                 `protobuf:"bytes,3,opt,name=entry_id,json=entryId,proto3" json:"entry_id,omitempty"`    // optional direct UUID lookup
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetJournalEntryRequest) Reset() {
+	*x = GetJournalEntryRequest{}
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetJournalEntryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetJournalEntryRequest) ProtoMessage() {}
+
+func (x *GetJournalEntryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetJournalEntryRequest.ProtoReflect.Descriptor instead.
+func (*GetJournalEntryRequest) Descriptor() ([]byte, []int) {
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetJournalEntryRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *GetJournalEntryRequest) GetEntryNo() string {
+	if x != nil {
+		return x.EntryNo
+	}
+	return ""
+}
+
+func (x *GetJournalEntryRequest) GetEntryId() string {
+	if x != nil {
+		return x.EntryId
+	}
+	return ""
+}
+
+type JournalEntryDetailLine struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LineNo        int32                  `protobuf:"varint,1,opt,name=line_no,json=lineNo,proto3" json:"line_no,omitempty"`
+	Direction     string                 `protobuf:"bytes,2,opt,name=direction,proto3" json:"direction,omitempty"` // DEBIT | CREDIT
+	AccountCode   string                 `protobuf:"bytes,3,opt,name=account_code,json=accountCode,proto3" json:"account_code,omitempty"`
+	AccountName   string                 `protobuf:"bytes,4,opt,name=account_name,json=accountName,proto3" json:"account_name,omitempty"`
+	AmountMinor   int64                  `protobuf:"varint,5,opt,name=amount_minor,json=amountMinor,proto3" json:"amount_minor,omitempty"`
+	CurrencyCode  string                 `protobuf:"bytes,6,opt,name=currency_code,json=currencyCode,proto3" json:"currency_code,omitempty"`
+	Description   string                 `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JournalEntryDetailLine) Reset() {
+	*x = JournalEntryDetailLine{}
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JournalEntryDetailLine) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JournalEntryDetailLine) ProtoMessage() {}
+
+func (x *JournalEntryDetailLine) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JournalEntryDetailLine.ProtoReflect.Descriptor instead.
+func (*JournalEntryDetailLine) Descriptor() ([]byte, []int) {
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *JournalEntryDetailLine) GetLineNo() int32 {
+	if x != nil {
+		return x.LineNo
+	}
+	return 0
+}
+
+func (x *JournalEntryDetailLine) GetDirection() string {
+	if x != nil {
+		return x.Direction
+	}
+	return ""
+}
+
+func (x *JournalEntryDetailLine) GetAccountCode() string {
+	if x != nil {
+		return x.AccountCode
+	}
+	return ""
+}
+
+func (x *JournalEntryDetailLine) GetAccountName() string {
+	if x != nil {
+		return x.AccountName
+	}
+	return ""
+}
+
+func (x *JournalEntryDetailLine) GetAmountMinor() int64 {
+	if x != nil {
+		return x.AmountMinor
+	}
+	return 0
+}
+
+func (x *JournalEntryDetailLine) GetCurrencyCode() string {
+	if x != nil {
+		return x.CurrencyCode
+	}
+	return ""
+}
+
+func (x *JournalEntryDetailLine) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type JournalEntryDetail struct {
+	state             protoimpl.MessageState    `protogen:"open.v1"`
+	JournalEntryId    string                    `protobuf:"bytes,1,opt,name=journal_entry_id,json=journalEntryId,proto3" json:"journal_entry_id,omitempty"`
+	EntryNo           int64                     `protobuf:"varint,2,opt,name=entry_no,json=entryNo,proto3" json:"entry_no,omitempty"`
+	AccountingDate    string                    `protobuf:"bytes,3,opt,name=accounting_date,json=accountingDate,proto3" json:"accounting_date,omitempty"` // "YYYY-MM-DD"
+	CurrencyCode      string                    `protobuf:"bytes,4,opt,name=currency_code,json=currencyCode,proto3" json:"currency_code,omitempty"`
+	Status            string                    `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"` // POSTED | REVERSED (readable states)
+	Description       string                    `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	BusinessDomain    string                    `protobuf:"bytes,7,opt,name=business_domain,json=businessDomain,proto3" json:"business_domain,omitempty"`
+	BusinessDocType   string                    `protobuf:"bytes,8,opt,name=business_doc_type,json=businessDocType,proto3" json:"business_doc_type,omitempty"`
+	BusinessDocId     string                    `protobuf:"bytes,9,opt,name=business_doc_id,json=businessDocId,proto3" json:"business_doc_id,omitempty"`
+	CaseId            string                    `protobuf:"bytes,10,opt,name=case_id,json=caseId,proto3" json:"case_id,omitempty"`
+	ReversedByEntryId string                    `protobuf:"bytes,11,opt,name=reversed_by_entry_id,json=reversedByEntryId,proto3" json:"reversed_by_entry_id,omitempty"` // set once the entry was reversed
+	TotalAmountMinor  int64                     `protobuf:"varint,12,opt,name=total_amount_minor,json=totalAmountMinor,proto3" json:"total_amount_minor,omitempty"`     // Σ debit (== Σ credit) of the lines
+	CreatedBy         string                    `protobuf:"bytes,13,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	CreatedAt         string                    `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Lines             []*JournalEntryDetailLine `protobuf:"bytes,15,rep,name=lines,proto3" json:"lines,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *JournalEntryDetail) Reset() {
+	*x = JournalEntryDetail{}
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JournalEntryDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JournalEntryDetail) ProtoMessage() {}
+
+func (x *JournalEntryDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JournalEntryDetail.ProtoReflect.Descriptor instead.
+func (*JournalEntryDetail) Descriptor() ([]byte, []int) {
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *JournalEntryDetail) GetJournalEntryId() string {
+	if x != nil {
+		return x.JournalEntryId
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetEntryNo() int64 {
+	if x != nil {
+		return x.EntryNo
+	}
+	return 0
+}
+
+func (x *JournalEntryDetail) GetAccountingDate() string {
+	if x != nil {
+		return x.AccountingDate
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetCurrencyCode() string {
+	if x != nil {
+		return x.CurrencyCode
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetBusinessDomain() string {
+	if x != nil {
+		return x.BusinessDomain
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetBusinessDocType() string {
+	if x != nil {
+		return x.BusinessDocType
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetBusinessDocId() string {
+	if x != nil {
+		return x.BusinessDocId
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetCaseId() string {
+	if x != nil {
+		return x.CaseId
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetReversedByEntryId() string {
+	if x != nil {
+		return x.ReversedByEntryId
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetTotalAmountMinor() int64 {
+	if x != nil {
+		return x.TotalAmountMinor
+	}
+	return 0
+}
+
+func (x *JournalEntryDetail) GetCreatedBy() string {
+	if x != nil {
+		return x.CreatedBy
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *JournalEntryDetail) GetLines() []*JournalEntryDetailLine {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
+}
+
 var File_arda_finance_v1_posting_proto protoreflect.FileDescriptor
 
 const file_arda_finance_v1_posting_proto_rawDesc = "" +
@@ -934,13 +1246,45 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\x06reason\x18\x06 \x01(\tR\x06reason\x12'\n" +
 	"\x0faccounting_date\x18\a \x01(\tR\x0eaccountingDate\x12'\n" +
 	"\x0fidempotency_key\x18\b \x01(\tR\x0eidempotencyKey\x12\x14\n" +
-	"\x05actor\x18\t \x01(\tR\x05actor2\xc0\x03\n" +
+	"\x05actor\x18\t \x01(\tR\x05actor\"k\n" +
+	"\x16GetJournalEntryRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
+	"\bentry_no\x18\x02 \x01(\tR\aentryNo\x12\x19\n" +
+	"\bentry_id\x18\x03 \x01(\tR\aentryId\"\xff\x01\n" +
+	"\x16JournalEntryDetailLine\x12\x17\n" +
+	"\aline_no\x18\x01 \x01(\x05R\x06lineNo\x12\x1c\n" +
+	"\tdirection\x18\x02 \x01(\tR\tdirection\x12!\n" +
+	"\faccount_code\x18\x03 \x01(\tR\vaccountCode\x12!\n" +
+	"\faccount_name\x18\x04 \x01(\tR\vaccountName\x12!\n" +
+	"\famount_minor\x18\x05 \x01(\x03R\vamountMinor\x12#\n" +
+	"\rcurrency_code\x18\x06 \x01(\tR\fcurrencyCode\x12 \n" +
+	"\vdescription\x18\a \x01(\tR\vdescription\"\xd3\x04\n" +
+	"\x12JournalEntryDetail\x12(\n" +
+	"\x10journal_entry_id\x18\x01 \x01(\tR\x0ejournalEntryId\x12\x19\n" +
+	"\bentry_no\x18\x02 \x01(\x03R\aentryNo\x12'\n" +
+	"\x0faccounting_date\x18\x03 \x01(\tR\x0eaccountingDate\x12#\n" +
+	"\rcurrency_code\x18\x04 \x01(\tR\fcurrencyCode\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12 \n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x12'\n" +
+	"\x0fbusiness_domain\x18\a \x01(\tR\x0ebusinessDomain\x12*\n" +
+	"\x11business_doc_type\x18\b \x01(\tR\x0fbusinessDocType\x12&\n" +
+	"\x0fbusiness_doc_id\x18\t \x01(\tR\rbusinessDocId\x12\x17\n" +
+	"\acase_id\x18\n" +
+	" \x01(\tR\x06caseId\x12/\n" +
+	"\x14reversed_by_entry_id\x18\v \x01(\tR\x11reversedByEntryId\x12,\n" +
+	"\x12total_amount_minor\x18\f \x01(\x03R\x10totalAmountMinor\x12\x1d\n" +
+	"\n" +
+	"created_by\x18\r \x01(\tR\tcreatedBy\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x0e \x01(\tR\tcreatedAt\x12=\n" +
+	"\x05lines\x18\x0f \x03(\v2'.arda.finance.v1.JournalEntryDetailLineR\x05lines2\xa1\x04\n" +
 	"\x0ePostingService\x12U\n" +
 	"\x0fValidatePosting\x12\x1f.arda.finance.v1.PostingRequest\x1a!.arda.finance.v1.ValidationResult\x12T\n" +
 	"\x0fPostTransaction\x12\x1f.arda.finance.v1.PostingRequest\x1a .arda.finance.v1.PostingResponse\x12S\n" +
 	"\x0eReservePosting\x12\x1f.arda.finance.v1.PostingRequest\x1a .arda.finance.v1.PostingResponse\x12S\n" +
 	"\x0eReleasePosting\x12\x1f.arda.finance.v1.ReleaseRequest\x1a .arda.finance.v1.PostingResponse\x12W\n" +
-	"\x12ReverseTransaction\x12\x1f.arda.finance.v1.ReverseRequest\x1a .arda.finance.v1.PostingResponseBCZAgithub.com/arda-labs/arda/libs/go/arda-proto/finance/v1;financev1b\x06proto3"
+	"\x12ReverseTransaction\x12\x1f.arda.finance.v1.ReverseRequest\x1a .arda.finance.v1.PostingResponse\x12_\n" +
+	"\x0fGetJournalEntry\x12'.arda.finance.v1.GetJournalEntryRequest\x1a#.arda.finance.v1.JournalEntryDetailBCZAgithub.com/arda-labs/arda/libs/go/arda-proto/finance/v1;financev1b\x06proto3"
 
 var (
 	file_arda_finance_v1_posting_proto_rawDescOnce sync.Once
@@ -954,43 +1298,49 @@ func file_arda_finance_v1_posting_proto_rawDescGZIP() []byte {
 	return file_arda_finance_v1_posting_proto_rawDescData
 }
 
-var file_arda_finance_v1_posting_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_arda_finance_v1_posting_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_arda_finance_v1_posting_proto_goTypes = []any{
-	(*BusinessReference)(nil), // 0: arda.finance.v1.BusinessReference
-	(*Analytics)(nil),         // 1: arda.finance.v1.Analytics
-	(*PostingLine)(nil),       // 2: arda.finance.v1.PostingLine
-	(*PostingRequest)(nil),    // 3: arda.finance.v1.PostingRequest
-	(*PostingResponse)(nil),   // 4: arda.finance.v1.PostingResponse
-	(*ReleaseRequest)(nil),    // 5: arda.finance.v1.ReleaseRequest
-	(*ValidationLine)(nil),    // 6: arda.finance.v1.ValidationLine
-	(*ValidationResult)(nil),  // 7: arda.finance.v1.ValidationResult
-	(*ReverseRequest)(nil),    // 8: arda.finance.v1.ReverseRequest
-	nil,                       // 9: arda.finance.v1.Analytics.DimensionsEntry
-	nil,                       // 10: arda.finance.v1.PostingRequest.MetadataEntry
+	(*BusinessReference)(nil),      // 0: arda.finance.v1.BusinessReference
+	(*Analytics)(nil),              // 1: arda.finance.v1.Analytics
+	(*PostingLine)(nil),            // 2: arda.finance.v1.PostingLine
+	(*PostingRequest)(nil),         // 3: arda.finance.v1.PostingRequest
+	(*PostingResponse)(nil),        // 4: arda.finance.v1.PostingResponse
+	(*ReleaseRequest)(nil),         // 5: arda.finance.v1.ReleaseRequest
+	(*ValidationLine)(nil),         // 6: arda.finance.v1.ValidationLine
+	(*ValidationResult)(nil),       // 7: arda.finance.v1.ValidationResult
+	(*ReverseRequest)(nil),         // 8: arda.finance.v1.ReverseRequest
+	(*GetJournalEntryRequest)(nil), // 9: arda.finance.v1.GetJournalEntryRequest
+	(*JournalEntryDetailLine)(nil), // 10: arda.finance.v1.JournalEntryDetailLine
+	(*JournalEntryDetail)(nil),     // 11: arda.finance.v1.JournalEntryDetail
+	nil,                            // 12: arda.finance.v1.Analytics.DimensionsEntry
+	nil,                            // 13: arda.finance.v1.PostingRequest.MetadataEntry
 }
 var file_arda_finance_v1_posting_proto_depIdxs = []int32{
-	9,  // 0: arda.finance.v1.Analytics.dimensions:type_name -> arda.finance.v1.Analytics.DimensionsEntry
+	12, // 0: arda.finance.v1.Analytics.dimensions:type_name -> arda.finance.v1.Analytics.DimensionsEntry
 	1,  // 1: arda.finance.v1.PostingLine.analytics:type_name -> arda.finance.v1.Analytics
 	0,  // 2: arda.finance.v1.PostingRequest.business_reference:type_name -> arda.finance.v1.BusinessReference
 	2,  // 3: arda.finance.v1.PostingRequest.lines:type_name -> arda.finance.v1.PostingLine
-	10, // 4: arda.finance.v1.PostingRequest.metadata:type_name -> arda.finance.v1.PostingRequest.MetadataEntry
+	13, // 4: arda.finance.v1.PostingRequest.metadata:type_name -> arda.finance.v1.PostingRequest.MetadataEntry
 	1,  // 5: arda.finance.v1.ValidationLine.resolved_analytics:type_name -> arda.finance.v1.Analytics
 	6,  // 6: arda.finance.v1.ValidationResult.lines:type_name -> arda.finance.v1.ValidationLine
-	3,  // 7: arda.finance.v1.PostingService.ValidatePosting:input_type -> arda.finance.v1.PostingRequest
-	3,  // 8: arda.finance.v1.PostingService.PostTransaction:input_type -> arda.finance.v1.PostingRequest
-	3,  // 9: arda.finance.v1.PostingService.ReservePosting:input_type -> arda.finance.v1.PostingRequest
-	5,  // 10: arda.finance.v1.PostingService.ReleasePosting:input_type -> arda.finance.v1.ReleaseRequest
-	8,  // 11: arda.finance.v1.PostingService.ReverseTransaction:input_type -> arda.finance.v1.ReverseRequest
-	7,  // 12: arda.finance.v1.PostingService.ValidatePosting:output_type -> arda.finance.v1.ValidationResult
-	4,  // 13: arda.finance.v1.PostingService.PostTransaction:output_type -> arda.finance.v1.PostingResponse
-	4,  // 14: arda.finance.v1.PostingService.ReservePosting:output_type -> arda.finance.v1.PostingResponse
-	4,  // 15: arda.finance.v1.PostingService.ReleasePosting:output_type -> arda.finance.v1.PostingResponse
-	4,  // 16: arda.finance.v1.PostingService.ReverseTransaction:output_type -> arda.finance.v1.PostingResponse
-	12, // [12:17] is the sub-list for method output_type
-	7,  // [7:12] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	10, // 7: arda.finance.v1.JournalEntryDetail.lines:type_name -> arda.finance.v1.JournalEntryDetailLine
+	3,  // 8: arda.finance.v1.PostingService.ValidatePosting:input_type -> arda.finance.v1.PostingRequest
+	3,  // 9: arda.finance.v1.PostingService.PostTransaction:input_type -> arda.finance.v1.PostingRequest
+	3,  // 10: arda.finance.v1.PostingService.ReservePosting:input_type -> arda.finance.v1.PostingRequest
+	5,  // 11: arda.finance.v1.PostingService.ReleasePosting:input_type -> arda.finance.v1.ReleaseRequest
+	8,  // 12: arda.finance.v1.PostingService.ReverseTransaction:input_type -> arda.finance.v1.ReverseRequest
+	9,  // 13: arda.finance.v1.PostingService.GetJournalEntry:input_type -> arda.finance.v1.GetJournalEntryRequest
+	7,  // 14: arda.finance.v1.PostingService.ValidatePosting:output_type -> arda.finance.v1.ValidationResult
+	4,  // 15: arda.finance.v1.PostingService.PostTransaction:output_type -> arda.finance.v1.PostingResponse
+	4,  // 16: arda.finance.v1.PostingService.ReservePosting:output_type -> arda.finance.v1.PostingResponse
+	4,  // 17: arda.finance.v1.PostingService.ReleasePosting:output_type -> arda.finance.v1.PostingResponse
+	4,  // 18: arda.finance.v1.PostingService.ReverseTransaction:output_type -> arda.finance.v1.PostingResponse
+	11, // 19: arda.finance.v1.PostingService.GetJournalEntry:output_type -> arda.finance.v1.JournalEntryDetail
+	14, // [14:20] is the sub-list for method output_type
+	8,  // [8:14] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_arda_finance_v1_posting_proto_init() }
@@ -1004,7 +1354,7 @@ func file_arda_finance_v1_posting_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_finance_v1_posting_proto_rawDesc), len(file_arda_finance_v1_posting_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

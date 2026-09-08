@@ -19,6 +19,8 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 		"RPT_SUBMIT_V2":             "rpt-submit-v2",
 		"FIN_SINGLE_ENTRY_V2":       "fin-single-entry-v2",
 		"FIN_DOUBLE_ENTRY_V2":       "fin-double-entry-v2",
+		"FIN_OFF_BALANCE_V2":        "fin-off-balance-v2",
+		"FIN_TXN_CANCEL_V2":         "fin-txn-cancel-v2",
 		"CUSTOMER_REGISTRATION": "crm-customer-registration-v2",
 		"CUSTOMER_ADJUSTMENT":   "customer-adjustment-v2",
 		"LOAN_FORMATION_V2":     "lnm-loan-formation-v2",
@@ -85,7 +87,7 @@ func TestCustomerAdjustmentStartsWithMakerRevise(t *testing.T) {
 }
 
 func TestManualPostingFlowSkeleton(t *testing.T) {
-	for _, processCode := range []string{"FIN_SINGLE_ENTRY_V2", "FIN_DOUBLE_ENTRY_V2"} {
+	for _, processCode := range []string{"FIN_SINGLE_ENTRY_V2", "FIN_DOUBLE_ENTRY_V2", "FIN_OFF_BALANCE_V2", "FIN_TXN_CANCEL_V2"} {
 		content := builtInProcessContent(t, processCode)
 		for _, fragment := range []string{
 			`candidateGroups="FIN_MAKER"`,

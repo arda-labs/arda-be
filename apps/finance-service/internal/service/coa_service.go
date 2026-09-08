@@ -17,7 +17,7 @@ type CoaService struct {
 type CoaRepository interface {
 	ListVersions(ctx context.Context, tenantID string) ([]domain.CoaVersion, error)
 	UpsertVersion(ctx context.Context, v *domain.CoaVersion) (*domain.CoaVersion, error)
-	ListAccounts(ctx context.Context, tenantID, versionCode string) ([]domain.CoaAccount, error)
+	ListAccounts(ctx context.Context, tenantID, versionCode, nature string) ([]domain.CoaAccount, error)
 	UpsertAccount(ctx context.Context, a *domain.CoaAccount) (*domain.CoaAccount, error)
 	ListClassMaps(ctx context.Context, tenantID, classification, versionCode string) ([]domain.AccClassCoaMap, error)
 	UpsertClassMap(ctx context.Context, m *domain.AccClassCoaMap) (*domain.AccClassCoaMap, error)
@@ -51,11 +51,11 @@ func (s *CoaService) UpsertVersion(ctx context.Context, tenantID string, v *doma
 	return s.repo.UpsertVersion(ctx, v)
 }
 
-func (s *CoaService) ListAccounts(ctx context.Context, tenantID, versionCode string) ([]domain.CoaAccount, error) {
+func (s *CoaService) ListAccounts(ctx context.Context, tenantID, versionCode, nature string) ([]domain.CoaAccount, error) {
 	if strings.TrimSpace(versionCode) == "" {
 		return nil, ardaerrors.New(ardaerrors.CodeRequired, "version query is required")
 	}
-	return s.repo.ListAccounts(ctx, tenantID, versionCode)
+	return s.repo.ListAccounts(ctx, tenantID, versionCode, nature)
 }
 
 func (s *CoaService) UpsertAccount(ctx context.Context, tenantID string, a *domain.CoaAccount) (*domain.CoaAccount, error) {

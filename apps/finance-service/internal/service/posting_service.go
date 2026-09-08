@@ -4,13 +4,20 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 )
+
+// ErrJournalEntryNotFound marks an entry that either does not exist or is in
+// a non-readable status (PENDING/VOID): the read surface reports both as
+// not-found so the cancellation flow cannot probe pending proposals.
+var ErrJournalEntryNotFound = errors.New("journal entry not found")
 
 // PostingService implements the gRPC PostingService contract v0.2: resolve
 // analytics to COA accounts, validate balance, persist entries idempotently,
@@ -618,6 +625,22 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 		reversalDate = original.AccountingDate
 	}
 
+	// The reversal entry posts on its own accounting date, so the period
+	// containing that date must still be open (same guard postPendingEntry
+	// applies; posting into a closed period via reversal would otherwise
+	// bypass the period lock).
+	if err := s.repo.EnsurePeriodOpen(ctx, tenantID, reversalDate); err != nil {
+		return nil, fmt.Errorf("PERIOD_CLOSED: %w", err)
+	}
+
+	// The cancellation flow stamps the reversal FIN_TXN_CANCEL (instead of
+	// copying the original doc type) so the journal list can filter it; a
+	// plain correction keeps the original doc type.
+	docType := original.DocType
+	if override := req.GetBusinessDocumentType(); override != "" {
+		docType = override
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -630,7 +653,7 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 			 business_domain, business_doc_type, business_doc_id, idempotency_key, created_by)
 		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9)`,
 		tenantID, reversalDate, original.Currency,
-		"REVERSAL: "+req.GetReason(), original.Domain, original.DocType,
+		"REVERSAL: "+req.GetReason(), original.Domain, docType,
 		nullUUIDText(original.DocID), nullText(req.GetIdempotencyKey()), req.GetActor()); err != nil {
 		return nil, fmt.Errorf("insert reversal: %w", err)
 	}
@@ -887,6 +910,97 @@ func fmtBytes(s string) []byte { return []byte(s) }
 
 // ── Journal read + Opening Balance (P1a.5/P1a.6) ──
 
+// journalEntryDetailRow is the shared SELECT shape for the read surface:
+// header plus the aggregate of the entry's lines (Σ debit == Σ credit for a
+// posted entry).
+const journalEntryDetailSelect = `
+	SELECT id, entry_no, accounting_date::text, currency_code, status,
+	       COALESCE(description,''), business_domain, business_doc_type,
+	       COALESCE(business_doc_id::text,''), COALESCE(case_id::text,''),
+	       COALESCE(reversed_by_entry_id::text,''), COALESCE(created_by,''),
+	       created_at::text,
+	       (SELECT COALESCE(SUM(amount_minor),0) FROM fin_journal_lines l
+	          WHERE l.tenant_id = e.tenant_id AND l.entry_id = e.id AND l.direction = 'DEBIT')
+	FROM fin_journal_entries e`
+
+// FindEntryRefByNo resolves a human journal number to the minimal entry ref
+// (id + status) — the posting-case service uses it to fail fast when a
+// CANCELLATION case references an unknown entry.
+func (s *PostingService) FindEntryRefByNo(ctx context.Context, tenantID string, entryNo int64) (*repository.JournalEntryRef, error) {
+	ref, err := s.repo.FindEntryByEntryNo(ctx, tenantID, entryNo)
+	if err == sql.ErrNoRows {
+		return nil, ErrJournalEntryNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return ref, nil
+}
+
+// GetJournalEntry reads one entry (header + lines) by entry_no (or by direct
+// entry_id). Only POSTED and REVERSED entries are readable — PENDING and VOID
+// report not-found, so the cancellation flow cannot probe unposted proposals.
+func (s *PostingService) GetJournalEntry(ctx context.Context, tenantID, entryNo, entryID string) (*financev1.JournalEntryDetail, error) {
+	if entryNo == "" && entryID == "" {
+		return nil, fmt.Errorf("entry_no or entry_id is required")
+	}
+	if entryID != "" {
+		return s.getJournalEntryBy(ctx, tenantID, "id", entryID)
+	}
+	if n, err := strconv.ParseInt(entryNo, 10, 64); err == nil {
+		return s.getJournalEntryBy(ctx, tenantID, "entry_no", n)
+	}
+	return nil, ErrJournalEntryNotFound
+}
+
+func (s *PostingService) getJournalEntryBy(ctx context.Context, tenantID, column string, value any) (*financev1.JournalEntryDetail, error) {
+	var (
+		out        financev1.JournalEntryDetail
+		reversedBy string
+		createdBy  string
+	)
+	err := s.db.QueryRowContext(ctx, journalEntryDetailSelect+`
+		WHERE e.tenant_id = $1 AND e.`+column+` = $2`, tenantID, value).Scan(
+		&out.JournalEntryId, &out.EntryNo, &out.AccountingDate, &out.CurrencyCode, &out.Status,
+		&out.Description, &out.BusinessDomain, &out.BusinessDocType,
+		&out.BusinessDocId, &out.CaseId,
+		&reversedBy, &createdBy, &out.CreatedAt, &out.TotalAmountMinor)
+	if err == sql.ErrNoRows {
+		return nil, ErrJournalEntryNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetch journal entry: %w", err)
+	}
+	if out.Status != "POSTED" && out.Status != "REVERSED" {
+		// PENDING/VOID entries stay hidden from the read surface.
+		return nil, ErrJournalEntryNotFound
+	}
+	out.ReversedByEntryId = reversedBy
+	out.CreatedBy = createdBy
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT line_no, direction, account_code, account_name, amount_minor, currency_code, COALESCE(description,'')
+		FROM fin_journal_lines
+		WHERE tenant_id = $1 AND entry_id = $2
+		ORDER BY line_no`, tenantID, out.JournalEntryId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		l := &financev1.JournalEntryDetailLine{}
+		if err := rows.Scan(&l.LineNo, &l.Direction, &l.AccountCode, &l.AccountName,
+			&l.AmountMinor, &l.CurrencyCode, &l.Description); err != nil {
+			return nil, err
+		}
+		out.Lines = append(out.Lines, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // JournalFilter narrows the journal listing.
 type JournalFilter struct {
 	FromDate     string
@@ -936,6 +1050,10 @@ type JournalEntryRow struct {
 	DocumentCode   string `json:"document_code"`
 	CaseID         string `json:"case_id"`
 	CreatedAt      string `json:"created_at"`
+	// TotalAmountMinor is Σ debit (== Σ credit) of the entry's lines; the
+	// journal detail contract exposes it so the FE shows the entry amount
+	// without loading lines.
+	TotalAmountMinor int64 `json:"total_amount_minor"`
 }
 
 // ListJournal returns recent entries (header only) ordered newest first.
@@ -946,13 +1064,15 @@ func (s *PostingService) ListJournal(ctx context.Context, tenantID string, f Jou
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, entry_no, accounting_date::text, currency_code, status,
 		       COALESCE(description,''), business_domain, business_doc_type,
-		       COALESCE(business_doc_code,''), COALESCE(case_id::text,''), created_at::text
-		FROM fin_journal_entries
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR accounting_date >= $2::date)
-		  AND ($3 = '' OR accounting_date <= $3::date)
-		  AND ($4 = '' OR business_doc_type = $4)
-		ORDER BY entry_no DESC
+		       COALESCE(business_doc_code,''), COALESCE(case_id::text,''), created_at::text,
+		       (SELECT COALESCE(SUM(amount_minor),0) FROM fin_journal_lines l
+		          WHERE l.tenant_id = fje.tenant_id AND l.entry_id = fje.id AND l.direction = 'DEBIT')
+		FROM fin_journal_entries fje
+		WHERE fje.tenant_id = $1
+		  AND ($2 = '' OR fje.accounting_date >= $2::date)
+		  AND ($3 = '' OR fje.accounting_date <= $3::date)
+		  AND ($4 = '' OR fje.business_doc_type = $4)
+		ORDER BY fje.entry_no DESC
 		LIMIT $5`, tenantID, f.FromDate, f.ToDate, f.DocumentType, f.Limit)
 	if err != nil {
 		return nil, err
@@ -962,7 +1082,8 @@ func (s *PostingService) ListJournal(ctx context.Context, tenantID string, f Jou
 	for rows.Next() {
 		var e JournalEntryRow
 		if err := rows.Scan(&e.ID, &e.EntryNo, &e.AccountingDate, &e.CurrencyCode, &e.Status,
-			&e.Description, &e.BusinessDomain, &e.DocumentType, &e.DocumentCode, &e.CaseID, &e.CreatedAt); err != nil {
+			&e.Description, &e.BusinessDomain, &e.DocumentType, &e.DocumentCode, &e.CaseID, &e.CreatedAt,
+			&e.TotalAmountMinor); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -999,9 +1120,10 @@ func (s *PostingService) ListJournalPaged(ctx context.Context, tenantID string, 
 	}
 	if f.Search != "" {
 		args = append(args, "%"+f.Search+"%")
+		n := len(args)
 		where = append(where, fmt.Sprintf(
-			"(business_doc_type ILIKE $%d OR COALESCE(business_doc_code,'') ILIKE $%d OR COALESCE(description,'') ILIKE $%d)",
-			len(args), len(args), len(args)))
+			"(business_doc_type ILIKE $%d OR COALESCE(business_doc_code,'') ILIKE $%d OR COALESCE(description,'') ILIKE $%d OR entry_no::text ILIKE $%d)",
+			n, n, n, n))
 	}
 
 	wc := strings.Join(where, " AND ")
@@ -1014,8 +1136,10 @@ func (s *PostingService) ListJournalPaged(ctx context.Context, tenantID string, 
 	query := fmt.Sprintf(`
 		SELECT id, entry_no, accounting_date::text, currency_code, status,
 		       COALESCE(description,''), business_domain, business_doc_type,
-		       COALESCE(business_doc_code,''), COALESCE(case_id::text,''), created_at::text
-		FROM fin_journal_entries
+		       COALESCE(business_doc_code,''), COALESCE(case_id::text,''), created_at::text,
+		       (SELECT COALESCE(SUM(amount_minor),0) FROM fin_journal_lines l
+		          WHERE l.tenant_id = fje.tenant_id AND l.entry_id = fje.id AND l.direction = 'DEBIT')
+		FROM fin_journal_entries fje
 		WHERE %s
 		ORDER BY %s
 		LIMIT %d OFFSET %d`, wc, journalOrderClause(f.Sort, f.Order), perPage, (page-1)*perPage)
@@ -1028,7 +1152,8 @@ func (s *PostingService) ListJournalPaged(ctx context.Context, tenantID string, 
 	for rows.Next() {
 		var e JournalEntryRow
 		if err := rows.Scan(&e.ID, &e.EntryNo, &e.AccountingDate, &e.CurrencyCode, &e.Status,
-			&e.Description, &e.BusinessDomain, &e.DocumentType, &e.DocumentCode, &e.CaseID, &e.CreatedAt); err != nil {
+			&e.Description, &e.BusinessDomain, &e.DocumentType, &e.DocumentCode, &e.CaseID, &e.CreatedAt,
+			&e.TotalAmountMinor); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, e)

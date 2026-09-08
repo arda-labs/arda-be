@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -66,8 +67,10 @@ var journalListSpec = ardahttp.ListSpec{
 
 // ListJournalEntries handles GET /api/finance/journal-entries. Adds the
 // standard list contract (q ILIKE document type / document code /
-// description, whitelisted sort, page/per_page) on top of the legacy
-// `limit` param, which stays honored when no paging params are given.
+// description / entry_no, whitelisted sort, page/per_page) on top of the
+// legacy `limit` param, which stays honored when no paging params are given.
+// from_date/to_date are accepted as aliases of from/to (the FE calendar
+// filter sends the long names); document_type filters the doc type exactly.
 func (h *PostingHandler) ListJournalEntries(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
@@ -84,10 +87,22 @@ func (h *PostingHandler) ListJournalEntries(w http.ResponseWriter, r *http.Reque
 			perPage = min(legacy, 200)
 		}
 	}
+	from := r.URL.Query().Get("from")
+	if from == "" {
+		from = r.URL.Query().Get("from_date")
+	}
+	to := r.URL.Query().Get("to")
+	if to == "" {
+		to = r.URL.Query().Get("to_date")
+	}
+	documentType := r.URL.Query().Get("document_type")
+	if documentType == "" {
+		documentType = r.URL.Query().Get("doc_type")
+	}
 	entries, total, err := h.svc.ListJournalPaged(r.Context(), tenantID, service.JournalListFilter{
-		FromDate:     r.URL.Query().Get("from"),
-		ToDate:       r.URL.Query().Get("to"),
-		DocumentType: r.URL.Query().Get("document_type"),
+		FromDate:     from,
+		ToDate:       to,
+		DocumentType: documentType,
 		Search:       listReq.Q,
 		Sort:         listReq.Sort,
 		Order:        listReq.Order,
@@ -99,6 +114,62 @@ func (h *PostingHandler) ListJournalEntries(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	respondJSON(w, r, http.StatusOK, ardahttp.NewListResponse(listReq.Page, perPage, total, entries))
+}
+
+// GetJournalEntry handles GET /api/finance/journal-entries/{entry_no} — the
+// popup/grid detail read (header + lines + total_amount_minor). Only POSTED
+// and REVERSED entries are readable; anything else is 404.
+func (h *PostingHandler) GetJournalEntry(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	entryNo := r.PathValue("entry_no")
+	detail, err := h.svc.GetJournalEntry(r.Context(), tenantID, entryNo, "")
+	if err != nil {
+		if errors.Is(err, service.ErrJournalEntryNotFound) {
+			respondError(w, r, http.StatusNotFound, "journal entry not found")
+			return
+		}
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, r, http.StatusOK, journalDetailJSON(detail))
+}
+
+// journalDetailJSON maps the proto detail onto the documented snake_case wire
+// shape (entry + lines + total_amount_minor).
+func journalDetailJSON(d *financev1.JournalEntryDetail) map[string]any {
+	lines := make([]map[string]any, 0, len(d.GetLines()))
+	for _, l := range d.GetLines() {
+		lines = append(lines, map[string]any{
+			"line_no":       l.GetLineNo(),
+			"direction":     l.GetDirection(),
+			"account_code":  l.GetAccountCode(),
+			"account_name":  l.GetAccountName(),
+			"amount_minor":  l.GetAmountMinor(),
+			"currency_code": l.GetCurrencyCode(),
+			"description":   l.GetDescription(),
+		})
+	}
+	docID := d.GetBusinessDocId()
+	return map[string]any{
+		"journal_entry_id":     d.GetJournalEntryId(),
+		"entry_no":             d.GetEntryNo(),
+		"accounting_date":      d.GetAccountingDate(),
+		"currency_code":        d.GetCurrencyCode(),
+		"status":               d.GetStatus(),
+		"description":          d.GetDescription(),
+		"business_domain":      d.GetBusinessDomain(),
+		"business_doc_type":    d.GetBusinessDocType(),
+		"business_doc_id":      docID,
+		"case_id":              d.GetCaseId(),
+		"reversed_by_entry_id": d.GetReversedByEntryId(),
+		"total_amount_minor":   d.GetTotalAmountMinor(),
+		"created_by":           d.GetCreatedBy(),
+		"created_at":           d.GetCreatedAt(),
+		"lines":                lines,
+	}
 }
 
 // UpsertOpeningBalance handles POST /api/finance/opening-balances (P1a.5).

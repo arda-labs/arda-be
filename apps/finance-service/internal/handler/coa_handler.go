@@ -46,7 +46,9 @@ func (h *CoaHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := h.svc.ListAccounts(r.Context(), tenantID, r.URL.Query().Get("version"))
+	// nature narrows the chart to one account nature (D | C | B) — the
+	// off-balance flow picks its nature-B accounts with nature=B.
+	items, err := h.svc.ListAccounts(r.Context(), tenantID, r.URL.Query().Get("version"), r.URL.Query().Get("nature"))
 	respondList(w, r, items, err)
 }
 

@@ -65,6 +65,12 @@ var finSingleEntry []byte
 //go:embed fin-double-entry-v2.bpmn
 var finDoubleEntry []byte
 
+//go:embed fin-off-balance-v2.bpmn
+var finOffBalance []byte
+
+//go:embed fin-txn-cancel-v2.bpmn
+var finTxnCancel []byte
+
 type Process struct {
 	ProcessCode  string
 	Name         string
@@ -190,6 +196,23 @@ func BuiltInProcesses() []Process {
 			Name:         "Bút toán kép (v2)",
 			ResourceName: "fin-double-entry-v2.bpmn",
 			Content:      finDoubleEntry,
+		},
+		{
+			// Iteration 10: off-balance memo posting (nhập xuất ngoại bảng)
+			// — same worker shape as the manual posting legs, the lines sit
+			// on nature-B accounts (availability-exempt).
+			ProcessCode:  "FIN_OFF_BALANCE_V2",
+			Name:         "Ngoại bảng (v2)",
+			ResourceName: "fin-off-balance-v2.bpmn",
+			Content:      finOffBalance,
+		},
+		{
+			// Iteration 10: transaction cancellation — no posting request,
+			// the workers reverse the referenced POSTED entry on approval.
+			ProcessCode:  "FIN_TXN_CANCEL_V2",
+			Name:         "Hủy giao dịch (v2)",
+			ResourceName: "fin-txn-cancel-v2.bpmn",
+			Content:      finTxnCancel,
 		},
 		{
 			ProcessCode:  "HRM_EMPLOYEE_REGISTRATION",
