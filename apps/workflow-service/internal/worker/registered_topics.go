@@ -42,6 +42,16 @@ var RegisteredJobTopics = []string{
 	"lnm.collection.validate",
 	"lnm.collection.execute",
 	"lnm.collection.cancel",
+	// Manual posting two-flow (fin-single-entry-v2.bpmn +
+	// fin-double-entry-v2.bpmn)
+	"fin.single-entry.init",
+	"fin.single-entry.validate",
+	"fin.single-entry.execute",
+	"fin.single-entry.cancel",
+	"fin.double-entry.init",
+	"fin.double-entry.validate",
+	"fin.double-entry.execute",
+	"fin.double-entry.cancel",
 	// Notification (no BPMN service task yet; registered for future flows)
 	"notification.email",
 	"notification.sms",

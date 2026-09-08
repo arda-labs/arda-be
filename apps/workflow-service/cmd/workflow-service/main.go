@@ -203,15 +203,15 @@ func main() {
 		hrmClient = hc
 	}
 
-	var financeClient *financeclient.Client
-	if cfg.FinanceGRPCAddr != "" {
-		fc, err := financeclient.Dial(context.Background(), cfg.FinanceGRPCAddr, cfg.AppName, logger)
-		if err != nil {
-			logger.Error("finance grpc dial", "err", err)
-			os.Exit(1)
-		}
-		defer fc.Close()
-		financeClient = fc
+	// Finance client is optional: the disbursement register/complete legs and
+	// the manual posting (fin.*) workers register only when finance-service
+	// is reachable.
+	financeClient, financeErr := financeclient.Dial(context.Background(), cfg.FinanceGRPCAddr, cfg.AppName, logger)
+	if financeErr != nil {
+		logger.Warn("finance grpc unavailable — lnm.disb-* and fin.* posting workers disabled", "addr", cfg.FinanceGRPCAddr, "err", financeErr)
+	} else {
+		defer financeClient.Close()
+		logger.Info("finance grpc configured", "addr", cfg.FinanceGRPCAddr)
 	}
 
 	if loanErr == nil {
@@ -230,7 +230,7 @@ func main() {
 		// Disbursement two-flow workers (P1b v2): the register leg reserves
 		// the posting at init and posts on approve; the complete leg
 		// settles the in-transit hold against cash.
-		if financeClient != nil {
+		if financeErr == nil {
 			disbRegister := worker.NewDisbursementWorkers(worker.RegisterFlow, loanClient, financeClient, caseRepo)
 			ri, rv, re, rc := disbRegister.Handlers()
 			riw := zeebeSvc.NewJobWorker("lnm.disb-register.init", ri)
@@ -301,6 +301,26 @@ func main() {
 		}
 	}
 
+	// Manual posting two-flow workers (FAC-native bút toán lẻ / bút toán
+	// kép): the case variables carry the FE-submitted posting; init reserves,
+	// validate re-checks, execute posts on approve, cancel releases on reject.
+	// Registered only when finance-service is reachable.
+	if financeClient != nil {
+		for _, flow := range []worker.ManualPostingFlow{worker.SingleEntryFlow, worker.DoubleEntryFlow} {
+			manualPosting := worker.NewManualPostingWorkers(flow, financeClient, caseRepo)
+			mi, mv, me, mc := manualPosting.Handlers()
+			miw := zeebeSvc.NewJobWorker(flow.TopicPrefix+".init", mi)
+			mvw := zeebeSvc.NewJobWorker(flow.TopicPrefix+".validate", mv)
+			mew := zeebeSvc.NewJobWorker(flow.TopicPrefix+".execute", me)
+			mcw := zeebeSvc.NewJobWorker(flow.TopicPrefix+".cancel", mc)
+			defer miw.Close()
+			defer mvw.Close()
+			defer mew.Close()
+			defer mcw.Close()
+		}
+		logger.Info("workflow manual posting workers registered")
+	}
+
 	// RPT submit workers: always registered — the submission case needs no
 	// domain callback (statistical-service owns the lifecycle).
 	rptWorkers := worker.NewRPTSubmitWorkers(caseRepo)
@@ -332,6 +352,7 @@ func main() {
 				"crm-service":         {},
 				"hrm-service":         {},
 				"loan-service":        {},
+				"finance-service":     {},
 				"statistical-service": {},
 			}),
 			interceptors.UnaryServerLogging(logger),

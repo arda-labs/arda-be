@@ -86,7 +86,13 @@ func effectiveAvailable(row repository.BalanceRow, opening int64, nature string)
 }
 
 // checkReserve validates one line at reserve (create-pending) time.
+// Nature-B accounts (off-balance memo, EPAS ACC_NATURE='B') are exempt —
+// EPAS skips them in validateBalanceInAccInfo because memo amounts are
+// unconstrained in their natural direction.
 func checkReserve(row repository.BalanceRow, opening int64, nature, direction string, amount int64) error {
+	if nature == "B" {
+		return nil
+	}
 	delta := lineDelta(nature, direction, amount)
 	if delta >= 0 {
 		return nil
@@ -101,8 +107,12 @@ func checkReserve(row repository.BalanceRow, opening int64, nature, direction st
 // actual (opening + posted) value must cover the outflow on its own — money
 // may have really left via other posted paths while this entry sat pending
 // (EPAS validateActualBalance at complete). Post never changes availability
-// (a hold graduates to actual), so this is a belt-and-braces re-check.
+// (a hold graduates to posted), so this is a belt-and-braces re-check.
+// Nature-B accounts are exempt (same rule as checkReserve).
 func checkPostActual(row repository.BalanceRow, opening int64, nature, direction string, amount int64) error {
+	if nature == "B" {
+		return nil
+	}
 	delta := lineDelta(nature, direction, amount)
 	if delta >= 0 {
 		return nil

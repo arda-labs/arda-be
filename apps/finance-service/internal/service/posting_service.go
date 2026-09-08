@@ -735,21 +735,21 @@ func (s *PostingService) resolve(ctx context.Context, tenantID string, req *fina
 		if in.GetDirection() != "DEBIT" && in.GetDirection() != "CREDIT" {
 			vl.Errors = append(vl.Errors, "INVALID_DIRECTION")
 		}
-		// Dimension registry validation (contract §8.2): unknown keys rejected.
 		analytics := in.GetAnalytics()
-		for key := range analytics.GetDimensions() {
-			if _, ok := registry[key]; !ok {
-				vl.Errors = append(vl.Errors, "UNKNOWN_DIMENSION:"+key)
+		switch {
+		case in.GetAccountCode() != "":
+			// Manual posting path (FAC-native flows): accountant-picked
+			// account. Analytics is optional metadata; dimension whitelist
+			// still applies to whatever extras the caller sends.
+			for key := range analytics.GetDimensions() {
+				if _, ok := registry[key]; !ok {
+					vl.Errors = append(vl.Errors, "UNKNOWN_DIMENSION:"+key)
+				}
 			}
-		}
-		classification := analytics.GetAccClassification()
-		if classification == "" {
-			vl.Errors = append(vl.Errors, "CLASSIFICATION_REQUIRED")
-		} else {
-			resolved, err := s.repo.ResolveAccount(ctx, tenantID, classification,
-				analytics.GetDebtGroupCode(), vl.GetCurrencyCode(), req.GetAccountingDate())
+			resolved, err := s.repo.ResolveAccountDirect(ctx, tenantID,
+				in.GetAccountCode(), in.GetCoaVersion(), req.GetAccountingDate())
 			if err != nil {
-				vl.Errors = append(vl.Errors, "ACCOUNT_UNRESOLVED")
+				vl.Errors = append(vl.Errors, err.Error())
 			} else {
 				vl.Resolved = true
 				vl.AccountCode = resolved.AccountCode
@@ -758,6 +758,32 @@ func (s *PostingService) resolve(ctx context.Context, tenantID string, req *fina
 				vl.ResolvedAnalytics = analytics
 				if coaVersion == "" {
 					coaVersion = resolved.CoaVersion
+				}
+			}
+		default:
+			// Classification path (domain flows): analytics drives resolution.
+			for key := range analytics.GetDimensions() {
+				if _, ok := registry[key]; !ok {
+					vl.Errors = append(vl.Errors, "UNKNOWN_DIMENSION:"+key)
+				}
+			}
+			classification := analytics.GetAccClassification()
+			if classification == "" {
+				vl.Errors = append(vl.Errors, "CLASSIFICATION_REQUIRED")
+			} else {
+				resolved, err := s.repo.ResolveAccount(ctx, tenantID, classification,
+					analytics.GetDebtGroupCode(), vl.GetCurrencyCode(), req.GetAccountingDate())
+				if err != nil {
+					vl.Errors = append(vl.Errors, "ACCOUNT_UNRESOLVED")
+				} else {
+					vl.Resolved = true
+					vl.AccountCode = resolved.AccountCode
+					vl.AccountName = resolved.AccountName
+					vl.CoaVersion = resolved.CoaVersion
+					vl.ResolvedAnalytics = analytics
+					if coaVersion == "" {
+						coaVersion = resolved.CoaVersion
+					}
 				}
 			}
 		}

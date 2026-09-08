@@ -54,6 +54,45 @@ func (r *PostingRepository) ResolveAccount(ctx context.Context, tenantID, classi
 	return &out, err
 }
 
+// ResolveAccountDirect is the manual-posting path (FAC-native flows where the
+// accountant picks the account): resolves an explicit account code against
+// the given COA version — or the tenant's default version effective on the
+// date — enforcing is_postable and the account's effective window.
+func (r *PostingRepository) ResolveAccountDirect(ctx context.Context, tenantID, accountCode, coaVersion, onDate string) (*ResolvedAccount, error) {
+	if onDate == "" {
+		onDate = time.Now().Format("2006-01-02")
+	}
+	if coaVersion == "" {
+		err := r.db.QueryRowContext(ctx, `
+			SELECT code FROM fin_coa_versions
+			WHERE tenant_id = $1 AND is_active AND effective_date <= $2::date
+			ORDER BY is_default DESC, effective_date DESC
+			LIMIT 1`, tenantID, onDate).Scan(&coaVersion)
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no active COA version effective on %s", onDate)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("resolve COA version: %w", err)
+		}
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT name FROM fin_coa_accounts
+		WHERE tenant_id = $1 AND version_code = $2 AND acc_code = $3
+		  AND is_postable
+		  AND effective_date <= $4::date
+		  AND (expiry_date IS NULL OR expiry_date > $4::date)`,
+		tenantID, coaVersion, accountCode, onDate)
+	var name string
+	err := row.Scan(&name)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("ACCOUNT_NOT_FOUND:%s@%s", accountCode, coaVersion)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("resolve account %s: %w", accountCode, err)
+	}
+	return &ResolvedAccount{CoaVersion: coaVersion, AccountCode: accountCode, AccountName: name}, nil
+}
+
 // RegisteredDimension is one whitelisted analytics dimension key.
 type RegisteredDimension struct {
 	Key         string

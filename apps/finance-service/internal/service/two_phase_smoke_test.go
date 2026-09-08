@@ -230,5 +230,32 @@ func TestTwoPhaseBalanceSmoke(t *testing.T) {
 		t.Fatalf("after direct post: posted_dr=%d posted_cr=%d, want 600000/400000", dr, cr)
 	}
 
+	// 8. Manual posting path: line carries account_code directly (FAC-native
+	// single-entry shape), classification left empty; nature-B (off-balance
+	// memo) account exempt from balance checks.
+	memo := &financev1.PostingRequest{
+		IdempotencyKey: runKey + "-memo",
+		AccountingDate: "2026-09-08",
+		CurrencyCode:   "VND",
+		Description:    "Ngoại bảng nhập — memo",
+		BusinessReference: &financev1.BusinessReference{
+			Domain: "fin", DocumentType: "FIN_OFF_BALANCE", DocumentCode: "OFFB-1",
+		},
+		Lines: []*financev1.PostingLine{
+			{LineNo: 1, Direction: "DEBIT", AmountMinor: 77_000,
+				AccountCode: "1311", // nature D — but direction DEBIT is an inflow
+				Analytics:   &financev1.Analytics{OrgUnitCode: "HO"}},
+			{LineNo: 2, Direction: "CREDIT", AmountMinor: 77_000,
+				AccountCode: "1311",
+				Analytics:   &financev1.Analytics{OrgUnitCode: "HO"}},
+		},
+	}
+	if v, err := svc.ValidatePosting(ctx, tenantID, memo); err != nil || !v.GetValid() {
+		t.Fatalf("manual lines must validate: %v / %v", err, v.GetGlobalErrors())
+	}
+	if _, err := svc.PostTransaction(ctx, tenantID, memo); err != nil {
+		t.Fatalf("manual direct post: %v", err)
+	}
+
 	slog.Info("two-phase balance smoke complete", "at", time.Now().Format(time.RFC3339))
 }

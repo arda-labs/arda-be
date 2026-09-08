@@ -65,6 +65,13 @@ message PostingLine {
   string counterparty_code = 6;
   string counterparty_name = 7;
   string description = 8;
+  // Manual posting path (accountant-picked lines, FAC-native flows): when
+  // account_code is set the line resolves directly against the COA —
+  // coa_version empty = the version effective on the accounting_date — and
+  // analytics becomes optional metadata. Classification lines (domain flows)
+  // keep using analytics.acc_classification.
+  string account_code = 9;
+  string coa_version = 10;
 }
 
 message PostingRequest {

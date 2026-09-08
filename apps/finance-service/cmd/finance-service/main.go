@@ -31,6 +31,7 @@ import (
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 )
 
 func main() {
@@ -65,6 +66,14 @@ func main() {
 	configRepo := repository.NewConfigRepository(db)
 	coaRepo := repository.NewCoaRepository(db)
 
+	// ── Workflow client (manual posting cases) ──
+	workflow, err := workflowclient.Dial(context.Background(), cfg.WorkflowGRPCAddr, cfg.AppName, logger)
+	if err != nil {
+		logger.Error("workflow grpc dial failed", "err", err)
+		os.Exit(1)
+	}
+	defer workflow.Close()
+
 	// ── Services ──
 	accountSvc := service.NewAccountService(accountRepo)
 	trialBalanceSvc := service.NewTrialBalanceService(db)
@@ -73,12 +82,14 @@ func main() {
 	postingRepo := repository.NewPostingRepository(db)
 	postingSvc := service.NewPostingService(postingRepo, db)
 	cashSvc := service.NewCashService(db, postingSvc)
+	postingCaseSvc := service.NewPostingCaseService(postingSvc, workflow)
 
 	// ── Handlers ──
 	financeHandler := handler.NewFinanceHandler(accountSvc, trialBalanceSvc, accountingConfigSvc, cashSvc)
 	coaHandler := handler.NewCoaHandler(coaSvc)
 	postingHandler := handler.NewPostingHandler(postingSvc)
 	cashHandler := handler.NewCashHandler(cashSvc)
+	postingCaseHandler := handler.NewPostingCaseHandler(postingCaseSvc)
 
 	// ── gRPC server (PostingService, port 9090) ──
 	serviceSecret, err := identity.SecretFromEnv()
@@ -129,7 +140,7 @@ func main() {
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, coaHandler, postingHandler, cashHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(financeHandler, coaHandler, postingHandler, cashHandler, postingCaseHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

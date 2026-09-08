@@ -119,3 +119,15 @@ func TestNaturalSignedOpening(t *testing.T) {
 		t.Fatalf("credit opening on C account = %d, want 100", got)
 	}
 }
+
+// Nature-B (off-balance memo) accounts are exempt from both checks — EPAS
+// skips them in validateBalanceInAccInfo.
+func TestCheckNatureBExempt(t *testing.T) {
+	row := balanceRow(0, 0, 0, 0)
+	if err := checkReserve(row, 0, "B", "CREDIT", 9_999); err != nil {
+		t.Fatalf("nature-B outflow reserve must be free: %v", err)
+	}
+	if err := checkPostActual(row, 0, "B", "CREDIT", 9_999); err != nil {
+		t.Fatalf("nature-B post must be free: %v", err)
+	}
+}

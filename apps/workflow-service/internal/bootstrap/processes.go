@@ -59,6 +59,12 @@ var dpmSettle []byte
 //go:embed rpt-submit-v2.bpmn
 var rptSubmit []byte
 
+//go:embed fin-single-entry-v2.bpmn
+var finSingleEntry []byte
+
+//go:embed fin-double-entry-v2.bpmn
+var finDoubleEntry []byte
+
 type Process struct {
 	ProcessCode  string
 	Name         string
@@ -169,6 +175,21 @@ func BuiltInProcesses() []Process {
 			Name:         "Tất toán sổ tiết kiệm (v2)",
 			ResourceName: "dpm-settle-v2.bpmn",
 			Content:      dpmSettle,
+		},
+		{
+			// Manual posting flows (FAC-native bút toán lẻ / bút toán kép):
+			// the maker submits accountant-picked lines, the finance posting
+			// rides Reserve → Validate → Post (Release on reject).
+			ProcessCode:  "FIN_SINGLE_ENTRY_V2",
+			Name:         "Bút toán lẻ (v2)",
+			ResourceName: "fin-single-entry-v2.bpmn",
+			Content:      finSingleEntry,
+		},
+		{
+			ProcessCode:  "FIN_DOUBLE_ENTRY_V2",
+			Name:         "Bút toán kép (v2)",
+			ResourceName: "fin-double-entry-v2.bpmn",
+			Content:      finDoubleEntry,
 		},
 		{
 			ProcessCode:  "HRM_EMPLOYEE_REGISTRATION",

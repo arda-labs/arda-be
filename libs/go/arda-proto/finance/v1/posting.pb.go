@@ -199,8 +199,15 @@ type PostingLine struct {
 	CounterpartyCode string                 `protobuf:"bytes,6,opt,name=counterparty_code,json=counterpartyCode,proto3" json:"counterparty_code,omitempty"`
 	CounterpartyName string                 `protobuf:"bytes,7,opt,name=counterparty_name,json=counterpartyName,proto3" json:"counterparty_name,omitempty"`
 	Description      string                 `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Manual posting path (accountant-picked lines, FAC-native flows): when
+	// account_code is set the line resolves directly against the COA —
+	// coa_version empty = the version effective on the accounting_date — and
+	// analytics becomes optional metadata. Classification lines (domain flows)
+	// keep using analytics.acc_classification.
+	AccountCode   string `protobuf:"bytes,9,opt,name=account_code,json=accountCode,proto3" json:"account_code,omitempty"`
+	CoaVersion    string `protobuf:"bytes,10,opt,name=coa_version,json=coaVersion,proto3" json:"coa_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PostingLine) Reset() {
@@ -285,6 +292,20 @@ func (x *PostingLine) GetCounterpartyName() string {
 func (x *PostingLine) GetDescription() string {
 	if x != nil {
 		return x.Description
+	}
+	return ""
+}
+
+func (x *PostingLine) GetAccountCode() string {
+	if x != nil {
+		return x.AccountCode
+	}
+	return ""
+}
+
+func (x *PostingLine) GetCoaVersion() string {
+	if x != nil {
+		return x.CoaVersion
 	}
 	return ""
 }
@@ -849,7 +870,7 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"dimensions\x1a=\n" +
 	"\x0fDimensionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc2\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x86\x03\n" +
 	"\vPostingLine\x12\x17\n" +
 	"\aline_no\x18\x01 \x01(\x05R\x06lineNo\x12\x1c\n" +
 	"\tdirection\x18\x02 \x01(\tR\tdirection\x12!\n" +
@@ -858,7 +879,11 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\tanalytics\x18\x05 \x01(\v2\x1a.arda.finance.v1.AnalyticsR\tanalytics\x12+\n" +
 	"\x11counterparty_code\x18\x06 \x01(\tR\x10counterpartyCode\x12+\n" +
 	"\x11counterparty_name\x18\a \x01(\tR\x10counterpartyName\x12 \n" +
-	"\vdescription\x18\b \x01(\tR\vdescription\"\xb8\x03\n" +
+	"\vdescription\x18\b \x01(\tR\vdescription\x12!\n" +
+	"\faccount_code\x18\t \x01(\tR\vaccountCode\x12\x1f\n" +
+	"\vcoa_version\x18\n" +
+	" \x01(\tR\n" +
+	"coaVersion\"\xb8\x03\n" +
 	"\x0ePostingRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12Q\n" +
 	"\x12business_reference\x18\x02 \x01(\v2\".arda.finance.v1.BusinessReferenceR\x11businessReference\x12'\n" +

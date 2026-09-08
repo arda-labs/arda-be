@@ -17,6 +17,8 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 		"HRM_EMPLOYEE_REGISTRATION": "hrm-employee-registration-v2",
 		"DPM_SETTLE_V2":             "dpm-settle-v2",
 		"RPT_SUBMIT_V2":             "rpt-submit-v2",
+		"FIN_SINGLE_ENTRY_V2":       "fin-single-entry-v2",
+		"FIN_DOUBLE_ENTRY_V2":       "fin-double-entry-v2",
 		"CUSTOMER_REGISTRATION": "crm-customer-registration-v2",
 		"CUSTOMER_ADJUSTMENT":   "customer-adjustment-v2",
 		"LOAN_FORMATION_V2":     "lnm-loan-formation-v2",
@@ -79,6 +81,26 @@ func TestCustomerAdjustmentStartsWithMakerRevise(t *testing.T) {
 	}
 	if strings.Contains(content, `sourceRef="Start_Submitted" targetRef="UT_CheckerReview"`) {
 		t.Fatal("customer adjustment must not go directly from start to checker review")
+	}
+}
+
+func TestManualPostingFlowSkeleton(t *testing.T) {
+	for _, processCode := range []string{"FIN_SINGLE_ENTRY_V2", "FIN_DOUBLE_ENTRY_V2"} {
+		content := builtInProcessContent(t, processCode)
+		for _, fragment := range []string{
+			`candidateGroups="FIN_MAKER"`,
+			`candidateGroups="FIN_CHECKER"`,
+			`<zeebe:header key="stepCode" value="maker_input" />`,
+			`<zeebe:header key="stepCode" value="checker_review" />`,
+			`sourceRef="GW_Decision" targetRef="ST_Execute"`,
+			`sourceRef="GW_Decision" targetRef="ST_Cancel"`,
+			`sourceRef="GW_Decision" targetRef="UT_MakerInput"`,
+			`sourceRef="Start_Submitted" targetRef="ST_Init"`,
+		} {
+			if !strings.Contains(content, fragment) {
+				t.Fatalf("%s process missing %q", processCode, fragment)
+			}
+		}
 	}
 }
 
