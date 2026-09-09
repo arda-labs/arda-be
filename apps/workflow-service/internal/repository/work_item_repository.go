@@ -705,7 +705,7 @@ func scanWorkItem(s scanner) (WorkItem, error) {
 		&item.ID, &item.CaseID, &item.TenantID, &item.CaseCode, &item.CaseType, &item.PrimaryObjectType, &item.PrimaryObjectID,
 		&processInstanceKey, &jobKey, &item.TaskType, &item.StepCode,
 		&item.Title, &item.Description, &item.Status, &item.TransactionStatus, &item.CreatedBy,
-		&item.CandidateRole, ardapg.Driver.Scanner(&item.CandidateUsers), &item.CandidateGroupID,
+		&item.CandidateRole, ardapg.Driver.Scanner(&item.CandidateUsers), &item.CandidateGroupID, &item.CandidateOrgUnitID,
 		&item.AssignedTo, &assignedAt, &claimExpiresAt,
 		&item.PreviousAssignedTo,
 		&slaDueAt, &item.CreatedAt, &item.UpdatedAt,

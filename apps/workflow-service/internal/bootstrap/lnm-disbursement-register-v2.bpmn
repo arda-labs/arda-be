@@ -3,7 +3,7 @@
   <bpmn:error id="Error_ValidationFailed" name="VALIDATION_FAILED" errorCode="VALIDATION_FAILED" />
   <bpmn:process id="lnm-disbursement-register-v2" name="Đăng ký giải ngân (v2)" isExecutable="true">
     <bpmn:startEvent id="Start_Submitted" name="Đã khởi tạo">
-      <bpmn:outgoing>Flow_Start_Maker</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Start_Init</bpmn:outgoing>
     </bpmn:startEvent>
     <bpmn:serviceTask id="ST_Init" name="Khởi tạo giao dịch kế toán">
       <bpmn:extensionElements>
