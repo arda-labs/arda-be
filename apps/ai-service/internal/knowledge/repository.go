@@ -397,7 +397,12 @@ type candidateHit struct {
 	URL             *string
 }
 
-func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVector []float32, tenantID string, topK int) ([]QueryHit, error) {
+// HybridSearch fuses a pgvector cosine leg with a SQLite-style FTS leg via
+// reciprocal rank fusion. minSimilarity is the cosine floor a chunk must clear
+// to count as evidence: chunks below it are dropped from both legs, so an
+// off-corpus query yields zero hits (no-evidence behavior) instead of top-k
+// filler. Pass 0 to disable the gate.
+func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVector []float32, tenantID string, topK int, minSimilarity float64) ([]QueryHit, error) {
 	if topK <= 0 {
 		topK = 5
 	}
@@ -421,7 +426,7 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 	if len(queryVector) > 0 {
 		vecStr := floatVectorToString(queryVector)
 		vecQuery := `
-			SELECT c.chunk_id, c.source_version_id, s.id AS source_id, s.source_key, v.version, s.title, COALESCE(c.heading, ''), c.content,
+			SELECT c.chunk_id, c.source_version_id, s.id AS source_id, s.id::text AS source_key, v.version, s.title, COALESCE(c.heading, ''), c.content,
 			       s.effective_from, s.effective_to, v.content_url
 			  FROM public.ai_knowledge_chunks c
 			  JOIN public.ai_knowledge_source_versions v ON v.id = c.source_version_id
@@ -434,10 +439,11 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 			   AND (s.effective_from IS NULL OR s.effective_from <= now())
 			   AND (s.effective_to IS NULL OR s.effective_to > now())
 			   AND s.deleted_at IS NULL
+			   AND ($4::float8 <= 0 OR 1 - (c.embedding <=> $2::vector) >= $4::float8)
 			 ORDER BY c.embedding <=> $2::vector
 			 LIMIT $3
 		`
-		rows, err := r.db.QueryContext(ctx, vecQuery, tID, vecStr, topK*2)
+		rows, err := r.db.QueryContext(ctx, vecQuery, tID, vecStr, topK*2, minSimilarity)
 		if err != nil {
 			return nil, fmt.Errorf("vector knowledge search: %w", err)
 		}
@@ -457,10 +463,12 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 		}
 	}
 
-	// 2. FTS leg
+	// 2. FTS leg — recall booster: when a query vector exists, chunks only
+	// count if they also clear the cosine floor, so lexical token overlap
+	// alone cannot produce filler hits.
 	var ftsRanks []rankedID
 	ftsQuery := `
-		SELECT c.chunk_id, c.source_version_id, s.id AS source_id, s.source_key, v.version, s.title, COALESCE(c.heading, ''), c.content,
+		SELECT c.chunk_id, c.source_version_id, s.id AS source_id, s.id::text AS source_key, v.version, s.title, COALESCE(c.heading, ''), c.content,
 		       s.effective_from, s.effective_to, v.content_url
 		  FROM public.ai_knowledge_chunks c
 		  JOIN public.ai_knowledge_source_versions v ON v.id = c.source_version_id
@@ -474,9 +482,14 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 		   AND (s.effective_from IS NULL OR s.effective_from <= now())
 		   AND (s.effective_to IS NULL OR s.effective_to > now())
 		   AND s.deleted_at IS NULL
-		 LIMIT $3
 	`
-	rows, err := r.db.QueryContext(ctx, ftsQuery, tID, queryText, topK*2)
+	ftsArgs := []any{tID, queryText, topK * 2}
+	if len(queryVector) > 0 {
+		ftsQuery += ` AND ($4::float8 <= 0 OR 1 - (c.embedding <=> $5::vector) >= $4::float8)`
+		ftsArgs = append(ftsArgs, minSimilarity, floatVectorToString(queryVector))
+	}
+	ftsQuery += ` LIMIT $3`
+	rows, err := r.db.QueryContext(ctx, ftsQuery, ftsArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("full-text knowledge search: %w", err)
 	}

@@ -24,7 +24,10 @@ type Service struct {
 	// FTS-only querying, but production ingestion must be explicit about this
 	// failure.
 	requireEmbedding bool
-	eventPublisher   EventPublisher
+	// minSimilarity is the cosine evidence floor for hybrid retrieval;
+	// 0 disables the gate.
+	minSimilarity float64
+	eventPublisher EventPublisher
 }
 
 type EventPublisher interface {
@@ -50,6 +53,14 @@ func NewService(repo *Repository, embedder Embedder, logger *slog.Logger) *Servi
 
 func (s *Service) SetRequireEmbedding(required bool) {
 	s.requireEmbedding = required
+}
+
+// SetMinSimilarity sets the cosine-similarity evidence floor applied to both
+// hybrid-search legs. 0 disables the gate (tests, keyword-only fallback).
+func (s *Service) SetMinSimilarity(floor float64) {
+	if s != nil {
+		s.minSimilarity = floor
+	}
 }
 
 func (s *Service) SetReranker(reranker Reranker) {
@@ -104,7 +115,7 @@ func (s *Service) Query(ctx context.Context, req QueryRequest, tenantID string) 
 	if s.reranker != nil {
 		retrievalK = minInt(topK*3, 30)
 	}
-	hits, err := s.repo.HybridSearch(ctx, queryText, queryVector, tenantID, retrievalK)
+	hits, err := s.repo.HybridSearch(ctx, queryText, queryVector, tenantID, retrievalK, s.minSimilarity)
 	if err != nil {
 		return nil, fmt.Errorf("hybrid search: %w", err)
 	}

@@ -97,6 +97,7 @@ func main() {
 		}
 		knowledgeSvc = knowledge.NewService(knowledgeRepo, embedder, logger)
 		knowledgeSvc.SetRequireEmbedding(cfg.RAGRequireEmbedding)
+		knowledgeSvc.SetMinSimilarity(cfg.RAGMinSimilarity)
 		if cfg.RAGRerankerBaseURL != "" {
 			knowledgeSvc.SetReranker(knowledge.NewCohereReranker(cfg.RAGRerankerBaseURL, cfg.RAGRerankerAPIKey, cfg.RAGRerankerModel, nil))
 		}

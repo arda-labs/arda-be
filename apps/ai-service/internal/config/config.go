@@ -47,6 +47,13 @@ type Config struct {
 	RAGEmbeddingModel      string
 	RAGEmbeddingDimensions int
 
+	// RAGMinSimilarity is the cosine-similarity floor a chunk must clear to
+	// count as evidence in hybrid retrieval. Queries whose best chunk falls
+	// below the floor return zero hits instead of top-k filler, so the
+	// answer layer can say "no evidence" instead of hallucinating. 0 disables
+	// the gate.
+	RAGMinSimilarity float64
+
 	// ModelBaseURLAllowlist restricts which base URLs tenant settings may
 	// point at (gateway routing, §3.5 of docs/ai/agent-evolution-roadmap.md).
 	// Empty slice = enforcement disabled; only ValidateEgressURL applies.
@@ -124,6 +131,7 @@ func Load() Config {
 		RAGEmbeddingAPIKey:     embeddingAPIKey,
 		RAGEmbeddingModel:      embeddingModel,
 		RAGEmbeddingDimensions: envIntOr("AI_RAG_EMBEDDING_DIMENSIONS", 1024),
+		RAGMinSimilarity:       envFloatOr("AI_RAG_MIN_SIMILARITY", 0.35),
 
 		ModelBaseURLAllowlist: envListOr("AI_MODEL_BASE_URL_ALLOWLIST"),
 		NATSURL:               envOr("NATS_URL", envOr("AI_NATS_URL", "")),
@@ -153,6 +161,14 @@ func envOr(name, fallback string) string {
 func envIntOr(name string, fallback int) int {
 	value, err := strconv.Atoi(os.Getenv(name))
 	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func envFloatOr(name string, fallback float64) float64 {
+	value, err := strconv.ParseFloat(os.Getenv(name), 64)
+	if err != nil {
 		return fallback
 	}
 	return value

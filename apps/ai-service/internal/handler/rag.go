@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,6 +50,7 @@ func (h *RAGHandler) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.svc.Query(r.Context(), req, scope.TenantID)
 	if err != nil {
+		slog.Error("rag query failed", "err", err)
 		problem(w, http.StatusInternalServerError, "rag.query_failed")
 		return
 	}
