@@ -177,6 +177,37 @@ func (c *ZeebeRestClient) CompleteUserTask(ctx context.Context, userTaskKey int6
 	return nil
 }
 
+// GetVariables reads the live process-instance variables through the Zeebe
+// gateway REST API (GET /v2/process-instances/{key}/variables). The v2
+// endpoint returns the variables as a flat JSON object keyed by name.
+func (c *ZeebeRestClient) GetVariables(ctx context.Context, processInstanceKey int64) (map[string]any, error) {
+	if !c.Enabled() {
+		return nil, ErrZeebeRestUnavailable
+	}
+	if processInstanceKey <= 0 {
+		return nil, fmt.Errorf("processInstanceKey is required")
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf("%s/v2/process-instances/%d/variables", c.baseURL, processInstanceKey), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("get process instance variables: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get process instance variables HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	var variables map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&variables); err != nil {
+		return nil, fmt.Errorf("decode process instance variables: %w", err)
+	}
+	return variables, nil
+}
+
 // IsNativeUserTaskElement reports whether a BPMN element id denotes a v2 native user task.
 func IsNativeUserTaskElement(elementID string) bool {
 	return strings.HasPrefix(strings.TrimSpace(elementID), "UT_")

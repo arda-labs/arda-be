@@ -177,6 +177,22 @@ func (h *LoanHandler) SubmitContract(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, r, item, err)
 }
 
+// UpdateContract is the maker revise (PUT /api/loan/contracts/{id}): only
+// the editable whitelist fields are applied and only while the contract is
+// DRAFT or PENDING.
+func (h *LoanHandler) UpdateContract(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.Contract
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.svc.UpdateContract(r.Context(), tenantID, r.PathValue("id"), &req)
+	writeResult(w, r, item, err)
+}
+
 func (h *LoanHandler) ListAgreements(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {

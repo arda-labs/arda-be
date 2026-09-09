@@ -27,7 +27,16 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 			methodNotAllowed(w, r)
 		}
 	})
-	mux.HandleFunc("/api/loan/contracts/{id}", method("GET", h.GetContract))
+	mux.HandleFunc("/api/loan/contracts/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.GetContract(w, r)
+		case http.MethodPut:
+			h.UpdateContract(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
 	mux.HandleFunc("/api/loan/contracts/{id}/submit", method("POST", h.SubmitContract))
 	mux.HandleFunc("/api/loan/contracts/{id}/dossier", method("GET", h.GetDossier))
 

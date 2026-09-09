@@ -1350,6 +1350,8 @@ func (h *WorkflowHandler) CaseByID(w http.ResponseWriter, r *http.Request) {
 		h.caseTimeline(w, r, id)
 	case r.Method == http.MethodGet && action == "task-readiness":
 		h.caseTaskReadiness(w, r, id)
+	case r.Method == http.MethodGet && action == "variables":
+		h.caseVariables(w, r, id)
 	case r.Method == http.MethodPost && action == "submit":
 		h.submitCase(w, r, id)
 	case r.Method == http.MethodPost && action == "claim":
@@ -1414,6 +1416,39 @@ func (h *WorkflowHandler) getCase(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 	writeJSON(w, r, http.StatusOK, bc)
+}
+
+// caseVariables serves GET /api/workflow/cases/{id}/variables: the live
+// Zeebe process-instance variables of the case (formation screens read the
+// appraisal/approval stage data plus amount/fundSource here).
+func (h *WorkflowHandler) caseVariables(w http.ResponseWriter, r *http.Request, id string) {
+	bc, err := h.caseRepo.GetCase(r.Context(), id)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query case: "+err.Error())
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Case not found")
+		return
+	}
+	if bc.ProcessInstanceKey == nil || *bc.ProcessInstanceKey <= 0 {
+		writeAPIError(w, r, http.StatusConflict, "Case has no process instance yet")
+		return
+	}
+	if h.zeebeRest == nil || !h.zeebeRest.Enabled() {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe REST client is not configured")
+		return
+	}
+	variables, err := h.zeebeRest.GetVariables(r.Context(), *bc.ProcessInstanceKey)
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{
+		"case_id":              bc.ID,
+		"process_instance_key": strconv.FormatInt(*bc.ProcessInstanceKey, 10),
+		"variables":            variables,
+	})
 }
 
 func (h *WorkflowHandler) caseTimeline(w http.ResponseWriter, r *http.Request, id string) {

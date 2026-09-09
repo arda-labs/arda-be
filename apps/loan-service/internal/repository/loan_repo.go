@@ -20,6 +20,10 @@ import (
 var (
 	ErrNotFound = errors.New("lnm: record not found")
 	ErrConflict = errors.New("lnm: code conflict")
+	// ErrContractNotEditable marks a maker-revise attempt against a contract
+	// whose status left the DRAFT/PENDING window between the service guard
+	// read and the guarded UPDATE (race backstop).
+	ErrContractNotEditable = errors.New("lnm: contract not editable")
 )
 
 // NewID generates a prefixed random-hex identifier.
@@ -203,6 +207,37 @@ func (r *LoanRepository) UpdateContractStatus(ctx context.Context, tenantID, id,
 		return fmt.Errorf("%w", ErrNotFound)
 	}
 	return nil
+}
+
+// UpdateContract applies the maker-editable field whitelist (formation form:
+// contract_no, amount/rate/term, dates, schedule and codes) to a contract.
+// The status guard lives in the WHERE clause so a concurrent status flip
+// (submit/decision) can never be overwritten: the UPDATE only matches
+// DRAFT/PENDING rows and a zero-row result distinguishes not-found vs
+// not-editable via a cheap re-read.
+func (r *LoanRepository) UpdateContract(ctx context.Context, tenantID, id string, in *domain.Contract) (*domain.Contract, error) {
+	row := r.db.QueryRowContext(ctx, `
+		UPDATE lnm_contracts SET
+			contract_no = $3, loan_amt_minor = $4, interest_rate = $5, loan_term = $6,
+			term_unit = $7, contract_date = $8::date, maturity_date = $9::date,
+			interest_schedule_day = $10, interest_payment_freq = $11,
+			principal_payment_freq = $12, purpose_code = $13, employee_code = $14,
+			industry_code = $15, loan_method_code = $16, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND status IN ('DRAFT','PENDING')
+		RETURNING `+contractColumns,
+		tenantID, id, in.ContractNo, in.LoanAmt, in.InterestRate, in.LoanTerm, in.TermUnit,
+		in.ContractDate, in.MaturityDate, in.InterestScheduleDay, in.InterestPaymentFreq,
+		in.PrincipalPaymentFreq, in.PurposeCode, in.EmployeeCode, in.IndustryCode, in.LoanMethodCode)
+	out, err := scanContract(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		var exists int
+		if scanErr := r.db.QueryRowContext(ctx,
+			`SELECT 1 FROM lnm_contracts WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&exists); errors.Is(scanErr, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w", ErrNotFound)
+		}
+		return nil, fmt.Errorf("%w", ErrContractNotEditable)
+	}
+	return &out, err
 }
 
 func (r *LoanRepository) SetContractWorkflowCase(ctx context.Context, tenantID, id, caseID, caseCode string) error {
