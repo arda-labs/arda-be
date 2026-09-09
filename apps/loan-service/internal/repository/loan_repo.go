@@ -52,7 +52,8 @@ const contractColumns = `id, tenant_id, contract_code, contract_no, customer_cod
 	contract_type_code, product_code, interest_rate, interest_rate_type, purpose_code, industry_code,
 	loan_method_code, contract_date::text, loan_term, term_unit, maturity_date::text,
 	interest_schedule_day, loan_amt_minor, interest_payment_freq, principal_payment_freq,
-	interest_payment_method, principal_payment_method, status, workflow_case_id, created_by, created_at, updated_at`
+	interest_payment_method, principal_payment_method, status, workflow_case_id::text,
+	COALESCE(workflow_case_code,''), COALESCE(org_code,''), created_by, created_at, updated_at`
 
 func scanContract(s interface{ Scan(...any) error }) (domain.Contract, error) {
 	var c domain.Contract
@@ -60,7 +61,8 @@ func scanContract(s interface{ Scan(...any) error }) (domain.Contract, error) {
 		&c.ContractTypeCode, &c.ProductCode, &c.InterestRate, &c.InterestRateType, &c.PurposeCode, &c.IndustryCode,
 		&c.LoanMethodCode, &c.ContractDate, &c.LoanTerm, &c.TermUnit, &c.MaturityDate,
 		&c.InterestScheduleDay, &c.LoanAmt, &c.InterestPaymentFreq, &c.PrincipalPaymentFreq,
-		&c.InterestPaymentMethod, &c.PrincipalPaymentMethod, &c.Status, &c.WorkflowCaseID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt)
+		&c.InterestPaymentMethod, &c.PrincipalPaymentMethod, &c.Status, &c.WorkflowCaseID,
+		&c.WorkflowCaseCode, &c.OrgCode, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt)
 	return c, err
 }
 
@@ -86,6 +88,81 @@ func (r *LoanRepository) ListContracts(ctx context.Context, tenantID, status, q 
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// contractSortCol maps the whitelisted ListContracts sort key to a SQL
+// column; unknown keys fall back to created_at (the historical default).
+func contractSortCol(field string) string {
+	switch field {
+	case "contract_no":
+		return "contract_no"
+	case "loan_amt_minor":
+		return "loan_amt_minor"
+	default:
+		return "created_at"
+	}
+}
+
+// ContractListFilter is the paged contract-list contract for GET
+// /api/loan/contracts: status exact filter + q ILIKE (contract_no /
+// customer_code / contract_code — the columns the legacy query matched) +
+// whitelisted sort + SQL LIMIT/OFFSET.
+type ContractListFilter struct {
+	Status  string
+	Search  string
+	Sort    string
+	Order   string
+	Page    int
+	PerPage int
+}
+
+// ListContractsPaged is the paged contract list: same narrowing as
+// ListContracts plus the unfiltered total for the standard list envelope.
+func (r *LoanRepository) ListContractsPaged(ctx context.Context, tenantID string, f ContractListFilter) ([]domain.Contract, int, error) {
+	page := f.Page
+	if page < 1 {
+		page = 1
+	}
+	perPage := f.PerPage
+	if perPage < 1 {
+		perPage = 50
+	}
+	order := "DESC"
+	if f.Sort != "" && f.Order != "desc" {
+		order = "ASC"
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+contractColumns+`, count(*) OVER() AS total_count
+		FROM lnm_contracts
+		WHERE tenant_id = $1
+		  AND ($2 = '' OR status = $2)
+		  AND ($3 = '' OR contract_no ILIKE '%' || $3 || '%' OR customer_code ILIKE '%' || $3 || '%' OR contract_code ILIKE '%' || $3 || '%')
+		ORDER BY `+contractSortCol(f.Sort)+` `+order+`, id
+		LIMIT $4 OFFSET $5`, tenantID, f.Status, f.Search, perPage, (page-1)*perPage)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	items := []domain.Contract{}
+	total := 0
+	for rows.Next() {
+		var c domain.Contract
+		var caseID sql.NullString
+		// contractColumns scan (workflow_case_id nullable) + the window total.
+		if err := rows.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.ContractNo, &c.CustomerCode, &c.EmployeeCode,
+			&c.ContractTypeCode, &c.ProductCode, &c.InterestRate, &c.InterestRateType, &c.PurposeCode, &c.IndustryCode,
+			&c.LoanMethodCode, &c.ContractDate, &c.LoanTerm, &c.TermUnit, &c.MaturityDate,
+			&c.InterestScheduleDay, &c.LoanAmt, &c.InterestPaymentFreq, &c.PrincipalPaymentFreq,
+			&c.InterestPaymentMethod, &c.PrincipalPaymentMethod, &c.Status, &caseID,
+			&c.WorkflowCaseCode, &c.OrgCode, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &total); err != nil {
+			return nil, 0, err
+		}
+		if caseID.Valid {
+			c.WorkflowCaseID = &caseID.String
+		}
+		items = append(items, c)
+	}
+	return items, total, rows.Err()
 }
 
 func (r *LoanRepository) GetContract(ctx context.Context, tenantID, id string) (domain.Contract, error) {
@@ -128,9 +205,9 @@ func (r *LoanRepository) UpdateContractStatus(ctx context.Context, tenantID, id,
 	return nil
 }
 
-func (r *LoanRepository) SetContractWorkflowCase(ctx context.Context, tenantID, id, caseID string) error {
+func (r *LoanRepository) SetContractWorkflowCase(ctx context.Context, tenantID, id, caseID, caseCode string) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE lnm_contracts SET workflow_case_id = $3, status = 'PENDING', updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id, caseID)
+		`UPDATE lnm_contracts SET workflow_case_id = $3, workflow_case_code = $4, status = 'PENDING', updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id, caseID, caseCode)
 	return err
 }
 
@@ -1007,7 +1084,6 @@ func (r *LoanRepository) CreateVfuPlan(ctx context.Context, p *domain.VfuPlan) (
 	return out, nil
 }
 
-
 // ── Disbursements (P1b) ──
 
 // disbursementSortCol maps the public sort key (whitelisted in the handler
@@ -1049,7 +1125,7 @@ func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string,
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
 		       currency_code, COALESCE(fund_source_code,''), flow_type, source_register_id::text, status, payload,
-		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at,
+		       workflow_case_id::text, COALESCE(workflow_case_code,''), journal_entry_id::text, created_by, created_at, updated_at,
 		       count(*) OVER() AS total_count
 		FROM lnm_disbursements
 		WHERE tenant_id = $1::text
@@ -1073,7 +1149,7 @@ func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string,
 		var payload []byte
 		if err := rows.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
 			&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.FlowType, &sourceID, &d.Status, &payload,
-			&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &total); err != nil {
+			&caseID, &d.WorkflowCaseCode, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &total); err != nil {
 			return nil, 0, err
 		}
 		if len(payload) > 0 && string(payload) != "null" {
@@ -1121,12 +1197,12 @@ func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id strin
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
 		       currency_code, COALESCE(fund_source_code,''), flow_type, source_register_id::text, status, payload,
-		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at
+		       workflow_case_id::text, COALESCE(workflow_case_code,''), journal_entry_id::text, created_by, created_at, updated_at
 		FROM lnm_disbursements WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	var payload []byte
 	err := row.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
 		&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.FlowType, &sourceID, &d.Status, &payload,
-		&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
+		&caseID, &d.WorkflowCaseCode, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, err
 	}
@@ -1155,10 +1231,10 @@ func (r *LoanRepository) SetDisbursementStatus(ctx context.Context, tenantID, id
 	return err
 }
 
-func (r *LoanRepository) SetDisbursementCaseAndJournal(ctx context.Context, tenantID, id, caseID, journalEntryID string) error {
+func (r *LoanRepository) SetDisbursementCaseAndJournal(ctx context.Context, tenantID, id, caseID, caseCode, journalEntryID string) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE lnm_disbursements SET workflow_case_id = $3, journal_entry_id = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullText(caseID), nullText(journalEntryID))
+		UPDATE lnm_disbursements SET workflow_case_id = $3, workflow_case_code = $4, journal_entry_id = $5, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullText(caseID), nullText(caseCode), nullText(journalEntryID))
 	return err
 }
 
@@ -1241,14 +1317,14 @@ func (r *LoanRepository) GetContractByCode(ctx context.Context, tenantID, code s
 		       industry_code, loan_method_code, contract_date::text, loan_term, term_unit,
 		       COALESCE(maturity_date::text,''), interest_schedule_day, loan_amt_minor,
 		       interest_payment_freq, principal_payment_freq, interest_payment_method,
-		       principal_payment_method, status, created_by, created_at, updated_at
+		       principal_payment_method, status, COALESCE(org_code,''), created_by, created_at, updated_at
 		FROM lnm_contracts WHERE tenant_id = $1 AND contract_code = $2`, tenantID, code)
 	err := row.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.ContractNo, &c.CustomerCode, &c.EmployeeCode,
 		&c.ContractTypeCode, &c.ProductCode, &c.InterestRate, &c.InterestRateType, &c.PurposeCode,
 		&c.IndustryCode, &c.LoanMethodCode, &c.ContractDate, &c.LoanTerm, &c.TermUnit,
 		&c.MaturityDate, &c.InterestScheduleDay, &c.LoanAmt,
 		&c.InterestPaymentFreq, &c.PrincipalPaymentFreq, &c.InterestPaymentMethod,
-		&c.PrincipalPaymentMethod, &c.Status, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt)
+		&c.PrincipalPaymentMethod, &c.Status, &c.OrgCode, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return c, fmt.Errorf("contract %s not found", code)
 	}
@@ -1259,7 +1335,7 @@ func (r *LoanRepository) GetContractByCode(ctx context.Context, tenantID, code s
 
 const collectionColumns = `id, tenant_id, contract_code, agreement_code, collection_date::text,
 	principal_minor, interest_minor, currency_code, status, payload,
-	workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at`
+	workflow_case_id::text, COALESCE(workflow_case_code,''), journal_entry_id::text, created_by, created_at, updated_at`
 
 // collectionSortCol maps the public sort key (whitelisted in the handler
 // ListSpec) to a SQL column; unknown keys fall back to created_at.
@@ -1304,7 +1380,7 @@ func (r *LoanRepository) ListCollections(ctx context.Context, tenantID string, o
 		var payload []byte
 		if err := rows.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.AgreementCode, &c.CollectionDate,
 			&c.PrincipalMinor, &c.InterestMinor, &c.CurrencyCode, &c.Status, &payload,
-			&caseID, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &total); err != nil {
+			&caseID, &c.WorkflowCaseCode, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &total); err != nil {
 			return nil, 0, err
 		}
 		if len(payload) > 0 && string(payload) != "null" {
@@ -1347,7 +1423,7 @@ func (r *LoanRepository) GetCollection(ctx context.Context, tenantID, id string)
 	var payload []byte
 	err := row.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.AgreementCode, &c.CollectionDate,
 		&c.PrincipalMinor, &c.InterestMinor, &c.CurrencyCode, &c.Status, &payload,
-		&caseID, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt)
+		&caseID, &c.WorkflowCaseCode, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, err
 	}
@@ -1373,10 +1449,10 @@ func (r *LoanRepository) SetCollectionStatus(ctx context.Context, tenantID, id, 
 	return err
 }
 
-func (r *LoanRepository) SetCollectionCaseAndJournal(ctx context.Context, tenantID, id, caseID, journalEntryID string) error {
+func (r *LoanRepository) SetCollectionCaseAndJournal(ctx context.Context, tenantID, id, caseID, caseCode, journalEntryID string) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE lnm_collections SET workflow_case_id = $3, journal_entry_id = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullText(caseID), nullText(journalEntryID))
+		UPDATE lnm_collections SET workflow_case_id = $3, workflow_case_code = $4, journal_entry_id = $5, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullText(caseID), nullText(caseCode), nullText(journalEntryID))
 	return err
 }
 
@@ -1397,15 +1473,15 @@ func (r *LoanRepository) ApplyCollection(ctx context.Context, tenantID, agreemen
 
 // AccruableAgreement is one ACTIVE agreement eligible for accrual.
 type AccruableAgreement struct {
-	ID             string
-	ContractCode   string
-	AgreementCode  string
-	DisburseDate   string
-	OutstandingAmt int64
-	InterestRate   float64
-	DebtGroupCode  string
+	ID                string
+	ContractCode      string
+	AgreementCode     string
+	DisburseDate      string
+	OutstandingAmt    int64
+	InterestRate      float64
+	DebtGroupCode     string
 	AccClassification string
-	CurrencyCode   string
+	CurrencyCode      string
 }
 
 // ListActiveAgreementsForAccrual returns ACTIVE agreements with positive
@@ -1438,13 +1514,56 @@ func (r *LoanRepository) ListActiveAgreementsForAccrual(ctx context.Context, ten
 	return out, rows.Err()
 }
 
-
 // orgCodesToAny: nil slice -> nil (unrestricted); slice -> []string for ANY().
 func orgCodesToAny(orgCodes []string) any {
 	if len(orgCodes) == 0 {
 		return nil
 	}
 	return orgCodes
+}
+
+// ── Approval limits (formation approval tiers, iteration 12) ──
+
+// ApprovalLimit is one lnm_approval_limits row: the PGD / GD approval-tier
+// thresholds (minor units) for one tenant+org (+ optional product).
+type ApprovalLimit struct {
+	OrgCode       string
+	ProductCode   string
+	PGDLimitMinor int64
+	GDLimitMinor  int64
+}
+
+// GetApprovalLimits loads the lnm_approval_limits rows for a tenant+org: the
+// exact product row and the org-wide fallback (product_code = '') as two
+// independent lookups — the product-vs-org precedence decision lives in the
+// service layer (PickApprovalLimit) so it stays unit-testable without a DB.
+// orgCode "" or a missing table row returns nil for that slot.
+func (r *LoanRepository) GetApprovalLimits(ctx context.Context, tenantID, orgCode, productCode string) (product, org *ApprovalLimit, err error) {
+	if orgCode == "" {
+		return nil, nil, nil
+	}
+	load := func(code string) (*ApprovalLimit, error) {
+		row := r.db.QueryRowContext(ctx, `
+			SELECT org_code, product_code, pgd_limit_minor, gd_limit_minor
+			FROM lnm_approval_limits
+			WHERE tenant_id = $1 AND org_code = $2 AND product_code = $3`,
+			tenantID, orgCode, code)
+		var out ApprovalLimit
+		if err := row.Scan(&out.OrgCode, &out.ProductCode, &out.PGDLimitMinor, &out.GDLimitMinor); err != nil {
+			if err == sql.ErrNoRows {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return &out, nil
+	}
+	if product, err = load(productCode); err != nil {
+		return nil, nil, err
+	}
+	if org, err = load(""); err != nil {
+		return nil, nil, err
+	}
+	return product, org, nil
 }
 
 // ── Composite dossier (P1b residue) ──
@@ -1454,14 +1573,14 @@ func orgCodesToAny(orgCodes []string) any {
 // Dossier aggregates one contract's full record set for the composite
 // dossier page (fe_loan loan-management parity).
 type Dossier struct {
-	Contract      domain.Contract            `json:"contract"`
-	Agreements    []domain.Agreement         `json:"agreements"`
-	RepayPlans    []domain.RepayPlan         `json:"repay_plans"`
-	Disbursements []domain.Disbursement      `json:"disbursements"`
-	Collections   []domain.Collection        `json:"collections"`
-	Mortgages     []domain.Mortgage          `json:"mortgages"`
-	Collaterals   []domain.Collateral        `json:"collaterals"`
-	CaseIDs       []string                   `json:"workflow_case_ids"`
+	Contract      domain.Contract       `json:"contract"`
+	Agreements    []domain.Agreement    `json:"agreements"`
+	RepayPlans    []domain.RepayPlan    `json:"repay_plans"`
+	Disbursements []domain.Disbursement `json:"disbursements"`
+	Collections   []domain.Collection   `json:"collections"`
+	Mortgages     []domain.Mortgage     `json:"mortgages"`
+	Collaterals   []domain.Collateral   `json:"collaterals"`
+	CaseIDs       []string              `json:"workflow_case_ids"`
 }
 
 // ListContractCaseIDs returns workflow case ids linked to a contract's

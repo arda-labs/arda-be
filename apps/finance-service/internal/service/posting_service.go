@@ -96,13 +96,13 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 		INSERT INTO fin_journal_entries
 			(tenant_id, accounting_date, currency_code, status, description,
 			 business_domain, business_doc_type, business_doc_id, business_doc_code, case_id,
-			 idempotency_key, created_by, posted_at)
-		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9,$10,$11,now())`,
+			 idempotency_key, created_by, posted_at, metadata)
+		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9,$10,$11,now(),$12)`,
 		tenantID, req.GetAccountingDate(), req.GetCurrencyCode(), req.GetDescription(),
 		ref.GetDomain(), ref.GetDocumentType(),
 		nullUUIDText(ref.GetDocumentId()), ref.GetDocumentCode(),
 		nullUUIDText(ref.GetCaseId()), nullText(req.GetIdempotencyKey()),
-		metadataActor(req, ref.GetDocumentCode())); err != nil {
+		metadataActor(req, ref.GetDocumentCode()), metadataJSONB(req.GetMetadata())); err != nil {
 		return nil, fmt.Errorf("insert entry: %w", err)
 	}
 
@@ -202,13 +202,13 @@ func (s *PostingService) ReservePosting(ctx context.Context, tenantID string, re
 		INSERT INTO fin_journal_entries
 			(tenant_id, accounting_date, currency_code, status, description,
 			 business_domain, business_doc_type, business_doc_id, business_doc_code, case_id,
-			 idempotency_key, created_by)
-		VALUES ($1,$2,$3,'PENDING',$4,$5,$6,$7,$8,$9,$10,$11)`,
+			 idempotency_key, created_by, metadata)
+		VALUES ($1,$2,$3,'PENDING',$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		tenantID, req.GetAccountingDate(), req.GetCurrencyCode(), req.GetDescription(),
 		ref.GetDomain(), ref.GetDocumentType(),
 		nullUUIDText(ref.GetDocumentId()), ref.GetDocumentCode(),
 		nullUUIDText(ref.GetCaseId()), nullText(req.GetIdempotencyKey()),
-		metadataActor(req, ref.GetDocumentCode())); err != nil {
+		metadataActor(req, ref.GetDocumentCode()), metadataJSONB(req.GetMetadata())); err != nil {
 		return nil, fmt.Errorf("insert pending entry: %w", err)
 	}
 
@@ -354,6 +354,8 @@ func (s *PostingService) postPendingEntry(ctx context.Context, tenantID, entryID
 		return nil, err
 	}
 
+	// The UPDATE leaves metadata untouched — the caller-stamped trader block
+	// reserved at PENDING survives the PENDING → POSTED conversion.
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE fin_journal_entries SET status = 'POSTED', posted_at = now(), updated_by = $3, updated_at = now()
 		WHERE tenant_id = $1 AND id = $2`, tenantID, entryID, nullText(actor)); err != nil {
@@ -610,6 +612,33 @@ func metadataActor(req *financev1.PostingRequest, fallback string) string {
 	return fallback
 }
 
+// metadataJSONB encodes a request metadata map for the fin_journal_entries
+// metadata column: nil when the map is empty (column stays NULL — legacy
+// entries and callers without a trader stamp keep their old shape).
+func metadataJSONB(metadata map[string]string) []byte {
+	if len(metadata) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(metadata)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// decodeMetadataJSONB reads the stored metadata column back into a map
+// (nil/empty → nil map).
+func decodeMetadataJSONB(raw []byte) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var out map[string]string
+	if err := json.Unmarshal(raw, &out); err != nil || len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func outboxPayloadFromEntry(entryID, accountingDate, currency string, lines []repository.JournalLineRow) []byte {
 	debit, credit := int64(0), int64(0)
 	for _, l := range lines {
@@ -676,11 +705,12 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO fin_journal_entries
 			(tenant_id, accounting_date, currency_code, status, description,
-			 business_domain, business_doc_type, business_doc_id, idempotency_key, created_by)
-		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9)`,
+			 business_domain, business_doc_type, business_doc_id, idempotency_key, created_by, metadata)
+		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9,$10)`,
 		tenantID, reversalDate, original.Currency,
 		"REVERSAL: "+req.GetReason(), original.Domain, docType,
-		nullUUIDText(original.DocID), nullText(req.GetIdempotencyKey()), req.GetActor()); err != nil {
+		nullUUIDText(original.DocID), nullText(req.GetIdempotencyKey()), req.GetActor(),
+		metadataJSONB(req.GetMetadata())); err != nil {
 		return nil, fmt.Errorf("insert reversal: %w", err)
 	}
 
@@ -946,7 +976,8 @@ const journalEntryDetailSelect = `
 	       COALESCE(reversed_by_entry_id::text,''), COALESCE(created_by,''),
 	       created_at::text,
 	       (SELECT COALESCE(SUM(amount_minor),0) FROM fin_journal_lines l
-	          WHERE l.tenant_id = e.tenant_id AND l.entry_id = e.id AND l.direction = 'DEBIT')
+	          WHERE l.tenant_id = e.tenant_id AND l.entry_id = e.id AND l.direction = 'DEBIT'),
+	       COALESCE(metadata, '{}'::jsonb)
 	FROM fin_journal_entries e`
 
 // FindEntryRefByNo resolves a human journal number to the minimal entry ref
@@ -1019,13 +1050,14 @@ func (s *PostingService) getJournalEntryBy(ctx context.Context, tenantID, column
 		out        financev1.JournalEntryDetail
 		reversedBy string
 		createdBy  string
+		metadata   []byte
 	)
 	err := s.db.QueryRowContext(ctx, journalEntryDetailSelect+`
 		WHERE e.tenant_id = $1 AND e.`+column+` = $2`, tenantID, value).Scan(
 		&out.JournalEntryId, &out.EntryNo, &out.AccountingDate, &out.CurrencyCode, &out.Status,
 		&out.Description, &out.BusinessDomain, &out.BusinessDocType,
 		&out.BusinessDocId, &out.CaseId,
-		&reversedBy, &createdBy, &out.CreatedAt, &out.TotalAmountMinor)
+		&reversedBy, &createdBy, &out.CreatedAt, &out.TotalAmountMinor, &metadata)
 	if err == sql.ErrNoRows {
 		return nil, ErrJournalEntryNotFound
 	}
@@ -1038,6 +1070,7 @@ func (s *PostingService) getJournalEntryBy(ctx context.Context, tenantID, column
 	}
 	out.ReversedByEntryId = reversedBy
 	out.CreatedBy = createdBy
+	out.Metadata = decodeMetadataJSONB(metadata)
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT line_no, direction, account_code, account_name, amount_minor, currency_code, COALESCE(description,'')

@@ -10,10 +10,10 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
-	"github.com/shopspring/decimal"
-	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
+	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
+	"github.com/shopspring/decimal"
 )
 
 // AccrualService computes and posts monthly interest accruals as an EOD
@@ -21,9 +21,9 @@ import (
 // date to the run date via ardamoney.MonthlyInterest, then one LNM_ACCRUAL
 // journal entry per agreement through the finance PostingService.
 type AccrualService struct {
-	repo     *repository.LoanRepository
-	db       *sql.DB
-	finance  *financeclient.Client
+	repo    *repository.LoanRepository
+	db      *sql.DB
+	finance *financeclient.Client
 }
 
 func NewAccrualService(repo *repository.LoanRepository, db *sql.DB, finance *financeclient.Client) *AccrualService {
@@ -91,6 +91,43 @@ func (s *AccrualService) RunDaily(ctx context.Context, tenantID, toDate, actor s
 			return nil, err
 		}
 
+		// Rule-card line build (iteration 12): the LNM_ACCRUAL card
+		// (seeded 20260907090200, lines 1-2) drives the classification; the
+		// pre-rules hardcoded strings stay as the per-leg fallback so an
+		// unseeded/unreachable card never breaks the batch. Analytics per
+		// leg keep the accrual scope (debt group / org / contract /
+		// agreement) and the classification is stamped from the card.
+		lines := financeclient.PostingLinesFromRules(
+			financeclient.FetchPostingRules(s.finance, "LNM_ACCRUAL"),
+			[]financeclient.PostingLeg{
+				{
+					CardLine:    1,
+					Fallback:    "LNM_INTEREST_RECEIVABLE",
+					Direction:   "DEBIT",
+					AmountMinor: interestMinor,
+					Analytics: &financev1.Analytics{
+						DebtGroupCode: a.DebtGroupCode,
+						OrgUnitCode:   a.AccClassification,
+						ContractCode:  a.ContractCode,
+						Dimensions:    map[string]string{"agreement_code": a.AgreementCode},
+					},
+					Description: "Phải thu lãi cho vay",
+				},
+				{
+					CardLine:    2,
+					Fallback:    "LNM_INTEREST_INCOME",
+					Direction:   "CREDIT",
+					AmountMinor: interestMinor,
+					Analytics: &financev1.Analytics{
+						OrgUnitCode:  a.AccClassification,
+						ContractCode: a.ContractCode,
+						Dimensions:   map[string]string{"agreement_code": a.AgreementCode},
+					},
+					Description: "Doanh thu lãi cho vay",
+				},
+			},
+			currency,
+		)
 		postReq := &financev1.PostingRequest{
 			IdempotencyKey: fmt.Sprintf("lnm-accrual-%s-%s", a.AgreementCode, toDate),
 			AccountingDate: toDate,
@@ -102,35 +139,7 @@ func (s *AccrualService) RunDaily(ctx context.Context, tenantID, toDate, actor s
 				DocumentId:   a.ID,
 				DocumentCode: a.AgreementCode,
 			},
-			Lines: []*financev1.PostingLine{
-				{
-					LineNo:       1,
-					Direction:    "DEBIT",
-					AmountMinor:  interestMinor,
-					CurrencyCode: currency,
-					Analytics: &financev1.Analytics{
-						AccClassification: "LNM_INTEREST_RECEIVABLE",
-						DebtGroupCode:     a.DebtGroupCode,
-						OrgUnitCode:       a.AccClassification,
-						ContractCode:      a.ContractCode,
-						Dimensions:        map[string]string{"agreement_code": a.AgreementCode},
-					},
-					Description: "Phải thu lãi cho vay",
-				},
-				{
-					LineNo:       2,
-					Direction:    "CREDIT",
-					AmountMinor:  interestMinor,
-					CurrencyCode: currency,
-					Analytics: &financev1.Analytics{
-						AccClassification: "LNM_INTEREST_INCOME",
-						OrgUnitCode:       a.AccClassification,
-						ContractCode:      a.ContractCode,
-						Dimensions:        map[string]string{"agreement_code": a.AgreementCode},
-					},
-					Description: "Doanh thu lãi cho vay",
-				},
-			},
+			Lines: lines,
 		}
 		posted, err := s.finance.Post(ctx, postReq)
 		if err != nil {

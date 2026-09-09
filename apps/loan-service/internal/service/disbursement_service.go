@@ -9,8 +9,8 @@ import (
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
-	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
 )
 
@@ -216,7 +216,7 @@ func (s *DisbursementService) Submit(ctx context.Context, tenantID, actor, id st
 	if _, err = s.workflow.SubmitCase(ctx, caseCreated.Id, actor, vars, fmt.Sprintf("lnm-disbursement-%s-%s-submit", strings.ToLower(flowType), item.ID)); err != nil {
 		return domain.Disbursement{}, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
 	}
-	if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, item.ID, caseCreated.Id, ""); err != nil {
+	if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, item.ID, caseCreated.Id, caseCreated.GetCaseCode(), ""); err != nil {
 		return domain.Disbursement{}, mapRepoError(err)
 	}
 	if err := s.repo.SetDisbursementStatus(ctx, tenantID, item.ID, domain.DisbursementSubmitted, actor); err != nil {
@@ -286,7 +286,7 @@ func (s *DisbursementService) SettleRegister(ctx context.Context, tenantID, id, 
 	if err != nil {
 		return mapRepoError(err)
 	}
-	if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, item.ID, "", journalEntryID); err != nil {
+	if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, item.ID, "", "", journalEntryID); err != nil {
 		return mapRepoError(err)
 	}
 	if err := s.repo.SetDisbursementStatus(ctx, tenantID, item.ID, domain.DisbursementPosted, actor); err != nil {
@@ -303,7 +303,7 @@ func (s *DisbursementService) SettleComplete(ctx context.Context, tenantID, id, 
 	if err != nil {
 		return mapRepoError(err)
 	}
-	if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, item.ID, "", journalEntryID); err != nil {
+	if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, item.ID, "", "", journalEntryID); err != nil {
 		return mapRepoError(err)
 	}
 	if err := s.repo.SetDisbursementStatus(ctx, tenantID, item.ID, domain.DisbursementPosted, actor); err != nil {

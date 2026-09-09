@@ -197,6 +197,9 @@ func (w *CancellationWorkers) execute() worker.JobHandler {
 			return
 		}
 		decidedBy := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
+		// Trader stamp (iteration 12): the maker's trader block rides the
+		// case variables onto the reversal entry's metadata so the ledger
+		// row shows who transacted, not just who approved.
 		reversed, err := w.financeClient.Reverse(crmJobContext(job), &financev1.ReverseRequest{
 			TenantId:             lookup.GetTenantId(),
 			JournalEntryId:       journalEntryID,
@@ -205,6 +208,7 @@ func (w *CancellationWorkers) execute() worker.JobHandler {
 			AccountingDate:       accountingDate,
 			IdempotencyKey:       idempotencyKey + "-reverse",
 			Actor:                decidedBy,
+			Metadata:             traderStampFromVars(vars),
 		})
 		if err != nil {
 			w.failJob(client, job, "Posting Error: "+grpcMessage(err))

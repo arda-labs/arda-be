@@ -81,6 +81,19 @@ var loanListSpec = ardahttp.ListSpec{
 	AllowAll:       true,
 }
 
+// contractListSpec is the public list contract for GET /api/loan/contracts
+// (normalized server list, iteration 12): SQL paging, q ILIKE
+// contract_no/customer_code/contract_code and a sort whitelist kept in sync
+// with the FE list definition (created_at today; contract_no and
+// loan_amt_minor are the reserved BE keys). AllowAll keeps the legacy
+// "everything up to 500" behavior reachable for the local-table screens.
+var contractListSpec = ardahttp.ListSpec{
+	DefaultPerPage: 50,
+	MaxPerPage:     200,
+	SortFields:     []string{"created_at", "contract_no", "loan_amt_minor"},
+	AllowAll:       true,
+}
+
 // productListSpec narrows the list contract to the product catalog: q is
 // applied in SQL (code + name ILIKE), is_active accepts a true/false CSV
 // filter, and the sort whitelist matches the ORDER BY switch in the repo.
@@ -113,17 +126,24 @@ func (h *LoanHandler) ListContracts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), loanListSpec)
+	listReq, err := ardahttp.ParseListRequest(r.URL.Query(), contractListSpec)
 	if err != nil {
 		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
 		return
 	}
-	items, err := h.svc.ListContracts(r.Context(), tenantID, r.URL.Query().Get("status"), r.URL.Query().Get("q"))
+	perPage := listReq.PerPage
+	if listReq.All {
+		// Legacy unpaged shape: the old endpoint returned LIMIT 500 newest
+		// first — keep that ceiling for all=true clients.
+		perPage = ardahttp.MaxUnpaginated
+	}
+	items, total, err := h.svc.ListContractsPaged(r.Context(), tenantID,
+		r.URL.Query().Get("status"), listReq.Q, listReq.Sort, listReq.Order, listReq.Page, perPage)
 	if err != nil {
 		writeServiceError(w, r, err)
 		return
 	}
-	listEnvelope(w, r, items, listReq)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listReq.Page, perPage, total, items))
 }
 
 func (h *LoanHandler) GetContract(w http.ResponseWriter, r *http.Request) {

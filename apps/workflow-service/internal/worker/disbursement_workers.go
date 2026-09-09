@@ -92,6 +92,10 @@ func (w *DisbursementWorkers) disbursementID(job entities.Job) (string, error) {
 // buildPostingRequest resolves the flow-aware legs from loan-service and
 // keys the hold on the disbursement id — the same key across init/validate/
 // execute is what makes Reserve idempotent and lets Post convert the hold.
+// Note (iteration 12 trader stamp): the disbursement case variables carry no
+// trader block today (LNM.300.02 is a system-executed drawdown, not a
+// maker-transacted voucher), so no trader_* metadata is stamped here. Wire
+// it via traderStampFromVars when the flow gains a trader input.
 func (w *DisbursementWorkers) buildPostingRequest(ctx context.Context, job entities.Job, id string) (*financev1.PostingRequest, error) {
 	detail, err := w.loanClient.GetDisbursementPostingDetail(crmJobContext(job), id)
 	if err != nil {

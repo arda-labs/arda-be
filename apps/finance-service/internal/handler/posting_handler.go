@@ -138,7 +138,7 @@ func (h *PostingHandler) GetJournalEntry(w http.ResponseWriter, r *http.Request)
 }
 
 // journalDetailJSON maps the proto detail onto the documented snake_case wire
-// shape (entry + lines + total_amount_minor).
+// shape (entry + lines + total_amount_minor + caller-stamped metadata).
 func journalDetailJSON(d *financev1.JournalEntryDetail) map[string]any {
 	lines := make([]map[string]any, 0, len(d.GetLines()))
 	for _, l := range d.GetLines() {
@@ -153,6 +153,10 @@ func journalDetailJSON(d *financev1.JournalEntryDetail) map[string]any {
 		})
 	}
 	docID := d.GetBusinessDocId()
+	metadata := d.GetMetadata()
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
 	return map[string]any{
 		"journal_entry_id":     d.GetJournalEntryId(),
 		"entry_no":             d.GetEntryNo(),
@@ -168,6 +172,7 @@ func journalDetailJSON(d *financev1.JournalEntryDetail) map[string]any {
 		"total_amount_minor":   d.GetTotalAmountMinor(),
 		"created_by":           d.GetCreatedBy(),
 		"created_at":           d.GetCreatedAt(),
+		"metadata":             metadata,
 		"lines":                lines,
 	}
 }

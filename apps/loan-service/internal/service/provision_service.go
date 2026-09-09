@@ -85,7 +85,7 @@ func (s *ProvisionService) Run(ctx context.Context, tenantID, toDate, actor stri
 			continue
 		}
 
-		lines := s.provisionLines(a, delta, requiredMinor)
+		lines := s.provisionLines(a, delta)
 		postReq := &financev1.PostingRequest{
 			IdempotencyKey: fmt.Sprintf("lnm-provision-%s-%s", a.AgreementCode, toDate),
 			AccountingDate: toDate,
@@ -138,31 +138,32 @@ func (s *ProvisionService) accumulatedProvision(ctx context.Context, tenantID, a
 }
 
 // provisionLines builds the 2-line entry: trích tăng (DR expense / CR
-// liability) hoặc hoàn giảm (DR liability / CR release income).
-func (s *ProvisionService) provisionLines(a repository.AccruableAgreement, delta, requiredMinor int64) []*financev1.PostingLine {
+// liability, card lines 1-2) hoặc hoàn giảm (DR liability / CR release
+// income, card lines 3-4). Rule-card driven (iteration 12): the LNM_PROVISION
+// card seeded by 20260909100000 drives the classification; the pre-rules
+// hardcoded strings stay as the per-leg fallback so an unseeded/unreachable
+// card never breaks the batch. Analytics per leg keep the provision scope.
+func (s *ProvisionService) provisionLines(a repository.AccruableAgreement, delta int64) []*financev1.PostingLine {
 	amount := delta
-	debitClass, creditClass := "LNM_PROVISION_EXPENSE", "LNM_PROVISION_LIABILITY"
+	cardLine, debitFallback, creditFallback := int32(1), "LNM_PROVISION_EXPENSE", "LNM_PROVISION_LIABILITY"
 	if delta < 0 {
 		amount = -delta
-		debitClass, creditClass = "LNM_PROVISION_LIABILITY", "LNM_PROVISION_RELEASE"
+		cardLine, debitFallback, creditFallback = 3, "LNM_PROVISION_LIABILITY", "LNM_PROVISION_RELEASE"
 	}
-	base := func(class, direction string, lineNo int32) *financev1.PostingLine {
-		return &financev1.PostingLine{
-			LineNo:       lineNo,
-			Direction:    direction,
-			AmountMinor:  amount,
-			CurrencyCode: "VND",
-			Analytics: &financev1.Analytics{
-				AccClassification: class,
-				DebtGroupCode:     a.DebtGroupCode,
-				OrgUnitCode:       a.AccClassification,
-				ContractCode:      a.ContractCode,
-				Dimensions:        map[string]string{"agreement_code": a.AgreementCode},
-			},
+	analytics := func() *financev1.Analytics {
+		return &financev1.Analytics{
+			DebtGroupCode: a.DebtGroupCode,
+			OrgUnitCode:   a.AccClassification,
+			ContractCode:  a.ContractCode,
+			Dimensions:    map[string]string{"agreement_code": a.AgreementCode},
 		}
 	}
-	return []*financev1.PostingLine{
-		base(debitClass, "DEBIT", 1),
-		base(creditClass, "CREDIT", 2),
-	}
+	return financeclient.PostingLinesFromRules(
+		financeclient.FetchPostingRules(s.finance, "LNM_PROVISION"),
+		[]financeclient.PostingLeg{
+			{CardLine: cardLine, Fallback: debitFallback, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics()},
+			{CardLine: cardLine + 1, Fallback: creditFallback, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics()},
+		},
+		"VND",
+	)
 }

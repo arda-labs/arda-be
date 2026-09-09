@@ -140,6 +140,24 @@ func postingRequestFromVars(vars map[string]any, flow ManualPostingFlow) (*finan
 			CaseId:       stringVariable(vars, "caseId"),
 		},
 	}
+	// Metadata: the actor stamp serialized by finance-service travels inside
+	// the postingRequest variable; the trader_* keys merge from the case's
+	// trader block (closing/cancellation variables). Absent on both sides →
+	// metadata stays empty.
+	if rawMeta, ok := raw["metadata"].(map[string]any); ok {
+		req.Metadata = map[string]string{}
+		for k, v := range rawMeta {
+			if s, ok := v.(string); ok && s != "" {
+				req.Metadata[k] = s
+			}
+		}
+	}
+	for k, v := range traderStampFromVars(vars) {
+		if req.Metadata == nil {
+			req.Metadata = map[string]string{}
+		}
+		req.Metadata[k] = v
+	}
 	rawLines, ok := raw["lines"].([]any)
 	if !ok || len(rawLines) == 0 {
 		return nil, fmt.Errorf("postingRequest.lines must not be empty")

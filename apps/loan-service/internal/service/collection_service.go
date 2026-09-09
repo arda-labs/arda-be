@@ -7,8 +7,8 @@ import (
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
-	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
 )
 
@@ -105,15 +105,15 @@ func (s *CollectionService) Submit(ctx context.Context, tenantID, actor, id stri
 		return domain.Collection{}, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
 	}
 	vars := map[string]any{
-		"collectionId":  item.ID,
-		"contractCode":  item.ContractCode,
-		"agreementCode": item.AgreementCode,
+		"collectionId":   item.ID,
+		"contractCode":   item.ContractCode,
+		"agreementCode":  item.AgreementCode,
 		"collectionDate": item.CollectionDate,
 	}
 	if _, err = s.workflow.SubmitCase(ctx, caseCreated.Id, actor, vars, fmt.Sprintf("lnm-collection-%s-submit", item.ID)); err != nil {
 		return domain.Collection{}, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
 	}
-	if err := s.repo.SetCollectionCaseAndJournal(ctx, tenantID, item.ID, caseCreated.Id, ""); err != nil {
+	if err := s.repo.SetCollectionCaseAndJournal(ctx, tenantID, item.ID, caseCreated.Id, caseCreated.GetCaseCode(), ""); err != nil {
 		return domain.Collection{}, mapRepoError(err)
 	}
 	if err := s.repo.SetCollectionStatus(ctx, tenantID, item.ID, domain.CollectionSubmitted, actor); err != nil {
@@ -153,7 +153,7 @@ func (s *CollectionService) Resolve(ctx context.Context, tenantID, id, decision,
 // Settle marks POSTED with the journal entry and applies side effects —
 // executed by the workflow worker after a successful PostTransaction.
 func (s *CollectionService) Settle(ctx context.Context, tenantID, id, journalEntryID, actor string) error {
-	if err := s.repo.SetCollectionCaseAndJournal(ctx, tenantID, id, "", journalEntryID); err != nil {
+	if err := s.repo.SetCollectionCaseAndJournal(ctx, tenantID, id, "", "", journalEntryID); err != nil {
 		return mapRepoError(err)
 	}
 	item, err := s.repo.GetCollection(ctx, tenantID, id)
@@ -182,16 +182,16 @@ func (s *CollectionService) PostingDetail(ctx context.Context, tenantID, id stri
 		return nil, mapRepoError(err)
 	}
 	detail := &loanv1.CollectionPostingDetail{
-		CollectionId:    item.ID,
-		ContractCode:    item.ContractCode,
-		AgreementCode:   item.AgreementCode,
-		CollectionDate:  item.CollectionDate,
-		PrincipalMinor:  item.PrincipalMinor,
-		InterestMinor:   item.InterestMinor,
-		CurrencyCode:    item.CurrencyCode,
-		DebtGroupCode:   agreement.DebtGroupCode,
-		OrgUnitCode:     contract.EmployeeCode,
-		CustomerCode:    contract.CustomerCode,
+		CollectionId:   item.ID,
+		ContractCode:   item.ContractCode,
+		AgreementCode:  item.AgreementCode,
+		CollectionDate: item.CollectionDate,
+		PrincipalMinor: item.PrincipalMinor,
+		InterestMinor:  item.InterestMinor,
+		CurrencyCode:   item.CurrencyCode,
+		DebtGroupCode:  agreement.DebtGroupCode,
+		OrgUnitCode:    contract.EmployeeCode,
+		CustomerCode:   contract.CustomerCode,
 	}
 	if item.WorkflowCaseID != nil {
 		detail.WorkflowCaseId = *item.WorkflowCaseID

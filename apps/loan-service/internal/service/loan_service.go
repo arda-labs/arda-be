@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
+	"log/slog"
+	"math"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
-	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 )
 
 // LoanService covers the core credit entities: contracts, disbursement
@@ -24,6 +26,22 @@ func NewLoanService(repo *repository.LoanRepository, workflow AdjustmentSubmitte
 func (s *LoanService) ListContracts(ctx context.Context, tenantID, status, q string) ([]domain.Contract, error) {
 	items, err := s.repo.ListContracts(ctx, tenantID, status, q)
 	return items, mapRepoError(err)
+}
+
+// ListContractsPaged is the normalized contract list (SQL paging + sort): q
+// ILIKEs contract_no/customer_code/contract_code, sort is a whitelist key
+// (created_at | contract_no | loan_amt_minor) validated by the handler's
+// ListSpec, and the total feeds the canonical list envelope.
+func (s *LoanService) ListContractsPaged(ctx context.Context, tenantID, status, q, sort, order string, page, perPage int) ([]domain.Contract, int, error) {
+	items, total, err := s.repo.ListContractsPaged(ctx, tenantID, repository.ContractListFilter{
+		Status:  status,
+		Search:  q,
+		Sort:    sort,
+		Order:   order,
+		Page:    page,
+		PerPage: perPage,
+	})
+	return items, total, mapRepoError(err)
 }
 
 func (s *LoanService) GetContract(ctx context.Context, tenantID, id string) (domain.Contract, error) {
@@ -75,24 +93,24 @@ func (s *LoanService) SubmitContract(ctx context.Context, tenantID, actor, id st
 	if err != nil {
 		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
 	}
+	// Approval-tier limits for the BPMN GW_ApprovalLevel conditions
+	// (amount > pgdLimit / amount > gdLimit): exact product row first, then
+	// the org-wide row; no configured limit → sentinel MaxInt keeps the old
+	// default-Execute-tier behavior (PGD review still runs) with a warn.
+	pgdLimit, gdLimit := s.approvalLimits(ctx, tenantID, contract)
 	vars := map[string]any{
 		"contractId":   contract.ID,
 		"contractCode": contract.ContractCode,
 		"customerCode": contract.CustomerCode,
 		"amount":       contract.LoanAmt,
 		"fundSource":   "BRANCH",
-		// Approval-tier limits for the BPMN GW_ApprovalLevel conditions
-		// (amount > pgdLimit / amount > gdLimit). No product/tenant limit
-		// config exists yet, so the sentinels keep every submission on the
-		// default Execute tier — the PGD human review still runs; the GD /
-		// Board tiers engage once real limit config feeds these variables.
-		"pgdLimit": int64(^uint64(0) >> 1),
-		"gdLimit":  int64(^uint64(0) >> 1),
+		"pgdLimit":     pgdLimit,
+		"gdLimit":      gdLimit,
 	}
 	if _, err = s.workflow.SubmitCase(ctx, caseCreated.Id, actor, vars, "lnm-contract-"+contract.ID+"-submit"); err != nil {
 		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
 	}
-	if err := s.repo.SetContractWorkflowCase(ctx, tenantID, contract.ID, caseCreated.Id); err != nil {
+	if err := s.repo.SetContractWorkflowCase(ctx, tenantID, contract.ID, caseCreated.Id, caseCreated.GetCaseCode()); err != nil {
 		return nil, mapRepoError(err)
 	}
 	item, err := s.repo.GetContract(ctx, tenantID, id)
@@ -104,6 +122,36 @@ func (s *LoanService) SetContractStatus(ctx context.Context, tenantID, id, statu
 		return ardaerrors.New(ardaerrors.CodeRequired, "status is required")
 	}
 	return mapRepoError(s.repo.UpdateContractStatus(ctx, tenantID, id, status))
+}
+
+// approvalLimitSentinel is the no-config fallback for the BPMN approval-tier
+// variables: MaxInt keeps every submission on the default Execute tier (the
+// same behavior the hardcoded sentinels had before the limit table existed).
+const approvalLimitSentinel = math.MaxInt64
+
+// approvalLimits resolves the formation approval-tier limits for one
+// contract: the exact product row first, then the org-wide fallback, then
+// the sentinel (no config → default Execute tier, same behavior as the old
+// hardcoded MaxInt variables, with a warn). The product/org precedence lives
+// in PickApprovalLimit so it stays unit-testable without a database.
+func (s *LoanService) approvalLimits(ctx context.Context, tenantID string, contract domain.Contract) (pgd, gd int64) {
+	pgd, gd = approvalLimitSentinel, approvalLimitSentinel
+	product, org, err := s.repo.GetApprovalLimits(ctx, tenantID, contract.OrgCode, contract.ProductCode)
+	if err != nil {
+		// A lookup failure must not block submission — keep the sentinel
+		// behavior and surface the cause in the logs.
+		slog.Warn("approval limit lookup failed — using sentinels", "org", contract.OrgCode, "err", err)
+		return pgd, gd
+	}
+	picked := PickApprovalLimit(org, product)
+	if picked.OrgCode == "" {
+		if contract.OrgCode != "" {
+			slog.Warn("no approval limit configured — using sentinels (default Execute tier)",
+				"org", contract.OrgCode, "product", contract.ProductCode)
+		}
+		return pgd, gd
+	}
+	return picked.PGDLimitMinor, picked.GDLimitMinor
 }
 
 func (s *LoanService) ListAgreements(ctx context.Context, tenantID, contractCode string) ([]domain.Agreement, error) {

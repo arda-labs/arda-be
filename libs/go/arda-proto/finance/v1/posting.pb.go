@@ -943,8 +943,11 @@ type ReverseRequest struct {
 	AccountingDate       string `protobuf:"bytes,7,opt,name=accounting_date,json=accountingDate,proto3" json:"accounting_date,omitempty"` // reversal business date
 	IdempotencyKey       string `protobuf:"bytes,8,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	Actor                string `protobuf:"bytes,9,opt,name=actor,proto3" json:"actor,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Trader stamp (iteration 12): caller-fixed trader_* keys persisted on the
+	// reversal entry's metadata column (same shape as PostingRequest.metadata).
+	Metadata      map[string]string `protobuf:"bytes,10,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReverseRequest) Reset() {
@@ -1038,6 +1041,13 @@ func (x *ReverseRequest) GetActor() string {
 		return x.Actor
 	}
 	return ""
+}
+
+func (x *ReverseRequest) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
 }
 
 type GetJournalEntryRequest struct {
@@ -1209,8 +1219,11 @@ type JournalEntryDetail struct {
 	CreatedBy         string                    `protobuf:"bytes,13,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	CreatedAt         string                    `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	Lines             []*JournalEntryDetailLine `protobuf:"bytes,15,rep,name=lines,proto3" json:"lines,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Caller-stamped metadata (actor + trader_* keys, iteration 12); empty for
+	// entries posted before the metadata column existed.
+	Metadata      map[string]string `protobuf:"bytes,16,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *JournalEntryDetail) Reset() {
@@ -1348,6 +1361,13 @@ func (x *JournalEntryDetail) GetLines() []*JournalEntryDetailLine {
 	return nil
 }
 
+func (x *JournalEntryDetail) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
 var File_arda_finance_v1_posting_proto protoreflect.FileDescriptor
 
 const file_arda_finance_v1_posting_proto_rawDesc = "" +
@@ -1440,7 +1460,7 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\x05valid\x18\x01 \x01(\bR\x05valid\x125\n" +
 	"\x05lines\x18\x02 \x03(\v2\x1f.arda.finance.v1.ValidationLineR\x05lines\x12#\n" +
 	"\rglobal_errors\x18\x03 \x03(\tR\fglobalErrors\x12$\n" +
-	"\x0ecoa_version_id\x18\x04 \x01(\tR\fcoaVersionId\"\xe8\x02\n" +
+	"\x0ecoa_version_id\x18\x04 \x01(\tR\fcoaVersionId\"\xf0\x03\n" +
 	"\x0eReverseRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12(\n" +
 	"\x10journal_entry_id\x18\x02 \x01(\tR\x0ejournalEntryId\x12'\n" +
@@ -1450,7 +1470,12 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\x06reason\x18\x06 \x01(\tR\x06reason\x12'\n" +
 	"\x0faccounting_date\x18\a \x01(\tR\x0eaccountingDate\x12'\n" +
 	"\x0fidempotency_key\x18\b \x01(\tR\x0eidempotencyKey\x12\x14\n" +
-	"\x05actor\x18\t \x01(\tR\x05actor\"k\n" +
+	"\x05actor\x18\t \x01(\tR\x05actor\x12I\n" +
+	"\bmetadata\x18\n" +
+	" \x03(\v2-.arda.finance.v1.ReverseRequest.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"k\n" +
 	"\x16GetJournalEntryRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
 	"\bentry_no\x18\x02 \x01(\tR\aentryNo\x12\x19\n" +
@@ -1462,7 +1487,7 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\faccount_name\x18\x04 \x01(\tR\vaccountName\x12!\n" +
 	"\famount_minor\x18\x05 \x01(\x03R\vamountMinor\x12#\n" +
 	"\rcurrency_code\x18\x06 \x01(\tR\fcurrencyCode\x12 \n" +
-	"\vdescription\x18\a \x01(\tR\vdescription\"\xd3\x04\n" +
+	"\vdescription\x18\a \x01(\tR\vdescription\"\xdf\x05\n" +
 	"\x12JournalEntryDetail\x12(\n" +
 	"\x10journal_entry_id\x18\x01 \x01(\tR\x0ejournalEntryId\x12\x19\n" +
 	"\bentry_no\x18\x02 \x01(\x03R\aentryNo\x12'\n" +
@@ -1481,7 +1506,11 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"created_by\x18\r \x01(\tR\tcreatedBy\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x0e \x01(\tR\tcreatedAt\x12=\n" +
-	"\x05lines\x18\x0f \x03(\v2'.arda.finance.v1.JournalEntryDetailLineR\x05lines2\x8a\x05\n" +
+	"\x05lines\x18\x0f \x03(\v2'.arda.finance.v1.JournalEntryDetailLineR\x05lines\x12M\n" +
+	"\bmetadata\x18\x10 \x03(\v21.arda.finance.v1.JournalEntryDetail.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\x8a\x05\n" +
 	"\x0ePostingService\x12U\n" +
 	"\x0fValidatePosting\x12\x1f.arda.finance.v1.PostingRequest\x1a!.arda.finance.v1.ValidationResult\x12T\n" +
 	"\x0fPostTransaction\x12\x1f.arda.finance.v1.PostingRequest\x1a .arda.finance.v1.PostingResponse\x12S\n" +
@@ -1503,7 +1532,7 @@ func file_arda_finance_v1_posting_proto_rawDescGZIP() []byte {
 	return file_arda_finance_v1_posting_proto_rawDescData
 }
 
-var file_arda_finance_v1_posting_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_arda_finance_v1_posting_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_arda_finance_v1_posting_proto_goTypes = []any{
 	(*ListPostingRulesRequest)(nil),  // 0: arda.finance.v1.ListPostingRulesRequest
 	(*PostingRule)(nil),              // 1: arda.finance.v1.PostingRule
@@ -1522,6 +1551,8 @@ var file_arda_finance_v1_posting_proto_goTypes = []any{
 	(*JournalEntryDetail)(nil),       // 14: arda.finance.v1.JournalEntryDetail
 	nil,                              // 15: arda.finance.v1.Analytics.DimensionsEntry
 	nil,                              // 16: arda.finance.v1.PostingRequest.MetadataEntry
+	nil,                              // 17: arda.finance.v1.ReverseRequest.MetadataEntry
+	nil,                              // 18: arda.finance.v1.JournalEntryDetail.MetadataEntry
 }
 var file_arda_finance_v1_posting_proto_depIdxs = []int32{
 	1,  // 0: arda.finance.v1.ListPostingRulesResponse.rules:type_name -> arda.finance.v1.PostingRule
@@ -1532,26 +1563,28 @@ var file_arda_finance_v1_posting_proto_depIdxs = []int32{
 	16, // 5: arda.finance.v1.PostingRequest.metadata:type_name -> arda.finance.v1.PostingRequest.MetadataEntry
 	4,  // 6: arda.finance.v1.ValidationLine.resolved_analytics:type_name -> arda.finance.v1.Analytics
 	9,  // 7: arda.finance.v1.ValidationResult.lines:type_name -> arda.finance.v1.ValidationLine
-	13, // 8: arda.finance.v1.JournalEntryDetail.lines:type_name -> arda.finance.v1.JournalEntryDetailLine
-	6,  // 9: arda.finance.v1.PostingService.ValidatePosting:input_type -> arda.finance.v1.PostingRequest
-	6,  // 10: arda.finance.v1.PostingService.PostTransaction:input_type -> arda.finance.v1.PostingRequest
-	6,  // 11: arda.finance.v1.PostingService.ReservePosting:input_type -> arda.finance.v1.PostingRequest
-	8,  // 12: arda.finance.v1.PostingService.ReleasePosting:input_type -> arda.finance.v1.ReleaseRequest
-	11, // 13: arda.finance.v1.PostingService.ReverseTransaction:input_type -> arda.finance.v1.ReverseRequest
-	12, // 14: arda.finance.v1.PostingService.GetJournalEntry:input_type -> arda.finance.v1.GetJournalEntryRequest
-	0,  // 15: arda.finance.v1.PostingService.ListPostingRules:input_type -> arda.finance.v1.ListPostingRulesRequest
-	10, // 16: arda.finance.v1.PostingService.ValidatePosting:output_type -> arda.finance.v1.ValidationResult
-	7,  // 17: arda.finance.v1.PostingService.PostTransaction:output_type -> arda.finance.v1.PostingResponse
-	7,  // 18: arda.finance.v1.PostingService.ReservePosting:output_type -> arda.finance.v1.PostingResponse
-	7,  // 19: arda.finance.v1.PostingService.ReleasePosting:output_type -> arda.finance.v1.PostingResponse
-	7,  // 20: arda.finance.v1.PostingService.ReverseTransaction:output_type -> arda.finance.v1.PostingResponse
-	14, // 21: arda.finance.v1.PostingService.GetJournalEntry:output_type -> arda.finance.v1.JournalEntryDetail
-	2,  // 22: arda.finance.v1.PostingService.ListPostingRules:output_type -> arda.finance.v1.ListPostingRulesResponse
-	16, // [16:23] is the sub-list for method output_type
-	9,  // [9:16] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	17, // 8: arda.finance.v1.ReverseRequest.metadata:type_name -> arda.finance.v1.ReverseRequest.MetadataEntry
+	13, // 9: arda.finance.v1.JournalEntryDetail.lines:type_name -> arda.finance.v1.JournalEntryDetailLine
+	18, // 10: arda.finance.v1.JournalEntryDetail.metadata:type_name -> arda.finance.v1.JournalEntryDetail.MetadataEntry
+	6,  // 11: arda.finance.v1.PostingService.ValidatePosting:input_type -> arda.finance.v1.PostingRequest
+	6,  // 12: arda.finance.v1.PostingService.PostTransaction:input_type -> arda.finance.v1.PostingRequest
+	6,  // 13: arda.finance.v1.PostingService.ReservePosting:input_type -> arda.finance.v1.PostingRequest
+	8,  // 14: arda.finance.v1.PostingService.ReleasePosting:input_type -> arda.finance.v1.ReleaseRequest
+	11, // 15: arda.finance.v1.PostingService.ReverseTransaction:input_type -> arda.finance.v1.ReverseRequest
+	12, // 16: arda.finance.v1.PostingService.GetJournalEntry:input_type -> arda.finance.v1.GetJournalEntryRequest
+	0,  // 17: arda.finance.v1.PostingService.ListPostingRules:input_type -> arda.finance.v1.ListPostingRulesRequest
+	10, // 18: arda.finance.v1.PostingService.ValidatePosting:output_type -> arda.finance.v1.ValidationResult
+	7,  // 19: arda.finance.v1.PostingService.PostTransaction:output_type -> arda.finance.v1.PostingResponse
+	7,  // 20: arda.finance.v1.PostingService.ReservePosting:output_type -> arda.finance.v1.PostingResponse
+	7,  // 21: arda.finance.v1.PostingService.ReleasePosting:output_type -> arda.finance.v1.PostingResponse
+	7,  // 22: arda.finance.v1.PostingService.ReverseTransaction:output_type -> arda.finance.v1.PostingResponse
+	14, // 23: arda.finance.v1.PostingService.GetJournalEntry:output_type -> arda.finance.v1.JournalEntryDetail
+	2,  // 24: arda.finance.v1.PostingService.ListPostingRules:output_type -> arda.finance.v1.ListPostingRulesResponse
+	18, // [18:25] is the sub-list for method output_type
+	11, // [11:18] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_arda_finance_v1_posting_proto_init() }
@@ -1565,7 +1598,7 @@ func file_arda_finance_v1_posting_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_finance_v1_posting_proto_rawDesc), len(file_arda_finance_v1_posting_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

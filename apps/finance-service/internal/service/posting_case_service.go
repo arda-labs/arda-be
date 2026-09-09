@@ -274,6 +274,15 @@ func (s *PostingCaseService) CreatePostingCase(ctx context.Context, tenantID, ac
 		idempotencyKey = fmt.Sprintf("fin-%s-%s", flowLower, newRandomUUID())
 		in.PostingRequest.IdempotencyKey = idempotencyKey
 	}
+	// Actor metadata (the authenticated maker) — preserved when the caller
+	// pinned their own; the workflow worker merges the case's trader_* keys
+	// on top when deserializing.
+	if in.PostingRequest.Metadata == nil {
+		in.PostingRequest.Metadata = map[string]string{}
+	}
+	if in.PostingRequest.Metadata["actor"] == "" {
+		in.PostingRequest.Metadata["actor"] = actor
+	}
 	caseType := CaseTypeFinSingleEntry
 	title := "Bút toán lẻ — "
 	switch in.Flow {
@@ -461,6 +470,15 @@ func postingRequestVariables(req *financev1.PostingRequest) map[string]any {
 	}
 	if v := req.GetIdempotencyKey(); v != "" {
 		vars["idempotencyKey"] = v
+	}
+	if meta := req.GetMetadata(); len(meta) > 0 {
+		// Actor (+ later trader) stamp rides the case variables so the
+		// workers rebuild an identical PostingRequest on Reserve/Post.
+		rawMeta := map[string]any{}
+		for k, v := range meta {
+			rawMeta[k] = v
+		}
+		vars["metadata"] = rawMeta
 	}
 	return vars
 }

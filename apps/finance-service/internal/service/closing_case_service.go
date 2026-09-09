@@ -21,7 +21,7 @@ import (
 // as the manual posting flows (Reserve at init → Validate → Post on approve
 // → Release on reject), carried by the fin-closing-v2.bpmn process.
 const (
-	FlowClosing       = "CLOSING"
+	FlowClosing        = "CLOSING"
 	CaseTypeFinClosing = "FIN_CLOSING_V2"
 
 	// ClosingPeriodTypes is the whitelist of closing period granularities
@@ -250,6 +250,9 @@ func (s *PostingCaseService) CreateClosingCase(ctx context.Context, tenantID, ac
 		in.IdempotencyKey = idempotencyKey
 	}
 	req.IdempotencyKey = idempotencyKey
+	// Actor metadata (maker) — the workflow worker merges the case's
+	// trader_* keys on top of this map when deserializing the postingRequest.
+	req.Metadata = map[string]string{"actor": actor}
 
 	title := "Kết chuyển thu chi — " + truncateDescription(req.GetDescription())
 
@@ -296,10 +299,10 @@ func (s *PostingCaseService) ListClosingCandidates(ctx context.Context, tenantID
 // cancellation trader).
 func closingMetaVariables(in *ClosingCaseInput, totals closingTotals) map[string]any {
 	meta := map[string]any{
-		"periodType":           totals.PeriodType,
-		"businessResultMinor":  totals.businessResultMinor(),
-		"totalIncomeMinor":     totals.TotalIncomeMinor,
-		"totalExpenseMinor":    totals.TotalExpenseMinor,
+		"periodType":          totals.PeriodType,
+		"businessResultMinor": totals.businessResultMinor(),
+		"totalIncomeMinor":    totals.TotalIncomeMinor,
+		"totalExpenseMinor":   totals.TotalExpenseMinor,
 	}
 	if in.Trader != nil {
 		trader := map[string]any{}

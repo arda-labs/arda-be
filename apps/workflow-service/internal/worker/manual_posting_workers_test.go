@@ -144,3 +144,50 @@ func TestIsPostingPolicyError(t *testing.T) {
 		}
 	}
 }
+
+func TestPostingRequestFromVarsMergesTraderStamp(t *testing.T) {
+	// The closing case carries the trader block inside closingMeta; the
+	// worker must merge the fixed trader_* keys into the request metadata
+	// while keeping the posting request itself intact.
+	vars := map[string]any{
+		"postingIdempotencyKey": "fin-closing-trader",
+		"closingMeta": map[string]any{
+			"trader": map[string]any{
+				"objectType": "CUST",
+				"objectCode": "KH001",
+				"objectName": "  Nguyễn Văn A  ",
+				"idNumber":   "012345678",
+			},
+		},
+		"postingRequest": map[string]any{
+			"accountingDate": "2026-09-09",
+			"lines": []any{
+				map[string]any{"direction": "DEBIT", "amountMinor": float64(10), "accountCode": "1111"},
+				map[string]any{"direction": "CREDIT", "amountMinor": float64(10), "accountCode": "5111"},
+			},
+		},
+	}
+	req, err := postingRequestFromVars(vars, ClosingFlow)
+	if err != nil {
+		t.Fatalf("postingRequestFromVars() error = %v", err)
+	}
+	meta := req.GetMetadata()
+	if meta["trader_object_type"] != "CUST" || meta["trader_object_code"] != "KH001" ||
+		meta["trader_object_name"] != "Nguyễn Văn A" || meta["trader_id_number"] != "012345678" {
+		t.Fatalf("trader metadata mismatch: %v", meta)
+	}
+	// Only keys with a value are stamped.
+	if _, ok := meta["trader_address"]; ok {
+		t.Fatalf("empty trader keys must not be stamped: %v", meta)
+	}
+}
+
+func TestTraderStampFromVarsWithoutTrader(t *testing.T) {
+	if got := traderStampFromVars(map[string]any{"postingIdempotencyKey": "k"}); got != nil {
+		t.Fatalf("no trader block = %v, want nil", got)
+	}
+	// A trader object with every field empty stamps nothing.
+	if got := traderStampFromVars(map[string]any{"trader": map[string]any{"objectType": ""}}); got != nil {
+		t.Fatalf("empty trader block = %v, want nil", got)
+	}
+}

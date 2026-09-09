@@ -59,6 +59,11 @@ func (w *CollectionWorkers) collectionID(job entities.Job) (string, error) {
 // buildPostingRequest resolves the receipt detail from loan-service and keys
 // the hold on the collection id — the same key across init/validate/execute
 // is what makes Reserve idempotent and lets Post convert the hold.
+// Note (iteration 12 trader stamp): the collection case variables carry no
+// trader block today (LNM.301.02 receipts are entered by the maker but the
+// posting detail has no trader source yet), so no trader_* metadata is
+// stamped here. Wire it via traderStampFromVars when the flow gains a trader
+// input.
 func (w *CollectionWorkers) buildPostingRequest(ctx context.Context, job entities.Job, id string) (*financev1.PostingRequest, error) {
 	detail, err := w.loanClient.GetCollectionPostingDetail(crmJobContext(job), id)
 	if err != nil {
