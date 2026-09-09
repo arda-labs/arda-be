@@ -10,7 +10,7 @@ import (
 
 // NewRouter wires the loan-service HTTP surface. Adjustment routes are
 // generated from the shared kind list so adding a flow never touches here.
-func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, kinds []string) http.Handler {
+func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, kinds []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -61,6 +61,35 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 		}
 	})
 	mux.HandleFunc("/api/loan/collections/{id}/submit", method("POST", c.SubmitCollection))
+
+	// Batch flows (iteration 13: 1 hồ sơ — N hợp đồng). The literal
+	// ".../complete" route outranks the {id} wildcard in Go's ServeMux.
+	mux.HandleFunc("/api/loan/disbursement-batches", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			b.ListDisbursementBatches(w, r)
+		case http.MethodPost:
+			b.CreateBatchRegister(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/loan/disbursement-batches/complete", method("POST", b.CreateBatchComplete))
+	mux.HandleFunc("/api/loan/disbursement-batches/{id}", method("GET", b.GetDisbursementBatch))
+	mux.HandleFunc("/api/loan/collection-batches", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			b.ListCollectionBatches(w, r)
+		case http.MethodPost:
+			b.CreateBatchCollection(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/loan/collection-batches/{id}", method("GET", b.GetCollectionBatch))
+
+	// Posting rules proxy (finance rule-card preview for the maker screens)
+	mux.HandleFunc("/api/loan/posting-rules", method("GET", b.ListPostingRules))
 
 	// Agreements (disbursements)
 	mux.HandleFunc("/api/loan/agreements", func(w http.ResponseWriter, r *http.Request) {

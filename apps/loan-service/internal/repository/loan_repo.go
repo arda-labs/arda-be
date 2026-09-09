@@ -215,32 +215,45 @@ func (r *LoanRepository) SetContractWorkflowCase(ctx context.Context, tenantID, 
 
 const agreementColumns = `id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
 	interest_rate, over_interest_rate, loan_term, term_unit, maturity_date::text, debt_group_code,
-	interest_payment_freq, principal_payment_freq, outstanding_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor,
-	provision_amt_minor, currency_code, acc_classification, status, created_by, created_at, updated_at`
+	interest_payment_freq, principal_payment_freq, outstanding_amt_minor, COALESCE(pending_disburse_amt_minor, 0), coln_principal_amt_minor, coln_interest_amt_minor,
+	provision_amt_minor, COALESCE(plan_code, ''), currency_code, acc_classification, status, created_by, created_at, updated_at`
 
 func scanAgreement(s interface{ Scan(...any) error }) (domain.Agreement, error) {
 	var a domain.Agreement
 	err := s.Scan(&a.ID, &a.TenantID, &a.ContractCode, &a.AgreementCode, &a.DisburseDate, &a.DisburseAmt,
 		&a.InterestRate, &a.OverInterestRate, &a.LoanTerm, &a.TermUnit, &a.MaturityDate, &a.DebtGroupCode,
-		&a.InterestPaymentFreq, &a.PrincipalPaymentFreq, &a.OutstandingAmt, &a.ColnPrincipalAmt, &a.ColnInterestAmt,
-		&a.ProvisionAmt, &a.CurrencyCode, &a.AccClassification, &a.Status, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt)
+		&a.InterestPaymentFreq, &a.PrincipalPaymentFreq, &a.OutstandingAmt, &a.PendingDisburseAmt, &a.ColnPrincipalAmt, &a.ColnInterestAmt,
+		&a.ProvisionAmt, &a.PlanCode, &a.CurrencyCode, &a.AccClassification, &a.Status, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt)
 	return a, err
 }
 
 func (r *LoanRepository) ListAgreements(ctx context.Context, tenantID, contractCode string) ([]domain.Agreement, error) {
+	// Agreements list joins the contract header so the FE gets contract_no +
+	// customer_code alongside the running balances (iteration 13 wave E).
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT `+agreementColumns+`
-		FROM lnm_agreements
-		WHERE tenant_id = $1 AND ($2 = '' OR contract_code = $2)
-		ORDER BY disburse_date DESC, agreement_code`, tenantID, contractCode)
+		SELECT a.id, a.tenant_id, a.contract_code, a.agreement_code, a.disburse_date::text, a.disburse_amt_minor,
+		       a.interest_rate, a.over_interest_rate, a.loan_term, a.term_unit, a.maturity_date::text, a.debt_group_code,
+		       a.interest_payment_freq, a.principal_payment_freq, a.outstanding_amt_minor, COALESCE(a.pending_disburse_amt_minor, 0),
+		       a.coln_principal_amt_minor, a.coln_interest_amt_minor, a.provision_amt_minor, COALESCE(a.plan_code, ''),
+		       a.currency_code, a.acc_classification, a.status, a.created_by, a.created_at, a.updated_at,
+		       COALESCE(c.contract_no, ''), COALESCE(c.customer_code, '')
+		FROM lnm_agreements a
+		LEFT JOIN lnm_contracts c ON c.tenant_id = a.tenant_id AND c.contract_code = a.contract_code
+		WHERE a.tenant_id = $1 AND ($2 = '' OR a.contract_code = $2)
+		ORDER BY a.disburse_date DESC, a.agreement_code`, tenantID, contractCode)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	items := []domain.Agreement{}
 	for rows.Next() {
-		item, err := scanAgreement(rows)
-		if err != nil {
+		var item domain.Agreement
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.ContractCode, &item.AgreementCode, &item.DisburseDate, &item.DisburseAmt,
+			&item.InterestRate, &item.OverInterestRate, &item.LoanTerm, &item.TermUnit, &item.MaturityDate, &item.DebtGroupCode,
+			&item.InterestPaymentFreq, &item.PrincipalPaymentFreq, &item.OutstandingAmt, &item.PendingDisburseAmt,
+			&item.ColnPrincipalAmt, &item.ColnInterestAmt, &item.ProvisionAmt, &item.PlanCode,
+			&item.CurrencyCode, &item.AccClassification, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt,
+			&item.ContractNo, &item.CustomerCode); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -272,14 +285,14 @@ func (r *LoanRepository) CreateAgreement(ctx context.Context, a *domain.Agreemen
 	}
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO lnm_agreements (id, tenant_id, contract_code, agreement_code, disburse_date, disburse_amt_minor,
-			interest_rate, over_interest_rate, loan_term, term_unit, maturity_date, debt_group_code,
-			interest_payment_freq, principal_payment_freq, outstanding_amt_minor, currency_code, acc_classification, created_by)
-		VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11::date,$12,$13,$14,$15,$16,$17,$18)
-		ON CONFLICT (tenant_id, agreement_code) DO NOTHING
-		RETURNING `+agreementColumns,
-		a.ID, a.TenantID, a.ContractCode, a.AgreementCode, a.DisburseDate, a.DisburseAmt,
-		a.InterestRate, a.OverInterestRate, a.LoanTerm, a.TermUnit, a.MaturityDate, a.DebtGroupCode,
-		a.InterestPaymentFreq, a.PrincipalPaymentFreq, a.OutstandingAmt, a.CurrencyCode, a.AccClassification, a.CreatedBy)
+				interest_rate, over_interest_rate, loan_term, term_unit, maturity_date, debt_group_code,
+				interest_payment_freq, principal_payment_freq, outstanding_amt_minor, plan_code, currency_code, acc_classification, created_by)
+			VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11::date,$12,$13,$14,$15,$16,$17,$18,$19)
+			ON CONFLICT (tenant_id, agreement_code) DO NOTHING
+			RETURNING `+agreementColumns,
+			a.ID, a.TenantID, a.ContractCode, a.AgreementCode, a.DisburseDate, a.DisburseAmt,
+			a.InterestRate, a.OverInterestRate, a.LoanTerm, a.TermUnit, a.MaturityDate, a.DebtGroupCode,
+			a.InterestPaymentFreq, a.PrincipalPaymentFreq, a.OutstandingAmt, a.PlanCode, a.CurrencyCode, a.AccClassification, a.CreatedBy)
 	out, err := scanAgreement(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w", ErrConflict)

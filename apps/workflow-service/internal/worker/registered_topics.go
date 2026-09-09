@@ -49,6 +49,21 @@ var RegisteredJobTopics = []string{
 	"lnm.collection.validate",
 	"lnm.collection.execute",
 	"lnm.collection.cancel",
+	// Batch flows (iteration 13 — 1 hồ sơ — N hợp đồng):
+	// lnm-disb-batch-register-v2.bpmn + lnm-disb-batch-complete-v2.bpmn +
+	// lnm-collection-batch-v2.bpmn
+	"lnm.disb-batch-register.init",
+	"lnm.disb-batch-register.validate",
+	"lnm.disb-batch-register.execute",
+	"lnm.disb-batch-register.cancel",
+	"lnm.disb-batch-complete.init",
+	"lnm.disb-batch-complete.validate",
+	"lnm.disb-batch-complete.execute",
+	"lnm.disb-batch-complete.cancel",
+	"lnm.collection-batch.init",
+	"lnm.collection-batch.validate",
+	"lnm.collection-batch.execute",
+	"lnm.collection-batch.cancel",
 	// Manual posting two-flow (fin-single-entry-v2.bpmn +
 	// fin-double-entry-v2.bpmn)
 	"fin.single-entry.init",

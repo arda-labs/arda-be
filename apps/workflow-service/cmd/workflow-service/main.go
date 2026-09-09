@@ -281,6 +281,44 @@ func main() {
 			defer ceE.Close()
 			defer ccc.Close()
 			logger.Info("workflow collection workers registered")
+
+			// Batch flows (iteration 13 — 1 hồ sơ — N hợp đồng): same
+			// Reserve → Validate → Post / Release lifecycle, one N-line
+			// posting per batch, settle loops the per-row semantics in
+			// loan-service.
+			batchRegister := worker.NewBatchWorkers(worker.BatchDisbRegisterFlow, loanClient, financeClient, caseRepo)
+			bri, brv, bre, brc := batchRegister.Handlers()
+			briw := zeebeSvc.NewJobWorker("lnm.disb-batch-register.init", bri)
+			brvw := zeebeSvc.NewJobWorker("lnm.disb-batch-register.validate", brv)
+			brew := zeebeSvc.NewJobWorker("lnm.disb-batch-register.execute", bre)
+			brcw := zeebeSvc.NewJobWorker("lnm.disb-batch-register.cancel", brc)
+			defer briw.Close()
+			defer brvw.Close()
+			defer brew.Close()
+			defer brcw.Close()
+
+			batchComplete := worker.NewBatchWorkers(worker.BatchDisbCompleteFlow, loanClient, financeClient, caseRepo)
+			bci, bcv, bce, bcc := batchComplete.Handlers()
+			bciw := zeebeSvc.NewJobWorker("lnm.disb-batch-complete.init", bci)
+			bcvw := zeebeSvc.NewJobWorker("lnm.disb-batch-complete.validate", bcv)
+			bcew := zeebeSvc.NewJobWorker("lnm.disb-batch-complete.execute", bce)
+			bccw := zeebeSvc.NewJobWorker("lnm.disb-batch-complete.cancel", bcc)
+			defer bciw.Close()
+			defer bcvw.Close()
+			defer bcew.Close()
+			defer bccw.Close()
+
+			batchCollection := worker.NewBatchWorkers(worker.BatchCollectionFlow, loanClient, financeClient, caseRepo)
+			bki, bkv, bke, bkc := batchCollection.Handlers()
+			bkiw := zeebeSvc.NewJobWorker("lnm.collection-batch.init", bki)
+			bkvw := zeebeSvc.NewJobWorker("lnm.collection-batch.validate", bkv)
+			bkew := zeebeSvc.NewJobWorker("lnm.collection-batch.execute", bke)
+			bkcw := zeebeSvc.NewJobWorker("lnm.collection-batch.cancel", bkc)
+			defer bkiw.Close()
+			defer bkvw.Close()
+			defer bkew.Close()
+			defer bkcw.Close()
+			logger.Info("workflow batch disbursement/collection workers registered")
 		}
 
 		var depositSettler worker.DepositSettler

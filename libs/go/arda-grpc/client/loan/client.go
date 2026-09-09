@@ -282,3 +282,70 @@ func (c *Client) ResolveCollection(ctx context.Context, collectionID, decision, 
 	})
 	return err
 }
+
+// ── Batch flows (iteration 13, 1 hồ sơ — N hợp đồng) ──
+
+// GetBatchPostingDetail returns the batch header + per-row posting context
+// (batch_type dispatches DISB_REGISTER / DISB_COMPLETE / COLLECTION).
+func (c *Client) GetBatchPostingDetail(ctx context.Context, batchID, batchType string) (*loanv1.BatchPostingDetail, error) {
+	if c == nil {
+		return nil, errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	return c.api.GetBatchPostingDetail(callCtx, &loanv1.GetBatchRequest{
+		BatchId:   batchID,
+		BatchType: batchType,
+	})
+}
+
+// CheckBatch re-validates the batch is actionable (BPMN validate).
+func (c *Client) CheckBatch(ctx context.Context, batchID, batchType string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckBatch(callCtx, &loanv1.CheckBatchRequest{
+		BatchId:   batchID,
+		BatchType: batchType,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+// SettleBatch marks the batch POSTED and applies the per-row side effects
+// (loan-service loops its existing per-row settle semantics).
+func (c *Client) SettleBatch(ctx context.Context, batchID, batchType, journalEntryID, actor string) error {
+	if c == nil {
+		return errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.SettleBatch(callCtx, &loanv1.SettleBatchRequest{
+		BatchId:        batchID,
+		BatchType:      batchType,
+		JournalEntryId: journalEntryID,
+		Actor:          actor,
+	})
+	return err
+}
+
+// ResolveBatch applies APPROVE/REJECT on the batch header without posting.
+func (c *Client) ResolveBatch(ctx context.Context, batchID, batchType, decision, decidedBy, note string) error {
+	if c == nil {
+		return errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.ResolveBatch(callCtx, &loanv1.ResolveBatchRequest{
+		BatchId:   batchID,
+		BatchType: batchType,
+		Decision:  decision,
+		DecidedBy: decidedBy,
+		Note:      note,
+	})
+	return err
+}

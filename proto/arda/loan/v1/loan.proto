@@ -20,6 +20,10 @@ service LoanCommandService {
   rpc GetCollectionPostingDetail(GetCollectionPostingDetailRequest) returns (CollectionPostingDetail);
   rpc SettleCollection(SettleCollectionRequest) returns (SettleCollectionResponse);
   rpc ResolveCollection(ResolveCollectionRequest) returns (ResolveCollectionResponse);
+  rpc GetBatchPostingDetail(GetBatchRequest) returns (BatchPostingDetail);
+  rpc CheckBatch(CheckBatchRequest) returns (CheckBatchResponse);
+  rpc SettleBatch(SettleBatchRequest) returns (SettleBatchResponse);
+  rpc ResolveBatch(ResolveBatchRequest) returns (ResolveBatchResponse);
 }
 
 message UpdateContractStatusRequest {
@@ -184,5 +188,83 @@ message ResolveCollectionRequest {
 }
 
 message ResolveCollectionResponse {
+  bool ok = 1;
+}
+
+// ── Batch flows (iteration 13, 1 hồ sơ — N hợp đồng) ──
+
+// tenant_id is carried for traceability; the authoritative tenant scope is
+// the propagated X-Tenant-Id metadata.
+message GetBatchRequest {
+  string tenant_id = 1;
+  string batch_id = 2;
+  string batch_type = 3; // DISB_REGISTER | DISB_COMPLETE | COLLECTION
+}
+
+message BatchRowDetail {
+  string row_id = 1;
+  string contract_code = 2;
+  string agreement_code = 3;
+  string plan_code = 4;
+  int64 amount_minor = 5;             // disbursement batches (drawdown)
+  int64 principal_minor = 6;          // collection batches
+  int64 interest_minor = 7;           // collection batches
+  int64 overdue_interest_minor = 8;   // collection batches (EPAS 301)
+  string debt_group_code = 9;
+  string org_unit_code = 10;
+  string customer_code = 11;
+  bool is_closed = 12;
+}
+
+// Everything the workflow worker needs to build one batch PostingRequest
+// (N rule-card line pairs) without reaching into loan-service internals.
+message BatchPostingDetail {
+  string batch_id = 1;
+  string batch_code = 2;
+  string batch_type = 3;        // DISB_REGISTER | DISB_COMPLETE | COLLECTION
+  string txn_date = 4;
+  string payment_method = 5;
+  string account_code = 6;
+  string currency_code = 7;
+  int64 total_amt_minor = 8;
+  int64 total_principal_minor = 9;
+  int64 total_interest_minor = 10;
+  string description = 11;
+  string org_unit_code = 12;
+  string workflow_case_id = 13;
+  map<string, string> trader = 14; // camelCase trader block for trader_* metadata
+  repeated BatchRowDetail rows = 15;
+}
+
+message CheckBatchRequest {
+  string batch_id = 1;
+  string batch_type = 2;
+}
+
+message CheckBatchResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message SettleBatchRequest {
+  string batch_id = 1;
+  string batch_type = 2; // dispatches the loan-service settle loop
+  string journal_entry_id = 3;
+  string actor = 4;
+}
+
+message SettleBatchResponse {
+  bool ok = 1;
+}
+
+message ResolveBatchRequest {
+  string batch_id = 1;
+  string batch_type = 2;
+  string decision = 3; // APPROVE | REJECT
+  string decided_by = 4;
+  string note = 5;
+}
+
+message ResolveBatchResponse {
   bool ok = 1;
 }

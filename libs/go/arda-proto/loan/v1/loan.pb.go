@@ -1548,6 +1548,694 @@ func (x *ResolveCollectionResponse) GetOk() bool {
 	return false
 }
 
+// tenant_id is carried for traceability; the authoritative tenant scope is
+// the propagated X-Tenant-Id metadata.
+type GetBatchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	BatchId       string                 `protobuf:"bytes,2,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
+	BatchType     string                 `protobuf:"bytes,3,opt,name=batch_type,json=batchType,proto3" json:"batch_type,omitempty"` // DISB_REGISTER | DISB_COMPLETE | COLLECTION
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBatchRequest) Reset() {
+	*x = GetBatchRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBatchRequest) ProtoMessage() {}
+
+func (x *GetBatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBatchRequest.ProtoReflect.Descriptor instead.
+func (*GetBatchRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *GetBatchRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *GetBatchRequest) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
+func (x *GetBatchRequest) GetBatchType() string {
+	if x != nil {
+		return x.BatchType
+	}
+	return ""
+}
+
+type BatchRowDetail struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	RowId                string                 `protobuf:"bytes,1,opt,name=row_id,json=rowId,proto3" json:"row_id,omitempty"`
+	ContractCode         string                 `protobuf:"bytes,2,opt,name=contract_code,json=contractCode,proto3" json:"contract_code,omitempty"`
+	AgreementCode        string                 `protobuf:"bytes,3,opt,name=agreement_code,json=agreementCode,proto3" json:"agreement_code,omitempty"`
+	PlanCode             string                 `protobuf:"bytes,4,opt,name=plan_code,json=planCode,proto3" json:"plan_code,omitempty"`
+	AmountMinor          int64                  `protobuf:"varint,5,opt,name=amount_minor,json=amountMinor,proto3" json:"amount_minor,omitempty"`                              // disbursement batches (drawdown)
+	PrincipalMinor       int64                  `protobuf:"varint,6,opt,name=principal_minor,json=principalMinor,proto3" json:"principal_minor,omitempty"`                     // collection batches
+	InterestMinor        int64                  `protobuf:"varint,7,opt,name=interest_minor,json=interestMinor,proto3" json:"interest_minor,omitempty"`                        // collection batches
+	OverdueInterestMinor int64                  `protobuf:"varint,8,opt,name=overdue_interest_minor,json=overdueInterestMinor,proto3" json:"overdue_interest_minor,omitempty"` // collection batches (EPAS 301)
+	DebtGroupCode        string                 `protobuf:"bytes,9,opt,name=debt_group_code,json=debtGroupCode,proto3" json:"debt_group_code,omitempty"`
+	OrgUnitCode          string                 `protobuf:"bytes,10,opt,name=org_unit_code,json=orgUnitCode,proto3" json:"org_unit_code,omitempty"`
+	CustomerCode         string                 `protobuf:"bytes,11,opt,name=customer_code,json=customerCode,proto3" json:"customer_code,omitempty"`
+	IsClosed             bool                   `protobuf:"varint,12,opt,name=is_closed,json=isClosed,proto3" json:"is_closed,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *BatchRowDetail) Reset() {
+	*x = BatchRowDetail{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchRowDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchRowDetail) ProtoMessage() {}
+
+func (x *BatchRowDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchRowDetail.ProtoReflect.Descriptor instead.
+func (*BatchRowDetail) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *BatchRowDetail) GetRowId() string {
+	if x != nil {
+		return x.RowId
+	}
+	return ""
+}
+
+func (x *BatchRowDetail) GetContractCode() string {
+	if x != nil {
+		return x.ContractCode
+	}
+	return ""
+}
+
+func (x *BatchRowDetail) GetAgreementCode() string {
+	if x != nil {
+		return x.AgreementCode
+	}
+	return ""
+}
+
+func (x *BatchRowDetail) GetPlanCode() string {
+	if x != nil {
+		return x.PlanCode
+	}
+	return ""
+}
+
+func (x *BatchRowDetail) GetAmountMinor() int64 {
+	if x != nil {
+		return x.AmountMinor
+	}
+	return 0
+}
+
+func (x *BatchRowDetail) GetPrincipalMinor() int64 {
+	if x != nil {
+		return x.PrincipalMinor
+	}
+	return 0
+}
+
+func (x *BatchRowDetail) GetInterestMinor() int64 {
+	if x != nil {
+		return x.InterestMinor
+	}
+	return 0
+}
+
+func (x *BatchRowDetail) GetOverdueInterestMinor() int64 {
+	if x != nil {
+		return x.OverdueInterestMinor
+	}
+	return 0
+}
+
+func (x *BatchRowDetail) GetDebtGroupCode() string {
+	if x != nil {
+		return x.DebtGroupCode
+	}
+	return ""
+}
+
+func (x *BatchRowDetail) GetOrgUnitCode() string {
+	if x != nil {
+		return x.OrgUnitCode
+	}
+	return ""
+}
+
+func (x *BatchRowDetail) GetCustomerCode() string {
+	if x != nil {
+		return x.CustomerCode
+	}
+	return ""
+}
+
+func (x *BatchRowDetail) GetIsClosed() bool {
+	if x != nil {
+		return x.IsClosed
+	}
+	return false
+}
+
+// Everything the workflow worker needs to build one batch PostingRequest
+// (N rule-card line pairs) without reaching into loan-service internals.
+type BatchPostingDetail struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	BatchId             string                 `protobuf:"bytes,1,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
+	BatchCode           string                 `protobuf:"bytes,2,opt,name=batch_code,json=batchCode,proto3" json:"batch_code,omitempty"`
+	BatchType           string                 `protobuf:"bytes,3,opt,name=batch_type,json=batchType,proto3" json:"batch_type,omitempty"` // DISB_REGISTER | DISB_COMPLETE | COLLECTION
+	TxnDate             string                 `protobuf:"bytes,4,opt,name=txn_date,json=txnDate,proto3" json:"txn_date,omitempty"`
+	PaymentMethod       string                 `protobuf:"bytes,5,opt,name=payment_method,json=paymentMethod,proto3" json:"payment_method,omitempty"`
+	AccountCode         string                 `protobuf:"bytes,6,opt,name=account_code,json=accountCode,proto3" json:"account_code,omitempty"`
+	CurrencyCode        string                 `protobuf:"bytes,7,opt,name=currency_code,json=currencyCode,proto3" json:"currency_code,omitempty"`
+	TotalAmtMinor       int64                  `protobuf:"varint,8,opt,name=total_amt_minor,json=totalAmtMinor,proto3" json:"total_amt_minor,omitempty"`
+	TotalPrincipalMinor int64                  `protobuf:"varint,9,opt,name=total_principal_minor,json=totalPrincipalMinor,proto3" json:"total_principal_minor,omitempty"`
+	TotalInterestMinor  int64                  `protobuf:"varint,10,opt,name=total_interest_minor,json=totalInterestMinor,proto3" json:"total_interest_minor,omitempty"`
+	Description         string                 `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
+	OrgUnitCode         string                 `protobuf:"bytes,12,opt,name=org_unit_code,json=orgUnitCode,proto3" json:"org_unit_code,omitempty"`
+	WorkflowCaseId      string                 `protobuf:"bytes,13,opt,name=workflow_case_id,json=workflowCaseId,proto3" json:"workflow_case_id,omitempty"`
+	Trader              map[string]string      `protobuf:"bytes,14,rep,name=trader,proto3" json:"trader,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // camelCase trader block for trader_* metadata
+	Rows                []*BatchRowDetail      `protobuf:"bytes,15,rep,name=rows,proto3" json:"rows,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *BatchPostingDetail) Reset() {
+	*x = BatchPostingDetail{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchPostingDetail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchPostingDetail) ProtoMessage() {}
+
+func (x *BatchPostingDetail) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchPostingDetail.ProtoReflect.Descriptor instead.
+func (*BatchPostingDetail) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *BatchPostingDetail) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
+func (x *BatchPostingDetail) GetBatchCode() string {
+	if x != nil {
+		return x.BatchCode
+	}
+	return ""
+}
+
+func (x *BatchPostingDetail) GetBatchType() string {
+	if x != nil {
+		return x.BatchType
+	}
+	return ""
+}
+
+func (x *BatchPostingDetail) GetTxnDate() string {
+	if x != nil {
+		return x.TxnDate
+	}
+	return ""
+}
+
+func (x *BatchPostingDetail) GetPaymentMethod() string {
+	if x != nil {
+		return x.PaymentMethod
+	}
+	return ""
+}
+
+func (x *BatchPostingDetail) GetAccountCode() string {
+	if x != nil {
+		return x.AccountCode
+	}
+	return ""
+}
+
+func (x *BatchPostingDetail) GetCurrencyCode() string {
+	if x != nil {
+		return x.CurrencyCode
+	}
+	return ""
+}
+
+func (x *BatchPostingDetail) GetTotalAmtMinor() int64 {
+	if x != nil {
+		return x.TotalAmtMinor
+	}
+	return 0
+}
+
+func (x *BatchPostingDetail) GetTotalPrincipalMinor() int64 {
+	if x != nil {
+		return x.TotalPrincipalMinor
+	}
+	return 0
+}
+
+func (x *BatchPostingDetail) GetTotalInterestMinor() int64 {
+	if x != nil {
+		return x.TotalInterestMinor
+	}
+	return 0
+}
+
+func (x *BatchPostingDetail) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *BatchPostingDetail) GetOrgUnitCode() string {
+	if x != nil {
+		return x.OrgUnitCode
+	}
+	return ""
+}
+
+func (x *BatchPostingDetail) GetWorkflowCaseId() string {
+	if x != nil {
+		return x.WorkflowCaseId
+	}
+	return ""
+}
+
+func (x *BatchPostingDetail) GetTrader() map[string]string {
+	if x != nil {
+		return x.Trader
+	}
+	return nil
+}
+
+func (x *BatchPostingDetail) GetRows() []*BatchRowDetail {
+	if x != nil {
+		return x.Rows
+	}
+	return nil
+}
+
+type CheckBatchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BatchId       string                 `protobuf:"bytes,1,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
+	BatchType     string                 `protobuf:"bytes,2,opt,name=batch_type,json=batchType,proto3" json:"batch_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckBatchRequest) Reset() {
+	*x = CheckBatchRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckBatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckBatchRequest) ProtoMessage() {}
+
+func (x *CheckBatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckBatchRequest.ProtoReflect.Descriptor instead.
+func (*CheckBatchRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *CheckBatchRequest) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
+func (x *CheckBatchRequest) GetBatchType() string {
+	if x != nil {
+		return x.BatchType
+	}
+	return ""
+}
+
+type CheckBatchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckBatchResponse) Reset() {
+	*x = CheckBatchResponse{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckBatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckBatchResponse) ProtoMessage() {}
+
+func (x *CheckBatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckBatchResponse.ProtoReflect.Descriptor instead.
+func (*CheckBatchResponse) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *CheckBatchResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *CheckBatchResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type SettleBatchRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	BatchId        string                 `protobuf:"bytes,1,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
+	BatchType      string                 `protobuf:"bytes,2,opt,name=batch_type,json=batchType,proto3" json:"batch_type,omitempty"` // dispatches the loan-service settle loop
+	JournalEntryId string                 `protobuf:"bytes,3,opt,name=journal_entry_id,json=journalEntryId,proto3" json:"journal_entry_id,omitempty"`
+	Actor          string                 `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SettleBatchRequest) Reset() {
+	*x = SettleBatchRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettleBatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettleBatchRequest) ProtoMessage() {}
+
+func (x *SettleBatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettleBatchRequest.ProtoReflect.Descriptor instead.
+func (*SettleBatchRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *SettleBatchRequest) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
+func (x *SettleBatchRequest) GetBatchType() string {
+	if x != nil {
+		return x.BatchType
+	}
+	return ""
+}
+
+func (x *SettleBatchRequest) GetJournalEntryId() string {
+	if x != nil {
+		return x.JournalEntryId
+	}
+	return ""
+}
+
+func (x *SettleBatchRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+type SettleBatchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SettleBatchResponse) Reset() {
+	*x = SettleBatchResponse{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettleBatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettleBatchResponse) ProtoMessage() {}
+
+func (x *SettleBatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettleBatchResponse.ProtoReflect.Descriptor instead.
+func (*SettleBatchResponse) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *SettleBatchResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+type ResolveBatchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BatchId       string                 `protobuf:"bytes,1,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
+	BatchType     string                 `protobuf:"bytes,2,opt,name=batch_type,json=batchType,proto3" json:"batch_type,omitempty"`
+	Decision      string                 `protobuf:"bytes,3,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
+	DecidedBy     string                 `protobuf:"bytes,4,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
+	Note          string                 `protobuf:"bytes,5,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveBatchRequest) Reset() {
+	*x = ResolveBatchRequest{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveBatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveBatchRequest) ProtoMessage() {}
+
+func (x *ResolveBatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveBatchRequest.ProtoReflect.Descriptor instead.
+func (*ResolveBatchRequest) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ResolveBatchRequest) GetBatchId() string {
+	if x != nil {
+		return x.BatchId
+	}
+	return ""
+}
+
+func (x *ResolveBatchRequest) GetBatchType() string {
+	if x != nil {
+		return x.BatchType
+	}
+	return ""
+}
+
+func (x *ResolveBatchRequest) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *ResolveBatchRequest) GetDecidedBy() string {
+	if x != nil {
+		return x.DecidedBy
+	}
+	return ""
+}
+
+func (x *ResolveBatchRequest) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type ResolveBatchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveBatchResponse) Reset() {
+	*x = ResolveBatchResponse{}
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveBatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveBatchResponse) ProtoMessage() {}
+
+func (x *ResolveBatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_loan_v1_loan_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveBatchResponse.ProtoReflect.Descriptor instead.
+func (*ResolveBatchResponse) Descriptor() ([]byte, []int) {
+	return file_arda_loan_v1_loan_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ResolveBatchResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_arda_loan_v1_loan_proto protoreflect.FileDescriptor
 
 const file_arda_loan_v1_loan_proto_rawDesc = "" +
@@ -1660,8 +2348,73 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"decided_by\x18\x03 \x01(\tR\tdecidedBy\x12\x12\n" +
 	"\x04note\x18\x04 \x01(\tR\x04note\"+\n" +
 	"\x19ResolveCollectionResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xca\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"h\n" +
+	"\x0fGetBatchRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
+	"\bbatch_id\x18\x02 \x01(\tR\abatchId\x12\x1d\n" +
 	"\n" +
+	"batch_type\x18\x03 \x01(\tR\tbatchType\"\xc7\x03\n" +
+	"\x0eBatchRowDetail\x12\x15\n" +
+	"\x06row_id\x18\x01 \x01(\tR\x05rowId\x12#\n" +
+	"\rcontract_code\x18\x02 \x01(\tR\fcontractCode\x12%\n" +
+	"\x0eagreement_code\x18\x03 \x01(\tR\ragreementCode\x12\x1b\n" +
+	"\tplan_code\x18\x04 \x01(\tR\bplanCode\x12!\n" +
+	"\famount_minor\x18\x05 \x01(\x03R\vamountMinor\x12'\n" +
+	"\x0fprincipal_minor\x18\x06 \x01(\x03R\x0eprincipalMinor\x12%\n" +
+	"\x0einterest_minor\x18\a \x01(\x03R\rinterestMinor\x124\n" +
+	"\x16overdue_interest_minor\x18\b \x01(\x03R\x14overdueInterestMinor\x12&\n" +
+	"\x0fdebt_group_code\x18\t \x01(\tR\rdebtGroupCode\x12\"\n" +
+	"\rorg_unit_code\x18\n" +
+	" \x01(\tR\vorgUnitCode\x12#\n" +
+	"\rcustomer_code\x18\v \x01(\tR\fcustomerCode\x12\x1b\n" +
+	"\tis_closed\x18\f \x01(\bR\bisClosed\"\xa8\x05\n" +
+	"\x12BatchPostingDetail\x12\x19\n" +
+	"\bbatch_id\x18\x01 \x01(\tR\abatchId\x12\x1d\n" +
+	"\n" +
+	"batch_code\x18\x02 \x01(\tR\tbatchCode\x12\x1d\n" +
+	"\n" +
+	"batch_type\x18\x03 \x01(\tR\tbatchType\x12\x19\n" +
+	"\btxn_date\x18\x04 \x01(\tR\atxnDate\x12%\n" +
+	"\x0epayment_method\x18\x05 \x01(\tR\rpaymentMethod\x12!\n" +
+	"\faccount_code\x18\x06 \x01(\tR\vaccountCode\x12#\n" +
+	"\rcurrency_code\x18\a \x01(\tR\fcurrencyCode\x12&\n" +
+	"\x0ftotal_amt_minor\x18\b \x01(\x03R\rtotalAmtMinor\x122\n" +
+	"\x15total_principal_minor\x18\t \x01(\x03R\x13totalPrincipalMinor\x120\n" +
+	"\x14total_interest_minor\x18\n" +
+	" \x01(\x03R\x12totalInterestMinor\x12 \n" +
+	"\vdescription\x18\v \x01(\tR\vdescription\x12\"\n" +
+	"\rorg_unit_code\x18\f \x01(\tR\vorgUnitCode\x12(\n" +
+	"\x10workflow_case_id\x18\r \x01(\tR\x0eworkflowCaseId\x12D\n" +
+	"\x06trader\x18\x0e \x03(\v2,.arda.loan.v1.BatchPostingDetail.TraderEntryR\x06trader\x120\n" +
+	"\x04rows\x18\x0f \x03(\v2\x1c.arda.loan.v1.BatchRowDetailR\x04rows\x1a9\n" +
+	"\vTraderEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"M\n" +
+	"\x11CheckBatchRequest\x12\x19\n" +
+	"\bbatch_id\x18\x01 \x01(\tR\abatchId\x12\x1d\n" +
+	"\n" +
+	"batch_type\x18\x02 \x01(\tR\tbatchType\">\n" +
+	"\x12CheckBatchResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x8e\x01\n" +
+	"\x12SettleBatchRequest\x12\x19\n" +
+	"\bbatch_id\x18\x01 \x01(\tR\abatchId\x12\x1d\n" +
+	"\n" +
+	"batch_type\x18\x02 \x01(\tR\tbatchType\x12(\n" +
+	"\x10journal_entry_id\x18\x03 \x01(\tR\x0ejournalEntryId\x12\x14\n" +
+	"\x05actor\x18\x04 \x01(\tR\x05actor\"%\n" +
+	"\x13SettleBatchResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x9e\x01\n" +
+	"\x13ResolveBatchRequest\x12\x19\n" +
+	"\bbatch_id\x18\x01 \x01(\tR\abatchId\x12\x1d\n" +
+	"\n" +
+	"batch_type\x18\x02 \x01(\tR\tbatchType\x12\x1a\n" +
+	"\bdecision\x18\x03 \x01(\tR\bdecision\x12\x1d\n" +
+	"\n" +
+	"decided_by\x18\x04 \x01(\tR\tdecidedBy\x12\x12\n" +
+	"\x04note\x18\x05 \x01(\tR\x04note\"&\n" +
+	"\x14ResolveBatchResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\xa0\r\n" +
 	"\x12LoanCommandService\x12m\n" +
 	"\x14UpdateContractStatus\x12).arda.loan.v1.UpdateContractStatusRequest\x1a*.arda.loan.v1.UpdateContractStatusResponse\x12L\n" +
 	"\vGetContract\x12 .arda.loan.v1.GetContractRequest\x1a\x1b.arda.loan.v1.ContractBrief\x12[\n" +
@@ -1675,7 +2428,12 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"\x0fCheckCollection\x12$.arda.loan.v1.CheckCollectionRequest\x1a%.arda.loan.v1.CheckCollectionResponse\x12t\n" +
 	"\x1aGetCollectionPostingDetail\x12/.arda.loan.v1.GetCollectionPostingDetailRequest\x1a%.arda.loan.v1.CollectionPostingDetail\x12a\n" +
 	"\x10SettleCollection\x12%.arda.loan.v1.SettleCollectionRequest\x1a&.arda.loan.v1.SettleCollectionResponse\x12d\n" +
-	"\x11ResolveCollection\x12&.arda.loan.v1.ResolveCollectionRequest\x1a'.arda.loan.v1.ResolveCollectionResponseB=Z;github.com/arda-labs/arda/libs/go/arda-proto/loan/v1;loanv1b\x06proto3"
+	"\x11ResolveCollection\x12&.arda.loan.v1.ResolveCollectionRequest\x1a'.arda.loan.v1.ResolveCollectionResponse\x12X\n" +
+	"\x15GetBatchPostingDetail\x12\x1d.arda.loan.v1.GetBatchRequest\x1a .arda.loan.v1.BatchPostingDetail\x12O\n" +
+	"\n" +
+	"CheckBatch\x12\x1f.arda.loan.v1.CheckBatchRequest\x1a .arda.loan.v1.CheckBatchResponse\x12R\n" +
+	"\vSettleBatch\x12 .arda.loan.v1.SettleBatchRequest\x1a!.arda.loan.v1.SettleBatchResponse\x12U\n" +
+	"\fResolveBatch\x12!.arda.loan.v1.ResolveBatchRequest\x1a\".arda.loan.v1.ResolveBatchResponseB=Z;github.com/arda-labs/arda/libs/go/arda-proto/loan/v1;loanv1b\x06proto3"
 
 var (
 	file_arda_loan_v1_loan_proto_rawDescOnce sync.Once
@@ -1689,7 +2447,7 @@ func file_arda_loan_v1_loan_proto_rawDescGZIP() []byte {
 	return file_arda_loan_v1_loan_proto_rawDescData
 }
 
-var file_arda_loan_v1_loan_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_arda_loan_v1_loan_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_arda_loan_v1_loan_proto_goTypes = []any{
 	(*UpdateContractStatusRequest)(nil),         // 0: arda.loan.v1.UpdateContractStatusRequest
 	(*UpdateContractStatusResponse)(nil),        // 1: arda.loan.v1.UpdateContractStatusResponse
@@ -1717,39 +2475,59 @@ var file_arda_loan_v1_loan_proto_goTypes = []any{
 	(*SettleCollectionResponse)(nil),            // 23: arda.loan.v1.SettleCollectionResponse
 	(*ResolveCollectionRequest)(nil),            // 24: arda.loan.v1.ResolveCollectionRequest
 	(*ResolveCollectionResponse)(nil),           // 25: arda.loan.v1.ResolveCollectionResponse
+	(*GetBatchRequest)(nil),                     // 26: arda.loan.v1.GetBatchRequest
+	(*BatchRowDetail)(nil),                      // 27: arda.loan.v1.BatchRowDetail
+	(*BatchPostingDetail)(nil),                  // 28: arda.loan.v1.BatchPostingDetail
+	(*CheckBatchRequest)(nil),                   // 29: arda.loan.v1.CheckBatchRequest
+	(*CheckBatchResponse)(nil),                  // 30: arda.loan.v1.CheckBatchResponse
+	(*SettleBatchRequest)(nil),                  // 31: arda.loan.v1.SettleBatchRequest
+	(*SettleBatchResponse)(nil),                 // 32: arda.loan.v1.SettleBatchResponse
+	(*ResolveBatchRequest)(nil),                 // 33: arda.loan.v1.ResolveBatchRequest
+	(*ResolveBatchResponse)(nil),                // 34: arda.loan.v1.ResolveBatchResponse
+	nil,                                         // 35: arda.loan.v1.BatchPostingDetail.TraderEntry
 }
 var file_arda_loan_v1_loan_proto_depIdxs = []int32{
-	0,  // 0: arda.loan.v1.LoanCommandService.UpdateContractStatus:input_type -> arda.loan.v1.UpdateContractStatusRequest
-	2,  // 1: arda.loan.v1.LoanCommandService.GetContract:input_type -> arda.loan.v1.GetContractRequest
-	4,  // 2: arda.loan.v1.LoanCommandService.CheckFormation:input_type -> arda.loan.v1.CheckFormationRequest
-	6,  // 3: arda.loan.v1.LoanCommandService.CheckAdjustment:input_type -> arda.loan.v1.CheckAdjustmentRequest
-	8,  // 4: arda.loan.v1.LoanCommandService.ResolveAdjustment:input_type -> arda.loan.v1.ResolveAdjustmentRequest
-	10, // 5: arda.loan.v1.LoanCommandService.CheckDisbursement:input_type -> arda.loan.v1.CheckDisbursementRequest
-	12, // 6: arda.loan.v1.LoanCommandService.GetDisbursementPostingDetail:input_type -> arda.loan.v1.GetDisbursementPostingDetailRequest
-	14, // 7: arda.loan.v1.LoanCommandService.SettleDisbursement:input_type -> arda.loan.v1.SettleDisbursementRequest
-	16, // 8: arda.loan.v1.LoanCommandService.ResolveDisbursement:input_type -> arda.loan.v1.ResolveDisbursementRequest
-	18, // 9: arda.loan.v1.LoanCommandService.CheckCollection:input_type -> arda.loan.v1.CheckCollectionRequest
-	20, // 10: arda.loan.v1.LoanCommandService.GetCollectionPostingDetail:input_type -> arda.loan.v1.GetCollectionPostingDetailRequest
-	22, // 11: arda.loan.v1.LoanCommandService.SettleCollection:input_type -> arda.loan.v1.SettleCollectionRequest
-	24, // 12: arda.loan.v1.LoanCommandService.ResolveCollection:input_type -> arda.loan.v1.ResolveCollectionRequest
-	1,  // 13: arda.loan.v1.LoanCommandService.UpdateContractStatus:output_type -> arda.loan.v1.UpdateContractStatusResponse
-	3,  // 14: arda.loan.v1.LoanCommandService.GetContract:output_type -> arda.loan.v1.ContractBrief
-	5,  // 15: arda.loan.v1.LoanCommandService.CheckFormation:output_type -> arda.loan.v1.CheckFormationResponse
-	7,  // 16: arda.loan.v1.LoanCommandService.CheckAdjustment:output_type -> arda.loan.v1.CheckAdjustmentResponse
-	9,  // 17: arda.loan.v1.LoanCommandService.ResolveAdjustment:output_type -> arda.loan.v1.ResolveAdjustmentResponse
-	11, // 18: arda.loan.v1.LoanCommandService.CheckDisbursement:output_type -> arda.loan.v1.CheckDisbursementResponse
-	13, // 19: arda.loan.v1.LoanCommandService.GetDisbursementPostingDetail:output_type -> arda.loan.v1.DisbursementPostingDetail
-	15, // 20: arda.loan.v1.LoanCommandService.SettleDisbursement:output_type -> arda.loan.v1.SettleDisbursementResponse
-	17, // 21: arda.loan.v1.LoanCommandService.ResolveDisbursement:output_type -> arda.loan.v1.ResolveDisbursementResponse
-	19, // 22: arda.loan.v1.LoanCommandService.CheckCollection:output_type -> arda.loan.v1.CheckCollectionResponse
-	21, // 23: arda.loan.v1.LoanCommandService.GetCollectionPostingDetail:output_type -> arda.loan.v1.CollectionPostingDetail
-	23, // 24: arda.loan.v1.LoanCommandService.SettleCollection:output_type -> arda.loan.v1.SettleCollectionResponse
-	25, // 25: arda.loan.v1.LoanCommandService.ResolveCollection:output_type -> arda.loan.v1.ResolveCollectionResponse
-	13, // [13:26] is the sub-list for method output_type
-	0,  // [0:13] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	35, // 0: arda.loan.v1.BatchPostingDetail.trader:type_name -> arda.loan.v1.BatchPostingDetail.TraderEntry
+	27, // 1: arda.loan.v1.BatchPostingDetail.rows:type_name -> arda.loan.v1.BatchRowDetail
+	0,  // 2: arda.loan.v1.LoanCommandService.UpdateContractStatus:input_type -> arda.loan.v1.UpdateContractStatusRequest
+	2,  // 3: arda.loan.v1.LoanCommandService.GetContract:input_type -> arda.loan.v1.GetContractRequest
+	4,  // 4: arda.loan.v1.LoanCommandService.CheckFormation:input_type -> arda.loan.v1.CheckFormationRequest
+	6,  // 5: arda.loan.v1.LoanCommandService.CheckAdjustment:input_type -> arda.loan.v1.CheckAdjustmentRequest
+	8,  // 6: arda.loan.v1.LoanCommandService.ResolveAdjustment:input_type -> arda.loan.v1.ResolveAdjustmentRequest
+	10, // 7: arda.loan.v1.LoanCommandService.CheckDisbursement:input_type -> arda.loan.v1.CheckDisbursementRequest
+	12, // 8: arda.loan.v1.LoanCommandService.GetDisbursementPostingDetail:input_type -> arda.loan.v1.GetDisbursementPostingDetailRequest
+	14, // 9: arda.loan.v1.LoanCommandService.SettleDisbursement:input_type -> arda.loan.v1.SettleDisbursementRequest
+	16, // 10: arda.loan.v1.LoanCommandService.ResolveDisbursement:input_type -> arda.loan.v1.ResolveDisbursementRequest
+	18, // 11: arda.loan.v1.LoanCommandService.CheckCollection:input_type -> arda.loan.v1.CheckCollectionRequest
+	20, // 12: arda.loan.v1.LoanCommandService.GetCollectionPostingDetail:input_type -> arda.loan.v1.GetCollectionPostingDetailRequest
+	22, // 13: arda.loan.v1.LoanCommandService.SettleCollection:input_type -> arda.loan.v1.SettleCollectionRequest
+	24, // 14: arda.loan.v1.LoanCommandService.ResolveCollection:input_type -> arda.loan.v1.ResolveCollectionRequest
+	26, // 15: arda.loan.v1.LoanCommandService.GetBatchPostingDetail:input_type -> arda.loan.v1.GetBatchRequest
+	29, // 16: arda.loan.v1.LoanCommandService.CheckBatch:input_type -> arda.loan.v1.CheckBatchRequest
+	31, // 17: arda.loan.v1.LoanCommandService.SettleBatch:input_type -> arda.loan.v1.SettleBatchRequest
+	33, // 18: arda.loan.v1.LoanCommandService.ResolveBatch:input_type -> arda.loan.v1.ResolveBatchRequest
+	1,  // 19: arda.loan.v1.LoanCommandService.UpdateContractStatus:output_type -> arda.loan.v1.UpdateContractStatusResponse
+	3,  // 20: arda.loan.v1.LoanCommandService.GetContract:output_type -> arda.loan.v1.ContractBrief
+	5,  // 21: arda.loan.v1.LoanCommandService.CheckFormation:output_type -> arda.loan.v1.CheckFormationResponse
+	7,  // 22: arda.loan.v1.LoanCommandService.CheckAdjustment:output_type -> arda.loan.v1.CheckAdjustmentResponse
+	9,  // 23: arda.loan.v1.LoanCommandService.ResolveAdjustment:output_type -> arda.loan.v1.ResolveAdjustmentResponse
+	11, // 24: arda.loan.v1.LoanCommandService.CheckDisbursement:output_type -> arda.loan.v1.CheckDisbursementResponse
+	13, // 25: arda.loan.v1.LoanCommandService.GetDisbursementPostingDetail:output_type -> arda.loan.v1.DisbursementPostingDetail
+	15, // 26: arda.loan.v1.LoanCommandService.SettleDisbursement:output_type -> arda.loan.v1.SettleDisbursementResponse
+	17, // 27: arda.loan.v1.LoanCommandService.ResolveDisbursement:output_type -> arda.loan.v1.ResolveDisbursementResponse
+	19, // 28: arda.loan.v1.LoanCommandService.CheckCollection:output_type -> arda.loan.v1.CheckCollectionResponse
+	21, // 29: arda.loan.v1.LoanCommandService.GetCollectionPostingDetail:output_type -> arda.loan.v1.CollectionPostingDetail
+	23, // 30: arda.loan.v1.LoanCommandService.SettleCollection:output_type -> arda.loan.v1.SettleCollectionResponse
+	25, // 31: arda.loan.v1.LoanCommandService.ResolveCollection:output_type -> arda.loan.v1.ResolveCollectionResponse
+	28, // 32: arda.loan.v1.LoanCommandService.GetBatchPostingDetail:output_type -> arda.loan.v1.BatchPostingDetail
+	30, // 33: arda.loan.v1.LoanCommandService.CheckBatch:output_type -> arda.loan.v1.CheckBatchResponse
+	32, // 34: arda.loan.v1.LoanCommandService.SettleBatch:output_type -> arda.loan.v1.SettleBatchResponse
+	34, // 35: arda.loan.v1.LoanCommandService.ResolveBatch:output_type -> arda.loan.v1.ResolveBatchResponse
+	19, // [19:36] is the sub-list for method output_type
+	2,  // [2:19] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_arda_loan_v1_loan_proto_init() }
@@ -1763,7 +2541,7 @@ func file_arda_loan_v1_loan_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_loan_v1_loan_proto_rawDesc), len(file_arda_loan_v1_loan_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   26,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -39,6 +39,12 @@ type Disbursement struct {
 	FundSourceCode   string          `json:"fund_source_code"`
 	FlowType         string          `json:"flow_type,omitempty"`
 	SourceRegisterID string          `json:"source_register_id,omitempty"`
+	// BatchID links the row to its batch dossier (iteration 13); empty on
+	// legacy single-row disbursements.
+	BatchID          string          `json:"batch_id,omitempty"`
+	// IsClosed marks a batch COMPLETE row that closes the contract after
+	// settle without moving cash (amount 0 — posting skips zero legs).
+	IsClosed         bool            `json:"is_closed,omitempty"`
 	Status           string          `json:"status"`
 	Payload          json.RawMessage `json:"payload,omitempty"`
 	WorkflowCaseID   *string         `json:"workflow_case_id,omitempty"`

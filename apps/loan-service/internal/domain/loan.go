@@ -79,11 +79,22 @@ type Agreement struct {
 	InterestPaymentFreq  string    `json:"interest_payment_freq"`
 	PrincipalPaymentFreq string    `json:"principal_payment_freq"`
 	OutstandingAmt       int64     `json:"outstanding_amt_minor"`
+	// PendingDisburseAmt is the in-transit (registered, not yet completed)
+	// share of the drawdown — bumped by the REGISTER settle, unwound by the
+	// COMPLETE settle (iteration 13 wave: exposed on the agreements list).
+	PendingDisburseAmt   int64     `json:"pending_disburse_amt_minor"`
 	ColnPrincipalAmt     int64     `json:"coln_principal_amt_minor"`
 	ColnInterestAmt      int64     `json:"coln_interest_amt_minor"`
 	ProvisionAmt         int64     `json:"provision_amt_minor"`
+	// PlanCode is the EPAS repayment-group key (group key for batch flows —
+	// data loaded at runtime, no seed).
+	PlanCode             string    `json:"plan_code,omitempty"`
 	CurrencyCode         string    `json:"currency_code"`
 	AccClassification    string    `json:"acc_classification"`
+	// ContractNo / CustomerCode are joined from the contract header on the
+	// agreements list (dossier parity); empty on direct agreement reads.
+	ContractNo           string    `json:"contract_no,omitempty"`
+	CustomerCode         string    `json:"customer_code,omitempty"`
 	Status               string    `json:"status"`
 	CreatedBy            string    `json:"created_by"`
 	CreatedAt            time.Time `json:"created_at"`

@@ -32,6 +32,10 @@ const (
 	LoanCommandService_GetCollectionPostingDetail_FullMethodName   = "/arda.loan.v1.LoanCommandService/GetCollectionPostingDetail"
 	LoanCommandService_SettleCollection_FullMethodName             = "/arda.loan.v1.LoanCommandService/SettleCollection"
 	LoanCommandService_ResolveCollection_FullMethodName            = "/arda.loan.v1.LoanCommandService/ResolveCollection"
+	LoanCommandService_GetBatchPostingDetail_FullMethodName        = "/arda.loan.v1.LoanCommandService/GetBatchPostingDetail"
+	LoanCommandService_CheckBatch_FullMethodName                   = "/arda.loan.v1.LoanCommandService/CheckBatch"
+	LoanCommandService_SettleBatch_FullMethodName                  = "/arda.loan.v1.LoanCommandService/SettleBatch"
+	LoanCommandService_ResolveBatch_FullMethodName                 = "/arda.loan.v1.LoanCommandService/ResolveBatch"
 )
 
 // LoanCommandServiceClient is the client API for LoanCommandService service.
@@ -54,6 +58,10 @@ type LoanCommandServiceClient interface {
 	GetCollectionPostingDetail(ctx context.Context, in *GetCollectionPostingDetailRequest, opts ...grpc.CallOption) (*CollectionPostingDetail, error)
 	SettleCollection(ctx context.Context, in *SettleCollectionRequest, opts ...grpc.CallOption) (*SettleCollectionResponse, error)
 	ResolveCollection(ctx context.Context, in *ResolveCollectionRequest, opts ...grpc.CallOption) (*ResolveCollectionResponse, error)
+	GetBatchPostingDetail(ctx context.Context, in *GetBatchRequest, opts ...grpc.CallOption) (*BatchPostingDetail, error)
+	CheckBatch(ctx context.Context, in *CheckBatchRequest, opts ...grpc.CallOption) (*CheckBatchResponse, error)
+	SettleBatch(ctx context.Context, in *SettleBatchRequest, opts ...grpc.CallOption) (*SettleBatchResponse, error)
+	ResolveBatch(ctx context.Context, in *ResolveBatchRequest, opts ...grpc.CallOption) (*ResolveBatchResponse, error)
 }
 
 type loanCommandServiceClient struct {
@@ -194,6 +202,46 @@ func (c *loanCommandServiceClient) ResolveCollection(ctx context.Context, in *Re
 	return out, nil
 }
 
+func (c *loanCommandServiceClient) GetBatchPostingDetail(ctx context.Context, in *GetBatchRequest, opts ...grpc.CallOption) (*BatchPostingDetail, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BatchPostingDetail)
+	err := c.cc.Invoke(ctx, LoanCommandService_GetBatchPostingDetail_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) CheckBatch(ctx context.Context, in *CheckBatchRequest, opts ...grpc.CallOption) (*CheckBatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckBatchResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_CheckBatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) SettleBatch(ctx context.Context, in *SettleBatchRequest, opts ...grpc.CallOption) (*SettleBatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SettleBatchResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_SettleBatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) ResolveBatch(ctx context.Context, in *ResolveBatchRequest, opts ...grpc.CallOption) (*ResolveBatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveBatchResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_ResolveBatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LoanCommandServiceServer is the server API for LoanCommandService service.
 // All implementations must embed UnimplementedLoanCommandServiceServer
 // for forward compatibility.
@@ -214,6 +262,10 @@ type LoanCommandServiceServer interface {
 	GetCollectionPostingDetail(context.Context, *GetCollectionPostingDetailRequest) (*CollectionPostingDetail, error)
 	SettleCollection(context.Context, *SettleCollectionRequest) (*SettleCollectionResponse, error)
 	ResolveCollection(context.Context, *ResolveCollectionRequest) (*ResolveCollectionResponse, error)
+	GetBatchPostingDetail(context.Context, *GetBatchRequest) (*BatchPostingDetail, error)
+	CheckBatch(context.Context, *CheckBatchRequest) (*CheckBatchResponse, error)
+	SettleBatch(context.Context, *SettleBatchRequest) (*SettleBatchResponse, error)
+	ResolveBatch(context.Context, *ResolveBatchRequest) (*ResolveBatchResponse, error)
 	mustEmbedUnimplementedLoanCommandServiceServer()
 }
 
@@ -262,6 +314,18 @@ func (UnimplementedLoanCommandServiceServer) SettleCollection(context.Context, *
 }
 func (UnimplementedLoanCommandServiceServer) ResolveCollection(context.Context, *ResolveCollectionRequest) (*ResolveCollectionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveCollection not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) GetBatchPostingDetail(context.Context, *GetBatchRequest) (*BatchPostingDetail, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBatchPostingDetail not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) CheckBatch(context.Context, *CheckBatchRequest) (*CheckBatchResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckBatch not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) SettleBatch(context.Context, *SettleBatchRequest) (*SettleBatchResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SettleBatch not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) ResolveBatch(context.Context, *ResolveBatchRequest) (*ResolveBatchResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveBatch not implemented")
 }
 func (UnimplementedLoanCommandServiceServer) mustEmbedUnimplementedLoanCommandServiceServer() {}
 func (UnimplementedLoanCommandServiceServer) testEmbeddedByValue()                            {}
@@ -518,6 +582,78 @@ func _LoanCommandService_ResolveCollection_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LoanCommandService_GetBatchPostingDetail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).GetBatchPostingDetail(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_GetBatchPostingDetail_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).GetBatchPostingDetail(ctx, req.(*GetBatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_CheckBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckBatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).CheckBatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_CheckBatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).CheckBatch(ctx, req.(*CheckBatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_SettleBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SettleBatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).SettleBatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_SettleBatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).SettleBatch(ctx, req.(*SettleBatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_ResolveBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveBatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).ResolveBatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_ResolveBatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).ResolveBatch(ctx, req.(*ResolveBatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LoanCommandService_ServiceDesc is the grpc.ServiceDesc for LoanCommandService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -576,6 +712,22 @@ var LoanCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveCollection",
 			Handler:    _LoanCommandService_ResolveCollection_Handler,
+		},
+		{
+			MethodName: "GetBatchPostingDetail",
+			Handler:    _LoanCommandService_GetBatchPostingDetail_Handler,
+		},
+		{
+			MethodName: "CheckBatch",
+			Handler:    _LoanCommandService_CheckBatch_Handler,
+		},
+		{
+			MethodName: "SettleBatch",
+			Handler:    _LoanCommandService_SettleBatch_Handler,
+		},
+		{
+			MethodName: "ResolveBatch",
+			Handler:    _LoanCommandService_ResolveBatch_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

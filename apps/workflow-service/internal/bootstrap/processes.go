@@ -50,6 +50,15 @@ var lnmDisbursementComplete []byte
 //go:embed lnm-collection-v2.bpmn
 var lnmCollection []byte
 
+//go:embed lnm-disb-batch-register-v2.bpmn
+var lnmDisbBatchRegister []byte
+
+//go:embed lnm-disb-batch-complete-v2.bpmn
+var lnmDisbBatchComplete []byte
+
+//go:embed lnm-collection-batch-v2.bpmn
+var lnmCollectionBatch []byte
+
 //go:embed hrm-employee-registration-v2.bpmn
 var hrmEmployeeRegistration []byte
 
@@ -172,6 +181,27 @@ func BuiltInProcesses() []Process {
 			Name:         "Thu nợ (v2)",
 			ResourceName: "lnm-collection-v2.bpmn",
 			Content:      lnmCollection,
+		},
+		{
+			// Iteration 13: batch (1 hồ sơ — N hợp đồng) disbursement
+			// register/complete + collection — same maker/checker skeleton as
+			// the per-row flows, the workers post one N-line entry per batch.
+			ProcessCode:  "LNM_DISB_BATCH_REGISTER_V2",
+			Name:         "Đăng ký giải ngân theo hồ sơ (v2)",
+			ResourceName: "lnm-disb-batch-register-v2.bpmn",
+			Content:      lnmDisbBatchRegister,
+		},
+		{
+			ProcessCode:  "LNM_DISB_BATCH_COMPLETE_V2",
+			Name:         "Hoàn tất giải ngân theo hồ sơ (v2)",
+			ResourceName: "lnm-disb-batch-complete-v2.bpmn",
+			Content:      lnmDisbBatchComplete,
+		},
+		{
+			ProcessCode:  "LNM_COLLECTION_BATCH_V2",
+			Name:         "Thu nợ theo hồ sơ (v2)",
+			ResourceName: "lnm-collection-batch-v2.bpmn",
+			Content:      lnmCollectionBatch,
 		},
 		{
 			ProcessCode:  "RPT_SUBMIT_V2",

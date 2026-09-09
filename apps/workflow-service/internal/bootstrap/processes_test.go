@@ -11,9 +11,12 @@ import (
 func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 	processes := bootstrap.BuiltInProcesses()
 	want := map[string]string{
-		"LNM_DISB_REGISTER_V2":      "lnm-disbursement-register-v2",
-		"LNM_DISB_COMPLETE_V2":      "lnm-disbursement-complete-v2",
-		"LNM_COLLECTION_V2":         "lnm-collection-v2",
+		"LNM_DISB_REGISTER_V2":        "lnm-disbursement-register-v2",
+		"LNM_DISB_COMPLETE_V2":        "lnm-disbursement-complete-v2",
+		"LNM_COLLECTION_V2":           "lnm-collection-v2",
+		"LNM_DISB_BATCH_REGISTER_V2":  "lnm-disb-batch-register-v2",
+		"LNM_DISB_BATCH_COMPLETE_V2":  "lnm-disb-batch-complete-v2",
+		"LNM_COLLECTION_BATCH_V2":     "lnm-collection-batch-v2",
 		"HRM_EMPLOYEE_REGISTRATION": "hrm-employee-registration-v2",
 		"DPM_SETTLE_V2":             "dpm-settle-v2",
 		"RPT_SUBMIT_V2":             "rpt-submit-v2",

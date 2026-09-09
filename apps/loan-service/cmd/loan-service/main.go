@@ -93,9 +93,15 @@ func main() {
 	provisionSvc := service.NewProvisionService(repo, db, financeClient)
 	provisionHandler := handler.NewProvisionHandler(provisionSvc)
 
+	// Batch flows (iteration 13: 1 hồ sơ — N hợp đồng). The posting-rules
+	// proxy reuses the optional finance client (nil → empty rule list).
+	disbBatchSvc := service.NewBatchDisbursementService(repo, workflow)
+	colBatchSvc := service.NewBatchCollectionService(repo, workflow)
+	batchHandler := handler.NewBatchHandler(disbBatchSvc, colBatchSvc, financeClient)
+
 	srv := &http.Server{
-		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, loangrpc.Kinds)),
+		Addr:        cfg.HTTPAddr,
+		Handler:     ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, loangrpc.Kinds)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -118,7 +124,7 @@ func main() {
 			interceptors.UnaryServerLogging(logger),
 		),
 	)
-	loanv1.RegisterLoanCommandServiceServer(grpcSrv, grpcserver.NewLoanServer(loanSvc, adjSvc, disbSvc, colSvc))
+	loanv1.RegisterLoanCommandServiceServer(grpcSrv, grpcserver.NewLoanServer(loanSvc, adjSvc, disbSvc, colSvc, disbBatchSvc, colBatchSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)

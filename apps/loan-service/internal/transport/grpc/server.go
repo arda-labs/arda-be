@@ -24,10 +24,12 @@ type LoanServer struct {
 	adj           *service.AdjustmentService
 	disbursements *service.DisbursementService
 	collections   *service.CollectionService
+	disbBatches   *service.BatchDisbursementService
+	colBatches    *service.BatchCollectionService
 }
 
-func NewLoanServer(contracts *service.LoanService, adj *service.AdjustmentService, disbursements *service.DisbursementService, collections *service.CollectionService) *LoanServer {
-	return &LoanServer{contracts: contracts, adj: adj, disbursements: disbursements, collections: collections}
+func NewLoanServer(contracts *service.LoanService, adj *service.AdjustmentService, disbursements *service.DisbursementService, collections *service.CollectionService, disbBatches *service.BatchDisbursementService, colBatches *service.BatchCollectionService) *LoanServer {
+	return &LoanServer{contracts: contracts, adj: adj, disbursements: disbursements, collections: collections, disbBatches: disbBatches, colBatches: colBatches}
 }
 
 func tenantFromContext(ctx context.Context) (string, error) {
@@ -226,4 +228,106 @@ func (s *LoanServer) ResolveCollection(ctx context.Context, req *loanv1.ResolveC
 		return &loanv1.ResolveCollectionResponse{Ok: false}, nil
 	}
 	return &loanv1.ResolveCollectionResponse{Ok: true}, nil
+}
+
+// ── Batch flows (iteration 13, 1 hồ sơ — N hợp đồng) ──
+
+// batchTypeByCase variables name the batch kind; when absent the batch_type
+// request field selects the service. Defaults to the disbursement register
+// leg for backward safety with older workers.
+func (s *LoanServer) batchDisbSvc() *service.BatchDisbursementService { return s.disbBatches }
+func (s *LoanServer) batchColSvc() *service.BatchCollectionService   { return s.colBatches }
+
+func isCollectionBatchType(batchType string) bool {
+	return batchType == domain.BatchTypeCollection
+}
+
+func (s *LoanServer) GetBatchPostingDetail(ctx context.Context, req *loanv1.GetBatchRequest) (*loanv1.BatchPostingDetail, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if req.GetBatchId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "batch_id is required")
+	}
+	if isCollectionBatchType(req.GetBatchType()) {
+		detail, err := s.batchColSvc().BatchPostingDetail(ctx, tenantID, req.GetBatchId())
+		if err != nil {
+			slog.Warn("loan grpc: batch posting detail failed", "id", req.GetBatchId(), "err", err)
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return detail, nil
+	}
+	detail, err := s.batchDisbSvc().BatchPostingDetail(ctx, tenantID, req.GetBatchId())
+	if err != nil {
+		slog.Warn("loan grpc: batch posting detail failed", "id", req.GetBatchId(), "err", err)
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return detail, nil
+}
+
+func (s *LoanServer) CheckBatch(ctx context.Context, req *loanv1.CheckBatchRequest) (*loanv1.CheckBatchResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if req.GetBatchId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "batch_id is required")
+	}
+	if isCollectionBatchType(req.GetBatchType()) {
+		ok, message, err := s.batchColSvc().Check(ctx, tenantID, req.GetBatchId())
+		if err != nil {
+			return &loanv1.CheckBatchResponse{Ok: false, Message: err.Error()}, nil
+		}
+		return &loanv1.CheckBatchResponse{Ok: ok, Message: message}, nil
+	}
+	ok, message, err := s.batchDisbSvc().Check(ctx, tenantID, req.GetBatchId())
+	if err != nil {
+		return &loanv1.CheckBatchResponse{Ok: false, Message: err.Error()}, nil
+	}
+	return &loanv1.CheckBatchResponse{Ok: ok, Message: message}, nil
+}
+
+func (s *LoanServer) SettleBatch(ctx context.Context, req *loanv1.SettleBatchRequest) (*loanv1.SettleBatchResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if req.GetBatchId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "batch_id is required")
+	}
+	if isCollectionBatchType(req.GetBatchType()) {
+		if err := s.batchColSvc().SettleBatchCollection(ctx, tenantID, req.GetBatchId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
+			slog.Warn("loan grpc: settle collection batch failed", "id", req.GetBatchId(), "err", err)
+			return &loanv1.SettleBatchResponse{Ok: false}, nil
+		}
+		return &loanv1.SettleBatchResponse{Ok: true}, nil
+	}
+	if err := s.batchDisbSvc().SettleBatch(ctx, tenantID, req.GetBatchId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
+		slog.Warn("loan grpc: settle disbursement batch failed", "id", req.GetBatchId(), "err", err)
+		return &loanv1.SettleBatchResponse{Ok: false}, nil
+	}
+	return &loanv1.SettleBatchResponse{Ok: true}, nil
+}
+
+func (s *LoanServer) ResolveBatch(ctx context.Context, req *loanv1.ResolveBatchRequest) (*loanv1.ResolveBatchResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if req.GetBatchId() == "" || req.GetDecision() == "" {
+		return nil, status.Error(codes.InvalidArgument, "batch_id and decision are required")
+	}
+	if isCollectionBatchType(req.GetBatchType()) {
+		if err := s.batchColSvc().Resolve(ctx, tenantID, req.GetBatchId(), req.GetDecision()); err != nil {
+			slog.Warn("loan grpc: resolve collection batch failed", "id", req.GetBatchId(), "err", err)
+			return &loanv1.ResolveBatchResponse{Ok: false}, nil
+		}
+		return &loanv1.ResolveBatchResponse{Ok: true}, nil
+	}
+	if err := s.batchDisbSvc().Resolve(ctx, tenantID, req.GetBatchId(), req.GetDecision()); err != nil {
+		slog.Warn("loan grpc: resolve disbursement batch failed", "id", req.GetBatchId(), "err", err)
+		return &loanv1.ResolveBatchResponse{Ok: false}, nil
+	}
+	return &loanv1.ResolveBatchResponse{Ok: true}, nil
 }
