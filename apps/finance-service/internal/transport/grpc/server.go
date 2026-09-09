@@ -90,6 +90,22 @@ func (s *PostingServer) GetJournalEntry(ctx context.Context, req *financev1.GetJ
 	return detail, nil
 }
 
+// ListPostingRules serves the workflow workers' rule-card line build: they
+// fetch the fin_accounting_rules card per document type instead of
+// hardcoding classification strings.
+func (s *PostingServer) ListPostingRules(ctx context.Context, req *financev1.ListPostingRulesRequest) (*financev1.ListPostingRulesResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	rules, err := s.posting.ListPostingRules(ctx, tenantID, req.GetDocumentType())
+	if err != nil {
+		slog.Warn("posting grpc: list posting rules failed", "docType", req.GetDocumentType(), "err", err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return &financev1.ListPostingRulesResponse{Rules: rules}, nil
+}
+
 func (s *PostingServer) ReservePosting(ctx context.Context, req *financev1.PostingRequest) (*financev1.PostingResponse, error) {
 	tenantID, err := tenantFromContext(ctx)
 	if err != nil {

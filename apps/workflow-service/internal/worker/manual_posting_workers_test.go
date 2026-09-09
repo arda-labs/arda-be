@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -89,5 +90,57 @@ func TestPostingRequestFromVarsRejectsBrokenVariables(t *testing.T) {
 		"postingRequest":        map[string]any{"lines": []any{}},
 	}, SingleEntryFlow); err == nil || !strings.Contains(err.Error(), "lines must not be empty") {
 		t.Fatalf("empty lines error = %v", err)
+	}
+}
+
+func TestClosingFlowBuildsFinanceRequest(t *testing.T) {
+	// The closing case variables carry the server-built postingRequest
+	// (finance-service constructed the balanced lines from the maker's
+	// INC/EXP rows) — the worker mirrors the manual posting deserialization
+	// with the FIN_CLOSING document type.
+	vars := map[string]any{
+		"caseId":                "case-777",
+		"postingIdempotencyKey": "fin-closing-abc",
+		"postingRequest": map[string]any{
+			"accountingDate": "2026-09-08",
+			"currencyCode":   "VND",
+			"description":    "Kết chuyển thu chi kỳ Y — 2026-09-08",
+			"lines": []any{
+				map[string]any{"lineNo": float64(1), "direction": "DEBIT", "amountMinor": float64(500000), "accountCode": "5111", "coaVersion": "V1"},
+				map[string]any{"lineNo": float64(2), "direction": "CREDIT", "amountMinor": float64(500000), "accountCode": "4211", "coaVersion": "V1"},
+			},
+		},
+	}
+	req, err := postingRequestFromVars(vars, ClosingFlow)
+	if err != nil {
+		t.Fatalf("postingRequestFromVars(closing) error = %v", err)
+	}
+	if req.GetIdempotencyKey() != "fin-closing-abc" {
+		t.Fatalf("idempotency key = %q, want fin-closing-abc", req.GetIdempotencyKey())
+	}
+	ref := req.GetBusinessReference()
+	if ref.GetDomain() != "fin" || ref.GetDocumentType() != "FIN_CLOSING" || ref.GetCaseId() != "case-777" {
+		t.Fatalf("business reference mismatch: %+v", ref)
+	}
+	if len(req.GetLines()) != 2 || req.GetLines()[0].GetAccountCode() != "5111" || req.GetLines()[1].GetAccountCode() != "4211" {
+		t.Fatalf("closing lines mismatch: %+v", req.GetLines())
+	}
+}
+
+func TestIsPostingPolicyError(t *testing.T) {
+	// Finance-service stamps the sentinel code at the start of the message;
+	// the gRPC layer prefixes transport detail, so containment decides.
+	policyMsg := errors.New("rpc error: code = FailedPrecondition desc = TRANSACTION_DATE_EXCEEDS_BACKDATE: accounting date 2026-01-01 is 250 days back")
+	if !isPostingPolicyError(policyMsg) {
+		t.Fatal("policy sentinel message must classify as validation")
+	}
+	infraMsg := errors.New("rpc error: code = Unavailable desc = connection refused")
+	if isPostingPolicyError(infraMsg) {
+		t.Fatal("infra failure must not classify as validation")
+	}
+	for _, sentinel := range []string{"TRANSACTION_DATE_EXCEEDS_CURRENT_DATE", "BACKDATE_NOT_ALLOWED", "TRANSACTION_DATE_EXCEEDS_BACKDATE", "POSTING_DATE_BEFORE_CLOSING_LOCK"} {
+		if !isPostingPolicyError(errors.New("desc = " + sentinel + ": detail")) {
+			t.Fatalf("sentinel %s must classify as validation", sentinel)
+		}
 	}
 }

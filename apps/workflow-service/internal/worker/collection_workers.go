@@ -8,14 +8,24 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
+	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
 )
 
-// CollectionWorkers run the LNM_COLLECTION_V2 flow jobs. Execute posts the
-// 4-line LNM_COLLECTION rule card (cash DR principal / CR loan principal /
-// cash DR interest / CR interest receivable) then applies side effects.
+// CollectionWorkers run the LNM_COLLECTION_V2 flow jobs (lnm-collection-v2.bpmn),
+// riding the finance two-phase posting lifecycle like the disbursement legs
+// — collection is one case (no register/complete split), so the phases map
+// onto the single case:
+//   - init:     reserve the cash hold (PENDING entry + available-balance
+//     reservation) right after submission, idempotent
+//   - validate: loan-service business check, then re-Reserve (rebuilds the
+//     hold when the maker edited the receipt)
+//   - execute:  post the reserved entry (PENDING → POSTED) — the 4-line
+//     LNM_COLLECTION rule card (cash DR principal / CR loan principal /
+//     cash DR interest / CR interest receivable) — then settle side effects
+//   - cancel:   release the hold (when one exists), reject the receipt
 type CollectionWorkers struct {
 	loanClient    *loanclient.Client
 	financeClient *financeclient.Client
@@ -26,9 +36,9 @@ func NewCollectionWorkers(loanClient *loanclient.Client, financeClient *financec
 	return &CollectionWorkers{loanClient: loanClient, financeClient: financeClient, projection: NewCaseProjection(caseRepo)}
 }
 
-// Handlers returns the validate/execute/cancel job handlers.
-func (w *CollectionWorkers) Handlers() (worker.JobHandler, worker.JobHandler, worker.JobHandler) {
-	return w.validate(), w.execute(), w.cancel()
+// Handlers returns the init/validate/execute/cancel job handlers.
+func (w *CollectionWorkers) Handlers() (worker.JobHandler, worker.JobHandler, worker.JobHandler, worker.JobHandler) {
+	return w.init(), w.validate(), w.execute(), w.cancel()
 }
 
 func (w *CollectionWorkers) collectionID(job entities.Job) (string, error) {
@@ -46,9 +56,126 @@ func (w *CollectionWorkers) collectionID(job entities.Job) (string, error) {
 	return id, nil
 }
 
+// buildPostingRequest resolves the receipt detail from loan-service and keys
+// the hold on the collection id — the same key across init/validate/execute
+// is what makes Reserve idempotent and lets Post convert the hold.
+func (w *CollectionWorkers) buildPostingRequest(ctx context.Context, job entities.Job, id string) (*financev1.PostingRequest, error) {
+	detail, err := w.loanClient.GetCollectionPostingDetail(crmJobContext(job), id)
+	if err != nil {
+		return nil, err
+	}
+	return &financev1.PostingRequest{
+		IdempotencyKey: fmt.Sprintf("lnm-collection-%s", detail.GetCollectionId()),		AccountingDate: detail.GetCollectionDate(),
+		CurrencyCode:   detail.GetCurrencyCode(),
+		Description:    fmt.Sprintf("Thu nợ %s / %s", detail.GetContractCode(), detail.GetAgreementCode()),
+		BusinessReference: &financev1.BusinessReference{
+			Domain:       "lnm",
+			DocumentType: "LNM_COLLECTION",
+			DocumentId:   detail.GetCollectionId(),
+			CaseId:       detail.GetWorkflowCaseId(),
+		},
+		Lines: postingLinesFromRules(fetchPostingRules(w.financeClient, "LNM_COLLECTION"), collectionLegs(detail), detail.GetCurrencyCode()),
+	}, nil
+}
+
+// collectionLegs builds the rule-card legs (EPAS LNM.301.02). The principal
+// pair posts card lines 1-2, the interest pair lines 3-4 — each pair only
+// when its amount is positive, so the card rows are referenced explicitly.
+// Classifications come from the finance rule card; the constants here are
+// only the fallback when a card row is missing.
+func collectionLegs(detail *loanv1.CollectionPostingDetail) []postingLeg {
+	var legs []postingLeg
+	if detail.GetPrincipalMinor() > 0 {
+		legs = append(legs,
+			postingLeg{
+				CardLine:    1,
+				Fallback:    "CASH_SETTLEMENT_ACCOUNT",
+				Direction:   "DEBIT",
+				AmountMinor: detail.GetPrincipalMinor(),
+				Analytics: &financev1.Analytics{
+					OrgUnitCode:  detail.GetOrgUnitCode(),
+					CustomerCode: detail.GetCustomerCode(),
+					ContractCode: detail.GetContractCode(),
+				},
+			},
+			postingLeg{
+				CardLine:    2,
+				Fallback:    "LNM_LOAN_PRINCIPAL",
+				Direction:   "CREDIT",
+				AmountMinor: detail.GetPrincipalMinor(),
+				Analytics: &financev1.Analytics{
+					DebtGroupCode: detail.GetDebtGroupCode(),
+					OrgUnitCode:   detail.GetOrgUnitCode(),
+					CustomerCode:  detail.GetCustomerCode(),
+					ContractCode:  detail.GetContractCode(),
+				},
+			})
+	}
+	if detail.GetInterestMinor() > 0 {
+		legs = append(legs,
+			postingLeg{
+				CardLine:    3,
+				Fallback:    "CASH_SETTLEMENT_ACCOUNT",
+				Direction:   "DEBIT",
+				AmountMinor: detail.GetInterestMinor(),
+				Analytics: &financev1.Analytics{
+					OrgUnitCode:  detail.GetOrgUnitCode(),
+					CustomerCode: detail.GetCustomerCode(),
+					ContractCode: detail.GetContractCode(),
+				},
+			},
+			postingLeg{
+				CardLine:    4,
+				Fallback:    "LNM_INTEREST_RECEIVABLE",
+				Direction:   "CREDIT",
+				AmountMinor: detail.GetInterestMinor(),
+				Analytics: &financev1.Analytics{
+					DebtGroupCode: detail.GetDebtGroupCode(),
+					OrgUnitCode:   detail.GetOrgUnitCode(),
+					ContractCode:  detail.GetContractCode(),
+				},
+			})
+	}
+	return legs
+}
+
+// init reserves the posting right after submission — the cash hold exists
+// from the moment the case starts (the cash setlement account's available
+// balance drops during the approval window). Safe on retries and after maker
+// edits: Reserve rebuilds or replays under the same idempotency key.
+func (w *CollectionWorkers) init() worker.JobHandler {
+	return func(client worker.JobClient, job entities.Job) {
+		logCollectionJob("init", job)
+		ctx := context.Background()
+		id, err := w.collectionID(job)
+		if err != nil {
+			_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).Send(ctx)
+			return
+		}
+		req, err := w.buildPostingRequest(ctx, job, id)
+		if err != nil {
+			w.failJob(client, job, "Loan Error: "+err.Error())
+			return
+		}
+		reserved, err := w.financeClient.Reserve(ctx, req)
+		if err != nil {
+			w.failJob(client, job, "Posting Error: "+err.Error())
+			return
+		}
+		if err := w.complete(ctx, client, job, map[string]any{
+			"journalEntryId": reserved.GetJournalEntryId(),
+		}); err != nil {
+			return
+		}
+		slog.Info("collection reserved", "id", id, "entry", reserved.GetJournalEntryId(), "status", reserved.GetStatus())
+	}
+}
+
+// validate re-runs the business check, then re-reserves with the same key —
+// if the maker edited the receipt the stale hold is released and rebuilt.
 func (w *CollectionWorkers) validate() worker.JobHandler {
 	return func(client worker.JobClient, job entities.Job) {
-		logLoanJob("collection", "validate", job)
+		logCollectionJob("validate", job)
 		ctx := context.Background()
 		id, err := w.collectionID(job)
 		if err != nil {
@@ -64,100 +191,43 @@ func (w *CollectionWorkers) validate() worker.JobHandler {
 			throwValidationError(client, job, message)
 			return
 		}
-		_ = w.complete(ctx, client, job, nil)
-	}
-}
-
-func (w *CollectionWorkers) execute() worker.JobHandler {
-	return func(client worker.JobClient, job entities.Job) {
-		logLoanJob("collection", "execute", job)
-		ctx := context.Background()
-		vars, _ := job.GetVariablesAsMap()
-		id, _ := vars["collectionId"].(string)
-		if id == "" {
-			id, _ = vars["primaryObjectId"].(string)
-		}
-		if id == "" {
-			_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).Send(ctx)
-			return
-		}
-		actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
-
-		detail, err := w.loanClient.GetCollectionPostingDetail(crmJobContext(job), id)
+		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
 			w.failJob(client, job, "Loan Error: "+err.Error())
 			return
 		}
+		reserved, err := w.financeClient.Reserve(ctx, req)
+		if err != nil {
+			w.failJob(client, job, "Posting Error: "+err.Error())
+			return
+		}
+		if err := w.complete(ctx, client, job, map[string]any{
+			"journalEntryId": reserved.GetJournalEntryId(),
+		}); err != nil {
+			return
+		}
+	}
+}
 
-		postReq := &financev1.PostingRequest{
-			IdempotencyKey: fmt.Sprintf("lnm-collection-%s", detail.GetCollectionId()),
-			AccountingDate: detail.GetCollectionDate(),
-			CurrencyCode:   detail.GetCurrencyCode(),
-			Description:    fmt.Sprintf("Thu nợ %s / %s", detail.GetContractCode(), detail.GetAgreementCode()),
-			BusinessReference: &financev1.BusinessReference{
-				Domain:       "lnm",
-				DocumentType: "LNM_COLLECTION",
-				DocumentId:   detail.GetCollectionId(),
-				CaseId:       detail.GetWorkflowCaseId(),
-			},
+// execute converts the reserved PENDING entry to POSTED, then settles the
+// receipt side effects (agreement outstanding unwind + journal ref).
+func (w *CollectionWorkers) execute() worker.JobHandler {
+	return func(client worker.JobClient, job entities.Job) {
+		logCollectionJob("execute", job)
+		ctx := context.Background()
+		id, err := w.collectionID(job)
+		if err != nil {
+			_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).Send(ctx)
+			return
 		}
-		if detail.GetPrincipalMinor() > 0 {
-			postReq.Lines = append(postReq.Lines,
-				&financev1.PostingLine{
-					LineNo:       int32(len(postReq.Lines) + 1),
-					Direction:    "DEBIT",
-					AmountMinor:  detail.GetPrincipalMinor(),
-					CurrencyCode: detail.GetCurrencyCode(),
-					Analytics: &financev1.Analytics{
-						AccClassification: "CASH_SETTLEMENT_ACCOUNT",
-						OrgUnitCode:       detail.GetOrgUnitCode(),
-						CustomerCode:      detail.GetCustomerCode(),
-						ContractCode:      detail.GetContractCode(),
-					},
-				},
-				&financev1.PostingLine{
-					LineNo:       int32(len(postReq.Lines) + 1),
-					Direction:    "CREDIT",
-					AmountMinor:  detail.GetPrincipalMinor(),
-					CurrencyCode: detail.GetCurrencyCode(),
-					Analytics: &financev1.Analytics{
-						AccClassification: "LNM_LOAN_PRINCIPAL",
-						DebtGroupCode:     detail.GetDebtGroupCode(),
-						OrgUnitCode:       detail.GetOrgUnitCode(),
-						CustomerCode:      detail.GetCustomerCode(),
-						ContractCode:      detail.GetContractCode(),
-					},
-				})
-		}
-		if detail.GetInterestMinor() > 0 {
-			postReq.Lines = append(postReq.Lines,
-				&financev1.PostingLine{
-					LineNo:       int32(len(postReq.Lines) + 1),
-					Direction:    "DEBIT",
-					AmountMinor:  detail.GetInterestMinor(),
-					CurrencyCode: detail.GetCurrencyCode(),
-					Analytics: &financev1.Analytics{
-						AccClassification: "CASH_SETTLEMENT_ACCOUNT",
-						OrgUnitCode:       detail.GetOrgUnitCode(),
-						CustomerCode:      detail.GetCustomerCode(),
-						ContractCode:      detail.GetContractCode(),
-					},
-				},
-				&financev1.PostingLine{
-					LineNo:       int32(len(postReq.Lines) + 1),
-					Direction:    "CREDIT",
-					AmountMinor:  detail.GetInterestMinor(),
-					CurrencyCode: detail.GetCurrencyCode(),
-					Analytics: &financev1.Analytics{
-						AccClassification: "LNM_INTEREST_RECEIVABLE",
-						DebtGroupCode:     detail.GetDebtGroupCode(),
-						OrgUnitCode:       detail.GetOrgUnitCode(),
-						ContractCode:      detail.GetContractCode(),
-					},
-				})
-		}
+		actor := stringVariable(mustJobVars(job), "actorUserId", "actor_user_id", "createdBy", "created_by")
 
-		posted, err := w.financeClient.Post(ctx, postReq)
+		req, err := w.buildPostingRequest(ctx, job, id)
+		if err != nil {
+			w.failJob(client, job, "Loan Error: "+err.Error())
+			return
+		}
+		posted, err := w.financeClient.Post(ctx, req)
 		if err != nil {
 			w.failJob(client, job, "Posting Error: "+err.Error())
 			return
@@ -177,11 +247,13 @@ func (w *CollectionWorkers) execute() worker.JobHandler {
 	}
 }
 
+// cancel releases the finance hold (when one exists — init may never have
+// run) and resolves the receipt as REJECTED.
 func (w *CollectionWorkers) cancel() worker.JobHandler {
 	return func(client worker.JobClient, job entities.Job) {
-		logLoanJob("collection", "cancel", job)
+		logCollectionJob("cancel", job)
 		ctx := context.Background()
-		vars, _ := job.GetVariablesAsMap()
+		vars := mustJobVars(job)
 		id, _ := vars["collectionId"].(string)
 		if id == "" {
 			id, _ = vars["primaryObjectId"].(string)
@@ -190,6 +262,18 @@ func (w *CollectionWorkers) cancel() worker.JobHandler {
 		note, _ := vars["decisionNote"].(string)
 		if note == "" {
 			note = "Rejected by checker"
+		}
+		// The hold only exists if a reserve step ran; a missing journalEntryId
+		// means the case was rejected before any posting was staged.
+		if journalEntryID := stringVariable(vars, "journalEntryId"); journalEntryID != "" {
+			if _, err := w.financeClient.Release(ctx, &financev1.ReleaseRequest{
+				JournalEntryId: journalEntryID,
+				Reason:         note,
+				Actor:          decidedBy,
+			}); err != nil {
+				w.failJob(client, job, "Posting Error: "+err.Error())
+				return
+			}
 		}
 		if err := w.loanClient.ResolveCollection(crmJobContext(job), id, "REJECT", decidedBy, note); err != nil {
 			w.failJob(client, job, "Loan Error: "+err.Error())
@@ -228,4 +312,18 @@ func (w *CollectionWorkers) failJob(client worker.JobClient, job entities.Job, r
 	if err != nil {
 		slog.Error("collection fail-job send", "err", err)
 	}
+}
+
+func logCollectionJob(phase string, job entities.Job) {
+	vars, _ := job.GetVariablesAsMap()
+	collectionID, _ := vars["collectionId"].(string)
+	slog.Info("loan job", "kind", "collection", "phase", phase, "jobType", job.GetType(),
+		"jobKey", job.GetKey(), "processInstanceKey", job.GetProcessInstanceKey(), "collectionId", collectionID)
+}
+
+// mustJobVars returns the job variables, tolerating decode failures (empty
+// map) for logging/decision paths that already guard on the values.
+func mustJobVars(job entities.Job) map[string]any {
+	vars, _ := job.GetVariablesAsMap()
+	return vars
 }

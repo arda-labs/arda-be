@@ -137,3 +137,20 @@ func (c *Client) GetJournalEntry(ctx context.Context, req *financev1.GetJournalE
 	defer cancel()
 	return c.api.GetJournalEntry(callCtx, req)
 }
+
+// ListPostingRules exposes the fin_accounting_rules card for one document
+// type so workers build their posting lines from config instead of
+// hardcoded classification strings. Unseeded document types return an empty
+// list — callers fall back to their built-in legs.
+func (c *Client) ListPostingRules(ctx context.Context, documentType string) ([]*financev1.PostingRule, error) {
+	if c == nil {
+		return nil, errors.New("finance client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.ListPostingRules(callCtx, &financev1.ListPostingRulesRequest{DocumentType: documentType})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetRules(), nil
+}

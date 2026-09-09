@@ -22,6 +22,8 @@ import (
 // Iteration 10 adds OFF_BALANCE (nhập/xuất ngoại bảng — same-shape lines on
 // nature-B accounts) and CANCELLATION (hủy giao dịch — reverse a POSTED
 // entry on checker approval; no posting_request, the original is referenced).
+// Iteration 11 adds CLOSING (kết chuyển thu chi — server-built lines from
+// INC/EXP rows, see closing_case_service.go).
 const (
 	FlowSingleEntry  = "SINGLE_ENTRY"
 	FlowDoubleEntry  = "DOUBLE_ENTRY"
@@ -57,11 +59,13 @@ func NewPostingCaseService(posting *PostingService, workflow WorkflowCaseClient)
 
 // PostingCaseInput is the HTTP contract body of POST /api/finance/posting-cases.
 // PostingRequest backs SINGLE_ENTRY / DOUBLE_ENTRY / OFF_BALANCE; Cancellation
-// backs CANCELLATION (no posting request — the original entry is referenced).
+// backs CANCELLATION (no posting request — the original entry is referenced);
+// Closing backs CLOSING (iteration 11 — server-built lines from INC/EXP rows).
 type PostingCaseInput struct {
 	Flow           string
 	PostingRequest *financev1.PostingRequest
 	Cancellation   *CancellationCaseInput
+	Closing        *ClosingCaseInput
 }
 
 // CancellationTrader is the person raising the cancellation (mirror of the
@@ -242,10 +246,14 @@ func validateCancellationShape(in *CancellationCaseInput) error {
 // replays instead of opening a second case. CANCELLATION skips the posting
 // preview (there is no posting request) and instead fails fast on an
 // unknown reference entry — the authoritative status check still happens in
-// the workflow init/validate workers.
+// the workflow init/validate workers. CLOSING (iteration 11) builds its
+// posting server-side from INC/EXP rows and lives in closing_case_service.go.
 func (s *PostingCaseService) CreatePostingCase(ctx context.Context, tenantID, actor string, in PostingCaseInput) (*PostingCaseResult, error) {
 	if in.Flow == FlowCancellation {
 		return s.createCancellationCase(ctx, tenantID, actor, in)
+	}
+	if in.Flow == FlowClosing {
+		return s.CreateClosingCase(ctx, tenantID, actor, in.Closing)
 	}
 	if err := validateManualPostingFlow(in.Flow, in.PostingRequest); err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())

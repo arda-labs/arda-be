@@ -227,6 +227,19 @@ func main() {
 		}
 		logger.Info("workflow loan adjustment workers registered", "kinds", len(loanclient.Kinds))
 
+		// Loan formation (LOAN_FORMATION_V2, EPAS LNM.201.01): validate reads
+		// the contract state, execute activates the contract, cancel rejects
+		// it. No finance involvement — formation moves no money.
+		formationWorkers := worker.NewFormationWorkers(loanClient, caseRepo)
+		fv, fe, fc := formationWorkers.Handlers()
+		fvw := zeebeSvc.NewJobWorker("lnm.loan.formation.validate", fv)
+		few := zeebeSvc.NewJobWorker("lnm.loan.formation.execute", fe)
+		fcw := zeebeSvc.NewJobWorker("lnm.loan.formation.cancel", fc)
+		defer fvw.Close()
+		defer few.Close()
+		defer fcw.Close()
+		logger.Info("workflow loan formation workers registered")
+
 		// Disbursement two-flow workers (P1b v2): the register leg reserves
 		// the posting at init and posts on approve; the complete leg
 		// settles the in-transit hold against cash.
@@ -254,11 +267,16 @@ func main() {
 			defer ccw.Close()
 			logger.Info("workflow disbursement register/complete workers registered")
 
+			// Collection: one case riding the two-phase finance lifecycle —
+			// init reserves the cash hold, validate re-checks + re-reserves,
+			// execute posts on approve, cancel releases on reject.
 			colWorkers := worker.NewCollectionWorkers(loanClient, financeClient, caseRepo)
-			cv, ce, cc := colWorkers.Handlers()
+			ci, cv, ce, cc := colWorkers.Handlers()
+			civ := zeebeSvc.NewJobWorker("lnm.collection.init", ci)
 			cvv := zeebeSvc.NewJobWorker("lnm.collection.validate", cv)
 			ceE := zeebeSvc.NewJobWorker("lnm.collection.execute", ce)
 			ccc := zeebeSvc.NewJobWorker("lnm.collection.cancel", cc)
+			defer civ.Close()
 			defer cvv.Close()
 			defer ceE.Close()
 			defer ccc.Close()
@@ -302,11 +320,12 @@ func main() {
 	}
 
 	// Manual posting two-flow workers (FAC-native bút toán lẻ / bút toán
-	// kép / ngoại bảng): the case variables carry the FE-submitted posting;
-	// init reserves, validate re-checks, execute posts on approve, cancel
-	// releases on reject. Registered only when finance-service is reachable.
+	// kép / ngoại bảng / kết chuyển thu chi): the case variables carry the
+	// FE-submitted posting; init reserves, validate re-checks, execute posts
+	// on approve, cancel releases on reject. Registered only when
+	// finance-service is reachable.
 	if financeClient != nil {
-		for _, flow := range []worker.ManualPostingFlow{worker.SingleEntryFlow, worker.DoubleEntryFlow, worker.OffBalanceFlow} {
+		for _, flow := range []worker.ManualPostingFlow{worker.SingleEntryFlow, worker.DoubleEntryFlow, worker.OffBalanceFlow, worker.ClosingFlow} {
 			manualPosting := worker.NewManualPostingWorkers(flow, financeClient, caseRepo)
 			mi, mv, me, mc := manualPosting.Handlers()
 			miw := zeebeSvc.NewJobWorker(flow.TopicPrefix+".init", mi)

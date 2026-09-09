@@ -25,6 +25,7 @@ const (
 	PostingService_ReleasePosting_FullMethodName     = "/arda.finance.v1.PostingService/ReleasePosting"
 	PostingService_ReverseTransaction_FullMethodName = "/arda.finance.v1.PostingService/ReverseTransaction"
 	PostingService_GetJournalEntry_FullMethodName    = "/arda.finance.v1.PostingService/GetJournalEntry"
+	PostingService_ListPostingRules_FullMethodName   = "/arda.finance.v1.PostingService/ListPostingRules"
 )
 
 // PostingServiceClient is the client API for PostingService service.
@@ -68,6 +69,11 @@ type PostingServiceClient interface {
 	// its status and reversed_by_entry_id before reversing. Only POSTED and
 	// REVERSED entries are readable; anything else is NOT_FOUND.
 	GetJournalEntry(ctx context.Context, in *GetJournalEntryRequest, opts ...grpc.CallOption) (*JournalEntryDetail, error)
+	// ListPostingRules exposes the fin_accounting_rules card for one document
+	// type so workflow workers build their posting lines from config instead of
+	// hardcoded classification strings. Unseeded document types return an
+	// empty rule list (workers fall back to their built-in legs).
+	ListPostingRules(ctx context.Context, in *ListPostingRulesRequest, opts ...grpc.CallOption) (*ListPostingRulesResponse, error)
 }
 
 type postingServiceClient struct {
@@ -138,6 +144,16 @@ func (c *postingServiceClient) GetJournalEntry(ctx context.Context, in *GetJourn
 	return out, nil
 }
 
+func (c *postingServiceClient) ListPostingRules(ctx context.Context, in *ListPostingRulesRequest, opts ...grpc.CallOption) (*ListPostingRulesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPostingRulesResponse)
+	err := c.cc.Invoke(ctx, PostingService_ListPostingRules_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PostingServiceServer is the server API for PostingService service.
 // All implementations must embed UnimplementedPostingServiceServer
 // for forward compatibility.
@@ -179,6 +195,11 @@ type PostingServiceServer interface {
 	// its status and reversed_by_entry_id before reversing. Only POSTED and
 	// REVERSED entries are readable; anything else is NOT_FOUND.
 	GetJournalEntry(context.Context, *GetJournalEntryRequest) (*JournalEntryDetail, error)
+	// ListPostingRules exposes the fin_accounting_rules card for one document
+	// type so workflow workers build their posting lines from config instead of
+	// hardcoded classification strings. Unseeded document types return an
+	// empty rule list (workers fall back to their built-in legs).
+	ListPostingRules(context.Context, *ListPostingRulesRequest) (*ListPostingRulesResponse, error)
 	mustEmbedUnimplementedPostingServiceServer()
 }
 
@@ -206,6 +227,9 @@ func (UnimplementedPostingServiceServer) ReverseTransaction(context.Context, *Re
 }
 func (UnimplementedPostingServiceServer) GetJournalEntry(context.Context, *GetJournalEntryRequest) (*JournalEntryDetail, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetJournalEntry not implemented")
+}
+func (UnimplementedPostingServiceServer) ListPostingRules(context.Context, *ListPostingRulesRequest) (*ListPostingRulesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPostingRules not implemented")
 }
 func (UnimplementedPostingServiceServer) mustEmbedUnimplementedPostingServiceServer() {}
 func (UnimplementedPostingServiceServer) testEmbeddedByValue()                        {}
@@ -336,6 +360,24 @@ func _PostingService_GetJournalEntry_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PostingService_ListPostingRules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPostingRulesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PostingServiceServer).ListPostingRules(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PostingService_ListPostingRules_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PostingServiceServer).ListPostingRules(ctx, req.(*ListPostingRulesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PostingService_ServiceDesc is the grpc.ServiceDesc for PostingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -366,6 +408,10 @@ var PostingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetJournalEntry",
 			Handler:    _PostingService_GetJournalEntry_Handler,
+		},
+		{
+			MethodName: "ListPostingRules",
+			Handler:    _PostingService_ListPostingRules_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

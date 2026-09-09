@@ -71,6 +71,9 @@ var finOffBalance []byte
 //go:embed fin-txn-cancel-v2.bpmn
 var finTxnCancel []byte
 
+//go:embed fin-closing-v2.bpmn
+var finClosing []byte
+
 type Process struct {
 	ProcessCode  string
 	Name         string
@@ -215,15 +218,26 @@ func BuiltInProcesses() []Process {
 			Content:      finTxnCancel,
 		},
 		{
+			// Iteration 11: closing (kết chuyển thu chi FAC.203.01) — same
+			// worker shape as the manual posting legs; the case variables
+			// carry the server-built postingRequest (INC/EXP rows netted
+			// into the FIN_CLOSING_*_DEST result account by finance-service).
+			ProcessCode:  "FIN_CLOSING_V2",
+			Name:         "Kết chuyển thu chi (v2)",
+			ResourceName: "fin-closing-v2.bpmn",
+			Content:      finClosing,
+		},
+		{
 			ProcessCode:  "HRM_EMPLOYEE_REGISTRATION",
 			Name:         "Đăng ký nhân sự (v2)",
 			ResourceName: "hrm-employee-registration-v2.bpmn",
 			Content:      hrmEmployeeRegistration,
 		},
 		{
-			// Multi-level approval sample derived from EPAS LNM.201.01 —
-			// proves the platform handles tiered review before the loan
-			// domain lands (P1). Reference flow only, no domain worker yet.
+			// Multi-level approval flow derived from EPAS LNM.201.01
+			// (hình thành khoản vay): maker → TW/PGD review → GD/Board
+			// approval, wired to loan-service by the formation workers
+			// (validate/execute/cancel) since iteration 11 wave 2.
 			ProcessCode:  "LOAN_FORMATION_V2",
 			Name:         "Hình thành khoản vay đa cấp (mẫu LNM.201.01)",
 			ResourceName: "lnm-loan-formation-v2.bpmn",

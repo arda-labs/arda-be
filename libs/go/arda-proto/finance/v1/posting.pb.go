@@ -21,6 +21,196 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ListPostingRulesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`             // resolved from metadata in-process
+	DocumentType  string                 `protobuf:"bytes,2,opt,name=document_type,json=documentType,proto3" json:"document_type,omitempty"` // LNM_DISB_REGISTER | LNM_DISB_COMPLETE | LNM_COLLECTION | ...
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPostingRulesRequest) Reset() {
+	*x = ListPostingRulesRequest{}
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPostingRulesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPostingRulesRequest) ProtoMessage() {}
+
+func (x *ListPostingRulesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPostingRulesRequest.ProtoReflect.Descriptor instead.
+func (*ListPostingRulesRequest) Descriptor() ([]byte, []int) {
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ListPostingRulesRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *ListPostingRulesRequest) GetDocumentType() string {
+	if x != nil {
+		return x.DocumentType
+	}
+	return ""
+}
+
+type PostingRule struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	LineNo    int32                  `protobuf:"varint,1,opt,name=line_no,json=lineNo,proto3" json:"line_no,omitempty"`
+	Direction string                 `protobuf:"bytes,2,opt,name=direction,proto3" json:"direction,omitempty"` // DEBIT | CREDIT
+	// resolution_type selects which side applies: CLASS_MAP uses
+	// acc_classification, FIXED_CODE uses account_ref directly.
+	ResolutionType      string   `protobuf:"bytes,3,opt,name=resolution_type,json=resolutionType,proto3" json:"resolution_type,omitempty"`
+	AccountRef          string   `protobuf:"bytes,4,opt,name=account_ref,json=accountRef,proto3" json:"account_ref,omitempty"`                      // fixed COA code when resolution_type = FIXED_CODE
+	AccClassification   string   `protobuf:"bytes,5,opt,name=acc_classification,json=accClassification,proto3" json:"acc_classification,omitempty"` // analytics classification when CLASS_MAP
+	RequiredDimensions  []string `protobuf:"bytes,6,rep,name=required_dimensions,json=requiredDimensions,proto3" json:"required_dimensions,omitempty"`
+	DescriptionTemplate string   `protobuf:"bytes,7,opt,name=description_template,json=descriptionTemplate,proto3" json:"description_template,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *PostingRule) Reset() {
+	*x = PostingRule{}
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PostingRule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PostingRule) ProtoMessage() {}
+
+func (x *PostingRule) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PostingRule.ProtoReflect.Descriptor instead.
+func (*PostingRule) Descriptor() ([]byte, []int) {
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *PostingRule) GetLineNo() int32 {
+	if x != nil {
+		return x.LineNo
+	}
+	return 0
+}
+
+func (x *PostingRule) GetDirection() string {
+	if x != nil {
+		return x.Direction
+	}
+	return ""
+}
+
+func (x *PostingRule) GetResolutionType() string {
+	if x != nil {
+		return x.ResolutionType
+	}
+	return ""
+}
+
+func (x *PostingRule) GetAccountRef() string {
+	if x != nil {
+		return x.AccountRef
+	}
+	return ""
+}
+
+func (x *PostingRule) GetAccClassification() string {
+	if x != nil {
+		return x.AccClassification
+	}
+	return ""
+}
+
+func (x *PostingRule) GetRequiredDimensions() []string {
+	if x != nil {
+		return x.RequiredDimensions
+	}
+	return nil
+}
+
+func (x *PostingRule) GetDescriptionTemplate() string {
+	if x != nil {
+		return x.DescriptionTemplate
+	}
+	return ""
+}
+
+type ListPostingRulesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rules         []*PostingRule         `protobuf:"bytes,1,rep,name=rules,proto3" json:"rules,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPostingRulesResponse) Reset() {
+	*x = ListPostingRulesResponse{}
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPostingRulesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPostingRulesResponse) ProtoMessage() {}
+
+func (x *ListPostingRulesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPostingRulesResponse.ProtoReflect.Descriptor instead.
+func (*ListPostingRulesResponse) Descriptor() ([]byte, []int) {
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ListPostingRulesResponse) GetRules() []*PostingRule {
+	if x != nil {
+		return x.Rules
+	}
+	return nil
+}
+
 type BusinessReference struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Domain        string                 `protobuf:"bytes,1,opt,name=domain,proto3" json:"domain,omitempty"`                                 // lnm | dpm | ibm | cfc | vcm | cob | fin
@@ -34,7 +224,7 @@ type BusinessReference struct {
 
 func (x *BusinessReference) Reset() {
 	*x = BusinessReference{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[0]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -46,7 +236,7 @@ func (x *BusinessReference) String() string {
 func (*BusinessReference) ProtoMessage() {}
 
 func (x *BusinessReference) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[0]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -59,7 +249,7 @@ func (x *BusinessReference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BusinessReference.ProtoReflect.Descriptor instead.
 func (*BusinessReference) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{0}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *BusinessReference) GetDomain() string {
@@ -112,7 +302,7 @@ type Analytics struct {
 
 func (x *Analytics) Reset() {
 	*x = Analytics{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[1]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -124,7 +314,7 @@ func (x *Analytics) String() string {
 func (*Analytics) ProtoMessage() {}
 
 func (x *Analytics) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[1]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -137,7 +327,7 @@ func (x *Analytics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Analytics.ProtoReflect.Descriptor instead.
 func (*Analytics) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{1}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Analytics) GetAccClassification() string {
@@ -212,7 +402,7 @@ type PostingLine struct {
 
 func (x *PostingLine) Reset() {
 	*x = PostingLine{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[2]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -224,7 +414,7 @@ func (x *PostingLine) String() string {
 func (*PostingLine) ProtoMessage() {}
 
 func (x *PostingLine) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[2]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -237,7 +427,7 @@ func (x *PostingLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostingLine.ProtoReflect.Descriptor instead.
 func (*PostingLine) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{2}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PostingLine) GetLineNo() int32 {
@@ -325,7 +515,7 @@ type PostingRequest struct {
 
 func (x *PostingRequest) Reset() {
 	*x = PostingRequest{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[3]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -337,7 +527,7 @@ func (x *PostingRequest) String() string {
 func (*PostingRequest) ProtoMessage() {}
 
 func (x *PostingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[3]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -350,7 +540,7 @@ func (x *PostingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostingRequest.ProtoReflect.Descriptor instead.
 func (*PostingRequest) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{3}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PostingRequest) GetIdempotencyKey() string {
@@ -416,7 +606,7 @@ type PostingResponse struct {
 
 func (x *PostingResponse) Reset() {
 	*x = PostingResponse{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[4]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -428,7 +618,7 @@ func (x *PostingResponse) String() string {
 func (*PostingResponse) ProtoMessage() {}
 
 func (x *PostingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[4]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -441,7 +631,7 @@ func (x *PostingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostingResponse.ProtoReflect.Descriptor instead.
 func (*PostingResponse) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{4}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PostingResponse) GetJournalEntryId() string {
@@ -497,7 +687,7 @@ type ReleaseRequest struct {
 
 func (x *ReleaseRequest) Reset() {
 	*x = ReleaseRequest{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[5]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -509,7 +699,7 @@ func (x *ReleaseRequest) String() string {
 func (*ReleaseRequest) ProtoMessage() {}
 
 func (x *ReleaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[5]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -522,7 +712,7 @@ func (x *ReleaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseRequest) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{5}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ReleaseRequest) GetJournalEntryId() string {
@@ -565,7 +755,7 @@ type ValidationLine struct {
 
 func (x *ValidationLine) Reset() {
 	*x = ValidationLine{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[6]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -577,7 +767,7 @@ func (x *ValidationLine) String() string {
 func (*ValidationLine) ProtoMessage() {}
 
 func (x *ValidationLine) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[6]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -590,7 +780,7 @@ func (x *ValidationLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationLine.ProtoReflect.Descriptor instead.
 func (*ValidationLine) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{6}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ValidationLine) GetLineNo() int32 {
@@ -682,7 +872,7 @@ type ValidationResult struct {
 
 func (x *ValidationResult) Reset() {
 	*x = ValidationResult{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[7]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -694,7 +884,7 @@ func (x *ValidationResult) String() string {
 func (*ValidationResult) ProtoMessage() {}
 
 func (x *ValidationResult) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[7]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -707,7 +897,7 @@ func (x *ValidationResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationResult.ProtoReflect.Descriptor instead.
 func (*ValidationResult) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{7}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ValidationResult) GetValid() bool {
@@ -759,7 +949,7 @@ type ReverseRequest struct {
 
 func (x *ReverseRequest) Reset() {
 	*x = ReverseRequest{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[8]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -771,7 +961,7 @@ func (x *ReverseRequest) String() string {
 func (*ReverseRequest) ProtoMessage() {}
 
 func (x *ReverseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[8]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -784,7 +974,7 @@ func (x *ReverseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReverseRequest.ProtoReflect.Descriptor instead.
 func (*ReverseRequest) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{8}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ReverseRequest) GetTenantId() string {
@@ -861,7 +1051,7 @@ type GetJournalEntryRequest struct {
 
 func (x *GetJournalEntryRequest) Reset() {
 	*x = GetJournalEntryRequest{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[9]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -873,7 +1063,7 @@ func (x *GetJournalEntryRequest) String() string {
 func (*GetJournalEntryRequest) ProtoMessage() {}
 
 func (x *GetJournalEntryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[9]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -886,7 +1076,7 @@ func (x *GetJournalEntryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJournalEntryRequest.ProtoReflect.Descriptor instead.
 func (*GetJournalEntryRequest) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{9}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetJournalEntryRequest) GetTenantId() string {
@@ -925,7 +1115,7 @@ type JournalEntryDetailLine struct {
 
 func (x *JournalEntryDetailLine) Reset() {
 	*x = JournalEntryDetailLine{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[10]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -937,7 +1127,7 @@ func (x *JournalEntryDetailLine) String() string {
 func (*JournalEntryDetailLine) ProtoMessage() {}
 
 func (x *JournalEntryDetailLine) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[10]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -950,7 +1140,7 @@ func (x *JournalEntryDetailLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JournalEntryDetailLine.ProtoReflect.Descriptor instead.
 func (*JournalEntryDetailLine) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{10}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *JournalEntryDetailLine) GetLineNo() int32 {
@@ -1025,7 +1215,7 @@ type JournalEntryDetail struct {
 
 func (x *JournalEntryDetail) Reset() {
 	*x = JournalEntryDetail{}
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[11]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1037,7 +1227,7 @@ func (x *JournalEntryDetail) String() string {
 func (*JournalEntryDetail) ProtoMessage() {}
 
 func (x *JournalEntryDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_finance_v1_posting_proto_msgTypes[11]
+	mi := &file_arda_finance_v1_posting_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1050,7 +1240,7 @@ func (x *JournalEntryDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JournalEntryDetail.ProtoReflect.Descriptor instead.
 func (*JournalEntryDetail) Descriptor() ([]byte, []int) {
-	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{11}
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *JournalEntryDetail) GetJournalEntryId() string {
@@ -1162,7 +1352,21 @@ var File_arda_finance_v1_posting_proto protoreflect.FileDescriptor
 
 const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\n" +
-	"\x1darda/finance/v1/posting.proto\x12\x0farda.finance.v1\"\xaf\x01\n" +
+	"\x1darda/finance/v1/posting.proto\x12\x0farda.finance.v1\"[\n" +
+	"\x17ListPostingRulesRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12#\n" +
+	"\rdocument_type\x18\x02 \x01(\tR\fdocumentType\"\xa1\x02\n" +
+	"\vPostingRule\x12\x17\n" +
+	"\aline_no\x18\x01 \x01(\x05R\x06lineNo\x12\x1c\n" +
+	"\tdirection\x18\x02 \x01(\tR\tdirection\x12'\n" +
+	"\x0fresolution_type\x18\x03 \x01(\tR\x0eresolutionType\x12\x1f\n" +
+	"\vaccount_ref\x18\x04 \x01(\tR\n" +
+	"accountRef\x12-\n" +
+	"\x12acc_classification\x18\x05 \x01(\tR\x11accClassification\x12/\n" +
+	"\x13required_dimensions\x18\x06 \x03(\tR\x12requiredDimensions\x121\n" +
+	"\x14description_template\x18\a \x01(\tR\x13descriptionTemplate\"N\n" +
+	"\x18ListPostingRulesResponse\x122\n" +
+	"\x05rules\x18\x01 \x03(\v2\x1c.arda.finance.v1.PostingRuleR\x05rules\"\xaf\x01\n" +
 	"\x11BusinessReference\x12\x16\n" +
 	"\x06domain\x18\x01 \x01(\tR\x06domain\x12#\n" +
 	"\rdocument_type\x18\x02 \x01(\tR\fdocumentType\x12\x1f\n" +
@@ -1277,14 +1481,15 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"created_by\x18\r \x01(\tR\tcreatedBy\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x0e \x01(\tR\tcreatedAt\x12=\n" +
-	"\x05lines\x18\x0f \x03(\v2'.arda.finance.v1.JournalEntryDetailLineR\x05lines2\xa1\x04\n" +
+	"\x05lines\x18\x0f \x03(\v2'.arda.finance.v1.JournalEntryDetailLineR\x05lines2\x8a\x05\n" +
 	"\x0ePostingService\x12U\n" +
 	"\x0fValidatePosting\x12\x1f.arda.finance.v1.PostingRequest\x1a!.arda.finance.v1.ValidationResult\x12T\n" +
 	"\x0fPostTransaction\x12\x1f.arda.finance.v1.PostingRequest\x1a .arda.finance.v1.PostingResponse\x12S\n" +
 	"\x0eReservePosting\x12\x1f.arda.finance.v1.PostingRequest\x1a .arda.finance.v1.PostingResponse\x12S\n" +
 	"\x0eReleasePosting\x12\x1f.arda.finance.v1.ReleaseRequest\x1a .arda.finance.v1.PostingResponse\x12W\n" +
 	"\x12ReverseTransaction\x12\x1f.arda.finance.v1.ReverseRequest\x1a .arda.finance.v1.PostingResponse\x12_\n" +
-	"\x0fGetJournalEntry\x12'.arda.finance.v1.GetJournalEntryRequest\x1a#.arda.finance.v1.JournalEntryDetailBCZAgithub.com/arda-labs/arda/libs/go/arda-proto/finance/v1;financev1b\x06proto3"
+	"\x0fGetJournalEntry\x12'.arda.finance.v1.GetJournalEntryRequest\x1a#.arda.finance.v1.JournalEntryDetail\x12g\n" +
+	"\x10ListPostingRules\x12(.arda.finance.v1.ListPostingRulesRequest\x1a).arda.finance.v1.ListPostingRulesResponseBCZAgithub.com/arda-labs/arda/libs/go/arda-proto/finance/v1;financev1b\x06proto3"
 
 var (
 	file_arda_finance_v1_posting_proto_rawDescOnce sync.Once
@@ -1298,49 +1503,55 @@ func file_arda_finance_v1_posting_proto_rawDescGZIP() []byte {
 	return file_arda_finance_v1_posting_proto_rawDescData
 }
 
-var file_arda_finance_v1_posting_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_arda_finance_v1_posting_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_arda_finance_v1_posting_proto_goTypes = []any{
-	(*BusinessReference)(nil),      // 0: arda.finance.v1.BusinessReference
-	(*Analytics)(nil),              // 1: arda.finance.v1.Analytics
-	(*PostingLine)(nil),            // 2: arda.finance.v1.PostingLine
-	(*PostingRequest)(nil),         // 3: arda.finance.v1.PostingRequest
-	(*PostingResponse)(nil),        // 4: arda.finance.v1.PostingResponse
-	(*ReleaseRequest)(nil),         // 5: arda.finance.v1.ReleaseRequest
-	(*ValidationLine)(nil),         // 6: arda.finance.v1.ValidationLine
-	(*ValidationResult)(nil),       // 7: arda.finance.v1.ValidationResult
-	(*ReverseRequest)(nil),         // 8: arda.finance.v1.ReverseRequest
-	(*GetJournalEntryRequest)(nil), // 9: arda.finance.v1.GetJournalEntryRequest
-	(*JournalEntryDetailLine)(nil), // 10: arda.finance.v1.JournalEntryDetailLine
-	(*JournalEntryDetail)(nil),     // 11: arda.finance.v1.JournalEntryDetail
-	nil,                            // 12: arda.finance.v1.Analytics.DimensionsEntry
-	nil,                            // 13: arda.finance.v1.PostingRequest.MetadataEntry
+	(*ListPostingRulesRequest)(nil),  // 0: arda.finance.v1.ListPostingRulesRequest
+	(*PostingRule)(nil),              // 1: arda.finance.v1.PostingRule
+	(*ListPostingRulesResponse)(nil), // 2: arda.finance.v1.ListPostingRulesResponse
+	(*BusinessReference)(nil),        // 3: arda.finance.v1.BusinessReference
+	(*Analytics)(nil),                // 4: arda.finance.v1.Analytics
+	(*PostingLine)(nil),              // 5: arda.finance.v1.PostingLine
+	(*PostingRequest)(nil),           // 6: arda.finance.v1.PostingRequest
+	(*PostingResponse)(nil),          // 7: arda.finance.v1.PostingResponse
+	(*ReleaseRequest)(nil),           // 8: arda.finance.v1.ReleaseRequest
+	(*ValidationLine)(nil),           // 9: arda.finance.v1.ValidationLine
+	(*ValidationResult)(nil),         // 10: arda.finance.v1.ValidationResult
+	(*ReverseRequest)(nil),           // 11: arda.finance.v1.ReverseRequest
+	(*GetJournalEntryRequest)(nil),   // 12: arda.finance.v1.GetJournalEntryRequest
+	(*JournalEntryDetailLine)(nil),   // 13: arda.finance.v1.JournalEntryDetailLine
+	(*JournalEntryDetail)(nil),       // 14: arda.finance.v1.JournalEntryDetail
+	nil,                              // 15: arda.finance.v1.Analytics.DimensionsEntry
+	nil,                              // 16: arda.finance.v1.PostingRequest.MetadataEntry
 }
 var file_arda_finance_v1_posting_proto_depIdxs = []int32{
-	12, // 0: arda.finance.v1.Analytics.dimensions:type_name -> arda.finance.v1.Analytics.DimensionsEntry
-	1,  // 1: arda.finance.v1.PostingLine.analytics:type_name -> arda.finance.v1.Analytics
-	0,  // 2: arda.finance.v1.PostingRequest.business_reference:type_name -> arda.finance.v1.BusinessReference
-	2,  // 3: arda.finance.v1.PostingRequest.lines:type_name -> arda.finance.v1.PostingLine
-	13, // 4: arda.finance.v1.PostingRequest.metadata:type_name -> arda.finance.v1.PostingRequest.MetadataEntry
-	1,  // 5: arda.finance.v1.ValidationLine.resolved_analytics:type_name -> arda.finance.v1.Analytics
-	6,  // 6: arda.finance.v1.ValidationResult.lines:type_name -> arda.finance.v1.ValidationLine
-	10, // 7: arda.finance.v1.JournalEntryDetail.lines:type_name -> arda.finance.v1.JournalEntryDetailLine
-	3,  // 8: arda.finance.v1.PostingService.ValidatePosting:input_type -> arda.finance.v1.PostingRequest
-	3,  // 9: arda.finance.v1.PostingService.PostTransaction:input_type -> arda.finance.v1.PostingRequest
-	3,  // 10: arda.finance.v1.PostingService.ReservePosting:input_type -> arda.finance.v1.PostingRequest
-	5,  // 11: arda.finance.v1.PostingService.ReleasePosting:input_type -> arda.finance.v1.ReleaseRequest
-	8,  // 12: arda.finance.v1.PostingService.ReverseTransaction:input_type -> arda.finance.v1.ReverseRequest
-	9,  // 13: arda.finance.v1.PostingService.GetJournalEntry:input_type -> arda.finance.v1.GetJournalEntryRequest
-	7,  // 14: arda.finance.v1.PostingService.ValidatePosting:output_type -> arda.finance.v1.ValidationResult
-	4,  // 15: arda.finance.v1.PostingService.PostTransaction:output_type -> arda.finance.v1.PostingResponse
-	4,  // 16: arda.finance.v1.PostingService.ReservePosting:output_type -> arda.finance.v1.PostingResponse
-	4,  // 17: arda.finance.v1.PostingService.ReleasePosting:output_type -> arda.finance.v1.PostingResponse
-	4,  // 18: arda.finance.v1.PostingService.ReverseTransaction:output_type -> arda.finance.v1.PostingResponse
-	11, // 19: arda.finance.v1.PostingService.GetJournalEntry:output_type -> arda.finance.v1.JournalEntryDetail
-	14, // [14:20] is the sub-list for method output_type
-	8,  // [8:14] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	1,  // 0: arda.finance.v1.ListPostingRulesResponse.rules:type_name -> arda.finance.v1.PostingRule
+	15, // 1: arda.finance.v1.Analytics.dimensions:type_name -> arda.finance.v1.Analytics.DimensionsEntry
+	4,  // 2: arda.finance.v1.PostingLine.analytics:type_name -> arda.finance.v1.Analytics
+	3,  // 3: arda.finance.v1.PostingRequest.business_reference:type_name -> arda.finance.v1.BusinessReference
+	5,  // 4: arda.finance.v1.PostingRequest.lines:type_name -> arda.finance.v1.PostingLine
+	16, // 5: arda.finance.v1.PostingRequest.metadata:type_name -> arda.finance.v1.PostingRequest.MetadataEntry
+	4,  // 6: arda.finance.v1.ValidationLine.resolved_analytics:type_name -> arda.finance.v1.Analytics
+	9,  // 7: arda.finance.v1.ValidationResult.lines:type_name -> arda.finance.v1.ValidationLine
+	13, // 8: arda.finance.v1.JournalEntryDetail.lines:type_name -> arda.finance.v1.JournalEntryDetailLine
+	6,  // 9: arda.finance.v1.PostingService.ValidatePosting:input_type -> arda.finance.v1.PostingRequest
+	6,  // 10: arda.finance.v1.PostingService.PostTransaction:input_type -> arda.finance.v1.PostingRequest
+	6,  // 11: arda.finance.v1.PostingService.ReservePosting:input_type -> arda.finance.v1.PostingRequest
+	8,  // 12: arda.finance.v1.PostingService.ReleasePosting:input_type -> arda.finance.v1.ReleaseRequest
+	11, // 13: arda.finance.v1.PostingService.ReverseTransaction:input_type -> arda.finance.v1.ReverseRequest
+	12, // 14: arda.finance.v1.PostingService.GetJournalEntry:input_type -> arda.finance.v1.GetJournalEntryRequest
+	0,  // 15: arda.finance.v1.PostingService.ListPostingRules:input_type -> arda.finance.v1.ListPostingRulesRequest
+	10, // 16: arda.finance.v1.PostingService.ValidatePosting:output_type -> arda.finance.v1.ValidationResult
+	7,  // 17: arda.finance.v1.PostingService.PostTransaction:output_type -> arda.finance.v1.PostingResponse
+	7,  // 18: arda.finance.v1.PostingService.ReservePosting:output_type -> arda.finance.v1.PostingResponse
+	7,  // 19: arda.finance.v1.PostingService.ReleasePosting:output_type -> arda.finance.v1.PostingResponse
+	7,  // 20: arda.finance.v1.PostingService.ReverseTransaction:output_type -> arda.finance.v1.PostingResponse
+	14, // 21: arda.finance.v1.PostingService.GetJournalEntry:output_type -> arda.finance.v1.JournalEntryDetail
+	2,  // 22: arda.finance.v1.PostingService.ListPostingRules:output_type -> arda.finance.v1.ListPostingRulesResponse
+	16, // [16:23] is the sub-list for method output_type
+	9,  // [9:16] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_arda_finance_v1_posting_proto_init() }
@@ -1354,7 +1565,7 @@ func file_arda_finance_v1_posting_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_finance_v1_posting_proto_rawDesc), len(file_arda_finance_v1_posting_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

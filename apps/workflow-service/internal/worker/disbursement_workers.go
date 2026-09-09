@@ -109,46 +109,47 @@ func (w *DisbursementWorkers) buildPostingRequest(ctx context.Context, job entit
 			DocumentCode: detail.GetDisbursementCode(),
 			CaseId:       detail.GetWorkflowCaseId(),
 		},
-		Lines: disbursementLines(w.flow, detail),
+		Lines: postingLinesFromRules(fetchPostingRules(w.financeClient, w.flow.DocumentType), disbursementLegs(w.flow, detail), detail.GetCurrencyCode()),
 	}, nil
 }
 
-// disbursementLines builds the rule-card legs. REGISTER: DEBIT
-// LNM_LOAN_PRINCIPAL / CREDIT FUND_DISBURSEMENT_IN_TRANSIT (LNM.300.02 seq 1).
-// COMPLETE: DEBIT FUND_DISBURSEMENT_IN_TRANSIT / CREDIT CASH_SETTLEMENT_ACCOUNT
-// (LNM.300.02 seq 2 — reverses the in-transit leg into cash).
-func disbursementLines(flow DisbursementFlow, detail *loanv1.DisbursementPostingDetail) []*financev1.PostingLine {
+// disbursementLegs builds the rule-card legs. REGISTER: DEBIT
+// LNM_LOAN_PRINCIPAL / CREDIT FUND_DISBURSEMENT_IN_TRANSIT (LNM.300.02 seq 1,
+// card lines 1-2 of LNM_DISB_REGISTER). COMPLETE: DEBIT
+// FUND_DISBURSEMENT_IN_TRANSIT / CREDIT CASH_SETTLEMENT_ACCOUNT (LNM.300.02
+// seq 2 — reverses the in-transit leg into cash; card lines 1-2 of
+// LNM_DISB_COMPLETE). Classifications come from the finance rule card; the
+// constants here are only the fallback when a card row is missing.
+func disbursementLegs(flow DisbursementFlow, detail *loanv1.DisbursementPostingDetail) []postingLeg {
 	debitClassification, creditClassification := "LNM_LOAN_PRINCIPAL", "FUND_DISBURSEMENT_IN_TRANSIT"
 	if flow.Flow == "COMPLETE" {
 		debitClassification, creditClassification = "FUND_DISBURSEMENT_IN_TRANSIT", "CASH_SETTLEMENT_ACCOUNT"
 	}
-	return []*financev1.PostingLine{
+	return []postingLeg{
 		{
-			LineNo:       1,
-			Direction:    "DEBIT",
-			AmountMinor:  detail.GetDisburseAmtMinor(),
-			CurrencyCode: detail.GetCurrencyCode(),
+			CardLine:    1,
+			Fallback:    debitClassification,
+			Direction:   "DEBIT",
+			AmountMinor: detail.GetDisburseAmtMinor(),
 			Analytics: &financev1.Analytics{
-				AccClassification: debitClassification,
-				DebtGroupCode:     detail.GetDebtGroupCode(),
-				OrgUnitCode:       detail.GetOrgUnitCode(),
-				CustomerCode:      detail.GetCustomerCode(),
-				ContractCode:      detail.GetContractCode(),
+				DebtGroupCode: detail.GetDebtGroupCode(),
+				OrgUnitCode:   detail.GetOrgUnitCode(),
+				CustomerCode:  detail.GetCustomerCode(),
+				ContractCode:  detail.GetContractCode(),
 				Dimensions: map[string]string{
 					"agreement_code": detail.GetAgreementCode(),
 				},
 			},
 		},
 		{
-			LineNo:       2,
-			Direction:    "CREDIT",
-			AmountMinor:  detail.GetDisburseAmtMinor(),
-			CurrencyCode: detail.GetCurrencyCode(),
+			CardLine:    2,
+			Fallback:    creditClassification,
+			Direction:   "CREDIT",
+			AmountMinor: detail.GetDisburseAmtMinor(),
 			Analytics: &financev1.Analytics{
-				AccClassification: creditClassification,
-				OrgUnitCode:       detail.GetOrgUnitCode(),
-				ContractCode:      detail.GetContractCode(),
-				FundSourceCode:    detail.GetFundSourceCode(),
+				OrgUnitCode:   detail.GetOrgUnitCode(),
+				ContractCode:  detail.GetContractCode(),
+				FundSourceCode: detail.GetFundSourceCode(),
 			},
 		},
 	}

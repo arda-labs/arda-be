@@ -18,14 +18,9 @@ import (
 // intentionallyUncovered documents sample/reference processes that are
 // deployed but must not be started by case types until their domain workers
 // exist; each entry must carry a matching comment in processes.go.
-var intentionallyUncovered = map[string][]string{
-	"LOAN_FORMATION_V2": {
-		// "Reference flow only, no domain worker yet" (processes.go)
-		"lnm.loan.formation.validate",
-		"lnm.loan.formation.execute",
-		"lnm.loan.formation.cancel",
-	},
-}
+// LOAN_FORMATION_V2 was uncovered until iteration 11 wave 2 — its
+// validate/execute/cancel workers are now registered in main.go.
+var intentionallyUncovered = map[string][]string{}
 
 func TestEveryServiceTaskTopicHasRegisteredWorker(t *testing.T) {
 	topicPattern := regexp.MustCompile(`zeebe:taskDefinition[^>]*type="([^"]+)"`)

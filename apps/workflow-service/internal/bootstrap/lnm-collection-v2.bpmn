@@ -4,8 +4,20 @@
 
   <bpmn:process id="lnm-collection-v2" name="Thu nợ (v2)" isExecutable="true">
     <bpmn:startEvent id="Start_Submitted" name="Đã khởi tạo">
-      <bpmn:outgoing>Flow_Start_Maker</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Start_Init</bpmn:outgoing>
     </bpmn:startEvent>
+
+    <bpmn:serviceTask id="ST_Init" name="Khởi tạo bút toán thu nợ">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="lnm.collection.init" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_Init</bpmn:incoming>
+      <bpmn:outgoing>Flow_Init_Maker</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:boundaryEvent id="Err_Init" attachedToRef="ST_Init">
+      <bpmn:outgoing>Flow_InitError_Maker</bpmn:outgoing>
+      <bpmn:errorEventDefinition errorRef="Error_ValidationFailed" />
+    </bpmn:boundaryEvent>
 
     <bpmn:userTask id="UT_MakerInput" name="Nhập hồ sơ thu nợ">
       <bpmn:extensionElements>
@@ -15,7 +27,8 @@
           <zeebe:header key="stepCode" value="maker_input" />
         </zeebe:taskHeaders>
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_Start_Maker</bpmn:incoming>
+      <bpmn:incoming>Flow_Init_Maker</bpmn:incoming>
+      <bpmn:incoming>Flow_InitError_Maker</bpmn:incoming>
       <bpmn:incoming>Flow_ValidateError_Maker</bpmn:incoming>
       <bpmn:incoming>Flow_Decision_Supplement</bpmn:incoming>
       <bpmn:outgoing>Flow_Maker_Validate</bpmn:outgoing>
@@ -75,7 +88,9 @@
       <bpmn:incoming>Flow_Cancel_End</bpmn:incoming>
     </bpmn:endEvent>
 
-    <bpmn:sequenceFlow id="Flow_Start_Maker" sourceRef="Start_Submitted" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_Start_Init" sourceRef="Start_Submitted" targetRef="ST_Init" />
+    <bpmn:sequenceFlow id="Flow_Init_Maker" sourceRef="ST_Init" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_InitError_Maker" sourceRef="Err_Init" targetRef="UT_MakerInput" />
     <bpmn:sequenceFlow id="Flow_Maker_Validate" sourceRef="UT_MakerInput" targetRef="ST_Validate" />
     <bpmn:sequenceFlow id="Flow_ValidateError_Maker" sourceRef="Err_Validate" targetRef="UT_MakerInput" />
     <bpmn:sequenceFlow id="Flow_Validate_Checker" sourceRef="ST_Validate" targetRef="UT_CheckerReview" />
@@ -93,26 +108,30 @@
 
   <bpmndi:BPMNDiagram id="BPMNDiagram_Definitions_LNMCollection">
     <bpmndi:BPMNPlane id="BPMNPlane_Definitions_LNMCollection" bpmnElement="lnm-collection-v2">
-      <bpmndi:BPMNShape id="Shape_Start_Submitted" bpmnElement="Start_Submitted"><dc:Bounds x="120" y="180" width="36" height="36" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_UT_MakerInput" bpmnElement="UT_MakerInput"><dc:Bounds x="200" y="320" width="160" height="80" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_ST_Validate" bpmnElement="ST_Validate"><dc:Bounds x="210" y="158" width="140" height="80" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_UT_CheckerReview" bpmnElement="UT_CheckerReview"><dc:Bounds x="400" y="158" width="170" height="80" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_GW_Decision" bpmnElement="GW_Decision" isMarkerVisible="true"><dc:Bounds x="620" y="173" width="50" height="50" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_ST_Execute" bpmnElement="ST_Execute"><dc:Bounds x="730" y="158" width="170" height="80" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_ST_Cancel" bpmnElement="ST_Cancel"><dc:Bounds x="730" y="30" width="170" height="80" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_End_Approved" bpmnElement="End_Approved"><dc:Bounds x="950" y="180" width="36" height="36" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_End_Rejected" bpmnElement="End_Rejected"><dc:Bounds x="950" y="52" width="36" height="36" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_Err_Validate" bpmnElement="Err_Validate"><dc:Bounds x="292" y="120" width="36" height="36" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Edge_Flow_Start_Maker" bpmnElement="Flow_Start_Maker"><di:waypoint x="156" y="198" /><di:waypoint x="156" y="360" /><di:waypoint x="200" y="360" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_Maker_Validate" bpmnElement="Flow_Maker_Validate"><di:waypoint x="280" y="320" /><di:waypoint x="280" y="238" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_ValidateError_Maker" bpmnElement="Flow_ValidateError_Maker"><di:waypoint x="310" y="156" /><di:waypoint x="310" y="280" /><di:waypoint x="280" y="280" /><di:waypoint x="280" y="320" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_Validate_Checker" bpmnElement="Flow_Validate_Checker"><di:waypoint x="350" y="198" /><di:waypoint x="400" y="198" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_Checker_Decision" bpmnElement="Flow_Checker_Decision"><di:waypoint x="570" y="198" /><di:waypoint x="620" y="198" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_Decision_Approve" bpmnElement="Flow_Decision_Approve"><di:waypoint x="670" y="198" /><di:waypoint x="730" y="198" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_Decision_Reject" bpmnElement="Flow_Decision_Reject"><di:waypoint x="645" y="173" /><di:waypoint x="645" y="70" /><di:waypoint x="730" y="70" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_Decision_Supplement" bpmnElement="Flow_Decision_Supplement"><di:waypoint x="645" y="223" /><di:waypoint x="645" y="360" /><di:waypoint x="360" y="360" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_Execute_End" bpmnElement="Flow_Execute_End"><di:waypoint x="900" y="198" /><di:waypoint x="950" y="198" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_Cancel_End" bpmnElement="Flow_Cancel_End"><di:waypoint x="900" y="70" /><di:waypoint x="950" y="70" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_Start_Submitted" bpmnElement="Start_Submitted"><dc:Bounds x="162" y="230" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ST_Init" bpmnElement="ST_Init"><dc:Bounds x="220" y="208" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Err_Init" bpmnElement="Err_Init"><dc:Bounds x="292" y="270" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UT_MakerInput" bpmnElement="UT_MakerInput"><dc:Bounds x="430" y="340" width="160" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ST_Validate" bpmnElement="ST_Validate"><dc:Bounds x="440" y="208" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Err_Validate" bpmnElement="Err_Validate"><dc:Bounds x="512" y="270" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UT_CheckerReview" bpmnElement="UT_CheckerReview"><dc:Bounds x="630" y="208" width="170" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_GW_Decision" bpmnElement="GW_Decision" isMarkerVisible="true"><dc:Bounds x="850" y="223" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ST_Execute" bpmnElement="ST_Execute"><dc:Bounds x="960" y="208" width="170" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ST_Cancel" bpmnElement="ST_Cancel"><dc:Bounds x="960" y="80" width="170" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_Approved" bpmnElement="End_Approved"><dc:Bounds x="1180" y="230" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_Rejected" bpmnElement="End_Rejected"><dc:Bounds x="1180" y="102" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_Start_Init" bpmnElement="Flow_Start_Init"><di:waypoint x="198" y="248" /><di:waypoint x="220" y="248" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Init_Maker" bpmnElement="Flow_Init_Maker"><di:waypoint x="360" y="248" /><di:waypoint x="430" y="248" /><di:waypoint x="430" y="380" /><di:waypoint x="510" y="380" /><di:waypoint x="510" y="340" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_InitError_Maker" bpmnElement="Flow_InitError_Maker"><di:waypoint x="310" y="306" /><di:waypoint x="310" y="380" /><di:waypoint x="430" y="380" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Maker_Validate" bpmnElement="Flow_Maker_Validate"><di:waypoint x="510" y="340" /><di:waypoint x="510" y="288" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ValidateError_Maker" bpmnElement="Flow_ValidateError_Maker"><di:waypoint x="530" y="288" /><di:waypoint x="530" y="320" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Validate_Checker" bpmnElement="Flow_Validate_Checker"><di:waypoint x="580" y="248" /><di:waypoint x="630" y="248" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Checker_Decision" bpmnElement="Flow_Checker_Decision"><di:waypoint x="800" y="248" /><di:waypoint x="850" y="248" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Decision_Approve" bpmnElement="Flow_Decision_Approve"><di:waypoint x="900" y="248" /><di:waypoint x="960" y="248" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Decision_Reject" bpmnElement="Flow_Decision_Reject"><di:waypoint x="875" y="223" /><di:waypoint x="875" y="120" /><di:waypoint x="960" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Decision_Supplement" bpmnElement="Flow_Decision_Supplement"><di:waypoint x="875" y="273" /><di:waypoint x="875" y="380" /><di:waypoint x="510" y="380" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Execute_End" bpmnElement="Flow_Execute_End"><di:waypoint x="1130" y="248" /><di:waypoint x="1180" y="248" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Cancel_End" bpmnElement="Flow_Cancel_End"><di:waypoint x="1130" y="120" /><di:waypoint x="1180" y="120" /></bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>

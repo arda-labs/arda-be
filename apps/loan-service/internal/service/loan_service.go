@@ -81,6 +81,13 @@ func (s *LoanService) SubmitContract(ctx context.Context, tenantID, actor, id st
 		"customerCode": contract.CustomerCode,
 		"amount":       contract.LoanAmt,
 		"fundSource":   "BRANCH",
+		// Approval-tier limits for the BPMN GW_ApprovalLevel conditions
+		// (amount > pgdLimit / amount > gdLimit). No product/tenant limit
+		// config exists yet, so the sentinels keep every submission on the
+		// default Execute tier — the PGD human review still runs; the GD /
+		// Board tiers engage once real limit config feeds these variables.
+		"pgdLimit": int64(^uint64(0) >> 1),
+		"gdLimit":  int64(^uint64(0) >> 1),
 	}
 	if _, err = s.workflow.SubmitCase(ctx, caseCreated.Id, actor, vars, "lnm-contract-"+contract.ID+"-submit"); err != nil {
 		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)

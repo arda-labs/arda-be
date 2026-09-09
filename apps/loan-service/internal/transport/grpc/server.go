@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
 	"google.golang.org/grpc/codes"
@@ -51,6 +52,49 @@ func (s *LoanServer) UpdateContractStatus(ctx context.Context, req *loanv1.Updat
 		return &loanv1.UpdateContractStatusResponse{Ok: false}, nil
 	}
 	return &loanv1.UpdateContractStatusResponse{Ok: true}, nil
+}
+
+func (s *LoanServer) GetContract(ctx context.Context, req *loanv1.GetContractRequest) (*loanv1.ContractBrief, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	contract, err := s.contracts.GetContract(ctx, tenantID, req.GetContractId())
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	brief := &loanv1.ContractBrief{
+		ContractId:   contract.ID,
+		ContractCode: contract.ContractCode,
+		CustomerCode: contract.CustomerCode,
+		Status:       contract.Status,
+		LoanAmtMinor: contract.LoanAmt,
+	}
+	if contract.WorkflowCaseID != nil {
+		brief.WorkflowCaseId = *contract.WorkflowCaseID
+	}
+	return brief, nil
+}
+
+// CheckFormation validates the contract is actionable for the
+// LOAN_FORMATION_V2 workflow (BPMN validate job): it must exist and sit in
+// the submitted-but-not-approved PENDING state.
+func (s *LoanServer) CheckFormation(ctx context.Context, req *loanv1.CheckFormationRequest) (*loanv1.CheckFormationResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	contract, err := s.contracts.GetContract(ctx, tenantID, req.GetContractId())
+	if err != nil {
+		return &loanv1.CheckFormationResponse{Ok: false, Message: err.Error()}, nil
+	}
+	if contract.Status != domain.ContractPending {
+		return &loanv1.CheckFormationResponse{
+			Ok:      false,
+			Message: fmt.Sprintf("status %s is not actionable", contract.Status),
+		}, nil
+	}
+	return &loanv1.CheckFormationResponse{Ok: true}, nil
 }
 
 func (s *LoanServer) CheckAdjustment(ctx context.Context, req *loanv1.CheckAdjustmentRequest) (*loanv1.CheckAdjustmentResponse, error) {

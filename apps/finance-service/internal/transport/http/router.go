@@ -83,6 +83,9 @@ func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHa
 	mux.HandleFunc("/api/finance/journal-entries/{entry_no}", method("GET", postingHandler.GetJournalEntry))
 	mux.HandleFunc("/api/finance/posting/validate", method("POST", postingHandler.ValidatePosting))
 	mux.HandleFunc("/api/finance/posting-cases", method("POST", postingCaseHandler.CreatePostingCase))
+	// Closing candidate picker (iteration 11 — kết chuyển thu chi): INC/EXP
+	// accounts with a positive natural balance as of the date.
+	mux.HandleFunc("/api/finance/closing/accounts", method("GET", postingCaseHandler.ListClosingAccounts))
 	mux.HandleFunc("/api/finance/opening-balances", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

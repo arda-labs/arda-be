@@ -55,6 +55,12 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 	if err := requireTenant(tenantID); err != nil {
 		return nil, err
 	}
+	// Posting-date policy (iteration 11): future dates and out-of-policy
+	// backdates fail before any write.
+	if err := s.EnsurePostingDateAllowed(ctx, tenantID,
+		req.GetBusinessReference().GetDocumentType(), req.GetAccountingDate()); err != nil {
+		return nil, err
+	}
 	if req.GetIdempotencyKey() != "" {
 		previous, err := s.repo.FindEntryByIdempotencyKey(ctx, tenantID, req.GetIdempotencyKey())
 		if err != nil {
@@ -154,6 +160,14 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 // updateTransaction rebuild semantics that make the maker-edit loop safe).
 func (s *PostingService) ReservePosting(ctx context.Context, tenantID string, req *financev1.PostingRequest) (*financev1.PostingResponse, error) {
 	if err := requireTenant(tenantID); err != nil {
+		return nil, err
+	}
+	// Posting-date policy (iteration 11): must run BEFORE the hold so an
+	// out-of-policy date never materializes a PENDING entry. The workflow
+	// init worker classifies the sentinel errors as validation failures
+	// (VALIDATION_FAILED → back to the maker).
+	if err := s.EnsurePostingDateAllowed(ctx, tenantID,
+		req.GetBusinessReference().GetDocumentType(), req.GetAccountingDate()); err != nil {
 		return nil, err
 	}
 	if key := req.GetIdempotencyKey(); key != "" {
@@ -625,20 +639,32 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 		reversalDate = original.AccountingDate
 	}
 
-	// The reversal entry posts on its own accounting date, so the period
-	// containing that date must still be open (same guard postPendingEntry
-	// applies; posting into a closed period via reversal would otherwise
-	// bypass the period lock).
-	if err := s.repo.EnsurePeriodOpen(ctx, tenantID, reversalDate); err != nil {
-		return nil, fmt.Errorf("PERIOD_CLOSED: %w", err)
-	}
-
 	// The cancellation flow stamps the reversal FIN_TXN_CANCEL (instead of
 	// copying the original doc type) so the journal list can filter it; a
 	// plain correction keeps the original doc type.
 	docType := original.DocType
 	if override := req.GetBusinessDocumentType(); override != "" {
 		docType = override
+	}
+
+	// Posting-date policy (iteration 11): the reversal entry posts on its
+	// own accounting date, so future dates and out-of-policy backdates fail
+	// before any write. Cancellations (FIN_TXN_CANCEL) and corrections keep
+	// their own doc-type policy row.
+	policyDocType := req.GetBusinessDocumentType()
+	if policyDocType == "" {
+		policyDocType = "FIN_TXN_CANCEL"
+	}
+	if err := s.EnsurePostingDateAllowed(ctx, tenantID, policyDocType, reversalDate); err != nil {
+		return nil, err
+	}
+
+	// The reversal entry posts on its own accounting date, so the period
+	// containing that date must still be open (same guard postPendingEntry
+	// applies; posting into a closed period via reversal would otherwise
+	// bypass the period lock).
+	if err := s.repo.EnsurePeriodOpen(ctx, tenantID, reversalDate); err != nil {
+		return nil, fmt.Errorf("PERIOD_CLOSED: %w", err)
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -951,6 +977,41 @@ func (s *PostingService) GetJournalEntry(ctx context.Context, tenantID, entryNo,
 		return s.getJournalEntryBy(ctx, tenantID, "entry_no", n)
 	}
 	return nil, ErrJournalEntryNotFound
+}
+
+// ListPostingRules exposes the fin_accounting_rules card for one document
+// type (iteration 11 wave 2 — rule-card line build). Workflow workers call it
+// to map posting legs to account classifications from config; unseeded
+// document types return an empty list so callers can fall back to their
+// built-in legs without failing the flow.
+func (s *PostingService) ListPostingRules(ctx context.Context, tenantID, documentType string) ([]*financev1.PostingRule, error) {
+	if strings.TrimSpace(documentType) == "" {
+		return nil, fmt.Errorf("document_type is required")
+	}
+	rows, err := s.repo.ListRules(ctx, tenantID, documentType)
+	if err != nil {
+		return nil, err
+	}
+	rules := make([]*financev1.PostingRule, 0, len(rows))
+	for _, r := range rows {
+		rule := &financev1.PostingRule{
+			LineNo:         r.LineNo,
+			Direction:      r.Direction,
+			ResolutionType: r.ResType,
+		}
+		if r.AccountRef.Valid {
+			rule.AccountRef = r.AccountRef.String
+		}
+		if r.ClassCode.Valid {
+			rule.AccClassification = r.ClassCode.String
+		}
+		rule.RequiredDimensions = r.Dimensions
+		if r.Description.Valid {
+			rule.DescriptionTemplate = r.Description.String
+		}
+		rules = append(rules, rule)
+	}
+	return rules, nil
 }
 
 func (s *PostingService) getJournalEntryBy(ctx context.Context, tenantID, column string, value any) (*financev1.JournalEntryDetail, error) {

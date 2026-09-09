@@ -3,10 +3,11 @@
   <bpmn:error id="Error_ValidationFailed" name="VALIDATION_FAILED" errorCode="VALIDATION_FAILED" />
 
   <!--
-    Multi-level approval sample derived from EPAS LNM.201.01 (Hình thành khoản vay):
+    Multi-level approval flow derived from EPAS LNM.201.01 (Hình thành khoản vay):
     fund source (TW revalidation vs branch) × approval tier (PGD → GĐ → Hội đồng)
-    by amount against pgdLimit/gdLimit process variables. Reference flow only —
-    the loan domain service is P1 scope.
+    by amount against pgdLimit/gdLimit process variables. Wired to loan-service
+    by the formation workers (iteration 11 wave 2); UT_* steps are workbench
+    human tasks (candidateGroups: LNM_MAKER/LNM_TWTD/LNM_POGD/LNM_GIDO/LNM_HODO).
   -->
   <bpmn:process id="lnm-loan-formation-v2" name="Hình thành khoản vay đa cấp (v2 mẫu)" isExecutable="true">
     <bpmn:startEvent id="Start_Submitted" name="Hồ sơ đã khởi tạo">

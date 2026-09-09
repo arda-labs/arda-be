@@ -47,15 +47,39 @@ type createCancellationBody struct {
 	IdempotencyKey   string                        `json:"idempotency_key"`
 }
 
+// createClosingRowBody is one maker-picked closing line: the INC/EXP
+// account and the amount to close (the FE prefills it from the candidate
+// balance of GET /api/finance/closing/accounts).
+type createClosingRowBody struct {
+	AccCode     string `json:"acc_code"`
+	AccPurpose  string `json:"acc_purpose"`
+	AmountMinor int64  `json:"amount_minor"`
+}
+
+// createClosingBody is the CLOSING flow request (iteration 11 — kết chuyển
+// thu chi): the period closing date + granularity, the optional trader
+// block and the INC/EXP rows. finance-service builds the balanced posting
+// lines server-side (dest 4211 from the FIN_CLOSING_*_DEST rules).
+type createClosingBody struct {
+	AccountingDate string                  `json:"accounting_date"`
+	PeriodType     string                  `json:"period_type"`
+	Description    string                  `json:"description"`
+	Trader         *createCancellationTraderBody `json:"trader"`
+	IdempotencyKey string                  `json:"idempotency_key"`
+	Rows           []createClosingRowBody  `json:"rows"`
+}
+
 // createPostingCaseBody is the request contract: flow + posting_request /
-// cancellation_request in the documented snake_case JSON shape. posting_request
-// is raw protojson (protojson accepts both spellings of proto fields, so the
-// FE contract and the proto stay aligned); CANCELLATION carries
-// cancellation_request instead and ignores posting_request.
+// cancellation_request / closing_request in the documented snake_case JSON
+// shape. posting_request is raw protojson (protojson accepts both spellings
+// of proto fields, so the FE contract and the proto stay aligned);
+// CANCELLATION carries cancellation_request instead and ignores
+// posting_request; CLOSING carries closing_request.
 type createPostingCaseBody struct {
 	Flow                string                  `json:"flow"`
 	PostingRequest      json.RawMessage         `json:"posting_request"`
 	CancellationRequest *createCancellationBody `json:"cancellation_request"`
+	ClosingRequest      *createClosingBody      `json:"closing_request"`
 }
 
 // CreatePostingCase handles POST /api/finance/posting-cases: structural +
@@ -96,6 +120,9 @@ func (h *PostingCaseHandler) CreatePostingCase(w http.ResponseWriter, r *http.Re
 	if in.Flow == service.FlowCancellation {
 		input.Cancellation = mapCancellationInput(in.CancellationRequest)
 	}
+	if in.Flow == service.FlowClosing {
+		input.Closing = mapClosingInput(in.ClosingRequest)
+	}
 
 	result, err := h.svc.CreatePostingCase(r.Context(), tenantID, actor, input)
 	if err != nil {
@@ -106,6 +133,58 @@ func (h *PostingCaseHandler) CreatePostingCase(w http.ResponseWriter, r *http.Re
 		"case_id":   result.CaseID,
 		"case_code": result.CaseCode,
 	})
+}
+
+// mapClosingInput translates the CLOSING wire body onto the service input.
+func mapClosingInput(body *createClosingBody) *service.ClosingCaseInput {
+	if body == nil {
+		return nil
+	}
+	in := &service.ClosingCaseInput{
+		AccountingDate: body.AccountingDate,
+		PeriodType:     body.PeriodType,
+		Description:    body.Description,
+		IdempotencyKey: body.IdempotencyKey,
+	}
+	if body.Trader != nil {
+		in.Trader = &service.CancellationTrader{
+			ObjectType: body.Trader.ObjectType,
+			ObjectCode: body.Trader.ObjectCode,
+			ObjectName: body.Trader.ObjectName,
+			IDNumber:   body.Trader.IDNumber,
+			IssueDate:  body.Trader.IssueDate,
+			IssuePlace: body.Trader.IssuePlace,
+			Address:    body.Trader.Address,
+		}
+	}
+	for _, row := range body.Rows {
+		in.Rows = append(in.Rows, service.ClosingCaseRow{
+			AccCode:     row.AccCode,
+			AccPurpose:  row.AccPurpose,
+			AmountMinor: row.AmountMinor,
+		})
+	}
+	return in
+}
+
+// ListClosingAccounts handles GET /api/finance/closing/accounts?accounting_date=
+// — the closing candidate picker: INC/EXP accounts with a positive natural
+// balance as of the date, each item prefilled with its closing amount.
+func (h *PostingCaseHandler) ListClosingAccounts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondError(w, r, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListClosingCandidates(r.Context(), tenantID, r.URL.Query().Get("accounting_date"))
+	if err != nil {
+		writePostingCaseError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
 }
 
 // mapCancellationInput translates the wire body onto the service input.

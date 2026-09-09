@@ -20,6 +20,8 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	LoanCommandService_UpdateContractStatus_FullMethodName         = "/arda.loan.v1.LoanCommandService/UpdateContractStatus"
+	LoanCommandService_GetContract_FullMethodName                  = "/arda.loan.v1.LoanCommandService/GetContract"
+	LoanCommandService_CheckFormation_FullMethodName               = "/arda.loan.v1.LoanCommandService/CheckFormation"
 	LoanCommandService_CheckAdjustment_FullMethodName              = "/arda.loan.v1.LoanCommandService/CheckAdjustment"
 	LoanCommandService_ResolveAdjustment_FullMethodName            = "/arda.loan.v1.LoanCommandService/ResolveAdjustment"
 	LoanCommandService_CheckDisbursement_FullMethodName            = "/arda.loan.v1.LoanCommandService/CheckDisbursement"
@@ -40,6 +42,8 @@ const (
 // execute loan business steps (mirror of crm CustomerCommandService).
 type LoanCommandServiceClient interface {
 	UpdateContractStatus(ctx context.Context, in *UpdateContractStatusRequest, opts ...grpc.CallOption) (*UpdateContractStatusResponse, error)
+	GetContract(ctx context.Context, in *GetContractRequest, opts ...grpc.CallOption) (*ContractBrief, error)
+	CheckFormation(ctx context.Context, in *CheckFormationRequest, opts ...grpc.CallOption) (*CheckFormationResponse, error)
 	CheckAdjustment(ctx context.Context, in *CheckAdjustmentRequest, opts ...grpc.CallOption) (*CheckAdjustmentResponse, error)
 	ResolveAdjustment(ctx context.Context, in *ResolveAdjustmentRequest, opts ...grpc.CallOption) (*ResolveAdjustmentResponse, error)
 	CheckDisbursement(ctx context.Context, in *CheckDisbursementRequest, opts ...grpc.CallOption) (*CheckDisbursementResponse, error)
@@ -64,6 +68,26 @@ func (c *loanCommandServiceClient) UpdateContractStatus(ctx context.Context, in 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateContractStatusResponse)
 	err := c.cc.Invoke(ctx, LoanCommandService_UpdateContractStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) GetContract(ctx context.Context, in *GetContractRequest, opts ...grpc.CallOption) (*ContractBrief, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContractBrief)
+	err := c.cc.Invoke(ctx, LoanCommandService_GetContract_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) CheckFormation(ctx context.Context, in *CheckFormationRequest, opts ...grpc.CallOption) (*CheckFormationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckFormationResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_CheckFormation_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -178,6 +202,8 @@ func (c *loanCommandServiceClient) ResolveCollection(ctx context.Context, in *Re
 // execute loan business steps (mirror of crm CustomerCommandService).
 type LoanCommandServiceServer interface {
 	UpdateContractStatus(context.Context, *UpdateContractStatusRequest) (*UpdateContractStatusResponse, error)
+	GetContract(context.Context, *GetContractRequest) (*ContractBrief, error)
+	CheckFormation(context.Context, *CheckFormationRequest) (*CheckFormationResponse, error)
 	CheckAdjustment(context.Context, *CheckAdjustmentRequest) (*CheckAdjustmentResponse, error)
 	ResolveAdjustment(context.Context, *ResolveAdjustmentRequest) (*ResolveAdjustmentResponse, error)
 	CheckDisbursement(context.Context, *CheckDisbursementRequest) (*CheckDisbursementResponse, error)
@@ -200,6 +226,12 @@ type UnimplementedLoanCommandServiceServer struct{}
 
 func (UnimplementedLoanCommandServiceServer) UpdateContractStatus(context.Context, *UpdateContractStatusRequest) (*UpdateContractStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateContractStatus not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) GetContract(context.Context, *GetContractRequest) (*ContractBrief, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetContract not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) CheckFormation(context.Context, *CheckFormationRequest) (*CheckFormationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckFormation not implemented")
 }
 func (UnimplementedLoanCommandServiceServer) CheckAdjustment(context.Context, *CheckAdjustmentRequest) (*CheckAdjustmentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckAdjustment not implemented")
@@ -266,6 +298,42 @@ func _LoanCommandService_UpdateContractStatus_Handler(srv interface{}, ctx conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(LoanCommandServiceServer).UpdateContractStatus(ctx, req.(*UpdateContractStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_GetContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).GetContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_GetContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).GetContract(ctx, req.(*GetContractRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_CheckFormation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckFormationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).CheckFormation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_CheckFormation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).CheckFormation(ctx, req.(*CheckFormationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -460,6 +528,14 @@ var LoanCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateContractStatus",
 			Handler:    _LoanCommandService_UpdateContractStatus_Handler,
+		},
+		{
+			MethodName: "GetContract",
+			Handler:    _LoanCommandService_GetContract_Handler,
+		},
+		{
+			MethodName: "CheckFormation",
+			Handler:    _LoanCommandService_CheckFormation_Handler,
 		},
 		{
 			MethodName: "CheckAdjustment",

@@ -103,6 +103,31 @@ func (c *Client) UpdateContractStatus(ctx context.Context, contractID, status st
 	return err
 }
 
+// GetContract reads the minimal contract brief (status lifecycle) — the
+// formation execute step keys off it.
+func (c *Client) GetContract(ctx context.Context, contractID string) (*loanv1.ContractBrief, error) {
+	if c == nil {
+		return nil, errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	return c.api.GetContract(callCtx, &loanv1.GetContractRequest{ContractId: contractID})
+}
+
+// CheckFormation validates the contract is actionable (BPMN validate).
+func (c *Client) CheckFormation(ctx context.Context, contractID string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckFormation(callCtx, &loanv1.CheckFormationRequest{ContractId: contractID})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
 func (c *Client) CheckAdjustment(ctx context.Context, kind, adjustmentID string) (bool, string, error) {
 	if c == nil {
 		return false, "", errors.New("loan client is nil")

@@ -8,6 +8,8 @@ option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1;loanv1
 // execute loan business steps (mirror of crm CustomerCommandService).
 service LoanCommandService {
   rpc UpdateContractStatus(UpdateContractStatusRequest) returns (UpdateContractStatusResponse);
+  rpc GetContract(GetContractRequest) returns (ContractBrief);
+  rpc CheckFormation(CheckFormationRequest) returns (CheckFormationResponse);
   rpc CheckAdjustment(CheckAdjustmentRequest) returns (CheckAdjustmentResponse);
   rpc ResolveAdjustment(ResolveAdjustmentRequest) returns (ResolveAdjustmentResponse);
   rpc CheckDisbursement(CheckDisbursementRequest) returns (CheckDisbursementResponse);
@@ -27,6 +29,32 @@ message UpdateContractStatusRequest {
 
 message UpdateContractStatusResponse {
   bool ok = 1;
+}
+
+message GetContractRequest {
+  string contract_id = 1;
+}
+
+// Minimal read model of lnm_contracts for the formation workers — the BPMN
+// validate/execute/cancel steps only need identity + lifecycle status.
+message ContractBrief {
+  string contract_id = 1;
+  string contract_code = 2;
+  string customer_code = 3;
+  string status = 4;              // DRAFT | PENDING | ACTIVE | REJECTED | CLOSED
+  int64 loan_amt_minor = 5;
+  string workflow_case_id = 6;
+}
+
+// ── Formation flow (LNM.201.01, LOAN_FORMATION_V2) ──
+
+message CheckFormationRequest {
+  string contract_id = 1;
+}
+
+message CheckFormationResponse {
+  bool ok = 1;
+  string message = 2;
 }
 
 message CheckAdjustmentRequest {

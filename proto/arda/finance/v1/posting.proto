@@ -41,6 +41,32 @@ service PostingService {
   // its status and reversed_by_entry_id before reversing. Only POSTED and
   // REVERSED entries are readable; anything else is NOT_FOUND.
   rpc GetJournalEntry(GetJournalEntryRequest) returns (JournalEntryDetail);
+  // ListPostingRules exposes the fin_accounting_rules card for one document
+  // type so workflow workers build their posting lines from config instead of
+  // hardcoded classification strings. Unseeded document types return an
+  // empty rule list (workers fall back to their built-in legs).
+  rpc ListPostingRules(ListPostingRulesRequest) returns (ListPostingRulesResponse);
+}
+
+message ListPostingRulesRequest {
+  string tenant_id = 1;        // resolved from metadata in-process
+  string document_type = 2;    // LNM_DISB_REGISTER | LNM_DISB_COMPLETE | LNM_COLLECTION | ...
+}
+
+message PostingRule {
+  int32 line_no = 1;
+  string direction = 2;        // DEBIT | CREDIT
+  // resolution_type selects which side applies: CLASS_MAP uses
+  // acc_classification, FIXED_CODE uses account_ref directly.
+  string resolution_type = 3;
+  string account_ref = 4;      // fixed COA code when resolution_type = FIXED_CODE
+  string acc_classification = 5; // analytics classification when CLASS_MAP
+  repeated string required_dimensions = 6;
+  string description_template = 7;
+}
+
+message ListPostingRulesResponse {
+  repeated PostingRule rules = 1;
 }
 
 message BusinessReference {

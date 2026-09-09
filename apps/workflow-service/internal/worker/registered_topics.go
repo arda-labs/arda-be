@@ -38,7 +38,14 @@ var RegisteredJobTopics = []string{
 	"dpm.settle.validate",
 	"dpm.settle.execute",
 	"dpm.settle.cancel",
-	// Collection (lnm-collection-v2.bpmn)
+	// Loan formation (lnm-loan-formation-v2.bpmn, iteration 11 wave 2) —
+	// multi-level approval; UT_* steps are human workbench tasks.
+	"lnm.loan.formation.validate",
+	"lnm.loan.formation.execute",
+	"lnm.loan.formation.cancel",
+	// Collection (lnm-collection-v2.bpmn) — two-phase reserve mirror of the
+	// disbursement register leg.
+	"lnm.collection.init",
 	"lnm.collection.validate",
 	"lnm.collection.execute",
 	"lnm.collection.cancel",
@@ -62,6 +69,11 @@ var RegisteredJobTopics = []string{
 	"fin.txn-cancel.validate",
 	"fin.txn-cancel.execute",
 	"fin.txn-cancel.cancel",
+	// Closing / kết chuyển thu chi (fin-closing-v2.bpmn, iteration 11)
+	"fin.closing.init",
+	"fin.closing.validate",
+	"fin.closing.execute",
+	"fin.closing.cancel",
 	// Notification (no BPMN service task yet; registered for future flows)
 	"notification.email",
 	"notification.sms",
