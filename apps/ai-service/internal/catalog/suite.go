@@ -16,10 +16,13 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
-// resultPreviewLimit bounds how much raw output is echoed back to the model
-// inline; anything larger stays in the sandbox ResultStore and is fetched via
-// readResult (Cloudflare code-mode pattern).
-const resultPreviewLimit = 1 << 10
+// resultPreviewLimit bounds the execute() output echoed inline to the model.
+// It must be large enough that a typical knowledge-search result (a handful of
+// ~1KB chunks) fits without a follow-up readResult round trip — each extra
+// round trip burns one agent step against the AI_AGENT_MAX_STEPS budget.
+// Genuinely huge outputs still spill into the sandbox ResultStore and are
+// fetched via readResult (Cloudflare code-mode pattern).
+const resultPreviewLimit = 6 << 10
 
 type CodeModeSuite struct {
 	SearchTool     tools.Tool

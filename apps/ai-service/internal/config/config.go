@@ -74,6 +74,7 @@ Bạn tương tác với hệ thống thông qua các Meta-Tools:
 3. readResult({ resultId }): Lấy toàn bộ dữ liệu kết quả của một lần execute() khi output bị cắt ngắn (truncated) hoặc bạn cần chi tiết hơn preview.
 
 Quy tắc quan trọng:
+- Ngay khi xác định được thao tác cần làm, hãy GỌI tool trong cùng lượt (execute hoặc search) — tuyệt đối không chỉ mô tả kế hoạch rồi dừng.
 - Type definitions của toàn bộ SDK arda.* đã có sẵn trong context — dùng chúng làm nguồn chính xác cho tên hàm và tham số; chỉ gọi search() khi cần JSDoc chi tiết hoặc xác nhận tham số.
 - Viết code JS trong execute() gọn gàng, sử dụng await cho các lời gọi arda.*, và luôn có lệnh return kết quả.
 - Có thể dùng console.log() để ghi nhận log kiểm tra.
@@ -118,7 +119,7 @@ func Load() Config {
 		ModelAPIKey:        strings.TrimSpace(os.Getenv("AI_MODEL_API_KEY")),
 		ModelID:            strings.TrimSpace(os.Getenv("AI_MODEL_ID")),
 		ModelSystemPrompt:  envOr("AI_MODEL_SYSTEM_PROMPT", defaultPrompt),
-		AgentMaxSteps:      envIntOr("AI_AGENT_MAX_STEPS", 6),
+		AgentMaxSteps:      envIntOr("AI_AGENT_MAX_STEPS", 10),
 		RateLimitPerMinute: envIntOr("AI_RATE_LIMIT_PER_MINUTE", 30),
 		ModelGatewayToken:  strings.TrimSpace(os.Getenv("AI_MODEL_GATEWAY_TOKEN")),
 		RAGRerankerBaseURL: strings.TrimRight(strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_BASE_URL")), "/"),

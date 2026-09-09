@@ -92,24 +92,18 @@ func (r *ProviderRegistry) Select(ctx RoutingContext) Provider {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	// Only a provider that explicitly matches the routing context and is
+	// healthy may be selected. There is deliberately no last-resort
+	// fallback: callers keep their own tenant-configured primary when no
+	// entry matches, and returning a known-unhealthy provider (or one
+	// without a base URL) would break every run routed through the
+	// registry.
 	for _, cfg := range r.configs {
 		if r.matchesContext(cfg, ctx) && r.isHealthy(cfg.ID) {
 			if p, ok := r.providers[cfg.ID]; ok {
 				return p
 			}
 		}
-	}
-
-	// Last-resort fallback: first healthy provider, or very first provider if all unhealthy
-	for _, cfg := range r.configs {
-		if r.isHealthy(cfg.ID) {
-			if p, ok := r.providers[cfg.ID]; ok {
-				return p
-			}
-		}
-	}
-	if len(r.configs) > 0 {
-		return r.providers[r.configs[0].ID]
 	}
 	return nil
 }
@@ -238,6 +232,12 @@ func LoadProvidersFromYAML(filePath string) (*ProviderRegistry, error) {
 
 	registry := NewProviderRegistry()
 	for _, cfg := range parsed.Providers {
+		// Entries without a base URL can never serve traffic: NewClient("")
+		// fails Validate on every call. Skip them instead of letting routing
+		// pick a dead provider.
+		if strings.TrimSpace(cfg.BaseURL) == "" {
+			continue
+		}
 		apiKey := ""
 		if cfg.APIKeyEnv != "" {
 			apiKey = os.Getenv(cfg.APIKeyEnv)

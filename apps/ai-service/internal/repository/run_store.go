@@ -120,8 +120,13 @@ func (s *SQLRunStore) Start(ctx context.Context, run RunContext, userMessage str
 	`, run.TenantID, run.ActorUserID, run.ExternalThread).Scan(&conversationID)
 	if err == sql.ErrNoRows {
 		title := userMessage
-		if len(title) > 80 {
-			title = title[:80]
+		// Cut by runes, not bytes: a byte slice through Vietnamese text can
+		// split a multi-byte character and the INSERT then fails with
+		// "invalid byte sequence for encoding UTF8" (0xc3...), 503-ing the
+		// whole run at Start.
+		runes := []rune(title)
+		if len(runes) > 80 {
+			title = string(runes[:80])
 		}
 		err = tx.QueryRowContext(ctx, `
 			INSERT INTO public.ai_conversations (tenant_id, actor_user_id, external_thread_id, title, last_message_at)

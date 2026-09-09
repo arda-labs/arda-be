@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/events"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
@@ -339,11 +340,20 @@ func agentStepsLoop(
 
 	defs := modelToolDefinitions(resolver)
 	maxSteps := options.AgentMaxSteps
-	if maxSteps <= 0 || maxSteps > 12 {
-		maxSteps = 6
+	if maxSteps <= 0 || maxSteps > 20 {
+		maxSteps = 10
 	}
 
 	var knowledgeCitations []string
+	// executedCalls remembers tool calls already run in this conversation
+	// (name + arguments). Repeating the identical call is the classic
+	// step-budget death spiral — the model re-reads the same result instead
+	// of synthesizing — so the replayed feedback tells it to finish.
+	type callKey struct {
+		name string
+		args string
+	}
+	executedCalls := make(map[callKey]int)
 	for step := 0; step < maxSteps && !awaitingApproval; step++ {
 		var turnText strings.Builder
 		var turnReasoning strings.Builder
@@ -494,6 +504,15 @@ func agentStepsLoop(
 				continue
 			}
 			pending, toolMessage := executeModelToolCall(ctx, r, store, resolver, scope, scopeRun, input, sse, call, options)
+			key := callKey{name: call.Name, args: string(call.Arguments)}
+			executedCalls[key]++
+			if repeat := executedCalls[key]; repeat > 1 && !pending {
+				toolMessage = mustJSON(map[string]any{
+					"repeat_warning": fmt.Sprintf("This exact %s call already ran %d times in this conversation; the result above is unchanged.", call.Name, repeat),
+					"instruction":    "Do not call this tool again. Use the data you already have and write the final answer now.",
+					"result":         json.RawMessage(toolMessage),
+				})
+			}
 			messages = append(messages, model.Message{Role: "tool", ToolCallID: call.ID, Content: toolMessage})
 			if isKnowledgeSearchTool(call.Name) || len(extractCitationLabels(toolMessage)) > 0 {
 				knowledgeCitations = appendUniqueCitations(knowledgeCitations, extractCitationLabels(toolMessage))
@@ -970,10 +989,21 @@ func createProposalForCall(
 }
 
 func boundContent(value string) string {
-	if len(value) > modelResultContentLimit {
-		return value[:modelResultContentLimit]
+	return truncateRunes(value, modelResultContentLimit)
+}
+
+// truncateRunes cuts a string at max bytes without splitting a multi-byte
+// character: a byte-slice cut through Vietnamese text produces invalid UTF-8,
+// which model providers reject and Postgres refuses to store.
+func truncateRunes(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
+		return value
 	}
-	return value
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+	return value[:cut]
 }
 
 func compactToolFeedback(data json.RawMessage, summary string) string {

@@ -994,10 +994,7 @@ var transcriptSecretPattern = regexp.MustCompile(`(?i)(bearer\s+[^\s,;]+|(?:auth
 func sanitizeTranscript(value string) string {
 	value = strings.TrimSpace(value)
 	value = transcriptSecretPattern.ReplaceAllString(value, "[REDACTED]")
-	if len(value) > 16*1024 {
-		return value[:16*1024]
-	}
-	return value
+	return truncateRunes(value, 16*1024)
 }
 
 func redactToolArguments(arguments json.RawMessage) string {
