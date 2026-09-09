@@ -73,6 +73,7 @@ ALTER TABLE lnm_collections ADD COLUMN IF NOT EXISTS overdue_interest_minor BIGI
 -- A receipt row may now carry only overdue interest (principal = interest = 0,
 -- overdue > 0) — the table CHECK is widened accordingly. Legacy rows all have
 -- principal + interest > 0, so the single-row path is unaffected.
+-- +goose StatementBegin
 DO $$
 DECLARE
     old_check TEXT;
@@ -89,12 +90,14 @@ BEGIN
             CHECK (principal_minor + interest_minor + overdue_interest_minor > 0);
     END IF;
 END $$;
+-- +goose StatementEnd
 
 -- is_closed rows (batch COMPLETE) carry amount 0 — they close the contract
 -- after settle without moving cash (posting legs skip zero amounts). The
 -- legacy disburse_amt_minor > 0 CHECK is relaxed to >= 0; legacy rows all
 -- carry positive amounts, so the single-row path is unaffected.
 ALTER TABLE lnm_disbursements ADD COLUMN IF NOT EXISTS is_closed BOOLEAN NOT NULL DEFAULT FALSE;
+-- +goose StatementBegin
 DO $$
 DECLARE
     old_check TEXT;
@@ -111,6 +114,7 @@ BEGIN
         ALTER TABLE lnm_disbursements ADD CONSTRAINT lnm_disbursements_disburse_amt_minor_check CHECK (disburse_amt_minor >= 0);
     END IF;
 END $$;
+-- +goose StatementEnd
 
 -- EPAS group key (plan_code): data is loaded at runtime, no seed here.
 ALTER TABLE lnm_agreements ADD COLUMN IF NOT EXISTS plan_code VARCHAR(64) NOT NULL DEFAULT '';
