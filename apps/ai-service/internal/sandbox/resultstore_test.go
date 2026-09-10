@@ -80,6 +80,30 @@ func TestResultStore_MaxEntriesEvictsOldest(t *testing.T) {
 	}
 }
 
+func TestResultStore_PerNamespaceEvictionKeepsOtherRuns(t *testing.T) {
+	store := NewResultStore()
+	store.perNamespaceMax = 2
+	store.max = 100
+
+	a1 := store.Put("run-a", json.RawMessage(`{"i":1}`), nil)
+	a2 := store.Put("run-a", json.RawMessage(`{"i":2}`), nil)
+	a3 := store.Put("run-a", json.RawMessage(`{"i":3}`), nil)
+	b1 := store.Put("run-b", json.RawMessage(`{"i":4}`), nil)
+
+	if _, _, ok := store.Get("run-a", a1); ok {
+		t.Error("oldest run-a result should be evicted")
+	}
+	if _, _, ok := store.Get("run-a", a2); !ok {
+		t.Error("run-a second result should stay")
+	}
+	if _, _, ok := store.Get("run-a", a3); !ok {
+		t.Error("run-a newest result should stay")
+	}
+	if _, _, ok := store.Get("run-b", b1); !ok {
+		t.Error("run-b must not be evicted by run-a churn")
+	}
+}
+
 func TestResultStore_NilStore(t *testing.T) {
 	var store *ResultStore
 	if id := store.Put("run-1", json.RawMessage(`{"x":1}`), nil); id != "" {

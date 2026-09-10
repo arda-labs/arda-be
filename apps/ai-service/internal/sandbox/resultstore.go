@@ -11,7 +11,10 @@ import (
 
 const (
 	resultStoreTTL        = 15 * time.Minute
-	resultStoreMaxEntries = 64
+	resultStoreMaxEntries = 256
+	// resultStorePerNamespaceMax bounds one run so a busy conversation cannot
+	// evict results from other concurrent runs.
+	resultStorePerNamespaceMax = 16
 )
 
 type storedResult struct {
@@ -27,19 +30,21 @@ type storedResult struct {
 // "filesystem as context" pattern instead of truncating data into tool
 // feedback.
 type ResultStore struct {
-	mu    sync.Mutex
-	items map[string]storedResult
-	seq   atomic.Uint64
-	ttl   time.Duration
-	max   int
+	mu              sync.Mutex
+	items           map[string]storedResult
+	seq             atomic.Uint64
+	ttl             time.Duration
+	max             int
+	perNamespaceMax int
 }
 
 // NewResultStore returns a bounded, TTL-backed result store.
 func NewResultStore() *ResultStore {
 	return &ResultStore{
-		items: make(map[string]storedResult),
-		ttl:   resultStoreTTL,
-		max:   resultStoreMaxEntries,
+		items:           make(map[string]storedResult),
+		ttl:             resultStoreTTL,
+		max:             resultStoreMaxEntries,
+		perNamespaceMax: resultStorePerNamespaceMax,
 	}
 }
 
@@ -54,6 +59,24 @@ func (s *ResultStore) Put(namespace string, data json.RawMessage, logs []string)
 	defer s.mu.Unlock()
 
 	s.evictLocked()
+
+	// Bound one run before the global cap so a chatty conversation cannot push
+	// out results belonging to other concurrent runs.
+	namespaceCount := 0
+	var oldestInNamespace string
+	var oldestNamespaceSeq uint64
+	for key, item := range s.items {
+		if !hasNamespacePrefix(key, namespace) {
+			continue
+		}
+		namespaceCount++
+		if oldestInNamespace == "" || item.Seq < oldestNamespaceSeq {
+			oldestInNamespace, oldestNamespaceSeq = key, item.Seq
+		}
+	}
+	if s.perNamespaceMax > 0 && namespaceCount >= s.perNamespaceMax && oldestInNamespace != "" {
+		delete(s.items, oldestInNamespace)
+	}
 
 	seq := s.seq.Add(1)
 	id := fmt.Sprintf("%s:%x", namespace, seq)
