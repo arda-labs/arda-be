@@ -71,6 +71,9 @@ var rptSubmit []byte
 //go:embed lnm-general-provision-v2.bpmn
 var lnmGeneralProvision []byte
 
+//go:embed lnm-mortgage-adjust-v2.bpmn
+var lnmMortgageAdjust []byte
+
 //go:embed fin-single-entry-v2.bpmn
 var finSingleEntry []byte
 
@@ -219,6 +222,15 @@ func BuiltInProcesses() []Process {
 			Name:         "Trích lập dự phòng chung (v2)",
 			ResourceName: "lnm-general-provision-v2.bpmn",
 			Content:      lnmGeneralProvision,
+		},
+		{
+			// Mortgage-adjust was registered as the 11th adjustment kind with
+			// its own table/FE screen but never got a process — this closes
+			// the kind (topics lnm.mortgage-adjust.* already registered).
+			ProcessCode:  "LNM_MORTGAGE_ADJUST_V2",
+			Name:         "Điều chỉnh TSBĐ (v2)",
+			ResourceName: "lnm-mortgage-adjust-v2.bpmn",
+			Content:      lnmMortgageAdjust,
 		},
 		{
 			ProcessCode:  "DPM_SETTLE_V2",
