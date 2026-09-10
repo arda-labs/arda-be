@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "arda-problem-docs",
+  "compatibility_date": "2026-08-22",
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "docs.arda.io.vn/*", "zone_name": "arda.io.vn" }
+  ],
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page"
+  },
+  "observability": {
+    "traces": {
+      "enabled": true
+    }
+  }
+}

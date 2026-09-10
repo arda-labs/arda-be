@@ -15,6 +15,12 @@ const HeaderRequestID = "X-Request-Id"
 const HeaderTraceID = "X-Trace-Id"
 const HeaderTraceParent = "traceparent"
 
+// ProblemsTypeBaseURL is the single source for the RFC-style problem `type`
+// URI prefix. Every problem writer must build type URLs from this constant so
+// the docs site at docs.arda.io.vn/problems/<code> stays the only resolution
+// target.
+const ProblemsTypeBaseURL = "https://docs.arda.io.vn/problems/"
+
 // SuccessEnvelope is the canonical shape for migrated JSON endpoints. A
 // non-migrated endpoint is an explicitly owned legacy/protocol surface; new
 // handlers and consumers must not guess between response shapes at runtime.
@@ -158,7 +164,7 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, status int, err *ardae
 	}
 	requestID := RequestID(r)
 	problem := Problem{
-		Type:      "https://docs.arda.io.vn/problems/" + err.Code,
+		Type:      ProblemsTypeBaseURL + err.Code,
 		Title:     http.StatusText(status),
 		Status:    status,
 		Code:      err.Code,

@@ -47,3 +47,6 @@ stress_output/
 stress_test_*
 *.xlsx
 *.csv
+
+# generated docs site output (rebuild with scripts/build-problem-docs.mjs)
+cloudflare/docs/dist/

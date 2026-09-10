@@ -1,57 +1,56 @@
 # Problem details catalog
 
 This directory is the source catalog for the stable `type` URLs returned by
-Arda HTTP APIs. The runtime currently emits URLs such as
-`https://docs.arda.io.vn/problems/insufficient_permissions`; the documentation
-site should publish a page for every entry here.
+Arda HTTP APIs (`https://docs.arda.io.vn/problems/<code>`; the URL prefix is
+the `ardahttp.ProblemsTypeBaseURL` constant in
+`libs/go/arda-http/response.go`). The documentation site is generated from
+this directory by `scripts/build-problem-docs.mjs` into
+`cloudflare/docs/` and served by the `arda-problem-docs` Worker — see
+[`cloudflare/docs/README.md`](../../cloudflare/docs/README.md).
 
-## Required page contract
+## Page format
 
-Every problem page must define:
+Every problem page is a Markdown file named `<code>.md` with a front-matter
+block using a small YAML subset (flat keys, `|` block scalars, simple lists):
 
-| Field | Rule |
-| --- | --- |
-| `code` | Stable machine-readable identifier. Never use a translated message. |
-| HTTP status | The status clients should branch on. |
-| `type` | Canonical documentation URL emitted in `application/problem+json`. |
-| Meaning | What the server rejected, in one sentence. |
-| Client action | Whether to retry, re-authenticate, select a tenant, or show access denied. |
-| Operator action | Log fields and checks needed to diagnose the problem. |
-| Example | A complete redacted response with `request_id`. |
-| Security notes | Data that must not be exposed or trusted from the browser. |
-| Related routes | The route families that can emit the problem. |
+```markdown
+---
+code: auth.error.unauthorized
+status: 401
+title: Authentication required
+summary: |
+  One-sentence meaning of the problem.
+client_action: |
+  What the client should do (retry policy, re-auth, tenant switch…).
+operator_action: |
+  Log fields and checks needed to diagnose the problem.
+related_routes:
+  - Route families that can emit this problem
+---
 
-Problem pages are operational contracts, not API implementation notes. Error
-messages may be localized or improved without changing the `code` or `type`.
+Optional extra prose rendered at the bottom of the page.
+```
 
-## Initial catalog
+Rules enforced by `scripts/check-problem-catalog.mjs`:
 
-- [insufficient_permissions](insufficient_permissions.md) — authenticated
-  actor lacks the required tenant or global capability.
-- [auth.error.unauthorized](auth.error.unauthorized.md) — no valid
-  authenticated session is available.
-- [auth.error.forbidden](auth.error.forbidden.md) — authenticated request is
-  denied by the generic auth policy.
-- [tenant_context_unavailable](tenant_context_unavailable.md) — the verified
-  actor has no usable active tenant context.
-- [organization_forbidden](organization_forbidden.md) — the requested
-  organization is outside the active tenant context.
-- [user_context_unavailable](user_context_unavailable.md) — IAM could not
-  provide a current user authorization context.
+- `code`, `status`, `title`, `summary` are required; `code` must equal the
+  file name; `status` is the HTTP status clients branch on.
+- Every code the backend can emit (canonical `arda-errors` constants, call
+  sites of problem writers, auth-gateway machine slugs) must have a page —
+  CI fails otherwise.
+- Extra catalog pages are allowed (e.g. codes emitted dynamically by
+  auth-gateway's message passthrough such as `tenant_context_unavailable`);
+  the check reports them as informational orphans.
+- Problem pages are operational contracts, not API implementation notes.
+  Error messages may be localized or improved without changing the `code`
+  or `type`.
+- Treat deletion or renaming of a problem URL as a versioned API change.
 
-## Publishing plan for `docs.arda.io.vn`
+## Known surfaces outside the gate
 
-There is no documentation-site source in the current workspace, so these
-Markdown files are the canonical content until that site is added. The future
-site should:
-
-1. Build this catalog as static routes at `/problems/{code}`.
-2. Keep the URL slug equal to the stable `code` for backwards compatibility.
-3. Render a controlled 404 page for unknown codes; never expose stack traces.
-4. Add a CI check that extracts every `type` URL from backend code/OpenAPI and
-   verifies that a matching catalog page exists.
-5. Publish an OpenAPI link and a short client-handling section on each page.
-6. Treat deletion or renaming of a problem URL as a versioned API change.
-
-When the docs site is created, it should consume this directory or a generated
-equivalent rather than duplicating problem definitions by hand.
+- Legacy `WriteAppError` endpoints emit the `{error: {code, message}}`
+  envelope without a `type` URL; they are not covered by the catalog check
+  and remain a migration debt.
+- ai-service streaming payloads carry an `error.code` field (agent
+  envelope); those are not `problem+json` and are catalogued only when they
+  coincide with an emitted problem code.

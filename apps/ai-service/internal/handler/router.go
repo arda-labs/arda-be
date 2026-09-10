@@ -20,6 +20,7 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 const assistantPermission = "ai.assistant.use"
@@ -1022,5 +1023,6 @@ func writeEvent(writer *bufio.Writer, event agentEvent) {
 func problem(w http.ResponseWriter, status int, code string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, `{"type":"https://arda.io.vn/problems/%s","status":%d,"code":%q,"message":%q}`, code, status, code, code)
+	_, _ = fmt.Fprintf(w, `{"type":%q,"title":%q,"status":%d,"code":%q,"message":%q}`,
+		ardahttp.ProblemsTypeBaseURL+code, http.StatusText(status), status, code, code)
 }
