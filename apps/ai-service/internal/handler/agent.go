@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -332,6 +333,7 @@ func agentStepsLoop(
 		}
 		if err != nil {
 			errorCode := modelErrorCode(err)
+			recordModelError(errorCode)
 			slog.Error("LLM model stream failed",
 				"err", err,
 				"code", errorCode,
@@ -387,10 +389,17 @@ func agentStepsLoop(
 				startText()
 				sse.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: reply})
 			}
-			if len(knowledgeCitations) > 0 && !hasValidCitation(reply, knowledgeCitations) {
-				citationBlock := "\n\nNguồn tham khảo:\n- " + strings.Join(knowledgeCitations, "\n- ")
-				sse.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: citationBlock})
-				reply += citationBlock
+			reply, invented := sanitizeInventedCitations(reply, knowledgeCitations)
+			recordInventedCitations(invented)
+			if len(knowledgeCitations) > 0 {
+				if hasValidCitation(reply, knowledgeCitations) {
+					recordCitationGuard("present")
+				} else {
+					citationBlock := "\n\nNguồn tham khảo:\n- " + strings.Join(knowledgeCitations, "\n- ")
+					sse.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: citationBlock})
+					reply += citationBlock
+					recordCitationGuard("appended")
+				}
 			}
 			endText()
 			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID})
@@ -689,6 +698,31 @@ func hasValidCitation(reply string, citations []string) bool {
 		}
 	}
 	return false
+}
+
+// citationTokenPattern matches the bracketed citation shapes a model is
+// tempted to invent ([source-3], [citation:foo], [chunk 7]).
+var citationTokenPattern = regexp.MustCompile(`(?i)\[(?:source|citation|chunk)[^\]]{0,120}\]`)
+
+// sanitizeInventedCitations removes bracketed [source…]/[citation…]/[chunk…]
+// tokens that do not match any citation actually supplied by knowledge.search.
+// Streaming deltas cannot be retracted, so this guards persisted history and
+// follow-up turns; the removal count feeds arda_ai_invented_citations_total.
+func sanitizeInventedCitations(reply string, citations []string) (string, int) {
+	if reply == "" || !citationTokenPattern.MatchString(reply) {
+		return reply, 0
+	}
+	removed := 0
+	sanitized := citationTokenPattern.ReplaceAllStringFunc(reply, func(token string) string {
+		for _, known := range citations {
+			if strings.Contains(known, token) {
+				return token
+			}
+		}
+		removed++
+		return ""
+	})
+	return sanitized, removed
 }
 
 // extractCitationLabels reads only the structured citation metadata returned

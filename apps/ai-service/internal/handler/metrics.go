@@ -156,6 +156,21 @@ var (
 		"Model provider health probes by provider and outcome.",
 		"provider", "outcome",
 	)
+	aiModelErrorsTotal = newAICounterVec(
+		"arda_ai_model_errors_total",
+		"Model stream failures by actionable error code.",
+		"code",
+	)
+	aiCitationGuardTotal = newAICounterVec(
+		"arda_ai_citation_guard_total",
+		"Knowledge answers by citation outcome (present, appended).",
+		"outcome",
+	)
+	aiInventedCitationsTotal = newAICounterVec(
+		"arda_ai_invented_citations_total",
+		"Fabricated [source]/[citation]/[chunk] tokens removed from persisted answers.",
+		"kind",
+	)
 )
 
 // RenderAIMetrics appends the arda_ai_* metric family to /metrics.
@@ -165,6 +180,9 @@ func RenderAIMetrics(w io.Writer) {
 	aiLLMTokensTotal.render(w)
 	aiRunDuration.render(w)
 	aiProviderProbesTotal.render(w)
+	aiModelErrorsTotal.render(w)
+	aiCitationGuardTotal.render(w)
+	aiInventedCitationsTotal.render(w)
 }
 
 // RecordProviderProbe records one readiness health probe without exposing
@@ -201,6 +219,29 @@ func recordLLMUsage(usage model.Usage) {
 	aiLLMTokensTotal.add(uint64(usage.PromptTokens), "prompt")
 	aiLLMTokensTotal.add(uint64(usage.CompletionTokens), "completion")
 	aiLLMTokensTotal.add(uint64(usage.TotalTokens), "total")
+}
+
+// recordModelError counts one model stream failure by actionable code.
+func recordModelError(code string) {
+	if code == "" {
+		code = "ai.model_unavailable"
+	}
+	aiModelErrorsTotal.add(1, code)
+}
+
+// recordCitationGuard counts whether an answer already cited retrieved
+// evidence or the guard had to append the source list.
+func recordCitationGuard(outcome string) {
+	aiCitationGuardTotal.add(1, outcome)
+}
+
+// recordInventedCitations counts fabricated citation tokens removed from the
+// persisted answer, so the rate is visible even though streaming cannot
+// retract an already-sent delta.
+func recordInventedCitations(count int) {
+	if count > 0 {
+		aiInventedCitationsTotal.add(uint64(count), "bracket")
+	}
 }
 
 // aiRunTimer measures agent loop wall-clock time; observe on defer.
