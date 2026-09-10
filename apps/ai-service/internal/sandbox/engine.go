@@ -18,7 +18,13 @@ import (
 const (
 	DefaultExecutionTimeout = 3000 * time.Millisecond
 	MaxSDKMethodCalls       = 50
-	MaxConcurrentSandboxes  = 8
+	// MaxMethodCallsPerRun bounds repeated calls to the same SDK method so one
+	// script cannot amplify a single endpoint.
+	MaxMethodCallsPerRun   = 20
+	MaxConcurrentSandboxes = 8
+	// MaxConcurrentSandboxesPerTenant keeps one tenant from occupying every
+	// global sandbox slot.
+	MaxConcurrentSandboxesPerTenant = 3
 )
 
 var (
@@ -55,13 +61,35 @@ type MethodRegistry interface {
 type Engine struct {
 	registry MethodRegistry
 	sem      chan struct{}
+	mu       sync.Mutex
+	tenants  map[string]chan struct{}
 }
 
 func NewEngine(registry MethodRegistry) *Engine {
 	return &Engine{
 		registry: registry,
 		sem:      make(chan struct{}, MaxConcurrentSandboxes),
+		tenants:  make(map[string]chan struct{}),
 	}
+}
+
+// tenantSemaphore returns the per-tenant slot channel, creating it on first
+// use. The map is bounded so a flood of tenant IDs cannot grow it forever.
+func (e *Engine) tenantSemaphore(tenantID string) chan struct{} {
+	if tenantID == "" {
+		tenantID = "unknown"
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.tenants == nil || len(e.tenants) > 1024 {
+		e.tenants = make(map[string]chan struct{})
+	}
+	if sem, ok := e.tenants[tenantID]; ok {
+		return sem
+	}
+	sem := make(chan struct{}, MaxConcurrentSandboxesPerTenant)
+	e.tenants[tenantID] = sem
+	return sem
 }
 
 // Execute runs the provided JavaScript in an isolated Goja VM with arda.* bindings.
@@ -73,7 +101,17 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 		}, err
 	}
 
-	// 2. Concurrency gate
+	// 2. Concurrency gates (global + per tenant). A tenant that already holds
+	// its share fails fast with sandbox_busy instead of queueing indefinitely.
+	tenantSem := e.tenantSemaphore(scope.TenantID)
+	select {
+	case tenantSem <- struct{}{}:
+		defer func() { <-tenantSem }()
+	default:
+		return ExecutionResult{
+			Error: ErrSandboxBusy.Error(),
+		}, ErrSandboxBusy
+	}
 	select {
 	case e.sem <- struct{}{}:
 		defer func() { <-e.sem }()
@@ -138,6 +176,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 	// Setup Execution Context & State
 	var mu sync.Mutex
 	callCount := 0
+	methodCalls := map[string]int{}
 	var approvalRequiredErr error
 	var approvalTool string
 	var approvalArgs map[string]any
@@ -156,6 +195,16 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 				panic(vm.ToValue(map[string]any{
 					"code":    "budget_exceeded",
 					"message": "Maximum SDK call budget of 50 calls exceeded",
+				}))
+			}
+			methodCalls[methodCopy.SDKPath]++
+			if methodCalls[methodCopy.SDKPath] > MaxMethodCallsPerRun {
+				limit := MaxMethodCallsPerRun
+				method := methodCopy.SDKPath
+				mu.Unlock()
+				panic(vm.ToValue(map[string]any{
+					"code":    "budget_exceeded",
+					"message": fmt.Sprintf("Method %s exceeded the per-run limit of %d calls", method, limit),
 				}))
 			}
 			res.MethodsCalled = append(res.MethodsCalled, methodCopy.SDKPath)

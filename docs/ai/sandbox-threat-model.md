@@ -92,8 +92,9 @@ recurse(0);
 **Mitigation:**
 - Hard timeout of **3 000 ms** enforced via `vm.Interrupt()` in a separate
   goroutine. The interrupt fires regardless of script state.
-- Maximum concurrent sandbox VMs per pod: **8**. Excess requests queue up to
-  avoid goroutine explosion; the queue has a bounded timeout of its own.
+- Maximum concurrent sandbox VMs per pod: **8**, plus a per-tenant cap of **3**
+  (`MaxConcurrentSandboxesPerTenant`). Excess requests fail fast with
+  `ai.sandbox_busy` instead of queueing, so one tenant cannot occupy every slot.
 - Goja's interrupt mechanism is cooperative (checks between VM opcodes) but
   fires within tens of milliseconds in practice.
 
@@ -115,15 +116,23 @@ while (true) { arr.push(new Array(1_000_000).fill("x")); }
 **Impact:** OOM kill of the ai-service pod.
 
 **Mitigation:**
-- Peak memory per VM capped at **32 MiB**. Goja does not natively enforce memory
-  limits, so the Go process monitors the VM's allocated object count via a
-  periodic interrupt callback; if threshold is exceeded, `vm.Interrupt()` fires.
-- Result output size capped at **64 KiB** before returning to the model.
-- Kubernetes pod memory limits act as the outer safety net.
+- Script size capped at **16 KiB** and result output capped at **64 KiB**; the
+  output is rejected (`ai.sandbox_output_too_large`) rather than truncated.
+- Console log buffer capped at **4 KiB** per invocation.
+- API budgets (50 calls total, 20 per method) plus the 3-second interrupt bound
+  how much work a script can do.
+- **No in-process memory cap exists.** Goja does not expose allocation limits,
+  so a single large allocation can still pressure the pod. The Kubernetes pod
+  memory limit is the hard backstop.
+- Process-level isolation (separate worker/subprocess with an RSS limit) is
+  **deferred**: it is the next step if memory-related OOMs are observed. Trigger
+  conditions: a pod OOM killed by an `execute` script, or a tenant exceeding its
+  CPU share under concurrent code-mode runs.
 
-**Residual risk:** Medium. Memory monitoring via interrupt callback has ~10 ms
-granularity. A single extremely large allocation could briefly exceed the limit
-before the check fires. The pod limit is the hard backstop.
+**Residual risk:** Medium. The pod limit contains the blast radius to one
+replica, but a determined allocation burst can still evict that replica's other
+in-flight runs. Process isolation or a cgroup limit per worker is the mitigation
+to schedule when traffic justifies it.
 
 ---
 
@@ -295,21 +304,26 @@ Before the Goja sandbox ships to production, the following test cases must pass:
 - `eval("1+1")` → rejected with `forbidden_identifier: eval`
 - `new Function("return 1")()` → rejected
 - `({}).__proto__.x = 1` → rejected
+- `({}).constructor.constructor("return 1")()` → rejected (prototype-chain escape)
+- `Object["defineProperty"]({}, "x", {})` → rejected
 - Script > 16 KiB → rejected with `script_too_large`
 - Script with null byte → rejected
+- `const f = function (x) { return x + 1; }` → still accepted (function keyword)
 
 ### Sandbox Isolation Tests
-- `process.exit(1)` → `ReferenceError` or forbidden identifier rejection
+- `process.exit(1)` → forbidden identifier rejection
 - `(function(){return this;})()` → `undefined` (strict mode)
 - `globalThis.arda` → `ReferenceError`
 - `Date.now()` → `ReferenceError`
 - `fetch("https://evil.com")` → `ReferenceError`
-- `require("fs")` → `ReferenceError`
+- `require("fs")` → forbidden identifier rejection
 
 ### Quota Enforcement Tests
-- Script with `while(true){}` → terminates within 3 500 ms with `quota_exceeded`
-- Script calling `arda.crm.getCustomer` 51 times → terminates at call 51 with `budget_exceeded`
-- Script returning a 65 KiB string → output truncated to 64 KiB
+- Script with `while(true){}` → terminates within 3 500 ms with `ai.sandbox_timeout`
+- Script calling `arda.crm.getCustomer` 51 times → terminates with `budget_exceeded` (50-call budget)
+- Script calling one method 21 times → terminates with `budget_exceeded` (20-per-method budget)
+- Script returning a 70 KiB string → rejected with `ai.sandbox_output_too_large`
+- A tenant already at its concurrency cap → `ai.sandbox_busy`; another tenant still runs
 
 ### Tenant Isolation Tests
 - Script passing `tenantId: "other"` to an SDK method → field ignored, request

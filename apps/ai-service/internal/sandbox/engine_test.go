@@ -2,6 +2,8 @@ package sandbox
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -184,6 +186,46 @@ func TestEngine_EnforcesCallBudget(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "budget_exceeded") {
 		t.Errorf("expected budget_exceeded error, got %v", err)
+	}
+}
+
+func TestEngine_EnforcesPerMethodCallLimit(t *testing.T) {
+	engine, _ := setupTestEngine()
+	code := fmt.Sprintf(`
+		for (var i = 0; i < %d; i++) {
+			await arda.crm.getCustomer({ customerId: "C-" + i });
+		}
+	`, MaxMethodCallsPerRun+1)
+
+	_, err := engine.Execute(context.Background(), testScope(), code)
+	if err == nil {
+		t.Fatal("expected per-method budget error, got nil")
+	}
+	if !strings.Contains(err.Error(), "budget_exceeded") {
+		t.Fatalf("expected budget_exceeded, got %v", err)
+	}
+}
+
+func TestEngine_PerTenantConcurrencyGate(t *testing.T) {
+	engine, _ := setupTestEngine()
+	sem := engine.tenantSemaphore("tenant-test")
+	for i := 0; i < MaxConcurrentSandboxesPerTenant; i++ {
+		sem <- struct{}{}
+	}
+
+	_, err := engine.Execute(context.Background(), testScope(), `return 1;`)
+	if !errors.Is(err, ErrSandboxBusy) {
+		t.Fatalf("expected ErrSandboxBusy when the tenant is at capacity, got %v", err)
+	}
+
+	// A different tenant still gets its own slots.
+	other := tools.Context{
+		TenantID:    "tenant-other",
+		ActorUserID: "user-test",
+		Permissions: map[string]struct{}{"crm.customer.read": {}},
+	}
+	if _, err := engine.Execute(context.Background(), other, `return 1;`); err != nil {
+		t.Fatalf("other tenant must not be blocked by a saturated tenant: %v", err)
 	}
 }
 
