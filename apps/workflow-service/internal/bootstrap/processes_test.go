@@ -40,6 +40,9 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 		"LNM_OFF_BALANCE_EXPORT_V2": "lnm-off-balance-export-v2",
 		"LNM_GENERAL_PROVISION_V2":  "lnm-general-provision-v2",
 		"LNM_MORTGAGE_ADJUST_V2":    "lnm-mortgage-adjust-v2",
+		"DPM_ADDITIONAL_V1":         "dpm-additional-v1",
+		"DPM_PRODUCT_REGISTER_V1":   "dpm-product-register-v1",
+		"DPM_PRODUCT_EDIT_V1":       "dpm-product-edit-v1",
 	}
 	if len(processes) != len(want) {
 		t.Fatalf("BuiltInProcesses() len = %d, want %d", len(processes), len(want))

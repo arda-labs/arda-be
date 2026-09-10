@@ -2,30 +2,46 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
-	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
-	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
-	"github.com/shopspring/decimal"
+	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
 	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
-// SettlementService runs deposit open/settle movements. Posting goes through
-// the finance PostingService (rule card DPM_SETTLEMENT — see
-// docs/accounting-rule-cards.md; add DPM-specific cards when the flows land).
-type SettlementService struct {
-	repo    *repository.DepositRepository
-	db      *sql.DB
-	finance *financeclient.Client
+// WorkflowSubmitter is the workflow case submission contract (shared by the
+// settlement and additional-deposit services).
+type WorkflowSubmitter interface {
+	CreateCase(ctx context.Context, in workflowclient.CaseCreate) (*workflowv1.BusinessCase, error)
+	SubmitCase(ctx context.Context, caseID, actor string, variables map[string]any, idempotencyKey string) (*workflowv1.BusinessCase, error)
 }
 
-func NewSettlementService(repo *repository.DepositRepository, db *sql.DB, finance *financeclient.Client) *SettlementService {
-	return &SettlementService{repo: repo, db: db, finance: finance}
+// Submission is the workflow case handle returned to the FE after submit.
+type Submission struct {
+	CaseID   string `json:"case_id"`
+	CaseCode string `json:"case_code"`
+}
+
+// SettlementService runs deposit open/settle movements. Posting goes through
+// the finance PostingService rule cards DPM_OPEN / DPM_SETTLEMENT
+// (docs/accounting-rule-cards.md, seeded by 20260910210000_dpm_rule_cards.sql).
+type SettlementService struct {
+	repo     *repository.DepositRepository
+	db       *sql.DB
+	finance  *financeclient.Client
+	workflow WorkflowSubmitter
+}
+
+func NewSettlementService(repo *repository.DepositRepository, db *sql.DB, finance *financeclient.Client, workflow WorkflowSubmitter) *SettlementService {
+	return &SettlementService{repo: repo, db: db, finance: finance, workflow: workflow}
 }
 
 // OpenSavingsInput is the create-savings request body.
@@ -92,8 +108,9 @@ func (s *SettlementService) Open(ctx context.Context, tenantID string, in *OpenS
 
 	// Posting: DR cash settlement, CR customer deposit liability.
 	if s.finance != nil {
-		entryID, err := s.post(ctx, tenantID, "DPM_OPEN", savings.SavingsCode, savings.CustomerCode,
-			openDate, currency, in.PrincipalMinor, "DPM_DEPOSIT_LIABILITY", "CASH_SETTLEMENT_ACCOUNT")
+		entryID, err := s.post(ctx, tenantID, "DPM_OPEN", "DPM_OPEN", idempotencyKey("dpm-open", in.SavingsCode),
+			savings.SavingsCode, savings.CustomerCode, openDate, currency, in.PrincipalMinor,
+			"CASH_SETTLEMENT_ACCOUNT", "DPM_DEPOSIT_LIABILITY")
 		if err != nil {
 			return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "deposit posting failed", err)
 		}
@@ -114,8 +131,45 @@ func (s *SettlementService) Open(ctx context.Context, tenantID string, in *OpenS
 	return savings, nil
 }
 
+// SubmitSettle creates + submits the DPM_SETTLE_V2 maker/checker case. The
+// actual settlement runs in the workflow execute step through the gRPC
+// Settle callback (no more direct settle from the HTTP surface).
+func (s *SettlementService) SubmitSettle(ctx context.Context, tenantID, actor, savingsCode string) (*Submission, error) {
+	if s.workflow == nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, "workflow client is not configured")
+	}
+	savings, err := s.repo.GetSavingsByCode(ctx, tenantID, savingsCode)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeNotFound, "savings not found: "+savingsCode)
+	}
+	if savings.Status != "ACTIVE" {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "only ACTIVE savings can be settled")
+	}
+	key := idempotencyKey("dpm-settle", savingsCode)
+	caseCreated, err := s.workflow.CreateCase(ctx, workflowclient.CaseCreate{
+		TenantID:          tenantID,
+		CaseType:          "DPM_SETTLE_V2",
+		Title:             "Tất toán sổ " + savingsCode,
+		PrimaryObjectType: "dpm.savings",
+		PrimaryObjectID:   savingsCode,
+		DomainService:     "deposit-service",
+		Priority:          "NORMAL",
+		CreatedBy:         actor,
+		IdempotencyKey:    key,
+	})
+	if err != nil {
+		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
+	}
+	if _, err := s.workflow.SubmitCase(ctx, caseCreated.GetId(), actor,
+		map[string]any{"savingsCode": savingsCode}, key+"-submit"); err != nil {
+		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
+	}
+	return &Submission{CaseID: caseCreated.GetId(), CaseCode: caseCreated.GetCaseCode()}, nil
+}
+
 // Settle closes a savings account: payout principal + accrued interest
-// (DR customer deposit liability + DR interest expense / CR cash).
+// (DR customer deposit liability / CR cash). Runs in the workflow execute
+// step through the gRPC callback.
 func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, actor string) (*repository.Savings, error) {
 	savings, err := s.repo.GetSavingsByCode(ctx, tenantID, savingsCode)
 	if err != nil {
@@ -128,8 +182,8 @@ func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, a
 	var entryID string
 	if s.finance != nil {
 		var err error
-		entryID, err = s.post(ctx, tenantID, "DPM_SETTLE", savings.SavingsCode, savings.CustomerCode,
-			todayDep(ctx), savings.CurrencyCode, payoutMinor,
+		entryID, err = s.post(ctx, tenantID, "DPM_SETTLEMENT", "DPM_SETTLEMENT", idempotencyKey("dpm-settlement", savingsCode),
+			savings.SavingsCode, savings.CustomerCode, todayDep(ctx), savings.CurrencyCode, payoutMinor,
 			"DPM_DEPOSIT_LIABILITY", "CASH_SETTLEMENT_ACCOUNT")
 		if err != nil {
 			return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "settlement posting failed", err)
@@ -141,49 +195,49 @@ func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, a
 	return savings, nil
 }
 
-func (s *SettlementService) post(ctx context.Context, tenantID, docType, savingsCode, customerCode, accountingDate, currency string, amountMinor int64, creditClass, debitClass string) (string, error) {
-	amount := ardamoney.FromMinor(amountMinor, currency)
-	_ = amount
-	_ = decimal.Decimal{}
+// post builds and posts one two-leg movement. The rule card (cardType) is
+// fetched first; fallback classifications keep unseeded environments working.
+func (s *SettlementService) post(ctx context.Context, tenantID, refType, cardType, idemKey, savingsCode, customerCode, accountingDate, currency string, amountMinor int64, debitFallback, creditFallback string) (string, error) {
+	analytics := func() *financev1.Analytics {
+		return &financev1.Analytics{
+			CustomerCode: customerCode,
+			Dimensions:   map[string]string{"savings_code": savingsCode},
+		}
+	}
 	postReq := &financev1.PostingRequest{
-		IdempotencyKey: fmt.Sprintf("dpm-%s-%s", strings.ToLower(docType), savingsCode),
+		IdempotencyKey: idemKey,
 		AccountingDate: accountingDate,
 		CurrencyCode:   currency,
-		Description:    docType + " " + savingsCode,
+		Description:    refType + " " + savingsCode,
 		BusinessReference: &financev1.BusinessReference{
 			Domain:       "dpm",
-			DocumentType: docType,
+			DocumentType: refType,
 			DocumentCode: savingsCode,
 		},
-		Lines: []*financev1.PostingLine{
-			{
-				LineNo:       1,
-				Direction:    "DEBIT",
-				AmountMinor:  amountMinor,
-				CurrencyCode: currency,
-				Analytics: &financev1.Analytics{
-					AccClassification: debitClass,
-					CustomerCode:      customerCode,
-				},
+		Lines: financeclient.PostingLinesFromRules(
+			financeclient.FetchPostingRules(s.finance, cardType),
+			[]financeclient.PostingLeg{
+				{CardLine: 1, Fallback: debitFallback, Direction: "DEBIT", AmountMinor: amountMinor, Analytics: analytics()},
+				{CardLine: 2, Fallback: creditFallback, Direction: "CREDIT", AmountMinor: amountMinor, Analytics: analytics()},
 			},
-			{
-				LineNo:       2,
-				Direction:    "CREDIT",
-				AmountMinor:  amountMinor,
-				CurrencyCode: currency,
-				Analytics: &financev1.Analytics{
-					AccClassification: creditClass,
-					CustomerCode:      customerCode,
-					Dimensions:        map[string]string{"savings_code": savingsCode},
-				},
-			},
-		},
+			currency,
+		),
 	}
 	resp, err := s.finance.Post(ctx, postReq)
 	if err != nil {
 		return "", err
 	}
 	return resp.GetJournalEntryId(), nil
+}
+
+// idempotencyKey returns "<prefix>-<code>-<random>" so distinct submissions
+// never replay each other; the random suffix is the uniqueness component.
+func idempotencyKey(prefix, code string) string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("%s-%s", prefix, code)
+	}
+	return prefix + "-" + code + "-" + hex.EncodeToString(buf)
 }
 
 func (s *SettlementService) findProduct(ctx context.Context, tenantID, code string) (*repository.SavingsProduct, error) {

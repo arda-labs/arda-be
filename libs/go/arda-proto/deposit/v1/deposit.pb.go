@@ -213,6 +213,443 @@ func (x *SettleResponse) GetOk() bool {
 	return false
 }
 
+// Additional deposit (DPM.301): posts the same DPM_OPEN shape and bumps the
+// savings principal. idempotency_key is generated at submit time and carried
+// through the case variables.
+type CheckAdditionalRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SavingsCode   string                 `protobuf:"bytes,1,opt,name=savings_code,json=savingsCode,proto3" json:"savings_code,omitempty"`
+	AmountMinor   int64                  `protobuf:"varint,2,opt,name=amount_minor,json=amountMinor,proto3" json:"amount_minor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckAdditionalRequest) Reset() {
+	*x = CheckAdditionalRequest{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckAdditionalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckAdditionalRequest) ProtoMessage() {}
+
+func (x *CheckAdditionalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckAdditionalRequest.ProtoReflect.Descriptor instead.
+func (*CheckAdditionalRequest) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CheckAdditionalRequest) GetSavingsCode() string {
+	if x != nil {
+		return x.SavingsCode
+	}
+	return ""
+}
+
+func (x *CheckAdditionalRequest) GetAmountMinor() int64 {
+	if x != nil {
+		return x.AmountMinor
+	}
+	return 0
+}
+
+type CheckAdditionalResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckAdditionalResponse) Reset() {
+	*x = CheckAdditionalResponse{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckAdditionalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckAdditionalResponse) ProtoMessage() {}
+
+func (x *CheckAdditionalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckAdditionalResponse.ProtoReflect.Descriptor instead.
+func (*CheckAdditionalResponse) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CheckAdditionalResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *CheckAdditionalResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type SettleAdditionalRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SavingsCode    string                 `protobuf:"bytes,1,opt,name=savings_code,json=savingsCode,proto3" json:"savings_code,omitempty"`
+	AmountMinor    int64                  `protobuf:"varint,2,opt,name=amount_minor,json=amountMinor,proto3" json:"amount_minor,omitempty"`
+	TxnDate        string                 `protobuf:"bytes,3,opt,name=txn_date,json=txnDate,proto3" json:"txn_date,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Actor          string                 `protobuf:"bytes,5,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SettleAdditionalRequest) Reset() {
+	*x = SettleAdditionalRequest{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettleAdditionalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettleAdditionalRequest) ProtoMessage() {}
+
+func (x *SettleAdditionalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettleAdditionalRequest.ProtoReflect.Descriptor instead.
+func (*SettleAdditionalRequest) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SettleAdditionalRequest) GetSavingsCode() string {
+	if x != nil {
+		return x.SavingsCode
+	}
+	return ""
+}
+
+func (x *SettleAdditionalRequest) GetAmountMinor() int64 {
+	if x != nil {
+		return x.AmountMinor
+	}
+	return 0
+}
+
+func (x *SettleAdditionalRequest) GetTxnDate() string {
+	if x != nil {
+		return x.TxnDate
+	}
+	return ""
+}
+
+func (x *SettleAdditionalRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *SettleAdditionalRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+type SettleAdditionalResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SettleAdditionalResponse) Reset() {
+	*x = SettleAdditionalResponse{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SettleAdditionalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SettleAdditionalResponse) ProtoMessage() {}
+
+func (x *SettleAdditionalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SettleAdditionalResponse.ProtoReflect.Descriptor instead.
+func (*SettleAdditionalResponse) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SettleAdditionalResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+// Product register/edit requests (DPM.102/103): APPROVE applies the staged
+// payload to dpm_products, REJECT closes the request.
+type CheckProductRequestRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ProductRequestId string                 `protobuf:"bytes,1,opt,name=product_request_id,json=productRequestId,proto3" json:"product_request_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *CheckProductRequestRequest) Reset() {
+	*x = CheckProductRequestRequest{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckProductRequestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckProductRequestRequest) ProtoMessage() {}
+
+func (x *CheckProductRequestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckProductRequestRequest.ProtoReflect.Descriptor instead.
+func (*CheckProductRequestRequest) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CheckProductRequestRequest) GetProductRequestId() string {
+	if x != nil {
+		return x.ProductRequestId
+	}
+	return ""
+}
+
+type CheckProductRequestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckProductRequestResponse) Reset() {
+	*x = CheckProductRequestResponse{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckProductRequestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckProductRequestResponse) ProtoMessage() {}
+
+func (x *CheckProductRequestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckProductRequestResponse.ProtoReflect.Descriptor instead.
+func (*CheckProductRequestResponse) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CheckProductRequestResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *CheckProductRequestResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type ResolveProductRequestRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ProductRequestId string                 `protobuf:"bytes,1,opt,name=product_request_id,json=productRequestId,proto3" json:"product_request_id,omitempty"`
+	Decision         string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
+	Actor            string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	Note             string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ResolveProductRequestRequest) Reset() {
+	*x = ResolveProductRequestRequest{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveProductRequestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveProductRequestRequest) ProtoMessage() {}
+
+func (x *ResolveProductRequestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveProductRequestRequest.ProtoReflect.Descriptor instead.
+func (*ResolveProductRequestRequest) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ResolveProductRequestRequest) GetProductRequestId() string {
+	if x != nil {
+		return x.ProductRequestId
+	}
+	return ""
+}
+
+func (x *ResolveProductRequestRequest) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *ResolveProductRequestRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *ResolveProductRequestRequest) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type ResolveProductRequestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveProductRequestResponse) Reset() {
+	*x = ResolveProductRequestResponse{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveProductRequestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveProductRequestResponse) ProtoMessage() {}
+
+func (x *ResolveProductRequestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveProductRequestResponse.ProtoReflect.Descriptor instead.
+func (*ResolveProductRequestResponse) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ResolveProductRequestResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_arda_deposit_v1_deposit_proto protoreflect.FileDescriptor
 
 const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
@@ -227,10 +664,40 @@ const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
 	"\fsavings_code\x18\x01 \x01(\tR\vsavingsCode\x12\x14\n" +
 	"\x05actor\x18\x02 \x01(\tR\x05actor\" \n" +
 	"\x0eSettleResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xbc\x01\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"^\n" +
+	"\x16CheckAdditionalRequest\x12!\n" +
+	"\fsavings_code\x18\x01 \x01(\tR\vsavingsCode\x12!\n" +
+	"\famount_minor\x18\x02 \x01(\x03R\vamountMinor\"C\n" +
+	"\x17CheckAdditionalResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xb9\x01\n" +
+	"\x17SettleAdditionalRequest\x12!\n" +
+	"\fsavings_code\x18\x01 \x01(\tR\vsavingsCode\x12!\n" +
+	"\famount_minor\x18\x02 \x01(\x03R\vamountMinor\x12\x19\n" +
+	"\btxn_date\x18\x03 \x01(\tR\atxnDate\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12\x14\n" +
+	"\x05actor\x18\x05 \x01(\tR\x05actor\"*\n" +
+	"\x18SettleAdditionalResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"J\n" +
+	"\x1aCheckProductRequestRequest\x12,\n" +
+	"\x12product_request_id\x18\x01 \x01(\tR\x10productRequestId\"G\n" +
+	"\x1bCheckProductRequestResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x92\x01\n" +
+	"\x1cResolveProductRequestRequest\x12,\n" +
+	"\x12product_request_id\x18\x01 \x01(\tR\x10productRequestId\x12\x1a\n" +
+	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x14\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\x12\x12\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\"/\n" +
+	"\x1dResolveProductRequestResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\xf5\x04\n" +
 	"\x15DepositCommandService\x12X\n" +
 	"\vCheckSettle\x12#.arda.deposit.v1.CheckSettleRequest\x1a$.arda.deposit.v1.CheckSettleResponse\x12I\n" +
-	"\x06Settle\x12\x1e.arda.deposit.v1.SettleRequest\x1a\x1f.arda.deposit.v1.SettleResponseBCZAgithub.com/arda-labs/arda/libs/go/arda-proto/deposit/v1;depositv1b\x06proto3"
+	"\x06Settle\x12\x1e.arda.deposit.v1.SettleRequest\x1a\x1f.arda.deposit.v1.SettleResponse\x12d\n" +
+	"\x0fCheckAdditional\x12'.arda.deposit.v1.CheckAdditionalRequest\x1a(.arda.deposit.v1.CheckAdditionalResponse\x12g\n" +
+	"\x10SettleAdditional\x12(.arda.deposit.v1.SettleAdditionalRequest\x1a).arda.deposit.v1.SettleAdditionalResponse\x12p\n" +
+	"\x13CheckProductRequest\x12+.arda.deposit.v1.CheckProductRequestRequest\x1a,.arda.deposit.v1.CheckProductRequestResponse\x12v\n" +
+	"\x15ResolveProductRequest\x12-.arda.deposit.v1.ResolveProductRequestRequest\x1a..arda.deposit.v1.ResolveProductRequestResponseBCZAgithub.com/arda-labs/arda/libs/go/arda-proto/deposit/v1;depositv1b\x06proto3"
 
 var (
 	file_arda_deposit_v1_deposit_proto_rawDescOnce sync.Once
@@ -244,23 +711,39 @@ func file_arda_deposit_v1_deposit_proto_rawDescGZIP() []byte {
 	return file_arda_deposit_v1_deposit_proto_rawDescData
 }
 
-var file_arda_deposit_v1_deposit_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_arda_deposit_v1_deposit_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_arda_deposit_v1_deposit_proto_goTypes = []any{
-	(*CheckSettleRequest)(nil),  // 0: arda.deposit.v1.CheckSettleRequest
-	(*CheckSettleResponse)(nil), // 1: arda.deposit.v1.CheckSettleResponse
-	(*SettleRequest)(nil),       // 2: arda.deposit.v1.SettleRequest
-	(*SettleResponse)(nil),      // 3: arda.deposit.v1.SettleResponse
+	(*CheckSettleRequest)(nil),            // 0: arda.deposit.v1.CheckSettleRequest
+	(*CheckSettleResponse)(nil),           // 1: arda.deposit.v1.CheckSettleResponse
+	(*SettleRequest)(nil),                 // 2: arda.deposit.v1.SettleRequest
+	(*SettleResponse)(nil),                // 3: arda.deposit.v1.SettleResponse
+	(*CheckAdditionalRequest)(nil),        // 4: arda.deposit.v1.CheckAdditionalRequest
+	(*CheckAdditionalResponse)(nil),       // 5: arda.deposit.v1.CheckAdditionalResponse
+	(*SettleAdditionalRequest)(nil),       // 6: arda.deposit.v1.SettleAdditionalRequest
+	(*SettleAdditionalResponse)(nil),      // 7: arda.deposit.v1.SettleAdditionalResponse
+	(*CheckProductRequestRequest)(nil),    // 8: arda.deposit.v1.CheckProductRequestRequest
+	(*CheckProductRequestResponse)(nil),   // 9: arda.deposit.v1.CheckProductRequestResponse
+	(*ResolveProductRequestRequest)(nil),  // 10: arda.deposit.v1.ResolveProductRequestRequest
+	(*ResolveProductRequestResponse)(nil), // 11: arda.deposit.v1.ResolveProductRequestResponse
 }
 var file_arda_deposit_v1_deposit_proto_depIdxs = []int32{
-	0, // 0: arda.deposit.v1.DepositCommandService.CheckSettle:input_type -> arda.deposit.v1.CheckSettleRequest
-	2, // 1: arda.deposit.v1.DepositCommandService.Settle:input_type -> arda.deposit.v1.SettleRequest
-	1, // 2: arda.deposit.v1.DepositCommandService.CheckSettle:output_type -> arda.deposit.v1.CheckSettleResponse
-	3, // 3: arda.deposit.v1.DepositCommandService.Settle:output_type -> arda.deposit.v1.SettleResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0,  // 0: arda.deposit.v1.DepositCommandService.CheckSettle:input_type -> arda.deposit.v1.CheckSettleRequest
+	2,  // 1: arda.deposit.v1.DepositCommandService.Settle:input_type -> arda.deposit.v1.SettleRequest
+	4,  // 2: arda.deposit.v1.DepositCommandService.CheckAdditional:input_type -> arda.deposit.v1.CheckAdditionalRequest
+	6,  // 3: arda.deposit.v1.DepositCommandService.SettleAdditional:input_type -> arda.deposit.v1.SettleAdditionalRequest
+	8,  // 4: arda.deposit.v1.DepositCommandService.CheckProductRequest:input_type -> arda.deposit.v1.CheckProductRequestRequest
+	10, // 5: arda.deposit.v1.DepositCommandService.ResolveProductRequest:input_type -> arda.deposit.v1.ResolveProductRequestRequest
+	1,  // 6: arda.deposit.v1.DepositCommandService.CheckSettle:output_type -> arda.deposit.v1.CheckSettleResponse
+	3,  // 7: arda.deposit.v1.DepositCommandService.Settle:output_type -> arda.deposit.v1.SettleResponse
+	5,  // 8: arda.deposit.v1.DepositCommandService.CheckAdditional:output_type -> arda.deposit.v1.CheckAdditionalResponse
+	7,  // 9: arda.deposit.v1.DepositCommandService.SettleAdditional:output_type -> arda.deposit.v1.SettleAdditionalResponse
+	9,  // 10: arda.deposit.v1.DepositCommandService.CheckProductRequest:output_type -> arda.deposit.v1.CheckProductRequestResponse
+	11, // 11: arda.deposit.v1.DepositCommandService.ResolveProductRequest:output_type -> arda.deposit.v1.ResolveProductRequestResponse
+	6,  // [6:12] is the sub-list for method output_type
+	0,  // [0:6] is the sub-list for method input_type
+	0,  // [0:0] is the sub-list for extension type_name
+	0,  // [0:0] is the sub-list for extension extendee
+	0,  // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_arda_deposit_v1_deposit_proto_init() }
@@ -274,7 +757,7 @@ func file_arda_deposit_v1_deposit_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_deposit_v1_deposit_proto_rawDesc), len(file_arda_deposit_v1_deposit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

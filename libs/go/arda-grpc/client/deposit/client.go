@@ -89,3 +89,79 @@ func (c *Client) Settle(ctx context.Context, savingsCode, actor string) error {
 	_, err := c.api.Settle(callCtx, &depositv1.SettleRequest{SavingsCode: savingsCode, Actor: actor})
 	return err
 }
+
+// Additionaler is the narrow surface the workflow additional-deposit workers
+// need (DPM.301).
+type Additionaler interface {
+	CheckAdditional(ctx context.Context, savingsCode string, amountMinor int64) (bool, string, error)
+	SettleAdditional(ctx context.Context, savingsCode string, amountMinor int64, txnDate, idempotencyKey, actor string) error
+}
+
+func (c *Client) CheckAdditional(ctx context.Context, savingsCode string, amountMinor int64) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("deposit client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckAdditional(callCtx, &depositv1.CheckAdditionalRequest{
+		SavingsCode: savingsCode,
+		AmountMinor: amountMinor,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+func (c *Client) SettleAdditional(ctx context.Context, savingsCode string, amountMinor int64, txnDate, idempotencyKey, actor string) error {
+	if c == nil {
+		return errors.New("deposit client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.SettleAdditional(callCtx, &depositv1.SettleAdditionalRequest{
+		SavingsCode:    savingsCode,
+		AmountMinor:    amountMinor,
+		TxnDate:        txnDate,
+		IdempotencyKey: idempotencyKey,
+		Actor:          actor,
+	})
+	return err
+}
+
+// ProductRequester is the narrow surface the workflow product-request workers
+// need (DPM.102/103).
+type ProductRequester interface {
+	CheckProductRequest(ctx context.Context, requestID string) (bool, string, error)
+	ResolveProductRequest(ctx context.Context, requestID, decision, actor, note string) error
+}
+
+func (c *Client) CheckProductRequest(ctx context.Context, requestID string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("deposit client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckProductRequest(callCtx, &depositv1.CheckProductRequestRequest{
+		ProductRequestId: requestID,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+func (c *Client) ResolveProductRequest(ctx context.Context, requestID, decision, actor, note string) error {
+	if c == nil {
+		return errors.New("deposit client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.ResolveProductRequest(callCtx, &depositv1.ResolveProductRequestRequest{
+		ProductRequestId: requestID,
+		Decision:         decision,
+		Actor:            actor,
+		Note:             note,
+	})
+	return err
+}

@@ -19,8 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DepositCommandService_CheckSettle_FullMethodName = "/arda.deposit.v1.DepositCommandService/CheckSettle"
-	DepositCommandService_Settle_FullMethodName      = "/arda.deposit.v1.DepositCommandService/Settle"
+	DepositCommandService_CheckSettle_FullMethodName           = "/arda.deposit.v1.DepositCommandService/CheckSettle"
+	DepositCommandService_Settle_FullMethodName                = "/arda.deposit.v1.DepositCommandService/Settle"
+	DepositCommandService_CheckAdditional_FullMethodName       = "/arda.deposit.v1.DepositCommandService/CheckAdditional"
+	DepositCommandService_SettleAdditional_FullMethodName      = "/arda.deposit.v1.DepositCommandService/SettleAdditional"
+	DepositCommandService_CheckProductRequest_FullMethodName   = "/arda.deposit.v1.DepositCommandService/CheckProductRequest"
+	DepositCommandService_ResolveProductRequest_FullMethodName = "/arda.deposit.v1.DepositCommandService/ResolveProductRequest"
 )
 
 // DepositCommandServiceClient is the client API for DepositCommandService service.
@@ -28,10 +32,15 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // DepositCommandService is the callback surface workflow-service workers use
-// for the dpm-settle-v2 flow. Tenant scope arrives via gRPC metadata.
+// for the dpm-settle-v2 and dpm-additional-v1 flows. Tenant scope arrives via
+// gRPC metadata.
 type DepositCommandServiceClient interface {
 	CheckSettle(ctx context.Context, in *CheckSettleRequest, opts ...grpc.CallOption) (*CheckSettleResponse, error)
 	Settle(ctx context.Context, in *SettleRequest, opts ...grpc.CallOption) (*SettleResponse, error)
+	CheckAdditional(ctx context.Context, in *CheckAdditionalRequest, opts ...grpc.CallOption) (*CheckAdditionalResponse, error)
+	SettleAdditional(ctx context.Context, in *SettleAdditionalRequest, opts ...grpc.CallOption) (*SettleAdditionalResponse, error)
+	CheckProductRequest(ctx context.Context, in *CheckProductRequestRequest, opts ...grpc.CallOption) (*CheckProductRequestResponse, error)
+	ResolveProductRequest(ctx context.Context, in *ResolveProductRequestRequest, opts ...grpc.CallOption) (*ResolveProductRequestResponse, error)
 }
 
 type depositCommandServiceClient struct {
@@ -62,15 +71,60 @@ func (c *depositCommandServiceClient) Settle(ctx context.Context, in *SettleRequ
 	return out, nil
 }
 
+func (c *depositCommandServiceClient) CheckAdditional(ctx context.Context, in *CheckAdditionalRequest, opts ...grpc.CallOption) (*CheckAdditionalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckAdditionalResponse)
+	err := c.cc.Invoke(ctx, DepositCommandService_CheckAdditional_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *depositCommandServiceClient) SettleAdditional(ctx context.Context, in *SettleAdditionalRequest, opts ...grpc.CallOption) (*SettleAdditionalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SettleAdditionalResponse)
+	err := c.cc.Invoke(ctx, DepositCommandService_SettleAdditional_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *depositCommandServiceClient) CheckProductRequest(ctx context.Context, in *CheckProductRequestRequest, opts ...grpc.CallOption) (*CheckProductRequestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckProductRequestResponse)
+	err := c.cc.Invoke(ctx, DepositCommandService_CheckProductRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *depositCommandServiceClient) ResolveProductRequest(ctx context.Context, in *ResolveProductRequestRequest, opts ...grpc.CallOption) (*ResolveProductRequestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveProductRequestResponse)
+	err := c.cc.Invoke(ctx, DepositCommandService_ResolveProductRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DepositCommandServiceServer is the server API for DepositCommandService service.
 // All implementations must embed UnimplementedDepositCommandServiceServer
 // for forward compatibility.
 //
 // DepositCommandService is the callback surface workflow-service workers use
-// for the dpm-settle-v2 flow. Tenant scope arrives via gRPC metadata.
+// for the dpm-settle-v2 and dpm-additional-v1 flows. Tenant scope arrives via
+// gRPC metadata.
 type DepositCommandServiceServer interface {
 	CheckSettle(context.Context, *CheckSettleRequest) (*CheckSettleResponse, error)
 	Settle(context.Context, *SettleRequest) (*SettleResponse, error)
+	CheckAdditional(context.Context, *CheckAdditionalRequest) (*CheckAdditionalResponse, error)
+	SettleAdditional(context.Context, *SettleAdditionalRequest) (*SettleAdditionalResponse, error)
+	CheckProductRequest(context.Context, *CheckProductRequestRequest) (*CheckProductRequestResponse, error)
+	ResolveProductRequest(context.Context, *ResolveProductRequestRequest) (*ResolveProductRequestResponse, error)
 	mustEmbedUnimplementedDepositCommandServiceServer()
 }
 
@@ -86,6 +140,18 @@ func (UnimplementedDepositCommandServiceServer) CheckSettle(context.Context, *Ch
 }
 func (UnimplementedDepositCommandServiceServer) Settle(context.Context, *SettleRequest) (*SettleResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Settle not implemented")
+}
+func (UnimplementedDepositCommandServiceServer) CheckAdditional(context.Context, *CheckAdditionalRequest) (*CheckAdditionalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckAdditional not implemented")
+}
+func (UnimplementedDepositCommandServiceServer) SettleAdditional(context.Context, *SettleAdditionalRequest) (*SettleAdditionalResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SettleAdditional not implemented")
+}
+func (UnimplementedDepositCommandServiceServer) CheckProductRequest(context.Context, *CheckProductRequestRequest) (*CheckProductRequestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckProductRequest not implemented")
+}
+func (UnimplementedDepositCommandServiceServer) ResolveProductRequest(context.Context, *ResolveProductRequestRequest) (*ResolveProductRequestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveProductRequest not implemented")
 }
 func (UnimplementedDepositCommandServiceServer) mustEmbedUnimplementedDepositCommandServiceServer() {}
 func (UnimplementedDepositCommandServiceServer) testEmbeddedByValue()                               {}
@@ -144,6 +210,78 @@ func _DepositCommandService_Settle_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DepositCommandService_CheckAdditional_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckAdditionalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DepositCommandServiceServer).CheckAdditional(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DepositCommandService_CheckAdditional_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DepositCommandServiceServer).CheckAdditional(ctx, req.(*CheckAdditionalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DepositCommandService_SettleAdditional_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SettleAdditionalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DepositCommandServiceServer).SettleAdditional(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DepositCommandService_SettleAdditional_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DepositCommandServiceServer).SettleAdditional(ctx, req.(*SettleAdditionalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DepositCommandService_CheckProductRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckProductRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DepositCommandServiceServer).CheckProductRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DepositCommandService_CheckProductRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DepositCommandServiceServer).CheckProductRequest(ctx, req.(*CheckProductRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DepositCommandService_ResolveProductRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveProductRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DepositCommandServiceServer).ResolveProductRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DepositCommandService_ResolveProductRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DepositCommandServiceServer).ResolveProductRequest(ctx, req.(*ResolveProductRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DepositCommandService_ServiceDesc is the grpc.ServiceDesc for DepositCommandService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -158,6 +296,22 @@ var DepositCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Settle",
 			Handler:    _DepositCommandService_Settle_Handler,
+		},
+		{
+			MethodName: "CheckAdditional",
+			Handler:    _DepositCommandService_CheckAdditional_Handler,
+		},
+		{
+			MethodName: "SettleAdditional",
+			Handler:    _DepositCommandService_SettleAdditional_Handler,
+		},
+		{
+			MethodName: "CheckProductRequest",
+			Handler:    _DepositCommandService_CheckProductRequest_Handler,
+		},
+		{
+			MethodName: "ResolveProductRequest",
+			Handler:    _DepositCommandService_ResolveProductRequest_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

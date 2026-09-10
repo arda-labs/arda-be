@@ -21,6 +21,7 @@ import (
 	grpcserver "github.com/arda-labs/arda/apps/deposit-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/deposit-service/internal/transport/http"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -60,9 +61,22 @@ func main() {
 		financeClient = fc
 	}
 
+	var workflowClient *workflowclient.Client
+	if cfg.WorkflowGRPCAddr != "" {
+		wc, err := workflowclient.Dial(context.Background(), cfg.WorkflowGRPCAddr, "deposit-service", logger)
+		if err != nil {
+			logger.Error("workflow grpc dial", "err", err)
+			os.Exit(1)
+		}
+		defer wc.Close()
+		workflowClient = wc
+	}
+
 	repo := repository.NewDepositRepository(db)
-	settlementSvc := service.NewSettlementService(repo, db, financeClient)
-	depositHandler := handler.NewDepositHandler(settlementSvc)
+	settlementSvc := service.NewSettlementService(repo, db, financeClient, workflowClient)
+	additionalSvc := service.NewAdditionalDepositService(repo, settlementSvc, db, workflowClient)
+	productRequestSvc := service.NewProductRequestService(repo, workflowClient)
+	depositHandler := handler.NewDepositHandler(settlementSvc, additionalSvc, productRequestSvc)
 
 	// ── gRPC server (DepositCommandService, port 9090) ──
 	serviceSecret, errSec := identity.SecretFromEnv()
@@ -82,7 +96,7 @@ func main() {
 			interceptors.UnaryServerLogging(logger),
 		),
 	)
-	depositv1.RegisterDepositCommandServiceServer(grpcSrv, grpcserver.NewDepositServer(settlementSvc))
+	depositv1.RegisterDepositCommandServiceServer(grpcSrv, grpcserver.NewDepositServer(settlementSvc, additionalSvc, productRequestSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
@@ -130,23 +144,25 @@ func main() {
 }
 
 type config struct {
-	AppName         string
-	HTTPAddr        string
-	GRPCAddr        string
-	LogLevel        string
-	DatabaseDSN     string
-	FinanceGRPCAddr string
+	AppName          string
+	HTTPAddr         string
+	GRPCAddr         string
+	LogLevel         string
+	DatabaseDSN      string
+	FinanceGRPCAddr  string
+	WorkflowGRPCAddr string
 }
 
 func loadConfig() config {
 	base := appconfig.Load()
 	return config{
-		AppName:         base.AppName,
-		HTTPAddr:        base.HTTPAddr,
-		GRPCAddr:        envOr("GRPC_ADDR", "0.0.0.0:9090"),
-		LogLevel:        base.LogLevel,
-		DatabaseDSN:     base.DatabaseDSN,
-		FinanceGRPCAddr: base.FinanceGRPCAddr,
+		AppName:          base.AppName,
+		HTTPAddr:         base.HTTPAddr,
+		GRPCAddr:         envOr("GRPC_ADDR", "0.0.0.0:9090"),
+		LogLevel:         base.LogLevel,
+		DatabaseDSN:      base.DatabaseDSN,
+		FinanceGRPCAddr:  base.FinanceGRPCAddr,
+		WorkflowGRPCAddr: base.WorkflowGRPCAddr,
 	}
 }
 

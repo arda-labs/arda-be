@@ -12,11 +12,13 @@ import (
 
 // DepositHandler exposes the deposit HTTP surface (P2.1).
 type DepositHandler struct {
-	svc *service.SettlementService
+	svc        *service.SettlementService
+	additional *service.AdditionalDepositService
+	products   *service.ProductRequestService
 }
 
-func NewDepositHandler(svc *service.SettlementService) *DepositHandler {
-	return &DepositHandler{svc: svc}
+func NewDepositHandler(svc *service.SettlementService, additional *service.AdditionalDepositService, products *service.ProductRequestService) *DepositHandler {
+	return &DepositHandler{svc: svc, additional: additional, products: products}
 }
 
 type orgScope struct {
@@ -134,19 +136,79 @@ func (h *DepositHandler) OpenSavings(w http.ResponseWriter, r *http.Request) {
 	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
 }
 
-// SettleSavings handles POST /api/deposit/savings/{code}/settle.
-func (h *DepositHandler) SettleSavings(w http.ResponseWriter, r *http.Request) {
+// SubmitSettlement handles POST /api/deposit/savings/{code}/settle — creates
+// and submits the DPM_SETTLE_V2 maker/checker case (parity DPM.306.01).
+func (h *DepositHandler) SubmitSettlement(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.Header.Get("X-Tenant-Id")
 	if tenantID == "" {
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	savings, err := h.svc.Settle(r.Context(), tenantID, r.PathValue("code"), r.Header.Get("X-User-Id"))
+	submission, err := h.svc.SubmitSettle(r.Context(), tenantID, r.Header.Get("X-User-Id"), r.PathValue("code"))
 	if err != nil {
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	ardahttp.WriteSuccess(w, r, http.StatusOK, savings)
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, submission)
+}
+
+// SubmitAdditional handles POST /api/deposit/savings/{code}/deposit — creates
+// and submits the DPM_ADDITIONAL_V1 maker/checker case (DPM.301.01).
+func (h *DepositHandler) SubmitAdditional(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	var in struct {
+		AmountMinor int64  `json:"amount_minor"`
+		TxnDate     string `json:"txn_date"`
+	}
+	if !decodeDepositBody(w, r, &in) {
+		return
+	}
+	submission, err := h.additional.Submit(r.Context(), tenantID, r.Header.Get("X-User-Id"),
+		r.PathValue("code"), in.AmountMinor, in.TxnDate)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, submission)
+}
+
+// SubmitProductRequest handles POST /api/deposit/product-requests —
+// DPM.102/103 staged product payload + maker/checker case.
+func (h *DepositHandler) SubmitProductRequest(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	var in service.ProductRequestInput
+	if !decodeDepositBody(w, r, &in) {
+		return
+	}
+	submission, err := h.products.Submit(r.Context(), tenantID, r.Header.Get("X-User-Id"), in)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, submission)
+}
+
+// ListProductRequests handles GET /api/deposit/product-requests?status=.
+func (h *DepositHandler) ListProductRequests(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	items, err := h.products.List(r.Context(), tenantID, r.URL.Query().Get("status"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
 }
 
 // ListSavings handles GET /api/deposit/savings.

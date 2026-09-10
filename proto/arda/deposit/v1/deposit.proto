@@ -5,10 +5,15 @@ package arda.deposit.v1;
 option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/deposit/v1;depositv1";
 
 // DepositCommandService is the callback surface workflow-service workers use
-// for the dpm-settle-v2 flow. Tenant scope arrives via gRPC metadata.
+// for the dpm-settle-v2 and dpm-additional-v1 flows. Tenant scope arrives via
+// gRPC metadata.
 service DepositCommandService {
   rpc CheckSettle(CheckSettleRequest) returns (CheckSettleResponse);
   rpc Settle(SettleRequest) returns (SettleResponse);
+  rpc CheckAdditional(CheckAdditionalRequest) returns (CheckAdditionalResponse);
+  rpc SettleAdditional(SettleAdditionalRequest) returns (SettleAdditionalResponse);
+  rpc CheckProductRequest(CheckProductRequestRequest) returns (CheckProductRequestResponse);
+  rpc ResolveProductRequest(ResolveProductRequestRequest) returns (ResolveProductRequestResponse);
 }
 
 message CheckSettleRequest {
@@ -26,5 +31,52 @@ message SettleRequest {
 }
 
 message SettleResponse {
+  bool ok = 1;
+}
+
+// Additional deposit (DPM.301): posts the same DPM_OPEN shape and bumps the
+// savings principal. idempotency_key is generated at submit time and carried
+// through the case variables.
+message CheckAdditionalRequest {
+  string savings_code = 1;
+  int64 amount_minor = 2;
+}
+
+message CheckAdditionalResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message SettleAdditionalRequest {
+  string savings_code = 1;
+  int64 amount_minor = 2;
+  string txn_date = 3;
+  string idempotency_key = 4;
+  string actor = 5;
+}
+
+message SettleAdditionalResponse {
+  bool ok = 1;
+}
+
+// Product register/edit requests (DPM.102/103): APPROVE applies the staged
+// payload to dpm_products, REJECT closes the request.
+message CheckProductRequestRequest {
+  string product_request_id = 1;
+}
+
+message CheckProductRequestResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message ResolveProductRequestRequest {
+  string product_request_id = 1;
+  string decision = 2; // APPROVE | REJECT
+  string actor = 3;
+  string note = 4;
+}
+
+message ResolveProductRequestResponse {
   bool ok = 1;
 }

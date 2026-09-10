@@ -42,6 +42,17 @@ var RegisteredJobTopics = []string{
 	"dpm.settle.validate",
 	"dpm.settle.execute",
 	"dpm.settle.cancel",
+	// Additional deposit (dpm-additional-v1.bpmn)
+	"dpm.additional.validate",
+	"dpm.additional.execute",
+	"dpm.additional.cancel",
+	// Product register/edit (dpm-product-register-v1 + dpm-product-edit-v1)
+	"dpm.product-register.validate",
+	"dpm.product-register.execute",
+	"dpm.product-register.cancel",
+	"dpm.product-edit.validate",
+	"dpm.product-edit.execute",
+	"dpm.product-edit.cancel",
 	// Loan formation (lnm-loan-formation-v2.bpmn, iteration 11 wave 2) —
 	// multi-level approval; UT_* steps are human workbench tasks.
 	"lnm.loan.formation.validate",

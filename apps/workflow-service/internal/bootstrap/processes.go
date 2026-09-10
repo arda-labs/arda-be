@@ -74,6 +74,15 @@ var lnmGeneralProvision []byte
 //go:embed lnm-mortgage-adjust-v2.bpmn
 var lnmMortgageAdjust []byte
 
+//go:embed dpm-additional-v1.bpmn
+var dpmAdditional []byte
+
+//go:embed dpm-product-register-v1.bpmn
+var dpmProductRegister []byte
+
+//go:embed dpm-product-edit-v1.bpmn
+var dpmProductEdit []byte
+
 //go:embed fin-single-entry-v2.bpmn
 var finSingleEntry []byte
 
@@ -231,6 +240,28 @@ func BuiltInProcesses() []Process {
 			Name:         "Điều chỉnh TSBĐ (v2)",
 			ResourceName: "lnm-mortgage-adjust-v2.bpmn",
 			Content:      lnmMortgageAdjust,
+		},
+		{
+			// DPM.301 additional deposit: maker submits, checker approval
+			// posts the DPM_OPEN shape and bumps the savings principal.
+			ProcessCode:  "DPM_ADDITIONAL_V1",
+			Name:         "Nộp thêm tiền gửi (v1)",
+			ResourceName: "dpm-additional-v1.bpmn",
+			Content:      dpmAdditional,
+		},
+		{
+			// DPM.102/103 product register/edit: the staged request payload is
+			// applied to dpm_products only on checker approval.
+			ProcessCode:  "DPM_PRODUCT_REGISTER_V1",
+			Name:         "Đăng ký sản phẩm tiền gửi (v1)",
+			ResourceName: "dpm-product-register-v1.bpmn",
+			Content:      dpmProductRegister,
+		},
+		{
+			ProcessCode:  "DPM_PRODUCT_EDIT_V1",
+			Name:         "Điều chỉnh sản phẩm tiền gửi (v1)",
+			ResourceName: "dpm-product-edit-v1.bpmn",
+			Content:      dpmProductEdit,
 		},
 		{
 			ProcessCode:  "DPM_SETTLE_V2",

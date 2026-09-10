@@ -12,14 +12,17 @@ import (
 )
 
 // DepositServer implements arda.deposit.v1.DepositCommandService — the
-// callback surface workflow-service workers use for dpm-settle-v2.
+// callback surface workflow-service workers use for dpm-settle-v2 and
+// dpm-additional-v1.
 type DepositServer struct {
 	depositv1.UnimplementedDepositCommandServiceServer
 	settlement *service.SettlementService
+	additional *service.AdditionalDepositService
+	products   *service.ProductRequestService
 }
 
-func NewDepositServer(settlement *service.SettlementService) *DepositServer {
-	return &DepositServer{settlement: settlement}
+func NewDepositServer(settlement *service.SettlementService, additional *service.AdditionalDepositService, products *service.ProductRequestService) *DepositServer {
+	return &DepositServer{settlement: settlement, additional: additional, products: products}
 }
 
 func tenantFromContext(ctx context.Context) (string, error) {
@@ -55,6 +58,53 @@ func (s *DepositServer) Settle(ctx context.Context, req *depositv1.SettleRequest
 		return &depositv1.SettleResponse{Ok: false}, nil
 	}
 	return &depositv1.SettleResponse{Ok: true}, nil
+}
+
+func (s *DepositServer) CheckAdditional(ctx context.Context, req *depositv1.CheckAdditionalRequest) (*depositv1.CheckAdditionalResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	ok, message, err := s.additional.Check(ctx, tenantID, req.GetSavingsCode(), req.GetAmountMinor())
+	if err != nil {
+		return &depositv1.CheckAdditionalResponse{Ok: false, Message: err.Error()}, nil
+	}
+	return &depositv1.CheckAdditionalResponse{Ok: ok, Message: message}, nil
+}
+
+func (s *DepositServer) SettleAdditional(ctx context.Context, req *depositv1.SettleAdditionalRequest) (*depositv1.SettleAdditionalResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if err := s.additional.Settle(ctx, tenantID, req.GetActor(), req.GetSavingsCode(),
+		req.GetAmountMinor(), req.GetTxnDate(), req.GetIdempotencyKey()); err != nil {
+		return &depositv1.SettleAdditionalResponse{Ok: false}, nil
+	}
+	return &depositv1.SettleAdditionalResponse{Ok: true}, nil
+}
+
+func (s *DepositServer) CheckProductRequest(ctx context.Context, req *depositv1.CheckProductRequestRequest) (*depositv1.CheckProductRequestResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	ok, message, err := s.products.Check(ctx, tenantID, req.GetProductRequestId())
+	if err != nil {
+		return &depositv1.CheckProductRequestResponse{Ok: false, Message: err.Error()}, nil
+	}
+	return &depositv1.CheckProductRequestResponse{Ok: ok, Message: message}, nil
+}
+
+func (s *DepositServer) ResolveProductRequest(ctx context.Context, req *depositv1.ResolveProductRequestRequest) (*depositv1.ResolveProductRequestResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if err := s.products.Resolve(ctx, tenantID, req.GetProductRequestId(), req.GetDecision(), req.GetActor()); err != nil {
+		return &depositv1.ResolveProductRequestResponse{Ok: false}, nil
+	}
+	return &depositv1.ResolveProductRequestResponse{Ok: true}, nil
 }
 
 // ardametadataFromContext is a thin adapter so the server does not import

@@ -9,21 +9,23 @@ import (
 
 // Config holds runtime configuration for deposit-service.
 type Config struct {
-	AppName         string `yaml:"app_name"`
-	HTTPAddr        string `yaml:"http_addr"`
-	LogLevel        string `yaml:"log_level"`
-	DatabaseDSN     string `yaml:"database_dsn"`
-	FinanceGRPCAddr string `yaml:"finance_grpc_addr"`
+	AppName          string `yaml:"app_name"`
+	HTTPAddr         string `yaml:"http_addr"`
+	LogLevel         string `yaml:"log_level"`
+	DatabaseDSN      string `yaml:"database_dsn"`
+	FinanceGRPCAddr  string `yaml:"finance_grpc_addr"`
+	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
 func Load() Config {
 	cfg := Config{
-		AppName:         "deposit-service",
-		HTTPAddr:        "0.0.0.0:8080",
-		LogLevel:        "info",
-		DatabaseDSN:     "",
-		FinanceGRPCAddr: "localhost:9090",
+		AppName:          "deposit-service",
+		HTTPAddr:         "0.0.0.0:8080",
+		LogLevel:         "info",
+		DatabaseDSN:      "",
+		FinanceGRPCAddr:  "localhost:9090",
+		WorkflowGRPCAddr: "",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -41,6 +43,7 @@ func Load() Config {
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("FINANCE_GRPC_ADDR", &cfg.FinanceGRPCAddr)
+	envStr("WORKFLOW_GRPC_ADDR", &cfg.WorkflowGRPCAddr)
 
 	return cfg
 }
@@ -65,6 +68,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("log_level", &c.LogLevel)
 	setStr("database_dsn", &c.DatabaseDSN)
 	setStr("finance_grpc_addr", &c.FinanceGRPCAddr)
+	setStr("workflow_grpc_addr", &c.WorkflowGRPCAddr)
 	return true
 }
 

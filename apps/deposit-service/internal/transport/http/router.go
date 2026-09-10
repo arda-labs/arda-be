@@ -30,6 +30,16 @@ func NewRouter(h *handler.DepositHandler) http.Handler {
 			writeMethodNotAllowed(w, r)
 		}
 	})
+	mux.HandleFunc("/api/deposit/product-requests", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.ListProductRequests(w, r)
+		case http.MethodPost:
+			h.SubmitProductRequest(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
 	mux.HandleFunc("/api/deposit/savings", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -42,7 +52,9 @@ func NewRouter(h *handler.DepositHandler) http.Handler {
 	mux.HandleFunc("/api/deposit/savings/", func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/settle") && r.Method == http.MethodPost:
-			h.SettleSavings(w, r)
+			h.SubmitSettlement(w, r)
+		case strings.HasSuffix(r.URL.Path, "/deposit") && r.Method == http.MethodPost:
+			h.SubmitAdditional(w, r)
 		default:
 			writeMethodNotAllowed(w, r)
 		}

@@ -334,7 +334,7 @@ func main() {
 			logger.Info("workflow batch disbursement/collection workers registered")
 		}
 
-		var depositSettler worker.DepositSettler
+		var depositClient *depositclient.Client
 		if cfg.DepositGRPCAddr != "" {
 			dc, err := depositclient.Dial(context.Background(), cfg.DepositGRPCAddr, cfg.AppName, logger)
 			if err != nil {
@@ -342,7 +342,7 @@ func main() {
 				os.Exit(1)
 			}
 			defer dc.Close()
-			depositSettler = dc
+			depositClient = dc
 		}
 
 		if hrmClient != nil {
@@ -357,8 +357,8 @@ func main() {
 			logger.Info("workflow hrm registration workers registered")
 		}
 
-		if depositSettler != nil {
-			depWorkers := worker.NewDepositWorkers(depositSettler, caseRepo)
+		if depositClient != nil {
+			depWorkers := worker.NewDepositWorkers(depositClient, caseRepo)
 			dv, de, dc := depWorkers.Handlers()
 			dvv := zeebeSvc.NewJobWorker("dpm.settle.validate", dv)
 			dee := zeebeSvc.NewJobWorker("dpm.settle.execute", de)
@@ -366,6 +366,26 @@ func main() {
 			defer dvv.Close()
 			defer dee.Close()
 			defer dcc.Close()
+
+			addWorkers := worker.NewAdditionalDepositWorkers(depositClient, caseRepo)
+			av, ae, ac := addWorkers.Handlers()
+			avw := zeebeSvc.NewJobWorker("dpm.additional.validate", av)
+			aew := zeebeSvc.NewJobWorker("dpm.additional.execute", ae)
+			acw := zeebeSvc.NewJobWorker("dpm.additional.cancel", ac)
+			defer avw.Close()
+			defer aew.Close()
+			defer acw.Close()
+
+			productWorkers := worker.NewProductRequestWorkers(depositClient, caseRepo)
+			pv, pe, pc := productWorkers.Handlers()
+			for _, prefix := range []string{"dpm.product-register", "dpm.product-edit"} {
+				pvw := zeebeSvc.NewJobWorker(prefix+".validate", pv)
+				pew := zeebeSvc.NewJobWorker(prefix+".execute", pe)
+				pcw := zeebeSvc.NewJobWorker(prefix+".cancel", pc)
+				defer pvw.Close()
+				defer pew.Close()
+				defer pcw.Close()
+			}
 			logger.Info("workflow deposit workers registered")
 		}
 	}
@@ -440,6 +460,7 @@ func main() {
 				"loan-service":        {},
 				"finance-service":     {},
 				"statistical-service": {},
+				"deposit-service":     {},
 			}),
 			interceptors.UnaryServerLogging(logger),
 		),
