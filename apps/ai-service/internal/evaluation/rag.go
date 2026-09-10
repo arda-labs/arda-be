@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"gopkg.in/yaml.v3"
 )
 
@@ -127,11 +128,14 @@ func Run(ctx context.Context, set Set, query QueryFunc) Report {
 // HTTPQuery returns a QueryFunc for the service/gateway RAG endpoint. Identity
 // is supplied by the caller so the runner can exercise tenant isolation. When
 // cookie is non-empty (or AI_EVAL_COOKIE is set), it is sent as the Cookie header.
+// When AI_EVAL_SERVICE_SECRET is set, every request is signed with the workload
+// identity expected by ai-service in production (source auth-gateway).
 func HTTPQuery(baseURL, userID, tenantID, permissions, cookie string, client *http.Client) QueryFunc {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
+	serviceSecret := strings.TrimSpace(os.Getenv("AI_EVAL_SERVICE_SECRET"))
 	return func(ctx context.Context, c Case) (knowledge.QueryResponse, error) {
 		body, _ := json.Marshal(knowledge.QueryRequest{Query: c.Query, TopK: 10})
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/rag/query", strings.NewReader(string(body)))
@@ -153,6 +157,11 @@ func HTTPQuery(baseURL, userID, tenantID, permissions, cookie string, client *ht
 		}
 		if cookieHeader != "" {
 			req.Header.Set("Cookie", cookieHeader)
+		}
+		if serviceSecret != "" {
+			if err := identity.SignRequest(req, serviceSecret, "auth-gateway", "ai-service", time.Now(), 2*time.Minute); err != nil {
+				return knowledge.QueryResponse{}, err
+			}
 		}
 		resp, err := client.Do(req)
 		if err != nil {

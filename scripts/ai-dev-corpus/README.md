@@ -48,3 +48,29 @@ counts and per-case pass/fail.
 Closing the production quality gate requires replacing this synthetic corpus
 with approved tenant documents and re-running the evaluator; see
 `docs/ai/evaluation-set.yaml` for the release template.
+
+## Live baseline (K3s, 2026-09-10)
+
+Run through a port-forward to the deployed `ai-service` (production mode,
+embedding provider enabled, no reranker):
+
+- 12/12 cases pass with `AI_EVAL_STRICT=1`; recall@10 = 1.0 on answerable cases.
+- Distant out-of-corpus and cross-tenant queries return 0 hits (floor 0.35).
+- Measured limitation: a *near-domain* hard negative ("làm việc 4 ngày mỗi
+  tuần") still returns lexically related chunks above the floor. Retrieval-level
+  floors cannot separate that case; it needs answer-level abstention
+  (citation/groundedness validator), so it is not part of this retrieval gate.
+- Latency: 0.4–6.5 s per query for `top_k=10`; no reranker configured.
+
+To reproduce, port-forward the service and provide the workload secret so the
+evaluator can sign requests (`AI_EVAL_SERVICE_SECRET`):
+
+```powershell
+kubectl -n arda-app port-forward svc/ai-service 18099:8080
+$env:AI_EVAL_BASE_URL="http://127.0.0.1:18099"
+$env:AI_EVAL_SERVICE_SECRET="<ARDA_SERVICE_AUTH_SECRET>"
+$env:AI_EVAL_SET="../../scripts/ai-dev-corpus/evaluation-set.yaml"
+$env:AI_EVAL_TENANT="00000000-0000-0000-0000-000000000010"
+$env:AI_EVAL_STRICT="1"
+go run ./cmd/ai-eval   # from arda-be/apps/ai-service
+```

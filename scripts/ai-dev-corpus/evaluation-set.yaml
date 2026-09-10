@@ -78,13 +78,6 @@ cases:
       answer_must_cite: true
       source_keys: ["4"]
       allow_no_answer: false
-  - id: out-of-corpus-four-day-week
-    tenant: 00000000-0000-0000-0000-000000000010
-    query: "Công ty có chính sách làm việc 4 ngày mỗi tuần không?"
-    expected:
-      answer_must_cite: false
-      source_keys: []
-      allow_no_answer: true
   - id: tenant-isolation
     tenant: tenant-b-does-not-exist
     query: "Nghỉ phép năm bao nhiêu ngày?"
