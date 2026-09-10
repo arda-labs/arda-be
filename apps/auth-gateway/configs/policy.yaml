@@ -579,6 +579,12 @@ routes:
     auth: true
     risk: medium
 
+  - id: workflow-work-items-write
+    path: /api/workflow/work-items/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+
   - id: workflow-instances-write
     path: /api/workflow/instances/**
     methods: [POST, PUT, PATCH, DELETE]
