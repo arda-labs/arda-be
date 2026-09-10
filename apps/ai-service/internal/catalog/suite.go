@@ -55,10 +55,12 @@ func NewCodeModeSuite(
 	store repository.RunStore,
 	enableHITL bool,
 	ragClient ragSearcher,
+	docsClient docsLookuper,
 ) *CodeModeSuite {
 	dispatcherReg := NewDispatcherRegistry()
 
 	RegisterBuiltinCatalog(dispatcherReg, ragClient)
+	RegisterDocsCatalog(dispatcherReg, docsClient)
 	RegisterGeneratedCatalog(dispatcherReg, ClientSet{
 		CRM:     crmClient,
 		Finance: financeClient,

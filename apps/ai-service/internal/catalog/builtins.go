@@ -8,7 +8,8 @@ import (
 // proxy a single internal HTTP route: identity self-service, capability
 // listing, knowledge search, and the local export stub. Direct internal
 // HTTP reads/mutations come from GeneratedCatalog() — see
-// RegisterGeneratedCatalog.
+// RegisterGeneratedCatalog. The problem-docs lookup registers separately in
+// NewCodeModeSuite (RegisterDocsCatalog) so its client stays optional.
 func RegisterBuiltinCatalog(
 	reg *DispatcherRegistry,
 	rag ragSearcher,

@@ -162,6 +162,28 @@ for (const page of pages) {
   await mkdir(dir, { recursive: true });
   const html = shell(page.title, bodyHtml(page));
   await writeFile(`${dir}/index.html`, html, "utf8");
+  // Machine-readable full page for /api/lookup (docs-worker.ts merges it into
+  // the response so AI tools and scripts get the remediation contract).
+  const { client, operator, example } = renderPageMarkdown(page);
+  await writeFile(
+    `${dir}/page.json`,
+    JSON.stringify(
+      {
+        code: page.code,
+        title: page.title,
+        status: page.status,
+        summary: page.summary ?? "",
+        client_action: client,
+        operator_action: operator,
+        related_routes: page.related_routes ?? [],
+        body: page._body ?? "",
+        example,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
   searchIndex.push({
     code: page.code,
     title: page.title,

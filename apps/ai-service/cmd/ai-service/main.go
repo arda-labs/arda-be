@@ -202,6 +202,7 @@ func main() {
 			svcclient.NewHRMClient(cfg.HRMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			svcclient.NewIAMClient(cfg.IAMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
 			store, cfg.EnableHITLProposals, ragSearcher,
+			catalog.NewHTTPDocsLookuper(cfg.ProblemDocsURL),
 		)
 		if eventPublisher != nil {
 			suite.SetEventPublisher(eventPublisher)
