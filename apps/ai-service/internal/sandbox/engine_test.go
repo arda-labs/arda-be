@@ -234,3 +234,57 @@ func TestEngine_PermissionDenied(t *testing.T) {
 		t.Errorf("expected permission_denied error, got: %v", err)
 	}
 }
+
+// Prototype-chain escapes survive a naive token list because they never spell
+// out eval/Function. They must still be rejected statically.
+func TestStaticValidator_BlocksPrototypeChainEscapes(t *testing.T) {
+	escapes := []string{
+		`return ({}).constructor.constructor("return 1")();`,
+		`const c = ({}).constructor; return c.constructor("return process")();`,
+		`return ({}).__proto__;`,
+		`return Object["defineProperty"]({}, "x", {});`,
+		`return ({})["constructor"];`,
+		`return [].prototype;`,
+		`return Object.getPrototypeOf({});`,
+		`const p = Proxy; return p;`,
+	}
+	for _, code := range escapes {
+		if err := ValidateScript(code); err == nil {
+			t.Errorf("expected escape rejected: %s", code)
+		}
+	}
+}
+
+func TestStaticValidator_AllowsFunctionKeyword(t *testing.T) {
+	safe := []string{
+		`const f = function (x) { return x + 1; }; return f(1);`,
+		`async function run() { return 1; } return run();`,
+	}
+	for _, code := range safe {
+		if err := ValidateScript(code); err != nil {
+			t.Errorf("safe script rejected: %s (%v)", code, err)
+		}
+	}
+}
+
+func TestEngine_RejectsOversizedScript(t *testing.T) {
+	engine, _ := setupTestEngine()
+	code := "return 1;" + strings.Repeat(" ", 17*1024)
+	if _, err := engine.Execute(context.Background(), testScope(), code); err == nil || !strings.Contains(err.Error(), "too_large") {
+		t.Fatalf("expected script-too-large error, got %v", err)
+	}
+}
+
+func TestEngine_RejectsOversizedOutput(t *testing.T) {
+	engine, _ := setupTestEngine()
+	result, err := engine.Execute(context.Background(), testScope(), `return "x".repeat(70000);`)
+	if err == nil {
+		t.Fatal("expected output-too-large error, got nil")
+	}
+	if !strings.Contains(err.Error(), "ai.sandbox_output_too_large") {
+		t.Fatalf("expected ai.sandbox_output_too_large, got %v", err)
+	}
+	if result.Output != nil {
+		t.Fatalf("oversized output must be dropped, got %v", result.Output)
+	}
+}
