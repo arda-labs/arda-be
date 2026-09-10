@@ -2,7 +2,6 @@ package http
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/handler"
 )
@@ -49,16 +48,8 @@ func NewRouter(h *handler.DepositHandler) http.Handler {
 		}
 	})
 	mux.HandleFunc("/api/deposit/savings/open", method("POST", h.OpenSavings))
-	mux.HandleFunc("/api/deposit/savings/", func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/settle") && r.Method == http.MethodPost:
-			h.SubmitSettlement(w, r)
-		case strings.HasSuffix(r.URL.Path, "/deposit") && r.Method == http.MethodPost:
-			h.SubmitAdditional(w, r)
-		default:
-			writeMethodNotAllowed(w, r)
-		}
-	})
+	mux.HandleFunc("POST /api/deposit/savings/{code}/settle", h.SubmitSettlement)
+	mux.HandleFunc("POST /api/deposit/savings/{code}/deposit", h.SubmitAdditional)
 	mux.HandleFunc("/api/deposit/interbank", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

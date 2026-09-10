@@ -37,13 +37,7 @@ func NewRouter(h *handler.CapitalHandler) http.Handler {
 			writeMethodNotAllowed(w, r)
 		}
 	})
-	mux.HandleFunc("/api/capital/contracts/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeMethodNotAllowed(w, r)
-			return
-		}
-		h.RecordMovement(w, r)
-	})
+	mux.HandleFunc("POST /api/capital/contracts/{id}/movements", h.RecordMovement)
 	return mux
 }
 

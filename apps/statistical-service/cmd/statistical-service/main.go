@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,10 +18,17 @@ import (
 	"github.com/arda-labs/arda/apps/statistical-service/internal/migration"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/repository"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/service"
+	grpcserver "github.com/arda-labs/arda/apps/statistical-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/statistical-service/internal/transport/http"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	statisticalv1 "github.com/arda-labs/arda/libs/go/arda-proto/statistical/v1"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
@@ -57,6 +65,42 @@ func main() {
 	statisticalSvc := service.NewStatisticalService(repo, workflow)
 	statisticalHandler := handler.NewStatisticalHandler(statisticalSvc)
 
+	// ── gRPC server (StatisticalCommandService) ──
+	serviceSecret, err := identity.SecretFromEnv()
+	if err != nil {
+		logger.Error("service identity is not configured", "err", err)
+		os.Exit(1)
+	}
+	transportCreds, err := identity.ServerTransportCredentials()
+	if err != nil {
+		logger.Error("grpc transport credentials", "err", err)
+		os.Exit(1)
+	}
+	grpcSrv := grpc.NewServer(
+		grpc.Creds(transportCreds),
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerServiceAuth(serviceSecret, "statistical-service", map[string]struct{}{"workflow-service": {}}),
+			interceptors.UnaryServerLogging(logger),
+		),
+	)
+	statisticalv1.RegisterStatisticalCommandServiceServer(grpcSrv, grpcserver.NewStatisticalServer(statisticalSvc))
+	healthSrv := health.NewServer()
+	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
+
+	go func() {
+		lis, err := net.Listen("tcp", cfg.GRPCAddr)
+		if err != nil {
+			logger.Error("grpc listen", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("grpc server started", "name", cfg.AppName, "addr", cfg.GRPCAddr)
+		if err := grpcSrv.Serve(lis); err != nil {
+			logger.Error("grpc server error", "err", err)
+		}
+	}()
+	defer grpcSrv.GracefulStop()
+
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
 		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(statisticalHandler)),
@@ -89,6 +133,7 @@ func main() {
 type config struct {
 	AppName          string
 	HTTPAddr         string
+	GRPCAddr         string
 	LogLevel         string
 	DatabaseDSN      string
 	WorkflowGRPCAddr string
@@ -113,6 +158,7 @@ func loadConfig() config {
 	return config{
 		AppName:          base.AppName,
 		HTTPAddr:         base.HTTPAddr,
+		GRPCAddr:         envOr("GRPC_ADDR", "0.0.0.0:9090"),
 		LogLevel:         base.LogLevel,
 		DatabaseDSN:      base.DatabaseDSN,
 		WorkflowGRPCAddr: base.WorkflowGRPCAddr,

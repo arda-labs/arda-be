@@ -1,12 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/capital-service/internal/repository"
-	"github.com/arda-labs/arda/apps/capital-service/internal/service"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
@@ -47,12 +47,21 @@ func (s capOrgScope) allows(orgID string) bool {
 	return false
 }
 
-// CapitalHandler exposes the CFM HTTP surface (P2.2).
-type CapitalHandler struct {
-	svc *service.CapitalService
+// CapitalService is the CFM service surface used by the HTTP handler
+// (interface for testability).
+type CapitalService interface {
+	ListFundTypes(ctx context.Context, tenantID string) ([]repository.FundType, error)
+	ListContracts(ctx context.Context, params repository.ListContractsParams) ([]repository.CapitalContract, int, error)
+	CreateContract(ctx context.Context, tenantID, actor string, in *repository.CapitalContract) (*repository.CapitalContract, error)
+	RecordMovement(ctx context.Context, tenantID, actor string, in *repository.CapitalMovement) (*repository.CapitalMovement, error)
 }
 
-func NewCapitalHandler(svc *service.CapitalService) *CapitalHandler {
+// CapitalHandler exposes the CFM HTTP surface (P2.2).
+type CapitalHandler struct {
+	svc CapitalService
+}
+
+func NewCapitalHandler(svc CapitalService) *CapitalHandler {
 	return &CapitalHandler{svc: svc}
 }
 

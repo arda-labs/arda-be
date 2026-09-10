@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/arda-labs/arda/apps/statistical-service/internal/reports"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
@@ -41,10 +42,24 @@ func (s *StatisticalService) UpsertReportDefinition(ctx context.Context, tenantI
 	if in.Code == "" || in.Name == "" || in.QueryID == "" {
 		return nil, ardaerrors.New(ardaerrors.CodeRequired, "code, name and query_id are required")
 	}
+	if !isKnownQueryID(in.QueryID) {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown query_id: "+in.QueryID)
+	}
 	in.TenantID = tenantID
 	in.IsActive = true
 	in.CreatedBy = actor
+	in.UpdatedBy = actor
 	return s.repo.UpsertReportDefinition(ctx, in)
+}
+
+// isKnownQueryID reports whether the builder registry knows the query id.
+func isKnownQueryID(id string) bool {
+	for _, known := range reports.KnownQueryIDs() {
+		if known == id {
+			return true
+		}
+	}
+	return false
 }
 
 // ListIndicators returns the indicator catalog.
@@ -108,7 +123,61 @@ func (s *StatisticalService) SubmitSubmission(ctx context.Context, tenantID, act
 	}, fmt.Sprintf("rpt-submit-%s-submit", existing.ID)); err != nil {
 		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
 	}
+	if _, err := s.repo.MarkSubmissionSubmitted(ctx, tenantID, existing.ID, caseCreated.Id, actor); err != nil {
+		return nil, ardaerrors.Wrap(ardaerrors.CodeInternal, "stamp submission submitted failed", err)
+	}
+	existing.Status = "SUBMITTED"
+	existing.SubmittedBy = actor
+	existing.WorkflowCaseID = &caseCreated.Id
 	return existing, nil
+}
+
+// CheckSubmission validates that the staged submission is actionable (used by
+// the rpt-submit-v2 validate job).
+func (s *StatisticalService) CheckSubmission(ctx context.Context, tenantID, id string) (bool, string, error) {
+	sub, err := s.repo.GetSubmissionByID(ctx, tenantID, id)
+	if err != nil {
+		return false, "", err
+	}
+	if sub == nil {
+		return false, "submission not found", nil
+	}
+	if sub.Status != "SUBMITTED" {
+		return false, "status " + sub.Status + " is not actionable", nil
+	}
+	return true, "", nil
+}
+
+// ResolveSubmission applies the checker decision (APPROVE→APPROVED,
+// REJECT→REJECTED); idempotent when the same decision arrives twice.
+func (s *StatisticalService) ResolveSubmission(ctx context.Context, tenantID, id, decision, actor string) error {
+	status := ""
+	switch decision {
+	case "APPROVE":
+		status = "APPROVED"
+	case "REJECT":
+		status = "REJECTED"
+	default:
+		return ardaerrors.New(ardaerrors.CodeInvalidInput, "decision must be APPROVE or REJECT")
+	}
+	applied, err := s.repo.ResolveSubmission(ctx, tenantID, id, status, actor)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+	sub, err := s.repo.GetSubmissionByID(ctx, tenantID, id)
+	if err != nil {
+		return err
+	}
+	if sub == nil {
+		return ardaerrors.New(ardaerrors.CodeNotFound, "submission not found")
+	}
+	if sub.Status == status {
+		return nil
+	}
+	return ardaerrors.New(ardaerrors.CodeInvalidInput, "submission is not SUBMITTED")
 }
 
 // findSubmission locates one submission by id.

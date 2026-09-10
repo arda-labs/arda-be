@@ -183,6 +183,28 @@ routes:
     auth: true
     risk: low
 
+  - id: iam-identity-self-write
+    path: /api/identity/me/**
+    methods: [PUT]
+    auth: true
+    risk: medium
+
+  - id: iam-policy-read
+    path: /api/policy/**
+    methods: [GET]
+    auth: true
+    risk: medium
+    permissions:
+      - iam.user.read
+
+  - id: iam-policy-enforce
+    path: /api/policy/**
+    methods: [POST]
+    auth: true
+    risk: medium
+    permissions:
+      - iam.user.manage
+
   - id: iam-session-config
     path: /api/iam/session/config
     methods: [GET]

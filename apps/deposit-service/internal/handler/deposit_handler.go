@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -10,14 +11,35 @@ import (
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
-// DepositHandler exposes the deposit HTTP surface (P2.1).
-type DepositHandler struct {
-	svc        *service.SettlementService
-	additional *service.AdditionalDepositService
-	products   *service.ProductRequestService
+// Settlement surface used by the HTTP handler (interface for testability).
+type SettlementService interface {
+	Open(ctx context.Context, tenantID string, in *service.OpenSavingsInput) (*repository.Savings, error)
+	SubmitSettle(ctx context.Context, tenantID, actor, savingsCode string) (*service.Submission, error)
+	ListSavings(ctx context.Context, tenantID string, orgCodes []string, status, q string) ([]repository.Savings, error)
+	ListProducts(ctx context.Context, params repository.ListProductsParams) ([]repository.SavingsProduct, error)
+	UpsertProduct(ctx context.Context, tenantID, actor string, in *repository.SavingsProduct) (*repository.SavingsProduct, error)
+	ListInterbank(ctx context.Context, tenantID string, orgCodes []string, status string) ([]repository.InterbankDeposit, error)
 }
 
-func NewDepositHandler(svc *service.SettlementService, additional *service.AdditionalDepositService, products *service.ProductRequestService) *DepositHandler {
+// AdditionalDeposit surface used by the HTTP handler.
+type AdditionalDepositService interface {
+	Submit(ctx context.Context, tenantID, actor, savingsCode string, amountMinor int64, txnDate string) (*service.Submission, error)
+}
+
+// ProductRequest surface used by the HTTP handler.
+type ProductRequestService interface {
+	Submit(ctx context.Context, tenantID, actor string, in service.ProductRequestInput) (*service.Submission, error)
+	List(ctx context.Context, tenantID, status string) ([]repository.ProductRequest, error)
+}
+
+// DepositHandler exposes the deposit HTTP surface (P2.1).
+type DepositHandler struct {
+	svc        SettlementService
+	additional AdditionalDepositService
+	products   ProductRequestService
+}
+
+func NewDepositHandler(svc SettlementService, additional AdditionalDepositService, products ProductRequestService) *DepositHandler {
 	return &DepositHandler{svc: svc, additional: additional, products: products}
 }
 

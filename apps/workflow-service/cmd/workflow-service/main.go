@@ -29,6 +29,7 @@ import (
 	hrmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/hrm"
 	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
 	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
+	statisticalclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/statistical"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -426,9 +427,20 @@ func main() {
 		logger.Info("workflow cancellation workers registered")
 	}
 
-	// RPT submit workers: always registered — the submission case needs no
-	// domain callback (statistical-service owns the lifecycle).
-	rptWorkers := worker.NewRPTSubmitWorkers(caseRepo)
+	var statisticalClient *statisticalclient.Client
+	if cfg.StatisticalGRPCAddr != "" {
+		sc, err := statisticalclient.Dial(context.Background(), cfg.StatisticalGRPCAddr, cfg.AppName, logger)
+		if err != nil {
+			logger.Error("statistical grpc dial", "err", err)
+			os.Exit(1)
+		}
+		defer sc.Close()
+		statisticalClient = sc
+	}
+
+	// RPT submit workers: the submission lifecycle lives in statistical-service;
+	// validate/execute/cancel write back via StatisticalCommandService gRPC.
+	rptWorkers := worker.NewRPTSubmitWorkers(statisticalClient, caseRepo)
 	rv, re, rc := rptWorkers.Handlers()
 	rvv := zeebeSvc.NewJobWorker("rpt.submit.validate", rv)
 	ree := zeebeSvc.NewJobWorker("rpt.submit.execute", re)

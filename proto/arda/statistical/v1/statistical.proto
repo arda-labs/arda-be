@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package arda.statistical.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/statistical/v1;statisticalv1";
+
+// StatisticalCommandService is the callback surface workflow-service workers
+// use for the rpt-submit-v2 flow (report submission lifecycle lives in
+// statistical-service). Tenant scope arrives via gRPC metadata.
+service StatisticalCommandService {
+  rpc CheckSubmission(CheckSubmissionRequest) returns (CheckSubmissionResponse);
+  rpc ResolveSubmission(ResolveSubmissionRequest) returns (ResolveSubmissionResponse);
+}
+
+message CheckSubmissionRequest {
+  string submission_id = 1;
+}
+
+message CheckSubmissionResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+// decision is APPROVE | REJECT (case variables approvalStatus); workflow_case_id
+// is stamped when the case is created at submit time.
+message ResolveSubmissionRequest {
+  string submission_id = 1;
+  string decision = 2;
+  string actor = 3;
+  string note = 4;
+}
+
+message ResolveSubmissionResponse {
+  bool ok = 1;
+}

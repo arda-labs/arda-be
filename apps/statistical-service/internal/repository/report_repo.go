@@ -25,6 +25,7 @@ type ReportDefinition struct {
 	OutputFormat   string          `json:"output_format"`
 	IsActive       bool            `json:"is_active"`
 	CreatedBy      string          `json:"created_by"`
+	UpdatedBy      string          `json:"updated_by,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
@@ -104,7 +105,8 @@ func (r *StatisticalRepository) ListReportDefinitions(ctx context.Context, param
 	}
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, code, name, COALESCE(group_code,''), query_id, param_schema,
-		       template_file_id::text, output_format, is_active, COALESCE(created_by,''), created_at, updated_at
+		       template_file_id::text, output_format, is_active, COALESCE(created_by,''),
+		       COALESCE(updated_by,''), created_at, updated_at
 		FROM rpt_report_definitions WHERE %s ORDER BY %s %s`,
 		where, reportDefinitionSortCol(params.Sort), listStatOrder(params.Order)), args...)
 	if err != nil {
@@ -116,7 +118,7 @@ func (r *StatisticalRepository) ListReportDefinitions(ctx context.Context, param
 		var d ReportDefinition
 		var template, group sql.NullString
 		if err := rows.Scan(&d.ID, &d.TenantID, &d.Code, &d.Name, &group, &d.QueryID, &d.ParamSchema,
-			&template, &d.OutputFormat, &d.IsActive, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			&template, &d.OutputFormat, &d.IsActive, &d.CreatedBy, &d.UpdatedBy, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			return nil, err
 		}
 		d.GroupCode = group.String
@@ -136,14 +138,21 @@ func (r *StatisticalRepository) UpsertReportDefinition(ctx context.Context, d *R
 	if d.ParamSchema == nil {
 		d.ParamSchema = []byte("{}")
 	}
+	if d.OutputFormat == "" {
+		d.OutputFormat = "XLSX"
+	}
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO rpt_report_definitions (id, tenant_id, code, name, group_code, query_id, param_schema, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		INSERT INTO rpt_report_definitions (id, tenant_id, code, name, group_code, query_id, param_schema,
+			template_file_id, output_format, created_by, updated_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name, group_code = EXCLUDED.group_code,
 			query_id = EXCLUDED.query_id, param_schema = EXCLUDED.param_schema,
+			template_file_id = EXCLUDED.template_file_id, output_format = EXCLUDED.output_format,
+			updated_by = EXCLUDED.updated_by,
 			updated_at = now(), version = rpt_report_definitions.version + 1
 		RETURNING created_at, updated_at`,
-		d.ID, d.TenantID, d.Code, d.Name, nullStringStat(d.GroupCode), d.QueryID, d.ParamSchema, d.CreatedBy)
+		d.ID, d.TenantID, d.Code, d.Name, nullStringStat(d.GroupCode), d.QueryID, d.ParamSchema,
+		d.TemplateFileID, d.OutputFormat, d.CreatedBy, nullStringStat(d.UpdatedBy))
 	if err := row.Scan(&d.CreatedAt, &d.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -246,6 +255,36 @@ func (r *StatisticalRepository) CreateSubmission(ctx context.Context, sub *Repor
 		return nil, err
 	}
 	return sub, nil
+}
+
+// MarkSubmissionSubmitted stamps the workflow case and moves DRAFT→SUBMITTED.
+func (r *StatisticalRepository) MarkSubmissionSubmitted(ctx context.Context, tenantID, id, caseID, actor string) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE rpt_report_submissions
+		SET status = 'SUBMITTED', workflow_case_id = NULLIF($3,'')::uuid, submitted_by = $4,
+		    submitted_at = now(), updated_by = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2::uuid AND status = 'DRAFT'`,
+		tenantID, id, caseID, actor)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// ResolveSubmission moves SUBMITTED→APPROVED|REJECTED. Only the first decision
+// wins, so a retried callback is a no-op rather than an overwrite.
+func (r *StatisticalRepository) ResolveSubmission(ctx context.Context, tenantID, id, status, actor string) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE rpt_report_submissions
+		SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2::uuid AND status = 'SUBMITTED'`,
+		tenantID, id, status, actor)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // ListSubmissionsParams carries the parsed list query for submissions.

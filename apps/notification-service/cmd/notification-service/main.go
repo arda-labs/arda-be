@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -124,6 +128,42 @@ func main() {
 	outboxWorker := worker.NewOutboxWorker(notificationRepo, publisher)
 	go outboxWorker.Run(workerCtx)
 	logger.Info("Notification JetStream outbox publisher started", "nats_url", cfg.NATSURL)
+
+	// Reference consumer for the wired event: records the inbox/dedupe marker
+	// (notification.inbox.created) with at-least-once semantics. No business
+	// side effect yet — the marker is the integration fixture the event
+	// registry asks for.
+	consumer, consumerErr := appevents.NewConsumer(nc, "arda.notification.inbox.created.v1", "notification-inbox")
+	if consumerErr != nil {
+		logger.Error("JetStream consumer setup failed", "err", consumerErr)
+		os.Exit(1)
+	}
+	go func() {
+		consumerRunErr := consumer.Run(workerCtx, func(ctx context.Context, msg *nats.Msg) error {
+			eventID := strings.TrimSpace(msg.Header.Get(nats.MsgIdHdr))
+			tenantID := ""
+			var envelope struct {
+				ID       string `json:"id"`
+				TenantID string `json:"tenant_id"`
+			}
+			if err := json.Unmarshal(msg.Data, &envelope); err == nil {
+				if eventID == "" {
+					eventID = strings.TrimSpace(envelope.ID)
+				}
+				tenantID = envelope.TenantID
+			}
+			if eventID == "" {
+				sum := sha256.Sum256(msg.Data)
+				eventID = hex.EncodeToString(sum[:])
+			}
+			return notificationRepo.ProcessEventOnce(ctx, "notification-inbox", eventID, msg.Subject, tenantID,
+				func(context.Context, *sql.Tx) error { return nil })
+		})
+		if consumerRunErr != nil && workerCtx.Err() == nil {
+			logger.Error("notification inbox consumer stopped", "err", consumerRunErr)
+		}
+	}()
+	logger.Info("Notification inbox consumer started", "subject", "arda.notification.inbox.created.v1")
 
 	// Keep SSE streams open (inbox poll). Read header timeout only.
 	srv := &http.Server{

@@ -24,6 +24,7 @@ type Config struct {
 	HRMGRPCAddr          string `yaml:"hrm_grpc_addr"`
 	IAMGRPCAddr          string `yaml:"iam_grpc_addr"`
 	NotificationGRPCAddr string `yaml:"notification_grpc_addr"`
+	StatisticalGRPCAddr  string `yaml:"statistical_grpc_addr"`
 }
 
 func Load() Config {
@@ -68,6 +69,7 @@ func Load() Config {
 	envStr("HRM_GRPC_ADDR", &cfg.HRMGRPCAddr)
 	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
 	envStr("NOTIFICATION_GRPC_ADDR", &cfg.NotificationGRPCAddr)
+	envStr("STATISTICAL_GRPC_ADDR", &cfg.StatisticalGRPCAddr)
 
 	return cfg
 }
@@ -100,6 +102,7 @@ func (c *Config) loadYAML(path string) bool {
 	set("loan_grpc_addr", &c.LoanGRPCAddr)
 	set("iam_grpc_addr", &c.IAMGRPCAddr)
 	set("notification_grpc_addr", &c.NotificationGRPCAddr)
+	set("statistical_grpc_addr", &c.StatisticalGRPCAddr)
 	return true
 }
 

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -56,18 +55,6 @@ func main() {
 	repo := repository.NewCapitalRepository(db)
 	capitalSvc := service.NewCapitalService(repo, db, financeClient)
 	capitalHandler := handler.NewCapitalHandler(capitalSvc)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health/live", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, `{"status":"ok"}`)
-	})
-	mux.HandleFunc("/health/ready", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, `{"status":"ready"}`)
-	})
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
