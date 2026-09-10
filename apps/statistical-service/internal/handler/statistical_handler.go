@@ -165,6 +165,55 @@ func (h *StatisticalHandler) SubmitSubmission(w http.ResponseWriter, r *http.Req
 	ardahttp.WriteSuccess(w, r, http.StatusOK, item)
 }
 
+// RunReport handles GET /api/statistical/reports/{code}/run.
+func (h *StatisticalHandler) RunReport(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	definition, query, rows, err := h.svc.RunReport(r.Context(), tenantID, r.PathValue("code"), reportParams(r))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"code":       definition.Code,
+		"name":       definition.Name,
+		"query_id":   definition.QueryID,
+		"columns":    query.Columns,
+		"rows":       rows,
+		"row_count":  len(rows),
+		"period_code": reportParams(r)["period_code"],
+	})
+}
+
+// ExportReport handles GET /api/statistical/reports/{code}/export — streams
+// the XLSX workbook directly (no media round-trip).
+func (h *StatisticalHandler) ExportReport(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	data, filename, err := h.svc.ExportReport(r.Context(), tenantID, r.PathValue("code"), reportParams(r))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+func reportParams(r *http.Request) map[string]string {
+	return map[string]string{
+		"period_code": r.URL.Query().Get("period_code"),
+		"org_code":    r.URL.Query().Get("org_code"),
+	}
+}
+
 func writeForbiddenStat(w http.ResponseWriter, r *http.Request) {
 	ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 }

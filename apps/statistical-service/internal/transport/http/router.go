@@ -50,6 +50,8 @@ func NewRouter(h *handler.StatisticalHandler) http.Handler {
 		}
 	})
 	mux.HandleFunc("/api/statistical/submissions/{id}/submit", method("POST", h.SubmitSubmission))
+	mux.HandleFunc("GET /api/statistical/reports/{code}/run", h.RunReport)
+	mux.HandleFunc("GET /api/statistical/reports/{code}/export", h.ExportReport)
 	return mux
 }
 

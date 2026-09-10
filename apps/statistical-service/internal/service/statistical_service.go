@@ -196,3 +196,42 @@ func (s *StatisticalService) findSubmission(ctx context.Context, tenantID, id st
 func (s *StatisticalService) ListSubmissions(ctx context.Context, params repository.ListSubmissionsParams) ([]repository.ReportSubmission, int, error) {
 	return s.repo.ListSubmissions(ctx, params)
 }
+
+// RunReport renders one report definition: validates params against the
+// builder, runs the parameterised query and returns the rows.
+func (s *StatisticalService) RunReport(ctx context.Context, tenantID, code string, params map[string]string) (*repository.ReportDefinition, *reports.ReportQuery, [][]any, error) {
+	definition, err := s.repo.GetReportDefinitionByCode(ctx, tenantID, code)
+	if err != nil {
+		return nil, nil, nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	if definition == nil {
+		return nil, nil, nil, ardaerrors.New(ardaerrors.CodeNotFound, "report definition not found: "+code)
+	}
+	query, err := reports.Build(definition.QueryID, reports.Params{
+		TenantID:   tenantID,
+		PeriodCode: params["period_code"],
+		OrgCode:    params["org_code"],
+	})
+	if err != nil {
+		return nil, nil, nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
+	}
+	rows, err := s.repo.RunQuery(ctx, query.SQL, query.Args, query.Columns)
+	if err != nil {
+		return nil, nil, nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	return definition, query, rows, nil
+}
+
+// ExportReport renders one report into XLSX bytes (download endpoint; media
+// hosting was dropped in favour of direct streaming — smaller surface).
+func (s *StatisticalService) ExportReport(ctx context.Context, tenantID, code string, params map[string]string) ([]byte, string, error) {
+	definition, query, rows, err := s.RunReport(ctx, tenantID, code, params)
+	if err != nil {
+		return nil, "", err
+	}
+	data, err := reports.ToExcelX(definition.Name, query.Columns, rows)
+	if err != nil {
+		return nil, "", ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	return data, definition.Code + ".xlsx", nil
+}

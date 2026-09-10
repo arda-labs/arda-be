@@ -287,6 +287,53 @@ func (r *StatisticalRepository) ResolveSubmission(ctx context.Context, tenantID,
 	return n > 0, err
 }
 
+// GetReportDefinitionByCode loads one active definition by code.
+func (r *StatisticalRepository) GetReportDefinitionByCode(ctx context.Context, tenantID, code string) (*ReportDefinition, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, code, name, COALESCE(group_code,''), query_id, param_schema,
+		       template_file_id::text, output_format, is_active, COALESCE(created_by,''),
+		       COALESCE(updated_by,''), created_at, updated_at
+		FROM rpt_report_definitions WHERE tenant_id = $1 AND code = $2 AND is_active`, tenantID, code)
+	var d ReportDefinition
+	var template, group sql.NullString
+	err := row.Scan(&d.ID, &d.TenantID, &d.Code, &d.Name, &group, &d.QueryID, &d.ParamSchema,
+		&template, &d.OutputFormat, &d.IsActive, &d.CreatedBy, &d.UpdatedBy, &d.CreatedAt, &d.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	d.GroupCode = group.String
+	if template.Valid {
+		d.TemplateFileID = &template.String
+	}
+	return &d, nil
+}
+
+// RunQuery executes one builder-provided parameterised query and returns the
+// rows as aligned values (the SQL text never contains caller input).
+func (r *StatisticalRepository) RunQuery(ctx context.Context, query string, args []any, columns []string) ([][]any, error) {
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := [][]any{}
+	for rows.Next() {
+		values := make([]any, len(columns))
+		dest := make([]any, len(columns))
+		for i := range values {
+			dest[i] = &values[i]
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, err
+		}
+		out = append(out, values)
+	}
+	return out, rows.Err()
+}
+
 // ListSubmissionsParams carries the parsed list query for submissions.
 type ListSubmissionsParams struct {
 	TenantID   string
