@@ -27,6 +27,56 @@
       "purpose": "aggregate HTTP duration and latency budget evidence"
     }
   ],
+  "ai_metrics": [
+    {
+      "name": "arda_ai_runs_total",
+      "type": "counter",
+      "labels": ["status"],
+      "purpose": "AI agent runs by terminal status"
+    },
+    {
+      "name": "arda_ai_tool_executions_total",
+      "type": "counter",
+      "labels": ["status", "risk"],
+      "purpose": "AI tool executions by status and risk tier"
+    },
+    {
+      "name": "arda_ai_llm_tokens_total",
+      "type": "counter",
+      "labels": ["type"],
+      "purpose": "LLM tokens consumed by prompt/completion/total"
+    },
+    {
+      "name": "arda_ai_run_duration_seconds",
+      "type": "histogram",
+      "labels": [],
+      "purpose": "AI agent loop wall-clock duration"
+    },
+    {
+      "name": "arda_ai_provider_probes_total",
+      "type": "counter",
+      "labels": ["provider", "outcome"],
+      "purpose": "model provider health probes"
+    },
+    {
+      "name": "arda_ai_model_errors_total",
+      "type": "counter",
+      "labels": ["code"],
+      "purpose": "model stream failures by actionable error code"
+    },
+    {
+      "name": "arda_ai_citation_guard_total",
+      "type": "counter",
+      "labels": ["outcome"],
+      "purpose": "knowledge answers by citation outcome (present, appended)"
+    },
+    {
+      "name": "arda_ai_invented_citations_total",
+      "type": "counter",
+      "labels": ["kind"],
+      "purpose": "fabricated citation tokens removed from persisted answers"
+    }
+  ],
   "slo_classes": [
     { "id": "public_read", "availability": "99.9%", "latency": "p95", "status": "proposed" },
     { "id": "admin_command", "availability": "99.9%", "latency": "p95", "status": "proposed" },
@@ -38,6 +88,7 @@
     "Prometheus scrape for every deployed service",
     "browser-to-gateway trace correlation sample",
     "dependency dashboards for PostgreSQL, Redis, gRPC, NATS, Zeebe and object storage",
+    "AI operational dashboard panels for run outcome, model error code, citation guard and tool risk",
     "approved SLO targets and burn-rate alerts"
   ]
 }

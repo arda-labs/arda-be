@@ -6,6 +6,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
 const contractPath = resolve(root, "contracts/observability/arda-observability-v1.json")
 const contract = JSON.parse(await readFile(contractPath, "utf8"))
 const source = await readFile(resolve(root, "libs/go/arda-http/observability.go"), "utf8")
+const aiSource = await readFile(resolve(root, "apps/ai-service/internal/handler/metrics.go"), "utf8")
 const requiredMetrics = [
   "arda_http_requests_total",
   "arda_http_responses_total",
@@ -19,6 +20,15 @@ for (const metric of requiredMetrics) {
   if (!contract.metrics.some((entry) => entry.name === metric)) errors.push(`contract missing metric ${metric}`)
   if (!source.includes(metric)) errors.push(`arda-http implementation missing metric ${metric}`)
 }
+const aiMetrics = contract.ai_metrics ?? []
+if (aiMetrics.length === 0) errors.push("contract missing ai_metrics")
+for (const entry of aiMetrics) {
+  if (!entry.name?.startsWith("arda_ai_")) errors.push(`ai metric ${entry.name} must use the arda_ai_ prefix`)
+  if (!aiSource.includes(entry.name)) errors.push(`ai-service implementation missing metric ${entry.name}`)
+}
+if (aiMetrics.length > 0 && !aiSource.includes("RenderAIMetrics")) {
+  errors.push("ai-service must expose AI metrics through RenderAIMetrics")
+}
 for (const header of ["X-Request-Id", "traceparent", "X-Trace-Id"]) {
   if (!JSON.stringify(contract.correlation).includes(header)) errors.push(`contract missing correlation header ${header}`)
 }
@@ -30,4 +40,6 @@ if (errors.length) {
   console.error(errors.join("\n"))
   process.exit(1)
 }
-console.log(`Observability contract OK: ${requiredMetrics.length} metrics, ${contract.slo_classes.length} proposed SLO classes`)
+console.log(
+  `Observability contract OK: ${requiredMetrics.length} HTTP metrics, ${aiMetrics.length} AI metrics, ${contract.slo_classes.length} proposed SLO classes`,
+)

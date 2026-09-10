@@ -28,7 +28,11 @@ object. Never log raw tokens, full sensitive tool payloads, or hidden reasoning.
 
 ## Metrics
 
-Track by service, route, tool, tenant class, and provider—not by raw prompt:
+The machine-readable registry is
+`contracts/observability/arda-observability-v1.json`; the `arda_ai_*` families
+listed there are enforced by `scripts/check-observability-contract.mjs` against
+`apps/ai-service/internal/handler/metrics.go`. Track by service, route, tool,
+tenant class, and provider—not by raw prompt:
 
 - request/run rate, success, error, cancellation, and disconnect rate;
 - time to first event and total run latency;
