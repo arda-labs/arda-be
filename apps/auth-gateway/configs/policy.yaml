@@ -570,6 +570,27 @@ routes:
     permissions:
       - workflow.operate
 
+  # Runtime case/task operations are daily inbox work, not admin actions:
+  # no step-up auth (medium) and no gateway permission — the workflow service
+  # enforces candidate-role membership per task and tenant scoping itself.
+  - id: workflow-tasks-write
+    path: /api/workflow/tasks/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+
+  - id: workflow-instances-write
+    path: /api/workflow/instances/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+
+  - id: workflow-cases-write
+    path: /api/workflow/cases/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+
   - id: workflow-write
     path: /api/workflow/**
     methods: [POST, PUT, PATCH, DELETE]
