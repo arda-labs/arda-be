@@ -116,6 +116,22 @@ func (h *PostingHandler) ListJournalEntries(w http.ResponseWriter, r *http.Reque
 	respondJSON(w, r, http.StatusOK, ardahttp.NewListResponse(listReq.Page, perPage, total, entries))
 }
 
+// GetLedger handles GET /api/finance/ledger?account=&from=&to= — per-account
+// movement list with the opening balance before `from`.
+func (h *PostingHandler) GetLedger(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	ledger, err := h.svc.Ledger(r.Context(), tenantID, q.Get("account"), q.Get("from"), q.Get("to"))
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, r, http.StatusOK, ledger)
+}
+
 // GetJournalEntry handles GET /api/finance/journal-entries/{entry_no} — the
 // popup/grid detail read (header + lines + total_amount_minor). Only POSTED
 // and REVERSED entries are readable; anything else is 404.

@@ -81,6 +81,7 @@ func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHa
 	// ── Posting stack (journal read + preview + opening balances) ──
 	mux.HandleFunc("/api/finance/journal-entries", method("GET", postingHandler.ListJournalEntries))
 	mux.HandleFunc("/api/finance/journal-entries/{entry_no}", method("GET", postingHandler.GetJournalEntry))
+	mux.HandleFunc("/api/finance/ledger", method("GET", postingHandler.GetLedger))
 	mux.HandleFunc("/api/finance/posting/validate", method("POST", postingHandler.ValidatePosting))
 	mux.HandleFunc("/api/finance/posting-cases", method("POST", postingCaseHandler.CreatePostingCase))
 	// Closing candidate picker (iteration 11 — kết chuyển thu chi): INC/EXP

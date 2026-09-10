@@ -1188,6 +1188,25 @@ func (s *PostingService) ListJournal(ctx context.Context, tenantID string, f Jou
 // ListJournalPaged is the paged journal-list contract: same narrowing as
 // ListJournal plus q ILIKE (document type / document code / description),
 // a whitelisted ORDER BY, SQL LIMIT/OFFSET and the unfiltered total.
+// JournalLedger is the per-account ledger view (opening + lines).
+type JournalLedger struct {
+	AccountCode  string                   `json:"account_code"`
+	OpeningMinor int64                    `json:"opening_minor"`
+	Lines        []repository.LedgerLine  `json:"lines"`
+}
+
+// Ledger returns the account ledger for [from, to] (opening net + posted lines).
+func (s *PostingService) Ledger(ctx context.Context, tenantID, accountCode, fromDate, toDate string) (*JournalLedger, error) {
+	if accountCode == "" || fromDate == "" || toDate == "" {
+		return nil, fmt.Errorf("account, from and to are required")
+	}
+	opening, lines, err := s.repo.Ledger(ctx, tenantID, accountCode, fromDate, toDate)
+	if err != nil {
+		return nil, err
+	}
+	return &JournalLedger{AccountCode: accountCode, OpeningMinor: opening, Lines: lines}, nil
+}
+
 func (s *PostingService) ListJournalPaged(ctx context.Context, tenantID string, f JournalListFilter) ([]JournalEntryRow, int, error) {
 	page := f.Page
 	if page < 1 {

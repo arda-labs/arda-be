@@ -439,3 +439,52 @@ func encodeAnalytics(a *financev1.Analytics) []byte {
 	}
 	return b
 }
+
+// LedgerLine is one posted journal line for the account ledger.
+type LedgerLine struct {
+	EntryNo     int64  `json:"entry_no"`
+	EntryDate   string `json:"entry_date"`
+	DocumentType string `json:"document_type"`
+	Description string `json:"description"`
+	DebitMinor  int64  `json:"debit_minor"`
+	CreditMinor int64  `json:"credit_minor"`
+	EntryID     string `json:"entry_id"`
+}
+
+// Ledger returns the opening net movement before fromDate plus the posted
+// lines inside [fromDate, toDate] for one account (debit positive / credit negative).
+func (r *PostingRepository) Ledger(ctx context.Context, tenantID, accountCode, fromDate, toDate string) (int64, []LedgerLine, error) {
+	var opening int64
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(CASE WHEN l.direction = 'DEBIT' THEN l.amount_minor ELSE -l.amount_minor END), 0)
+		FROM fin_journal_lines l
+		JOIN fin_journal_entries e ON e.id = l.entry_id
+		WHERE l.tenant_id = $1 AND l.account_code = $2 AND e.status = 'POSTED'
+		  AND e.accounting_date < $3::date`, tenantID, accountCode, fromDate).Scan(&opening); err != nil {
+		return 0, nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT e.entry_no, e.accounting_date::text, COALESCE(e.business_doc_type,''), e.description,
+		       CASE WHEN l.direction = 'DEBIT' THEN l.amount_minor ELSE 0 END,
+		       CASE WHEN l.direction = 'CREDIT' THEN l.amount_minor ELSE 0 END,
+		       e.id::text
+		FROM fin_journal_lines l
+		JOIN fin_journal_entries e ON e.id = l.entry_id
+		WHERE l.tenant_id = $1 AND l.account_code = $2 AND e.status = 'POSTED'
+		  AND e.accounting_date >= $3::date AND e.accounting_date <= $4::date
+		ORDER BY e.accounting_date, e.entry_no, l.line_no`, tenantID, accountCode, fromDate, toDate)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer rows.Close()
+	out := []LedgerLine{}
+	for rows.Next() {
+		var line LedgerLine
+		if err := rows.Scan(&line.EntryNo, &line.EntryDate, &line.DocumentType, &line.Description,
+			&line.DebitMinor, &line.CreditMinor, &line.EntryID); err != nil {
+			return 0, nil, err
+		}
+		out = append(out, line)
+	}
+	return opening, out, rows.Err()
+}
