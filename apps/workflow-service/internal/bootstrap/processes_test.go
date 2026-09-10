@@ -46,6 +46,8 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 		"CFC_CONTRACT_V1":           "cfc-contract-v1",
 		"CFC_AMENDMENT_V1":          "cfc-amendment-v1",
 		"CFC_MOVEMENT_V1":           "cfc-movement-v1",
+		"IBM_PLACE_V1":              "ibm-place-v1",
+		"IBM_MOVEMENT_V1":           "ibm-movement-v1",
 	}
 	if len(processes) != len(want) {
 		t.Fatalf("BuiltInProcesses() len = %d, want %d", len(processes), len(want))

@@ -32,15 +32,25 @@ type ProductRequestService interface {
 	List(ctx context.Context, tenantID, status string) ([]repository.ProductRequest, error)
 }
 
+// IBM surface used by the HTTP handler.
+type IBMService interface {
+	ListIBMProducts(ctx context.Context, tenantID string, includeInactive bool) ([]repository.IBMProduct, error)
+	UpsertIBMProduct(ctx context.Context, tenantID, actor string, in *repository.IBMProduct) (*repository.IBMProduct, error)
+	GetIBMDetail(ctx context.Context, tenantID, id string) (*service.IBMDetail, error)
+	SubmitPlace(ctx context.Context, tenantID, actor string, in *repository.InterbankDeposit) (*repository.InterbankDeposit, error)
+	SubmitMovement(ctx context.Context, tenantID, actor, depositID, kind string, amountMinor int64, movementDate, periodFrom, periodTo, note string) (*repository.IBMMovement, error)
+}
+
 // DepositHandler exposes the deposit HTTP surface (P2.1).
 type DepositHandler struct {
 	svc        SettlementService
 	additional AdditionalDepositService
 	products   ProductRequestService
+	ibm        IBMService
 }
 
-func NewDepositHandler(svc SettlementService, additional AdditionalDepositService, products ProductRequestService) *DepositHandler {
-	return &DepositHandler{svc: svc, additional: additional, products: products}
+func NewDepositHandler(svc SettlementService, additional AdditionalDepositService, products ProductRequestService, ibm IBMService) *DepositHandler {
+	return &DepositHandler{svc: svc, additional: additional, products: products, ibm: ibm}
 }
 
 type orgScope struct {
@@ -272,4 +282,103 @@ func (h *DepositHandler) ListInterbankDeposits(w http.ResponseWriter, r *http.Re
 		return
 	}
 	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// CreateInterbankDeposit handles POST /api/deposit/interbank — stages the
+// IBM.200.01 placement case.
+func (h *DepositHandler) CreateInterbankDeposit(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	var in repository.InterbankDeposit
+	if !decodeDepositBody(w, r, &in) {
+		return
+	}
+	scope := orgScopeFrom(r)
+	in.OrgCode = scope.active()
+	created, err := h.ibm.SubmitPlace(r.Context(), tenantID, r.Header.Get("X-User-Id"), &in)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
+}
+
+// GetInterbankDetail handles GET /api/deposit/interbank/{id}.
+func (h *DepositHandler) GetInterbankDetail(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	detail, err := h.ibm.GetIBMDetail(r.Context(), tenantID, r.PathValue("id"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, detail)
+}
+
+// SubmitIBMMovement handles POST /api/deposit/interbank/{id}/movements —
+// stages one TOP_UP/INTEREST/EXPECTED/WITHDRAW case.
+func (h *DepositHandler) SubmitIBMMovement(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	var in struct {
+		Kind         string `json:"kind"`
+		AmountMinor  int64  `json:"amount_minor"`
+		MovementDate string `json:"movement_date"`
+		PeriodFrom   string `json:"period_from"`
+		PeriodTo     string `json:"period_to"`
+		Note         string `json:"note"`
+	}
+	if !decodeDepositBody(w, r, &in) {
+		return
+	}
+	created, err := h.ibm.SubmitMovement(r.Context(), tenantID, r.Header.Get("X-User-Id"),
+		r.PathValue("id"), in.Kind, in.AmountMinor, in.MovementDate, in.PeriodFrom, in.PeriodTo, in.Note)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
+}
+
+// ListIBMProducts handles GET /api/deposit/ibm-products.
+func (h *DepositHandler) ListIBMProducts(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	items, err := h.ibm.ListIBMProducts(r.Context(), tenantID, r.URL.Query().Get("include_inactive") == "true")
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// UpsertIBMProduct handles POST /api/deposit/ibm-products.
+func (h *DepositHandler) UpsertIBMProduct(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	var in repository.IBMProduct
+	if !decodeDepositBody(w, r, &in) {
+		return
+	}
+	created, err := h.ibm.UpsertIBMProduct(r.Context(), tenantID, r.Header.Get("X-User-Id"), &in)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
 }

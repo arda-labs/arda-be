@@ -63,6 +63,13 @@ var RegisteredJobTopics = []string{
 	"cfc.movement.validate",
 	"cfc.movement.execute",
 	"cfc.movement.cancel",
+	// IBM lifecycle (ibm-place-v1 + ibm-movement-v1)
+	"ibm.place.validate",
+	"ibm.place.execute",
+	"ibm.place.cancel",
+	"ibm.movement.validate",
+	"ibm.movement.execute",
+	"ibm.movement.cancel",
 	// Loan formation (lnm-loan-formation-v2.bpmn, iteration 11 wave 2) —
 	// multi-level approval; UT_* steps are human workbench tasks.
 	"lnm.loan.formation.validate",

@@ -14,6 +14,8 @@ service DepositCommandService {
   rpc SettleAdditional(SettleAdditionalRequest) returns (SettleAdditionalResponse);
   rpc CheckProductRequest(CheckProductRequestRequest) returns (CheckProductRequestResponse);
   rpc ResolveProductRequest(ResolveProductRequestRequest) returns (ResolveProductRequestResponse);
+  rpc CheckIBMRequest(CheckIBMRequestRequest) returns (CheckIBMRequestResponse);
+  rpc ResolveIBMRequest(ResolveIBMRequestRequest) returns (ResolveIBMRequestResponse);
 }
 
 message CheckSettleRequest {
@@ -78,5 +80,29 @@ message ResolveProductRequestRequest {
 }
 
 message ResolveProductRequestResponse {
+  bool ok = 1;
+}
+
+// IBM lifecycle (IBM.200/300/301/302/304): kind = PLACE | TOP_UP | INTEREST |
+// EXPECTED | WITHDRAW. PLACE refs the staged ibm_deposits row; the other kinds
+// ref an ibm_movements row.
+message CheckIBMRequestRequest {
+  string kind = 1;
+  string ref_id = 2;
+}
+
+message CheckIBMRequestResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message ResolveIBMRequestRequest {
+  string kind = 1;
+  string ref_id = 2;
+  string decision = 3; // APPROVE | REJECT
+  string actor = 4;
+}
+
+message ResolveIBMRequestResponse {
   bool ok = 1;
 }

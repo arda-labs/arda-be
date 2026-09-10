@@ -25,6 +25,8 @@ const (
 	DepositCommandService_SettleAdditional_FullMethodName      = "/arda.deposit.v1.DepositCommandService/SettleAdditional"
 	DepositCommandService_CheckProductRequest_FullMethodName   = "/arda.deposit.v1.DepositCommandService/CheckProductRequest"
 	DepositCommandService_ResolveProductRequest_FullMethodName = "/arda.deposit.v1.DepositCommandService/ResolveProductRequest"
+	DepositCommandService_CheckIBMRequest_FullMethodName       = "/arda.deposit.v1.DepositCommandService/CheckIBMRequest"
+	DepositCommandService_ResolveIBMRequest_FullMethodName     = "/arda.deposit.v1.DepositCommandService/ResolveIBMRequest"
 )
 
 // DepositCommandServiceClient is the client API for DepositCommandService service.
@@ -41,6 +43,8 @@ type DepositCommandServiceClient interface {
 	SettleAdditional(ctx context.Context, in *SettleAdditionalRequest, opts ...grpc.CallOption) (*SettleAdditionalResponse, error)
 	CheckProductRequest(ctx context.Context, in *CheckProductRequestRequest, opts ...grpc.CallOption) (*CheckProductRequestResponse, error)
 	ResolveProductRequest(ctx context.Context, in *ResolveProductRequestRequest, opts ...grpc.CallOption) (*ResolveProductRequestResponse, error)
+	CheckIBMRequest(ctx context.Context, in *CheckIBMRequestRequest, opts ...grpc.CallOption) (*CheckIBMRequestResponse, error)
+	ResolveIBMRequest(ctx context.Context, in *ResolveIBMRequestRequest, opts ...grpc.CallOption) (*ResolveIBMRequestResponse, error)
 }
 
 type depositCommandServiceClient struct {
@@ -111,6 +115,26 @@ func (c *depositCommandServiceClient) ResolveProductRequest(ctx context.Context,
 	return out, nil
 }
 
+func (c *depositCommandServiceClient) CheckIBMRequest(ctx context.Context, in *CheckIBMRequestRequest, opts ...grpc.CallOption) (*CheckIBMRequestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckIBMRequestResponse)
+	err := c.cc.Invoke(ctx, DepositCommandService_CheckIBMRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *depositCommandServiceClient) ResolveIBMRequest(ctx context.Context, in *ResolveIBMRequestRequest, opts ...grpc.CallOption) (*ResolveIBMRequestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveIBMRequestResponse)
+	err := c.cc.Invoke(ctx, DepositCommandService_ResolveIBMRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DepositCommandServiceServer is the server API for DepositCommandService service.
 // All implementations must embed UnimplementedDepositCommandServiceServer
 // for forward compatibility.
@@ -125,6 +149,8 @@ type DepositCommandServiceServer interface {
 	SettleAdditional(context.Context, *SettleAdditionalRequest) (*SettleAdditionalResponse, error)
 	CheckProductRequest(context.Context, *CheckProductRequestRequest) (*CheckProductRequestResponse, error)
 	ResolveProductRequest(context.Context, *ResolveProductRequestRequest) (*ResolveProductRequestResponse, error)
+	CheckIBMRequest(context.Context, *CheckIBMRequestRequest) (*CheckIBMRequestResponse, error)
+	ResolveIBMRequest(context.Context, *ResolveIBMRequestRequest) (*ResolveIBMRequestResponse, error)
 	mustEmbedUnimplementedDepositCommandServiceServer()
 }
 
@@ -152,6 +178,12 @@ func (UnimplementedDepositCommandServiceServer) CheckProductRequest(context.Cont
 }
 func (UnimplementedDepositCommandServiceServer) ResolveProductRequest(context.Context, *ResolveProductRequestRequest) (*ResolveProductRequestResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveProductRequest not implemented")
+}
+func (UnimplementedDepositCommandServiceServer) CheckIBMRequest(context.Context, *CheckIBMRequestRequest) (*CheckIBMRequestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckIBMRequest not implemented")
+}
+func (UnimplementedDepositCommandServiceServer) ResolveIBMRequest(context.Context, *ResolveIBMRequestRequest) (*ResolveIBMRequestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveIBMRequest not implemented")
 }
 func (UnimplementedDepositCommandServiceServer) mustEmbedUnimplementedDepositCommandServiceServer() {}
 func (UnimplementedDepositCommandServiceServer) testEmbeddedByValue()                               {}
@@ -282,6 +314,42 @@ func _DepositCommandService_ResolveProductRequest_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DepositCommandService_CheckIBMRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckIBMRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DepositCommandServiceServer).CheckIBMRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DepositCommandService_CheckIBMRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DepositCommandServiceServer).CheckIBMRequest(ctx, req.(*CheckIBMRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DepositCommandService_ResolveIBMRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveIBMRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DepositCommandServiceServer).ResolveIBMRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DepositCommandService_ResolveIBMRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DepositCommandServiceServer).ResolveIBMRequest(ctx, req.(*ResolveIBMRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DepositCommandService_ServiceDesc is the grpc.ServiceDesc for DepositCommandService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -312,6 +380,14 @@ var DepositCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveProductRequest",
 			Handler:    _DepositCommandService_ResolveProductRequest_Handler,
+		},
+		{
+			MethodName: "CheckIBMRequest",
+			Handler:    _DepositCommandService_CheckIBMRequest_Handler,
+		},
+		{
+			MethodName: "ResolveIBMRequest",
+			Handler:    _DepositCommandService_ResolveIBMRequest_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

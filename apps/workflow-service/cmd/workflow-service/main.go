@@ -388,6 +388,24 @@ func main() {
 				defer pew.Close()
 				defer pcw.Close()
 			}
+
+			ibmPlaceWorkers := worker.NewIBMWorkers(depositClient, caseRepo, "PLACE")
+			ipv, ipe, ipc := ibmPlaceWorkers.Handlers()
+			ipvw := zeebeSvc.NewJobWorker("ibm.place.validate", ipv)
+			ipw := zeebeSvc.NewJobWorker("ibm.place.execute", ipe)
+			ipcw := zeebeSvc.NewJobWorker("ibm.place.cancel", ipc)
+			defer ipvw.Close()
+			defer ipw.Close()
+			defer ipcw.Close()
+
+			ibmMovementWorkers := worker.NewIBMWorkers(depositClient, caseRepo, "")
+			imv, ime, imc := ibmMovementWorkers.Handlers()
+			imvw := zeebeSvc.NewJobWorker("ibm.movement.validate", imv)
+			imw := zeebeSvc.NewJobWorker("ibm.movement.execute", ime)
+			imcw := zeebeSvc.NewJobWorker("ibm.movement.cancel", imc)
+			defer imvw.Close()
+			defer imw.Close()
+			defer imcw.Close()
 			logger.Info("workflow deposit workers registered")
 		}
 	}

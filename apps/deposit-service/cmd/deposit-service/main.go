@@ -76,7 +76,8 @@ func main() {
 	settlementSvc := service.NewSettlementService(repo, db, financeClient, workflowClient)
 	additionalSvc := service.NewAdditionalDepositService(repo, settlementSvc, db, workflowClient)
 	productRequestSvc := service.NewProductRequestService(repo, workflowClient)
-	depositHandler := handler.NewDepositHandler(settlementSvc, additionalSvc, productRequestSvc)
+	ibmSvc := service.NewIBMService(repo, db, financeClient, workflowClient)
+	depositHandler := handler.NewDepositHandler(settlementSvc, additionalSvc, productRequestSvc, ibmSvc)
 
 	// ── gRPC server (DepositCommandService, port 9090) ──
 	serviceSecret, errSec := identity.SecretFromEnv()
@@ -96,7 +97,7 @@ func main() {
 			interceptors.UnaryServerLogging(logger),
 		),
 	)
-	depositv1.RegisterDepositCommandServiceServer(grpcSrv, grpcserver.NewDepositServer(settlementSvc, additionalSvc, productRequestSvc))
+	depositv1.RegisterDepositCommandServiceServer(grpcSrv, grpcserver.NewDepositServer(settlementSvc, additionalSvc, productRequestSvc, ibmSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)

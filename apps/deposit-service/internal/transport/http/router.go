@@ -54,6 +54,20 @@ func NewRouter(h *handler.DepositHandler) http.Handler {
 		switch r.Method {
 		case http.MethodGet:
 			h.ListInterbankDeposits(w, r)
+		case http.MethodPost:
+			h.CreateInterbankDeposit(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("GET /api/deposit/interbank/{id}", h.GetInterbankDetail)
+	mux.HandleFunc("POST /api/deposit/interbank/{id}/movements", h.SubmitIBMMovement)
+	mux.HandleFunc("/api/deposit/ibm-products", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.ListIBMProducts(w, r)
+		case http.MethodPost, http.MethodPut:
+			h.UpsertIBMProduct(w, r)
 		default:
 			writeMethodNotAllowed(w, r)
 		}

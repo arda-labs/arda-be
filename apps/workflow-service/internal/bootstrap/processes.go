@@ -92,6 +92,12 @@ var cfcAmendment []byte
 //go:embed cfc-movement-v1.bpmn
 var cfcMovement []byte
 
+//go:embed ibm-place-v1.bpmn
+var ibmPlace []byte
+
+//go:embed ibm-movement-v1.bpmn
+var ibmMovement []byte
+
 //go:embed fin-single-entry-v2.bpmn
 var finSingleEntry []byte
 
@@ -297,6 +303,20 @@ func BuiltInProcesses() []Process {
 			Name:         "Giao dịch vốn (v1)",
 			ResourceName: "cfc-movement-v1.bpmn",
 			Content:      cfcMovement,
+		},
+		{
+			// IBM (tiền gửi liên ngân hàng): placement + 4 movement kinds share
+			// the movement BPMN; the kind arrives via case variables.
+			ProcessCode:  "IBM_PLACE_V1",
+			Name:         "Mở hợp đồng tiền gửi liên ngân hàng (v1)",
+			ResourceName: "ibm-place-v1.bpmn",
+			Content:      ibmPlace,
+		},
+		{
+			ProcessCode:  "IBM_MOVEMENT_V1",
+			Name:         "Giao dịch tiền gửi liên ngân hàng (v1)",
+			ResourceName: "ibm-movement-v1.bpmn",
+			Content:      ibmMovement,
 		},
 		{
 			// Manual posting flows (FAC-native bút toán lẻ / bút toán kép):

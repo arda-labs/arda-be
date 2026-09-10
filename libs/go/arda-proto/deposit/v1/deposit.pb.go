@@ -650,6 +650,225 @@ func (x *ResolveProductRequestResponse) GetOk() bool {
 	return false
 }
 
+// IBM lifecycle (IBM.200/300/301/302/304): kind = PLACE | TOP_UP | INTEREST |
+// EXPECTED | WITHDRAW. PLACE refs the staged ibm_deposits row; the other kinds
+// ref an ibm_movements row.
+type CheckIBMRequestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	RefId         string                 `protobuf:"bytes,2,opt,name=ref_id,json=refId,proto3" json:"ref_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckIBMRequestRequest) Reset() {
+	*x = CheckIBMRequestRequest{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckIBMRequestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckIBMRequestRequest) ProtoMessage() {}
+
+func (x *CheckIBMRequestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckIBMRequestRequest.ProtoReflect.Descriptor instead.
+func (*CheckIBMRequestRequest) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *CheckIBMRequestRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *CheckIBMRequestRequest) GetRefId() string {
+	if x != nil {
+		return x.RefId
+	}
+	return ""
+}
+
+type CheckIBMRequestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckIBMRequestResponse) Reset() {
+	*x = CheckIBMRequestResponse{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckIBMRequestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckIBMRequestResponse) ProtoMessage() {}
+
+func (x *CheckIBMRequestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckIBMRequestResponse.ProtoReflect.Descriptor instead.
+func (*CheckIBMRequestResponse) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *CheckIBMRequestResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *CheckIBMRequestResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type ResolveIBMRequestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	RefId         string                 `protobuf:"bytes,2,opt,name=ref_id,json=refId,proto3" json:"ref_id,omitempty"`
+	Decision      string                 `protobuf:"bytes,3,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
+	Actor         string                 `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveIBMRequestRequest) Reset() {
+	*x = ResolveIBMRequestRequest{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveIBMRequestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveIBMRequestRequest) ProtoMessage() {}
+
+func (x *ResolveIBMRequestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveIBMRequestRequest.ProtoReflect.Descriptor instead.
+func (*ResolveIBMRequestRequest) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ResolveIBMRequestRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ResolveIBMRequestRequest) GetRefId() string {
+	if x != nil {
+		return x.RefId
+	}
+	return ""
+}
+
+func (x *ResolveIBMRequestRequest) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *ResolveIBMRequestRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+type ResolveIBMRequestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveIBMRequestResponse) Reset() {
+	*x = ResolveIBMRequestResponse{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveIBMRequestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveIBMRequestResponse) ProtoMessage() {}
+
+func (x *ResolveIBMRequestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveIBMRequestResponse.ProtoReflect.Descriptor instead.
+func (*ResolveIBMRequestResponse) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ResolveIBMRequestResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_arda_deposit_v1_deposit_proto protoreflect.FileDescriptor
 
 const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
@@ -690,14 +909,29 @@ const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
 	"\x05actor\x18\x03 \x01(\tR\x05actor\x12\x12\n" +
 	"\x04note\x18\x04 \x01(\tR\x04note\"/\n" +
 	"\x1dResolveProductRequestResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xf5\x04\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"C\n" +
+	"\x16CheckIBMRequestRequest\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x15\n" +
+	"\x06ref_id\x18\x02 \x01(\tR\x05refId\"C\n" +
+	"\x17CheckIBMRequestResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"w\n" +
+	"\x18ResolveIBMRequestRequest\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x15\n" +
+	"\x06ref_id\x18\x02 \x01(\tR\x05refId\x12\x1a\n" +
+	"\bdecision\x18\x03 \x01(\tR\bdecision\x12\x14\n" +
+	"\x05actor\x18\x04 \x01(\tR\x05actor\"+\n" +
+	"\x19ResolveIBMRequestResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\xc7\x06\n" +
 	"\x15DepositCommandService\x12X\n" +
 	"\vCheckSettle\x12#.arda.deposit.v1.CheckSettleRequest\x1a$.arda.deposit.v1.CheckSettleResponse\x12I\n" +
 	"\x06Settle\x12\x1e.arda.deposit.v1.SettleRequest\x1a\x1f.arda.deposit.v1.SettleResponse\x12d\n" +
 	"\x0fCheckAdditional\x12'.arda.deposit.v1.CheckAdditionalRequest\x1a(.arda.deposit.v1.CheckAdditionalResponse\x12g\n" +
 	"\x10SettleAdditional\x12(.arda.deposit.v1.SettleAdditionalRequest\x1a).arda.deposit.v1.SettleAdditionalResponse\x12p\n" +
 	"\x13CheckProductRequest\x12+.arda.deposit.v1.CheckProductRequestRequest\x1a,.arda.deposit.v1.CheckProductRequestResponse\x12v\n" +
-	"\x15ResolveProductRequest\x12-.arda.deposit.v1.ResolveProductRequestRequest\x1a..arda.deposit.v1.ResolveProductRequestResponseBCZAgithub.com/arda-labs/arda/libs/go/arda-proto/deposit/v1;depositv1b\x06proto3"
+	"\x15ResolveProductRequest\x12-.arda.deposit.v1.ResolveProductRequestRequest\x1a..arda.deposit.v1.ResolveProductRequestResponse\x12d\n" +
+	"\x0fCheckIBMRequest\x12'.arda.deposit.v1.CheckIBMRequestRequest\x1a(.arda.deposit.v1.CheckIBMRequestResponse\x12j\n" +
+	"\x11ResolveIBMRequest\x12).arda.deposit.v1.ResolveIBMRequestRequest\x1a*.arda.deposit.v1.ResolveIBMRequestResponseBCZAgithub.com/arda-labs/arda/libs/go/arda-proto/deposit/v1;depositv1b\x06proto3"
 
 var (
 	file_arda_deposit_v1_deposit_proto_rawDescOnce sync.Once
@@ -711,7 +945,7 @@ func file_arda_deposit_v1_deposit_proto_rawDescGZIP() []byte {
 	return file_arda_deposit_v1_deposit_proto_rawDescData
 }
 
-var file_arda_deposit_v1_deposit_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_arda_deposit_v1_deposit_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_arda_deposit_v1_deposit_proto_goTypes = []any{
 	(*CheckSettleRequest)(nil),            // 0: arda.deposit.v1.CheckSettleRequest
 	(*CheckSettleResponse)(nil),           // 1: arda.deposit.v1.CheckSettleResponse
@@ -725,6 +959,10 @@ var file_arda_deposit_v1_deposit_proto_goTypes = []any{
 	(*CheckProductRequestResponse)(nil),   // 9: arda.deposit.v1.CheckProductRequestResponse
 	(*ResolveProductRequestRequest)(nil),  // 10: arda.deposit.v1.ResolveProductRequestRequest
 	(*ResolveProductRequestResponse)(nil), // 11: arda.deposit.v1.ResolveProductRequestResponse
+	(*CheckIBMRequestRequest)(nil),        // 12: arda.deposit.v1.CheckIBMRequestRequest
+	(*CheckIBMRequestResponse)(nil),       // 13: arda.deposit.v1.CheckIBMRequestResponse
+	(*ResolveIBMRequestRequest)(nil),      // 14: arda.deposit.v1.ResolveIBMRequestRequest
+	(*ResolveIBMRequestResponse)(nil),     // 15: arda.deposit.v1.ResolveIBMRequestResponse
 }
 var file_arda_deposit_v1_deposit_proto_depIdxs = []int32{
 	0,  // 0: arda.deposit.v1.DepositCommandService.CheckSettle:input_type -> arda.deposit.v1.CheckSettleRequest
@@ -733,14 +971,18 @@ var file_arda_deposit_v1_deposit_proto_depIdxs = []int32{
 	6,  // 3: arda.deposit.v1.DepositCommandService.SettleAdditional:input_type -> arda.deposit.v1.SettleAdditionalRequest
 	8,  // 4: arda.deposit.v1.DepositCommandService.CheckProductRequest:input_type -> arda.deposit.v1.CheckProductRequestRequest
 	10, // 5: arda.deposit.v1.DepositCommandService.ResolveProductRequest:input_type -> arda.deposit.v1.ResolveProductRequestRequest
-	1,  // 6: arda.deposit.v1.DepositCommandService.CheckSettle:output_type -> arda.deposit.v1.CheckSettleResponse
-	3,  // 7: arda.deposit.v1.DepositCommandService.Settle:output_type -> arda.deposit.v1.SettleResponse
-	5,  // 8: arda.deposit.v1.DepositCommandService.CheckAdditional:output_type -> arda.deposit.v1.CheckAdditionalResponse
-	7,  // 9: arda.deposit.v1.DepositCommandService.SettleAdditional:output_type -> arda.deposit.v1.SettleAdditionalResponse
-	9,  // 10: arda.deposit.v1.DepositCommandService.CheckProductRequest:output_type -> arda.deposit.v1.CheckProductRequestResponse
-	11, // 11: arda.deposit.v1.DepositCommandService.ResolveProductRequest:output_type -> arda.deposit.v1.ResolveProductRequestResponse
-	6,  // [6:12] is the sub-list for method output_type
-	0,  // [0:6] is the sub-list for method input_type
+	12, // 6: arda.deposit.v1.DepositCommandService.CheckIBMRequest:input_type -> arda.deposit.v1.CheckIBMRequestRequest
+	14, // 7: arda.deposit.v1.DepositCommandService.ResolveIBMRequest:input_type -> arda.deposit.v1.ResolveIBMRequestRequest
+	1,  // 8: arda.deposit.v1.DepositCommandService.CheckSettle:output_type -> arda.deposit.v1.CheckSettleResponse
+	3,  // 9: arda.deposit.v1.DepositCommandService.Settle:output_type -> arda.deposit.v1.SettleResponse
+	5,  // 10: arda.deposit.v1.DepositCommandService.CheckAdditional:output_type -> arda.deposit.v1.CheckAdditionalResponse
+	7,  // 11: arda.deposit.v1.DepositCommandService.SettleAdditional:output_type -> arda.deposit.v1.SettleAdditionalResponse
+	9,  // 12: arda.deposit.v1.DepositCommandService.CheckProductRequest:output_type -> arda.deposit.v1.CheckProductRequestResponse
+	11, // 13: arda.deposit.v1.DepositCommandService.ResolveProductRequest:output_type -> arda.deposit.v1.ResolveProductRequestResponse
+	13, // 14: arda.deposit.v1.DepositCommandService.CheckIBMRequest:output_type -> arda.deposit.v1.CheckIBMRequestResponse
+	15, // 15: arda.deposit.v1.DepositCommandService.ResolveIBMRequest:output_type -> arda.deposit.v1.ResolveIBMRequestResponse
+	8,  // [8:16] is the sub-list for method output_type
+	0,  // [0:8] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
@@ -757,7 +999,7 @@ func file_arda_deposit_v1_deposit_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_deposit_v1_deposit_proto_rawDesc), len(file_arda_deposit_v1_deposit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

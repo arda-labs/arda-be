@@ -19,10 +19,11 @@ type DepositServer struct {
 	settlement *service.SettlementService
 	additional *service.AdditionalDepositService
 	products   *service.ProductRequestService
+	ibm        *service.IBMService
 }
 
-func NewDepositServer(settlement *service.SettlementService, additional *service.AdditionalDepositService, products *service.ProductRequestService) *DepositServer {
-	return &DepositServer{settlement: settlement, additional: additional, products: products}
+func NewDepositServer(settlement *service.SettlementService, additional *service.AdditionalDepositService, products *service.ProductRequestService, ibm *service.IBMService) *DepositServer {
+	return &DepositServer{settlement: settlement, additional: additional, products: products, ibm: ibm}
 }
 
 func tenantFromContext(ctx context.Context) (string, error) {
@@ -105,6 +106,29 @@ func (s *DepositServer) ResolveProductRequest(ctx context.Context, req *depositv
 		return &depositv1.ResolveProductRequestResponse{Ok: false}, nil
 	}
 	return &depositv1.ResolveProductRequestResponse{Ok: true}, nil
+}
+
+func (s *DepositServer) CheckIBMRequest(ctx context.Context, req *depositv1.CheckIBMRequestRequest) (*depositv1.CheckIBMRequestResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	ok, message, err := s.ibm.CheckIBMRequest(ctx, tenantID, req.GetKind(), req.GetRefId())
+	if err != nil {
+		return &depositv1.CheckIBMRequestResponse{Ok: false, Message: err.Error()}, nil
+	}
+	return &depositv1.CheckIBMRequestResponse{Ok: ok, Message: message}, nil
+}
+
+func (s *DepositServer) ResolveIBMRequest(ctx context.Context, req *depositv1.ResolveIBMRequestRequest) (*depositv1.ResolveIBMRequestResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if err := s.ibm.ResolveIBMRequest(ctx, tenantID, req.GetKind(), req.GetRefId(), req.GetDecision(), req.GetActor()); err != nil {
+		return &depositv1.ResolveIBMRequestResponse{Ok: false}, nil
+	}
+	return &depositv1.ResolveIBMRequestResponse{Ok: true}, nil
 }
 
 // ardametadataFromContext is a thin adapter so the server does not import

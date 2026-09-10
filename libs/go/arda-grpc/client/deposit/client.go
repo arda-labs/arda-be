@@ -165,3 +165,38 @@ func (c *Client) ResolveProductRequest(ctx context.Context, requestID, decision,
 	})
 	return err
 }
+
+// IBMRequester is the narrow surface the workflow IBM workers need
+// (IBM.200/300/301/302/304).
+type IBMRequester interface {
+	CheckIBMRequest(ctx context.Context, kind, refID string) (bool, string, error)
+	ResolveIBMRequest(ctx context.Context, kind, refID, decision, actor string) error
+}
+
+func (c *Client) CheckIBMRequest(ctx context.Context, kind, refID string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("deposit client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckIBMRequest(callCtx, &depositv1.CheckIBMRequestRequest{Kind: kind, RefId: refID})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+func (c *Client) ResolveIBMRequest(ctx context.Context, kind, refID, decision, actor string) error {
+	if c == nil {
+		return errors.New("deposit client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.ResolveIBMRequest(callCtx, &depositv1.ResolveIBMRequestRequest{
+		Kind:     kind,
+		RefId:    refID,
+		Decision: decision,
+		Actor:    actor,
+	})
+	return err
+}
