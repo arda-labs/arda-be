@@ -50,3 +50,6 @@ stress_test_*
 
 # generated docs site output (rebuild with scripts/build-problem-docs.mjs)
 cloudflare/docs/dist/
+
+# wrangler local state
+.wrangler/
