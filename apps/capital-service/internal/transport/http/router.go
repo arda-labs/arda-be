@@ -23,6 +23,20 @@ func NewRouter(h *handler.CapitalHandler) http.Handler {
 		switch r.Method {
 		case http.MethodGet:
 			h.ListFundTypes(w, r)
+		case http.MethodPost:
+			h.CreateFundType(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("PUT /api/capital/fund-types/{id}", h.UpdateFundType)
+	mux.HandleFunc("DELETE /api/capital/fund-types/{id}", h.DeactivateFundType)
+	mux.HandleFunc("/api/capital/products", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.ListProducts(w, r)
+		case http.MethodPost, http.MethodPut:
+			h.UpsertProduct(w, r)
 		default:
 			writeMethodNotAllowed(w, r)
 		}
@@ -37,6 +51,8 @@ func NewRouter(h *handler.CapitalHandler) http.Handler {
 			writeMethodNotAllowed(w, r)
 		}
 	})
+	mux.HandleFunc("GET /api/capital/contracts/{id}", h.GetContractDetail)
+	mux.HandleFunc("POST /api/capital/contracts/{id}/amendments", h.SubmitAmendment)
 	mux.HandleFunc("POST /api/capital/contracts/{id}/movements", h.RecordMovement)
 	return mux
 }

@@ -53,6 +53,16 @@ var RegisteredJobTopics = []string{
 	"dpm.product-edit.validate",
 	"dpm.product-edit.execute",
 	"dpm.product-edit.cancel",
+	// CFM lifecycle (cfc-contract-v1 + cfc-amendment-v1 + cfc-movement-v1)
+	"cfc.contract.validate",
+	"cfc.contract.execute",
+	"cfc.contract.cancel",
+	"cfc.amendment.validate",
+	"cfc.amendment.execute",
+	"cfc.amendment.cancel",
+	"cfc.movement.validate",
+	"cfc.movement.execute",
+	"cfc.movement.cancel",
 	// Loan formation (lnm-loan-formation-v2.bpmn, iteration 11 wave 2) —
 	// multi-level approval; UT_* steps are human workbench tasks.
 	"lnm.loan.formation.validate",

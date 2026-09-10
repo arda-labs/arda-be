@@ -23,6 +23,7 @@ import (
 	grpcserver "github.com/arda-labs/arda/apps/workflow-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/workflow-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/worker"
+	capitalclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/capital"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	depositclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/deposit"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
@@ -426,6 +427,35 @@ func main() {
 		defer ccw.Close()
 		logger.Info("workflow cancellation workers registered")
 	}
+
+	// CFM lifecycle workers (formation / amendment / movement): the staged
+	// object lives in capital-service and validate/execute/cancel write the
+	// checker decision back via CapitalCommandService gRPC.
+	var capitalClient *capitalclient.Client
+	if cfg.CapitalGRPCAddr != "" {
+		cc, err := capitalclient.Dial(context.Background(), cfg.CapitalGRPCAddr, cfg.AppName, logger)
+		if err != nil {
+			logger.Error("capital grpc dial", "err", err)
+			os.Exit(1)
+		}
+		defer cc.Close()
+		capitalClient = cc
+	}
+	for _, flow := range []struct{ kind, prefix string }{
+		{worker.CFCKindFormation, "cfc.contract"},
+		{worker.CFCKindAmendment, "cfc.amendment"},
+		{worker.CFCKindMovement, "cfc.movement"},
+	} {
+		cfcWorkers := worker.NewCFCWorkers(capitalClient, caseRepo, flow.kind)
+		cv, ce, cc := cfcWorkers.Handlers()
+		cvw := zeebeSvc.NewJobWorker(flow.prefix+".validate", cv)
+		cew := zeebeSvc.NewJobWorker(flow.prefix+".execute", ce)
+		ccw := zeebeSvc.NewJobWorker(flow.prefix+".cancel", cc)
+		defer cvw.Close()
+		defer cew.Close()
+		defer ccw.Close()
+	}
+	logger.Info("workflow capital workers registered")
 
 	var statisticalClient *statisticalclient.Client
 	if cfg.StatisticalGRPCAddr != "" {

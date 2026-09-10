@@ -83,6 +83,15 @@ var dpmProductRegister []byte
 //go:embed dpm-product-edit-v1.bpmn
 var dpmProductEdit []byte
 
+//go:embed cfc-contract-v1.bpmn
+var cfcContract []byte
+
+//go:embed cfc-amendment-v1.bpmn
+var cfcAmendment []byte
+
+//go:embed cfc-movement-v1.bpmn
+var cfcMovement []byte
+
 //go:embed fin-single-entry-v2.bpmn
 var finSingleEntry []byte
 
@@ -268,6 +277,26 @@ func BuiltInProcesses() []Process {
 			Name:         "Tất toán sổ tiết kiệm (v2)",
 			ResourceName: "dpm-settle-v2.bpmn",
 			Content:      dpmSettle,
+		},
+		{
+			// CFM (vốn nội bộ): formation + amendments + movements all await
+			// checker approval; posting rides CFC_* provisional cards.
+			ProcessCode:  "CFC_CONTRACT_V1",
+			Name:         "Hình thành hợp đồng vốn (v1)",
+			ResourceName: "cfc-contract-v1.bpmn",
+			Content:      cfcContract,
+		},
+		{
+			ProcessCode:  "CFC_AMENDMENT_V1",
+			Name:         "Điều chỉnh hợp đồng vốn (v1)",
+			ResourceName: "cfc-amendment-v1.bpmn",
+			Content:      cfcAmendment,
+		},
+		{
+			ProcessCode:  "CFC_MOVEMENT_V1",
+			Name:         "Giao dịch vốn (v1)",
+			ResourceName: "cfc-movement-v1.bpmn",
+			Content:      cfcMovement,
 		},
 		{
 			// Manual posting flows (FAC-native bút toán lẻ / bút toán kép):

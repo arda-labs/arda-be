@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package arda.capital.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/capital/v1;capitalv1";
+
+// CapitalCommandService is the callback surface workflow-service workers use
+// for the cfc-contract-v1 (formation), cfc-amendment-v1 and cfc-movement-v1
+// flows. kind selects the staged object; tenant scope arrives via gRPC metadata.
+service CapitalCommandService {
+  rpc CheckRequest(CheckRequestRequest) returns (CheckRequestResponse);
+  rpc ResolveRequest(ResolveRequestRequest) returns (ResolveRequestResponse);
+}
+
+// kind = CONTRACT_FORMATION | CONTRACT_AMENDMENT | MOVEMENT.
+message CheckRequestRequest {
+  string kind = 1;
+  string ref_id = 2;
+}
+
+message CheckRequestResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+// decision = APPROVE | REJECT.
+message ResolveRequestRequest {
+  string kind = 1;
+  string ref_id = 2;
+  string decision = 3;
+  string actor = 4;
+}
+
+message ResolveRequestResponse {
+  bool ok = 1;
+}

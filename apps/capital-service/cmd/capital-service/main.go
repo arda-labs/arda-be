@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,9 +18,17 @@ import (
 	"github.com/arda-labs/arda/apps/capital-service/internal/migration"
 	"github.com/arda-labs/arda/apps/capital-service/internal/repository"
 	"github.com/arda-labs/arda/apps/capital-service/internal/service"
+	grpcserver "github.com/arda-labs/arda/apps/capital-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/capital-service/internal/transport/http"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	capitalv1 "github.com/arda-labs/arda/libs/go/arda-proto/capital/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
@@ -53,8 +62,54 @@ func main() {
 	}
 
 	repo := repository.NewCapitalRepository(db)
-	capitalSvc := service.NewCapitalService(repo, db, financeClient)
+	var workflowClient *workflowclient.Client
+	if cfg.WorkflowGRPCAddr != "" {
+		wc, err := workflowclient.Dial(context.Background(), cfg.WorkflowGRPCAddr, "capital-service", logger)
+		if err != nil {
+			logger.Error("workflow grpc dial", "err", err)
+			os.Exit(1)
+		}
+		defer wc.Close()
+		workflowClient = wc
+	}
+	capitalSvc := service.NewCapitalService(repo, db, financeClient, workflowClient)
 	capitalHandler := handler.NewCapitalHandler(capitalSvc)
+
+	// ── gRPC server (CapitalCommandService, port 9090) ──
+	serviceSecret, err := identity.SecretFromEnv()
+	if err != nil {
+		logger.Error("service identity is not configured", "err", err)
+		os.Exit(1)
+	}
+	transportCreds, err := identity.ServerTransportCredentials()
+	if err != nil {
+		logger.Error("grpc transport credentials", "err", err)
+		os.Exit(1)
+	}
+	grpcSrv := grpc.NewServer(
+		grpc.Creds(transportCreds),
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerServiceAuth(serviceSecret, "capital-service", map[string]struct{}{"workflow-service": {}}),
+			interceptors.UnaryServerLogging(logger),
+		),
+	)
+	capitalv1.RegisterCapitalCommandServiceServer(grpcSrv, grpcserver.NewCapitalServer(capitalSvc))
+	healthSrv := health.NewServer()
+	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
+
+	go func() {
+		lis, err := net.Listen("tcp", cfg.GRPCAddr)
+		if err != nil {
+			logger.Error("grpc listen", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("grpc server started", "name", cfg.AppName, "addr", cfg.GRPCAddr)
+		if err := grpcSrv.Serve(lis); err != nil {
+			logger.Error("grpc server error", "err", err)
+		}
+	}()
+	defer grpcSrv.GracefulStop()
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
@@ -86,21 +141,25 @@ func main() {
 }
 
 type config struct {
-	AppName         string
-	HTTPAddr        string
-	LogLevel        string
-	DatabaseDSN     string
-	FinanceGRPCAddr string
+	AppName          string
+	HTTPAddr         string
+	GRPCAddr         string
+	LogLevel         string
+	DatabaseDSN      string
+	FinanceGRPCAddr  string
+	WorkflowGRPCAddr string
 }
 
 func loadConfig() config {
 	base := appconfig.Load()
 	return config{
-		AppName:         base.AppName,
-		HTTPAddr:        base.HTTPAddr,
-		LogLevel:        base.LogLevel,
-		DatabaseDSN:     base.DatabaseDSN,
-		FinanceGRPCAddr: base.FinanceGRPCAddr,
+		AppName:          base.AppName,
+		HTTPAddr:         base.HTTPAddr,
+		GRPCAddr:         envOr("GRPC_ADDR", "0.0.0.0:9090"),
+		LogLevel:         base.LogLevel,
+		DatabaseDSN:      base.DatabaseDSN,
+		FinanceGRPCAddr:  base.FinanceGRPCAddr,
+		WorkflowGRPCAddr: base.WorkflowGRPCAddr,
 	}
 }
 

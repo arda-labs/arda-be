@@ -21,6 +21,7 @@ type Config struct {
 	LoanGRPCAddr         string `yaml:"loan_grpc_addr"`
 	FinanceGRPCAddr      string `yaml:"finance_grpc_addr"`
 	DepositGRPCAddr      string `yaml:"deposit_grpc_addr"`
+	CapitalGRPCAddr      string `yaml:"capital_grpc_addr"`
 	HRMGRPCAddr          string `yaml:"hrm_grpc_addr"`
 	IAMGRPCAddr          string `yaml:"iam_grpc_addr"`
 	NotificationGRPCAddr string `yaml:"notification_grpc_addr"`
@@ -66,6 +67,7 @@ func Load() Config {
 	envStr("LOAN_GRPC_ADDR", &cfg.LoanGRPCAddr)
 	envStr("FINANCE_GRPC_ADDR", &cfg.FinanceGRPCAddr)
 	envStr("DEPOSIT_GRPC_ADDR", &cfg.DepositGRPCAddr)
+	envStr("CAPITAL_GRPC_ADDR", &cfg.CapitalGRPCAddr)
 	envStr("HRM_GRPC_ADDR", &cfg.HRMGRPCAddr)
 	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
 	envStr("NOTIFICATION_GRPC_ADDR", &cfg.NotificationGRPCAddr)
@@ -103,6 +105,7 @@ func (c *Config) loadYAML(path string) bool {
 	set("iam_grpc_addr", &c.IAMGRPCAddr)
 	set("notification_grpc_addr", &c.NotificationGRPCAddr)
 	set("statistical_grpc_addr", &c.StatisticalGRPCAddr)
+	set("capital_grpc_addr", &c.CapitalGRPCAddr)
 	return true
 }
 
