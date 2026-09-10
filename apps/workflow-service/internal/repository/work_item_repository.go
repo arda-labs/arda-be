@@ -452,7 +452,13 @@ func (r *CaseRepository) queryWorkItems(
 	if strings.TrimSpace(f.AssignedTo) != "" {
 		add("wt.assigned_to = $%d", f.AssignedTo)
 	}
+	if f.From != nil {
+		add("bc.created_at >= $%d", *f.From)
+	}
 	if f.To != nil {
+		// Half-open [from, to): a date-only To (midnight business tz) must
+		// cover through the end of that calendar day, so shift one day and
+		// keep the exclusive bound.
 		add("bc.created_at < $%d", f.To.AddDate(0, 0, 1))
 	}
 	if f.TransactionStatus != "" && f.TransactionStatus != "ALL" {

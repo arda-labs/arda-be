@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -80,7 +81,8 @@ func StreamXLSX(ctx context.Context, w io.Writer, opts StreamOptions, supplier R
 
 	loc := opts.Timezone
 	if loc == nil {
-		loc = time.Local
+		// Exports render in the business timezone unless a caller overrides.
+		loc = ardatime.Location()
 	}
 	isEn := opts.Locale == "en-US"
 
@@ -220,7 +222,7 @@ func StreamCSV(ctx context.Context, w io.Writer, opts StreamOptions, supplier Ro
 	isEn := opts.Locale == "en-US"
 	loc := opts.Timezone
 	if loc == nil {
-		loc = time.Local
+		loc = ardatime.Location()
 	}
 
 	// Header row

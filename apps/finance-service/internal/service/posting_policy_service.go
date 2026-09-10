@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // Posting-date policy (arda iteration 11 — posting policy/backdate). Every
@@ -77,7 +78,7 @@ func sentinelErr(code string) error {
 // Today passes without a policy lookup — only backdated postings are
 // constrained.
 func (s *PostingService) EnsurePostingDateAllowed(ctx context.Context, tenantID, docType, date string) error {
-	violation, err := s.checkPostingDate(ctx, tenantID, docType, date, time.Now())
+	violation, err := s.checkPostingDate(ctx, tenantID, docType, date, ardatime.Now())
 	if err != nil {
 		return err
 	}
@@ -176,7 +177,7 @@ func (s *PostingService) ClosingCandidates(ctx context.Context, tenantID, onDate
 		return nil, err
 	}
 	if trimDate(onDate) == "" {
-		onDate = time.Now().Format("2006-01-02")
+		onDate = ardatime.Today()
 	}
 	if _, err := time.Parse("2006-01-02", onDate); err != nil {
 		return nil, fmt.Errorf("accounting_date must be YYYY-MM-DD")

@@ -201,6 +201,8 @@ func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		ApprovalLevel string `json:"approval_level"`
 		DailyLimit    string `json:"daily_limit"`
 		Bio           string `json:"bio"`
+		Timezone      string `json:"timezone"`
+		Locale        string `json:"locale"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondCanonicalError(w, r, http.StatusBadRequest, "invalid json")
@@ -222,6 +224,8 @@ func (h *UserHandler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		strings.TrimSpace(req.ApprovalLevel),
 		strings.TrimSpace(req.DailyLimit),
 		strings.TrimSpace(req.Bio),
+		strings.TrimSpace(req.Timezone),
+		strings.TrimSpace(req.Locale),
 	)
 	if err != nil {
 		respondCanonicalError(w, r, http.StatusBadRequest, err.Error())

@@ -111,13 +111,13 @@ SELECT debt_group_code,
 FROM lnm_agreements
 WHERE tenant_id = $1
   AND status = 'ACTIVE'
-  AND date_trunc('month', disburse_date) = ($2::date - INTERVAL '1 month + 1 day')::date
+  AND date_trunc('month', disburse_date) = date_trunc('month', ($2::date - INTERVAL '1 month'))
 GROUP BY debt_group_code
 ORDER BY debt_group_code`
 	return &ReportQuery{
 		QueryID: QueryLoanPortfolioSummary,
 		SQL:     sqlText,
-		Args:    []any{p.TenantID, "2026-" + p.PeriodCode[5:] + "-01"},
+		Args:    []any{p.TenantID, p.PeriodCode + "-01"},
 		Columns: []string{"debt_group_code", "agreement_count", "outstanding_minor"},
 	}, nil
 }

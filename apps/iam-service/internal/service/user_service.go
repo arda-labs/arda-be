@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
@@ -188,11 +191,39 @@ func (s *UserService) UpdateUserCover(ctx context.Context, userID, coverFileID, 
 	return s.buildContext(ctx, user)
 }
 
-func (s *UserService) UpdateUserProfile(ctx context.Context, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.UserContext, error) {
+func (s *UserService) UpdateUserProfile(ctx context.Context, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio, timezone, locale string) (*domain.UserContext, error) {
 	if userID == "" {
 		return nil, fmt.Errorf("user id is required")
 	}
-	user, err := s.repo.UpdateUserProfile(ctx, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio)
+	// Omitted (empty) timezone/locale keep the stored values so a partial
+	// profile update never silently resets user preferences. They are read
+	// back first because the profile UPDATE writes every column it touches.
+	if timezone == "" || locale == "" {
+		current, err := s.repo.GetUserByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if current == nil {
+			return nil, fmt.Errorf("user not found")
+		}
+		if timezone == "" {
+			timezone = current.Timezone
+		}
+		if locale == "" {
+			locale = current.Locale
+		}
+	}
+	if _, err := ardatime.In(timezone); err != nil {
+		return nil, fmt.Errorf("invalid timezone: %w", err)
+	}
+	locale = strings.TrimSpace(locale)
+	if locale == "" {
+		return nil, fmt.Errorf("locale is required")
+	}
+	if len(locale) > 16 {
+		return nil, fmt.Errorf("locale must be at most 16 characters")
+	}
+	user, err := s.repo.UpdateUserProfile(ctx, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio, timezone, locale)
 	if err != nil {
 		return nil, err
 	}
@@ -357,6 +388,8 @@ func (s *UserService) buildContextForTenantWithMemberships(ctx context.Context, 
 		ApprovalLevel:            user.ApprovalLevel,
 		DailyLimit:               user.DailyLimit,
 		Bio:                      user.Bio,
+		Timezone:                 user.Timezone,
+		Locale:                   user.Locale,
 	}, nil
 }
 

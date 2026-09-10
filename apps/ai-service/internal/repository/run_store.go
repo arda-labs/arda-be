@@ -639,7 +639,7 @@ func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*Analy
 	modelRows.Close()
 
 	dayRows, dayErr := s.db.QueryContext(ctx, `
-		SELECT to_char(started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'), count(*),
+		SELECT to_char(started_at AT TIME ZONE 'Asia/Ho_Chi_Minh' /* ardatime.DefaultTimezoneName */, 'YYYY-MM-DD'), count(*),
 		       COALESCE(sum(CASE WHEN usage->>'total_tokens' ~ '^[0-9]+$' THEN (usage->>'total_tokens')::bigint ELSE 0 END), 0),
 		       count(*) FILTER (WHERE status = 'FAILED')
 		FROM public.ai_runs

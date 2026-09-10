@@ -12,6 +12,7 @@ import (
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardaexport "github.com/arda-labs/arda/libs/go/arda-export"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // AuditHandler exposes audit query and management endpoints.
@@ -42,10 +43,18 @@ func (h *AuditHandler) Query(w http.ResponseWriter, r *http.Request) {
 
 	var from, to time.Time
 	if f := r.URL.Query().Get("from"); f != "" {
-		from, _ = time.Parse(time.RFC3339, f)
+		var err error
+		if from, err = time.Parse(time.RFC3339, f); err != nil {
+			respondAdminRequestError(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "from must be RFC3339: "+err.Error())
+			return
+		}
 	}
 	if t := r.URL.Query().Get("to"); t != "" {
-		to, _ = time.Parse(time.RFC3339, t)
+		var err error
+		if to, err = time.Parse(time.RFC3339, t); err != nil {
+			respondAdminRequestError(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "to must be RFC3339: "+err.Error())
+			return
+		}
 	}
 
 	events, total, err := h.svc.Query(r.Context(), repository.QueryParams{
@@ -79,14 +88,22 @@ func (h *AuditHandler) ExportAudit(w http.ResponseWriter, r *http.Request) {
 
 	var from, to time.Time
 	if f := r.URL.Query().Get("from"); f != "" {
-		from, _ = time.Parse(time.RFC3339, f)
+		var err error
+		if from, err = time.Parse(time.RFC3339, f); err != nil {
+			respondAdminRequestError(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "from must be RFC3339: "+err.Error())
+			return
+		}
 	}
 	if t := r.URL.Query().Get("to"); t != "" {
-		to, _ = time.Parse(time.RFC3339, t)
+		var err error
+		if to, err = time.Parse(time.RFC3339, t); err != nil {
+			respondAdminRequestError(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "to must be RFC3339: "+err.Error())
+			return
+		}
 	}
 
 	format := ardaexport.NormalizeFormat(formatStr)
-	filename := fmt.Sprintf("audit_export_%s", time.Now().Format("20060102_150405"))
+	filename := fmt.Sprintf("audit_export_%s", ardatime.Now().Format("20060102_150405"))
 
 	cols := []ardaexport.Column{
 		{Header: "ID sự kiện", Key: "eventId", Type: ardaexport.CellTypeCode},

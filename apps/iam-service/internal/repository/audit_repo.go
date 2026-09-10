@@ -131,7 +131,7 @@ func (r *AuditRepository) Query(ctx context.Context, params QueryParams) ([]doma
 		idx++
 	}
 	if !params.To.IsZero() {
-		where = append(where, fmt.Sprintf("timestamp <= $%d", idx))
+		where = append(where, fmt.Sprintf("timestamp < $%d", idx))
 		args = append(args, params.To)
 		idx++
 	}
@@ -241,7 +241,7 @@ func (r *AuditRepository) StreamAudit(ctx context.Context, params QueryParams) (
 		idx++
 	}
 	if !params.To.IsZero() {
-		where = append(where, fmt.Sprintf("timestamp <= $%d", idx))
+		where = append(where, fmt.Sprintf("timestamp < $%d", idx))
 		args = append(args, params.To)
 		idx++
 	}
@@ -282,12 +282,12 @@ func (r *AuditRepository) Stats(ctx context.Context, from, to time.Time) (*Audit
 	}
 
 	r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM iam_audit_logs WHERE timestamp >= $1 AND timestamp <= $2
+		SELECT COUNT(*) FROM iam_audit_logs WHERE timestamp >= $1 AND timestamp < $2
 	`, from, to).Scan(&stats.TotalEvents)
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT event_type, COUNT(*) FROM iam_audit_logs
-		WHERE timestamp >= $1 AND timestamp <= $2
+		WHERE timestamp >= $1 AND timestamp < $2
 		GROUP BY event_type ORDER BY COUNT(*) DESC
 	`, from, to)
 	if err == nil {
@@ -303,7 +303,7 @@ func (r *AuditRepository) Stats(ctx context.Context, from, to time.Time) (*Audit
 
 	rows2, err := r.db.QueryContext(ctx, `
 		SELECT result, COUNT(*) FROM iam_audit_logs
-		WHERE timestamp >= $1 AND timestamp <= $2
+		WHERE timestamp >= $1 AND timestamp < $2
 		GROUP BY result
 	`, from, to)
 	if err == nil {
@@ -347,7 +347,7 @@ func (r *AuditRepository) VerifyChain(ctx context.Context, from, to time.Time) (
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT event_id, chain_prev_hash, chain_hash, timestamp, created_at, result
 		FROM iam_audit_logs
-		WHERE timestamp >= $1 AND timestamp <= $2
+		WHERE timestamp >= $1 AND timestamp < $2
 		ORDER BY created_at ASC, id ASC
 	`, from, to)
 	if err != nil {

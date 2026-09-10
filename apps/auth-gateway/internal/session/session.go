@@ -60,6 +60,8 @@ type UserInfo struct {
 	IsGlobalAdmin            bool               `json:"isGlobalAdmin"`
 	GlobalCapabilitiesLoaded bool               `json:"globalCapabilitiesLoaded"`
 	AuthVersion              int64              `json:"authVersion"`
+	Timezone                 string             `json:"timezone,omitempty"`
+	Locale                   string             `json:"locale,omitempty"`
 }
 
 type TenantMembership struct {

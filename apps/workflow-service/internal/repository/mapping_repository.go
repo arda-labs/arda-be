@@ -32,7 +32,7 @@ func (r *MappingRepository) SaveMapping(ctx context.Context, businessKey string,
 		    bpmn_process_id = EXCLUDED.bpmn_process_id,
 		    status = EXCLUDED.status
 	`
-	_, err := r.db.ExecContext(ctx, query, businessKey, processInstanceKey, bpmnProcessID, status, time.Now())
+	_, err := r.db.ExecContext(ctx, query, businessKey, processInstanceKey, bpmnProcessID, status, time.Now().UTC())
 	return err
 }
 

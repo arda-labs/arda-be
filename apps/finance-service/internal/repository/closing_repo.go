@@ -4,7 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
+
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // Closing + posting-policy reads (arda iteration 11 — kết chuyển thu chi
@@ -42,7 +43,7 @@ func (r *PostingRepository) LoadPostingPolicy(ctx context.Context, tenantID, doc
 }
 
 // MaxClosingDate returns the latest accounting_date of a FIN_CLOSING journal
-// entry ('' when none exists) — the closing lock anchor: a posting dated
+// entry (” when none exists) — the closing lock anchor: a posting dated
 // before the last closing would write into an already-closed period.
 func (r *PostingRepository) MaxClosingDate(ctx context.Context, tenantID string) (string, error) {
 	var maxDate string
@@ -189,7 +190,7 @@ type ClosingAccountRef struct {
 // plus its acc_purpose/acc_nature for the closing validation.
 func (r *PostingRepository) ResolveClosingAccount(ctx context.Context, tenantID, accountCode, onDate string) (*ClosingAccountRef, error) {
 	if onDate == "" {
-		onDate = time.Now().Format("2006-01-02")
+		onDate = ardatime.Today()
 	}
 	coaVersion := ""
 	err := r.db.QueryRowContext(ctx, `

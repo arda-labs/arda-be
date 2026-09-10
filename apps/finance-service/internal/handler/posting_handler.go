@@ -6,11 +6,11 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/service"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -228,7 +228,7 @@ func (h *PostingHandler) ListOpeningBalances(w http.ResponseWriter, r *http.Requ
 	}
 	onDate := r.URL.Query().Get("as_of")
 	if onDate == "" {
-		onDate = time.Now().Format("2006-01-02")
+		onDate = ardatime.Today()
 	}
 	items, err := h.svc.ListOpeningBalances(r.Context(), tenantID, onDate)
 	if err != nil {

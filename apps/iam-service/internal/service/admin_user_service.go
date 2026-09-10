@@ -22,6 +22,8 @@ type AdminUserSummary struct {
 	Country          string
 	Address          string
 	Position         string
+	Timezone         string
+	Locale           string
 	Status           string
 	Source           string
 	KratosIdentityID string
@@ -119,6 +121,8 @@ func (s *AdminUserService) ListUsers(ctx context.Context, params repository.List
 			Country:          u.Country,
 			Address:          u.Address,
 			Position:         u.Position,
+			Timezone:         u.Timezone,
+			Locale:           u.Locale,
 			Status:           u.Status,
 			Source:           u.Source,
 			KratosIdentityID: u.KratosIdentityID,

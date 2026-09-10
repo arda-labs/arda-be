@@ -49,7 +49,7 @@ func scanUserRow(scanner interface {
 	return scanner.Scan(&u.ID, &u.Subject, &u.KratosIdentityID, &u.Username, &u.Email, &u.DisplayName, &u.Nickname,
 		&u.FirstName, &u.LastName, &u.PhoneNumber, &u.Birthdate, &u.Gender, &u.Address, &u.Country,
 		&u.Source, &u.Status, &u.TenantID, &u.AvatarFileID, &u.PictureURL, &u.CoverFileID, &u.CoverImageURL,
-		&u.Department, &u.Position, &u.EmployeeID, &u.ApprovalLevel, &u.DailyLimit, &u.Bio,
+		&u.Department, &u.Position, &u.EmployeeID, &u.ApprovalLevel, &u.DailyLimit, &u.Bio, &u.Timezone, &u.Locale,
 		&u.CreatedAt, &u.UpdatedAt)
 }
 
@@ -113,6 +113,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, params ListUsersParams) 
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		       created_at, updated_at
 		FROM iam_users
 		WHERE %s
@@ -204,6 +205,7 @@ func (r *UserRepository) UpdateUserAvatar(ctx context.Context, userID, avatarFil
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		          COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		          created_at, updated_at
 	`, userID, avatarFileID, pictureURL)
 	u := &domain.User{}
@@ -230,6 +232,7 @@ func (r *UserRepository) UpdateUserCover(ctx context.Context, userID, coverFileI
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		          COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		          created_at, updated_at
 	`, userID, coverFileID, coverImageURL)
 	u := &domain.User{}
@@ -242,7 +245,7 @@ func (r *UserRepository) UpdateUserCover(ctx context.Context, userID, coverFileI
 	return u, nil
 }
 
-func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio string) (*domain.User, error) {
+func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio, timezone, locale string) (*domain.User, error) {
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE iam_users
 		SET display_name = $2,
@@ -260,17 +263,20 @@ func (r *UserRepository) UpdateUserProfile(ctx context.Context, userID, name, ni
 		    approval_level = $14,
 		    daily_limit = $15,
 		    bio = $16,
+		    timezone = $17,
+		    locale = $18,
 		    updated_at = now()
-		WHERE id = $1
-		RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
-		          COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
-		          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
-		       COALESCE(source,'internal'), status, tenant_id,
-		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
-		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
-		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
-		          created_at, updated_at
-	`, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio)
+	WHERE id = $1
+	RETURNING id, external_subject, COALESCE(kratos_identity_id,''), username, email, display_name,
+	          COALESCE(nickname,''), COALESCE(first_name,''), COALESCE(last_name,''),
+	          COALESCE(phone_number,''), COALESCE(birthdate,''), COALESCE(gender,''), COALESCE(address,''), COALESCE(country,''),
+	       COALESCE(source,'internal'), status, tenant_id,
+	          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
+	          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
+	          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+	          COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
+	          created_at, updated_at
+	`, userID, name, nickname, firstName, lastName, phoneNumber, birthdate, gender, address, country, position, department, employeeID, approvalLevel, dailyLimit, bio, timezone, locale)
 	u := &domain.User{}
 	if err := scanUserRow(row, u); err != nil {
 		if err == sql.ErrNoRows {
@@ -295,6 +301,7 @@ func (r *UserRepository) UpdateUserEmail(ctx context.Context, userID, email stri
 		          COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		          COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		          COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		          COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		          created_at, updated_at
 	`, userID, email)
 	u := &domain.User{}
@@ -641,6 +648,7 @@ func (r *UserRepository) GetUserBySubject(ctx context.Context, subject string) (
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		       created_at, updated_at
 		FROM iam_users
 		WHERE external_subject = $1
@@ -659,6 +667,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		       created_at, updated_at
 		FROM iam_users
 		WHERE id = $1
@@ -678,6 +687,7 @@ func (r *UserRepository) GetUserByIDScoped(ctx context.Context, id, tenantID str
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		       created_at, updated_at
 		FROM iam_users
 		WHERE id = $1 AND tenant_id = $2
@@ -698,6 +708,7 @@ func (r *UserRepository) GetUsersByIDs(ctx context.Context, ids []string) ([]dom
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		       created_at, updated_at
 		FROM iam_users
 		WHERE id = ANY($1)
@@ -727,6 +738,7 @@ func (r *UserRepository) GetUserByKratosIdentityID(ctx context.Context, identity
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		       created_at, updated_at
 		FROM iam_users
 		WHERE kratos_identity_id = $1
@@ -745,6 +757,7 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		       created_at, updated_at
 		FROM iam_users
 		WHERE username = $1
@@ -763,6 +776,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*dom
 		       COALESCE(avatar_file_id,''), COALESCE(picture_url,''), COALESCE(cover_file_id,''), COALESCE(cover_image_url,''),
 		       COALESCE(department,''), COALESCE(position,''), COALESCE(employee_id,''),
 		       COALESCE(approval_level,''), COALESCE(daily_limit,''), COALESCE(bio,''),
+		       COALESCE(timezone,'Asia/Ho_Chi_Minh'), COALESCE(locale,'vi-VN'),
 		       created_at, updated_at
 		FROM iam_users
 		WHERE email = $1

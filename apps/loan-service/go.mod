@@ -9,6 +9,7 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-money v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-time v0.0.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/shopspring/decimal v1.4.0
@@ -46,3 +47,5 @@ replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
 replace github.com/arda-labs/arda/libs/go/arda-money => ../../libs/go/arda-money
 
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
+
+replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time

@@ -3,11 +3,11 @@ package handler
 import (
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // EODHandler exposes the COB trigger + job definitions (P2.4).
@@ -32,7 +32,7 @@ func (h *EODHandler) RunCOB(w http.ResponseWriter, r *http.Request) {
 	}
 	businessDate := r.URL.Query().Get("business_date")
 	if businessDate == "" {
-		businessDate = time.Now().Format("2006-01-02")
+		businessDate = ardatime.Today()
 	}
 	result, err := h.svc.Run(r.Context(), tenantID, businessDate)
 	if err != nil {

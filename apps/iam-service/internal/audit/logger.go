@@ -32,7 +32,7 @@ func New(service string, db DBWriter) *Logger {
 
 // Event logs an authentication or authorization event.
 func (l *Logger) Event(ctx context.Context, e *domain.AuthEvent) {
-	e.Timestamp = time.Now()
+	e.Timestamp = time.Now().UTC()
 	e.ServiceName = l.service
 	e.Details = redactDetails(e.Details)
 

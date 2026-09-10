@@ -94,6 +94,7 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			Name: u.Name, Status: u.Status, Source: u.Source,
 			Nickname: u.Nickname, FirstName: u.FirstName, LastName: u.LastName,
 			Gender: u.Gender, Country: u.Country, Address: u.Address, Position: u.Position,
+			Timezone: u.Timezone, Locale: u.Locale,
 			KratosIdentityID: u.KratosIdentityID, Roles: u.Roles,
 			TenantID: u.TenantID, CreatedAt: u.CreatedAt.Format(time.RFC3339),
 		}))

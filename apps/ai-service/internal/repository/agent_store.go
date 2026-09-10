@@ -87,7 +87,7 @@ func (s *SQLRunStore) SaveAgent(ctx context.Context, agent AgentConfig) (*AgentC
 	if agent.Temperature <= 0 || agent.Temperature > 2 {
 		agent.Temperature = 0.2
 	}
-	now := time.Now()
+	now := time.Now().UTC()
 	agent.UpdatedAt = now
 
 	_, err := s.db.ExecContext(ctx, `

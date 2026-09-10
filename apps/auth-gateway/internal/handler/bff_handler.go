@@ -936,6 +936,8 @@ func sessionUserFromIAM(uc *iamclient.UserContext, fallback *session.UserInfo) *
 		IsGlobalAdmin:            uc.IsGlobalAdmin,
 		GlobalCapabilitiesLoaded: uc.GlobalCapabilitiesLoaded,
 		AuthVersion:              uc.AuthVersion,
+		Timezone:                 uc.Timezone,
+		Locale:                   uc.Locale,
 	}
 	if len(uc.TenantMemberships) > 0 {
 		info.TenantMemberships = make([]session.TenantMembership, 0, len(uc.TenantMemberships))

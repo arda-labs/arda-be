@@ -10,6 +10,7 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-media v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-time v0.0.0
 	github.com/casbin/casbin/v3 v3.10.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/pressly/goose/v3 v3.27.1
@@ -55,5 +56,7 @@ replace github.com/arda-labs/arda/libs/go/arda-media => ../../libs/go/arda-media
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
+
+replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
 
 replace github.com/arda-labs/arda/libs/go/arda-export => ../../libs/go/arda-export

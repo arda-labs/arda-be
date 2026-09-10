@@ -41,6 +41,7 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-time v0.0.0-00010101000000-000000000000
 	github.com/dop251/goja v0.0.0-20260822123354-58e940e0d230
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/nats-io/nats.go v1.52.0
@@ -49,3 +50,5 @@ require (
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
+
+replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time

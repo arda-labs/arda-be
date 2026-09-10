@@ -8,6 +8,7 @@ import (
 	"time"
 
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // PostingRepository owns all journal SQL for the PostingService.
@@ -30,7 +31,7 @@ type ResolvedAccount struct {
 // on the accounting date (exact debt-group/currency match wins, then blank).
 func (r *PostingRepository) ResolveAccount(ctx context.Context, tenantID, classification, debtGroup, currency, onDate string) (*ResolvedAccount, error) {
 	if onDate == "" {
-		onDate = time.Now().Format("2006-01-02")
+		onDate = ardatime.Today()
 	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT m.coa_version, m.coa_acc_code, COALESCE(a.name, '')
@@ -60,7 +61,7 @@ func (r *PostingRepository) ResolveAccount(ctx context.Context, tenantID, classi
 // date — enforcing is_postable and the account's effective window.
 func (r *PostingRepository) ResolveAccountDirect(ctx context.Context, tenantID, accountCode, coaVersion, onDate string) (*ResolvedAccount, error) {
 	if onDate == "" {
-		onDate = time.Now().Format("2006-01-02")
+		onDate = ardatime.Today()
 	}
 	if coaVersion == "" {
 		err := r.db.QueryRowContext(ctx, `
@@ -308,9 +309,9 @@ func (r *PostingRepository) MarkReversed(ctx context.Context, tx *sql.Tx, tenant
 // JournalEntryRef is the minimal header the posting-case service reads to
 // fail fast when a cancellation case references a missing entry.
 type JournalEntryRef struct {
-	ID     string
+	ID      string
 	EntryNo int64
-	Status string
+	Status  string
 }
 
 // FindEntryByEntryNo resolves a human journal number to its entry id/status.

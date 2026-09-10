@@ -1,0 +1,7 @@
+-- +goose Up
+ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Ho_Chi_Minh';
+ALTER TABLE iam_users ADD COLUMN IF NOT EXISTS locale VARCHAR(16) NOT NULL DEFAULT 'vi-VN';
+
+-- +goose Down
+ALTER TABLE iam_users DROP COLUMN IF EXISTS timezone;
+ALTER TABLE iam_users DROP COLUMN IF EXISTS locale;

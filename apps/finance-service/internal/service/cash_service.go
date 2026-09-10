@@ -5,11 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
 
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // CashService records treasury cash transactions (VCM kho quỹ) and posts
@@ -48,7 +48,7 @@ func (s *CashService) Record(ctx context.Context, tenantID string, in *CashTxnIn
 		in.CurrencyCode = "VND"
 	}
 	if in.TxnDate == "" {
-		in.TxnDate = time.Now().Format("2006-01-02")
+		in.TxnDate = ardatime.Today()
 	}
 	if in.TxnDate == "" || len(in.TxnDate) != 10 || in.TxnDate[4] != '-' || in.TxnDate[7] != '-' {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "txn_date must be YYYY-MM-DD")

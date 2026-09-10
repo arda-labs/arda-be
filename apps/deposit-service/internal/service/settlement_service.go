@@ -13,6 +13,7 @@ import (
 	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	"github.com/shopspring/decimal"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // SettlementService runs deposit open/settle movements. Posting goes through
@@ -205,7 +206,7 @@ func mapErr(err error) error {
 }
 
 func todayDep() string {
-	return time.Now().Format("2006-01-02")
+	return ardatime.Today()
 }
 
 func addMonths(dateStr string, months int) string {

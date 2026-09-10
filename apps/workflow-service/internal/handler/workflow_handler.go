@@ -18,6 +18,7 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -1695,17 +1696,22 @@ func safeFilename(name string) string {
 	return name
 }
 
+// parseDate parses filter bounds: RFC3339 keeps the client's explicit
+// offset; a date-only value resolves as midnight in the business timezone
+// (not UTC) per docs/db-schema-conventions.md.
 func parseDate(values ...string) *time.Time {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			continue
 		}
-		for _, layout := range []string{time.RFC3339, "2006-01-02"} {
-			parsed, err := time.Parse(layout, value)
-			if err == nil {
-				return &parsed
-			}
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err == nil {
+			return &parsed
+		}
+		local, err := ardatime.ParseDay(value)
+		if err == nil {
+			return &local
 		}
 	}
 	return nil

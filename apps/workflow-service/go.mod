@@ -48,6 +48,7 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-leakcheck v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-time v0.0.0
 	github.com/camunda/zeebe/clients/go/v8 v8.5.5
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/pressly/goose/v3 v3.27.1
@@ -57,3 +58,5 @@ require (
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-leakcheck => ../../libs/go/arda-leakcheck
+
+replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time

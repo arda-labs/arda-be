@@ -3,7 +3,8 @@ package service
 import (
 	"context"
 	"database/sql"
-	"time"
+
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // TrialBalanceEntry is one trial-balance row: per account, per currency.
@@ -19,11 +20,11 @@ type TrialBalanceEntry struct {
 
 // TrialBalanceResult is the P1a journal-aggregated trial balance.
 type TrialBalanceResult struct {
-	TenantID string               `json:"tenant_id"`
-	AsOf     string               `json:"as_of"`
-	Entries  []TrialBalanceEntry  `json:"entries"`
-	TotalDebitMinor  int64         `json:"total_debit_minor"`
-	TotalCreditMinor int64         `json:"total_credit_minor"`
+	TenantID         string              `json:"tenant_id"`
+	AsOf             string              `json:"as_of"`
+	Entries          []TrialBalanceEntry `json:"entries"`
+	TotalDebitMinor  int64               `json:"total_debit_minor"`
+	TotalCreditMinor int64               `json:"total_credit_minor"`
 }
 
 // TrialBalanceService aggregates fin_journal_lines (+ fin_opening_balances)
@@ -38,7 +39,7 @@ func NewTrialBalanceService(db *sql.DB) *TrialBalanceService {
 
 func (s *TrialBalanceService) TrialBalance(ctx context.Context, tenantID, asOf string) (*TrialBalanceResult, error) {
 	if asOf == "" {
-		asOf = time.Now().Format("2006-01-02")
+		asOf = ardatime.Today()
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		WITH lines AS (

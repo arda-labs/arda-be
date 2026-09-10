@@ -128,7 +128,7 @@ func handleCreateConnector(w http.ResponseWriter, r *http.Request, store runStor
 		TargetSource: targetSource,
 		SyncSchedule: schedule,
 		Status:       "synced",
-		LastSyncAt:   time.Now(),
+		LastSyncAt:   time.Now().UTC(),
 		DocCount:     0,
 		TotalChunks:  0,
 	})

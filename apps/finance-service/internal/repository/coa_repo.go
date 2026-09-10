@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/domain"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // CoaRepository implements the COA v2 definition layer (versions, chart tree,
@@ -224,7 +224,7 @@ func (r *CoaRepository) ResolveClassification(ctx context.Context, tenantID, cla
 		return nil, err
 	}
 	if onDate == "" {
-		onDate = time.Now().Format("2006-01-02")
+		onDate = ardatime.Today()
 	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT m.classification, m.coa_version, m.coa_acc_code, a.acc_type, a.acc_nature

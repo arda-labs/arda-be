@@ -35,8 +35,8 @@ func defaultStrategy(tenantID string) TenantRAGStrategy {
 		RerankerModel:       "cohere-rerank-v3.5",
 		TopK:                20,
 		TopN:                5,
-		CreatedAt:           time.Now(),
-		UpdatedAt:           time.Now(),
+		CreatedAt:           time.Now().UTC(),
+		UpdatedAt:           time.Now().UTC(),
 	}
 }
 

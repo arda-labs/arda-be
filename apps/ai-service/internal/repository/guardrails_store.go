@@ -31,8 +31,8 @@ func defaultGuardrails(tenantID string) TenantGuardrails {
 		HallucinationCheck:     true,
 		ZeroRetention:          true,
 		InjectionThreshold:     0.85,
-		CreatedAt:              time.Now(),
-		UpdatedAt:              time.Now(),
+		CreatedAt:              time.Now().UTC(),
+		UpdatedAt:              time.Now().UTC(),
 	}
 }
 

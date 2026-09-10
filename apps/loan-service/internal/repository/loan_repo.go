@@ -14,6 +14,7 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
 	"github.com/shopspring/decimal"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // Sentinel errors mapped to HTTP statuses by the service layer.
@@ -732,7 +733,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 		if termCount > 0 {
 			start := item.EffectiveDate
 			if start == nil || *start == "" {
-				today := time.Now().Format("2006-01-02")
+				today := ardatime.Today()
 				start = &today
 			}
 			if err := r.RegeneratePlans(ctx, tenantID, *item.AgreementCode, termCount, *start); err != nil {
@@ -907,7 +908,7 @@ func (r *LoanRepository) RegeneratePlans(ctx context.Context, tenantID, agreemen
 
 	start, err := time.Parse("2006-01-02", startDate)
 	if err != nil {
-		start = time.Now().UTC()
+		return fmt.Errorf("invalid effective start date %q: %w", startDate, err)
 	}
 	plans := make([]domain.RepayPlan, 0, termCount)
 	remaining := outstanding

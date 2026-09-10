@@ -18,6 +18,8 @@ type adminUserItemJSON struct {
 	Country          string   `json:"country"`
 	Address          string   `json:"address"`
 	Position         string   `json:"position"`
+	Timezone         string   `json:"timezone"`
+	Locale           string   `json:"locale"`
 	Status           string   `json:"status"`
 	Source           string   `json:"source"`
 	KratosIdentityID string   `json:"kratos_identity_id"`
@@ -32,6 +34,7 @@ func toAdminUserItemJSON(u adminUserListFields) adminUserItemJSON {
 		ID: u.ID, Username: u.Username, Email: u.Email, Name: u.Name,
 		Nickname: u.Nickname, FirstName: u.FirstName, LastName: u.LastName,
 		Gender: u.Gender, Country: u.Country, Address: u.Address, Position: u.Position,
+		Timezone: u.Timezone, Locale: u.Locale,
 		Status: u.Status, Source: u.Source, KratosIdentityID: u.KratosIdentityID,
 		Roles: u.Roles, TenantID: u.TenantID, CreatedAt: u.CreatedAt,
 	}
@@ -39,9 +42,9 @@ func toAdminUserItemJSON(u adminUserListFields) adminUserItemJSON {
 
 type adminUserListFields struct {
 	ID, Username, Email, Name, Nickname, FirstName, LastName string
-	Gender, Country, Address, Position, Status, Source       string
-	KratosIdentityID, TenantID, CreatedAt                      string
-	Roles                                                      []string
+	Gender, Country, Address, Position, Timezone, Locale     string
+	Status, Source, KratosIdentityID, TenantID, CreatedAt    string
+	Roles                                                    []string
 }
 
 func toAdminUserDetailJSON(u *domain.User, roles []string) adminUserItemJSON {
@@ -52,6 +55,7 @@ func toAdminUserDetailJSON(u *domain.User, roles []string) adminUserItemJSON {
 		ID: u.ID, Username: u.Username, Email: u.Email, Name: u.DisplayName,
 		Nickname: u.Nickname, FirstName: u.FirstName, LastName: u.LastName,
 		Gender: u.Gender, Country: u.Country, Address: u.Address, Position: u.Position,
+		Timezone: u.Timezone, Locale: u.Locale,
 		Status: u.Status, Source: u.Source, KratosIdentityID: u.KratosIdentityID,
 		Roles: roles, TenantID: u.TenantID,
 		CreatedAt: u.CreatedAt.Format(time.RFC3339),

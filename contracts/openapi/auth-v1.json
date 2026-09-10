@@ -56,7 +56,9 @@
           "orgIds": { "type": "array", "items": { "type": "string" } },
           "roles": { "type": "array", "items": { "type": "string" } },
           "permissions": { "type": "array", "items": { "type": "string" } },
-          "authVersion": { "type": "integer", "minimum": 1 }
+          "authVersion": { "type": "integer", "minimum": 1 },
+          "timezone": { "type": "string" },
+          "locale": { "type": "string" }
         }
       },
       "AuthUserSuccess": {

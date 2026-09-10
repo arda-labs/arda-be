@@ -30,7 +30,7 @@ type ConnectorStore interface {
 }
 
 func defaultSeedConnectors(tenantID string) []DataConnector {
-	now := time.Now()
+	now := time.Now().UTC()
 	return []DataConnector{
 		{
 			TenantID:     tenantID,
@@ -142,7 +142,7 @@ func (s *SQLRunStore) CreateConnector(ctx context.Context, conn DataConnector) (
 	}
 	lastSync := conn.LastSyncAt
 	if lastSync.IsZero() {
-		lastSync = time.Now()
+		lastSync = time.Now().UTC()
 	}
 
 	var res DataConnector

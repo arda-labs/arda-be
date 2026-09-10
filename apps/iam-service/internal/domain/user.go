@@ -31,6 +31,8 @@ type User struct {
 	ApprovalLevel    string
 	DailyLimit       string
 	Bio              string
+	Timezone         string
+	Locale           string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -129,6 +131,8 @@ type UserContext struct {
 	ApprovalLevel            string             `json:"approvalLevel,omitempty"`
 	DailyLimit               string             `json:"dailyLimit,omitempty"`
 	Bio                      string             `json:"bio,omitempty"`
+	Timezone                 string             `json:"timezone,omitempty"`
+	Locale                   string             `json:"locale,omitempty"`
 }
 
 // IdentityMapping links an external identity to an internal user.
