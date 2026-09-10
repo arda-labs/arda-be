@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	ardacrypto "github.com/arda-labs/arda/libs/go/arda-crypto"
 )
@@ -15,16 +14,14 @@ var (
 	ErrTenantSettingsNotFound = errors.New("ai tenant settings not found")
 )
 
+// TenantSettings is the single active model configuration for a tenant. It is
+// owned by the tenant through the AI Settings UI; the deployment only supplies
+// shared security controls (gateway token, base-URL allowlist).
 type TenantSettings struct {
-	TenantID     string    `json:"tenantId"`
-	ProviderType string    `json:"providerType"`
-	BaseURL      string    `json:"baseUrl"`
-	APIKey       string    `json:"apiKey"`
-	ModelID      string    `json:"modelId"`
-	Temperature  float32   `json:"temperature"`
-	IsActive     bool      `json:"isActive"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	TenantID string `json:"tenantId"`
+	BaseURL  string `json:"baseUrl"`
+	APIKey   string `json:"apiKey"`
+	ModelID  string `json:"modelId"`
 }
 
 type TenantSettingsStore interface {
@@ -37,25 +34,13 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 		return nil, ErrTenantSettingsNotFound
 	}
 
-	query := `
-		SELECT tenant_id, provider_type, base_url, api_key, model_id, temperature, is_active, created_at, updated_at
-		FROM public.ai_tenant_settings
-		WHERE tenant_id = $1 AND is_active = true
-	`
-
 	var item TenantSettings
 	var rawAPIKey string
-	err := s.db.QueryRowContext(ctx, query, tenantID).Scan(
-		&item.TenantID,
-		&item.ProviderType,
-		&item.BaseURL,
-		&rawAPIKey,
-		&item.ModelID,
-		&item.Temperature,
-		&item.IsActive,
-		&item.CreatedAt,
-		&item.UpdatedAt,
-	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT tenant_id, base_url, api_key, model_id
+		FROM public.ai_tenant_settings
+		WHERE tenant_id = $1 AND is_active = true
+	`, tenantID).Scan(&item.TenantID, &item.BaseURL, &rawAPIKey, &item.ModelID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrTenantSettingsNotFound
@@ -63,18 +48,7 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 		return nil, fmt.Errorf("query tenant settings: %w", err)
 	}
 
-	// Decrypt API key if encrypted
-	if s.encryptionSecret != "" && strings.HasPrefix(rawAPIKey, "enc:v1:") {
-		decrypted, decErr := ardacrypto.Decrypt(rawAPIKey, s.encryptionSecret)
-		if decErr == nil {
-			item.APIKey = decrypted
-		} else {
-			item.APIKey = rawAPIKey
-		}
-	} else {
-		item.APIKey = rawAPIKey
-	}
-
+	item.APIKey = s.decryptSecret(rawAPIKey)
 	return &item, nil
 }
 
@@ -84,43 +58,37 @@ func (s *SQLRunStore) UpsertTenantSettings(ctx context.Context, settings TenantS
 	}
 
 	apiKeyToSave := strings.TrimSpace(settings.APIKey)
-	// If API key is provided and not already encrypted, encrypt it with AES-256-GCM
 	if apiKeyToSave != "" && !strings.HasPrefix(apiKeyToSave, "enc:v1:") && s.encryptionSecret != "" {
 		encrypted, err := ardacrypto.Encrypt(apiKeyToSave, s.encryptionSecret)
-		if err == nil {
-			apiKeyToSave = encrypted
+		if err != nil {
+			return fmt.Errorf("encrypt tenant api key: %w", err)
 		}
+		apiKeyToSave = encrypted
 	}
 
-	query := `
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO public.ai_tenant_settings (
-			tenant_id, provider_type, base_url, api_key, model_id, temperature, is_active, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
+			tenant_id, base_url, api_key, model_id, is_active, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, true, now(), now())
 		ON CONFLICT (tenant_id) DO UPDATE SET
-			provider_type = EXCLUDED.provider_type,
 			base_url = EXCLUDED.base_url,
-			api_key = CASE 
-				WHEN EXCLUDED.api_key = '' OR EXCLUDED.api_key LIKE 'sk-%...%' THEN public.ai_tenant_settings.api_key
-				ELSE EXCLUDED.api_key
-			END,
+			api_key = EXCLUDED.api_key,
 			model_id = EXCLUDED.model_id,
-			temperature = EXCLUDED.temperature,
-			is_active = EXCLUDED.is_active,
+			is_active = true,
 			updated_at = now()
-	`
-
-	_, err := s.db.ExecContext(ctx, query,
-		settings.TenantID,
-		settings.ProviderType,
-		settings.BaseURL,
-		apiKeyToSave,
-		settings.ModelID,
-		settings.Temperature,
-		settings.IsActive,
-	)
+	`, settings.TenantID, strings.TrimRight(strings.TrimSpace(settings.BaseURL), "/"),
+		apiKeyToSave, strings.TrimSpace(settings.ModelID))
 	if err != nil {
 		return fmt.Errorf("upsert tenant settings: %w", err)
 	}
-
 	return nil
+}
+
+func (s *SQLRunStore) decryptSecret(raw string) string {
+	if s.encryptionSecret != "" && strings.HasPrefix(raw, "enc:v1:") {
+		if decrypted, err := ardacrypto.Decrypt(raw, s.encryptionSecret); err == nil {
+			return decrypted
+		}
+	}
+	return raw
 }

@@ -264,25 +264,6 @@ func TestAnalyticsEndpoint(t *testing.T) {
 	}
 }
 
-func TestAgentsEndpoints(t *testing.T) {
-	router := NewRouter()
-	req := httptest.NewRequest(http.MethodGet, "/api/ai/agents", nil)
-	setAIIdentityHeaders(req)
-	res := httptest.NewRecorder()
-	router.ServeHTTP(res, req)
-	if res.Code != http.StatusServiceUnavailable || !strings.Contains(res.Body.String(), "ai.agent_persistence_unavailable") {
-		t.Fatalf("list agents failed: code = %d, body = %s", res.Code, res.Body.String())
-	}
-
-	saveReq := httptest.NewRequest(http.MethodPost, "/api/ai/agents", strings.NewReader(`{"name":"Custom Agent","department":"Tech","modelId":"gemini-2.5-flash","temperature":0.3,"systemPrompt":"test"}`))
-	setAIIdentityHeaders(saveReq)
-	saveRes := httptest.NewRecorder()
-	router.ServeHTTP(saveRes, saveReq)
-	if saveRes.Code != http.StatusServiceUnavailable || !strings.Contains(saveRes.Body.String(), "ai.agent_persistence_unavailable") {
-		t.Fatalf("save agent failed: code = %d, body = %s", saveRes.Code, saveRes.Body.String())
-	}
-}
-
 func setAIIdentityHeaders(req *http.Request) {
 	req.Header.Set("X-Auth-Checked", "true")
 	req.Header.Set("X-User-Id", "user-1")

@@ -79,13 +79,10 @@ func TestSettings_GetAndUpsertMaskedKey(t *testing.T) {
 	store := &fakeSettingsStore{
 		settings: map[string]*repository.TenantSettings{
 			"tenant-test": {
-				TenantID:     "tenant-test",
-				ProviderType: "openai",
-				BaseURL:      "https://api.openai.com/v1",
-				APIKey:       "sk-proj-test-provider-key-abcd89",
-				ModelID:      "gpt-4o",
-				Temperature:  0.2,
-				IsActive:     true,
+				TenantID: "tenant-test",
+				BaseURL:  "https://api.openai.com/v1",
+				APIKey:   "sk-proj-test-provider-key-abcd89",
+				ModelID:  "gpt-4o",
 			},
 		},
 	}
@@ -116,8 +113,8 @@ func TestSettings_GetAndUpsertMaskedKey(t *testing.T) {
 		t.Fatalf("expected modelId 'gpt-4o', got %v", getEnvelope.Result.ModelID)
 	}
 
-	// 2. PUT Settings
-	updatePayload := `{"providerType":"openrouter","baseUrl":"https://openrouter.ai/api/v1","apiKey":"sk-or-new-test-key-efgh90","modelId":"anthropic/claude-3.5-sonnet","temperature":0.3}`
+	// 2. PUT with a new key persists it
+	updatePayload := `{"baseUrl":"https://openrouter.ai/api/v1","apiKey":"sk-or-new-test-key-efgh90","modelId":"anthropic/claude-3.5-sonnet"}`
 	putReq := httptest.NewRequest(http.MethodPut, "/api/ai/settings", strings.NewReader(updatePayload))
 	adminGatewayHeaders(putReq)
 	putRes := httptest.NewRecorder()
@@ -128,13 +125,40 @@ func TestSettings_GetAndUpsertMaskedKey(t *testing.T) {
 	}
 
 	saved := store.settings["tenant-test"]
-	if saved.ModelID != "anthropic/claude-3.5-sonnet" || saved.ProviderType != "openrouter" {
+	if saved.ModelID != "anthropic/claude-3.5-sonnet" || saved.APIKey != "sk-or-new-test-key-efgh90" {
 		t.Fatalf("settings not saved properly: %+v", saved)
 	}
 }
 
+func TestSettings_MaskedKeyKeepsStoredSecret(t *testing.T) {
+	store := &fakeSettingsStore{
+		settings: map[string]*repository.TenantSettings{
+			"tenant-test": {
+				TenantID: "tenant-test",
+				BaseURL:  "https://api.openai.com/v1",
+				APIKey:   "sk-proj-test-provider-key-abcd89",
+				ModelID:  "gpt-4o",
+			},
+		},
+	}
+	router := NewRouterWithOptions(store, nil, RouterOptions{})
+
+	updatePayload := `{"baseUrl":"https://api.openai.com/v1","apiKey":"sk-p...cd89","modelId":"gpt-4o-mini"}`
+	putReq := httptest.NewRequest(http.MethodPut, "/api/ai/settings", strings.NewReader(updatePayload))
+	adminGatewayHeaders(putReq)
+	putRes := httptest.NewRecorder()
+	router.ServeHTTP(putRes, putReq)
+
+	if putRes.Code != http.StatusOK {
+		t.Fatalf("expected 200 on PUT, got %d: %s", putRes.Code, putRes.Body.String())
+	}
+	if saved := store.settings["tenant-test"]; saved.APIKey != "sk-proj-test-provider-key-abcd89" {
+		t.Fatalf("masked key must not overwrite the stored secret: %+v", saved)
+	}
+}
+
 func TestSettings_TestConnection(t *testing.T) {
-	// Mock OpenAI upstream server
+	// Mock OpenAI-compatible upstream server
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer test-key" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -150,7 +174,6 @@ func TestSettings_TestConnection(t *testing.T) {
 	store := &fakeSettingsStore{}
 	router := NewRouterWithOptions(store, nil, RouterOptions{AllowLocalModelURLs: true})
 
-	// Test with correct key
 	testBody := `{"baseUrl":"` + mockServer.URL + `","apiKey":"test-key","modelId":"gpt-4o-mini"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/ai/settings/test", strings.NewReader(testBody))
 	adminGatewayHeaders(req)
@@ -168,7 +191,6 @@ func TestSettings_TestConnection(t *testing.T) {
 		t.Fatalf("expected test connection success, got error: %s", testEnvelope.Result.Error)
 	}
 
-	// Test with bad key
 	badBody := `{"baseUrl":"` + mockServer.URL + `","apiKey":"wrong-key","modelId":"gpt-4o-mini"}`
 	req2 := httptest.NewRequest(http.MethodPost, "/api/ai/settings/test", strings.NewReader(badBody))
 	adminGatewayHeaders(req2)
@@ -184,6 +206,38 @@ func TestSettings_TestConnection(t *testing.T) {
 	}
 	if !strings.Contains(badEnvelope.Result.Error, "401") {
 		t.Fatalf("expected HTTP 401 in error message, got: %s", badEnvelope.Result.Error)
+	}
+}
+
+func TestSettings_TestConnectionSendsGatewayToken(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("cf-aig-authorization") != "Bearer gw-token" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"pong"}}]}`))
+	}))
+	defer mockServer.Close()
+
+	store := &fakeSettingsStore{}
+	router := NewRouterWithOptions(store, nil, RouterOptions{
+		AllowLocalModelURLs: true,
+		ModelGatewayToken:   "gw-token",
+	})
+
+	testBody := `{"baseUrl":"` + mockServer.URL + `","apiKey":"test-key","modelId":"gpt-4o-mini"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/settings/test", strings.NewReader(testBody))
+	adminGatewayHeaders(req)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	var envelope struct {
+		Result testConnectionResponse `json:"result"`
+	}
+	_ = json.Unmarshal(res.Body.Bytes(), &envelope)
+	if !envelope.Result.Success {
+		t.Fatalf("expected gateway-token test to succeed, got: %s", envelope.Result.Error)
 	}
 }
 
@@ -220,9 +274,8 @@ func TestSettings_BaseURLAllowlistEnforced(t *testing.T) {
 		ModelBaseURLAllowlist: []string{gateway},
 	})
 
-	// PUT with a disallowed base URL → 400 ai.base_url_not_allowed
 	putReq := httptest.NewRequest(http.MethodPut, "/api/ai/settings",
-		strings.NewReader(`{"providerType":"openai","baseUrl":"https://api.openai.com/v1","apiKey":"sk-test-key-abc123def","modelId":"gpt-4o-mini"}`))
+		strings.NewReader(`{"baseUrl":"https://api.openai.com/v1","apiKey":"sk-test-key-abc123def","modelId":"gpt-4o-mini"}`))
 	adminGatewayHeaders(putReq)
 	putRes := httptest.NewRecorder()
 	router.ServeHTTP(putRes, putReq)
@@ -236,8 +289,7 @@ func TestSettings_BaseURLAllowlistEnforced(t *testing.T) {
 		t.Fatalf("settings must not be persisted when base URL is rejected")
 	}
 
-	// PUT with an allowed gateway sub-path → 200 and persisted
-	allowedPayload := `{"providerType":"openai","baseUrl":"` + gateway + `/openai","apiKey":"sk-gw-key-654321","modelId":"gpt-4o-mini"}`
+	allowedPayload := `{"baseUrl":"` + gateway + `/openai","apiKey":"sk-gw-key-654321","modelId":"gpt-4o-mini"}`
 	putReq2 := httptest.NewRequest(http.MethodPut, "/api/ai/settings", strings.NewReader(allowedPayload))
 	adminGatewayHeaders(putReq2)
 	putRes2 := httptest.NewRecorder()

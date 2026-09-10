@@ -7,8 +7,22 @@ import (
 	"time"
 )
 
+type circuitFake struct {
+	err    error
+	output string
+	calls  int
+}
+
+func (f *circuitFake) StreamChat(_ context.Context, _ []Message, _ []ToolDef, cb StreamCallbacks) (string, Usage, error) {
+	f.calls++
+	if f.output != "" && cb.OnTextDelta != nil {
+		cb.OnTextDelta(f.output)
+	}
+	return "", Usage{}, f.err
+}
+
 func TestCircuitOpensAfterPreOutputFailures(t *testing.T) {
-	f := &chainFake{err: errors.New("down")}
+	f := &circuitFake{err: errors.New("down")}
 	c := NewCircuitBreakerProvider(f, 2, time.Minute)
 	for i := 0; i < 2; i++ {
 		_, _, _ = c.StreamChat(context.Background(), nil, nil, StreamCallbacks{})
@@ -19,7 +33,7 @@ func TestCircuitOpensAfterPreOutputFailures(t *testing.T) {
 }
 
 func TestCircuitDoesNotCountPartialFailure(t *testing.T) {
-	f := &chainFake{err: errors.New("disconnect"), output: "partial"}
+	f := &circuitFake{err: errors.New("disconnect"), output: "partial"}
 	c := NewCircuitBreakerProvider(f, 1, time.Minute)
 	_, _, _ = c.StreamChat(context.Background(), nil, nil, StreamCallbacks{})
 	if _, _, err := c.StreamChat(context.Background(), nil, nil, StreamCallbacks{}); err == ErrCircuitOpen {

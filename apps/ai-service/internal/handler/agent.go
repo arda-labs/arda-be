@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -160,135 +159,36 @@ func buildIdentityContext(scope tools.Context) string {
 	return b.String()
 }
 
-// selectModelProvider resolves the provider for a run. A saved tenant
-// configuration is the model source of truth; the platform provider wired
-// from env only exists as a development fallback for stores without
-// persistence (production never wires it, see cmd/ai-service/main.go).
-// Nil means "not configured" and the run fails closed.
+// selectModelProvider resolves the tenant's active model configuration from
+// the AI Settings UI (ai_tenant_settings). The deployment only supplies the
+// shared gateway token and base-URL allowlist. Nil means "not configured" and
+// the run fails closed.
+//
+// Stores without tenant persistence (tests, local harnesses) may pass a
+// development provider through RouterOptions.ModelProvider; production never
+// wires one.
 func selectModelProvider(ctx context.Context, store runStore, scope tools.Context, options RouterOptions) model.Provider {
 	settingsStore, ok := store.(repository.TenantSettingsStore)
 	if !ok {
-		// Development/local mode without persistence.
 		return options.ModelProvider
 	}
-	tenantSettings, err := settingsStore.GetTenantSettings(ctx, scope.TenantID)
+	settings, err := settingsStore.GetTenantSettings(ctx, scope.TenantID)
 	if err != nil {
 		if errors.Is(err, repository.ErrTenantSettingsNotFound) {
 			return options.ModelProvider
 		}
 		return nil
 	}
-	if tenantSettings == nil {
+	if settings == nil {
 		return options.ModelProvider
 	}
-	if tenantSettings.BaseURL == "" || tenantSettings.ModelID == "" || !baseURLAllowed(options.ModelBaseURLAllowlist, tenantSettings.BaseURL) {
+	if settings.BaseURL == "" || settings.ModelID == "" || !baseURLAllowed(options.ModelBaseURLAllowlist, settings.BaseURL) {
 		return nil
 	}
-	primary := model.Provider(model.NewClient(tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID, nil))
 	if options.ModelPool != nil {
-		primary = options.ModelPool.GetProvider(scope.TenantID, tenantSettings.BaseURL, tenantSettings.APIKey, tenantSettings.ModelID)
+		return options.ModelPool.GetProvider(scope.TenantID, settings.BaseURL, settings.APIKey, settings.ModelID)
 	}
-	// Optional profile routing adds pre-output failover without changing the
-	// tenant settings contract. Profiles are matched by name, provider type, or
-	// provider hostname in the configured primary/secondary/failover order.
-	profileStore, hasProfiles := store.(repository.ProfileStore)
-	routingStore, hasRouting := store.(repository.RoutingStore)
-	if !hasProfiles || !hasRouting {
-		return primary
-	}
-	profiles, err := profileStore.ListProfiles(ctx, scope.TenantID)
-	if err != nil || len(profiles) == 0 {
-		return primary
-	}
-	rules, err := routingStore.GetRoutingRules(ctx, scope.TenantID)
-	if err != nil || rules == nil {
-		return primary
-	}
-	if options.ProviderRegistry != nil {
-		features := make([]string, 0, 2)
-		if options.ModelSDKTypes != "" {
-			features = append(features, "code_mode")
-		}
-		routingCtx := model.RoutingContext{
-			TenantPlan:   "starter",
-			RiskLevel:    "low",
-			FeatureFlags: features,
-			RunID:        scope.RequestID,
-		}
-		if regProvider := options.ProviderRegistry.Select(routingCtx); regProvider != nil {
-			primary = regProvider
-		}
-	}
-
-	ordered := []model.Provider{primary}
-	seen := map[string]struct{}{tenantSettings.BaseURL + "\x00" + tenantSettings.ModelID: {}}
-
-	// If specialized routing is set for Code Mode or Fast Model, prioritize matching profile
-	targetModel := ""
-	if options.ModelSDKTypes != "" && rules.CodeModel != "" {
-		targetModel = rules.CodeModel
-	} else if rules.FastModel != "" {
-		targetModel = rules.FastModel
-	}
-	if targetModel != "" {
-		for _, profile := range profiles {
-			if strings.EqualFold(profile.ModelID, targetModel) || strings.EqualFold(profile.Name, targetModel) {
-				if baseURLAllowed(options.ModelBaseURLAllowlist, profile.BaseURL) {
-					var specialized model.Provider
-					if options.ModelPool != nil {
-						specialized = options.ModelPool.GetProvider(scope.TenantID, profile.BaseURL, profile.APIKey, profile.ModelID)
-					} else {
-						specialized = model.NewCircuitBreakerProvider(model.NewClient(profile.BaseURL, profile.APIKey, profile.ModelID, nil), 3, 30*time.Second)
-					}
-					key := profile.BaseURL + "\x00" + profile.ModelID
-					if _, exists := seen[key]; !exists {
-						ordered = append([]model.Provider{specialized}, ordered...)
-						seen[key] = struct{}{}
-					}
-					break
-				}
-			}
-		}
-	}
-
-	for _, target := range []string{rules.PrimaryProvider, rules.SecondaryProvider, rules.FailoverProvider} {
-		for _, profile := range profiles {
-			if !profileMatchesTarget(profile, target) {
-				continue
-			}
-			key := profile.BaseURL + "\x00" + profile.ModelID
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			if !baseURLAllowed(options.ModelBaseURLAllowlist, profile.BaseURL) {
-				continue
-			}
-			var profileProvider model.Provider
-			if options.ModelPool != nil {
-				profileProvider = options.ModelPool.GetProvider(scope.TenantID, profile.BaseURL, profile.APIKey, profile.ModelID)
-			} else {
-				profileProvider = model.NewCircuitBreakerProvider(model.NewClient(profile.BaseURL, profile.APIKey, profile.ModelID, nil), 3, 30*time.Second)
-			}
-			ordered = append(ordered, profileProvider)
-			seen[key] = struct{}{}
-		}
-	}
-	if len(ordered) == 1 {
-		return primary
-	}
-	return model.NewChainProvider(ordered...)
-}
-
-func profileMatchesTarget(profile repository.TenantSettingProfile, target string) bool {
-	target = strings.ToLower(strings.TrimSpace(target))
-	if target == "" {
-		return false
-	}
-	if target == strings.ToLower(profile.Name) || target == strings.ToLower(profile.ProviderType) {
-		return true
-	}
-	u, err := url.Parse(profile.BaseURL)
-	return err == nil && strings.EqualFold(target, u.Hostname())
+	return model.NewCircuitBreakerProvider(model.NewClient(settings.BaseURL, settings.APIKey, settings.ModelID, nil), 3, 30*time.Second)
 }
 
 // agentStepsLoop drives the model↔tool loop shared by fresh runs and resumed
@@ -433,13 +333,6 @@ func agentStepsLoop(
 			recordLLMUsage(usage)
 			if usageStore, ok := store.(repository.UsageSetter); ok {
 				_ = usageStore.SetUsage(ctx, scopeRun, mustJSON(usageTotal))
-			}
-			if costStore, ok := store.(repository.CostSetter); ok {
-				modelID := ""
-				if descriptor, ok := modelProvider.(interface{ ModelID() string }); ok {
-					modelID = descriptor.ModelID()
-				}
-				_ = costStore.SetCost(ctx, scopeRun, model.EstimateCost(modelID, usageTotal.PromptTokens, usageTotal.CompletionTokens))
 			}
 		}
 

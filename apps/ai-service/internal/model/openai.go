@@ -163,6 +163,50 @@ func (c *Client) WithGatewayToken(token string) *Client {
 	return c
 }
 
+// ChatProbe verifies credentials and reachability with a minimal
+// chat-completions request. Unlike Probe (GET /models), it works with gateways
+// that only expose the OpenAI-compatible chat endpoint and applies the same
+// Authorization / cf-aig-authorization headers as real runs.
+func (c *Client) ChatProbe(ctx context.Context) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	payload, err := json.Marshal(map[string]any{
+		"model": c.model,
+		"messages": []map[string]string{
+			{"role": "user", "content": "ping"},
+		},
+		"max_tokens": 16,
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	if c.gatewayToken != "" {
+		req.Header.Set("cf-aig-authorization", "Bearer "+c.gatewayToken)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<10))
+		return fmt.Errorf("provider returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 func NewClient(baseURL, apiKey, model string, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: defaultTimeout}

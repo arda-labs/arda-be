@@ -41,12 +41,15 @@ func TestCatalogEvalLLM(t *testing.T) {
 		t.Skip("live-model eval: set CATALOG_EVAL_LLM=1 plus AI_MODEL_BASE_URL/AI_MODEL_API_KEY/AI_MODEL_ID to run (costs real tokens)")
 	}
 	cfg := config.Load()
-	if cfg.ModelBaseURL == "" || cfg.ModelAPIKey == "" || cfg.ModelID == "" {
+	baseURL := strings.TrimSpace(os.Getenv("AI_MODEL_BASE_URL"))
+	apiKey := strings.TrimSpace(os.Getenv("AI_MODEL_API_KEY"))
+	modelID := strings.TrimSpace(os.Getenv("AI_MODEL_ID"))
+	if baseURL == "" || apiKey == "" || modelID == "" {
 		t.Fatal("CATALOG_EVAL_LLM=1 but AI_MODEL_BASE_URL / AI_MODEL_API_KEY / AI_MODEL_ID are not all set")
 	}
-	provider := model.NewClient(cfg.ModelBaseURL, cfg.ModelAPIKey, cfg.ModelID, nil)
-	if cfg.ModelGatewayToken != "" {
-		provider = provider.WithGatewayToken(cfg.ModelGatewayToken)
+	provider := model.NewClient(baseURL, apiKey, modelID, nil)
+	if gatewayToken := strings.TrimSpace(os.Getenv("AI_MODEL_GATEWAY_TOKEN")); gatewayToken != "" {
+		provider = provider.WithGatewayToken(gatewayToken)
 	}
 
 	questions := loadEvalQuestions(t)

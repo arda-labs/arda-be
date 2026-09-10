@@ -49,10 +49,6 @@ type ModelSetter interface {
 	SetModel(ctx context.Context, run RunContext, provider, modelID string) error
 }
 
-type CostSetter interface {
-	SetCost(ctx context.Context, run RunContext, costUSD float64) error
-}
-
 type RunFailureSetter interface {
 	FailRun(ctx context.Context, run RunContext, errorCode string) error
 }
@@ -372,23 +368,6 @@ func (s *SQLRunStore) SetUsage(ctx context.Context, run RunContext, usageJSON st
 	return nil
 }
 
-func (s *SQLRunStore) SetCost(ctx context.Context, run RunContext, costUSD float64) error {
-	if s == nil || s.db == nil {
-		return fmt.Errorf("AI run store is not configured")
-	}
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE public.ai_runs SET cost_usd = GREATEST(0, $4)
-		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
-	`, run.TenantID, run.ActorUserID, run.ExternalRun, costUSD)
-	if err != nil {
-		return fmt.Errorf("persist AI run cost: %w", err)
-	}
-	if rows, _ := result.RowsAffected(); rows == 0 {
-		return fmt.Errorf("AI run not found for cost update")
-	}
-	return nil
-}
-
 func (s *SQLRunStore) SetModel(ctx context.Context, run RunContext, provider, modelID string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("AI run store is not configured")
@@ -530,12 +509,11 @@ type AnalyticsSummary struct {
 	TotalTokens      int64           `json:"totalTokens"`
 	PromptTokens     int64           `json:"promptTokens"`
 	CompletionTokens int64           `json:"completionTokens"`
-	EstimatedCostUSD float64         `json:"estimatedCostUsd"`
 	Latency          LatencyStats    `json:"latency"`
 	Feedback         FeedbackStats   `json:"feedback"`
 	RAGQuality       RAGQualityStats `json:"ragQuality"`
 	RunsByDay        []DayTrend      `json:"runsByDay"`
-	CostByModel      []ModelCost     `json:"costByModel"`
+	ModelsByUsage    []ModelUsage    `json:"modelsByUsage"`
 }
 
 type LatencyStats struct {
@@ -559,30 +537,27 @@ type RAGQualityStats struct {
 }
 
 type DayTrend struct {
-	Date    string  `json:"date"`
-	Runs    int64   `json:"runs"`
-	Tokens  int64   `json:"tokens"`
-	CostUSD float64 `json:"costUsd"`
-	Errors  int64   `json:"errors"`
+	Date   string `json:"date"`
+	Runs   int64  `json:"runs"`
+	Tokens int64  `json:"tokens"`
+	Errors int64  `json:"errors"`
 }
 
-type ModelCost struct {
-	ModelID  string  `json:"modelId"`
-	Provider string  `json:"provider"`
-	Runs     int64   `json:"runs"`
-	Tokens   int64   `json:"tokens"`
-	CostUSD  float64 `json:"costUsd"`
+type ModelUsage struct {
+	ModelID  string `json:"modelId"`
+	Provider string `json:"provider"`
+	Runs     int64  `json:"runs"`
+	Tokens   int64  `json:"tokens"`
 }
 
 func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*AnalyticsSummary, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("analytics persistence is unavailable")
 	}
-	summary := &AnalyticsSummary{RunsByDay: []DayTrend{}, CostByModel: []ModelCost{}}
+	summary := &AnalyticsSummary{RunsByDay: []DayTrend{}, ModelsByUsage: []ModelUsage{}}
 
 	var totalRuns, successRuns, failedRuns int64
 	var totalTokens, promptTokens, completionTokens int64
-	var estimatedCost float64
 	var avgLatency float64
 	err := s.db.QueryRowContext(ctx, `
 		SELECT
@@ -592,11 +567,10 @@ func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*Analy
 			coalesce(avg(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000) FILTER (WHERE finished_at IS NOT NULL), 0),
 			coalesce(sum(CASE WHEN usage->>'total_tokens' ~ '^[0-9]+$' THEN (usage->>'total_tokens')::bigint ELSE 0 END), 0),
 			coalesce(sum(CASE WHEN usage->>'prompt_tokens' ~ '^[0-9]+$' THEN (usage->>'prompt_tokens')::bigint ELSE 0 END), 0),
-			coalesce(sum(CASE WHEN usage->>'completion_tokens' ~ '^[0-9]+$' THEN (usage->>'completion_tokens')::bigint ELSE 0 END), 0),
-			coalesce(sum(cost_usd), 0)
+			coalesce(sum(CASE WHEN usage->>'completion_tokens' ~ '^[0-9]+$' THEN (usage->>'completion_tokens')::bigint ELSE 0 END), 0)
 		FROM public.ai_runs
 		WHERE tenant_id = $1 OR $1 = ''
-	`, tenantID).Scan(&totalRuns, &successRuns, &failedRuns, &avgLatency, &totalTokens, &promptTokens, &completionTokens, &estimatedCost)
+	`, tenantID).Scan(&totalRuns, &successRuns, &failedRuns, &avgLatency, &totalTokens, &promptTokens, &completionTokens)
 
 	if err != nil {
 		return nil, fmt.Errorf("load analytics runs: %w", err)
@@ -611,7 +585,6 @@ func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*Analy
 	summary.TotalTokens = totalTokens
 	summary.PromptTokens = promptTokens
 	summary.CompletionTokens = completionTokens
-	summary.EstimatedCostUSD = estimatedCost
 
 	modelRows, modelErr := s.db.QueryContext(ctx, `
 		SELECT COALESCE(model_id, ''), COALESCE(provider, ''), count(*),
@@ -625,12 +598,12 @@ func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*Analy
 		return nil, fmt.Errorf("load analytics models: %w", modelErr)
 	}
 	for modelRows.Next() {
-		var item ModelCost
+		var item ModelUsage
 		if err := modelRows.Scan(&item.ModelID, &item.Provider, &item.Runs, &item.Tokens); err != nil {
 			modelRows.Close()
 			return nil, fmt.Errorf("scan analytics model: %w", err)
 		}
-		summary.CostByModel = append(summary.CostByModel, item)
+		summary.ModelsByUsage = append(summary.ModelsByUsage, item)
 	}
 	if err := modelRows.Err(); err != nil {
 		modelRows.Close()

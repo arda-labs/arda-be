@@ -1,35 +1,32 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
+// settingsDTO is the tenant-owned active model configuration. The deployment
+// never sets model credentials; tenants configure them in the AI Settings UI.
 type settingsDTO struct {
-	ProviderType string  `json:"providerType"`
-	BaseURL      string  `json:"baseUrl"`
-	APIKey       string  `json:"apiKey"`
-	ModelID      string  `json:"modelId"`
-	Temperature  float32 `json:"temperature"`
-	IsActive     bool    `json:"isActive"`
-	HasAPIKey    bool    `json:"hasApiKey"`
+	BaseURL   string `json:"baseUrl"`
+	APIKey    string `json:"apiKey"`
+	ModelID   string `json:"modelId"`
+	HasAPIKey bool   `json:"hasApiKey"`
 }
 
 type testConnectionRequest struct {
-	ProviderType string `json:"providerType"`
-	BaseURL      string `json:"baseUrl"`
-	APIKey       string `json:"apiKey"`
-	ModelID      string `json:"modelId"`
+	BaseURL string `json:"baseUrl"`
+	APIKey  string `json:"apiKey"`
+	ModelID string `json:"modelId"`
 }
 
 type testConnectionResponse struct {
@@ -51,57 +48,33 @@ func handleGetSettings(w http.ResponseWriter, r *http.Request, store runStore, o
 		return
 	}
 
-	// Platform defaults come from the deployment env so the dialog reflects
-	// the configuration actually in effect, not a fictional openai default.
-	defaultSettings := settingsDTO{
-		ProviderType: "openai",
-		BaseURL:      options.PlatformModelBaseURL,
-		APIKey:       "",
-		ModelID:      options.PlatformModelID,
-		Temperature:  0.2,
-		IsActive:     true,
-		HasAPIKey:    false,
-	}
-	if defaultSettings.BaseURL == "" {
-		defaultSettings.BaseURL = "https://api.openai.com/v1"
-	}
-
+	result := settingsDTO{}
 	settingsStore, ok := store.(repository.TenantSettingsStore)
 	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"success":  true,
-			"errors":   []any{},
-			"messages": []string{},
-			"result":   defaultSettings,
-		})
+		writeSettingsEnvelope(w, result)
 		return
 	}
 
 	settings, err := settingsStore.GetTenantSettings(r.Context(), scope.TenantID)
-	if err != nil {
-		if errors.Is(err, repository.ErrTenantSettingsNotFound) {
-			writeJSON(w, http.StatusOK, map[string]any{
-				"success":  true,
-				"errors":   []any{},
-				"messages": []string{},
-				"result":   defaultSettings,
-			})
-			return
+	switch {
+	case err == nil && settings != nil:
+		result = settingsDTO{
+			BaseURL:   settings.BaseURL,
+			APIKey:    maskAPIKey(settings.APIKey),
+			ModelID:   settings.ModelID,
+			HasAPIKey: strings.TrimSpace(settings.APIKey) != "",
 		}
+	case errors.Is(err, repository.ErrTenantSettingsNotFound):
+		// Not configured yet: the dialog starts empty.
+	default:
 		problem(w, http.StatusInternalServerError, "ai.settings_fetch_failed")
 		return
 	}
 
-	result := settingsDTO{
-		ProviderType: settings.ProviderType,
-		BaseURL:      settings.BaseURL,
-		APIKey:       maskAPIKey(settings.APIKey),
-		ModelID:      settings.ModelID,
-		Temperature:  settings.Temperature,
-		IsActive:     settings.IsActive,
-		HasAPIKey:    strings.TrimSpace(settings.APIKey) != "",
-	}
+	writeSettingsEnvelope(w, result)
+}
 
+func writeSettingsEnvelope(w http.ResponseWriter, result settingsDTO) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":  true,
 		"errors":   []any{},
@@ -135,7 +108,6 @@ func handleUpdateSettings(w http.ResponseWriter, r *http.Request, store runStore
 
 	req.BaseURL = strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
 	req.ModelID = strings.TrimSpace(req.ModelID)
-	req.ProviderType = strings.TrimSpace(req.ProviderType)
 
 	if err := validateProviderURL(req.BaseURL, options.AllowLocalModelURLs); err != nil {
 		problem(w, http.StatusBadRequest, "ai.invalid_base_url")
@@ -149,25 +121,18 @@ func handleUpdateSettings(w http.ResponseWriter, r *http.Request, store runStore
 		problem(w, http.StatusBadRequest, "ai.missing_required_fields")
 		return
 	}
-	if strings.TrimSpace(req.APIKey) == "" {
+
+	apiKey, ok := resolveAPIKey(r.Context(), settingsStore, scope.TenantID, req.APIKey)
+	if !ok {
 		problem(w, http.StatusBadRequest, "ai.missing_required_fields")
 		return
 	}
-	if req.ProviderType == "" {
-		req.ProviderType = "openai"
-	}
-	if req.Temperature <= 0 || req.Temperature > 2 {
-		req.Temperature = 0.2
-	}
 
 	err := settingsStore.UpsertTenantSettings(r.Context(), repository.TenantSettings{
-		TenantID:     scope.TenantID,
-		ProviderType: req.ProviderType,
-		BaseURL:      req.BaseURL,
-		APIKey:       strings.TrimSpace(req.APIKey),
-		ModelID:      req.ModelID,
-		Temperature:  req.Temperature,
-		IsActive:     true,
+		TenantID: scope.TenantID,
+		BaseURL:  req.BaseURL,
+		APIKey:   apiKey,
+		ModelID:  req.ModelID,
 	})
 	if err != nil {
 		problem(w, http.StatusInternalServerError, "ai.settings_save_failed")
@@ -178,9 +143,7 @@ func handleUpdateSettings(w http.ResponseWriter, r *http.Request, store runStore
 		"success":  true,
 		"errors":   []any{},
 		"messages": []string{"AI settings saved successfully"},
-		"result": map[string]any{
-			"saved": true,
-		},
+		"result":   map[string]any{"saved": true},
 	})
 }
 
@@ -202,128 +165,78 @@ func handleTestConnection(w http.ResponseWriter, r *http.Request, store runStore
 	}
 
 	baseURL := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
-	apiKey := strings.TrimSpace(req.APIKey)
 	modelID := strings.TrimSpace(req.ModelID)
 
-	if err := validateProviderURL(baseURL, options.AllowLocalModelURLs); err != nil {
+	writeTestResult := func(res testConnectionResponse) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"success": true,
 			"errors":  []any{},
-			"result": testConnectionResponse{
-				Success: false,
-				Error:   err.Error(),
-			},
+			"result":  res,
 		})
+	}
+
+	if err := validateProviderURL(baseURL, options.AllowLocalModelURLs); err != nil {
+		writeTestResult(testConnectionResponse{Success: false, Error: err.Error()})
 		return
 	}
 	if !baseURLAllowed(options.ModelBaseURLAllowlist, baseURL) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"errors":  []any{},
-			"result": testConnectionResponse{
-				Success: false,
-				Error:   "Base URL không nằm trong danh sách được phép của hệ thống",
-			},
-		})
+		writeTestResult(testConnectionResponse{Success: false, Error: "Base URL không nằm trong danh sách được phép của hệ thống"})
 		return
 	}
 	if modelID == "" {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"errors":  []any{},
-			"result": testConnectionResponse{
-				Success: false,
-				Error:   "Model ID không được để trống",
-			},
-		})
+		writeTestResult(testConnectionResponse{Success: false, Error: "Model ID không được để trống"})
 		return
 	}
 
-	// If apiKey is masked (e.g. sk-...xxxx), retrieve existing key from DB
-	if strings.Contains(apiKey, "...") {
-		if settingsStore, ok := store.(repository.TenantSettingsStore); ok {
+	apiKey := strings.TrimSpace(req.APIKey)
+	if masked := isMaskedSecret(apiKey); masked || apiKey == "" {
+		if settingsStore, hasSettings := store.(repository.TenantSettingsStore); hasSettings {
 			if existing, err := settingsStore.GetTenantSettings(r.Context(), scope.TenantID); err == nil && existing != nil {
 				apiKey = existing.APIKey
 			}
 		}
 	}
 
-	// Send lightweight probe request (max_tokens: 1)
+	client := model.NewClient(baseURL, apiKey, modelID, nil)
+	if options.ModelGatewayToken != "" {
+		client.WithGatewayToken(options.ModelGatewayToken)
+	}
+
 	start := time.Now()
-	// max_tokens 16: some providers (b.ai among them) reject probe requests
-	// with a too-small max_tokens ("must be greater than 2"); 16 stays cheap
-	// while passing every OpenAI-compatible provider's floor.
-	testPayload, _ := json.Marshal(map[string]any{
-		"model": modelID,
-		"messages": []map[string]string{
-			{"role": "user", "content": "ping"},
-		},
-		"max_tokens": 16,
-	})
-
-	testCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-
-	httpReq, err := http.NewRequestWithContext(testCtx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(testPayload))
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"errors":  []any{},
-			"result": testConnectionResponse{
-				Success: false,
-				Error:   fmt.Sprintf("Không thể tạo request: %v", err),
-			},
+	if err := client.ChatProbe(ctx); err != nil {
+		writeTestResult(testConnectionResponse{
+			Success:   false,
+			LatencyMs: time.Since(start).Milliseconds(),
+			Error:     err.Error(),
 		})
 		return
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(httpReq)
 	latency := time.Since(start).Milliseconds()
-
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"errors":  []any{},
-			"result": testConnectionResponse{
-				Success:   false,
-				LatencyMs: latency,
-				Error:     fmt.Sprintf("Kết nối thất bại: %v", err),
-			},
-		})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<10))
-		writeJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"errors":  []any{},
-			"result": testConnectionResponse{
-				Success:   false,
-				LatencyMs: latency,
-				Error:     fmt.Sprintf("Nhà cung cấp trả về lỗi HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body))),
-			},
-		})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"errors":  []any{},
-		"result": testConnectionResponse{
-			Success:   true,
-			LatencyMs: latency,
-			ModelID:   modelID,
-			Message:   fmt.Sprintf("Kết nối thành công tới %s (%dms)", modelID, latency),
-		},
+	writeTestResult(testConnectionResponse{
+		Success:   true,
+		LatencyMs: latency,
+		ModelID:   modelID,
+		Message:   "Kết nối thành công tới " + modelID,
 	})
+}
+
+// resolveAPIKey returns the key to persist. A masked or empty value means
+// "keep the key currently in effect" so the dialog never forces retyping a
+// secret it only ever displays masked.
+func resolveAPIKey(ctx context.Context, store repository.TenantSettingsStore, tenantID, submitted string) (string, bool) {
+	apiKey := strings.TrimSpace(submitted)
+	if apiKey != "" && !isMaskedSecret(apiKey) {
+		return apiKey, true
+	}
+	if existing, err := store.GetTenantSettings(ctx, tenantID); err == nil && existing != nil {
+		if strings.TrimSpace(existing.APIKey) != "" {
+			return existing.APIKey, true
+		}
+	}
+	return "", false
 }
 
 func validateProviderURL(rawURL string, allowLocal bool) error {
@@ -333,8 +246,8 @@ func validateProviderURL(rawURL string, allowLocal bool) error {
 // baseURLAllowed reports whether rawURL matches the gateway allowlist.
 // Entries are URL prefixes with path-boundary semantics, so
 // "https://gateway.example/v1/acct/gw" permits "/v1/acct/gw/openai" but not
-// "/v1/acct/other". An empty allowlist disables enforcement (deployment has
-// not switched to a gateway yet); only ValidateEgressURL applies.
+// "/v1/acct/other". An empty allowlist disables enforcement; only
+// ValidateEgressURL applies.
 func baseURLAllowed(allowlist []string, rawURL string) bool {
 	if len(allowlist) == 0 {
 		return true
@@ -353,6 +266,10 @@ func baseURLAllowed(allowlist []string, rawURL string) bool {
 		}
 	}
 	return false
+}
+
+func isMaskedSecret(value string) bool {
+	return strings.Contains(value, "...")
 }
 
 func maskAPIKey(key string) string {

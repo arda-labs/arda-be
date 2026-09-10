@@ -35,23 +35,26 @@ type ragFeedbacker interface {
 
 type RouterOptions struct {
 	EnableHITLProposals bool
-	ModelProvider       model.Provider
-	ModelPool           *model.ClientPool
-	AgentMaxSteps       int
-	ModelSystemPrompt   string
+	// ModelPool caches tenant model clients and their circuit-breaker state.
+	// Tenant model configuration itself lives in ai_tenant_settings (UI).
+	ModelPool *model.ClientPool
+	// ModelProvider is a development/test fallback used only by stores without
+	// TenantSettingsStore persistence. Production leaves it nil.
+	ModelProvider     model.Provider
+	AgentMaxSteps     int
+	ModelSystemPrompt string
 	// ModelSDKTypes is the generated arda.* TypeScript declaration file
 	// injected once into the model context so the model knows the whole SDK
 	// surface without re-searching. Empty = not injected (direct-tool mode).
 	ModelSDKTypes string
 	// ModelBaseURLAllowlist restricts tenant-provided base URLs; empty = disabled.
 	ModelBaseURLAllowlist []string
+	// ModelGatewayToken is the shared AI Gateway credential (platform secret)
+	// applied to tenant model clients and connection tests.
+	ModelGatewayToken string
 	// AllowLocalModelURLs is intended for local development only. Production
 	// must keep private and loopback provider addresses blocked to prevent SSRF.
 	AllowLocalModelURLs bool
-	// Platform model config surfaced in GET /api/ai/settings when the tenant
-	// has no row, so admins see the configuration actually in effect.
-	PlatformModelBaseURL string
-	PlatformModelID      string
 	// RAGClient is the RAG feedback client. Nil means feedback is unavailable.
 	// Matches the nil-safe pattern of ModelProvider.
 	RAGClient ragFeedbacker
@@ -64,8 +67,6 @@ type RouterOptions struct {
 	ReadyCheck func(context.Context) error
 	// EventPublisher publishes AI lifecycle and audit events (NATS JetStream).
 	EventPublisher events.Publisher
-	// ProviderRegistry enables dynamic multi-provider routing and fallback.
-	ProviderRegistry *model.ProviderRegistry
 }
 
 type CatalogToolDTO struct {
@@ -88,12 +89,6 @@ type runStore interface {
 
 type analyticsStore interface {
 	GetAnalytics(ctx context.Context, tenantID string) (*repository.AnalyticsSummary, error)
-}
-
-type agentStore interface {
-	ListAgents(ctx context.Context, tenantID string) ([]repository.AgentConfig, error)
-	SaveAgent(ctx context.Context, agent repository.AgentConfig) (*repository.AgentConfig, error)
-	DeleteAgent(ctx context.Context, tenantID, agentID string) error
 }
 
 type toolResolver interface {
@@ -209,24 +204,6 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	mux.HandleFunc("/api/ai/analytics/overview", func(w http.ResponseWriter, r *http.Request) {
 		handleGetAnalytics(w, r, store, options)
 	})
-	mux.HandleFunc("/api/ai/agents", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			handleSaveAgent(w, r, store, options)
-			return
-		}
-		handleListAgents(w, r, store, options)
-	})
-	mux.HandleFunc("/api/ai/agents/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			handleDeleteAgent(w, r, store, options)
-			return
-		}
-		if r.Method == http.MethodPut || r.Method == http.MethodPost {
-			handleSaveAgent(w, r, store, options)
-			return
-		}
-		handleListAgents(w, r, store, options)
-	})
 	mux.HandleFunc("/api/ai/settings", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			handleGetSettings(w, r, store, options)
@@ -237,49 +214,12 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	mux.HandleFunc("/api/ai/settings/test", func(w http.ResponseWriter, r *http.Request) {
 		handleTestConnection(w, r, store, options)
 	})
-	mux.HandleFunc("/api/ai/settings/routing", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			handleGetRouting(w, r, store)
-			return
-		}
-		handleUpdateRouting(w, r, store)
-	})
 	mux.HandleFunc("/api/ai/settings/quotas", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			handleGetQuotas(w, r, store)
 			return
 		}
 		handleUpdateQuotas(w, r, store)
-	})
-	mux.HandleFunc("/api/ai/settings/guardrails", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			handleGetGuardrails(w, r, store)
-			return
-		}
-		handleUpdateGuardrails(w, r, store)
-	})
-	mux.HandleFunc("/api/rag/strategies", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			handleGetStrategies(w, r, store)
-			return
-		}
-		handleUpdateStrategies(w, r, store)
-	})
-	mux.HandleFunc("/api/rag/connectors", func(w http.ResponseWriter, r *http.Request) {
-		handleConnectors(w, r, store)
-	})
-	mux.HandleFunc("/api/rag/connectors/", func(w http.ResponseWriter, r *http.Request) {
-		handleConnectorSubtree(w, r, store)
-	})
-	mux.HandleFunc("/api/ai/settings/profiles", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			handleCreateProfile(w, r, store, options)
-			return
-		}
-		handleListProfiles(w, r, store)
-	})
-	mux.HandleFunc("/api/ai/settings/profiles/", func(w http.ResponseWriter, r *http.Request) {
-		handleProfileAction(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		listConversations(w, r, store, options)
@@ -775,78 +715,6 @@ func handleGetAnalytics(w http.ResponseWriter, r *http.Request, store runStore, 
 		}
 	}
 	problem(w, http.StatusServiceUnavailable, "ai.analytics_persistence_unavailable")
-}
-
-func handleListAgents(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
-	if r.Method != http.MethodGet {
-		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
-		return
-	}
-	scope, ok := identityScope(w, r)
-	if !ok {
-		return
-	}
-	tenantID := scope.TenantID
-	if as, ok := store.(agentStore); ok {
-		agents, err := as.ListAgents(r.Context(), tenantID)
-		if err == nil {
-			writeJSON(w, http.StatusOK, agents)
-			return
-		}
-	}
-	problem(w, http.StatusServiceUnavailable, "ai.agent_persistence_unavailable")
-}
-
-func handleSaveAgent(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
-	scope, ok := identityScope(w, r)
-	if !ok {
-		return
-	}
-	tenantID := scope.TenantID
-	var agent repository.AgentConfig
-	if err := json.NewDecoder(r.Body).Decode(&agent); err != nil {
-		problem(w, http.StatusBadRequest, "ai.invalid_json")
-		return
-	}
-	agent.TenantID = tenantID
-
-	// If ID is in URL path: /api/ai/agents/{id}
-	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(pathParts) >= 4 && pathParts[3] != "" {
-		agent.ID = pathParts[3]
-	}
-
-	if as, ok := store.(agentStore); ok {
-		saved, err := as.SaveAgent(r.Context(), agent)
-		if err != nil {
-			problem(w, http.StatusBadRequest, "ai.save_agent_failed")
-			return
-		}
-		writeJSON(w, http.StatusOK, saved)
-		return
-	}
-	problem(w, http.StatusServiceUnavailable, "ai.agent_persistence_unavailable")
-}
-
-func handleDeleteAgent(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
-	scope, ok := identityScope(w, r)
-	if !ok {
-		return
-	}
-	tenantID := scope.TenantID
-	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(pathParts) < 4 || pathParts[3] == "" {
-		problem(w, http.StatusBadRequest, "ai.agent_id_required")
-		return
-	}
-	agentID := pathParts[3]
-	if as, ok := store.(agentStore); ok {
-		if err := as.DeleteAgent(r.Context(), tenantID, agentID); err != nil {
-			problem(w, http.StatusInternalServerError, "ai.delete_agent_failed")
-			return
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
 // identityScope establishes the caller's identity/tenant context without

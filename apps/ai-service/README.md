@@ -50,9 +50,11 @@ enabled with `AI_RAG_RERANKER_BASE_URL`, `AI_RAG_RERANKER_API_KEY`, and
 The provider must speak the OpenAI-compatible chat-completions SSE protocol
 (cloud providers, vLLM, Ollama, and similar local runtimes all work). The
 handler depends only on the `model.Provider` interface, so additional sources
-can be added later without touching tool or handler code. Tenant profiles can
-define primary/secondary/failover providers; fallback is attempted only before
-any output is emitted, and repeated upstream failures are circuit-broken. The agent loop
+can be added later without touching tool or handler code. Model configuration
+is tenant-owned (AI Settings UI): each tenant stores one active base URL, API
+key and model id in `ai_tenant_settings`; the deployment only supplies the
+shared AI Gateway token and an optional base-URL allowlist. Repeated upstream
+failures are circuit-broken. The agent loop
 streams `TEXT_MESSAGE_*` deltas incrementally, executes only registry tools
 whose permissions resolve against gateway headers, and never executes
 `confirm`-kind tools directly: requesting one creates an approval proposal
@@ -92,8 +94,9 @@ gateway supplies a separate short-lived workload identity.
 For the shell panel, start the frontend with `VITE_AI_ENABLED=true` and run the gateway with
 `AI_SERVICE_URL=http://localhost:8098`. The gateway still requires a real
 authenticated session and the `ai.assistant.use` permission; setting the
-frontend flag does not bypass either check. A tenant model profile can override
-the deployment provider; otherwise the configured platform provider is used.
+frontend flag does not bypass either check. Model credentials are configured
+per tenant in AI Settings; the deployment only provides the shared gateway
+token and allowlist.
 
 Tenant quota settings may set `monthlyTokenLimit`. Each model run reserves a
 bounded allowance atomically and finalizes it with provider usage; exceeding

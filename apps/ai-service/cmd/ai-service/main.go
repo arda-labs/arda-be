@@ -67,26 +67,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Model configuration is tenant-managed: production always resolves the
-	// provider from ai_tenant_settings (AI Settings UI; API keys encrypted at
-	// rest via ARDA_SERVICE_AUTH_SECRET) and fails closed when a tenant has
-	// no active configuration. The deployment env model is a development
-	// fallback for local runs without a database only.
-	var ModelProvider model.Provider
-	if cfg.Mode != "production" {
-		if cfg.ModelReady() {
-			client := model.NewClient(cfg.ModelBaseURL, cfg.ModelAPIKey, cfg.ModelID, nil)
-			if cfg.ModelGatewayToken != "" {
-				client.WithGatewayToken(cfg.ModelGatewayToken)
-			}
-			ModelProvider = model.NewCircuitBreakerProvider(client, 3, 30*time.Second)
-		} else if cfg.ModelEnabled {
-			logger.Warn("model provider is not configured; tenants must provide an active model setting")
-		}
-	} else if cfg.ModelEnabled {
-		logger.Info("model provider is tenant-managed; configure it per tenant in AI Settings")
-	}
-
 	var knowledgeSvc *knowledge.Service
 	var inProcessRAG *knowledge.InProcessRAGAdapter
 	if db != nil {
@@ -125,57 +105,30 @@ func main() {
 	}
 	defer eventPublisher.Close()
 
-	var providerRegistry *model.ProviderRegistry
-	if cfg.ProvidersConfigFile != "" {
-		if reg, err := model.LoadProvidersFromYAML(cfg.ProvidersConfigFile); err == nil {
-			providerRegistry = reg
-			go providerRegistry.StartActiveHealthProbing(context.Background())
-			logger.Info("multi-provider registry loaded from file", "config_file", cfg.ProvidersConfigFile)
-		}
-	}
+	// Model configuration is tenant-owned (AI Settings UI); the deployment
+	// supplies only the shared gateway token and base-URL allowlist.
+	modelPool := model.NewClientPool(nil)
+	modelPool.SetGatewayToken(cfg.ModelGatewayToken)
 
 	routerOptions := handler.RouterOptions{
 		EnableHITLProposals:   cfg.EnableHITLProposals,
-		ModelProvider:         ModelProvider,
-		ModelPool:             model.NewClientPool(nil),
+		ModelPool:             modelPool,
 		AgentMaxSteps:         cfg.AgentMaxSteps,
 		ModelSystemPrompt:     cfg.ModelSystemPrompt,
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
+		ModelGatewayToken:     cfg.ModelGatewayToken,
 		AllowLocalModelURLs:   cfg.Mode != "production",
-		PlatformModelBaseURL:  cfg.ModelBaseURL,
-		PlatformModelID:       cfg.ModelID,
 		RAGService:            knowledgeSvc,
 		EventPublisher:        eventPublisher,
-		ProviderRegistry:      providerRegistry,
 	}
-	if db != nil || (cfg.ModelEnabled && cfg.ModelReady()) {
-		routerOptions.ReadyCheck = func(ctx context.Context) error {
-			if db != nil {
-				if err := db.PingContext(ctx); err != nil {
-					return err
-				}
-			}
-			if cfg.ModelEnabled && cfg.ModelReady() && ModelProvider != nil {
-				if prober, ok := ModelProvider.(model.Prober); ok {
-					probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-					defer cancel()
-					probeErr := prober.Probe(probeCtx)
-					providerName := "unknown"
-					if descriptor, ok := ModelProvider.(interface{ ProviderName() string }); ok {
-						providerName = descriptor.ProviderName()
-					}
-					handler.RecordProviderProbe(providerName, probeErr)
-					if probeErr != nil {
-						return probeErr
-					}
-				}
-			}
-			return nil
+	routerOptions.ReadyCheck = func(ctx context.Context) error {
+		if db != nil {
+			return db.PingContext(ctx)
 		}
-	} else if cfg.Mode == "production" {
-		routerOptions.ReadyCheck = func(context.Context) error { return errors.New("database is required in production") }
-	} else if cfg.ModelEnabled && !cfg.ModelReady() {
-		routerOptions.ReadyCheck = func(context.Context) error { return errors.New("model provider is not configured") }
+		if cfg.Mode == "production" {
+			return errors.New("database is required in production")
+		}
+		return nil
 	}
 	if inProcessRAG != nil {
 		routerOptions.RAGClient = inProcessRAG
@@ -232,9 +185,6 @@ func main() {
 			routerOptions.CatalogTools = toolsDTO
 		}
 	}
-	if cfg.ModelGatewayToken != "" {
-		routerOptions.ModelPool.SetGatewayToken(cfg.ModelGatewayToken)
-	}
 
 	mux := handler.NewRouterWithOptions(store, resolver, routerOptions)
 	handlerChain := ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(handler.ServiceAuthMiddleware(
@@ -264,7 +214,6 @@ func main() {
 		"addr", cfg.HTTPAddr, "mode", cfg.Mode,
 		"persistent", store != nil, "read_tools", resolver != nil,
 		"hitl_proposals", cfg.EnableHITLProposals,
-		"agent_model", cfg.ModelReady(),
 	)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("AI service stopped unexpectedly", "err", err)

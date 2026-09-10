@@ -8,6 +8,10 @@ import (
 
 // Config controls the AI service runtime. Development mode is the default for
 // local runs; production mode requires a database.
+//
+// Model configuration is tenant-owned through the AI Settings UI (one active
+// config per tenant). The deployment only supplies shared security controls:
+// the AI Gateway token and the allowed provider base-URL prefixes.
 type Config struct {
 	AppName             string
 	HTTPAddr            string
@@ -22,23 +26,21 @@ type Config struct {
 	ProblemDocsURL      string
 	EnableReadTools     bool
 	EnableHITLProposals bool
-	EnableCodeMode      bool
 	DBMaxOpenConns      int
 	DBMaxIdleConns      int
 	DBConnMaxIdleSec    int
 
-	ModelEnabled       bool
-	ModelBaseURL       string
-	ModelAPIKey        string
-	ModelID            string
 	ModelSystemPrompt  string
 	AgentMaxSteps      int
 	RateLimitPerMinute int
 
 	// ModelGatewayToken is the AI Gateway credential sent as the
-	// cf-aig-authorization header when the model base URL points at a
+	// cf-aig-authorization header when a tenant model base URL points at a
 	// Cloudflare AI Gateway with authentication enabled. Empty = direct.
-	ModelGatewayToken      string
+	ModelGatewayToken string
+	// ModelBaseURLAllowlist restricts which base URLs tenants may configure.
+	// Empty disables the allowlist and only generic egress validation applies.
+	ModelBaseURLAllowlist  []string
 	RAGRerankerBaseURL     string
 	RAGRerankerAPIKey      string
 	RAGRerankerModel       string
@@ -55,13 +57,7 @@ type Config struct {
 	// the gate.
 	RAGMinSimilarity float64
 
-	// ModelBaseURLAllowlist restricts which base URLs tenant settings may
-	// point at (gateway routing, §3.5 of docs/ai/agent-evolution-roadmap.md).
-	// Empty slice = enforcement disabled; only ValidateEgressURL applies.
-	ModelBaseURLAllowlist []string
-
-	NATSURL             string
-	ProvidersConfigFile string
+	NATSURL string
 }
 
 const defaultDirectToolSystemPrompt = `Bạn là Olorin, trợ lý của nền tảng Arda. Bạn trả lời ngắn gọn, chính xác ` +
@@ -85,9 +81,9 @@ Quy tắc quan trọng:
 
 func Load() Config {
 	mode := envOr("AI_MODE", "development")
-	enableCodeMode := envBoolOr("AI_ENABLE_CODE_MODE", true)
+	enableReadTools := envBoolOr("AI_ENABLE_READ_TOOLS", false)
 	defaultPrompt := defaultDirectToolSystemPrompt
-	if enableCodeMode {
+	if enableReadTools {
 		defaultPrompt = defaultCodeModeSystemPrompt
 	}
 	embeddingBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("AI_RAG_EMBEDDING_BASE_URL")), "/")
@@ -109,24 +105,20 @@ func Load() Config {
 		IAMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("IAM_SERVICE_URL")), "/"),
 		RAGServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), "/"),
 		ProblemDocsURL:      strings.TrimRight(strings.TrimSpace(envOr("PROBLEM_DOCS_URL", "https://docs.arda.io.vn")), "/"),
-		EnableReadTools:     envBoolOr("AI_ENABLE_READ_TOOLS", false),
+		EnableReadTools:     enableReadTools,
 		EnableHITLProposals: envBoolOr("AI_ENABLE_HITL_PROPOSALS", false),
-		EnableCodeMode:      enableCodeMode,
 		DBMaxOpenConns:      envIntOr("DB_MAX_OPEN_CONNS", 8),
 		DBMaxIdleConns:      envIntOr("DB_MAX_IDLE_CONNS", 4),
 		DBConnMaxIdleSec:    envIntOr("DB_CONN_MAX_IDLE_SECONDS", 300),
 
-		ModelEnabled:       envBoolOr("AI_ENABLE_AGENT", false),
-		ModelBaseURL:       strings.TrimRight(strings.TrimSpace(envOr("AI_MODEL_BASE_URL", "https://api.openai.com/v1")), "/"),
-		ModelAPIKey:        strings.TrimSpace(os.Getenv("AI_MODEL_API_KEY")),
-		ModelID:            strings.TrimSpace(os.Getenv("AI_MODEL_ID")),
-		ModelSystemPrompt:  envOr("AI_MODEL_SYSTEM_PROMPT", defaultPrompt),
-		AgentMaxSteps:      envIntOr("AI_AGENT_MAX_STEPS", 10),
-		RateLimitPerMinute: envIntOr("AI_RATE_LIMIT_PER_MINUTE", 30),
-		ModelGatewayToken:  strings.TrimSpace(os.Getenv("AI_MODEL_GATEWAY_TOKEN")),
-		RAGRerankerBaseURL: strings.TrimRight(strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_BASE_URL")), "/"),
-		RAGRerankerAPIKey:  strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_API_KEY")),
-		RAGRerankerModel:   strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_MODEL")),
+		ModelSystemPrompt:     envOr("AI_MODEL_SYSTEM_PROMPT", defaultPrompt),
+		AgentMaxSteps:         envIntOr("AI_AGENT_MAX_STEPS", 10),
+		RateLimitPerMinute:    envIntOr("AI_RATE_LIMIT_PER_MINUTE", 30),
+		ModelGatewayToken:     strings.TrimSpace(os.Getenv("AI_MODEL_GATEWAY_TOKEN")),
+		ModelBaseURLAllowlist: envListOr("AI_MODEL_BASE_URL_ALLOWLIST"),
+		RAGRerankerBaseURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_BASE_URL")), "/"),
+		RAGRerankerAPIKey:     strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_API_KEY")),
+		RAGRerankerModel:      strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_MODEL")),
 		// Production always fails closed when embeddings are unavailable. The
 		// environment flag allows CI/staging to opt into the same behavior.
 		RAGRequireEmbedding:    mode == "production" || envBoolOr("AI_RAG_REQUIRE_EMBEDDING", false),
@@ -136,14 +128,8 @@ func Load() Config {
 		RAGEmbeddingDimensions: envIntOr("AI_RAG_EMBEDDING_DIMENSIONS", 1024),
 		RAGMinSimilarity:       envFloatOr("AI_RAG_MIN_SIMILARITY", 0.35),
 
-		ModelBaseURLAllowlist: envListOr("AI_MODEL_BASE_URL_ALLOWLIST"),
-		NATSURL:               envOr("NATS_URL", envOr("AI_NATS_URL", "")),
-		ProvidersConfigFile:   envOr("AI_PROVIDERS_CONFIG_FILE", "configs/providers.yaml"),
+		NATSURL: envOr("NATS_URL", envOr("AI_NATS_URL", "")),
 	}
-}
-
-func (c Config) ModelReady() bool {
-	return c.ModelEnabled && c.ModelBaseURL != "" && c.ModelAPIKey != "" && c.ModelID != ""
 }
 
 func envBoolOr(name string, fallback bool) bool {
@@ -154,7 +140,7 @@ func envBoolOr(name string, fallback bool) bool {
 	return value
 }
 
-func envOr(name, fallback string) string {
+func envOr(name string, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
 	}
