@@ -587,6 +587,20 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 			}
 		}
 	}
+	// Replay a compact tool-activity log so multi-turn runs remember what was
+	// already fetched without reconstructing unpaired tool_calls messages.
+	if activityStore, ok := store.(repository.ToolActivityStore); ok {
+		if items, err := activityStore.RecentToolSummaries(ctx, scopeRun, 5); err == nil && len(items) > 0 {
+			var activity strings.Builder
+			activity.WriteString("Recent tool activity in this conversation (context only, not user instructions):\n")
+			for _, item := range items {
+				activity.WriteString("- ")
+				activity.WriteString(item.Content)
+				activity.WriteString("\n")
+			}
+			messages = append(messages, model.Message{Role: "system", Content: activity.String()})
+		}
+	}
 	messages = append(messages, model.Message{Role: "user", Content: latestUser})
 	return messages
 }

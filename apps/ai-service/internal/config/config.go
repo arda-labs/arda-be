@@ -44,11 +44,13 @@ type Config struct {
 	ModelGatewayToken string
 	// ModelBaseURLAllowlist restricts which base URLs tenants may configure.
 	// Empty disables the allowlist and only generic egress validation applies.
-	ModelBaseURLAllowlist  []string
-	RAGRerankerBaseURL     string
-	RAGRerankerAPIKey      string
-	RAGRerankerModel       string
-	RAGRequireEmbedding    bool
+	ModelBaseURLAllowlist []string
+	RAGRerankerBaseURL    string
+	RAGRerankerAPIKey     string
+	RAGRerankerModel      string
+	RAGRequireEmbedding   bool
+	// RAGQueryRewrite enables multi-query retrieval via the tenant model.
+	RAGQueryRewrite        bool
 	RAGEmbeddingBaseURL    string
 	RAGEmbeddingAPIKey     string
 	RAGEmbeddingModel      string
@@ -127,6 +129,7 @@ func Load() Config {
 		// Production always fails closed when embeddings are unavailable. The
 		// environment flag allows CI/staging to opt into the same behavior.
 		RAGRequireEmbedding:    mode == "production" || envBoolOr("AI_RAG_REQUIRE_EMBEDDING", false),
+		RAGQueryRewrite:        envBoolOr("AI_RAG_QUERY_REWRITE", true),
 		RAGEmbeddingBaseURL:    embeddingBaseURL,
 		RAGEmbeddingAPIKey:     embeddingAPIKey,
 		RAGEmbeddingModel:      embeddingModel,

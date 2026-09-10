@@ -21,6 +21,7 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/migration"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
+	"github.com/arda-labs/arda/apps/ai-service/internal/rewrite"
 	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -109,6 +110,9 @@ func main() {
 	// supplies only the shared gateway token and base-URL allowlist.
 	modelPool := model.NewClientPool(nil)
 	modelPool.SetGatewayToken(cfg.ModelGatewayToken)
+	if knowledgeSvc != nil && cfg.RAGQueryRewrite {
+		knowledgeSvc.SetQueryRewriter(rewrite.New(store, modelPool))
+	}
 
 	routerOptions := handler.RouterOptions{
 		EnableHITLProposals:   cfg.EnableHITLProposals,

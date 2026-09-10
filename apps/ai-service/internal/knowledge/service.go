@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ type Service struct {
 	repo     *Repository
 	embedder Embedder
 	reranker Reranker
+	rewriter QueryRewriter
 	logger   *slog.Logger
 	workerID string
 	// requireEmbedding prevents a published version from being reported as
@@ -26,8 +28,15 @@ type Service struct {
 	requireEmbedding bool
 	// minSimilarity is the cosine evidence floor for hybrid retrieval;
 	// 0 disables the gate.
-	minSimilarity float64
+	minSimilarity  float64
 	eventPublisher EventPublisher
+}
+
+// QueryRewriter produces alternative retrieval queries for a user question.
+// The original query is always searched too, so a failing or slow rewrite only
+// costs latency, never correctness.
+type QueryRewriter interface {
+	Rewrite(ctx context.Context, tenantID, query string) ([]string, error)
 }
 
 type EventPublisher interface {
@@ -69,6 +78,13 @@ func (s *Service) SetReranker(reranker Reranker) {
 	}
 }
 
+// SetQueryRewriter enables multi-query retrieval. Nil disables rewriting.
+func (s *Service) SetQueryRewriter(rewriter QueryRewriter) {
+	if s != nil {
+		s.rewriter = rewriter
+	}
+}
+
 func (s *Service) SetEventPublisher(pub EventPublisher) {
 	if s != nil {
 		s.eventPublisher = pub
@@ -90,34 +106,29 @@ func (s *Service) Query(ctx context.Context, req QueryRequest, tenantID string) 
 	}
 	topK := req.TopK
 	if topK <= 0 {
-		topK = 5
+		topK = 8
 	}
-	if topK > 10 {
-		topK = 10
+	if topK > 20 {
+		topK = 20
 	}
 
-	var queryVector []float32
-	if s.embedder != nil {
-		vecs, err := s.embedder.Embed(ctx, []string{queryText})
-		if err != nil {
-			if s.requireEmbedding {
-				return nil, fmt.Errorf("embedding query: %w", err)
-			}
-			s.logger.Warn("embedding failed, falling back to FTS-only", "err", err)
-		} else if len(vecs) > 0 {
-			queryVector = vecs[0]
-		}
-	} else if s.requireEmbedding {
-		return nil, fmt.Errorf("embedding provider is required but not configured")
-	}
+	queries := s.expandQueries(ctx, tenantID, queryText)
+	rewritten := len(queries) > 1
 
 	retrievalK := topK
 	if s.reranker != nil {
-		retrievalK = minInt(topK*3, 30)
+		retrievalK = minInt(topK*3, 40)
 	}
-	hits, err := s.repo.HybridSearch(ctx, queryText, queryVector, tenantID, retrievalK, s.minSimilarity)
+	ranked, embedded, err := s.multiQuerySearch(ctx, queries, tenantID, retrievalK)
 	if err != nil {
 		return nil, fmt.Errorf("hybrid search: %w", err)
+	}
+	hits := make([]QueryHit, 0, len(ranked))
+	for _, entry := range ranked {
+		hits = append(hits, entry.hit)
+		if len(hits) >= retrievalK {
+			break
+		}
 	}
 
 	retrievedCount := len(hits)
@@ -138,8 +149,11 @@ func (s *Service) Query(ctx context.Context, req QueryRequest, tenantID string) 
 	}
 
 	modelUsed := "fts-only"
-	if len(queryVector) > 0 && s.embedder != nil {
+	if embedded && s.embedder != nil {
 		modelUsed = s.embedder.Model()
+	}
+	if rewritten {
+		modelUsed += "+rewrite"
 	}
 	if s.reranker != nil && rerankedCount > 0 {
 		modelUsed += "+rerank:" + s.reranker.Model()
@@ -154,10 +168,117 @@ func (s *Service) Query(ctx context.Context, req QueryRequest, tenantID string) 
 		RunID:          runID,
 		Hits:           hits,
 		LatencyMs:      latencyMs,
-		Rewritten:      false,
+		Rewritten:      rewritten,
 		RetrievedCount: retrievedCount,
 		RerankedCount:  rerankedCount,
 	}, nil
+}
+
+// expandQueries returns the original query plus up to two rewrite variants.
+// Rewrite failures and empty/duplicate variants are ignored.
+func (s *Service) expandQueries(ctx context.Context, tenantID, queryText string) []string {
+	queries := []string{queryText}
+	if s.rewriter == nil {
+		return queries
+	}
+	rewriteCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	variants, err := s.rewriter.Rewrite(rewriteCtx, tenantID, queryText)
+	if err != nil {
+		s.logger.Warn("query rewrite failed; using the original query", "err", err)
+		return queries
+	}
+	for _, variant := range variants {
+		variant = strings.TrimSpace(variant)
+		if variant == "" || variant == queryText || len(variant) > 2000 {
+			continue
+		}
+		duplicate := false
+		for _, existing := range queries {
+			if existing == variant {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		queries = append(queries, variant)
+		if len(queries) >= 3 {
+			break
+		}
+	}
+	return queries
+}
+
+type rankedHit struct {
+	hit QueryHit
+	rrf float64
+}
+
+// multiQuerySearch runs hybrid search for every query and fuses the results
+// with Reciprocal Rank Fusion (1/(60+rank)). The reported Score stays the best
+// cosine similarity seen for the chunk, so the evidence floor keeps meaning.
+func (s *Service) multiQuerySearch(ctx context.Context, queries []string, tenantID string, limit int) ([]rankedHit, bool, error) {
+	merged := make(map[string]*rankedHit)
+	order := make([]string, 0)
+	embedded := false
+	for queryIndex, query := range queries {
+		vector, err := s.embedQuery(ctx, query, queryIndex == 0)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(vector) > 0 {
+			embedded = true
+		}
+		hits, err := s.repo.HybridSearch(ctx, query, vector, tenantID, limit, s.minSimilarity)
+		if err != nil {
+			return nil, false, err
+		}
+		for rank, hit := range hits {
+			key := fmt.Sprintf("%d|%s|%s", hit.SourceVersionID, hit.Heading, hit.Content)
+			entry, ok := merged[key]
+			if !ok {
+				copied := hit
+				entry = &rankedHit{hit: copied}
+				merged[key] = entry
+				order = append(order, key)
+			}
+			entry.rrf += 1.0 / (60.0 + float64(rank+1))
+			if hit.Score > entry.hit.Score {
+				entry.hit.Score = hit.Score
+			}
+		}
+	}
+	ranked := make([]rankedHit, 0, len(order))
+	for _, key := range order {
+		ranked = append(ranked, *merged[key])
+	}
+	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].rrf > ranked[j].rrf })
+	return ranked, embedded, nil
+}
+
+// embedQuery embeds one query. required controls fail-closed behavior for the
+// original query; variant queries degrade to FTS instead of failing the run.
+func (s *Service) embedQuery(ctx context.Context, query string, required bool) ([]float32, error) {
+	if s.embedder == nil {
+		if required && s.requireEmbedding {
+			return nil, fmt.Errorf("embedding provider is required but not configured")
+		}
+		return nil, nil
+	}
+	vectors, err := s.embedder.Embed(ctx, []string{query})
+	if err != nil {
+		if required && s.requireEmbedding {
+			return nil, fmt.Errorf("embedding query: %w", err)
+		}
+		s.logger.Warn("embedding failed, falling back to FTS-only", "err", err)
+		return nil, nil
+	}
+	if len(vectors) > 0 {
+		return vectors[0], nil
+	}
+	return nil, nil
 }
 
 func (s *Service) PreviewChunks(req ChunkPreviewRequest) (*ChunkPreviewResponse, error) {

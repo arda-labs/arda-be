@@ -45,7 +45,10 @@ backward compatibility. Production mode fails closed when embeddings are
 missing; development can opt into the same behavior with
 `AI_RAG_REQUIRE_EMBEDDING=true`. Optional Cohere-compatible reranking is
 enabled with `AI_RAG_RERANKER_BASE_URL`, `AI_RAG_RERANKER_API_KEY`, and
-`AI_RAG_RERANKER_MODEL`.
+`AI_RAG_RERANKER_MODEL`. Optional multi-query rewrite asks the tenant model for
+up to two additional Vietnamese search queries and fuses the result sets with
+RRF; it is enabled by default and can be disabled with
+`AI_RAG_QUERY_REWRITE=false`.
 
 The provider must speak the OpenAI-compatible chat-completions SSE protocol
 (cloud providers, vLLM, Ollama, and similar local runtimes all work). The

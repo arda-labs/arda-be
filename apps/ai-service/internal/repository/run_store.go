@@ -41,6 +41,13 @@ type HistoryStore interface {
 	RecentMessages(ctx context.Context, run RunContext, limit int) ([]HistoryMessage, error)
 }
 
+// ToolActivityStore replays a compact tool-activity log from earlier turns.
+// Providers reject unpaired tool messages, so the log is injected as ordinary
+// system context instead of reconstructed tool_calls/tool pairs.
+type ToolActivityStore interface {
+	RecentToolSummaries(ctx context.Context, run RunContext, limit int) ([]HistoryMessage, error)
+}
+
 type UsageSetter interface {
 	SetUsage(ctx context.Context, run RunContext, usageJSON string) error
 }
@@ -280,6 +287,54 @@ func (s *SQLRunStore) RecentMessages(ctx context.Context, run RunContext, limit 
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate AI history: %w", err)
+	}
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+	return messages, nil
+}
+
+// RecentToolSummaries returns the most recent tool executions in the
+// conversation (newest last) with a bounded preview of the redacted result.
+func (s *SQLRunStore) RecentToolSummaries(ctx context.Context, run RunContext, limit int) ([]HistoryMessage, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("AI run store is not configured")
+	}
+	if limit <= 0 || limit > 20 {
+		limit = 5
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT t.tool_name, t.status, left(coalesce(t.result_redacted::text, ''), 400)
+		FROM public.ai_tool_executions t
+		JOIN public.ai_runs r ON r.id = t.run_id
+		JOIN public.ai_conversations c ON c.id = r.conversation_id
+		WHERE c.tenant_id = $1 AND c.actor_user_id = $2 AND c.external_thread_id = $3
+		  AND r.status IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'WAITING_APPROVAL')
+		ORDER BY t.started_at DESC
+		LIMIT $4
+	`, run.TenantID, run.ActorUserID, run.ExternalThread, limit)
+	if err != nil {
+		return nil, fmt.Errorf("load AI tool summaries: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []HistoryMessage
+	for rows.Next() {
+		var name, status, preview string
+		if err := rows.Scan(&name, &status, &preview); err != nil {
+			return nil, fmt.Errorf("scan AI tool summary: %w", err)
+		}
+		preview = strings.TrimSpace(preview)
+		if preview == "" || preview == "{}" {
+			preview = "(no output)"
+		}
+		messages = append(messages, HistoryMessage{
+			Role:    "system",
+			Content: fmt.Sprintf("[tool %s · %s] %s", name, status, preview),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate AI tool summaries: %w", err)
 	}
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
