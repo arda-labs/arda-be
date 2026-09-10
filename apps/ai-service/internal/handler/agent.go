@@ -36,6 +36,8 @@ func runAgentStream(
 	input runInput,
 	options RouterOptions,
 ) {
+	r, cancelRun := requestWithRunTimeout(r, options)
+	defer cancelRun()
 	ctx := r.Context()
 	scopeRun := repository.RunContext{
 		TenantID: scope.TenantID, ActorUserID: scope.ActorUserID,
@@ -69,6 +71,8 @@ func runAgentStream(
 		return
 	}
 	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
+	stopHeartbeat := startSSEHeartbeat(sse)
+	defer stopHeartbeat()
 	if terminateAgentRunOnContext(ctx, store, scopeRun, input, sse) {
 		return
 	}
@@ -191,6 +195,39 @@ func selectModelProvider(ctx context.Context, store runStore, scope tools.Contex
 	return model.NewCircuitBreakerProvider(model.NewClient(settings.BaseURL, settings.APIKey, settings.ModelID, nil), 3, 30*time.Second)
 }
 
+// modelErrorCode maps a model stream failure to a stable, actionable code so
+// the client can tell auth problems from rate limits, timeouts and outages.
+func modelErrorCode(err error) string {
+	if err == nil {
+		return "ai.model_unavailable"
+	}
+	var statusErr *model.ProviderStatusError
+	if errors.As(err, &statusErr) {
+		switch statusErr.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return "ai.model_unauthorized"
+		case http.StatusTooManyRequests:
+			return "ai.model_rate_limited"
+		case http.StatusRequestTimeout, http.StatusGatewayTimeout:
+			return "ai.model_timeout"
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "ai.model_timeout"
+	}
+	return "ai.model_unavailable"
+}
+
+// requestWithRunTimeout bounds a whole agent run (model + tools) with a
+// server-side deadline. A zero timeout keeps the request context as-is.
+func requestWithRunTimeout(r *http.Request, options RouterOptions) (*http.Request, context.CancelFunc) {
+	if r == nil || options.AgentRunTimeout <= 0 {
+		return r, func() {}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), options.AgentRunTimeout)
+	return r.WithContext(ctx), cancel
+}
+
 // agentStepsLoop drives the model↔tool loop shared by fresh runs and resumed
 // runs. It owns SSE text framing, step budgeting, tool dispatch, and the
 // terminal store.Finish call.
@@ -289,15 +326,17 @@ func agentStepsLoop(
 			return
 		}
 		if err != nil {
+			errorCode := modelErrorCode(err)
 			slog.Error("LLM model stream failed",
 				"err", err,
+				"code", errorCode,
 				"thread_id", input.ThreadID,
 				"run_id", input.RunID,
 				"tenant_id", scope.TenantID,
 				"user_id", scope.ActorUserID,
 			)
 			endText()
-			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: "ai.model_unavailable"})
+			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: errorCode})
 			recordRunOutcome("FAILED")
 			_ = store.Finish(ctx, scopeRun, fmt.Sprintf("I could not complete that request right now: %v", err), "FAILED")
 			if options.EventPublisher != nil {
@@ -310,9 +349,9 @@ func agentStepsLoop(
 					input.RunID,
 					events.RunFailedData{
 						ConversationID: input.ThreadID,
-						ErrorCode:      "ai.model_unavailable",
+						ErrorCode:      errorCode,
 						DurationMs:     timer.durationMs(),
-						Retryable:      true,
+						Retryable:      errorCode != "ai.model_unauthorized",
 					},
 				))
 			}

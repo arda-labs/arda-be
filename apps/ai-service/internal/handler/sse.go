@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // agUIProtocolVersion is the Arda compatibility version for the AG-UI
@@ -23,6 +25,7 @@ const agUIProtocolVersionHeader = "X-Arda-AI-Protocol-Version"
 // separated by \n\n, each carrying a `type` field. @ag-ui/client validates
 // and reassembles them (text/tool/reasoning messages, interrupts).
 type sseWriter struct {
+	mu                 sync.Mutex
 	writer             *bufio.Writer
 	flusher            http.Flusher
 	sequence           uint64
@@ -51,6 +54,8 @@ func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
 }
 
 func (s *sseWriter) event(payload agentEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	// Once an AG-UI run is terminal, any later callback is stale work from a
 	// provider/tool goroutine. Dropping it keeps clients from observing a
 	// second terminal event after RUN_ERROR or RUN_FINISHED.
@@ -262,6 +267,45 @@ func (s *sseWriter) translate(ev agentEvent) []agUiEvent {
 func (s *sseWriter) finalFlush() {
 	_ = s.writer.Flush()
 	s.flusher.Flush()
+}
+
+// ping writes an SSE comment as a keepalive while the run waits for the first
+// model token or a slow tool. Proxies (Cloudflare Tunnel especially) drop
+// otherwise-idle streams, and clients use the tick to distinguish "thinking"
+// from a dead connection. It is a no-op once the run is terminal.
+func (s *sseWriter) ping() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.terminal {
+		return
+	}
+	fmt.Fprint(s.writer, ": ping\n\n")
+	_ = s.writer.Flush()
+	s.flusher.Flush()
+}
+
+// startSSEHeartbeat sends periodic keepalive comments until the returned stop
+// function is called.
+func startSSEHeartbeat(sse *sseWriter) func() {
+	if sse == nil {
+		return func() {}
+	}
+	ticker := time.NewTicker(15 * time.Second)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				sse.ping()
+			}
+		}
+	}()
+	return func() {
+		ticker.Stop()
+		close(done)
+	}
 }
 
 // proposalIDFromResult detects a HITL approval proposal payload

@@ -71,6 +71,21 @@ type Usage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
+// ProviderStatusError carries the upstream HTTP status so the agent loop can
+// map failures to actionable error codes (auth, rate limit, timeout) instead
+// of collapsing every provider failure into ai.model_unavailable.
+type ProviderStatusError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *ProviderStatusError) Error() string {
+	if e == nil {
+		return "provider error"
+	}
+	return fmt.Sprintf("model returned status %d: %s", e.StatusCode, e.Body)
+}
+
 const defaultTimeout = 120 * time.Second
 
 // Provider abstracts the streaming chat backend so the handler can later
@@ -290,7 +305,7 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
-		return "", Usage{}, fmt.Errorf("model returned status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+		return "", Usage{}, &ProviderStatusError{StatusCode: response.StatusCode, Body: strings.TrimSpace(string(body))}
 	}
 
 	finishReason := ""
@@ -371,7 +386,7 @@ func (c *Client) doWithRetry(ctx context.Context, payload []byte) (*http.Respons
 		} else {
 			body, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
 			response.Body.Close()
-			lastErr = fmt.Errorf("model returned status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+			lastErr = &ProviderStatusError{StatusCode: response.StatusCode, Body: strings.TrimSpace(string(body))}
 			if !retryableProviderStatus(response.StatusCode) {
 				return nil, lastErr
 			}

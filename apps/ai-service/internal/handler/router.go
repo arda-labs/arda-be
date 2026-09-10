@@ -43,6 +43,9 @@ type RouterOptions struct {
 	ModelProvider     model.Provider
 	AgentMaxSteps     int
 	ModelSystemPrompt string
+	// AgentRunTimeout bounds a whole agent run (model + tools). Zero disables
+	// the server-side deadline.
+	AgentRunTimeout time.Duration
 	// ModelSDKTypes is the generated arda.* TypeScript declaration file
 	// injected once into the model context so the model knows the whole SDK
 	// surface without re-searching. Empty = not injected (direct-tool mode).

@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config controls the AI service runtime. Development mode is the default for
@@ -33,6 +34,9 @@ type Config struct {
 	ModelSystemPrompt  string
 	AgentMaxSteps      int
 	RateLimitPerMinute int
+	// AgentRunTimeout bounds a whole agent run (model + tools). Zero disables
+	// the server-side deadline; the default is 5 minutes.
+	AgentRunTimeout time.Duration
 
 	// ModelGatewayToken is the AI Gateway credential sent as the
 	// cf-aig-authorization header when a tenant model base URL points at a
@@ -114,6 +118,7 @@ func Load() Config {
 		ModelSystemPrompt:     envOr("AI_MODEL_SYSTEM_PROMPT", defaultPrompt),
 		AgentMaxSteps:         envIntOr("AI_AGENT_MAX_STEPS", 10),
 		RateLimitPerMinute:    envIntOr("AI_RATE_LIMIT_PER_MINUTE", 30),
+		AgentRunTimeout:       time.Duration(envIntOr("AI_AGENT_RUN_TIMEOUT_SECONDS", 300)) * time.Second,
 		ModelGatewayToken:     strings.TrimSpace(os.Getenv("AI_MODEL_GATEWAY_TOKEN")),
 		ModelBaseURLAllowlist: envListOr("AI_MODEL_BASE_URL_ALLOWLIST"),
 		RAGRerankerBaseURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_BASE_URL")), "/"),

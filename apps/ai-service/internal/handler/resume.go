@@ -25,6 +25,8 @@ type runResumeStore interface {
 }
 
 func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore, resolver toolResolver, options RouterOptions) {
+	r, cancelRun := requestWithRunTimeout(r, options)
+	defer cancelRun()
 	if !options.EnableHITLProposals {
 		problem(w, http.StatusNotFound, "ai.hitl_not_enabled")
 		return
@@ -159,6 +161,8 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 		return
 	}
 	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID})
+	stopHeartbeat := startSSEHeartbeat(sse)
+	defer stopHeartbeat()
 	if terminateAgentRunOnContext(ctx, store, exec.Run, resumeInput, sse) {
 		return
 	}
@@ -226,6 +230,8 @@ func buildResumeMessages(
 // executes the approved tool, then the agent loop resumes streaming AG-UI
 // events on the same connection.
 func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, resolver toolResolver, input runInput, options RouterOptions) {
+	r, cancelRun := requestWithRunTimeout(r, options)
+	defer cancelRun()
 	if !options.EnableHITLProposals {
 		problem(w, http.StatusNotFound, "ai.hitl_not_enabled")
 		return
@@ -333,6 +339,8 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 		return
 	}
 	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID})
+	stopHeartbeat := startSSEHeartbeat(sse)
+	defer stopHeartbeat()
 	if terminateAgentRunOnContext(ctx, store, run, resumeInput, sse) {
 		return
 	}

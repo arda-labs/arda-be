@@ -118,6 +118,7 @@ func main() {
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
 		ModelGatewayToken:     cfg.ModelGatewayToken,
 		AllowLocalModelURLs:   cfg.Mode != "production",
+		AgentRunTimeout:       cfg.AgentRunTimeout,
 		RAGService:            knowledgeSvc,
 		EventPublisher:        eventPublisher,
 	}
