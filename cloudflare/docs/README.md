@@ -20,6 +20,7 @@ node scripts/build-problem-docs.mjs
 bun x wrangler deploy -c cloudflare/docs/wrangler.jsonc
 ```
 
-The route `docs.arda.io.vn/*` on zone `arda.io.vn` is created by the first
-deploy (Cloudflare manages the custom-domain route; the DNS record may need a
-one-time manual check).
+The custom domain `docs.arda.io.vn` is provisioned by wrangler
+(`custom_domain: true`) — the DNS record is created automatically on the
+first deploy. `workers_dev` also exposes the worker on
+`arda-problem-docs.<account>.workers.dev` as a fallback.

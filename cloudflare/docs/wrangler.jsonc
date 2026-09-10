@@ -1,10 +1,11 @@
 {
   "$schema": "https://unpkg.com/wrangler/config-schema.json",
   "name": "arda-problem-docs",
+  "main": "./docs-worker.ts",
   "compatibility_date": "2026-08-22",
   "workers_dev": true,
   "routes": [
-    { "pattern": "docs.arda.io.vn/*", "zone_name": "arda.io.vn" }
+    { "pattern": "docs.arda.io.vn", "custom_domain": true }
   ],
   "assets": {
     "directory": "dist",
