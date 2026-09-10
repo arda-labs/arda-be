@@ -1,12 +1,15 @@
 # Problem details catalog
 
-This directory is the source catalog for the stable `type` URLs returned by
+This directory is the single source of truth for the stable `type` URLs returned by
 Arda HTTP APIs (`https://docs.arda.io.vn/problems/<code>`; the URL prefix is
 the `ardahttp.ProblemsTypeBaseURL` constant in
-`libs/go/arda-http/response.go`). The documentation site is generated from
-this directory by `scripts/build-problem-docs.mjs` into
-`cloudflare/docs/` and served by the `arda-problem-docs` Worker — see
-[`cloudflare/docs/README.md`](../../cloudflare/docs/README.md).
+`libs/go/arda-http/response.go`).
+
+The public documentation site and machine lookup API (`docs.arda.io.vn`) are
+built and deployed from the dedicated [`arda-labs/docs-site`](https://github.com/arda-labs/docs-site)
+repository (Fumadocs + Cloudflare Worker), which syncs markdown pages from this directory
+at build time. CI gate `scripts/check-problem-catalog.mjs` remains here to enforce 100% coverage
+against backend Go sources.
 
 ## Page format
 

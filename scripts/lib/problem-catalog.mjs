@@ -1,6 +1,6 @@
 // Shared helpers for the problem-details catalog (docs/problems/*.md) consumed
-// by check-problem-catalog.mjs (CI gate) and build-problem-docs.mjs (static
-// site). Front-matter uses a deliberately tiny YAML subset (flat keys, | and >
+// by check-problem-catalog.mjs (CI gate) and arda-labs/docs-site (static site).
+// Front-matter uses a deliberately tiny YAML subset (flat keys, | and >
 // block scalars, simple lists) so the toolchain stays dependency-free.
 
 import { readFile } from "node:fs/promises";
