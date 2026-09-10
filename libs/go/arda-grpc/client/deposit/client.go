@@ -200,3 +200,71 @@ func (c *Client) ResolveIBMRequest(ctx context.Context, kind, refID, decision, a
 	})
 	return err
 }
+
+// RateRequester is the narrow surface the workflow rate workers need
+// (DPM.100/101).
+type RateRequester interface {
+	CheckRateRequest(ctx context.Context, requestID string) (bool, string, error)
+	ResolveRateRequest(ctx context.Context, requestID, decision, actor string) error
+}
+
+func (c *Client) CheckRateRequest(ctx context.Context, requestID string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("deposit client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckRateRequest(callCtx, &depositv1.CheckRateRequestRequest{RequestId: requestID})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+func (c *Client) ResolveRateRequest(ctx context.Context, requestID, decision, actor string) error {
+	if c == nil {
+		return errors.New("deposit client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.ResolveRateRequest(callCtx, &depositv1.ResolveRateRequestRequest{
+		RequestId: requestID,
+		Decision:  decision,
+		Actor:     actor,
+	})
+	return err
+}
+
+// InterestOperator is the narrow surface the workflow interest workers need
+// (DPM.302/303/304).
+type InterestOperator interface {
+	CheckInterestOp(ctx context.Context, opID string) (bool, string, error)
+	ResolveInterestOp(ctx context.Context, opID, decision, actor string) error
+}
+
+func (c *Client) CheckInterestOp(ctx context.Context, opID string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("deposit client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckInterestOp(callCtx, &depositv1.CheckInterestOpRequest{OpId: opID})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+func (c *Client) ResolveInterestOp(ctx context.Context, opID, decision, actor string) error {
+	if c == nil {
+		return errors.New("deposit client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.ResolveInterestOp(callCtx, &depositv1.ResolveInterestOpRequest{
+		OpId:     opID,
+		Decision: decision,
+		Actor:    actor,
+	})
+	return err
+}

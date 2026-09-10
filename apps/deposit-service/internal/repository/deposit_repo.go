@@ -5,6 +5,7 @@ import (
 	cryptoRand "crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -336,8 +337,56 @@ func (r *DepositRepository) RecordTxn(ctx context.Context, t *DepositTxn) (*Depo
 func (r *DepositRepository) SetTxnJournal(ctx context.Context, tenantID, id, status, journalEntryID string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE dpm_transactions SET status = $3, journal_entry_id = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status, nullStringDep(journalEntryID))
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullStringDep(journalEntryID))
 	return err
+}
+
+// ListTxnsBySavings returns transactions of one savings account.
+func (r *DepositRepository) ListTxnsBySavings(ctx context.Context, tenantID, savingsID string) ([]DepositTxn, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, savings_id, txn_type, amount_minor, currency_code, txn_date::text, status,
+		       workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at
+		FROM dpm_transactions WHERE tenant_id = $1 AND savings_id = $2 ORDER BY created_at DESC LIMIT 200`,
+		tenantID, savingsID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []DepositTxn{}
+	for rows.Next() {
+		var t DepositTxn
+		var caseID, entryID sql.NullString
+		if err := rows.Scan(&t.ID, &t.TenantID, &t.SavingsID, &t.TxnType, &t.AmountMinor, &t.CurrencyCode,
+			&t.TxnDate, &t.Status, &caseID, &entryID, &t.CreatedBy, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		if caseID.Valid {
+			t.WorkflowCaseID = &caseID.String
+		}
+		if entryID.Valid {
+			t.JournalEntryID = &entryID.String
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// GetProductByCode loads one savings product by code.
+func (r *DepositRepository) GetProductByCode(ctx context.Context, tenantID, code string) (*SavingsProduct, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, code, name, term_months, interest_rate, currency_code, is_active,
+		       COALESCE(created_by,''), created_at, updated_at
+		FROM dpm_products WHERE tenant_id = $1 AND code = $2`, tenantID, code)
+	var p SavingsProduct
+	err := row.Scan(&p.ID, &p.TenantID, &p.Code, &p.Name, &p.TermMonths, &p.InterestRate,
+		&p.CurrencyCode, &p.IsActive, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 // CloseSavings marks the account CLOSED after full settlement.
@@ -703,6 +752,486 @@ func (r *DepositRepository) SetIBMMovementStatus(ctx context.Context, tenantID, 
 		UPDATE ibm_movements SET status = $3, updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2::uuid`, tenantID, id, status)
 	return err
+}
+
+// ── DPM interest rates / accruals / ops (W3) ──
+
+// InterestRate is one DPM rate tier row.
+type InterestRate struct {
+	ID            string    `json:"id"`
+	TenantID      string    `json:"tenant_id"`
+	ProductCode   string    `json:"product_code,omitempty"`
+	TermMonths    int       `json:"term_months"`
+	Method        string    `json:"method"`
+	Denominator   int       `json:"denominator"`
+	Rate          float64   `json:"rate"`
+	EffectiveFrom string    `json:"effective_from"`
+	IsActive      bool      `json:"is_active"`
+	CreatedBy     string    `json:"created_by"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// RateRequest is one staged rate register/adjust request.
+type RateRequest struct {
+	ID             string          `json:"id"`
+	TenantID       string          `json:"tenant_id"`
+	RequestType    string          `json:"request_type"`
+	Payload        json.RawMessage `json:"payload"`
+	Status         string          `json:"status"`
+	WorkflowCaseID *string         `json:"workflow_case_id,omitempty"`
+	CreatedBy      string          `json:"created_by"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+}
+
+// Accrual is one posted daily-prorated accrual row.
+type Accrual struct {
+	ID           string    `json:"id"`
+	TenantID     string    `json:"tenant_id"`
+	SavingsID    string    `json:"savings_id"`
+	SavingsCode  string    `json:"savings_code"`
+	PeriodFrom   string    `json:"period_from"`
+	PeriodTo     string    `json:"period_to"`
+	Days         int       `json:"days"`
+	BaseMinor    int64     `json:"base_minor"`
+	Rate         float64   `json:"rate"`
+	AmountMinor  int64     `json:"amount_minor"`
+	Status       string    `json:"status"`
+	JournalID    *string   `json:"journal_entry_id,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// InterestOp is one staged interest pay/capitalize operation.
+type InterestOp struct {
+	ID             string    `json:"id"`
+	TenantID       string    `json:"tenant_id"`
+	SavingsID      string    `json:"savings_id"`
+	SavingsCode    string    `json:"savings_code"`
+	OpType         string    `json:"op_type"`
+	AmountMinor    int64     `json:"amount_minor"`
+	Days           int       `json:"days"`
+	Rate           float64   `json:"rate"`
+	PeriodFrom     string    `json:"period_from,omitempty"`
+	PeriodTo       string    `json:"period_to,omitempty"`
+	BatchID        *string   `json:"batch_id,omitempty"`
+	Status         string    `json:"status"`
+	WorkflowCaseID *string   `json:"workflow_case_id,omitempty"`
+	JournalEntryID *string   `json:"journal_entry_id,omitempty"`
+	CreatedBy      string    `json:"created_by"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// ListInterestRates returns active rate tiers (optionally for one product).
+func (r *DepositRepository) ListInterestRates(ctx context.Context, tenantID, productCode string) ([]InterestRate, error) {
+	where := []string{"tenant_id = $1", "is_active"}
+	args := []any{tenantID}
+	if productCode != "" {
+		args = append(args, productCode)
+		where = append(where, fmt.Sprintf("(product_code = $%d OR product_code IS NULL)", len(args)))
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, COALESCE(product_code,''), term_months, method, denominator, rate,
+		       effective_from::text, is_active, COALESCE(created_by,''), created_at, updated_at
+		FROM dpm_interest_rates WHERE `+strings.Join(where, " AND ")+`
+		ORDER BY effective_from DESC, term_months ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []InterestRate{}
+	for rows.Next() {
+		var x InterestRate
+		if err := rows.Scan(&x.ID, &x.TenantID, &x.ProductCode, &x.TermMonths, &x.Method, &x.Denominator,
+			&x.Rate, &x.EffectiveFrom, &x.IsActive, &x.CreatedBy, &x.CreatedAt, &x.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// FindEffectiveRate returns the most specific active tier for the product/term
+// on or before onDate (falls back product → default bucket).
+func (r *DepositRepository) FindEffectiveRate(ctx context.Context, tenantID, productCode string, termMonths int, onDate string) (*InterestRate, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, COALESCE(product_code,''), term_months, method, denominator, rate,
+		       effective_from::text, is_active, COALESCE(created_by,''), created_at, updated_at
+		FROM dpm_interest_rates
+		WHERE tenant_id = $1 AND is_active AND effective_from <= $2::date
+		  AND (product_code = $3 OR product_code IS NULL)
+		  AND (term_months = $4 OR term_months = 0)
+		ORDER BY (product_code = $3) DESC, (term_months = $4) DESC, effective_from DESC
+		LIMIT 1`, tenantID, onDate, nullStringDep(productCode), termMonths)
+	var x InterestRate
+	err := row.Scan(&x.ID, &x.TenantID, &x.ProductCode, &x.TermMonths, &x.Method, &x.Denominator,
+		&x.Rate, &x.EffectiveFrom, &x.IsActive, &x.CreatedBy, &x.CreatedAt, &x.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+// UpsertInterestRate inserts one rate tier (bucket + effective date unique).
+func (r *DepositRepository) UpsertInterestRate(ctx context.Context, in *InterestRate) (*InterestRate, error) {
+	if in.ID == "" {
+		in.ID = NewDepositID("dpmrate")
+	}
+	if in.Method == "" {
+		in.Method = "SIMPLE"
+	}
+	if in.Denominator == 0 {
+		in.Denominator = 365
+	}
+	row := r.db.QueryRowContext(ctx, `
+		INSERT INTO dpm_interest_rates (id, tenant_id, product_code, term_months, method, denominator,
+			rate, effective_from, is_active, created_by)
+		VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,true,$9)
+		ON CONFLICT (tenant_id, COALESCE(product_code, ''), term_months, effective_from)
+		DO UPDATE SET rate = EXCLUDED.rate, method = EXCLUDED.method,
+			denominator = EXCLUDED.denominator, is_active = true,
+			updated_at = now(), version = dpm_interest_rates.version + 1
+		RETURNING created_at, updated_at`,
+		in.ID, in.TenantID, in.ProductCode, in.TermMonths, in.Method, in.Denominator,
+		in.Rate, in.EffectiveFrom, in.CreatedBy)
+	if err := row.Scan(&in.CreatedAt, &in.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return in, nil
+}
+
+// CreateRateRequest stages one rate request row.
+func (r *DepositRepository) CreateRateRequest(ctx context.Context, in *RateRequest) (*RateRequest, error) {
+	if len(in.Payload) == 0 {
+		in.Payload = json.RawMessage(`{}`)
+	}
+	row := r.db.QueryRowContext(ctx, `
+		INSERT INTO dpm_rate_requests (tenant_id, request_type, payload, status, created_by)
+		VALUES ($1,$2,$3,$4,$5) RETURNING id::text, created_at, updated_at`,
+		in.TenantID, in.RequestType, in.Payload, in.Status, in.CreatedBy)
+	if err := row.Scan(&in.ID, &in.CreatedAt, &in.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return in, nil
+}
+
+// GetRateRequestByID loads one rate request.
+func (r *DepositRepository) GetRateRequestByID(ctx context.Context, tenantID, id string) (*RateRequest, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id::text, tenant_id, request_type, payload, status, workflow_case_id::text,
+		       COALESCE(created_by,''), created_at, updated_at
+		FROM dpm_rate_requests WHERE tenant_id = $1 AND id = $2::uuid`, tenantID, id)
+	var x RateRequest
+	var caseID sql.NullString
+	err := row.Scan(&x.ID, &x.TenantID, &x.RequestType, &x.Payload, &x.Status, &caseID,
+		&x.CreatedBy, &x.CreatedAt, &x.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if caseID.Valid {
+		x.WorkflowCaseID = &caseID.String
+	}
+	return &x, nil
+}
+
+// SetRateRequestCase stamps the workflow case + SUBMITTED state.
+func (r *DepositRepository) SetRateRequestCase(ctx context.Context, tenantID, id, caseID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE dpm_rate_requests SET workflow_case_id = NULLIF($3,'')::uuid, status = 'SUBMITTED',
+			updated_at = now(), version = version + 1 WHERE tenant_id = $1 AND id = $2::uuid`,
+		tenantID, id, caseID)
+	return err
+}
+
+// SetRateRequestStatus moves the request between lifecycle states.
+func (r *DepositRepository) SetRateRequestStatus(ctx context.Context, tenantID, id, status string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE dpm_rate_requests SET status = $3, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2::uuid`, tenantID, id, status)
+	return err
+}
+
+// CreateAccrual inserts one accrual row; returns false when the period was
+// already accrued (idempotent per savings+period_to).
+func (r *DepositRepository) CreateAccrual(ctx context.Context, a *Accrual) (bool, error) {
+	row := r.db.QueryRowContext(ctx, `
+		INSERT INTO dpm_accruals (tenant_id, savings_id, savings_code, period_from, period_to, days,
+			base_minor, rate, amount_minor, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'POSTED')
+		ON CONFLICT (tenant_id, savings_id, period_to) DO NOTHING
+		RETURNING id::text`,
+		a.TenantID, a.SavingsID, a.SavingsCode, a.PeriodFrom, a.PeriodTo, a.Days,
+		a.BaseMinor, a.Rate, a.AmountMinor)
+	var id string
+	err := row.Scan(&id)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	a.ID = id
+	return true, nil
+}
+
+// SetAccrualJournal stamps the accrual posting result.
+func (r *DepositRepository) SetAccrualJournal(ctx context.Context, tenantID, id, journalEntryID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE dpm_accruals SET journal_entry_id = NULLIF($3,'')::uuid WHERE tenant_id = $1 AND id = $2::uuid`,
+		tenantID, id, journalEntryID)
+	return err
+}
+
+// LastAccrualPeriod returns the last accrued-to date for one savings.
+func (r *DepositRepository) LastAccrualPeriod(ctx context.Context, tenantID, savingsID string) (string, error) {
+	var last sql.NullString
+	err := r.db.QueryRowContext(ctx, `
+		SELECT MAX(period_to)::text FROM dpm_accruals WHERE tenant_id = $1 AND savings_id = $2`,
+		tenantID, savingsID).Scan(&last)
+	if err != nil {
+		return "", err
+	}
+	return last.String, nil
+}
+
+// ListAccrualsBySavings returns accrual rows for one savings account.
+func (r *DepositRepository) ListAccrualsBySavings(ctx context.Context, tenantID, savingsID string) ([]Accrual, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id::text, tenant_id, savings_id, savings_code, period_from::text, period_to::text, days,
+		       base_minor, rate, amount_minor, status, journal_entry_id::text, created_at
+		FROM dpm_accruals WHERE tenant_id = $1 AND savings_id = $2 ORDER BY period_to DESC LIMIT 100`,
+		tenantID, savingsID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Accrual{}
+	for rows.Next() {
+		var a Accrual
+		var journal sql.NullString
+		if err := rows.Scan(&a.ID, &a.TenantID, &a.SavingsID, &a.SavingsCode, &a.PeriodFrom, &a.PeriodTo,
+			&a.Days, &a.BaseMinor, &a.Rate, &a.AmountMinor, &a.Status, &journal, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		if journal.Valid {
+			a.JournalID = &journal.String
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// ListActiveSavingsForAccrual returns ACTIVE savings ordered for COB accrual.
+func (r *DepositRepository) ListActiveSavingsForAccrual(ctx context.Context, tenantID string) ([]Savings, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, savings_code, customer_code, product_code, open_date::text, maturity_date::text,
+		       principal_minor, accrued_minor, currency_code, COALESCE(org_code,''), status,
+		       workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at
+		FROM dpm_savings WHERE tenant_id = $1 AND status = 'ACTIVE' ORDER BY savings_code`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Savings{}
+	for rows.Next() {
+		var s Savings
+		var caseID, entryID sql.NullString
+		if err := rows.Scan(&s.ID, &s.TenantID, &s.SavingsCode, &s.CustomerCode, &s.ProductCode,
+			&s.OpenDate, &s.MaturityDate, &s.PrincipalMinor, &s.AccruedMinor, &s.CurrencyCode,
+			&s.OrgCode, &s.Status, &caseID, &entryID, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if caseID.Valid {
+			s.WorkflowCaseID = &caseID.String
+		}
+		if entryID.Valid {
+			s.JournalEntryID = &entryID.String
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// ApplyAccrualToSavings adds accrued interest to the savings row.
+func (r *DepositRepository) ApplyAccrualToSavings(ctx context.Context, tenantID, savingsID string, amountMinor int64) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE dpm_savings SET accrued_minor = accrued_minor + $3, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'`, tenantID, savingsID, amountMinor)
+	return err
+}
+
+// ApplyInterestOp updates the savings row for PAY (accrued down) or
+// CAPITALIZE (accrued down + principal up).
+func (r *DepositRepository) ApplyInterestOp(ctx context.Context, tenantID, savingsID string, amountMinor int64, capitalize bool) error {
+	capitalizeSQL := ""
+	if capitalize {
+		capitalizeSQL = ", principal_minor = principal_minor + $3"
+	}
+	tag, err := r.db.ExecContext(ctx, `
+		UPDATE dpm_savings SET accrued_minor = GREATEST(accrued_minor - $3, 0)`+capitalizeSQL+`,
+			updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'`, tenantID, savingsID, amountMinor)
+	if err != nil {
+		return err
+	}
+	if n, _ := tag.RowsAffected(); n == 0 {
+		return fmt.Errorf("savings account not active")
+	}
+	return nil
+}
+
+// CreateInterestOp inserts one staged interest op.
+func (r *DepositRepository) CreateInterestOp(ctx context.Context, in *InterestOp) (*InterestOp, error) {
+	row := r.db.QueryRowContext(ctx, `
+		INSERT INTO dpm_interest_ops (tenant_id, savings_id, savings_code, op_type, amount_minor, days,
+			rate, period_from, period_to, batch_id, status, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::date,NULLIF($9,'')::date,$10::uuid,$11,$12)
+		RETURNING id::text, created_at, updated_at`,
+		in.TenantID, in.SavingsID, in.SavingsCode, in.OpType, in.AmountMinor, in.Days, in.Rate,
+		in.PeriodFrom, in.PeriodTo, nullStringDep(derefString(in.BatchID)), in.Status, in.CreatedBy)
+	if err := row.Scan(&in.ID, &in.CreatedAt, &in.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return in, nil
+}
+
+// GetInterestOpByID loads one interest op.
+func (r *DepositRepository) GetInterestOpByID(ctx context.Context, tenantID, id string) (*InterestOp, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id::text, tenant_id, savings_id, savings_code, op_type, amount_minor, days, rate,
+		       COALESCE(period_from::text,''), COALESCE(period_to::text,''), batch_id::text,
+		       status, workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at
+		FROM dpm_interest_ops WHERE tenant_id = $1 AND id = $2::uuid`, tenantID, id)
+	var x InterestOp
+	var batchID, caseID, entryID sql.NullString
+	err := row.Scan(&x.ID, &x.TenantID, &x.SavingsID, &x.SavingsCode, &x.OpType, &x.AmountMinor, &x.Days,
+		&x.Rate, &x.PeriodFrom, &x.PeriodTo, &batchID, &x.Status, &caseID, &entryID, &x.CreatedBy, &x.CreatedAt, &x.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if batchID.Valid {
+		x.BatchID = &batchID.String
+	}
+	if caseID.Valid {
+		x.WorkflowCaseID = &caseID.String
+	}
+	if entryID.Valid {
+		x.JournalEntryID = &entryID.String
+	}
+	return &x, nil
+}
+
+// ListInterestOpsBySavings returns ops for one savings account.
+func (r *DepositRepository) ListInterestOpsBySavings(ctx context.Context, tenantID, savingsID string) ([]InterestOp, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id::text, tenant_id, savings_id, savings_code, op_type, amount_minor, days, rate,
+		       COALESCE(period_from::text,''), COALESCE(period_to::text,''), batch_id::text,
+		       status, workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at
+		FROM dpm_interest_ops WHERE tenant_id = $1 AND savings_id = $2 ORDER BY created_at DESC LIMIT 100`,
+		tenantID, savingsID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []InterestOp{}
+	for rows.Next() {
+		var x InterestOp
+		var batchID, caseID, entryID sql.NullString
+		if err := rows.Scan(&x.ID, &x.TenantID, &x.SavingsID, &x.SavingsCode, &x.OpType, &x.AmountMinor,
+			&x.Days, &x.Rate, &x.PeriodFrom, &x.PeriodTo, &batchID, &x.Status, &caseID, &entryID,
+			&x.CreatedBy, &x.CreatedAt, &x.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if batchID.Valid {
+			x.BatchID = &batchID.String
+		}
+		if caseID.Valid {
+			x.WorkflowCaseID = &caseID.String
+		}
+		if entryID.Valid {
+			x.JournalEntryID = &entryID.String
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// ListInterestOpsByBatch returns ops of one batch.
+func (r *DepositRepository) ListInterestOpsByBatch(ctx context.Context, tenantID, batchID string) ([]InterestOp, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id::text, tenant_id, savings_id, savings_code, op_type, amount_minor, days, rate,
+		       COALESCE(period_from::text,''), COALESCE(period_to::text,''), batch_id::text,
+		       status, workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at
+		FROM dpm_interest_ops WHERE tenant_id = $1 AND batch_id = $2::uuid ORDER BY savings_code`,
+		tenantID, batchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []InterestOp{}
+	for rows.Next() {
+		var x InterestOp
+		var batch, caseID, entryID sql.NullString
+		if err := rows.Scan(&x.ID, &x.TenantID, &x.SavingsID, &x.SavingsCode, &x.OpType, &x.AmountMinor,
+			&x.Days, &x.Rate, &x.PeriodFrom, &x.PeriodTo, &batch, &x.Status, &caseID, &entryID,
+			&x.CreatedBy, &x.CreatedAt, &x.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if batch.Valid {
+			x.BatchID = &batch.String
+		}
+		if caseID.Valid {
+			x.WorkflowCaseID = &caseID.String
+		}
+		if entryID.Valid {
+			x.JournalEntryID = &entryID.String
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// SetInterestOpCase stamps the workflow case + SUBMITTED state.
+func (r *DepositRepository) SetInterestOpCase(ctx context.Context, tenantID, id, caseID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE dpm_interest_ops SET workflow_case_id = NULLIF($3,'')::uuid, status = 'SUBMITTED',
+			updated_at = now(), version = version + 1 WHERE tenant_id = $1 AND id = $2::uuid`,
+		tenantID, id, caseID)
+	return err
+}
+
+// SetInterestOpJournal stamps the posting result.
+func (r *DepositRepository) SetInterestOpJournal(ctx context.Context, tenantID, id, status, journalEntryID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE dpm_interest_ops SET status = $3, journal_entry_id = NULLIF($4,'')::uuid,
+			updated_at = now(), version = version + 1 WHERE tenant_id = $1 AND id = $2::uuid`,
+		tenantID, id, status, journalEntryID)
+	return err
+}
+
+// SetInterestOpStatus moves the op between lifecycle states.
+func (r *DepositRepository) SetInterestOpStatus(ctx context.Context, tenantID, id, status string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE dpm_interest_ops SET status = $3, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2::uuid`, tenantID, id, status)
+	return err
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // NewDepositID generates a prefixed random id.

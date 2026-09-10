@@ -20,10 +20,11 @@ type DepositServer struct {
 	additional *service.AdditionalDepositService
 	products   *service.ProductRequestService
 	ibm        *service.IBMService
+	interest   *service.InterestService
 }
 
-func NewDepositServer(settlement *service.SettlementService, additional *service.AdditionalDepositService, products *service.ProductRequestService, ibm *service.IBMService) *DepositServer {
-	return &DepositServer{settlement: settlement, additional: additional, products: products, ibm: ibm}
+func NewDepositServer(settlement *service.SettlementService, additional *service.AdditionalDepositService, products *service.ProductRequestService, ibm *service.IBMService, interest *service.InterestService) *DepositServer {
+	return &DepositServer{settlement: settlement, additional: additional, products: products, ibm: ibm, interest: interest}
 }
 
 func tenantFromContext(ctx context.Context) (string, error) {
@@ -129,6 +130,52 @@ func (s *DepositServer) ResolveIBMRequest(ctx context.Context, req *depositv1.Re
 		return &depositv1.ResolveIBMRequestResponse{Ok: false}, nil
 	}
 	return &depositv1.ResolveIBMRequestResponse{Ok: true}, nil
+}
+
+func (s *DepositServer) CheckRateRequest(ctx context.Context, req *depositv1.CheckRateRequestRequest) (*depositv1.CheckRateRequestResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	ok, message, err := s.interest.CheckRateRequest(ctx, tenantID, req.GetRequestId())
+	if err != nil {
+		return &depositv1.CheckRateRequestResponse{Ok: false, Message: err.Error()}, nil
+	}
+	return &depositv1.CheckRateRequestResponse{Ok: ok, Message: message}, nil
+}
+
+func (s *DepositServer) ResolveRateRequest(ctx context.Context, req *depositv1.ResolveRateRequestRequest) (*depositv1.ResolveRateRequestResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if err := s.interest.ResolveRateRequest(ctx, tenantID, req.GetRequestId(), req.GetDecision(), req.GetActor()); err != nil {
+		return &depositv1.ResolveRateRequestResponse{Ok: false}, nil
+	}
+	return &depositv1.ResolveRateRequestResponse{Ok: true}, nil
+}
+
+func (s *DepositServer) CheckInterestOp(ctx context.Context, req *depositv1.CheckInterestOpRequest) (*depositv1.CheckInterestOpResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	ok, message, err := s.interest.CheckInterestOp(ctx, tenantID, req.GetOpId())
+	if err != nil {
+		return &depositv1.CheckInterestOpResponse{Ok: false, Message: err.Error()}, nil
+	}
+	return &depositv1.CheckInterestOpResponse{Ok: ok, Message: message}, nil
+}
+
+func (s *DepositServer) ResolveInterestOp(ctx context.Context, req *depositv1.ResolveInterestOpRequest) (*depositv1.ResolveInterestOpResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if err := s.interest.ResolveInterestOp(ctx, tenantID, req.GetOpId(), req.GetDecision(), req.GetActor()); err != nil {
+		return &depositv1.ResolveInterestOpResponse{Ok: false}, nil
+	}
+	return &depositv1.ResolveInterestOpResponse{Ok: true}, nil
 }
 
 // ardametadataFromContext is a thin adapter so the server does not import

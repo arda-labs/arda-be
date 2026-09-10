@@ -182,9 +182,13 @@ func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, a
 	var entryID string
 	if s.finance != nil {
 		var err error
-		entryID, err = s.post(ctx, tenantID, "DPM_SETTLEMENT", "DPM_SETTLEMENT", idempotencyKey("dpm-settlement", savingsCode),
-			savings.SavingsCode, savings.CustomerCode, todayDep(ctx), savings.CurrencyCode, payoutMinor,
-			"DPM_DEPOSIT_LIABILITY", "CASH_SETTLEMENT_ACCOUNT")
+		if savings.AccruedMinor > 0 {
+			entryID, err = s.postSettlementV3(ctx, tenantID, savings)
+		} else {
+			entryID, err = s.post(ctx, tenantID, "DPM_SETTLEMENT", "DPM_SETTLEMENT", idempotencyKey("dpm-settlement", savingsCode),
+				savings.SavingsCode, savings.CustomerCode, todayDep(ctx), savings.CurrencyCode, payoutMinor,
+				"DPM_DEPOSIT_LIABILITY", "CASH_SETTLEMENT_ACCOUNT")
+		}
 		if err != nil {
 			return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "settlement posting failed", err)
 		}
@@ -193,6 +197,42 @@ func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, a
 		return nil, mapErr(err)
 	}
 	return savings, nil
+}
+
+// postSettlementV3 posts the 3-leg settlement (principal + accrued interest +
+// cash payout) when the savings has accrued interest (EPAS DPM.306 parity).
+func (s *SettlementService) postSettlementV3(ctx context.Context, tenantID string, savings *repository.Savings) (string, error) {
+	analytics := func() *financev1.Analytics {
+		return &financev1.Analytics{
+			CustomerCode: savings.CustomerCode,
+			Dimensions:   map[string]string{"savings_code": savings.SavingsCode},
+		}
+	}
+	payout := savings.PrincipalMinor + savings.AccruedMinor
+	resp, err := s.finance.Post(ctx, &financev1.PostingRequest{
+		IdempotencyKey: idempotencyKey("dpm-settlement", savings.SavingsCode),
+		AccountingDate: todayDep(ctx),
+		CurrencyCode:   savings.CurrencyCode,
+		Description:    "DPM_SETTLEMENT_V3 " + savings.SavingsCode,
+		BusinessReference: &financev1.BusinessReference{
+			Domain:       "dpm",
+			DocumentType: "DPM_SETTLEMENT_V3",
+			DocumentCode: savings.SavingsCode,
+		},
+		Lines: financeclient.PostingLinesFromRules(
+			financeclient.FetchPostingRules(s.finance, "DPM_SETTLEMENT_V3"),
+			[]financeclient.PostingLeg{
+				{CardLine: 1, Fallback: "DPM_DEPOSIT_LIABILITY", Direction: "DEBIT", AmountMinor: savings.PrincipalMinor, Analytics: analytics()},
+				{CardLine: 2, Fallback: "DPM_INTEREST_PAYABLE", Direction: "DEBIT", AmountMinor: savings.AccruedMinor, Analytics: analytics()},
+				{CardLine: 3, Fallback: "CASH_SETTLEMENT_ACCOUNT", Direction: "CREDIT", AmountMinor: payout, Analytics: analytics()},
+			},
+			savings.CurrencyCode,
+		),
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.GetJournalEntryId(), nil
 }
 
 // post builds and posts one two-leg movement. The rule card (cardType) is

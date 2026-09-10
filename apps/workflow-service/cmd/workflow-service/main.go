@@ -406,6 +406,26 @@ func main() {
 			defer imvw.Close()
 			defer imw.Close()
 			defer imcw.Close()
+
+			rateWorkers := worker.NewDPMInterestWorkers(depositClient, caseRepo, worker.DPMInterestModeRate)
+			drv, dre, drc := rateWorkers.Handlers()
+			drvw := zeebeSvc.NewJobWorker("dpm.rate.validate", drv)
+			drw := zeebeSvc.NewJobWorker("dpm.rate.execute", dre)
+			drcw := zeebeSvc.NewJobWorker("dpm.rate.cancel", drc)
+			defer drvw.Close()
+			defer drw.Close()
+			defer drcw.Close()
+
+			// Single ops + batches share the dpm.interest topics; the worker
+			// resolves opId/opIds from the case variables.
+			interestWorkers := worker.NewDPMInterestWorkers(depositClient, caseRepo, worker.DPMInterestModeOp)
+			div, die, dic := interestWorkers.Handlers()
+			divw := zeebeSvc.NewJobWorker("dpm.interest.validate", div)
+			diw := zeebeSvc.NewJobWorker("dpm.interest.execute", die)
+			diwc := zeebeSvc.NewJobWorker("dpm.interest.cancel", dic)
+			defer divw.Close()
+			defer diw.Close()
+			defer diwc.Close()
 			logger.Info("workflow deposit workers registered")
 		}
 	}

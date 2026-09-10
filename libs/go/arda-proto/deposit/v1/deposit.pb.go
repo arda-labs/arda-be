@@ -869,6 +869,408 @@ func (x *ResolveIBMRequestResponse) GetOk() bool {
 	return false
 }
 
+// DPM rate register/edit (DPM.100/101): APPROVE upserts the rate tier.
+type CheckRateRequestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckRateRequestRequest) Reset() {
+	*x = CheckRateRequestRequest{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckRateRequestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckRateRequestRequest) ProtoMessage() {}
+
+func (x *CheckRateRequestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckRateRequestRequest.ProtoReflect.Descriptor instead.
+func (*CheckRateRequestRequest) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CheckRateRequestRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type CheckRateRequestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckRateRequestResponse) Reset() {
+	*x = CheckRateRequestResponse{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckRateRequestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckRateRequestResponse) ProtoMessage() {}
+
+func (x *CheckRateRequestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckRateRequestResponse.ProtoReflect.Descriptor instead.
+func (*CheckRateRequestResponse) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CheckRateRequestResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *CheckRateRequestResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type ResolveRateRequestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Decision      string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
+	Actor         string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveRateRequestRequest) Reset() {
+	*x = ResolveRateRequestRequest{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveRateRequestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveRateRequestRequest) ProtoMessage() {}
+
+func (x *ResolveRateRequestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveRateRequestRequest.ProtoReflect.Descriptor instead.
+func (*ResolveRateRequestRequest) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ResolveRateRequestRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ResolveRateRequestRequest) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *ResolveRateRequestRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+type ResolveRateRequestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveRateRequestResponse) Reset() {
+	*x = ResolveRateRequestResponse{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveRateRequestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveRateRequestResponse) ProtoMessage() {}
+
+func (x *ResolveRateRequestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveRateRequestResponse.ProtoReflect.Descriptor instead.
+func (*ResolveRateRequestResponse) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ResolveRateRequestResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+// DPM.302/303/304 interest ops: APPROVE posts + updates the savings row.
+type CheckInterestOpRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OpId          string                 `protobuf:"bytes,1,opt,name=op_id,json=opId,proto3" json:"op_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckInterestOpRequest) Reset() {
+	*x = CheckInterestOpRequest{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckInterestOpRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckInterestOpRequest) ProtoMessage() {}
+
+func (x *CheckInterestOpRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckInterestOpRequest.ProtoReflect.Descriptor instead.
+func (*CheckInterestOpRequest) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *CheckInterestOpRequest) GetOpId() string {
+	if x != nil {
+		return x.OpId
+	}
+	return ""
+}
+
+type CheckInterestOpResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckInterestOpResponse) Reset() {
+	*x = CheckInterestOpResponse{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckInterestOpResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckInterestOpResponse) ProtoMessage() {}
+
+func (x *CheckInterestOpResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckInterestOpResponse.ProtoReflect.Descriptor instead.
+func (*CheckInterestOpResponse) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *CheckInterestOpResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *CheckInterestOpResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type ResolveInterestOpRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OpId          string                 `protobuf:"bytes,1,opt,name=op_id,json=opId,proto3" json:"op_id,omitempty"`
+	Decision      string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
+	Actor         string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveInterestOpRequest) Reset() {
+	*x = ResolveInterestOpRequest{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveInterestOpRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveInterestOpRequest) ProtoMessage() {}
+
+func (x *ResolveInterestOpRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveInterestOpRequest.ProtoReflect.Descriptor instead.
+func (*ResolveInterestOpRequest) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ResolveInterestOpRequest) GetOpId() string {
+	if x != nil {
+		return x.OpId
+	}
+	return ""
+}
+
+func (x *ResolveInterestOpRequest) GetDecision() string {
+	if x != nil {
+		return x.Decision
+	}
+	return ""
+}
+
+func (x *ResolveInterestOpRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+type ResolveInterestOpResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveInterestOpResponse) Reset() {
+	*x = ResolveInterestOpResponse{}
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveInterestOpResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveInterestOpResponse) ProtoMessage() {}
+
+func (x *ResolveInterestOpResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_deposit_v1_deposit_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveInterestOpResponse.ProtoReflect.Descriptor instead.
+func (*ResolveInterestOpResponse) Descriptor() ([]byte, []int) {
+	return file_arda_deposit_v1_deposit_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ResolveInterestOpResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_arda_deposit_v1_deposit_proto protoreflect.FileDescriptor
 
 const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
@@ -922,7 +1324,31 @@ const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
 	"\bdecision\x18\x03 \x01(\tR\bdecision\x12\x14\n" +
 	"\x05actor\x18\x04 \x01(\tR\x05actor\"+\n" +
 	"\x19ResolveIBMRequestResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xc7\x06\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"8\n" +
+	"\x17CheckRateRequestRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"D\n" +
+	"\x18CheckRateRequestResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"l\n" +
+	"\x19ResolveRateRequestRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1a\n" +
+	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x14\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\",\n" +
+	"\x1aResolveRateRequestResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"-\n" +
+	"\x16CheckInterestOpRequest\x12\x13\n" +
+	"\x05op_id\x18\x01 \x01(\tR\x04opId\"C\n" +
+	"\x17CheckInterestOpResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"a\n" +
+	"\x18ResolveInterestOpRequest\x12\x13\n" +
+	"\x05op_id\x18\x01 \x01(\tR\x04opId\x12\x1a\n" +
+	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x14\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\"+\n" +
+	"\x19ResolveInterestOpResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\xf1\t\n" +
 	"\x15DepositCommandService\x12X\n" +
 	"\vCheckSettle\x12#.arda.deposit.v1.CheckSettleRequest\x1a$.arda.deposit.v1.CheckSettleResponse\x12I\n" +
 	"\x06Settle\x12\x1e.arda.deposit.v1.SettleRequest\x1a\x1f.arda.deposit.v1.SettleResponse\x12d\n" +
@@ -931,7 +1357,11 @@ const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
 	"\x13CheckProductRequest\x12+.arda.deposit.v1.CheckProductRequestRequest\x1a,.arda.deposit.v1.CheckProductRequestResponse\x12v\n" +
 	"\x15ResolveProductRequest\x12-.arda.deposit.v1.ResolveProductRequestRequest\x1a..arda.deposit.v1.ResolveProductRequestResponse\x12d\n" +
 	"\x0fCheckIBMRequest\x12'.arda.deposit.v1.CheckIBMRequestRequest\x1a(.arda.deposit.v1.CheckIBMRequestResponse\x12j\n" +
-	"\x11ResolveIBMRequest\x12).arda.deposit.v1.ResolveIBMRequestRequest\x1a*.arda.deposit.v1.ResolveIBMRequestResponseBCZAgithub.com/arda-labs/arda/libs/go/arda-proto/deposit/v1;depositv1b\x06proto3"
+	"\x11ResolveIBMRequest\x12).arda.deposit.v1.ResolveIBMRequestRequest\x1a*.arda.deposit.v1.ResolveIBMRequestResponse\x12g\n" +
+	"\x10CheckRateRequest\x12(.arda.deposit.v1.CheckRateRequestRequest\x1a).arda.deposit.v1.CheckRateRequestResponse\x12m\n" +
+	"\x12ResolveRateRequest\x12*.arda.deposit.v1.ResolveRateRequestRequest\x1a+.arda.deposit.v1.ResolveRateRequestResponse\x12d\n" +
+	"\x0fCheckInterestOp\x12'.arda.deposit.v1.CheckInterestOpRequest\x1a(.arda.deposit.v1.CheckInterestOpResponse\x12j\n" +
+	"\x11ResolveInterestOp\x12).arda.deposit.v1.ResolveInterestOpRequest\x1a*.arda.deposit.v1.ResolveInterestOpResponseBCZAgithub.com/arda-labs/arda/libs/go/arda-proto/deposit/v1;depositv1b\x06proto3"
 
 var (
 	file_arda_deposit_v1_deposit_proto_rawDescOnce sync.Once
@@ -945,7 +1375,7 @@ func file_arda_deposit_v1_deposit_proto_rawDescGZIP() []byte {
 	return file_arda_deposit_v1_deposit_proto_rawDescData
 }
 
-var file_arda_deposit_v1_deposit_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_arda_deposit_v1_deposit_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_arda_deposit_v1_deposit_proto_goTypes = []any{
 	(*CheckSettleRequest)(nil),            // 0: arda.deposit.v1.CheckSettleRequest
 	(*CheckSettleResponse)(nil),           // 1: arda.deposit.v1.CheckSettleResponse
@@ -963,6 +1393,14 @@ var file_arda_deposit_v1_deposit_proto_goTypes = []any{
 	(*CheckIBMRequestResponse)(nil),       // 13: arda.deposit.v1.CheckIBMRequestResponse
 	(*ResolveIBMRequestRequest)(nil),      // 14: arda.deposit.v1.ResolveIBMRequestRequest
 	(*ResolveIBMRequestResponse)(nil),     // 15: arda.deposit.v1.ResolveIBMRequestResponse
+	(*CheckRateRequestRequest)(nil),       // 16: arda.deposit.v1.CheckRateRequestRequest
+	(*CheckRateRequestResponse)(nil),      // 17: arda.deposit.v1.CheckRateRequestResponse
+	(*ResolveRateRequestRequest)(nil),     // 18: arda.deposit.v1.ResolveRateRequestRequest
+	(*ResolveRateRequestResponse)(nil),    // 19: arda.deposit.v1.ResolveRateRequestResponse
+	(*CheckInterestOpRequest)(nil),        // 20: arda.deposit.v1.CheckInterestOpRequest
+	(*CheckInterestOpResponse)(nil),       // 21: arda.deposit.v1.CheckInterestOpResponse
+	(*ResolveInterestOpRequest)(nil),      // 22: arda.deposit.v1.ResolveInterestOpRequest
+	(*ResolveInterestOpResponse)(nil),     // 23: arda.deposit.v1.ResolveInterestOpResponse
 }
 var file_arda_deposit_v1_deposit_proto_depIdxs = []int32{
 	0,  // 0: arda.deposit.v1.DepositCommandService.CheckSettle:input_type -> arda.deposit.v1.CheckSettleRequest
@@ -973,16 +1411,24 @@ var file_arda_deposit_v1_deposit_proto_depIdxs = []int32{
 	10, // 5: arda.deposit.v1.DepositCommandService.ResolveProductRequest:input_type -> arda.deposit.v1.ResolveProductRequestRequest
 	12, // 6: arda.deposit.v1.DepositCommandService.CheckIBMRequest:input_type -> arda.deposit.v1.CheckIBMRequestRequest
 	14, // 7: arda.deposit.v1.DepositCommandService.ResolveIBMRequest:input_type -> arda.deposit.v1.ResolveIBMRequestRequest
-	1,  // 8: arda.deposit.v1.DepositCommandService.CheckSettle:output_type -> arda.deposit.v1.CheckSettleResponse
-	3,  // 9: arda.deposit.v1.DepositCommandService.Settle:output_type -> arda.deposit.v1.SettleResponse
-	5,  // 10: arda.deposit.v1.DepositCommandService.CheckAdditional:output_type -> arda.deposit.v1.CheckAdditionalResponse
-	7,  // 11: arda.deposit.v1.DepositCommandService.SettleAdditional:output_type -> arda.deposit.v1.SettleAdditionalResponse
-	9,  // 12: arda.deposit.v1.DepositCommandService.CheckProductRequest:output_type -> arda.deposit.v1.CheckProductRequestResponse
-	11, // 13: arda.deposit.v1.DepositCommandService.ResolveProductRequest:output_type -> arda.deposit.v1.ResolveProductRequestResponse
-	13, // 14: arda.deposit.v1.DepositCommandService.CheckIBMRequest:output_type -> arda.deposit.v1.CheckIBMRequestResponse
-	15, // 15: arda.deposit.v1.DepositCommandService.ResolveIBMRequest:output_type -> arda.deposit.v1.ResolveIBMRequestResponse
-	8,  // [8:16] is the sub-list for method output_type
-	0,  // [0:8] is the sub-list for method input_type
+	16, // 8: arda.deposit.v1.DepositCommandService.CheckRateRequest:input_type -> arda.deposit.v1.CheckRateRequestRequest
+	18, // 9: arda.deposit.v1.DepositCommandService.ResolveRateRequest:input_type -> arda.deposit.v1.ResolveRateRequestRequest
+	20, // 10: arda.deposit.v1.DepositCommandService.CheckInterestOp:input_type -> arda.deposit.v1.CheckInterestOpRequest
+	22, // 11: arda.deposit.v1.DepositCommandService.ResolveInterestOp:input_type -> arda.deposit.v1.ResolveInterestOpRequest
+	1,  // 12: arda.deposit.v1.DepositCommandService.CheckSettle:output_type -> arda.deposit.v1.CheckSettleResponse
+	3,  // 13: arda.deposit.v1.DepositCommandService.Settle:output_type -> arda.deposit.v1.SettleResponse
+	5,  // 14: arda.deposit.v1.DepositCommandService.CheckAdditional:output_type -> arda.deposit.v1.CheckAdditionalResponse
+	7,  // 15: arda.deposit.v1.DepositCommandService.SettleAdditional:output_type -> arda.deposit.v1.SettleAdditionalResponse
+	9,  // 16: arda.deposit.v1.DepositCommandService.CheckProductRequest:output_type -> arda.deposit.v1.CheckProductRequestResponse
+	11, // 17: arda.deposit.v1.DepositCommandService.ResolveProductRequest:output_type -> arda.deposit.v1.ResolveProductRequestResponse
+	13, // 18: arda.deposit.v1.DepositCommandService.CheckIBMRequest:output_type -> arda.deposit.v1.CheckIBMRequestResponse
+	15, // 19: arda.deposit.v1.DepositCommandService.ResolveIBMRequest:output_type -> arda.deposit.v1.ResolveIBMRequestResponse
+	17, // 20: arda.deposit.v1.DepositCommandService.CheckRateRequest:output_type -> arda.deposit.v1.CheckRateRequestResponse
+	19, // 21: arda.deposit.v1.DepositCommandService.ResolveRateRequest:output_type -> arda.deposit.v1.ResolveRateRequestResponse
+	21, // 22: arda.deposit.v1.DepositCommandService.CheckInterestOp:output_type -> arda.deposit.v1.CheckInterestOpResponse
+	23, // 23: arda.deposit.v1.DepositCommandService.ResolveInterestOp:output_type -> arda.deposit.v1.ResolveInterestOpResponse
+	12, // [12:24] is the sub-list for method output_type
+	0,  // [0:12] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
@@ -999,7 +1445,7 @@ func file_arda_deposit_v1_deposit_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_deposit_v1_deposit_proto_rawDesc), len(file_arda_deposit_v1_deposit_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

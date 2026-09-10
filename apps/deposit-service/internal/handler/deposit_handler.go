@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -41,16 +42,26 @@ type IBMService interface {
 	SubmitMovement(ctx context.Context, tenantID, actor, depositID, kind string, amountMinor int64, movementDate, periodFrom, periodTo, note string) (*repository.IBMMovement, error)
 }
 
+// Interest surface used by the HTTP handler (rates + accrual + ops).
+type InterestService interface {
+	ListInterestRates(ctx context.Context, tenantID, productCode string) ([]repository.InterestRate, error)
+	SubmitRate(ctx context.Context, tenantID, actor, requestType string, payload json.RawMessage) (*repository.RateRequest, error)
+	SubmitInterest(ctx context.Context, tenantID, actor, savingsCode, opType string, amountMinor int64) (*repository.InterestOp, []repository.InterestOp, error)
+	GetSavingsDetail(ctx context.Context, tenantID, code string) (*service.SavingsDetail, error)
+	RunDaily(ctx context.Context, tenantID, businessDate string) (int, error)
+}
+
 // DepositHandler exposes the deposit HTTP surface (P2.1).
 type DepositHandler struct {
 	svc        SettlementService
 	additional AdditionalDepositService
 	products   ProductRequestService
 	ibm        IBMService
+	interest   InterestService
 }
 
-func NewDepositHandler(svc SettlementService, additional AdditionalDepositService, products ProductRequestService, ibm IBMService) *DepositHandler {
-	return &DepositHandler{svc: svc, additional: additional, products: products, ibm: ibm}
+func NewDepositHandler(svc SettlementService, additional AdditionalDepositService, products ProductRequestService, ibm IBMService, interest InterestService) *DepositHandler {
+	return &DepositHandler{svc: svc, additional: additional, products: products, ibm: ibm, interest: interest}
 }
 
 type orgScope struct {
@@ -381,4 +392,116 @@ func (h *DepositHandler) UpsertIBMProduct(w http.ResponseWriter, r *http.Request
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
+}
+
+// ListInterestRates handles GET /api/deposit/rates.
+func (h *DepositHandler) ListInterestRates(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	items, err := h.interest.ListInterestRates(r.Context(), tenantID, r.URL.Query().Get("product_code"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// SubmitRateRequest handles POST /api/deposit/rates — stages a DPM.100/101 case.
+func (h *DepositHandler) SubmitRateRequest(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	var in struct {
+		RequestType string          `json:"request_type"`
+		Payload     json.RawMessage `json:"payload"`
+	}
+	if !decodeDepositBody(w, r, &in) {
+		return
+	}
+	created, err := h.interest.SubmitRate(r.Context(), tenantID, r.Header.Get("X-User-Id"), in.RequestType, in.Payload)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
+}
+
+// GetSavingsDetail handles GET /api/deposit/savings/{code}.
+func (h *DepositHandler) GetSavingsDetail(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	detail, err := h.interest.GetSavingsDetail(r.Context(), tenantID, r.PathValue("code"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, detail)
+}
+
+// SubmitSavingsInterest handles POST /api/deposit/savings/{code}/interest —
+// stages a DPM.302/303 op.
+func (h *DepositHandler) SubmitSavingsInterest(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	var in struct {
+		OpType      string `json:"op_type"`
+		AmountMinor int64  `json:"amount_minor"`
+	}
+	if !decodeDepositBody(w, r, &in) {
+		return
+	}
+	op, _, err := h.interest.SubmitInterest(r.Context(), tenantID, r.Header.Get("X-User-Id"),
+		r.PathValue("code"), in.OpType, in.AmountMinor)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, op)
+}
+
+// SubmitBatchInterest handles POST /api/deposit/batch-interest — stages the
+// DPM.304 batch case over every savings with accrued interest.
+func (h *DepositHandler) SubmitBatchInterest(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	_, ops, err := h.interest.SubmitInterest(r.Context(), tenantID, r.Header.Get("X-User-Id"), "", "BATCH", 0)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, map[string]any{"items": ops, "total": len(ops)})
+}
+
+// RunAccrualDaily handles POST /internal/jobs/deposit-accrual-daily?to_date=.
+func (h *DepositHandler) RunAccrualDaily(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	toDate := strings.TrimSpace(r.URL.Query().Get("to_date"))
+	if toDate == "" {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeRequired, "to_date is required"))
+		return
+	}
+	posted, err := h.interest.RunDaily(r.Context(), tenantID, toDate)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{"posted": posted})
 }

@@ -70,6 +70,13 @@ var RegisteredJobTopics = []string{
 	"ibm.movement.validate",
 	"ibm.movement.execute",
 	"ibm.movement.cancel",
+	// DPM rates + interest ops (dpm-rate-v1 + dpm-interest-v1)
+	"dpm.rate.validate",
+	"dpm.rate.execute",
+	"dpm.rate.cancel",
+	"dpm.interest.validate",
+	"dpm.interest.execute",
+	"dpm.interest.cancel",
 	// Loan formation (lnm-loan-formation-v2.bpmn, iteration 11 wave 2) —
 	// multi-level approval; UT_* steps are human workbench tasks.
 	"lnm.loan.formation.validate",

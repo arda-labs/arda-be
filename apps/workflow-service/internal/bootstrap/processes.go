@@ -98,6 +98,12 @@ var ibmPlace []byte
 //go:embed ibm-movement-v1.bpmn
 var ibmMovement []byte
 
+//go:embed dpm-rate-v1.bpmn
+var dpmRate []byte
+
+//go:embed dpm-interest-v1.bpmn
+var dpmInterest []byte
+
 //go:embed fin-single-entry-v2.bpmn
 var finSingleEntry []byte
 
@@ -317,6 +323,22 @@ func BuiltInProcesses() []Process {
 			Name:         "Giao dịch tiền gửi liên ngân hàng (v1)",
 			ResourceName: "ibm-movement-v1.bpmn",
 			Content:      ibmMovement,
+		},
+		{
+			// DPM rate register/edit (DPM.100/101) shares one BPMN; the request
+			// type arrives via case variables.
+			ProcessCode:  "DPM_RATE_V1",
+			Name:         "Đăng ký lãi suất huy động (v1)",
+			ResourceName: "dpm-rate-v1.bpmn",
+			Content:      dpmRate,
+		},
+		{
+			// DPM.302/303/304 interest ops share one BPMN; single ops carry
+			// opId, the batch carries opIds.
+			ProcessCode:  "DPM_INTEREST_V1",
+			Name:         "Trả lãi tiền gửi (v1)",
+			ResourceName: "dpm-interest-v1.bpmn",
+			Content:      dpmInterest,
 		},
 		{
 			// Manual posting flows (FAC-native bút toán lẻ / bút toán kép):

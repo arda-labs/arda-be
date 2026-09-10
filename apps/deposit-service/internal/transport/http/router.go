@@ -47,9 +47,23 @@ func NewRouter(h *handler.DepositHandler) http.Handler {
 			writeMethodNotAllowed(w, r)
 		}
 	})
-	mux.HandleFunc("/api/deposit/savings/open", method("POST", h.OpenSavings))
+	mux.HandleFunc("POST /api/deposit/savings/open", h.OpenSavings)
+	mux.HandleFunc("GET /api/deposit/savings/{code}", h.GetSavingsDetail)
 	mux.HandleFunc("POST /api/deposit/savings/{code}/settle", h.SubmitSettlement)
 	mux.HandleFunc("POST /api/deposit/savings/{code}/deposit", h.SubmitAdditional)
+	mux.HandleFunc("POST /api/deposit/savings/{code}/interest", h.SubmitSavingsInterest)
+	mux.HandleFunc("/api/deposit/rates", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.ListInterestRates(w, r)
+		case http.MethodPost:
+			h.SubmitRateRequest(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/deposit/batch-interest", method("POST", h.SubmitBatchInterest))
+	mux.HandleFunc("/internal/jobs/deposit-accrual-daily", method("POST", h.RunAccrualDaily))
 	mux.HandleFunc("/api/deposit/interbank", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

@@ -27,6 +27,10 @@ const (
 	DepositCommandService_ResolveProductRequest_FullMethodName = "/arda.deposit.v1.DepositCommandService/ResolveProductRequest"
 	DepositCommandService_CheckIBMRequest_FullMethodName       = "/arda.deposit.v1.DepositCommandService/CheckIBMRequest"
 	DepositCommandService_ResolveIBMRequest_FullMethodName     = "/arda.deposit.v1.DepositCommandService/ResolveIBMRequest"
+	DepositCommandService_CheckRateRequest_FullMethodName      = "/arda.deposit.v1.DepositCommandService/CheckRateRequest"
+	DepositCommandService_ResolveRateRequest_FullMethodName    = "/arda.deposit.v1.DepositCommandService/ResolveRateRequest"
+	DepositCommandService_CheckInterestOp_FullMethodName       = "/arda.deposit.v1.DepositCommandService/CheckInterestOp"
+	DepositCommandService_ResolveInterestOp_FullMethodName     = "/arda.deposit.v1.DepositCommandService/ResolveInterestOp"
 )
 
 // DepositCommandServiceClient is the client API for DepositCommandService service.
@@ -45,6 +49,10 @@ type DepositCommandServiceClient interface {
 	ResolveProductRequest(ctx context.Context, in *ResolveProductRequestRequest, opts ...grpc.CallOption) (*ResolveProductRequestResponse, error)
 	CheckIBMRequest(ctx context.Context, in *CheckIBMRequestRequest, opts ...grpc.CallOption) (*CheckIBMRequestResponse, error)
 	ResolveIBMRequest(ctx context.Context, in *ResolveIBMRequestRequest, opts ...grpc.CallOption) (*ResolveIBMRequestResponse, error)
+	CheckRateRequest(ctx context.Context, in *CheckRateRequestRequest, opts ...grpc.CallOption) (*CheckRateRequestResponse, error)
+	ResolveRateRequest(ctx context.Context, in *ResolveRateRequestRequest, opts ...grpc.CallOption) (*ResolveRateRequestResponse, error)
+	CheckInterestOp(ctx context.Context, in *CheckInterestOpRequest, opts ...grpc.CallOption) (*CheckInterestOpResponse, error)
+	ResolveInterestOp(ctx context.Context, in *ResolveInterestOpRequest, opts ...grpc.CallOption) (*ResolveInterestOpResponse, error)
 }
 
 type depositCommandServiceClient struct {
@@ -135,6 +143,46 @@ func (c *depositCommandServiceClient) ResolveIBMRequest(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *depositCommandServiceClient) CheckRateRequest(ctx context.Context, in *CheckRateRequestRequest, opts ...grpc.CallOption) (*CheckRateRequestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckRateRequestResponse)
+	err := c.cc.Invoke(ctx, DepositCommandService_CheckRateRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *depositCommandServiceClient) ResolveRateRequest(ctx context.Context, in *ResolveRateRequestRequest, opts ...grpc.CallOption) (*ResolveRateRequestResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveRateRequestResponse)
+	err := c.cc.Invoke(ctx, DepositCommandService_ResolveRateRequest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *depositCommandServiceClient) CheckInterestOp(ctx context.Context, in *CheckInterestOpRequest, opts ...grpc.CallOption) (*CheckInterestOpResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckInterestOpResponse)
+	err := c.cc.Invoke(ctx, DepositCommandService_CheckInterestOp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *depositCommandServiceClient) ResolveInterestOp(ctx context.Context, in *ResolveInterestOpRequest, opts ...grpc.CallOption) (*ResolveInterestOpResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveInterestOpResponse)
+	err := c.cc.Invoke(ctx, DepositCommandService_ResolveInterestOp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DepositCommandServiceServer is the server API for DepositCommandService service.
 // All implementations must embed UnimplementedDepositCommandServiceServer
 // for forward compatibility.
@@ -151,6 +199,10 @@ type DepositCommandServiceServer interface {
 	ResolveProductRequest(context.Context, *ResolveProductRequestRequest) (*ResolveProductRequestResponse, error)
 	CheckIBMRequest(context.Context, *CheckIBMRequestRequest) (*CheckIBMRequestResponse, error)
 	ResolveIBMRequest(context.Context, *ResolveIBMRequestRequest) (*ResolveIBMRequestResponse, error)
+	CheckRateRequest(context.Context, *CheckRateRequestRequest) (*CheckRateRequestResponse, error)
+	ResolveRateRequest(context.Context, *ResolveRateRequestRequest) (*ResolveRateRequestResponse, error)
+	CheckInterestOp(context.Context, *CheckInterestOpRequest) (*CheckInterestOpResponse, error)
+	ResolveInterestOp(context.Context, *ResolveInterestOpRequest) (*ResolveInterestOpResponse, error)
 	mustEmbedUnimplementedDepositCommandServiceServer()
 }
 
@@ -184,6 +236,18 @@ func (UnimplementedDepositCommandServiceServer) CheckIBMRequest(context.Context,
 }
 func (UnimplementedDepositCommandServiceServer) ResolveIBMRequest(context.Context, *ResolveIBMRequestRequest) (*ResolveIBMRequestResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveIBMRequest not implemented")
+}
+func (UnimplementedDepositCommandServiceServer) CheckRateRequest(context.Context, *CheckRateRequestRequest) (*CheckRateRequestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckRateRequest not implemented")
+}
+func (UnimplementedDepositCommandServiceServer) ResolveRateRequest(context.Context, *ResolveRateRequestRequest) (*ResolveRateRequestResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveRateRequest not implemented")
+}
+func (UnimplementedDepositCommandServiceServer) CheckInterestOp(context.Context, *CheckInterestOpRequest) (*CheckInterestOpResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckInterestOp not implemented")
+}
+func (UnimplementedDepositCommandServiceServer) ResolveInterestOp(context.Context, *ResolveInterestOpRequest) (*ResolveInterestOpResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveInterestOp not implemented")
 }
 func (UnimplementedDepositCommandServiceServer) mustEmbedUnimplementedDepositCommandServiceServer() {}
 func (UnimplementedDepositCommandServiceServer) testEmbeddedByValue()                               {}
@@ -350,6 +414,78 @@ func _DepositCommandService_ResolveIBMRequest_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DepositCommandService_CheckRateRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckRateRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DepositCommandServiceServer).CheckRateRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DepositCommandService_CheckRateRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DepositCommandServiceServer).CheckRateRequest(ctx, req.(*CheckRateRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DepositCommandService_ResolveRateRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveRateRequestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DepositCommandServiceServer).ResolveRateRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DepositCommandService_ResolveRateRequest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DepositCommandServiceServer).ResolveRateRequest(ctx, req.(*ResolveRateRequestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DepositCommandService_CheckInterestOp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckInterestOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DepositCommandServiceServer).CheckInterestOp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DepositCommandService_CheckInterestOp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DepositCommandServiceServer).CheckInterestOp(ctx, req.(*CheckInterestOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DepositCommandService_ResolveInterestOp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveInterestOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DepositCommandServiceServer).ResolveInterestOp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DepositCommandService_ResolveInterestOp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DepositCommandServiceServer).ResolveInterestOp(ctx, req.(*ResolveInterestOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DepositCommandService_ServiceDesc is the grpc.ServiceDesc for DepositCommandService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -388,6 +524,22 @@ var DepositCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveIBMRequest",
 			Handler:    _DepositCommandService_ResolveIBMRequest_Handler,
+		},
+		{
+			MethodName: "CheckRateRequest",
+			Handler:    _DepositCommandService_CheckRateRequest_Handler,
+		},
+		{
+			MethodName: "ResolveRateRequest",
+			Handler:    _DepositCommandService_ResolveRateRequest_Handler,
+		},
+		{
+			MethodName: "CheckInterestOp",
+			Handler:    _DepositCommandService_CheckInterestOp_Handler,
+		},
+		{
+			MethodName: "ResolveInterestOp",
+			Handler:    _DepositCommandService_ResolveInterestOp_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

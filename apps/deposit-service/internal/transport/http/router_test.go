@@ -3,6 +3,7 @@
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -90,9 +91,31 @@ func (f *fakeIBM) SubmitMovement(_ context.Context, _, _, depositID, kind string
 	return &repository.IBMMovement{ID: "mv-1", DepositID: depositID, Kind: kind}, nil
 }
 
+type fakeInterest struct{}
+
+func (f *fakeInterest) ListInterestRates(context.Context, string, string) ([]repository.InterestRate, error) {
+	return nil, nil
+}
+
+func (f *fakeInterest) SubmitRate(context.Context, string, string, string, json.RawMessage) (*repository.RateRequest, error) {
+	return &repository.RateRequest{ID: "rate-1"}, nil
+}
+
+func (f *fakeInterest) SubmitInterest(context.Context, string, string, string, string, int64) (*repository.InterestOp, []repository.InterestOp, error) {
+	return &repository.InterestOp{ID: "op-1"}, nil, nil
+}
+
+func (f *fakeInterest) GetSavingsDetail(context.Context, string, string) (*service.SavingsDetail, error) {
+	return &service.SavingsDetail{Savings: &repository.Savings{}}, nil
+}
+
+func (f *fakeInterest) RunDaily(context.Context, string, string) (int, error) {
+	return 0, nil
+}
+
 func TestRouterSettleRouteCarriesCode(t *testing.T) {
 	svc := &fakeSettlement{}
-	mux := NewRouter(handler.NewDepositHandler(svc, &fakeAdditional{}, &fakeProducts{}, &fakeIBM{}))
+	mux := NewRouter(handler.NewDepositHandler(svc, &fakeAdditional{}, &fakeProducts{}, &fakeIBM{}, &fakeInterest{}))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/deposit/savings/SAV-001/settle", nil)
 	req.Header.Set("X-Tenant-Id", "tenant-1")
@@ -109,7 +132,7 @@ func TestRouterSettleRouteCarriesCode(t *testing.T) {
 
 func TestRouterAdditionalDepositRouteCarriesCode(t *testing.T) {
 	additional := &fakeAdditional{}
-	mux := NewRouter(handler.NewDepositHandler(&fakeSettlement{}, additional, &fakeProducts{}, &fakeIBM{}))
+	mux := NewRouter(handler.NewDepositHandler(&fakeSettlement{}, additional, &fakeProducts{}, &fakeIBM{}, &fakeInterest{}))
 
 	body := bytes.NewBufferString(`{"amount_minor":250000,"txn_date":"2026-09-11"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/deposit/savings/SAV-002/deposit", body)
@@ -126,7 +149,7 @@ func TestRouterAdditionalDepositRouteCarriesCode(t *testing.T) {
 }
 
 func TestRouterRejectsWrongMethodOnActionRoutes(t *testing.T) {
-	mux := NewRouter(handler.NewDepositHandler(&fakeSettlement{}, &fakeAdditional{}, &fakeProducts{}, &fakeIBM{}))
+	mux := NewRouter(handler.NewDepositHandler(&fakeSettlement{}, &fakeAdditional{}, &fakeProducts{}, &fakeIBM{}, &fakeInterest{}))
 	req := httptest.NewRequest(http.MethodGet, "/api/deposit/savings/SAV-001/settle", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -134,3 +157,4 @@ func TestRouterRejectsWrongMethodOnActionRoutes(t *testing.T) {
 		t.Fatalf("status = %d, want 405", rec.Code)
 	}
 }
+

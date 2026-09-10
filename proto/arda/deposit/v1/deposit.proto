@@ -16,6 +16,10 @@ service DepositCommandService {
   rpc ResolveProductRequest(ResolveProductRequestRequest) returns (ResolveProductRequestResponse);
   rpc CheckIBMRequest(CheckIBMRequestRequest) returns (CheckIBMRequestResponse);
   rpc ResolveIBMRequest(ResolveIBMRequestRequest) returns (ResolveIBMRequestResponse);
+  rpc CheckRateRequest(CheckRateRequestRequest) returns (CheckRateRequestResponse);
+  rpc ResolveRateRequest(ResolveRateRequestRequest) returns (ResolveRateRequestResponse);
+  rpc CheckInterestOp(CheckInterestOpRequest) returns (CheckInterestOpResponse);
+  rpc ResolveInterestOp(ResolveInterestOpRequest) returns (ResolveInterestOpResponse);
 }
 
 message CheckSettleRequest {
@@ -104,5 +108,45 @@ message ResolveIBMRequestRequest {
 }
 
 message ResolveIBMRequestResponse {
+  bool ok = 1;
+}
+
+// DPM rate register/edit (DPM.100/101): APPROVE upserts the rate tier.
+message CheckRateRequestRequest {
+  string request_id = 1;
+}
+
+message CheckRateRequestResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message ResolveRateRequestRequest {
+  string request_id = 1;
+  string decision = 2; // APPROVE | REJECT
+  string actor = 3;
+}
+
+message ResolveRateRequestResponse {
+  bool ok = 1;
+}
+
+// DPM.302/303/304 interest ops: APPROVE posts + updates the savings row.
+message CheckInterestOpRequest {
+  string op_id = 1;
+}
+
+message CheckInterestOpResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message ResolveInterestOpRequest {
+  string op_id = 1;
+  string decision = 2; // APPROVE | REJECT
+  string actor = 3;
+}
+
+message ResolveInterestOpResponse {
   bool ok = 1;
 }
