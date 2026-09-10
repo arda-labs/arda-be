@@ -24,6 +24,8 @@ service LoanCommandService {
   rpc CheckBatch(CheckBatchRequest) returns (CheckBatchResponse);
   rpc SettleBatch(SettleBatchRequest) returns (SettleBatchResponse);
   rpc ResolveBatch(ResolveBatchRequest) returns (ResolveBatchResponse);
+  rpc CheckGeneralProvision(CheckGeneralProvisionRequest) returns (CheckGeneralProvisionResponse);
+  rpc ResolveGeneralProvision(ResolveGeneralProvisionRequest) returns (ResolveGeneralProvisionResponse);
 }
 
 message UpdateContractStatusRequest {
@@ -266,5 +268,31 @@ message ResolveBatchRequest {
 }
 
 message ResolveBatchResponse {
+  bool ok = 1;
+}
+
+// ── General provision flow (LNM.307.01, LNM_GENERAL_PROVISION_V2) ──
+//
+// The maker submits a per-org provision period; ResolveGeneralProvision
+// APPROVE recomputes the delta, posts the LNM_PROVISION rule card and marks
+// the period POSTED (single server-side step — the worker stays thin).
+
+message CheckGeneralProvisionRequest {
+  string general_provision_id = 1;
+}
+
+message CheckGeneralProvisionResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message ResolveGeneralProvisionRequest {
+  string general_provision_id = 1;
+  string decision = 2; // APPROVE | REJECT
+  string decided_by = 3;
+  string note = 4;
+}
+
+message ResolveGeneralProvisionResponse {
   bool ok = 1;
 }

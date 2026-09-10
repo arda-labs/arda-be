@@ -36,6 +36,8 @@ const (
 	LoanCommandService_CheckBatch_FullMethodName                   = "/arda.loan.v1.LoanCommandService/CheckBatch"
 	LoanCommandService_SettleBatch_FullMethodName                  = "/arda.loan.v1.LoanCommandService/SettleBatch"
 	LoanCommandService_ResolveBatch_FullMethodName                 = "/arda.loan.v1.LoanCommandService/ResolveBatch"
+	LoanCommandService_CheckGeneralProvision_FullMethodName        = "/arda.loan.v1.LoanCommandService/CheckGeneralProvision"
+	LoanCommandService_ResolveGeneralProvision_FullMethodName      = "/arda.loan.v1.LoanCommandService/ResolveGeneralProvision"
 )
 
 // LoanCommandServiceClient is the client API for LoanCommandService service.
@@ -62,6 +64,8 @@ type LoanCommandServiceClient interface {
 	CheckBatch(ctx context.Context, in *CheckBatchRequest, opts ...grpc.CallOption) (*CheckBatchResponse, error)
 	SettleBatch(ctx context.Context, in *SettleBatchRequest, opts ...grpc.CallOption) (*SettleBatchResponse, error)
 	ResolveBatch(ctx context.Context, in *ResolveBatchRequest, opts ...grpc.CallOption) (*ResolveBatchResponse, error)
+	CheckGeneralProvision(ctx context.Context, in *CheckGeneralProvisionRequest, opts ...grpc.CallOption) (*CheckGeneralProvisionResponse, error)
+	ResolveGeneralProvision(ctx context.Context, in *ResolveGeneralProvisionRequest, opts ...grpc.CallOption) (*ResolveGeneralProvisionResponse, error)
 }
 
 type loanCommandServiceClient struct {
@@ -242,6 +246,26 @@ func (c *loanCommandServiceClient) ResolveBatch(ctx context.Context, in *Resolve
 	return out, nil
 }
 
+func (c *loanCommandServiceClient) CheckGeneralProvision(ctx context.Context, in *CheckGeneralProvisionRequest, opts ...grpc.CallOption) (*CheckGeneralProvisionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckGeneralProvisionResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_CheckGeneralProvision_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) ResolveGeneralProvision(ctx context.Context, in *ResolveGeneralProvisionRequest, opts ...grpc.CallOption) (*ResolveGeneralProvisionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveGeneralProvisionResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_ResolveGeneralProvision_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LoanCommandServiceServer is the server API for LoanCommandService service.
 // All implementations must embed UnimplementedLoanCommandServiceServer
 // for forward compatibility.
@@ -266,6 +290,8 @@ type LoanCommandServiceServer interface {
 	CheckBatch(context.Context, *CheckBatchRequest) (*CheckBatchResponse, error)
 	SettleBatch(context.Context, *SettleBatchRequest) (*SettleBatchResponse, error)
 	ResolveBatch(context.Context, *ResolveBatchRequest) (*ResolveBatchResponse, error)
+	CheckGeneralProvision(context.Context, *CheckGeneralProvisionRequest) (*CheckGeneralProvisionResponse, error)
+	ResolveGeneralProvision(context.Context, *ResolveGeneralProvisionRequest) (*ResolveGeneralProvisionResponse, error)
 	mustEmbedUnimplementedLoanCommandServiceServer()
 }
 
@@ -326,6 +352,12 @@ func (UnimplementedLoanCommandServiceServer) SettleBatch(context.Context, *Settl
 }
 func (UnimplementedLoanCommandServiceServer) ResolveBatch(context.Context, *ResolveBatchRequest) (*ResolveBatchResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveBatch not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) CheckGeneralProvision(context.Context, *CheckGeneralProvisionRequest) (*CheckGeneralProvisionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckGeneralProvision not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) ResolveGeneralProvision(context.Context, *ResolveGeneralProvisionRequest) (*ResolveGeneralProvisionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveGeneralProvision not implemented")
 }
 func (UnimplementedLoanCommandServiceServer) mustEmbedUnimplementedLoanCommandServiceServer() {}
 func (UnimplementedLoanCommandServiceServer) testEmbeddedByValue()                            {}
@@ -654,6 +686,42 @@ func _LoanCommandService_ResolveBatch_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LoanCommandService_CheckGeneralProvision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckGeneralProvisionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).CheckGeneralProvision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_CheckGeneralProvision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).CheckGeneralProvision(ctx, req.(*CheckGeneralProvisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_ResolveGeneralProvision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveGeneralProvisionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).ResolveGeneralProvision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_ResolveGeneralProvision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).ResolveGeneralProvision(ctx, req.(*ResolveGeneralProvisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LoanCommandService_ServiceDesc is the grpc.ServiceDesc for LoanCommandService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -728,6 +796,14 @@ var LoanCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveBatch",
 			Handler:    _LoanCommandService_ResolveBatch_Handler,
+		},
+		{
+			MethodName: "CheckGeneralProvision",
+			Handler:    _LoanCommandService_CheckGeneralProvision_Handler,
+		},
+		{
+			MethodName: "ResolveGeneralProvision",
+			Handler:    _LoanCommandService_ResolveGeneralProvision_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

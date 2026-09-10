@@ -227,6 +227,19 @@ func main() {
 		}
 		logger.Info("workflow loan adjustment workers registered", "kinds", len(loanclient.Kinds))
 
+		// General provision (LNM.307.01): the maker submits a per-org period,
+		// the checker resolution recomputes + posts via the LNM_PROVISION
+		// rule card inside loan-service.
+		gpWorkers := worker.NewGeneralProvisionWorkers(loanClient, caseRepo)
+		gpv, gpe, gpc := gpWorkers.Handlers()
+		gpvw := zeebeSvc.NewJobWorker("lnm.general-provision.validate", gpv)
+		gpew := zeebeSvc.NewJobWorker("lnm.general-provision.execute", gpe)
+		gpcw := zeebeSvc.NewJobWorker("lnm.general-provision.cancel", gpc)
+		defer gpvw.Close()
+		defer gpew.Close()
+		defer gpcw.Close()
+		logger.Info("workflow general provision workers registered")
+
 		// Loan formation (LOAN_FORMATION_V2, EPAS LNM.201.01): validate reads
 		// the contract state, execute activates the contract, cancel rejects
 		// it. No finance involvement — formation moves no money.

@@ -26,10 +26,11 @@ type LoanServer struct {
 	collections   *service.CollectionService
 	disbBatches   *service.BatchDisbursementService
 	colBatches    *service.BatchCollectionService
+	generalProv   *service.GeneralProvisionService
 }
 
-func NewLoanServer(contracts *service.LoanService, adj *service.AdjustmentService, disbursements *service.DisbursementService, collections *service.CollectionService, disbBatches *service.BatchDisbursementService, colBatches *service.BatchCollectionService) *LoanServer {
-	return &LoanServer{contracts: contracts, adj: adj, disbursements: disbursements, collections: collections, disbBatches: disbBatches, colBatches: colBatches}
+func NewLoanServer(contracts *service.LoanService, adj *service.AdjustmentService, disbursements *service.DisbursementService, collections *service.CollectionService, disbBatches *service.BatchDisbursementService, colBatches *service.BatchCollectionService, generalProv *service.GeneralProvisionService) *LoanServer {
+	return &LoanServer{contracts: contracts, adj: adj, disbursements: disbursements, collections: collections, disbBatches: disbBatches, colBatches: colBatches, generalProv: generalProv}
 }
 
 func tenantFromContext(ctx context.Context) (string, error) {
@@ -330,4 +331,37 @@ func (s *LoanServer) ResolveBatch(ctx context.Context, req *loanv1.ResolveBatchR
 		return &loanv1.ResolveBatchResponse{Ok: false}, nil
 	}
 	return &loanv1.ResolveBatchResponse{Ok: true}, nil
+}
+
+// ── General provision flow (LNM.307.01) ──
+
+func (s *LoanServer) CheckGeneralProvision(ctx context.Context, req *loanv1.CheckGeneralProvisionRequest) (*loanv1.CheckGeneralProvisionResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if req.GetGeneralProvisionId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "general_provision_id is required")
+	}
+	ok, message, err := s.generalProv.Check(ctx, tenantID, req.GetGeneralProvisionId())
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &loanv1.CheckGeneralProvisionResponse{Ok: ok, Message: message}, nil
+}
+
+func (s *LoanServer) ResolveGeneralProvision(ctx context.Context, req *loanv1.ResolveGeneralProvisionRequest) (*loanv1.ResolveGeneralProvisionResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if req.GetGeneralProvisionId() == "" || req.GetDecision() == "" {
+		return nil, status.Error(codes.InvalidArgument, "general_provision_id and decision are required")
+	}
+	if err := s.generalProv.Resolve(ctx, tenantID, req.GetGeneralProvisionId(),
+		req.GetDecision(), req.GetDecidedBy(), req.GetNote()); err != nil {
+		slog.Warn("loan grpc: resolve general provision failed", "id", req.GetGeneralProvisionId(), "err", err)
+		return &loanv1.ResolveGeneralProvisionResponse{Ok: false}, nil
+	}
+	return &loanv1.ResolveGeneralProvisionResponse{Ok: true}, nil
 }

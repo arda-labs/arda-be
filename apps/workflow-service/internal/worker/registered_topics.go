@@ -34,6 +34,10 @@ var RegisteredJobTopics = []string{
 	"rpt.submit.validate",
 	"rpt.submit.execute",
 	"rpt.submit.cancel",
+	// General provision (lnm-general-provision-v2.bpmn)
+	"lnm.general-provision.validate",
+	"lnm.general-provision.execute",
+	"lnm.general-provision.cancel",
 	// Deposit settlement (dpm-settle-v2.bpmn)
 	"dpm.settle.validate",
 	"dpm.settle.execute",

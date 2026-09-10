@@ -10,7 +10,7 @@ import (
 
 // NewRouter wires the loan-service HTTP surface. Adjustment routes are
 // generated from the shared kind list so adding a flow never touches here.
-func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, kinds []string) http.Handler {
+func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, kinds []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -57,6 +57,19 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 	mux.HandleFunc("/internal/jobs/accrual-daily", a.RunDailyAccrual)
 	mux.HandleFunc("/internal/jobs/provision-daily", p.RunProvision)
 	mux.HandleFunc("/api/loan/accruals", method("GET", a.ListAccruals))
+
+	// General provision (LNM.307.01): preview, submit, list.
+	mux.HandleFunc("/api/loan/general-provisions/calculate", method("POST", gp.CalculateGeneralProvision))
+	mux.HandleFunc("/api/loan/general-provisions", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			gp.ListGeneralProvisions(w, r)
+		case http.MethodPost:
+			gp.SubmitGeneralProvision(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
 
 	// Collections (P1b.4a receipt flow, LNM.301.02)
 	mux.HandleFunc("/api/loan/collections", func(w http.ResponseWriter, r *http.Request) {

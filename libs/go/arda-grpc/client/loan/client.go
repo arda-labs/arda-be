@@ -349,3 +349,36 @@ func (c *Client) ResolveBatch(ctx context.Context, batchID, batchType, decision,
 	})
 	return err
 }
+
+// CheckGeneralProvision validates the period is actionable (BPMN validate).
+func (c *Client) CheckGeneralProvision(ctx context.Context, id string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckGeneralProvision(callCtx, &loanv1.CheckGeneralProvisionRequest{
+		GeneralProvisionId: id,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+// ResolveGeneralProvision APPROVE recomputes + posts the provision delta and
+// marks the period POSTED; REJECT just closes it.
+func (c *Client) ResolveGeneralProvision(ctx context.Context, id, decision, decidedBy, note string) error {
+	if c == nil {
+		return errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.ResolveGeneralProvision(callCtx, &loanv1.ResolveGeneralProvisionRequest{
+		GeneralProvisionId: id,
+		Decision:           decision,
+		DecidedBy:          decidedBy,
+		Note:               note,
+	})
+	return err
+}

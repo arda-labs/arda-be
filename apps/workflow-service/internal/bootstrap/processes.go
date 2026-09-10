@@ -68,6 +68,9 @@ var dpmSettle []byte
 //go:embed rpt-submit-v2.bpmn
 var rptSubmit []byte
 
+//go:embed lnm-general-provision-v2.bpmn
+var lnmGeneralProvision []byte
+
 //go:embed fin-single-entry-v2.bpmn
 var finSingleEntry []byte
 
@@ -208,6 +211,14 @@ func BuiltInProcesses() []Process {
 			Name:         "Nộp báo cáo (v2)",
 			ResourceName: "rpt-submit-v2.bpmn",
 			Content:      rptSubmit,
+		},
+		{
+			// LNM.307.01 general provision (per org, cumulative) — maker
+			// screen previews the figures, checker approval posts them.
+			ProcessCode:  "LNM_GENERAL_PROVISION_V2",
+			Name:         "Trích lập dự phòng chung (v2)",
+			ResourceName: "lnm-general-provision-v2.bpmn",
+			Content:      lnmGeneralProvision,
 		},
 		{
 			ProcessCode:  "DPM_SETTLE_V2",

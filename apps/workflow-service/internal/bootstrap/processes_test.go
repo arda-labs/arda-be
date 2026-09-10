@@ -38,6 +38,7 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 		"LNM_REVENUE_ALLOCATION_V2": "lnm-revenue-allocation-v2",
 		"LNM_VFU_FEE_ALLOCATION_V2": "lnm-vfu-fee-allocation-v2",
 		"LNM_OFF_BALANCE_EXPORT_V2": "lnm-off-balance-export-v2",
+		"LNM_GENERAL_PROVISION_V2":  "lnm-general-provision-v2",
 	}
 	if len(processes) != len(want) {
 		t.Fatalf("BuiltInProcesses() len = %d, want %d", len(processes), len(want))
