@@ -81,14 +81,12 @@
     <bpmn:sequenceFlow id="Flow_ValidateError_MakerRevise" sourceRef="Err_Validate" targetRef="UT_MakerRevise" />
     <bpmn:sequenceFlow id="Flow_Checker_Decision" sourceRef="UT_CheckerReview" targetRef="GW_Decision" />
     <bpmn:sequenceFlow id="Flow_Decision_Approve" name="Duyệt" sourceRef="GW_Decision" targetRef="ST_Execute">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "APPROVE"</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "APPROVE"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_Decision_Reject" name="Từ chối" sourceRef="GW_Decision" targetRef="ST_Cancel">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "REJECT"</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "REJECT"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
-    <bpmn:sequenceFlow id="Flow_Decision_Supplement" name="Yêu cầu chỉnh sửa" sourceRef="GW_Decision" targetRef="UT_MakerRevise">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "REQUEST_CHANGES"</bpmn:conditionExpression>
-    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Decision_Supplement" name="Yêu cầu chỉnh sửa" sourceRef="GW_Decision" targetRef="UT_MakerRevise" />
     <bpmn:sequenceFlow id="Flow_MakerRevise_Validate" sourceRef="UT_MakerRevise" targetRef="ST_Validate" />
     <bpmn:sequenceFlow id="Flow_Execute_End" sourceRef="ST_Execute" targetRef="End_Approved" />
     <bpmn:sequenceFlow id="Flow_Cancel_End" sourceRef="ST_Cancel" targetRef="End_Rejected" />

@@ -22,6 +22,9 @@ func reviewDecisionFromVariables(variables map[string]any) string {
 	if v, ok := variables["approvalResult"].(string); ok && strings.TrimSpace(v) != "" {
 		return strings.TrimSpace(v)
 	}
+	if v, ok := variables["decision"].(string); ok && strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
+	}
 	return ""
 }
 

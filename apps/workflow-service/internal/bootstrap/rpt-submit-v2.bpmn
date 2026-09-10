@@ -8,7 +8,7 @@
     <bpmn:userTask id="UT_MakerInput" name="Hoàn thiện báo cáo">
       <bpmn:extensionElements>
         <zeebe:userTask />
-        <zeebe:assignmentDefinition candidateGroups="LNM_MAKER" />
+        <zeebe:assignmentDefinition candidateGroups="RPT_MAKER" />
         <zeebe:taskHeaders>
           <zeebe:header key="stepCode" value="maker_input" />
         </zeebe:taskHeaders>
@@ -32,7 +32,7 @@
     <bpmn:userTask id="UT_CheckerReview" name="Phê duyệt báo cáo">
       <bpmn:extensionElements>
         <zeebe:userTask />
-        <zeebe:assignmentDefinition candidateGroups="LNM_CHECKER" />
+        <zeebe:assignmentDefinition candidateGroups="RPT_CHECKER" />
         <zeebe:taskHeaders>
           <zeebe:header key="stepCode" value="checker_review" />
         </zeebe:taskHeaders>

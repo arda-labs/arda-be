@@ -63,14 +63,12 @@
 
     <bpmn:sequenceFlow id="Flow_Start_MakerRevise" sourceRef="Start_Submitted" targetRef="UT_MakerRevise" />
     <bpmn:sequenceFlow id="Flow_Review_DecisionGateway" sourceRef="UT_CheckerReview" targetRef="GW_CheckerDecision" />
-    <bpmn:sequenceFlow id="Flow_Decision_RequestChanges" name="Yeu cau chinh sua" sourceRef="GW_CheckerDecision" targetRef="UT_MakerRevise">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "REQUEST_CHANGES"</bpmn:conditionExpression>
-    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Decision_RequestChanges" name="Yeu cau chinh sua" sourceRef="GW_CheckerDecision" targetRef="UT_MakerRevise" />
     <bpmn:sequenceFlow id="Flow_Decision_Reject" name="Tu choi" sourceRef="GW_CheckerDecision" targetRef="ST_RejectAdjustment">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "REJECT"</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "REJECT"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_Decision_Approve" name="Duyet" sourceRef="GW_CheckerDecision" targetRef="ST_ApplyAdjustment">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "APPROVE"</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "APPROVE"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_RevisionBack_Review" sourceRef="UT_MakerRevise" targetRef="UT_CheckerReview" />
     <bpmn:sequenceFlow id="Flow_Reject_End" sourceRef="ST_RejectAdjustment" targetRef="End_Rejected" />

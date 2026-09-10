@@ -133,9 +133,19 @@ func firstCandidateGroup(groups []string) string {
 func userTaskTitle(elementID string) string {
 	switch elementID {
 	case "UT_CheckerReview":
-		return "Phê duyệt hồ sơ khách hàng"
+		return "Phê duyệt"
 	case "UT_MakerRevise":
 		return "Chỉnh sửa hồ sơ"
+	case "UT_MakerInput":
+		return "Nhập liệu"
+	case "UT_TWRevalidate":
+		return "Tái thẩm định"
+	case "UT_PGDReview":
+		return "Xem xét cấp Phó giám đốc"
+	case "UT_GDReview":
+		return "Phê duyệt cấp Giám đốc"
+	case "UT_BoardReview":
+		return "Phê duyệt Hội đồng tín dụng"
 	default:
 		return elementID
 	}

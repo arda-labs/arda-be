@@ -79,6 +79,9 @@ func (h *WorkflowHandler) applyNativeUserTaskSideEffects(ctx context.Context, el
 	if decision == "" {
 		decision, _ = variables["approvalResult"].(string)
 	}
+	if decision == "" {
+		decision, _ = variables["decision"].(string)
+	}
 	if elementID != "UT_CheckerReview" && elementID != "UT_MakerRevise" {
 		return nil
 	}

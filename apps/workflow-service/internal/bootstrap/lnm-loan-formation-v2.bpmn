@@ -26,6 +26,8 @@
       <bpmn:incoming>Flow_ValidateError_Maker</bpmn:incoming>
       <bpmn:incoming>Flow_GD_Supplement</bpmn:incoming>
       <bpmn:incoming>Flow_Board_Supplement</bpmn:incoming>
+      <bpmn:incoming>Flow_TW_Supplement</bpmn:incoming>
+      <bpmn:incoming>Flow_PGD_Supplement</bpmn:incoming>
       <bpmn:outgoing>Flow_Maker_Validate</bpmn:outgoing>
     </bpmn:userTask>
 
@@ -56,8 +58,14 @@
         </zeebe:taskHeaders>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_FundSource_TW</bpmn:incoming>
-      <bpmn:outgoing>Flow_TW_PGD</bpmn:outgoing>
+      <bpmn:outgoing>Flow_TW_Decision</bpmn:outgoing>
     </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="GW_TWDecision" name="Kết quả tái thẩm định" default="Flow_TW_Supplement">
+      <bpmn:incoming>Flow_TW_Decision</bpmn:incoming>
+      <bpmn:outgoing>Flow_TW_Approve</bpmn:outgoing>
+      <bpmn:outgoing>Flow_TW_Supplement</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
 
     <bpmn:userTask id="UT_PGDReview" name="Xem xét cấp Phó giám đốc">
       <bpmn:extensionElements>
@@ -68,12 +76,18 @@
         </zeebe:taskHeaders>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_FundSource_Branch</bpmn:incoming>
-      <bpmn:incoming>Flow_TW_PGD</bpmn:incoming>
-      <bpmn:outgoing>Flow_PGD_Level</bpmn:outgoing>
+      <bpmn:incoming>Flow_TW_Approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_PGD_Decision</bpmn:outgoing>
     </bpmn:userTask>
 
+    <bpmn:exclusiveGateway id="GW_PGDDecision" name="Kết quả xem xét PGĐ" default="Flow_PGD_Supplement">
+      <bpmn:incoming>Flow_PGD_Decision</bpmn:incoming>
+      <bpmn:outgoing>Flow_PGD_Approve</bpmn:outgoing>
+      <bpmn:outgoing>Flow_PGD_Supplement</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
     <bpmn:exclusiveGateway id="GW_ApprovalLevel" name="Cấp duyệt theo hạn mức" default="Flow_Level_Execute">
-      <bpmn:incoming>Flow_PGD_Level</bpmn:incoming>
+      <bpmn:incoming>Flow_PGD_Approve</bpmn:incoming>
       <bpmn:outgoing>Flow_Level_Board</bpmn:outgoing>
       <bpmn:outgoing>Flow_Level_GD</bpmn:outgoing>
       <bpmn:outgoing>Flow_Level_Execute</bpmn:outgoing>
@@ -149,8 +163,16 @@
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=fundSource = "TW"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_FundSource_Branch" sourceRef="GW_FundSource" targetRef="UT_PGDReview" />
-    <bpmn:sequenceFlow id="Flow_TW_PGD" sourceRef="UT_TWRevalidate" targetRef="UT_PGDReview" />
-    <bpmn:sequenceFlow id="Flow_PGD_Level" sourceRef="UT_PGDReview" targetRef="GW_ApprovalLevel" />
+    <bpmn:sequenceFlow id="Flow_TW_Decision" sourceRef="UT_TWRevalidate" targetRef="GW_TWDecision" />
+    <bpmn:sequenceFlow id="Flow_TW_Approve" sourceRef="GW_TWDecision" targetRef="UT_PGDReview">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "APPROVE"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_TW_Supplement" sourceRef="GW_TWDecision" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_PGD_Decision" sourceRef="UT_PGDReview" targetRef="GW_PGDDecision" />
+    <bpmn:sequenceFlow id="Flow_PGD_Approve" sourceRef="GW_PGDDecision" targetRef="GW_ApprovalLevel">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "APPROVE"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_PGD_Supplement" sourceRef="GW_PGDDecision" targetRef="UT_MakerInput" />
     <bpmn:sequenceFlow id="Flow_Level_Board" sourceRef="GW_ApprovalLevel" targetRef="UT_BoardReview">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=amount &gt; gdLimit</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
@@ -184,6 +206,8 @@
       <bpmndi:BPMNShape id="Shape_UT_MakerInput" bpmnElement="UT_MakerInput"><dc:Bounds x="200" y="180" width="150" height="76" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_ST_Validate" bpmnElement="ST_Validate"><dc:Bounds x="400" y="180" width="150" height="76" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_FundSource" bpmnElement="GW_FundSource" isMarkerVisible="true"><dc:Bounds x="600" y="193" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_GW_TWDecision" bpmnElement="GW_TWDecision" isMarkerVisible="true"><dc:Bounds x="880" y="420" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_GW_PGDDecision" bpmnElement="GW_PGDDecision" isMarkerVisible="true"><dc:Bounds x="905" y="310" width="50" height="50" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_UT_TWRevalidate" bpmnElement="UT_TWRevalidate"><dc:Bounds x="700" y="320" width="160" height="76" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_UT_PGDReview" bpmnElement="UT_PGDReview"><dc:Bounds x="700" y="180" width="160" height="76" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_GW_ApprovalLevel" bpmnElement="GW_ApprovalLevel" isMarkerVisible="true"><dc:Bounds x="910" y="193" width="50" height="50" /></bpmndi:BPMNShape>
@@ -201,8 +225,12 @@
       <bpmndi:BPMNEdge id="Edge_Flow_Validate_FundSource" bpmnElement="Flow_Validate_FundSource"><di:waypoint x="550" y="218" /><di:waypoint x="600" y="218" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_FundSource_TW" bpmnElement="Flow_FundSource_TW"><di:waypoint x="625" y="243" /><di:waypoint x="625" y="358" /><di:waypoint x="700" y="358" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_FundSource_Branch" bpmnElement="Flow_FundSource_Branch"><di:waypoint x="650" y="218" /><di:waypoint x="700" y="218" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_TW_PGD" bpmnElement="Flow_TW_PGD"><di:waypoint x="860" y="358" /><di:waypoint x="880" y="358" /><di:waypoint x="880" y="256" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_PGD_Level" bpmnElement="Flow_PGD_Level"><di:waypoint x="860" y="218" /><di:waypoint x="910" y="218" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_TW_Decision" bpmnElement="Flow_TW_Decision"><di:waypoint x="860" y="358" /><di:waypoint x="905" y="430" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_TW_Approve" bpmnElement="Flow_TW_Approve"><di:waypoint x="905" y="420" /><di:waypoint x="905" y="256" /><di:waypoint x="860" y="256" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_TW_Supplement" bpmnElement="Flow_TW_Supplement"><di:waypoint x="880" y="445" /><di:waypoint x="275" y="445" /><di:waypoint x="275" y="256" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_PGD_Decision" bpmnElement="Flow_PGD_Decision"><di:waypoint x="860" y="218" /><di:waypoint x="930" y="218" /><di:waypoint x="930" y="310" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_PGD_Approve" bpmnElement="Flow_PGD_Approve"><di:waypoint x="930" y="310" /><di:waypoint x="930" y="243" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_PGD_Supplement" bpmnElement="Flow_PGD_Supplement"><di:waypoint x="955" y="360" /><di:waypoint x="955" y="480" /><di:waypoint x="240" y="480" /><di:waypoint x="240" y="256" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Level_Board" bpmnElement="Flow_Level_Board"><di:waypoint x="935" y="193" /><di:waypoint x="935" y="98" /><di:waypoint x="1020" y="98" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Level_GD" bpmnElement="Flow_Level_GD"><di:waypoint x="960" y="218" /><di:waypoint x="1020" y="218" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Level_Execute" bpmnElement="Flow_Level_Execute"><di:waypoint x="935" y="243" /><di:waypoint x="935" y="470" /><di:waypoint x="1560" y="470" /><di:waypoint x="1560" y="256" /><di:waypoint x="1400" y="256" /></bpmndi:BPMNEdge>

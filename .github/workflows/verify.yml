@@ -46,6 +46,8 @@ jobs:
         run: node scripts/check-ai-catalog.mjs
       - name: Validate migration conventions
         run: node scripts/check-migrations.mjs
+      - name: Validate workflow BPMN invariants
+        run: node scripts/check-bpmn.mjs
       - name: Validate RLS feasibility pilot
         run: node scripts/check-rls-pilot.mjs
       - name: Validate event registry

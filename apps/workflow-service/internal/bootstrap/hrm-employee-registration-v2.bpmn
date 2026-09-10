@@ -2,7 +2,7 @@
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_HRMEmployeeRegistrationV2" targetNamespace="https://arda.io.vn/bpmn/customer" exporter="Arda" exporterVersion="2.0">
   <bpmn:error id="Error_ValidationFailed" name="VALIDATION_FAILED" errorCode="VALIDATION_FAILED" />
 
-  <bpmn:process id="hrm-employee-registration-v2" name="Đăng ký khách hàng hội viên (v2)" isExecutable="true">
+  <bpmn:process id="hrm-employee-registration-v2" name="Đăng ký nhân sự (v2)" isExecutable="true">
     <bpmn:startEvent id="Start_Submitted" name="Đã khởi tạo">
       <bpmn:outgoing>Flow_Start_MakerRevise</bpmn:outgoing>
     </bpmn:startEvent>
@@ -22,7 +22,7 @@
     <bpmn:userTask id="UT_CheckerReview" name="Phê duyệt hồ sơ khách hàng">
       <bpmn:extensionElements>
         <zeebe:userTask />
-        <zeebe:assignmentDefinition candidateGroups="CUSTOMER_CHECKER" />
+        <zeebe:assignmentDefinition candidateGroups="HRM_REGISTRATION_REVIEWER" />
         <zeebe:taskHeaders>
           <zeebe:header key="stepCode" value="checker_review" />
         </zeebe:taskHeaders>
@@ -41,7 +41,7 @@
     <bpmn:userTask id="UT_MakerRevise" name="Chỉnh sửa hồ sơ">
       <bpmn:extensionElements>
         <zeebe:userTask />
-        <zeebe:assignmentDefinition candidateGroups="CUSTOMER_MAKER" />
+        <zeebe:assignmentDefinition candidateGroups="HRM_REGISTRATION_SUBMITTER" />
         <zeebe:taskHeaders>
           <zeebe:header key="stepCode" value="maker_revise" />
         </zeebe:taskHeaders>
@@ -68,11 +68,11 @@
       <bpmn:outgoing>Flow_Cancel_End</bpmn:outgoing>
     </bpmn:serviceTask>
 
-    <bpmn:endEvent id="End_Approved" name="Khách hàng được duyệt">
+    <bpmn:endEvent id="End_Approved" name="Nhân sự được duyệt">
       <bpmn:incoming>Flow_Execute_End</bpmn:incoming>
     </bpmn:endEvent>
 
-    <bpmn:endEvent id="End_Rejected" name="Khách hàng bị từ chối">
+    <bpmn:endEvent id="End_Rejected" name="Nhân sự bị từ chối">
       <bpmn:incoming>Flow_Cancel_End</bpmn:incoming>
     </bpmn:endEvent>
 
@@ -81,21 +81,19 @@
     <bpmn:sequenceFlow id="Flow_ValidateError_MakerRevise" sourceRef="Err_Validate" targetRef="UT_MakerRevise" />
     <bpmn:sequenceFlow id="Flow_Checker_Decision" sourceRef="UT_CheckerReview" targetRef="GW_Decision" />
     <bpmn:sequenceFlow id="Flow_Decision_Approve" name="Duyệt" sourceRef="GW_Decision" targetRef="ST_Execute">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "APPROVE"</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "APPROVE"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_Decision_Reject" name="Từ chối" sourceRef="GW_Decision" targetRef="ST_Cancel">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "REJECT"</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=decision = "REJECT"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
-    <bpmn:sequenceFlow id="Flow_Decision_Supplement" name="Yêu cầu chỉnh sửa" sourceRef="GW_Decision" targetRef="UT_MakerRevise">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reviewDecision = "REQUEST_CHANGES"</bpmn:conditionExpression>
-    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Decision_Supplement" name="Yêu cầu chỉnh sửa" sourceRef="GW_Decision" targetRef="UT_MakerRevise" />
     <bpmn:sequenceFlow id="Flow_MakerRevise_Validate" sourceRef="UT_MakerRevise" targetRef="ST_Validate" />
     <bpmn:sequenceFlow id="Flow_Execute_End" sourceRef="ST_Execute" targetRef="End_Approved" />
     <bpmn:sequenceFlow id="Flow_Cancel_End" sourceRef="ST_Cancel" targetRef="End_Rejected" />
   </bpmn:process>
 
-  <bpmndi:BPMNDiagram id="BPMNDiagram_CRMCustomerRegistrationV2">
-    <bpmndi:BPMNPlane id="BPMNPlane_CRMCustomerRegistrationV2" bpmnElement="hrm-employee-registration-v2">
+  <bpmndi:BPMNDiagram id="BPMNDiagram_HRMEmployeeRegistrationV2">
+    <bpmndi:BPMNPlane id="BPMNPlane_HRMEmployeeRegistrationV2" bpmnElement="hrm-employee-registration-v2">
       <bpmndi:BPMNShape id="Shape_Start_Submitted" bpmnElement="Start_Submitted"><dc:Bounds x="120" y="180" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_ST_Validate" bpmnElement="ST_Validate"><dc:Bounds x="210" y="158" width="140" height="80" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_UT_CheckerReview" bpmnElement="UT_CheckerReview"><dc:Bounds x="400" y="158" width="160" height="80" /></bpmndi:BPMNShape>
