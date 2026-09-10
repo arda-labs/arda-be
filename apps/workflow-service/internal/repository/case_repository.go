@@ -420,7 +420,9 @@ func (r *CaseRepository) WithSubmissionLock(ctx context.Context, caseID string, 
 		return nil, err
 	}
 	defer conn.Close()
-	lockKey := tenant + "\x00" + strings.TrimSpace(caseID)
+	// PostgreSQL text cannot carry NUL bytes, so the tenant/case separator is
+	// a literal "|" (hashtextextended only needs a deterministic byte string).
+	lockKey := tenant + "|" + strings.TrimSpace(caseID)
 	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(hashtextextended($1, 0))`, lockKey); err != nil {
 		return nil, fmt.Errorf("acquire case submission lock: %w", err)
 	}
