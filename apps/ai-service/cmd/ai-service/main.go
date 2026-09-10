@@ -25,6 +25,7 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardaredis "github.com/arda-labs/arda/libs/go/arda-redis"
 )
 
 func main() {
@@ -128,10 +129,14 @@ func main() {
 	}
 	routerOptions.ReadyCheck = func(ctx context.Context) error {
 		if db != nil {
-			return db.PingContext(ctx)
-		}
-		if cfg.Mode == "production" {
+			if err := db.PingContext(ctx); err != nil {
+				return err
+			}
+		} else if cfg.Mode == "production" {
 			return errors.New("database is required in production")
+		}
+		if cfg.RAGRequireEmbedding && cfg.RAGEmbeddingBaseURL == "" {
+			return errors.New("embedding provider is required but not configured")
 		}
 		return nil
 	}
@@ -192,8 +197,19 @@ func main() {
 	}
 
 	mux := handler.NewRouterWithOptions(store, resolver, routerOptions)
+	var rateLimitStore handler.RateLimitStore
+	if cfg.RedisURL != "" {
+		rdb, err := ardaredis.Connect(context.Background(), cfg.RedisURL)
+		if err != nil {
+			logger.Warn("redis rate limiter unavailable; using the in-process limiter", "err", err)
+		} else {
+			defer rdb.Close()
+			rateLimitStore = handler.NewRedisRateLimitStore(rdb, cfg.RateLimitPerMinute)
+			logger.Info("rate limiter: redis")
+		}
+	}
 	handlerChain := ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(handler.ServiceAuthMiddleware(
-		handler.RateLimitMiddleware(mux, cfg.RateLimitPerMinute),
+		handler.RateLimitMiddleware(mux, cfg.RateLimitPerMinute, rateLimitStore),
 		cfg.ServiceAuthSecret,
 		cfg.Mode == "production",
 	)), handler.RenderAIMetrics)

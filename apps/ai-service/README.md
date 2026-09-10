@@ -94,6 +94,11 @@ response. In production mode `DATABASE_DSN` and
 `ARDA_SERVICE_AUTH_SECRET` are mandatory; migrations run at startup and the
 gateway supplies a separate short-lived workload identity.
 
+Rate limiting is per tenant/user per minute (`AI_RATE_LIMIT_PER_MINUTE`). Set
+`REDIS_URL` to share the window across replicas; without it the in-process
+token bucket applies per replica. Readiness fails when
+`AI_RAG_REQUIRE_EMBEDDING` is on and no embedding provider is configured.
+
 For the shell panel, start the frontend with `VITE_AI_ENABLED=true` and run the gateway with
 `AI_SERVICE_URL=http://localhost:8098`. The gateway still requires a real
 authenticated session and the `ai.assistant.use` permission; setting the

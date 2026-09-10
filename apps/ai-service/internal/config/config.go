@@ -64,6 +64,9 @@ type Config struct {
 	RAGMinSimilarity float64
 
 	NATSURL string
+	// RedisURL enables the distributed rate limiter. Empty uses the
+	// in-process limiter (single-replica behavior).
+	RedisURL string
 }
 
 const defaultDirectToolSystemPrompt = `Bạn là Olorin, trợ lý của nền tảng Arda. Bạn trả lời ngắn gọn, chính xác ` +
@@ -136,7 +139,8 @@ func Load() Config {
 		RAGEmbeddingDimensions: envIntOr("AI_RAG_EMBEDDING_DIMENSIONS", 1024),
 		RAGMinSimilarity:       envFloatOr("AI_RAG_MIN_SIMILARITY", 0.35),
 
-		NATSURL: envOr("NATS_URL", envOr("AI_NATS_URL", "")),
+		NATSURL:  envOr("NATS_URL", envOr("AI_NATS_URL", "")),
+		RedisURL: envOr("REDIS_URL", ""),
 	}
 }
 
