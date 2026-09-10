@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -363,6 +365,7 @@ const maxProviderAttempts = 3
 func (c *Client) doWithRetry(ctx context.Context, payload []byte) (*http.Response, error) {
 	var lastErr error
 	for attempt := 1; attempt <= maxProviderAttempts; attempt++ {
+		var retryAfter time.Duration
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
 		if err != nil {
 			return nil, fmt.Errorf("create model request: %w", err)
@@ -384,6 +387,7 @@ func (c *Client) doWithRetry(ctx context.Context, payload []byte) (*http.Respons
 		} else if response.StatusCode == http.StatusOK {
 			return response, nil
 		} else {
+			retryAfter = parseRetryAfter(response.Header.Get("Retry-After"))
 			body, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
 			response.Body.Close()
 			lastErr = &ProviderStatusError{StatusCode: response.StatusCode, Body: strings.TrimSpace(string(body))}
@@ -393,6 +397,15 @@ func (c *Client) doWithRetry(ctx context.Context, payload []byte) (*http.Respons
 		}
 		if attempt < maxProviderAttempts {
 			backoff := time.Duration(1<<(attempt-1)) * 250 * time.Millisecond
+			if retryAfter > backoff {
+				backoff = retryAfter
+			}
+			if backoff > maxRetryAfter {
+				backoff = maxRetryAfter
+			}
+			// Full jitter over the lower half keeps retries from synchronizing.
+			half := backoff / 2
+			backoff = half + time.Duration(rand.Int64N(int64(half)+1))
 			timer := time.NewTimer(backoff)
 			select {
 			case <-ctx.Done():
@@ -403,6 +416,28 @@ func (c *Client) doWithRetry(ctx context.Context, payload []byte) (*http.Respons
 		}
 	}
 	return nil, lastErr
+}
+
+const maxRetryAfter = 10 * time.Second
+
+// parseRetryAfter understands both delay-seconds and HTTP-date forms.
+func parseRetryAfter(value string) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if seconds, err := strconv.Atoi(value); err == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if when, err := http.ParseTime(value); err == nil {
+		if delay := time.Until(when); delay > 0 {
+			return delay
+		}
+	}
+	return 0
 }
 
 func retryableProviderStatus(status int) bool {
