@@ -224,7 +224,7 @@ func (r *CoaRepository) ResolveClassification(ctx context.Context, tenantID, cla
 		return nil, err
 	}
 	if onDate == "" {
-		onDate = ardatime.Today()
+		onDate = ardatime.TodayCtx(ctx)
 	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT m.classification, m.coa_version, m.coa_acc_code, a.acc_type, a.acc_nature

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
@@ -60,7 +59,7 @@ func (s *SettlementService) Open(ctx context.Context, tenantID string, in *OpenS
 	}
 	openDate := in.OpenDate
 	if openDate == "" {
-		openDate = todayDep()
+		openDate = todayDep(ctx)
 	}
 	maturity := addMonths(openDate, product.TermMonths)
 
@@ -130,7 +129,7 @@ func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, a
 	if s.finance != nil {
 		var err error
 		entryID, err = s.post(ctx, tenantID, "DPM_SETTLE", savings.SavingsCode, savings.CustomerCode,
-			todayDep(), savings.CurrencyCode, payoutMinor,
+			todayDep(ctx), savings.CurrencyCode, payoutMinor,
 			"DPM_DEPOSIT_LIABILITY", "CASH_SETTLEMENT_ACCOUNT")
 		if err != nil {
 			return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "settlement posting failed", err)
@@ -205,16 +204,17 @@ func mapErr(err error) error {
 	return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 }
 
-func todayDep() string {
-	return ardatime.Today()
+func todayDep(ctx context.Context) string {
+	return ardatime.TodayCtx(ctx)
 }
 
 func addMonths(dateStr string, months int) string {
-	t, err := time.Parse("2006-01-02", dateStr)
+	// Clamp month-end overflow (Jan 31 + 1 month = Feb 28/29, never Mar 2/3).
+	m, err := ardatime.AddMonthsClamped(dateStr, months)
 	if err != nil {
 		return dateStr
 	}
-	return t.AddDate(0, months, 0).Format("2006-01-02")
+	return m
 }
 
 // ListSavings passthrough for the HTTP read API.

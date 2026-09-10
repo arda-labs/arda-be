@@ -237,11 +237,11 @@ func main() {
 	}
 
 	mux := handler.NewRouterWithOptions(store, resolver, routerOptions)
-	handlerChain := ardahttp.MetricsMiddleware(cfg.AppName, handler.ServiceAuthMiddleware(
+	handlerChain := ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(handler.ServiceAuthMiddleware(
 		handler.RateLimitMiddleware(mux, cfg.RateLimitPerMinute),
 		cfg.ServiceAuthSecret,
 		cfg.Mode == "production",
-	), handler.RenderAIMetrics)
+	)), handler.RenderAIMetrics)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,

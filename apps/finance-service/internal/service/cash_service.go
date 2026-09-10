@@ -48,7 +48,7 @@ func (s *CashService) Record(ctx context.Context, tenantID string, in *CashTxnIn
 		in.CurrencyCode = "VND"
 	}
 	if in.TxnDate == "" {
-		in.TxnDate = ardatime.Today()
+		in.TxnDate = ardatime.TodayCtx(ctx)
 	}
 	if in.TxnDate == "" || len(in.TxnDate) != 10 || in.TxnDate[4] != '-' || in.TxnDate[7] != '-' {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "txn_date must be YYYY-MM-DD")

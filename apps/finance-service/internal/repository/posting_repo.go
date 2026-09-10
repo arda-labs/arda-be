@@ -31,7 +31,7 @@ type ResolvedAccount struct {
 // on the accounting date (exact debt-group/currency match wins, then blank).
 func (r *PostingRepository) ResolveAccount(ctx context.Context, tenantID, classification, debtGroup, currency, onDate string) (*ResolvedAccount, error) {
 	if onDate == "" {
-		onDate = ardatime.Today()
+		onDate = ardatime.TodayCtx(ctx)
 	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT m.coa_version, m.coa_acc_code, COALESCE(a.name, '')
@@ -61,7 +61,7 @@ func (r *PostingRepository) ResolveAccount(ctx context.Context, tenantID, classi
 // date — enforcing is_postable and the account's effective window.
 func (r *PostingRepository) ResolveAccountDirect(ctx context.Context, tenantID, accountCode, coaVersion, onDate string) (*ResolvedAccount, error) {
 	if onDate == "" {
-		onDate = ardatime.Today()
+		onDate = ardatime.TodayCtx(ctx)
 	}
 	if coaVersion == "" {
 		err := r.db.QueryRowContext(ctx, `

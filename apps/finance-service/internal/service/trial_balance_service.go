@@ -39,7 +39,7 @@ func NewTrialBalanceService(db *sql.DB) *TrialBalanceService {
 
 func (s *TrialBalanceService) TrialBalance(ctx context.Context, tenantID, asOf string) (*TrialBalanceResult, error) {
 	if asOf == "" {
-		asOf = ardatime.Today()
+		asOf = ardatime.TodayCtx(ctx)
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		WITH lines AS (

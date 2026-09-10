@@ -78,7 +78,7 @@ func sentinelErr(code string) error {
 // Today passes without a policy lookup — only backdated postings are
 // constrained.
 func (s *PostingService) EnsurePostingDateAllowed(ctx context.Context, tenantID, docType, date string) error {
-	violation, err := s.checkPostingDate(ctx, tenantID, docType, date, ardatime.Now())
+	violation, err := s.checkPostingDate(ctx, tenantID, docType, date, ardatime.NowCtx(ctx))
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func (s *PostingService) ClosingCandidates(ctx context.Context, tenantID, onDate
 		return nil, err
 	}
 	if trimDate(onDate) == "" {
-		onDate = ardatime.Today()
+		onDate = ardatime.TodayCtx(ctx)
 	}
 	if _, err := time.Parse("2006-01-02", onDate); err != nil {
 		return nil, fmt.Errorf("accounting_date must be YYYY-MM-DD")

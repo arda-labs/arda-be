@@ -1096,8 +1096,8 @@ func workItemFilter(r *http.Request) repository.WorkItemFilter {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	return repository.WorkItemFilter{
 		Direction:         strings.ToUpper(q.Get("direction")),
-		From:              parseDate(q.Get("from"), q.Get("fromDate")),
-		To:                parseDate(q.Get("to"), q.Get("toDate")),
+		From:              parseDate(ardatime.TZ(r.Context()), q.Get("from"), q.Get("fromDate")),
+		To:                parseDate(ardatime.TZ(r.Context()), q.Get("to"), q.Get("toDate")),
 		Accounting:        strings.ToUpper(q.Get("accounting")),
 		SLAStatus:         strings.ToUpper(firstString(q.Get("slaStatus"), q.Get("sla_status"))),
 		TransactionStatus: strings.ToUpper(firstString(q.Get("transactionStatus"), q.Get("status"))),
@@ -1697,9 +1697,10 @@ func safeFilename(name string) string {
 }
 
 // parseDate parses filter bounds: RFC3339 keeps the client's explicit
-// offset; a date-only value resolves as midnight in the business timezone
-// (not UTC) per docs/db-schema-conventions.md.
-func parseDate(values ...string) *time.Time {
+// offset; a date-only value resolves as midnight in the request's business
+// timezone (user tz via X-User-Timezone, default Asia/Ho_Chi_Minh) per
+// docs/db-schema-conventions.md §8.
+func parseDate(loc *time.Location, values ...string) *time.Time {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
 		if value == "" {
@@ -1709,7 +1710,7 @@ func parseDate(values ...string) *time.Time {
 		if err == nil {
 			return &parsed
 		}
-		local, err := ardatime.ParseDay(value)
+		local, err := ardatime.ParseDayIn(value, loc)
 		if err == nil {
 			return &local
 		}

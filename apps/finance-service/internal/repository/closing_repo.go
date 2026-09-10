@@ -190,7 +190,7 @@ type ClosingAccountRef struct {
 // plus its acc_purpose/acc_nature for the closing validation.
 func (r *PostingRepository) ResolveClosingAccount(ctx context.Context, tenantID, accountCode, onDate string) (*ClosingAccountRef, error) {
 	if onDate == "" {
-		onDate = ardatime.Today()
+		onDate = ardatime.TodayCtx(ctx)
 	}
 	coaVersion := ""
 	err := r.db.QueryRowContext(ctx, `

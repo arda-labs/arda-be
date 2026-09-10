@@ -1613,6 +1613,11 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			proxyReq.Header.Set("X-User-Email", sess.User.Email)
 			proxyReq.Header.Set("X-Nickname", sess.User.Nickname)
 			proxyReq.Header.Set("X-Tenant-Id", sess.User.TenantID)
+			// Business timezone of the session user (IANA, from iam profile);
+			// downstream services resolve "today"/date ranges per request.
+			if sess.User.Timezone != "" {
+				proxyReq.Header.Set(ardahttp.HeaderUserTimezone, sess.User.Timezone)
+			}
 			if len(sess.User.OrgIDs) > 0 {
 				proxyReq.Header.Set("X-User-Org-Ids", strings.Join(sess.User.OrgIDs, ","))
 			}

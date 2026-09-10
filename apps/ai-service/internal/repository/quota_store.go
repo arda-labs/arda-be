@@ -165,7 +165,7 @@ func (s *SQLRunStore) ReserveQuota(ctx context.Context, tenantID, externalRunID 
 	if err != nil {
 		return fmt.Errorf("load quota settings: %w", err)
 	}
-	currentPeriod := ardatime.Now().Format("2006-01-02")[:8] + "01"
+	currentPeriod := ardatime.NowCtx(ctx).Format("2006-01-02")[:8] + "01"
 	if !strings.HasPrefix(period, currentPeriod[:7]) {
 		used = 0
 		period = currentPeriod

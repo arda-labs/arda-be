@@ -733,7 +733,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 		if termCount > 0 {
 			start := item.EffectiveDate
 			if start == nil || *start == "" {
-				today := ardatime.Today()
+				today := ardatime.TodayCtx(ctx)
 				start = &today
 			}
 			if err := r.RegeneratePlans(ctx, tenantID, *item.AgreementCode, termCount, *start); err != nil {

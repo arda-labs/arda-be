@@ -228,7 +228,7 @@ func (h *PostingHandler) ListOpeningBalances(w http.ResponseWriter, r *http.Requ
 	}
 	onDate := r.URL.Query().Get("as_of")
 	if onDate == "" {
-		onDate = ardatime.Today()
+		onDate = ardatime.TodayCtx(r.Context())
 	}
 	items, err := h.svc.ListOpeningBalances(r.Context(), tenantID, onDate)
 	if err != nil {

@@ -14,6 +14,7 @@
 package ardatime
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -137,3 +138,51 @@ func ResolveDayRange(fromStr, toStr string, loc *time.Location) (from, to time.T
 		fromStr, toStr, loc.String(), from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339))
 	return from.UTC(), to.UTC(), debug, nil
 }
+
+// AddMonthsClamped shifts a YYYY-MM-DD business date by whole months,
+// clamping the day-of-month to the target month's last day — banking
+// maturity semantics: Jan 31 + 1 month = Feb 28/29, never Mar 2/3. Note
+// that time.AddDate alone normalizes overflow instead of clamping.
+func AddMonthsClamped(day string, months int) (string, error) {
+	t, err := ParseDay(day)
+	if err != nil {
+		return "", err
+	}
+	target := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location()).AddDate(0, months, 0)
+	lastDay := time.Date(target.Year(), target.Month()+1, 0, 0, 0, 0, 0, t.Location()).Day()
+	clamped := t.Day()
+	if clamped > lastDay {
+		clamped = lastDay
+	}
+	return time.Date(target.Year(), target.Month(), clamped, 0, 0, 0, 0, t.Location()).Format(LayoutDate), nil
+}
+
+// ── Per-request timezone context ──
+// The BFF injects the session user's IANA timezone as the X-User-Timezone
+// header; the shared HTTP middleware resolves it into a *time.Location and
+// stores it in the request context. Handlers/services then resolve
+// business dates per user instead of the tenant default.
+
+type tzKey struct{}
+
+// WithTZ returns a context carrying loc as the request's business timezone.
+func WithTZ(ctx context.Context, loc *time.Location) context.Context {
+	return context.WithValue(ctx, tzKey{}, loc)
+}
+
+// TZ returns the request's business timezone, falling back to the platform
+// default when the context carries none (internal jobs, direct calls).
+func TZ(ctx context.Context) *time.Location {
+	if ctx != nil {
+		if loc, ok := ctx.Value(tzKey{}).(*time.Location); ok && loc != nil {
+			return loc
+		}
+	}
+	return defaultLocation
+}
+
+// TodayCtx is Today resolved in the request's business timezone.
+func TodayCtx(ctx context.Context) string { return TodayIn(TZ(ctx)) }
+
+// NowCtx is the current instant rendered in the request's business timezone.
+func NowCtx(ctx context.Context) time.Time { return NowIn(TZ(ctx)) }

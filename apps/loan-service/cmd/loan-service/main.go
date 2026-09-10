@@ -101,7 +101,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:        cfg.HTTPAddr,
-		Handler:     ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, loangrpc.Kinds)),
+		Handler:     ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, loangrpc.Kinds))),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

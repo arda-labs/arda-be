@@ -32,7 +32,7 @@ func (h *EODHandler) RunCOB(w http.ResponseWriter, r *http.Request) {
 	}
 	businessDate := r.URL.Query().Get("business_date")
 	if businessDate == "" {
-		businessDate = ardatime.Today()
+		businessDate = ardatime.TodayCtx(r.Context())
 	}
 	result, err := h.svc.Run(r.Context(), tenantID, businessDate)
 	if err != nil {

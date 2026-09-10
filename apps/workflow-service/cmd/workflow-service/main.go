@@ -464,7 +464,7 @@ func main() {
 	// Router and HTTP Server
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(wfHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(wfHandler))),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 45 * time.Second,
 		IdleTimeout:  60 * time.Second,

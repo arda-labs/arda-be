@@ -43,7 +43,7 @@ type RebuildDailyResult struct {
 // from the first affected date.
 func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, toDate, actor string) (*RebuildDailyResult, error) {
 	if toDate == "" {
-		toDate = ardatime.Today()
+		toDate = ardatime.TodayCtx(ctx)
 	}
 	if _, err := time.Parse("2006-01-02", toDate); err != nil {
 		return nil, fmt.Errorf("to_date must be YYYY-MM-DD: %w", err)
@@ -161,7 +161,7 @@ type DailyBalanceEntry struct {
 // ListDaily returns the precomputed trial balance for one date (read API).
 func (s *TrialBalanceDailyService) ListDaily(ctx context.Context, tenantID, asOf string) ([]DailyBalanceEntry, error) {
 	if asOf == "" {
-		asOf = ardatime.Today()
+		asOf = ardatime.TodayCtx(ctx)
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT tbd.coa_version, tbd.account_code, COALESCE(a.name, ''), tbd.currency_code,

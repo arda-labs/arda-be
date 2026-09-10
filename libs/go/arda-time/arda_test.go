@@ -1,6 +1,7 @@
 package ardatime
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -113,5 +114,39 @@ func TestResolveDayRange(t *testing.T) {
 	}
 	if _, _, _, err := ResolveDayRange("2026-09-01", "not-a-date", Location()); err == nil {
 		t.Fatalf("ResolveDayRange bad to = nil error; want error")
+	}
+}
+
+func TestAddMonthsClamped(t *testing.T) {
+	cases := []struct {
+		in     string
+		months int
+		want   string
+	}{
+		{"2026-01-31", 1, "2026-02-28"},
+		{"2026-01-31", 12, "2027-01-31"},
+		{"2026-01-15", 1, "2026-02-15"},
+		{"2026-08-31", 4, "2026-12-31"},
+		{"2026-05-31", -3, "2026-02-28"},
+	}
+	for _, c := range cases {
+		got, err := AddMonthsClamped(c.in, c.months)
+		if err != nil || got != c.want {
+			t.Fatalf("AddMonthsClamped(%s, %d) = %q, %v; want %q", c.in, c.months, got, err, c.want)
+		}
+	}
+	if _, err := AddMonthsClamped("not-a-date", 1); err == nil {
+		t.Fatalf("AddMonthsClamped(bogus) = nil error; want error")
+	}
+}
+
+func TestTZContext(t *testing.T) {
+	if got := TodayCtx(context.Background()); got != Today() {
+		t.Fatalf("TodayCtx(no tz) = %q; want default %q", got, Today())
+	}
+	berlin, _ := time.LoadLocation("Europe/Berlin")
+	ctx := WithTZ(context.Background(), berlin)
+	if TZ(ctx) != berlin {
+		t.Fatalf("TZ(ctx) != injected Berlin")
 	}
 }
