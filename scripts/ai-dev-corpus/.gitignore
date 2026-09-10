@@ -1,0 +1,5 @@
+# Generated or one-off artifacts — not part of the versioned corpus.
+chunks.csv
+query-vecs.json
+fix-doc11.mjs
+sign-test.sh

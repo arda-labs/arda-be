@@ -1,0 +1,101 @@
+version: 1
+description: >-
+  Dev-only golden questions matched to the synthetic corpus in
+  scripts/ai-dev-corpus/docs (sources src-2 .. src-13 on tenant
+  00000000-0000-0000-0000-000000000010). Recall is measured against
+  source keys (source id text).
+metrics:
+  - retrieval_recall_at_k
+  - citation_accuracy
+cases:
+  - id: annual-leave-days
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Nhân viên được bao nhiêu ngày phép năm?"
+    expected:
+      answer_must_cite: true
+      source_keys: ["3", "2"]
+      allow_no_answer: false
+  - id: payment-approval-threshold
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Thanh toán bao nhiêu thì cần Giám đốc Tài chính duyệt?"
+    expected:
+      answer_must_cite: true
+      source_keys: ["5"]
+      allow_no_answer: false
+  - id: expense-deadline
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Hoàn ứng chi phí phải nộp trong bao nhiêu ngày?"
+    expected:
+      answer_must_cite: true
+      source_keys: ["4"]
+      allow_no_answer: false
+  - id: sev1-incident-response
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Khi có sự cố Sev1 thì phải làm gì?"
+    expected:
+      answer_must_cite: true
+      source_keys: ["13"]
+      allow_no_answer: false
+  - id: customer-data-export
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Quy trình xin xuất dữ liệu khách hàng diễn ra thế nào?"
+    expected:
+      answer_must_cite: true
+      source_keys: ["12"]
+      allow_no_answer: false
+  - id: procurement-quotes
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Mua sắm trên 5 triệu có cần bao nhiêu báo giá?"
+    expected:
+      answer_must_cite: true
+      source_keys: ["6"]
+      allow_no_answer: false
+  - id: password-policy
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Chính sách mật khẩu yêu cầu tối thiểu bao nhiêu ký tự?"
+    expected:
+      answer_must_cite: true
+      source_keys: ["11"]
+      allow_no_answer: false
+  - id: olorin-open-shortcut
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Làm sao mở trợ lý AI Olorin?"
+    expected:
+      answer_must_cite: true
+      source_keys: ["10"]
+      allow_no_answer: false
+  - id: probation-leave-abbrev
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "NV thử việc được nghỉ phép năm bao nhiêu ngày?"
+    expected:
+      answer_must_cite: true
+      source_keys: ["3"]
+      allow_no_answer: false
+  - id: hotel-per-diem
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Khách sạn công tác nội địa được thanh toán tối đa bao nhiêu một đêm?"
+    expected:
+      answer_must_cite: true
+      source_keys: ["4"]
+      allow_no_answer: false
+  - id: out-of-corpus-four-day-week
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Công ty có chính sách làm việc 4 ngày mỗi tuần không?"
+    expected:
+      answer_must_cite: false
+      source_keys: []
+      allow_no_answer: true
+  - id: tenant-isolation
+    tenant: tenant-b-does-not-exist
+    query: "Nghỉ phép năm bao nhiêu ngày?"
+    expected:
+      answer_must_cite: false
+      source_keys: []
+      allow_no_answer: true
+  - id: out-of-corpus
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Chính sách hỗ trợ mua xe ô tô cho nhân viên là gì?"
+    expected:
+      answer_must_cite: false
+      source_keys: []
+      allow_no_answer: true
