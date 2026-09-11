@@ -83,6 +83,22 @@ func (h *ReportingHandler) ListStatements(w http.ResponseWriter, r *http.Request
 	respondJSON(w, r, http.StatusOK, map[string]any{"statements": codes})
 }
 
+// GetFinancialSummary handles GET /api/finance/reports/financial-summary —
+// consolidated CDKT + B02 totals (Tổng hợp báo cáo tài chính).
+func (h *ReportingHandler) GetFinancialSummary(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	summary, err := h.stmts.FinancialSummary(r.Context(), tenantID,
+		r.URL.Query().Get("as_of"), r.URL.Query().Get("coa_version"), r.URL.Query().Get("from"))
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, r, http.StatusOK, summary)
+}
+
 // RunStatement handles GET /api/finance/statements/{code}/run?as_of=&coa_version=
 // — renders the statement rows from fin_trial_balance_daily (read-only,
 // idempotent; amounts are minor units, debit-positive unless sign flips).

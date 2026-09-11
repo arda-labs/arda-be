@@ -250,7 +250,50 @@ type StatementSummary struct {
 	RowCount      int    `json:"row_count"`
 }
 
-// ListStatements returns the distinct statement codes defined for the tenant.
+// FinancialSummary consolidates the key totals of the balance sheet (CDKT) and
+// operating results (B02) — the Tổng hợp báo cáo tài chính screen.
+type FinancialSummary struct {
+	AsOf                  string `json:"as_of"`
+	FromDate              string `json:"from_date,omitempty"`
+	TotalAssetsMinor      int64  `json:"total_assets_minor"`
+	TotalLiabilitiesMinor int64  `json:"total_liabilities_minor"`
+	TotalEquityMinor      int64  `json:"total_equity_minor"`
+	TotalIncomeMinor      int64  `json:"total_income_minor"`
+	TotalExpenseMinor     int64  `json:"total_expense_minor"`
+	ProfitMinor           int64  `json:"profit_minor"`
+}
+
+// FinancialSummary runs CDKT + B02 and returns their total rows.
+func (s *StatementService) FinancialSummary(ctx context.Context, tenantID, asOf, coaVersion, fromDate string) (*FinancialSummary, error) {
+	cdkt, err := s.RunStatement(ctx, tenantID, "CDKT", asOf, coaVersion, fromDate)
+	if err != nil {
+		return nil, err
+	}
+	b02, err := s.RunStatement(ctx, tenantID, "B02", asOf, coaVersion, fromDate)
+	if err != nil {
+		return nil, err
+	}
+	return &FinancialSummary{
+		AsOf:                  cdkt.AsOf,
+		FromDate:              cdkt.FromDate,
+		TotalAssetsMinor:      statementRowAmount(cdkt, "ASSETS_TOTAL"),
+		TotalLiabilitiesMinor: statementRowAmount(cdkt, "LIAB_TOTAL"),
+		TotalEquityMinor:      statementRowAmount(cdkt, "EQUITY_TOTAL"),
+		TotalIncomeMinor:      statementRowAmount(b02, "INCOME_TOTAL"),
+		TotalExpenseMinor:     statementRowAmount(b02, "EXPENSE_TOTAL"),
+		ProfitMinor:           statementRowAmount(b02, "PROFIT"),
+	}, nil
+}
+
+func statementRowAmount(res *StatementResult, rowCode string) int64 {
+	for _, row := range res.Rows {
+		if row.RowCode == rowCode {
+			return row.AmountMinor
+		}
+	}
+	return 0
+}
+
 func (s *StatementService) ListStatements(ctx context.Context, tenantID string) ([]StatementSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT statement_code, count(*) AS row_count
