@@ -495,3 +495,44 @@ func (h *StatisticalHandler) SubmitImportTransaction(w http.ResponseWriter, r *h
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusOK, item)
 }
+
+// ListCmmsResults handles GET /api/statistical/cmms/results.
+func (h *StatisticalHandler) ListCmmsResults(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.svc.ListCmmsResults(r.Context(), repository.ListCmmsResultsParams{
+		TenantID:         tenantID,
+		ScenarioCode:     q.Get("scenario_code"),
+		CompliancePeriod: q.Get("compliance_period"),
+		Status:           q.Get("status"),
+	})
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// RunCmms handles POST /api/statistical/cmms/run.
+func (h *StatisticalHandler) RunCmms(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	var in repository.CmmsResult
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidJSON, "invalid body"))
+		return
+	}
+	created, err := h.svc.RunCmms(r.Context(), tenantID, r.Header.Get("X-User-Id"), &in)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
+}

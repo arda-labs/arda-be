@@ -152,3 +152,31 @@ func (s *StatisticalService) SubmitImportTransaction(ctx context.Context, tenant
 	}
 	return item, nil
 }
+
+// ListCmmsResults returns recorded CMMS compliance runs.
+func (s *StatisticalService) ListCmmsResults(ctx context.Context, p repository.ListCmmsResultsParams) ([]repository.CmmsResult, error) {
+	return s.repo.ListCmmsResults(ctx, p)
+}
+
+// RunCmms records one CMMS compliance run; status is FAILED when any check
+// failed, otherwise PASSED.
+func (s *StatisticalService) RunCmms(ctx context.Context, tenantID, actor string, in *repository.CmmsResult) (*repository.CmmsResult, error) {
+	if strings.TrimSpace(in.ScenarioCode) == "" || strings.TrimSpace(in.CompliancePeriod) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "scenario_code and compliance_period are required")
+	}
+	in.TenantID = tenantID
+	in.RunBy = actor
+	switch {
+	case in.FailedCount > 0:
+		in.Status = "FAILED"
+	case strings.TrimSpace(in.Status) == "":
+		in.Status = "PASSED"
+	}
+	if in.CheckedCount < 0 {
+		in.CheckedCount = 0
+	}
+	if in.FailedCount < 0 {
+		in.FailedCount = 0
+	}
+	return s.repo.UpsertCmmsResult(ctx, in)
+}

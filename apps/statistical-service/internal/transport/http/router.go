@@ -85,6 +85,8 @@ func NewRouter(h *handler.StatisticalHandler) http.Handler {
 		h.UpsertImportTransaction(w, r)
 	})
 	mux.HandleFunc("POST /api/statistical/import-transactions/{id}/submit", h.SubmitImportTransaction)
+	mux.HandleFunc("GET /api/statistical/cmms/results", h.ListCmmsResults)
+	mux.HandleFunc("POST /api/statistical/cmms/run", h.RunCmms)
 	return mux
 }
 
