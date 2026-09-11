@@ -61,12 +61,12 @@ type createClosingRowBody struct {
 // block and the INC/EXP rows. finance-service builds the balanced posting
 // lines server-side (dest 4211 from the FIN_CLOSING_*_DEST rules).
 type createClosingBody struct {
-	AccountingDate string                  `json:"accounting_date"`
-	PeriodType     string                  `json:"period_type"`
-	Description    string                  `json:"description"`
+	AccountingDate string                        `json:"accounting_date"`
+	PeriodType     string                        `json:"period_type"`
+	Description    string                        `json:"description"`
 	Trader         *createCancellationTraderBody `json:"trader"`
-	IdempotencyKey string                  `json:"idempotency_key"`
-	Rows           []createClosingRowBody  `json:"rows"`
+	IdempotencyKey string                        `json:"idempotency_key"`
+	Rows           []createClosingRowBody        `json:"rows"`
 }
 
 // createPostingCaseBody is the request contract: flow + posting_request /
@@ -170,6 +170,46 @@ func mapClosingInput(body *createClosingBody) *service.ClosingCaseInput {
 // ListClosingAccounts handles GET /api/finance/closing/accounts?accounting_date=
 // — the closing candidate picker: INC/EXP accounts with a positive natural
 // balance as of the date, each item prefilled with its closing amount.
+// ImportPostingCases handles POST /api/finance/posting-cases/import — an
+// XLSX posting sheet (multipart/form-data, field "file") is parsed into a
+// manual posting case. form fields: flow (default SINGLE_ENTRY),
+// accounting_date (fallback when the sheet has no accounting_date column).
+func (h *PostingCaseHandler) ImportPostingCases(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, r, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	actor := r.Header.Get("X-User-Id")
+
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		respondError(w, r, http.StatusBadRequest, "invalid multipart form")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, "file is required")
+		return
+	}
+	defer file.Close()
+
+	result, err := h.svc.ImportPostingSheet(r.Context(), tenantID, actor,
+		r.FormValue("flow"), r.FormValue("accounting_date"), file)
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, r, http.StatusCreated, map[string]any{
+		"case_id":         result.CaseID,
+		"case_code":       result.CaseCode,
+		"line_count":      result.LineCount,
+		"accounting_date": result.AccountingDate,
+	})
+}
+
 func (h *PostingCaseHandler) ListClosingAccounts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		respondError(w, r, http.StatusMethodNotAllowed, "method not allowed")
