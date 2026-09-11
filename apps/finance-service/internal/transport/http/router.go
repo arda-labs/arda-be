@@ -13,7 +13,7 @@ import (
 // NewRouter wires HTTP routes for the finance service. Posting endpoints do
 // NOT live here — the gRPC PostingService owns them (contract v0.2 §1);
 // HTTP is read/config surface for the finance remote.
-func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHandler, postingHandler *handler.PostingHandler, cashHandler *handler.CashHandler, postingCaseHandler *handler.PostingCaseHandler, reportingHandler *handler.ReportingHandler) http.Handler {
+func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHandler, postingHandler *handler.PostingHandler, cashHandler *handler.CashHandler, postingCaseHandler *handler.PostingCaseHandler, reportingHandler *handler.ReportingHandler, counterpartyHandler *handler.CounterpartyHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Health
@@ -77,6 +77,13 @@ func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHa
 			writeMethodNotAllowed(w, r)
 		}
 	})
+
+	// Counterparty master (W4c-E): partner catalog + bank/GL accounts.
+	mux.HandleFunc("/api/finance/counterparties", counterpartyHandler.Counterparties)
+	mux.HandleFunc("PUT /api/finance/counterparties/{id}", counterpartyHandler.CounterpartyByID)
+	mux.HandleFunc("DELETE /api/finance/counterparties/{id}", counterpartyHandler.CounterpartyByID)
+	mux.HandleFunc("GET /api/finance/counterparties/{id}/accounts", counterpartyHandler.CounterpartyByID)
+	mux.HandleFunc("POST /api/finance/counterparties/{id}/accounts", counterpartyHandler.CounterpartyByID)
 
 	// ── Posting stack (journal read + preview + opening balances) ──
 	mux.HandleFunc("/api/finance/journal-entries", method("GET", postingHandler.ListJournalEntries))

@@ -644,3 +644,13 @@ func movementTitle(movementType string) string {
 		return "Tiếp nhận vốn"
 	}
 }
+
+// FundSourceStatement is the sổ nguồn vốn report (W4c).
+func (s *CapitalService) FundSourceStatement(ctx context.Context, tenantID, fromDate, toDate, status string) ([]repository.FundSourceStatementRow, error) {
+	return s.repo.FundSourceStatement(ctx, tenantID, fromDate, toDate, status)
+}
+
+// FundSourceTransactions is the giao dịch nguồn vốn report (W4c).
+func (s *CapitalService) FundSourceTransactions(ctx context.Context, tenantID, fromDate, toDate, movementType string) ([]repository.FundSourceTxnRow, error) {
+	return s.repo.FundSourceTransactions(ctx, tenantID, fromDate, toDate, movementType)
+}

@@ -78,7 +78,8 @@ func main() {
 	productRequestSvc := service.NewProductRequestService(repo, workflowClient)
 	ibmSvc := service.NewIBMService(repo, db, financeClient, workflowClient)
 	interestSvc := service.NewInterestService(repo, db, financeClient, workflowClient)
-	depositHandler := handler.NewDepositHandler(settlementSvc, additionalSvc, productRequestSvc, ibmSvc, interestSvc)
+	reportSvc := service.NewReportService(repo)
+	depositHandler := handler.NewDepositHandler(settlementSvc, additionalSvc, productRequestSvc, ibmSvc, interestSvc, reportSvc)
 
 	// ── gRPC server (DepositCommandService, port 9090) ──
 	serviceSecret, errSec := identity.SecretFromEnv()

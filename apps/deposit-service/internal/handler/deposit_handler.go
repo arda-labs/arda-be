@@ -51,6 +51,14 @@ type InterestService interface {
 	RunDaily(ctx context.Context, tenantID, businessDate string) (int, error)
 }
 
+// Report surface used by the HTTP handler (DPM/IBM report reads).
+type ReportService interface {
+	SavingsStatement(ctx context.Context, tenantID, fromDate, toDate, status string) ([]repository.SavingsStatementRow, error)
+	SavingsTransactions(ctx context.Context, tenantID, fromDate, toDate, txnType string) ([]repository.SavingsTxnRow, error)
+	InterbankStatement(ctx context.Context, tenantID, fromDate, toDate, status string) ([]repository.InterbankStatementRow, error)
+	InterbankTransactions(ctx context.Context, tenantID, fromDate, toDate string) ([]repository.InterbankTxnRow, error)
+}
+
 // DepositHandler exposes the deposit HTTP surface (P2.1).
 type DepositHandler struct {
 	svc        SettlementService
@@ -58,10 +66,11 @@ type DepositHandler struct {
 	products   ProductRequestService
 	ibm        IBMService
 	interest   InterestService
+	reports    ReportService
 }
 
-func NewDepositHandler(svc SettlementService, additional AdditionalDepositService, products ProductRequestService, ibm IBMService, interest InterestService) *DepositHandler {
-	return &DepositHandler{svc: svc, additional: additional, products: products, ibm: ibm, interest: interest}
+func NewDepositHandler(svc SettlementService, additional AdditionalDepositService, products ProductRequestService, ibm IBMService, interest InterestService, reports ReportService) *DepositHandler {
+	return &DepositHandler{svc: svc, additional: additional, products: products, ibm: ibm, interest: interest, reports: reports}
 }
 
 type orgScope struct {
@@ -504,4 +513,68 @@ func (h *DepositHandler) RunAccrualDaily(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{"posted": posted})
+}
+
+// GetDepositStatement handles GET /api/deposit/reports/deposit-statement.
+func (h *DepositHandler) GetDepositStatement(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.reports.SavingsStatement(r.Context(), tenantID, q.Get("from"), q.Get("to"), q.Get("status"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// GetDepositTransactions handles GET /api/deposit/reports/deposit-transactions.
+func (h *DepositHandler) GetDepositTransactions(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.reports.SavingsTransactions(r.Context(), tenantID, q.Get("from"), q.Get("to"), q.Get("txn_type"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// GetInterbankStatement handles GET /api/deposit/reports/interbank-statement.
+func (h *DepositHandler) GetInterbankStatement(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.reports.InterbankStatement(r.Context(), tenantID, q.Get("from"), q.Get("to"), q.Get("status"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// GetInterbankTransactions handles GET /api/deposit/reports/interbank-transactions.
+func (h *DepositHandler) GetInterbankTransactions(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.reports.InterbankTransactions(r.Context(), tenantID, q.Get("from"), q.Get("to"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
 }

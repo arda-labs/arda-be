@@ -70,6 +70,14 @@ func (f *fakeCapitalService) RecordMovement(_ context.Context, _, _ string, in *
 	return in, nil
 }
 
+func (f *fakeCapitalService) FundSourceStatement(context.Context, string, string, string, string) ([]repository.FundSourceStatementRow, error) {
+	return nil, nil
+}
+
+func (f *fakeCapitalService) FundSourceTransactions(context.Context, string, string, string, string) ([]repository.FundSourceTxnRow, error) {
+	return nil, nil
+}
+
 func TestRouterMovementRouteCarriesContractID(t *testing.T) {
 	svc := &fakeCapitalService{}
 	mux := NewRouter(handler.NewCapitalHandler(svc))

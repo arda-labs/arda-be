@@ -63,6 +63,10 @@ func NewRouter(h *handler.DepositHandler) http.Handler {
 		}
 	})
 	mux.HandleFunc("/api/deposit/batch-interest", method("POST", h.SubmitBatchInterest))
+	mux.HandleFunc("GET /api/deposit/reports/deposit-statement", h.GetDepositStatement)
+	mux.HandleFunc("GET /api/deposit/reports/deposit-transactions", h.GetDepositTransactions)
+	mux.HandleFunc("GET /api/deposit/reports/interbank-statement", h.GetInterbankStatement)
+	mux.HandleFunc("GET /api/deposit/reports/interbank-transactions", h.GetInterbankTransactions)
 	mux.HandleFunc("/internal/jobs/deposit-accrual-daily", method("POST", h.RunAccrualDaily))
 	mux.HandleFunc("/api/deposit/interbank", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

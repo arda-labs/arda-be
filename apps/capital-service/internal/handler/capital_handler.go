@@ -72,6 +72,8 @@ type CapitalService interface {
 	CreateContract(ctx context.Context, tenantID, actor string, in *repository.CapitalContract) (*repository.CapitalContract, error)
 	SubmitAmendment(ctx context.Context, tenantID, actor, contractID string, payload json.RawMessage, reason string) (*repository.ContractAmendment, error)
 	RecordMovement(ctx context.Context, tenantID, actor string, in *repository.CapitalMovement) (*repository.CapitalMovement, error)
+	FundSourceStatement(ctx context.Context, tenantID, fromDate, toDate, status string) ([]repository.FundSourceStatementRow, error)
+	FundSourceTransactions(ctx context.Context, tenantID, fromDate, toDate, movementType string) ([]repository.FundSourceTxnRow, error)
 }
 
 // CapitalHandler exposes the CFM HTTP surface (P2.2).
@@ -314,4 +316,36 @@ func (h *CapitalHandler) RecordMovement(w http.ResponseWriter, r *http.Request) 
 
 func writeForbidden(w http.ResponseWriter, r *http.Request) {
 	ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+}
+
+// GetFundSourceStatement handles GET /api/capital/reports/fund-source-statement.
+func (h *CapitalHandler) GetFundSourceStatement(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbidden(w, r)
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.svc.FundSourceStatement(r.Context(), tenantID, q.Get("from"), q.Get("to"), q.Get("status"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// GetFundSourceTransactions handles GET /api/capital/reports/fund-source-transactions.
+func (h *CapitalHandler) GetFundSourceTransactions(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbidden(w, r)
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.svc.FundSourceTransactions(r.Context(), tenantID, q.Get("from"), q.Get("to"), q.Get("movement_type"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
 }

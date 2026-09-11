@@ -678,6 +678,107 @@ func NewCapitalID(prefix string) string {
 	return prefix + "_" + hex.EncodeToString(b[:])
 }
 
+// ── Reports (W4c) ──
+
+// FundSourceStatementRow is one sổ nguồn vốn row.
+type FundSourceStatementRow struct {
+	ContractCode     string  `json:"contract_code"`
+	FundTypeCode     string  `json:"fund_type_code"`
+	CounterpartyCode string  `json:"counterparty_code"`
+	ContractDate     string  `json:"contract_date"`
+	MaturityDate     string  `json:"maturity_date,omitempty"`
+	AmountMinor      int64   `json:"amount_minor"`
+	InterestRate     float64 `json:"interest_rate"`
+	CurrencyCode     string  `json:"currency_code"`
+	Status           string  `json:"status"`
+}
+
+// FundSourceTxnRow is one giao dịch nguồn vốn row.
+type FundSourceTxnRow struct {
+	MovementDate string `json:"movement_date"`
+	ContractCode string `json:"contract_code"`
+	MovementType string `json:"movement_type"`
+	AmountMinor  int64  `json:"amount_minor"`
+	CurrencyCode string `json:"currency_code"`
+	Note         string `json:"note,omitempty"`
+	Status       string `json:"status"`
+}
+
+// FundSourceStatement lists fund contracts with contract_date in [from, to].
+func (r *CapitalRepository) FundSourceStatement(ctx context.Context, tenantID, fromDate, toDate, status string) ([]FundSourceStatementRow, error) {
+	where := []string{"tenant_id = $1"}
+	args := []any{tenantID}
+	if fromDate != "" {
+		args = append(args, fromDate)
+		where = append(where, fmt.Sprintf("contract_date >= $%d::date", len(args)))
+	}
+	if toDate != "" {
+		args = append(args, toDate)
+		where = append(where, fmt.Sprintf("contract_date <= $%d::date", len(args)))
+	}
+	if status != "" {
+		args = append(args, status)
+		where = append(where, fmt.Sprintf("status = $%d::text", len(args)))
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT contract_code, fund_type_code, counterparty_code, contract_date::text,
+		       COALESCE(maturity_date::text,''), amount_minor, interest_rate, currency_code, status
+		FROM cfc_contracts WHERE `+strings.Join(where, " AND ")+`
+		ORDER BY contract_date DESC, contract_code LIMIT 1000`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []FundSourceStatementRow{}
+	for rows.Next() {
+		var x FundSourceStatementRow
+		if err := rows.Scan(&x.ContractCode, &x.FundTypeCode, &x.CounterpartyCode, &x.ContractDate,
+			&x.MaturityDate, &x.AmountMinor, &x.InterestRate, &x.CurrencyCode, &x.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// FundSourceTransactions lists fund movements with movement_date in [from, to].
+func (r *CapitalRepository) FundSourceTransactions(ctx context.Context, tenantID, fromDate, toDate, movementType string) ([]FundSourceTxnRow, error) {
+	where := []string{"m.tenant_id = $1"}
+	args := []any{tenantID}
+	if fromDate != "" {
+		args = append(args, fromDate)
+		where = append(where, fmt.Sprintf("m.movement_date >= $%d::date", len(args)))
+	}
+	if toDate != "" {
+		args = append(args, toDate)
+		where = append(where, fmt.Sprintf("m.movement_date <= $%d::date", len(args)))
+	}
+	if movementType != "" {
+		args = append(args, movementType)
+		where = append(where, fmt.Sprintf("m.movement_type = $%d::text", len(args)))
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT m.movement_date::text, c.contract_code, m.movement_type, m.amount_minor,
+		       m.currency_code, COALESCE(m.note,''), m.status
+		FROM cfc_movements m JOIN cfc_contracts c ON c.id = m.contract_id
+		WHERE `+strings.Join(where, " AND ")+`
+		ORDER BY m.movement_date DESC, c.contract_code LIMIT 1000`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []FundSourceTxnRow{}
+	for rows.Next() {
+		var x FundSourceTxnRow
+		if err := rows.Scan(&x.MovementDate, &x.ContractCode, &x.MovementType, &x.AmountMinor,
+			&x.CurrencyCode, &x.Note, &x.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
 func nullStringCap(s string) any {
 	if s == "" {
 		return nil

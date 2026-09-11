@@ -8,7 +8,7 @@ import (
 
 func TestNewRouterRegistersFinanceRoutes(t *testing.T) {
 	t.Helper()
-	NewRouter(handler.NewFinanceHandler(nil, nil, nil, nil), handler.NewCoaHandler(nil), handler.NewPostingHandler(nil), handler.NewCashHandler(nil), handler.NewPostingCaseHandler(nil), handler.NewReportingHandler(nil, nil))
+	NewRouter(handler.NewFinanceHandler(nil, nil, nil, nil), handler.NewCoaHandler(nil), handler.NewPostingHandler(nil), handler.NewCashHandler(nil), handler.NewPostingCaseHandler(nil), handler.NewReportingHandler(nil, nil), handler.NewCounterpartyHandler(nil))
 }
 
 func TestPostingCaseRouteIsRegistered(t *testing.T) {

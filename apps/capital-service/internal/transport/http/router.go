@@ -54,6 +54,8 @@ func NewRouter(h *handler.CapitalHandler) http.Handler {
 	mux.HandleFunc("GET /api/capital/contracts/{id}", h.GetContractDetail)
 	mux.HandleFunc("POST /api/capital/contracts/{id}/amendments", h.SubmitAmendment)
 	mux.HandleFunc("POST /api/capital/contracts/{id}/movements", h.RecordMovement)
+	mux.HandleFunc("GET /api/capital/reports/fund-source-statement", h.GetFundSourceStatement)
+	mux.HandleFunc("GET /api/capital/reports/fund-source-transactions", h.GetFundSourceTransactions)
 	return mux
 }
 

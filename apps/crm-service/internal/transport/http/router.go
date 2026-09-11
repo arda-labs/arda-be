@@ -16,7 +16,7 @@ type Router struct {
 	amendmentHandler *handler.AmendmentHandler
 }
 
-func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handler.AmendmentHandler, projectHandler *handler.ProjectHandler) http.Handler {
+func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handler.AmendmentHandler, projectHandler *handler.ProjectHandler, reportHandler *handler.ReportHandler) http.Handler {
 	r := &Router{
 		customerHandler:  customerHandler,
 		amendmentHandler: amendmentHandler,
@@ -66,6 +66,7 @@ func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handl
 			writeMethodNotAllowed(w, req)
 		}
 	})
+	mux.HandleFunc("GET /api/crm/reports/customers", reportHandler.GetCustomerReport)
 
 	// Internal AI surface: ai-service calls here with a signed caller
 	// assertion and the delegated subject as headers. Resource-level scoping

@@ -17,6 +17,7 @@ import (
 	"github.com/arda-labs/arda/apps/crm-service/internal/handler"
 	"github.com/arda-labs/arda/apps/crm-service/internal/migration"
 	"github.com/arda-labs/arda/apps/crm-service/internal/repository"
+	"github.com/arda-labs/arda/apps/crm-service/internal/service"
 	grpcserver "github.com/arda-labs/arda/apps/crm-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/crm-service/internal/transport/http"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
@@ -109,11 +110,13 @@ func main() {
 	projectRepo := repository.NewProjectRepository(db)
 	projectHandler := handler.NewProjectHandler(projectRepo)
 	amendmentHandler := handler.NewAmendmentHandler(customerRepo, amendmentRepo, workflowClient)
+	reportSvc := service.NewReportService(customerRepo)
+	reportHandler := handler.NewReportHandler(reportSvc)
 
 	// Router and HTTP Server
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(customerHandler, amendmentHandler, projectHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(customerHandler, amendmentHandler, projectHandler, reportHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

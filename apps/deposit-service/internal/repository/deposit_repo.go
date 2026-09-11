@@ -1234,6 +1234,203 @@ func derefString(s *string) string {
 	return *s
 }
 
+// ── Reports (W4c) ──
+
+// SavingsStatementRow is one sổ tiền gửi report row.
+type SavingsStatementRow struct {
+	SavingsCode    string `json:"savings_code"`
+	CustomerCode   string `json:"customer_code"`
+	ProductCode    string `json:"product_code"`
+	OpenDate       string `json:"open_date"`
+	MaturityDate   string `json:"maturity_date"`
+	PrincipalMinor int64  `json:"principal_minor"`
+	AccruedMinor   int64  `json:"accrued_minor"`
+	CurrencyCode   string `json:"currency_code"`
+	Status         string `json:"status"`
+}
+
+// SavingsTxnRow is one giao dịch tiền gửi report row.
+type SavingsTxnRow struct {
+	TxnDate        string `json:"txn_date"`
+	SavingsCode    string `json:"savings_code"`
+	TxnType        string `json:"txn_type"`
+	AmountMinor    int64  `json:"amount_minor"`
+	CurrencyCode   string `json:"currency_code"`
+	Status         string `json:"status"`
+	JournalEntryID string `json:"journal_entry_id,omitempty"`
+}
+
+// InterbankStatementRow is one sổ tiền gửi liên ngân hàng report row.
+type InterbankStatementRow struct {
+	DepositCode      string `json:"deposit_code"`
+	CounterpartyCode string `json:"counterparty_code"`
+	CounterpartyName string `json:"counterparty_name,omitempty"`
+	ProductCode      string `json:"product_code,omitempty"`
+	DepositDate      string `json:"deposit_date"`
+	MaturityDate     string `json:"maturity_date"`
+	PrincipalMinor   int64  `json:"principal_minor"`
+	AccruedMinor     int64  `json:"accrued_minor"`
+	CurrencyCode     string `json:"currency_code"`
+	Status           string `json:"status"`
+}
+
+// InterbankTxnRow is one giao dịch liên ngân hàng report row.
+type InterbankTxnRow struct {
+	MovementDate string `json:"movement_date"`
+	DepositCode  string `json:"deposit_code"`
+	Kind         string `json:"kind"`
+	AmountMinor  int64  `json:"amount_minor"`
+	CurrencyCode string `json:"currency_code"`
+	Note         string `json:"note,omitempty"`
+	Status       string `json:"status"`
+}
+
+// SavingsStatement lists savings accounts opened on/before toDate.
+func (r *DepositRepository) SavingsStatement(ctx context.Context, tenantID, fromDate, toDate, status string) ([]SavingsStatementRow, error) {
+	where := []string{"tenant_id = $1"}
+	args := []any{tenantID}
+	if toDate != "" {
+		args = append(args, toDate)
+		where = append(where, fmt.Sprintf("open_date <= $%d::date", len(args)))
+	}
+	if fromDate != "" {
+		args = append(args, fromDate)
+		where = append(where, fmt.Sprintf("open_date >= $%d::date", len(args)))
+	}
+	if status != "" {
+		args = append(args, status)
+		where = append(where, fmt.Sprintf("status = $%d::text", len(args)))
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT savings_code, customer_code, product_code, open_date::text, maturity_date::text,
+		       principal_minor, accrued_minor, currency_code, status
+		FROM dpm_savings WHERE `+strings.Join(where, " AND ")+`
+		ORDER BY open_date, savings_code LIMIT 1000`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SavingsStatementRow{}
+	for rows.Next() {
+		var x SavingsStatementRow
+		if err := rows.Scan(&x.SavingsCode, &x.CustomerCode, &x.ProductCode, &x.OpenDate, &x.MaturityDate,
+			&x.PrincipalMinor, &x.AccruedMinor, &x.CurrencyCode, &x.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// SavingsTransactions lists deposit transactions in [from, to].
+func (r *DepositRepository) SavingsTransactions(ctx context.Context, tenantID, fromDate, toDate, txnType string) ([]SavingsTxnRow, error) {
+	where := []string{"t.tenant_id = $1"}
+	args := []any{tenantID}
+	if fromDate != "" {
+		args = append(args, fromDate)
+		where = append(where, fmt.Sprintf("t.txn_date >= $%d::date", len(args)))
+	}
+	if toDate != "" {
+		args = append(args, toDate)
+		where = append(where, fmt.Sprintf("t.txn_date <= $%d::date", len(args)))
+	}
+	if txnType != "" {
+		args = append(args, txnType)
+		where = append(where, fmt.Sprintf("t.txn_type = $%d::text", len(args)))
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT t.txn_date::text, s.savings_code, t.txn_type, t.amount_minor, t.currency_code, t.status,
+		       COALESCE(t.journal_entry_id::text,'')
+		FROM dpm_transactions t JOIN dpm_savings s ON s.id = t.savings_id
+		WHERE `+strings.Join(where, " AND ")+`
+		ORDER BY t.txn_date DESC, s.savings_code LIMIT 1000`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SavingsTxnRow{}
+	for rows.Next() {
+		var x SavingsTxnRow
+		if err := rows.Scan(&x.TxnDate, &x.SavingsCode, &x.TxnType, &x.AmountMinor, &x.CurrencyCode,
+			&x.Status, &x.JournalEntryID); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// InterbankStatement lists interbank contracts opened on/before toDate.
+func (r *DepositRepository) InterbankStatement(ctx context.Context, tenantID, fromDate, toDate, status string) ([]InterbankStatementRow, error) {
+	where := []string{"tenant_id = $1"}
+	args := []any{tenantID}
+	if fromDate != "" {
+		args = append(args, fromDate)
+		where = append(where, fmt.Sprintf("deposit_date >= $%d::date", len(args)))
+	}
+	if toDate != "" {
+		args = append(args, toDate)
+		where = append(where, fmt.Sprintf("deposit_date <= $%d::date", len(args)))
+	}
+	if status != "" {
+		args = append(args, status)
+		where = append(where, fmt.Sprintf("status = $%d::text", len(args)))
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT deposit_code, counterparty_code, COALESCE(counterparty_name,''), COALESCE(product_code,''),
+		       deposit_date::text, maturity_date::text, principal_minor, accrued_minor, currency_code, status
+		FROM ibm_deposits WHERE `+strings.Join(where, " AND ")+`
+		ORDER BY deposit_date DESC LIMIT 1000`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []InterbankStatementRow{}
+	for rows.Next() {
+		var x InterbankStatementRow
+		if err := rows.Scan(&x.DepositCode, &x.CounterpartyCode, &x.CounterpartyName, &x.ProductCode,
+			&x.DepositDate, &x.MaturityDate, &x.PrincipalMinor, &x.AccruedMinor, &x.CurrencyCode, &x.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// InterbankTransactions lists interbank movements in [from, to].
+func (r *DepositRepository) InterbankTransactions(ctx context.Context, tenantID, fromDate, toDate string) ([]InterbankTxnRow, error) {
+	where := []string{"m.tenant_id = $1"}
+	args := []any{tenantID}
+	if fromDate != "" {
+		args = append(args, fromDate)
+		where = append(where, fmt.Sprintf("m.movement_date >= $%d::date", len(args)))
+	}
+	if toDate != "" {
+		args = append(args, toDate)
+		where = append(where, fmt.Sprintf("m.movement_date <= $%d::date", len(args)))
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT m.movement_date::text, d.deposit_code, m.kind, m.amount_minor, m.currency_code,
+		       COALESCE(m.note,''), m.status
+		FROM ibm_movements m JOIN ibm_deposits d ON d.id = m.deposit_id
+		WHERE `+strings.Join(where, " AND ")+`
+		ORDER BY m.movement_date DESC, d.deposit_code LIMIT 1000`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []InterbankTxnRow{}
+	for rows.Next() {
+		var x InterbankTxnRow
+		if err := rows.Scan(&x.MovementDate, &x.DepositCode, &x.Kind, &x.AmountMinor, &x.CurrencyCode,
+			&x.Note, &x.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
 // NewDepositID generates a prefixed random id.
 func NewDepositID(prefix string) string {
 	var b [16]byte
