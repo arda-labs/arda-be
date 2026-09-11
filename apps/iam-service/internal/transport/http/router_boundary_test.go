@@ -7,7 +7,7 @@ import (
 )
 
 func TestIAMDoesNotExposeBrowserAuthBoundary(t *testing.T) {
-	router := NewRouter(nil, nil, nil, nil, nil, nil)
+	router := NewRouter(nil, nil, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/login-page?login_challenge=legacy", nil)
 	resp := httptest.NewRecorder()
 

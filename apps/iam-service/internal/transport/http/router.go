@@ -12,7 +12,7 @@ import (
 )
 
 // NewRouter wires HTTP routes for the IAM service.
-func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHandler, adminHandler *handler.AdminHandler, sessionHandler *handler.SessionHandler, mfaHandler *handler.MFAHandler, auditHandler *handler.AuditHandler, tenantHandlers ...*handler.TenantHandler) http.Handler {
+func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHandler, adminHandler *handler.AdminHandler, sessionHandler *handler.SessionHandler, mfaHandler *handler.MFAHandler, auditHandler *handler.AuditHandler, oauthClientHandler *handler.OAuthClientHandler, tenantHandlers ...*handler.TenantHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Health
@@ -78,6 +78,8 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 			writeMethodNotAllowed(w, r)
 		}
 	})
+	mux.HandleFunc("/api/admin/oauth-clients", oauthClientHandler.Clients)
+	mux.HandleFunc("/api/admin/oauth-clients/{id}", oauthClientHandler.ClientByID)
 
 	// Admin API - Group management
 	mux.HandleFunc("/api/admin/groups/export", method("GET", adminHandler.ExportGroups))

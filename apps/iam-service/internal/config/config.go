@@ -18,6 +18,7 @@ type Config struct {
 
 	KratosAdminURL string `yaml:"kratos_admin_url"`
 	TOTPIssuer     string `yaml:"totp_issuer"`
+	HydraAdminURL  string `yaml:"hydra_admin_url"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -32,6 +33,7 @@ func Load() Config {
 
 		KratosAdminURL: "http://localhost:4434",
 		TOTPIssuer:     "arda.io.vn",
+		HydraAdminURL:  "http://192.168.100.201:30445",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -51,6 +53,7 @@ func Load() Config {
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("KRATOS_ADMIN_URL", &cfg.KratosAdminURL)
 	envStr("TOTP_ISSUER", &cfg.TOTPIssuer)
+	envStr("HYDRA_ADMIN_URL", &cfg.HydraAdminURL)
 
 	return cfg
 }
@@ -76,6 +79,7 @@ func (c *Config) loadYAML(path string) bool {
 	set("database_dsn", &c.DatabaseDSN)
 	set("kratos_admin_url", &c.KratosAdminURL)
 	set("totp_issuer", &c.TOTPIssuer)
+	set("hydra_admin_url", &c.HydraAdminURL)
 	return true
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/arda-labs/arda/apps/iam-service/internal/bootstrap"
 	"github.com/arda-labs/arda/apps/iam-service/internal/config"
 	"github.com/arda-labs/arda/apps/iam-service/internal/handler"
+	"github.com/arda-labs/arda/apps/iam-service/internal/hydra"
 	"github.com/arda-labs/arda/apps/iam-service/internal/kratos"
 	"github.com/arda-labs/arda/apps/iam-service/internal/mfa"
 	"github.com/arda-labs/arda/apps/iam-service/internal/migration"
@@ -121,6 +122,7 @@ func main() {
 	mfaHandler := handler.NewMFAHandler(mfaSvc, userRepo)
 	auditHandler := handler.NewAuditHandler(auditSvc)
 	tenantHandler := handler.NewTenantHandler(tenantSvc)
+	oauthClientHandler := handler.NewOAuthClientHandler(hydra.New(cfg.HydraAdminURL))
 
 	// ── gRPC server ──
 	if _, err := iamgrpc.ListenAndServe(cfg.GRPCAddr, userRepo); err != nil {
@@ -133,7 +135,7 @@ func main() {
 	// WriteTimeout must be 0 for large-scale chunked HTTP streaming exports and SSE.
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(userHandler, policyHandler, adminHandler, sessionHandler, mfaHandler, auditHandler, tenantHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(userHandler, policyHandler, adminHandler, sessionHandler, mfaHandler, auditHandler, oauthClientHandler, tenantHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,
@@ -172,3 +174,4 @@ func parseLogLevel(level string) slog.Level {
 		return slog.LevelInfo
 	}
 }
+
