@@ -41,6 +41,11 @@ func TestBuildRPTSet(t *testing.T) {
 		{QueryLoanDebtClassification, 2, 5},
 		{QueryCustomerSummary, 1, 3},
 		{QueryOperationControl, 2, 4},
+		{QueryDepositMaturityLadder, 1, 4},
+		{QueryDepositAccruedByProduct, 1, 4},
+		{QueryCapitalByFundType, 1, 4},
+		{QueryCapitalMovements, 2, 4},
+		{QueryCollateralByType, 1, 4},
 	}
 	for _, tc := range cases {
 		q, err := Build(tc.id, Params{TenantID: "t1", PeriodCode: "2026-09"})
