@@ -398,3 +398,69 @@ func newInboxPublicID() string {
 	}
 	return "nib_" + hex.EncodeToString(b[:])
 }
+
+// ListTemplates returns the notification template catalog (X2).
+func (s *NotificationService) ListTemplates(ctx context.Context, tenantID string) ([]repository.NotificationTemplate, error) {
+	if tenantID == "" {
+		return nil, ErrTenantScopeRequired
+	}
+	return s.repo.ListTemplates(ctx, tenantID)
+}
+
+// UpsertTemplate creates or updates one template.
+func (s *NotificationService) UpsertTemplate(ctx context.Context, tenantID, actor string, in *repository.NotificationTemplate) (*repository.NotificationTemplate, error) {
+	if tenantID == "" {
+		return nil, ErrTenantScopeRequired
+	}
+	if in.EventCode == "" || in.Body == "" || in.Channel == "" {
+		return nil, errors.New("event_code, channel and body are required")
+	}
+	in.TenantID = tenantID
+	if in.Locale == "" {
+		in.Locale = "vi-VN"
+	}
+	in.CreatedBy = actor
+	created, err := s.repo.UpsertTemplate(ctx, in)
+	if err != nil {
+		return nil, errors.New("could not save the template")
+	}
+	return created, nil
+}
+
+// DeleteTemplate removes one template.
+func (s *NotificationService) DeleteTemplate(ctx context.Context, tenantID, id string) error {
+	if tenantID == "" {
+		return ErrTenantScopeRequired
+	}
+	if err := s.repo.DeleteTemplate(ctx, tenantID, id); err != nil {
+		return errors.New("template not found")
+	}
+	return nil
+}
+
+// ListSenders returns the sender configs (password masked).
+func (s *NotificationService) ListSenders(ctx context.Context, tenantID string) ([]repository.SenderConfig, error) {
+	if tenantID == "" {
+		return nil, ErrTenantScopeRequired
+	}
+	return s.repo.ListSenders(ctx, tenantID)
+}
+
+// UpsertSender creates or updates one sender config.
+func (s *NotificationService) UpsertSender(ctx context.Context, tenantID, actor string, in *repository.SenderConfig) (*repository.SenderConfig, error) {
+	if tenantID == "" {
+		return nil, ErrTenantScopeRequired
+	}
+	if in.Host == "" || in.FromAddress == "" {
+		return nil, errors.New("host and from_address are required")
+	}
+	in.TenantID = tenantID
+	if in.Channel == "" {
+		in.Channel = "email"
+	}
+	created, err := s.repo.UpsertSender(ctx, in)
+	if err != nil {
+		return nil, errors.New("could not save the sender config")
+	}
+	return created, nil
+}

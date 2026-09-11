@@ -28,6 +28,11 @@ func NewRouter(notificationHandler *handler.NotificationHandler) http.Handler {
 	mux.HandleFunc("GET /api/notifications/push/vapid-public-key", notificationHandler.PushPublicKey)
 	mux.HandleFunc("POST /api/notifications/push/subscribe", notificationHandler.SubscribePush)
 	mux.HandleFunc("POST /api/notifications/push/unsubscribe", notificationHandler.UnsubscribePush)
+	mux.HandleFunc("GET /api/notifications/templates", notificationHandler.ListTemplates)
+	mux.HandleFunc("POST /api/notifications/templates", notificationHandler.UpsertTemplate)
+	mux.HandleFunc("DELETE /api/notifications/templates/{id}", notificationHandler.DeleteTemplate)
+	mux.HandleFunc("GET /api/notifications/senders", notificationHandler.ListSenders)
+	mux.HandleFunc("POST /api/notifications/senders", notificationHandler.UpsertSender)
 
 	return mux
 }

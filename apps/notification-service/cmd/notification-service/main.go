@@ -21,6 +21,7 @@ import (
 	"github.com/arda-labs/arda/apps/notification-service/internal/config"
 	appevents "github.com/arda-labs/arda/apps/notification-service/internal/events"
 	"github.com/arda-labs/arda/apps/notification-service/internal/handler"
+	"github.com/arda-labs/arda/apps/notification-service/internal/mailer"
 	"github.com/arda-labs/arda/apps/notification-service/internal/migration"
 	"github.com/arda-labs/arda/apps/notification-service/internal/push"
 	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
@@ -75,12 +76,12 @@ func main() {
 		logger.Warn("web push disabled — set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY")
 	}
 	notificationService := service.NewNotificationService(notificationRepo, pushSender)
-	notificationHandler := handler.NewNotificationHandler(notificationService)
 	serviceSecret, err := identity.SecretFromEnv()
 	if err != nil {
 		logger.Error("service identity unavailable", "err", err)
 		os.Exit(1)
 	}
+	notificationHandler := handler.NewNotificationHandler(notificationService, serviceSecret)
 	serverCreds, err := identity.ServerTransportCredentials()
 	if err != nil {
 		logger.Error("grpc tls unavailable", "err", err)
@@ -105,7 +106,7 @@ func main() {
 		}
 	}()
 
-	deliveryWorker := worker.NewDeliveryWorker(notificationRepo)
+	deliveryWorker := worker.NewDeliveryWorker(notificationRepo, mailer.NewSMTP(), serviceSecret)
 	workerCtx, stopWorker := context.WithCancel(context.Background())
 	go deliveryWorker.Run(workerCtx)
 	defer stopWorker()

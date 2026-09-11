@@ -8,18 +8,21 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
+	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
 	"github.com/arda-labs/arda/apps/notification-service/internal/service"
 	"github.com/arda-labs/arda/libs/go/arda-auth/usercontext"
+	ardacrypto "github.com/arda-labs/arda/libs/go/arda-crypto"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 type NotificationHandler struct {
-	svc *service.NotificationService
+	svc    *service.NotificationService
+	secret string
 }
 
-func NewNotificationHandler(svc *service.NotificationService) *NotificationHandler {
-	return &NotificationHandler{svc: svc}
+func NewNotificationHandler(svc *service.NotificationService, secret string) *NotificationHandler {
+	return &NotificationHandler{svc: svc, secret: secret}
 }
 
 func (h *NotificationHandler) ListInbox(w http.ResponseWriter, r *http.Request) {
@@ -235,4 +238,81 @@ func inboxItemJSON(item domain.InboxItem) map[string]any {
 		out["readAt"] = item.ReadAt
 	}
 	return out
+}
+
+// ListTemplates handles GET /api/notifications/templates (X2).
+func (h *NotificationHandler) ListTemplates(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := requestUser(r)
+	items, err := h.svc.ListTemplates(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+// UpsertTemplate handles POST /api/notifications/templates (X2).
+func (h *NotificationHandler) UpsertTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID := requestUser(r)
+	var in repository.NotificationTemplate
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid json")
+		return
+	}
+	created, err := h.svc.UpsertTemplate(r.Context(), tenantID, userID, &in)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, created)
+}
+
+// DeleteTemplate handles DELETE /api/notifications/templates/{id} (X2).
+func (h *NotificationHandler) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := requestUser(r)
+	if err := h.svc.DeleteTemplate(r.Context(), tenantID, r.PathValue("id")); err != nil {
+		writeError(w, r, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// ListSenders handles GET /api/notifications/senders (X2).
+func (h *NotificationHandler) ListSenders(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := requestUser(r)
+	items, err := h.svc.ListSenders(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+// UpsertSender handles POST /api/notifications/senders — the password (if
+// present) is encrypted at rest with the service secret (X2).
+func (h *NotificationHandler) UpsertSender(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID := requestUser(r)
+	var in struct {
+		repository.SenderConfig
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid json")
+		return
+	}
+	in.SenderConfig.TenantID = tenantID
+	if in.Password != "" {
+		encrypted, err := ardacrypto.Encrypt(in.Password, h.secret)
+		if err != nil {
+			writeError(w, r, http.StatusInternalServerError, "could not encrypt the password")
+			return
+		}
+		in.SenderConfig.PasswordEnc = encrypted
+	}
+	created, err := h.svc.UpsertSender(r.Context(), tenantID, userID, &in.SenderConfig)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, created)
 }
