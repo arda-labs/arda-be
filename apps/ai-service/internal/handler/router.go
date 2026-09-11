@@ -214,6 +214,12 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 		}
 		handleUpdateSettings(w, r, store, options)
 	})
+	mux.HandleFunc("/api/ai/settings/profiles", func(w http.ResponseWriter, r *http.Request) {
+		handleProfiles(w, r, store, options)
+	})
+	mux.HandleFunc("/api/ai/settings/profiles/", func(w http.ResponseWriter, r *http.Request) {
+		handleProfileByID(w, r, store, options)
+	})
 	mux.HandleFunc("/api/ai/settings/test", func(w http.ResponseWriter, r *http.Request) {
 		handleTestConnection(w, r, store, options)
 	})

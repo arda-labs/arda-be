@@ -36,7 +36,24 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 
 	var item TenantSettings
 	var rawAPIKey string
+	// Preferred source: the applied profile + applied model.
 	err := s.db.QueryRowContext(ctx, `
+		SELECT p.tenant_id, p.base_url, p.api_key, m.model_id
+		FROM public.ai_model_profiles p
+		JOIN public.ai_profile_models m ON m.profile_id = p.id
+		WHERE p.tenant_id = $1 AND p.is_active = true AND m.is_active = true
+		LIMIT 1
+	`, tenantID).Scan(&item.TenantID, &item.BaseURL, &rawAPIKey, &item.ModelID)
+	if err == nil {
+		item.APIKey = s.decryptSecret(rawAPIKey)
+		return &item, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("query active model profile: %w", err)
+	}
+
+	// Legacy fallback for tenants configured before profiles existed.
+	err = s.db.QueryRowContext(ctx, `
 		SELECT tenant_id, base_url, api_key, model_id
 		FROM public.ai_tenant_settings
 		WHERE tenant_id = $1 AND is_active = true
