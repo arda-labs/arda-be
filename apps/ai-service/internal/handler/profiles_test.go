@@ -179,7 +179,7 @@ func TestProfiles_ApplySelectsOneModel(t *testing.T) {
 	store := &fakeProfileStore{}
 	router := NewRouterWithOptions(store, nil, RouterOptions{})
 	createReq := httptest.NewRequest(http.MethodPost, "/api/ai/settings/profiles",
-		strings.NewReader(`{"name":"Prod","baseUrl":"https://api.openai.com/v1","apiKey":"sk-x-123456","models":["gpt-4o","gpt-4o-mini"]}`))
+		strings.NewReader(`{"name":"Prod","baseUrl":"https://api.openai.com/v1","apiKey":"sk-test-secret-key-abc","models":["gpt-4o","gpt-4o-mini"]}`))
 	adminGatewayHeaders(createReq)
 	router.ServeHTTP(httptest.NewRecorder(), createReq)
 
