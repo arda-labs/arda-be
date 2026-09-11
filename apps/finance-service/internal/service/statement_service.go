@@ -56,13 +56,16 @@ type StatementResult struct {
 	TenantID      string         `json:"tenant_id"`
 	StatementCode string         `json:"statement_code"`
 	AsOf          string         `json:"as_of"`
+	FromDate      string         `json:"from_date,omitempty"`
 	CoaVersion    string         `json:"coa_version,omitempty"`
 	Rows          []StatementRow `json:"rows"`
 }
 
 // RunStatement renders statementCode as of asOf from fin_trial_balance_daily.
-// asOf empty = latest rebuilt date. Rows come back in sort_order.
-func (s *StatementService) RunStatement(ctx context.Context, tenantID, statementCode, asOf, coaVersion string) (*StatementResult, error) {
+// asOf empty = latest rebuilt date. fromDate bounds movement/opening formulas
+// (B03 cash-flow); empty = first day of the month containing asOf. Rows come
+// back in sort_order.
+func (s *StatementService) RunStatement(ctx context.Context, tenantID, statementCode, asOf, coaVersion, fromDate string) (*StatementResult, error) {
 	if statementCode == "" {
 		return nil, fmt.Errorf("statement_code is required")
 	}
@@ -73,8 +76,17 @@ func (s *StatementService) RunStatement(ctx context.Context, tenantID, statement
 			return nil, err
 		}
 	}
-	if _, err := time.Parse("2006-01-02", asOf); err != nil {
+	asOfTime, err := time.Parse("2006-01-02", asOf)
+	if err != nil {
 		return nil, fmt.Errorf("as_of must be YYYY-MM-DD")
+	}
+	if fromDate == "" {
+		fromDate = time.Date(asOfTime.Year(), asOfTime.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	} else if _, err := time.Parse("2006-01-02", fromDate); err != nil {
+		return nil, fmt.Errorf("from must be YYYY-MM-DD")
+	}
+	if fromDate > asOf {
+		return nil, fmt.Errorf("from must be on or before as_of")
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -111,19 +123,33 @@ func (s *StatementService) RunStatement(ctx context.Context, tenantID, statement
 	}
 
 	// Net debit-positive balance per account as of asOf (opening booked
-	// before asOf + all movements up to asOf).
+	// before asOf + all movements up to asOf); opening at period start and
+	// period movement (incr_*) for B03 cash-flow rows.
 	acctBal, err := s.accountBalances(ctx, tenantID, asOf, coaVersion)
 	if err != nil {
 		return nil, err
 	}
+	openBal, err := s.accountOpeningBalances(ctx, tenantID, fromDate, coaVersion)
+	if err != nil {
+		return nil, err
+	}
+	movement, err := s.accountMovements(ctx, tenantID, fromDate, asOf, coaVersion)
+	if err != nil {
+		return nil, err
+	}
 
-	result, err := evaluateStatement(defs, acctBal)
+	result, err := evaluateStatement(defs, statementInputs{
+		asOf:     acctBal,
+		opening:  openBal,
+		movement: movement,
+	})
 	if err != nil {
 		return nil, err
 	}
 	result.TenantID = tenantID
 	result.StatementCode = statementCode
 	result.AsOf = asOf
+	result.FromDate = fromDate
 	if result.CoaVersion == "" {
 		result.CoaVersion = coaVersion
 	}
@@ -145,6 +171,16 @@ type statementDef struct {
 	IsTotal    bool
 }
 
+// statementInputs carries the per-account maps the evaluator reads. asOf is
+// the standing net balance at as_of; opening is the standing net balance
+// before from_date; movement is the period movement (incr debit - incr credit)
+// between from_date and as_of.
+type statementInputs struct {
+	asOf     map[string]int64
+	opening  map[string]int64
+	movement map[string]int64
+}
+
 // evaluateStatement renders rows from definitions + per-account net
 // balances. Pure function — DB I/O stays in RunStatement.
 //
@@ -159,7 +195,7 @@ type statementDef struct {
 //
 // Rows evaluate in definition order (seed sort_order); a total must come
 // after the rows it references.
-func evaluateStatement(defs []statementDef, acctBal map[string]int64) (*StatementResult, error) {
+func evaluateStatement(defs []statementDef, in statementInputs) (*StatementResult, error) {
 	result := &StatementResult{Rows: make([]StatementRow, 0, len(defs))}
 	valueOf := map[string]int64{} // display value of each evaluated row
 	for _, d := range defs {
@@ -172,7 +208,17 @@ func evaluateStatement(defs []statementDef, acctBal map[string]int64) (*Statemen
 		switch d.Formula.Type {
 		case "accounts":
 			for _, code := range d.Formula.Codes {
-				sum += acctBal[code]
+				sum += in.asOf[code]
+			}
+			hasAmount = true
+		case "opening":
+			for _, code := range d.Formula.Codes {
+				sum += in.opening[code]
+			}
+			hasAmount = true
+		case "movement":
+			for _, code := range d.Formula.Codes {
+				sum += in.movement[code]
 			}
 			hasAmount = true
 		case "rows":
@@ -256,6 +302,69 @@ func (s *StatementService) accountBalances(ctx context.Context, tenantID, asOf, 
 		WHERE tbd.tenant_id = $1 AND tbd.business_date <= $2::date
 		ORDER BY tbd.coa_version, tbd.account_code, tbd.currency_code, tbd.business_date DESC`,
 		tenantID, asOf)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	bal := map[string]int64{}
+	for rows.Next() {
+		var v, code string
+		var net int64
+		if err := rows.Scan(&v, &code, &net); err != nil {
+			return nil, err
+		}
+		if coaVersion != "" && v != coaVersion {
+			continue
+		}
+		bal[code] += net
+	}
+	return bal, rows.Err()
+}
+
+// accountOpeningBalances returns the standing net balance immediately before
+// fromDate (business_date < from_date) — the opening balance of a period.
+func (s *StatementService) accountOpeningBalances(ctx context.Context, tenantID, fromDate, coaVersion string) (map[string]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT ON (tbd.coa_version, tbd.account_code, tbd.currency_code)
+		       tbd.coa_version, tbd.account_code,
+		       tbd.close_debit_minor - tbd.close_credit_minor AS net_minor
+		FROM fin_trial_balance_daily tbd
+		WHERE tbd.tenant_id = $1 AND tbd.business_date < $2::date
+		ORDER BY tbd.coa_version, tbd.account_code, tbd.currency_code, tbd.business_date DESC`,
+		tenantID, fromDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	bal := map[string]int64{}
+	for rows.Next() {
+		var v, code string
+		var net int64
+		if err := rows.Scan(&v, &code, &net); err != nil {
+			return nil, err
+		}
+		if coaVersion != "" && v != coaVersion {
+			continue
+		}
+		bal[code] += net
+	}
+	return bal, rows.Err()
+}
+
+// accountMovements sums period movement (incr debit - incr credit) per
+// account_code over [fromDate, asOf] — the input for B03 cash-flow rows.
+func (s *StatementService) accountMovements(ctx context.Context, tenantID, fromDate, asOf, coaVersion string) (map[string]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT tbd.coa_version, tbd.account_code,
+		       SUM(tbd.incr_debit_minor - tbd.incr_credit_minor) AS net_minor
+		FROM fin_trial_balance_daily tbd
+		WHERE tbd.tenant_id = $1
+		  AND tbd.business_date >= $2::date AND tbd.business_date <= $3::date
+		  AND ($4 = '' OR tbd.coa_version = $4)
+		GROUP BY tbd.coa_version, tbd.account_code`,
+		tenantID, fromDate, asOf, coaVersion)
 	if err != nil {
 		return nil, err
 	}

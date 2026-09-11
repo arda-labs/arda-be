@@ -143,7 +143,7 @@ func TestReportingSmoke(t *testing.T) {
 
 	// 4. Statements render from the precompute.
 	stmts := NewStatementService(db)
-	cdk, err := stmts.RunStatement(ctx, tenantID, "CDKT", d1.String, "")
+	cdk, err := stmts.RunStatement(ctx, tenantID, "CDKT", d1.String, "", "")
 	if err != nil {
 		t.Fatalf("CDKT: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestReportingSmoke(t *testing.T) {
 	if bank, ok := byCode["BANK"]; ok && bank.AmountMinor != bankNet {
 		t.Fatalf("CDKT BANK = %d, want daily close of 1131 = %d", bank.AmountMinor, bankNet)
 	}
-	b02, err := stmts.RunStatement(ctx, tenantID, "B02", d1.String, "")
+	b02, err := stmts.RunStatement(ctx, tenantID, "B02", d1.String, "", "")
 	if err != nil {
 		t.Fatalf("B02: %v", err)
 	}

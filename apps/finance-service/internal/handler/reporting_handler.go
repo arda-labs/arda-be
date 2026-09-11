@@ -93,7 +93,7 @@ func (h *ReportingHandler) RunStatement(w http.ResponseWriter, r *http.Request) 
 	}
 	code := r.PathValue("code")
 	result, err := h.stmts.RunStatement(r.Context(), tenantID, code,
-		r.URL.Query().Get("as_of"), r.URL.Query().Get("coa_version"))
+		r.URL.Query().Get("as_of"), r.URL.Query().Get("coa_version"), r.URL.Query().Get("from"))
 	if err != nil {
 		respondError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -111,7 +111,7 @@ func (h *ReportingHandler) ExportStatement(w http.ResponseWriter, r *http.Reques
 	}
 	code := r.PathValue("code")
 	result, err := h.stmts.RunStatement(r.Context(), tenantID, code,
-		r.URL.Query().Get("as_of"), r.URL.Query().Get("coa_version"))
+		r.URL.Query().Get("as_of"), r.URL.Query().Get("coa_version"), r.URL.Query().Get("from"))
 	if err != nil {
 		respondError(w, r, http.StatusBadRequest, err.Error())
 		return

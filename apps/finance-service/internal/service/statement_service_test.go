@@ -23,7 +23,7 @@ func TestEvaluateStatementCDKT(t *testing.T) {
 		"1311": 50_000_000,
 		"1319": -300_000,
 	}
-	res, err := evaluateStatement(defs, acctBal)
+	res, err := evaluateStatement(defs, statementInputs{asOf: acctBal})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestEvaluateStatementB02Profit(t *testing.T) {
 		{RowCode: "PROFIT", SortOrder: 80, Sign: 1, IsTotal: true, Formula: formula{Type: "rows", Members: []formulaMember{{Code: "INCOME_TOTAL"}, {Code: "EXPENSE_TOTAL", Sign: -1}}}},
 	}
 	acctBal := map[string]int64{"5111": -3_000_000, "1319": -1_000_000}
-	res, err := evaluateStatement(defs, acctBal)
+	res, err := evaluateStatement(defs, statementInputs{asOf: acctBal})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestEvaluateStatementUnknownFormulaType(t *testing.T) {
 	defs := []statementDef{
 		{RowCode: "R1", Label: "bad", SortOrder: 1, Sign: 1, Formula: formula{Type: "sql", Codes: []string{"select 1"}}},
 	}
-	if _, err := evaluateStatement(defs, map[string]int64{}); err == nil {
+	if _, err := evaluateStatement(defs, statementInputs{}); err == nil {
 		t.Fatal("unknown formula type must be rejected")
 	}
 }
@@ -95,11 +95,42 @@ func TestEvaluateStatementRowRefsMustPrecedeTotal(t *testing.T) {
 	defs := []statementDef{
 		{RowCode: "TOTAL", Label: "total", SortOrder: 1, Sign: 1, Formula: formula{Type: "rows", Codes: []string{"MISSING"}}},
 	}
-	res, err := evaluateStatement(defs, map[string]int64{})
+	res, err := evaluateStatement(defs, statementInputs{})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
 	}
 	if res.Rows[0].AmountMinor != 0 {
 		t.Fatalf("unresolved member must contribute 0, got %d", res.Rows[0].AmountMinor)
+	}
+}
+
+// B03 cash-flow shape: opening balance at period start + net movement =
+// closing balance, all over the cash/settlement accounts.
+func TestEvaluateStatementB03CashFlow(t *testing.T) {
+	defs := []statementDef{
+		{RowCode: "CASHFLOW", Label: "LƯU CHUYỂN TIỀN TỆ", Level: 0, SortOrder: 10, Sign: 1, Formula: formula{Type: "none"}},
+		{RowCode: "OPENING_CASH", ParentCode: "CASHFLOW", Label: "Tiền đầu kỳ", Level: 1, SortOrder: 20, Sign: 1, Formula: formula{Type: "opening", Codes: []string{"1011", "1131"}}},
+		{RowCode: "NET_CASH", ParentCode: "CASHFLOW", Label: "Lưu chuyển tiền thuần trong kỳ", Level: 1, SortOrder: 30, Sign: 1, Formula: formula{Type: "movement", Codes: []string{"1011", "1131"}}},
+		{RowCode: "CLOSING_CASH", ParentCode: "CASHFLOW", Label: "Tiền cuối kỳ", Level: 1, SortOrder: 40, Sign: 1, IsTotal: true, Formula: formula{Type: "rows", Members: []formulaMember{{Code: "OPENING_CASH"}, {Code: "NET_CASH"}}}},
+	}
+	res, err := evaluateStatement(defs, statementInputs{
+		opening:  map[string]int64{"1011": 100, "1131": 900},
+		movement: map[string]int64{"1011": 50, "1131": -200},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	byCode := map[string]StatementRow{}
+	for _, r := range res.Rows {
+		byCode[r.RowCode] = r
+	}
+	if got := byCode["OPENING_CASH"].AmountMinor; got != 1_000 {
+		t.Fatalf("OPENING_CASH = %d, want 1000", got)
+	}
+	if got := byCode["NET_CASH"].AmountMinor; got != -150 {
+		t.Fatalf("NET_CASH = %d, want -150", got)
+	}
+	if got := byCode["CLOSING_CASH"].AmountMinor; got != 850 {
+		t.Fatalf("CLOSING_CASH = %d, want 850", got)
 	}
 }
