@@ -70,13 +70,21 @@ func validPeriod(p string) bool {
 // Registry of known query builders. rpt_report_definitions.query_id must
 // match one of these IDs; anything else is rejected at the handler.
 const (
-	QueryLoanPortfolioSummary = "loan_portfolio_summary"
-	QueryDepositPortfolio     = "deposit_portfolio"
+	QueryLoanPortfolioSummary   = "loan_portfolio_summary"
+	QueryDepositPortfolio       = "deposit_portfolio"
+	QueryLoanAppraisalSummary   = "loan_appraisal_summary"
+	QueryLoanDebtClassification = "loan_debt_classification"
+	QueryCustomerSummary        = "customer_summary"
+	QueryOperationControl       = "operation_control_summary"
 )
 
 var builders = map[string]func(Params) (*ReportQuery, error){
-	QueryLoanPortfolioSummary: buildLoanPortfolioSummary,
-	QueryDepositPortfolio:     buildDepositPortfolio,
+	QueryLoanPortfolioSummary:   buildLoanPortfolioSummary,
+	QueryDepositPortfolio:       buildDepositPortfolio,
+	QueryLoanAppraisalSummary:   buildLoanAppraisalSummary,
+	QueryLoanDebtClassification: buildLoanDebtClassification,
+	QueryCustomerSummary:        buildCustomerSummary,
+	QueryOperationControl:       buildOperationControl,
 }
 
 // Build renders the named report query. Unknown query IDs fail closed.
@@ -139,5 +147,89 @@ ORDER BY product_code`
 		SQL:     sqlText,
 		Args:    []any{p.TenantID},
 		Columns: []string{"product_code", "savings_count", "principal_minor", "accrued_minor"},
+	}, nil
+}
+
+// buildLoanAppraisalSummary (rpt-loan-appraisal): số hồ sơ đã thẩm định/giải
+// ngân trong kỳ, dư nợ và lãi suất bình quân — tổng hợp theo tháng.
+func buildLoanAppraisalSummary(p Params) (*ReportQuery, error) {
+	sqlText := `
+SELECT to_char(date_trunc('month', disburse_date), 'YYYY-MM') AS period_code,
+       COUNT(*) AS agreement_count,
+       SUM(disburse_amt_minor) AS disburse_minor,
+       ROUND(AVG(interest_rate)::numeric, 4) AS avg_interest_rate,
+       SUM(outstanding_amt_minor) AS outstanding_minor
+FROM lnm_agreements
+WHERE tenant_id = $1
+  AND disburse_date IS NOT NULL
+  AND date_trunc('month', disburse_date) = date_trunc('month', $2::date)
+GROUP BY 1
+ORDER BY 1`
+	return &ReportQuery{
+		QueryID: QueryLoanAppraisalSummary,
+		SQL:     sqlText,
+		Args:    []any{p.TenantID, p.PeriodCode + "-01"},
+		Columns: []string{"period_code", "agreement_count", "disburse_minor", "avg_interest_rate", "outstanding_minor"},
+	}, nil
+}
+
+// buildLoanDebtClassification (rpt-loan-classification): phân loại nợ theo
+// nhóm, kèm dư nợ, dự phòng và số khoản quá hạn (maturity_date < cuối kỳ).
+func buildLoanDebtClassification(p Params) (*ReportQuery, error) {
+	sqlText := `
+SELECT debt_group_code,
+       COUNT(*) AS agreement_count,
+       SUM(outstanding_amt_minor) AS outstanding_minor,
+       SUM(provision_amt_minor) AS provision_minor,
+       SUM(CASE WHEN maturity_date IS NOT NULL AND maturity_date < ($2::date + INTERVAL '1 month') THEN 1 ELSE 0 END) AS overdue_count
+FROM lnm_agreements
+WHERE tenant_id = $1
+  AND status = 'ACTIVE'
+GROUP BY debt_group_code
+ORDER BY debt_group_code`
+	return &ReportQuery{
+		QueryID: QueryLoanDebtClassification,
+		SQL:     sqlText,
+		Args:    []any{p.TenantID, p.PeriodCode + "-01"},
+		Columns: []string{"debt_group_code", "agreement_count", "outstanding_minor", "provision_minor", "overdue_count"},
+	}, nil
+}
+
+// buildCustomerSummary (rpt-customer): khách hàng theo phân khúc + trạng thái.
+func buildCustomerSummary(p Params) (*ReportQuery, error) {
+	sqlText := `
+SELECT COALESCE(NULLIF(segment, ''), 'UNSEGMENTED') AS segment,
+       status,
+       COUNT(*) AS customer_count
+FROM customers
+WHERE tenant_id = $1
+GROUP BY 1, 2
+ORDER BY 1, 2`
+	return &ReportQuery{
+		QueryID: QueryCustomerSummary,
+		SQL:     sqlText,
+		Args:    []any{p.TenantID},
+		Columns: []string{"segment", "status", "customer_count"},
+	}, nil
+}
+
+// buildOperationControl (rpt-operation-control): kiểm soát vận hành báo cáo —
+// tình trạng nộp báo cáo theo kỳ (chạy trên chính statistical DB).
+func buildOperationControl(p Params) (*ReportQuery, error) {
+	sqlText := `
+SELECT report_code,
+       period_code,
+       status,
+       COUNT(*) AS submission_count
+FROM rpt_report_submissions
+WHERE tenant_id = $1
+  AND period_code = $2
+GROUP BY report_code, period_code, status
+ORDER BY report_code, status`
+	return &ReportQuery{
+		QueryID: QueryOperationControl,
+		SQL:     sqlText,
+		Args:    []any{p.TenantID, p.PeriodCode},
+		Columns: []string{"report_code", "period_code", "status", "submission_count"},
 	}, nil
 }

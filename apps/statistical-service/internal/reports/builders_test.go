@@ -31,6 +31,34 @@ func TestBuildRejectsUnknownQueryID(t *testing.T) {
 	}
 }
 
+func TestBuildRPTSet(t *testing.T) {
+	cases := []struct {
+		id      string
+		args    int
+		columns int
+	}{
+		{QueryLoanAppraisalSummary, 2, 5},
+		{QueryLoanDebtClassification, 2, 5},
+		{QueryCustomerSummary, 1, 3},
+		{QueryOperationControl, 2, 4},
+	}
+	for _, tc := range cases {
+		q, err := Build(tc.id, Params{TenantID: "t1", PeriodCode: "2026-09"})
+		if err != nil {
+			t.Fatalf("build %s: %v", tc.id, err)
+		}
+		if len(q.Args) != tc.args {
+			t.Fatalf("%s: args = %v, want %d bound args", tc.id, q.Args, tc.args)
+		}
+		if len(q.Columns) != tc.columns {
+			t.Fatalf("%s: columns = %v, want %d", tc.id, q.Columns, tc.columns)
+		}
+		if !strings.Contains(q.SQL, "WHERE") {
+			t.Fatalf("%s: query must be tenant-scoped", tc.id)
+		}
+	}
+}
+
 func TestBuildValidatesParams(t *testing.T) {
 	cases := []Params{
 		{TenantID: "", PeriodCode: "2026-09"},
