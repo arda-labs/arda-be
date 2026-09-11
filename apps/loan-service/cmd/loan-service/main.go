@@ -128,7 +128,7 @@ func main() {
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
-			interceptors.UnaryServerServiceAuth(serviceSecret, "loan-service", map[string]struct{}{"workflow-service": {}}),
+			interceptors.UnaryServerServiceAuth(serviceSecret, "loan-service", map[string]struct{}{"workflow-service": {}, "finance-service": {}}),
 			interceptors.UnaryServerLogging(logger),
 		),
 	)
