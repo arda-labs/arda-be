@@ -69,6 +69,14 @@ func NewRouter(h *handler.StatisticalHandler) http.Handler {
 	mux.HandleFunc("GET /api/statistical/form-templates/{code}/export", h.ExportFormTemplate)
 	mux.HandleFunc("POST /api/statistical/form-templates/import", h.ImportFormTemplate)
 	mux.HandleFunc("GET /api/statistical/dashboard", h.Dashboard)
+	mux.HandleFunc("/api/statistical/score-results", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			h.ListScoreResults(w, r)
+			return
+		}
+		h.CreateScoreResult(w, r)
+	})
+	mux.HandleFunc("GET /api/statistical/score-results/{id}", h.GetScoreResult)
 	return mux
 }
 

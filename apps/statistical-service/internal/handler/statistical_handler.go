@@ -179,12 +179,12 @@ func (h *StatisticalHandler) RunReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{
-		"code":       definition.Code,
-		"name":       definition.Name,
-		"query_id":   definition.QueryID,
-		"columns":    query.Columns,
-		"rows":       rows,
-		"row_count":  len(rows),
+		"code":        definition.Code,
+		"name":        definition.Name,
+		"query_id":    definition.QueryID,
+		"columns":     query.Columns,
+		"rows":        rows,
+		"row_count":   len(rows),
 		"period_code": reportParams(r)["period_code"],
 	})
 }
@@ -367,4 +367,75 @@ func (h *StatisticalHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 func writeForbiddenStat(w http.ResponseWriter, r *http.Request) {
 	ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+}
+
+// scoreResultRequest is the rank-score compute contract: the FE resolves the
+// mdm criteria-mapping (weights) + scoring-benchmarks (bands) and posts the
+// entries here; statistical-service computes + persists the result.
+type scoreResultRequest struct {
+	ScoringTypeCode string               `json:"scoring_type_code"`
+	SubjectType     string               `json:"subject_type"`
+	SubjectRef      string               `json:"subject_ref"`
+	Entries         []service.ScoreEntry `json:"entries"`
+	Bands           []service.ScoreBand  `json:"bands"`
+}
+
+// CreateScoreResult handles POST /api/statistical/score-results.
+func (h *StatisticalHandler) CreateScoreResult(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	var in scoreResultRequest
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidJSON, "invalid body"))
+		return
+	}
+	created, err := h.svc.CreateScoreResult(r.Context(), tenantID, r.Header.Get("X-User-Id"), service.ScoreInput{
+		ScoringTypeCode: in.ScoringTypeCode,
+		SubjectType:     in.SubjectType,
+		SubjectRef:      in.SubjectRef,
+		Entries:         in.Entries,
+		Bands:           in.Bands,
+	})
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
+}
+
+// ListScoreResults handles GET /api/statistical/score-results.
+func (h *StatisticalHandler) ListScoreResults(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	items, err := h.svc.ListScoreResults(r.Context(), repository.ListScoreResultsParams{
+		TenantID:        tenantID,
+		ScoringTypeCode: r.URL.Query().Get("scoring_type_code"),
+		SubjectRef:      r.URL.Query().Get("subject_ref"),
+	})
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// GetScoreResult handles GET /api/statistical/score-results/{id}.
+func (h *StatisticalHandler) GetScoreResult(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	item, err := h.svc.GetScoreResult(r.Context(), tenantID, r.PathValue("id"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, item)
 }
