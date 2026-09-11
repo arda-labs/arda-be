@@ -316,3 +316,47 @@ func (h *NotificationHandler) UpsertSender(w http.ResponseWriter, r *http.Reques
 	}
 	writeJSON(w, r, http.StatusCreated, created)
 }
+
+// ListEvents handles GET /api/notifications/events — the notification event
+// registry (fe_common #17 / fe_bpm #7).
+func (h *NotificationHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := requestUser(r)
+	items, err := h.svc.ListEvents(r.Context(), tenantID)
+	if err != nil {
+		writeNotificationError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+// ListDLQ handles GET /api/notifications/dlq — pending dead-lettered events.
+func (h *NotificationHandler) ListDLQ(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := requestUser(r)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	items, err := h.svc.ListOutboxDLQ(r.Context(), tenantID, limit)
+	if err != nil {
+		writeNotificationError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+// RetryDLQ handles POST /api/notifications/dlq/{id}/retry.
+func (h *NotificationHandler) RetryDLQ(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID := requestUser(r)
+	if err := h.svc.ReplayOutboxDLQ(r.Context(), tenantID, r.PathValue("id"), userID); err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// DiscardDLQ handles DELETE /api/notifications/dlq/{id}.
+func (h *NotificationHandler) DiscardDLQ(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := requestUser(r)
+	if err := h.svc.DiscardOutboxDLQ(r.Context(), tenantID, r.PathValue("id")); err != nil {
+		writeError(w, r, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
+}
