@@ -122,3 +122,33 @@ func (s *StatisticalService) GetScoreResult(ctx context.Context, tenantID, id st
 	}
 	return item, nil
 }
+
+// ListImportTransactions returns staged QCMS import transactions.
+func (s *StatisticalService) ListImportTransactions(ctx context.Context, p repository.ListImportTransactionsParams) ([]repository.ImportTransaction, error) {
+	return s.repo.ListImportTransactions(ctx, p)
+}
+
+// UpsertImportTransaction stages (or updates) an import transaction.
+func (s *StatisticalService) UpsertImportTransaction(ctx context.Context, tenantID, actor string, in *repository.ImportTransaction) (*repository.ImportTransaction, error) {
+	if strings.TrimSpace(in.ImportTypeCode) == "" || strings.TrimSpace(in.PeriodCode) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "import_type_code and period_code are required")
+	}
+	in.TenantID = tenantID
+	in.CreatedBy = actor
+	if strings.TrimSpace(in.Status) == "" {
+		in.Status = "STAGED"
+	}
+	if in.RowCount < 0 {
+		in.RowCount = 0
+	}
+	return s.repo.UpsertImportTransaction(ctx, in)
+}
+
+// SubmitImportTransaction marks a staged import POSTED.
+func (s *StatisticalService) SubmitImportTransaction(ctx context.Context, tenantID, id, actor string) (*repository.ImportTransaction, error) {
+	item, err := s.repo.SetImportTransactionStatus(ctx, tenantID, id, "POSTED", actor)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeNotFound, "import transaction not found")
+	}
+	return item, nil
+}

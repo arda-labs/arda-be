@@ -77,6 +77,14 @@ func NewRouter(h *handler.StatisticalHandler) http.Handler {
 		h.CreateScoreResult(w, r)
 	})
 	mux.HandleFunc("GET /api/statistical/score-results/{id}", h.GetScoreResult)
+	mux.HandleFunc("/api/statistical/import-transactions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			h.ListImportTransactions(w, r)
+			return
+		}
+		h.UpsertImportTransaction(w, r)
+	})
+	mux.HandleFunc("POST /api/statistical/import-transactions/{id}/submit", h.SubmitImportTransaction)
 	return mux
 }
 

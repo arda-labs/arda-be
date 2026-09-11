@@ -439,3 +439,59 @@ func (h *StatisticalHandler) GetScoreResult(w http.ResponseWriter, r *http.Reque
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusOK, item)
 }
+
+// ListImportTransactions handles GET /api/statistical/import-transactions.
+func (h *StatisticalHandler) ListImportTransactions(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.svc.ListImportTransactions(r.Context(), repository.ListImportTransactionsParams{
+		TenantID:       tenantID,
+		ImportTypeCode: q.Get("import_type_code"),
+		PeriodCode:     q.Get("period_code"),
+		Status:         q.Get("status"),
+	})
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// UpsertImportTransaction handles POST /api/statistical/import-transactions.
+func (h *StatisticalHandler) UpsertImportTransaction(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	var in repository.ImportTransaction
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidJSON, "invalid body"))
+		return
+	}
+	created, err := h.svc.UpsertImportTransaction(r.Context(), tenantID, r.Header.Get("X-User-Id"), &in)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
+}
+
+// SubmitImportTransaction handles POST /api/statistical/import-transactions/{id}/submit.
+func (h *StatisticalHandler) SubmitImportTransaction(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	item, err := h.svc.SubmitImportTransaction(r.Context(), tenantID, r.PathValue("id"), r.Header.Get("X-User-Id"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, item)
+}
