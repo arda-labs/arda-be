@@ -2,5 +2,5 @@ app_name: iam-service
 http_addr: 0.0.0.0:8080
 log_level: debug
 database_dsn: ""
-kratos_admin_url: "http://192.168.100.201:30446"
+kratos_admin_url: "http://192.168.10.201:30446"
 totp_issuer: "arda.io.vn"

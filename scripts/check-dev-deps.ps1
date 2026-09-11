@@ -1,5 +1,5 @@
 param(
-  [string]$Node = "192.168.100.201",
+  [string]$Node = "192.168.10.201",
   [int]$PostgresPort = 30432,
   [int]$ValkeyPort = 30379,
   [int]$NatsPort = 4222,

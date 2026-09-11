@@ -35,7 +35,7 @@ func Load() Config {
 		GRPCAddr:             "0.0.0.0:9090",
 		LogLevel:             "info",
 		DatabaseDSN:          "",
-		ZeebeAddr:            "192.168.100.201:30650",
+		ZeebeAddr:            "192.168.10.201:30650",
 		CRMGRPCAddr:          "localhost:9090",
 		LoanGRPCAddr:         "localhost:9090",
 		FinanceGRPCAddr:      "localhost:9090",

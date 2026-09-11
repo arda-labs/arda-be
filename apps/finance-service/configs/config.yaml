@@ -3,5 +3,5 @@ http_addr: "0.0.0.0:8080"
 log_level: "info"
 database_dsn: ""
 platform_grpc_addr: "localhost:9090"
-nats_url: "nats://192.168.100.201:30222,nats://192.168.100.202:30222,nats://192.168.100.203:30222"
+nats_url: "nats://192.168.10.201:30222,nats://192.168.10.202:30222,nats://192.168.10.203:30222"
 max_concurrent_transactions: 100

@@ -8,7 +8,7 @@ jwt_issuer: "https://auth.arda.io.vn"
 jwt_audience: arda-api
 jwks_url: "https://auth.arda.io.vn/.well-known/jwks.json"
 
-introspection_url: "http://192.168.100.201:30445/oauth2/introspect"
+introspection_url: "http://192.168.10.201:30445/oauth2/introspect"
 introspection_client_id: auth-gateway
 introspection_client_secret: ""
 
@@ -29,7 +29,7 @@ rag_service_url: "http://localhost:8098"
 policy_file: "configs/policy.yaml"
 
 kratos_public_url: "https://identity.arda.io.vn"
-hydra_admin_url: "http://192.168.100.201:30445"
+hydra_admin_url: "http://192.168.10.201:30445"
 hydra_public_url: "https://auth.arda.io.vn"
 oauth_client_id: "arda-shell"
 oauth_redirect_uri: "http://localhost:5000/api/auth/callback"
