@@ -217,6 +217,104 @@ func nullUUIDPtr(s *string) any {
 	return *s
 }
 
+// GetProject loads one project by id.
+func (r *ProjectRepository) GetProject(ctx context.Context, tenantID, id string) (*Project, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, project_code, name, type_code, customer_id::text, parent_code::text,
+		       start_date::text, end_date::text, status, description::text, COALESCE(org_code,''),
+		       created_by, created_at, updated_at
+		FROM crm_projects WHERE tenant_id = $1 AND id = $2::uuid`, tenantID, id)
+	var p Project
+	err := row.Scan(&p.ID, &p.TenantID, &p.ProjectCode, &p.Name, &p.TypeCode, &p.CustomerID, &p.ParentCode,
+		&p.StartDate, &p.EndDate, &p.Status, &p.Description, &p.OrgCode, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// UpdateProject updates the editable fields of one project.
+func (r *ProjectRepository) UpdateProject(ctx context.Context, tenantID, id, actor string, p *Project) (*Project, error) {
+	row := r.db.QueryRowContext(ctx, `
+		UPDATE crm_projects SET name = $3, type_code = $4, status = $5,
+			start_date = NULLIF($6,'')::date, end_date = NULLIF($7,'')::date,
+			description = NULLIF($8,''), updated_by = $9, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2::uuid
+		RETURNING project_code, customer_id::text, COALESCE(org_code,''), created_by, created_at, updated_at`,
+		tenantID, id, p.Name, p.TypeCode, p.Status, derefOr(p.StartDate), derefOr(p.EndDate),
+		derefOr(p.Description), actor)
+	if err := row.Scan(&p.ProjectCode, &p.CustomerID, &p.OrgCode, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		return nil, err
+	}
+	p.ID = id
+	p.TenantID = tenantID
+	return p, nil
+}
+
+// ListProjectMembers returns active members of one project.
+func (r *ProjectRepository) ListProjectMembers(ctx context.Context, tenantID, projectID string) ([]ProjectMember, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id::text, tenant_id, project_id::text, user_id, role_code, is_active,
+		       COALESCE(created_by,''), created_at
+		FROM crm_project_members WHERE tenant_id = $1 AND project_id = $2::uuid AND is_active
+		ORDER BY created_at`, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ProjectMember{}
+	for rows.Next() {
+		var m ProjectMember
+		if err := rows.Scan(&m.ID, &m.TenantID, &m.ProjectID, &m.UserID, &m.RoleCode, &m.IsActive,
+			&m.CreatedBy, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// AddProjectMember upserts one project member by (tenant, project, user).
+func (r *ProjectRepository) AddProjectMember(ctx context.Context, m *ProjectMember) (*ProjectMember, error) {
+	row := r.db.QueryRowContext(ctx, `
+		INSERT INTO crm_project_members (tenant_id, project_id, user_id, role_code, is_active, created_by)
+		VALUES ($1,$2::uuid,$3,NULLIF($4,''),true,$5)
+		ON CONFLICT (tenant_id, project_id, user_id) DO UPDATE SET
+			role_code = EXCLUDED.role_code, is_active = true, created_at = now()
+		RETURNING id::text, created_at`,
+		m.TenantID, m.ProjectID, m.UserID, derefOr(m.RoleCode), m.CreatedBy)
+	if err := row.Scan(&m.ID, &m.CreatedAt); err != nil {
+		return nil, err
+	}
+	m.IsActive = true
+	return m, nil
+}
+
+// RemoveProjectMember soft-deletes one project member.
+func (r *ProjectRepository) RemoveProjectMember(ctx context.Context, tenantID, projectID, memberID string) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE crm_project_members SET is_active = false
+		WHERE tenant_id = $1 AND project_id = $2::uuid AND id = $3::uuid`,
+		tenantID, projectID, memberID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func derefOr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func nullString(s string) any {
 	if strings.TrimSpace(s) == "" {
 		return nil

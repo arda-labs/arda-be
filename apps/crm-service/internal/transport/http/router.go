@@ -66,6 +66,9 @@ func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handl
 			writeMethodNotAllowed(w, req)
 		}
 	})
+	mux.HandleFunc("/api/crm/projects/{id}", projectHandler.ProjectByID)
+	mux.HandleFunc("/api/crm/projects/{id}/members", projectHandler.ProjectMembers)
+	mux.HandleFunc("DELETE /api/crm/projects/{id}/members/{memberId}", projectHandler.ProjectMemberByID)
 	mux.HandleFunc("GET /api/crm/reports/customers", reportHandler.GetCustomerReport)
 
 	// Internal AI surface: ai-service calls here with a signed caller

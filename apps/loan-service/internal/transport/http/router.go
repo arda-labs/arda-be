@@ -10,7 +10,7 @@ import (
 
 // NewRouter wires the loan-service HTTP surface. Adjustment routes are
 // generated from the shared kind list so adding a flow never touches here.
-func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, rp *handler.ReportHandler, kinds []string) http.Handler {
+func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, rp *handler.ReportHandler, pl *handler.PlanHandler, kinds []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -19,6 +19,8 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 	mux.HandleFunc("GET /api/loan/reports/loan-ledger", rp.GetLoanLedger)
 	mux.HandleFunc("GET /api/loan/reports/loan-statement", rp.GetLoanStatement)
 	mux.HandleFunc("GET /api/loan/reports/collateral-statement", rp.GetCollateralStatement)
+	mux.HandleFunc("/api/loan/plans", pl.Plans)
+	mux.HandleFunc("DELETE /api/loan/plans/{id}", pl.PlanByID)
 
 	// Contracts
 	mux.HandleFunc("/api/loan/contracts", func(w http.ResponseWriter, r *http.Request) {

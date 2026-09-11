@@ -45,6 +45,22 @@ func (h *CashHandler) RecordCash(w http.ResponseWriter, r *http.Request) {
 	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
 }
 
+// ListCash handles GET /api/finance/cash (W7).
+func (h *CashHandler) ListCash(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	q := r.URL.Query()
+	rows, err := h.svc.List(r.Context(), tenantID, q.Get("from"), q.Get("to"), q.Get("direction"))
+	if err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusInternalServerError, ardaerrors.New(ardaerrors.CodeInternal, err.Error()))
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, rows)
+}
+
 // Position handles GET /api/finance/cash-position.
 func (h *CashHandler) Position(w http.ResponseWriter, r *http.Request) {
 	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))

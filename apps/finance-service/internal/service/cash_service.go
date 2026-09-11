@@ -26,13 +26,14 @@ func NewCashService(db *sql.DB, posting *PostingService) *CashService {
 
 // CashTxnInput is one cash in/out movement.
 type CashTxnInput struct {
-	TxnDate      string `json:"txn_date"`
-	Direction    string `json:"direction"`
-	AmountMinor  int64  `json:"amount_minor"`
-	CurrencyCode string `json:"currency_code"`
-	OrgCode      string `json:"org_code"`
-	Description  string `json:"description"`
-	Actor        string `json:"-"`
+	TxnDate        string `json:"txn_date"`
+	Direction      string `json:"direction"`
+	AmountMinor    int64  `json:"amount_minor"`
+	CurrencyCode   string `json:"currency_code"`
+	OrgCode        string `json:"org_code"`
+	Description    string `json:"description"`
+	JournalEntryID string `json:"journal_entry_id,omitempty"`
+	Actor          string `json:"-"`
 }
 
 // Record posts a cash movement: IN = DR cash / CR counterparty cash account;
@@ -64,10 +65,10 @@ func (s *CashService) Record(ctx context.Context, tenantID string, in *CashTxnIn
 	if s.posting != nil {
 		_ = ardamoney.FromMinor(in.AmountMinor, in.CurrencyCode)
 		docType := "VCM_CASH_IN"
-		debit, credit := "CASH_SETTLEMENT_ACCOUNT", "FUND_DISBURSEMENT_IN_TRANSIT"
+		debit, credit := "VCM_CASH_ACCOUNT", "CASH_SETTLEMENT_ACCOUNT"
 		if in.Direction == "OUT" {
 			docType = "VCM_CASH_OUT"
-			debit, credit = "FUND_DISBURSEMENT_IN_TRANSIT", "CASH_SETTLEMENT_ACCOUNT"
+			debit, credit = "CASH_SETTLEMENT_ACCOUNT", "VCM_CASH_ACCOUNT"
 		}
 		req := &financev1.PostingRequest{
 			IdempotencyKey: fmt.Sprintf("vcm-%s-%s-%s", strings.ToLower(in.Direction), in.TxnDate, fmt.Sprint(in.AmountMinor)),
@@ -102,11 +103,71 @@ func (s *CashService) Record(ctx context.Context, tenantID string, in *CashTxnIn
 				},
 			},
 		}
-		if _, err := s.posting.PostTransaction(ctx, tenantID, req); err != nil {
+		posted, err := s.posting.PostTransaction(ctx, tenantID, req)
+		if err != nil {
 			return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "cash posting failed", err)
+		}
+		if posted != nil && posted.GetJournalEntryId() != "" {
+			if _, err := s.db.ExecContext(ctx, `
+				UPDATE fin_cash_transactions SET journal_entry_id = $3::uuid, updated_at = now()
+				WHERE tenant_id = $1 AND txn_date = $2::date AND direction = $4
+				  AND amount_minor = $5 AND description = $6 AND journal_entry_id IS NULL`,
+				tenantID, in.TxnDate, posted.GetJournalEntryId(), in.Direction, in.AmountMinor, in.Description); err != nil {
+				return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+			}
+			in.JournalEntryID = posted.GetJournalEntryId()
 		}
 	}
 	return in, nil
+}
+
+// List returns cash transactions filtered by date range and direction (W7).
+func (s *CashService) List(ctx context.Context, tenantID, fromDate, toDate, direction string) ([]CashTxnRow, error) {
+	where := []string{"tenant_id = $1"}
+	args := []any{tenantID}
+	if fromDate != "" {
+		args = append(args, fromDate)
+		where = append(where, fmt.Sprintf("txn_date >= $%d::date", len(args)))
+	}
+	if toDate != "" {
+		args = append(args, toDate)
+		where = append(where, fmt.Sprintf("txn_date <= $%d::date", len(args)))
+	}
+	if direction != "" {
+		args = append(args, direction)
+		where = append(where, fmt.Sprintf("direction = $%d::text", len(args)))
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT txn_date::text, direction, amount_minor, currency_code, COALESCE(org_code,''),
+		       COALESCE(description,''), COALESCE(journal_entry_id::text,''), COALESCE(created_by,'')
+		FROM fin_cash_transactions WHERE `+strings.Join(where, " AND ")+`
+		ORDER BY txn_date DESC, created_at DESC LIMIT 500`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CashTxnRow{}
+	for rows.Next() {
+		var row CashTxnRow
+		if err := rows.Scan(&row.TxnDate, &row.Direction, &row.AmountMinor, &row.CurrencyCode,
+			&row.OrgCode, &row.Description, &row.JournalEntryID, &row.CreatedBy); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// CashTxnRow is one treasury transaction row (W7).
+type CashTxnRow struct {
+	TxnDate        string `json:"txn_date"`
+	Direction      string `json:"direction"`
+	AmountMinor    int64  `json:"amount_minor"`
+	CurrencyCode   string `json:"currency_code"`
+	OrgCode        string `json:"org_code,omitempty"`
+	Description    string `json:"description,omitempty"`
+	JournalEntryID string `json:"journal_entry_id,omitempty"`
+	CreatedBy      string `json:"created_by,omitempty"`
 }
 
 // CashPosition aggregates in/out per day for the treasury aggregate screen.

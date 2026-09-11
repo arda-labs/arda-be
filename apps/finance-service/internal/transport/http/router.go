@@ -63,6 +63,8 @@ func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHa
 	// VCM cash treasury (P2.4b)
 	mux.HandleFunc("/api/finance/cash", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
+		case http.MethodGet:
+			cashHandler.ListCash(w, r)
 		case http.MethodPost:
 			cashHandler.RecordCash(w, r)
 		default:

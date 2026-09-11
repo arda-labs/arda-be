@@ -96,6 +96,8 @@ func main() {
 	generalProvHandler := handler.NewGeneralProvisionHandler(generalProvSvc)
 	reportSvc := service.NewLoanReportService(repo)
 	reportHandler := handler.NewReportHandler(reportSvc)
+	planSvc := service.NewPlanService(repo)
+	planHandler := handler.NewPlanHandler(planSvc)
 
 	// Batch flows (iteration 13: 1 hồ sơ — N hợp đồng). The posting-rules
 	// proxy reuses the optional finance client (nil → empty rule list).
@@ -105,7 +107,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:        cfg.HTTPAddr,
-		Handler:     ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, loangrpc.Kinds))),
+		Handler:     ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, loangrpc.Kinds))),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
