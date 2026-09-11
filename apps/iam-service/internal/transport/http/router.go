@@ -68,6 +68,16 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 	mux.HandleFunc("/api/admin/users/{userId}/roles", method("POST", adminHandler.AssignUserRole))
 	mux.HandleFunc("/api/admin/users/{userId}/roles/{roleId}", method("DELETE", adminHandler.UnassignUserRole))
 	mux.HandleFunc("/api/admin/users/{id}/groups", method("GET", adminHandler.ListUserGroups))
+	mux.HandleFunc("/api/admin/users/{id}/organizations", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			adminHandler.ListUserOrganizations(w, r)
+		case http.MethodPut:
+			adminHandler.SetUserOrganizations(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
 
 	// Admin API - Group management
 	mux.HandleFunc("/api/admin/groups/export", method("GET", adminHandler.ExportGroups))

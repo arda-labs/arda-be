@@ -45,6 +45,17 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 	mux.HandleFunc("/api/platform/eod/seed", eodHandler.SeedCOBJobs)
 	mux.HandleFunc("GET /api/platform/jobs", eodHandler.ListJobs)
 	mux.HandleFunc("GET /api/platform/jobs/runs", eodHandler.ListJobRuns)
+	mux.HandleFunc("/api/platform/working-hours", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			platformHandler.ListWorkingHours(w, r)
+		case http.MethodPost, http.MethodPut:
+			platformHandler.UpsertWorkingHour(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("DELETE /api/platform/working-hours/{id}", platformHandler.DeleteWorkingHour)
 
 	mux.HandleFunc("/api/platform/public/branding", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

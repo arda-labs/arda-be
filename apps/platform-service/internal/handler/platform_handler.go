@@ -701,6 +701,46 @@ func (h *PlatformHandler) DeleteFileTemplate(w http.ResponseWriter, r *http.Requ
 	writeResultWithRequest(w, r, map[string]bool{"ok": true}, err)
 }
 
+// ListWorkingHours handles GET /api/platform/working-hours (W6a).
+func (h *PlatformHandler) ListWorkingHours(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListWorkingHours(r.Context(), tenantID, r.URL.Query().Get("org_code"))
+	writeResultWithRequest(w, r, items, err)
+}
+
+// UpsertWorkingHour handles POST /api/platform/working-hours (W6a).
+func (h *PlatformHandler) UpsertWorkingHour(w http.ResponseWriter, r *http.Request) {
+	var req repository.WorkingHour
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, "validation.invalid_json", "invalid json")
+		return
+	}
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.UpsertWorkingHour(r.Context(), tenantID, r.Header.Get("X-User-Id"), &req)
+	writeResultWithRequest(w, r, item, err)
+}
+
+// DeleteWorkingHour handles DELETE /api/platform/working-hours/{id} (W6a).
+func (h *PlatformHandler) DeleteWorkingHour(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErrorCode(w, http.StatusBadRequest, "validation.required", "id is required")
+		return
+	}
+	tenantID, ok := requiredTenantID(w, r)
+	if !ok {
+		return
+	}
+	err := h.svc.SetWorkingHourActive(r.Context(), tenantID, id, false)
+	writeResultWithRequest(w, r, map[string]bool{"ok": true}, err)
+}
+
 func extractPublicID(fileURL string) string {
 	parts := strings.Split(strings.TrimRight(fileURL, "/"), "/")
 	if len(parts) == 0 {

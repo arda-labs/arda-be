@@ -1231,6 +1231,26 @@ func (r *UserRepository) GetUserOrganizations(ctx context.Context, userID string
 	return orgs, rows.Err()
 }
 
+// SetUserOrganizations replaces the user's org scope (data-scope admin, W6a).
+func (r *UserRepository) SetUserOrganizations(ctx context.Context, userID string, orgIDs []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM iam_user_organizations WHERE user_id = $1`, userID); err != nil {
+		return err
+	}
+	for _, orgID := range orgIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO iam_user_organizations (user_id, organization_id) VALUES ($1, $2::uuid)
+			ON CONFLICT DO NOTHING`, userID, orgID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (r *UserRepository) GetUserOrganizationsForTenant(ctx context.Context, userID, tenantID string) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT o.id::text

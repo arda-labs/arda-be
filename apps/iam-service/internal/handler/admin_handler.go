@@ -1532,6 +1532,45 @@ func (h *AdminHandler) groupHasSuperAdminRole(w http.ResponseWriter, r *http.Req
 	return false
 }
 
+// ListUserOrganizations handles GET /api/admin/users/{id}/organizations (W6a).
+func (h *AdminHandler) ListUserOrganizations(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondAdminError(w, r, http.StatusBadRequest, "missing user id")
+		return
+	}
+	orgs, err := h.userRepo.GetUserOrganizations(r.Context(), id)
+	if err != nil {
+		respondAdminError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondAdminJSON(w, r, http.StatusOK, map[string]any{"organization_ids": orgs})
+}
+
+// SetUserOrganizations handles PUT /api/admin/users/{id}/organizations (W6a).
+func (h *AdminHandler) SetUserOrganizations(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondAdminError(w, r, http.StatusBadRequest, "missing user id")
+		return
+	}
+	var body struct {
+		OrganizationIDs []string `json:"organization_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondAdminError(w, r, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := h.userRepo.SetUserOrganizations(r.Context(), id, body.OrganizationIDs); err != nil {
+		respondAdminError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.auditAdmin(r, "iam", "update_org_scope", "user:"+id, "success", map[string]any{
+		"organization_ids": body.OrganizationIDs,
+	})
+	respondAdminJSON(w, r, http.StatusOK, map[string]any{"organization_ids": body.OrganizationIDs})
+}
+
 func (h *AdminHandler) auditAdmin(r *http.Request, eventType, action, resource, result string, details map[string]any) {
 	if h.audit == nil {
 		return

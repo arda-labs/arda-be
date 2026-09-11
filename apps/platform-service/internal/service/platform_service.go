@@ -6,6 +6,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
 	"github.com/arda-labs/arda/apps/platform-service/internal/repository"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 )
 
 type PlatformService struct {
@@ -179,4 +180,34 @@ func (s *PlatformService) UpdateFileTemplate(ctx context.Context, item domain.Fi
 
 func (s *PlatformService) DeleteFileTemplate(ctx context.Context, tenantID, id string) error {
 	return s.repo.DeleteFileTemplate(ctx, tenantID, id)
+}
+
+// ListWorkingHours returns the weekly shifts (W6a).
+func (s *PlatformService) ListWorkingHours(ctx context.Context, tenantID, orgCode string) ([]repository.WorkingHour, error) {
+	return s.repo.ListWorkingHours(ctx, tenantID, orgCode)
+}
+
+// UpsertWorkingHour creates or updates one shift.
+func (s *PlatformService) UpsertWorkingHour(ctx context.Context, tenantID, actor string, in *repository.WorkingHour) (*repository.WorkingHour, error) {
+	if in.DayOfWeek < 1 || in.DayOfWeek > 7 {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "day_of_week must be 1..7")
+	}
+	if in.StartTime == "" || in.EndTime == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "start_time and end_time are required")
+	}
+	in.TenantID = tenantID
+	in.CreatedBy = actor
+	created, err := s.repo.UpsertWorkingHour(ctx, in)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeConflict, err.Error())
+	}
+	return created, nil
+}
+
+// SetWorkingHourActive toggles one shift.
+func (s *PlatformService) SetWorkingHourActive(ctx context.Context, tenantID, id string, active bool) error {
+	if err := s.repo.SetWorkingHourActive(ctx, tenantID, id, active); err != nil {
+		return ardaerrors.New(ardaerrors.CodeNotFound, err.Error())
+	}
+	return nil
 }

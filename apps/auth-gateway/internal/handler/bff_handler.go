@@ -2129,6 +2129,25 @@ func containsString(values []string, wanted string) bool {
 	return false
 }
 
+// PolicyRoutes exposes the authorization policy entries read-only (W6a
+// resource-management screen): id, path, methods, auth, risk, permissions.
+func (h *BFFHandler) PolicyRoutes(w http.ResponseWriter, r *http.Request) {
+	routes := []any{}
+	if h.policy != nil {
+		for _, route := range h.policy.Routes {
+			routes = append(routes, map[string]any{
+				"id":          route.ID,
+				"path":        route.Path,
+				"methods":     route.Methods,
+				"auth":        route.Auth,
+				"risk":        route.Risk,
+				"permissions": route.Permissions,
+			})
+		}
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, routes)
+}
+
 func isMachineErrorCode(value string) bool {
 	if value == "" || strings.ContainsAny(value, " \t") {
 		return false
