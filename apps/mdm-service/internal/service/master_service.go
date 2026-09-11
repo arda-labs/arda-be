@@ -185,6 +185,18 @@ var Catalogs = map[string]CatalogDef{
 			"score_max":         {kind: "number"},
 		},
 	},
+	"scoring-criteria-mappings": {
+		// CtgCfgScoringIndcMapp — bảng ánh xạ chỉ tiêu chấm điểm theo bộ
+		// (W5d): mỗi dòng gắn indicator vào scoring type + tiêu chí/trọng số.
+		Name: "scoring-criteria-mappings", Table: "mdm_scoring_criteria_mappings", IDPrefix: "scm",
+		Attrs: map[string]attrSpec{
+			"scoring_type_code": {kind: "string", required: true},
+			"indicator_code":    {kind: "string", required: true},
+			"criteria_code":     {kind: "string"},
+			"weight":            {kind: "number", min: num(0), max: num(1), def: 0},
+			"note":              {kind: "string"},
+		},
+	},
 }
 
 // CatalogNames returns registry keys in stable order for routing.
