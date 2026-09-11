@@ -67,3 +67,49 @@ func (h *ReportHandler) GetCollateralStatement(w http.ResponseWriter, r *http.Re
 func writeForbiddenReport(w http.ResponseWriter, r *http.Request) {
 	ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 }
+
+// GetLoanDiary handles GET /api/loan/reports/loan-diary.
+func (h *ReportHandler) GetLoanDiary(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		writeForbiddenReport(w, r)
+		return
+	}
+	q := r.URL.Query()
+	items, err := h.svc.LoanDiary(r.Context(), tenantID, q.Get("from"), q.Get("to"), q.Get("contract_code"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// GetLoanAppraisal handles GET /api/loan/reports/loan-appraisal.
+func (h *ReportHandler) GetLoanAppraisal(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		writeForbiddenReport(w, r)
+		return
+	}
+	items, err := h.svc.LoanAppraisal(r.Context(), tenantID, r.URL.Query().Get("contract_code"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// GetLoanReconciliation handles GET /api/loan/reports/loan-reconciliation.
+func (h *ReportHandler) GetLoanReconciliation(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		writeForbiddenReport(w, r)
+		return
+	}
+	items, err := h.svc.LoanReconciliation(r.Context(), tenantID, r.URL.Query().Get("contract_code"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}

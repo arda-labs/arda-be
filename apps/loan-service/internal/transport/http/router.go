@@ -19,6 +19,9 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 	mux.HandleFunc("GET /api/loan/reports/loan-ledger", rp.GetLoanLedger)
 	mux.HandleFunc("GET /api/loan/reports/loan-statement", rp.GetLoanStatement)
 	mux.HandleFunc("GET /api/loan/reports/collateral-statement", rp.GetCollateralStatement)
+	mux.HandleFunc("GET /api/loan/reports/loan-diary", rp.GetLoanDiary)
+	mux.HandleFunc("GET /api/loan/reports/loan-appraisal", rp.GetLoanAppraisal)
+	mux.HandleFunc("GET /api/loan/reports/loan-reconciliation", rp.GetLoanReconciliation)
 	mux.HandleFunc("/api/loan/plans", pl.Plans)
 	mux.HandleFunc("DELETE /api/loan/plans/{id}", pl.PlanByID)
 
