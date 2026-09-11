@@ -67,6 +67,65 @@
         }
       }
     },
+    "/api/media/files": {
+      "get": {
+        "operationId": "listEntityMediaFiles",
+        "summary": "List files attached to an entity",
+        "parameters": [
+          {
+            "name": "entity_type",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "module",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Files attached to the entity, newest first",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EntityFilesSuccess" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/media/files/attach": {
+      "post": {
+        "operationId": "attachMediaFiles",
+        "summary": "Attach uploaded temp files to an owner entity",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AttachMediaFilesRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Files attached",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AttachMediaFilesSuccess" } } }
+          },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "404": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/api/media/{publicId}": {
       "get": {
         "operationId": "viewMedia",
@@ -251,6 +310,56 @@
           "created_at": { "type": "string", "format": "date-time" },
           "uploaded_at": { "type": ["string", "null"], "format": "date-time" },
           "expires_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "EntityFilesResponse": {
+        "type": "object",
+        "required": ["files", "count"],
+        "properties": {
+          "files": { "type": "array", "items": { "$ref": "#/components/schemas/MediaFile" } },
+          "count": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "EntityFilesSuccess": {
+        "type": "object",
+        "required": ["result", "success", "errors", "messages", "meta"],
+        "properties": {
+          "result": { "$ref": "#/components/schemas/EntityFilesResponse" },
+          "success": { "const": true },
+          "errors": { "type": "array", "maxItems": 0 },
+          "messages": { "type": "array", "items": { "type": "string" } },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+        }
+      },
+      "AttachMediaFilesRequest": {
+        "type": "object",
+        "required": ["public_ids", "owner_type", "owner_id"],
+        "properties": {
+          "public_ids": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1
+          },
+          "owner_type": { "type": "string", "minLength": 1 },
+          "owner_id": { "type": "string", "minLength": 1 }
+        }
+      },
+      "AttachMediaFilesResult": {
+        "type": "object",
+        "required": ["attached"],
+        "properties": {
+          "attached": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "AttachMediaFilesSuccess": {
+        "type": "object",
+        "required": ["result", "success", "errors", "messages", "meta"],
+        "properties": {
+          "result": { "$ref": "#/components/schemas/AttachMediaFilesResult" },
+          "success": { "const": true },
+          "errors": { "type": "array", "maxItems": 0 },
+          "messages": { "type": "array", "items": { "type": "string" } },
+          "meta": { "$ref": "#/components/schemas/ResponseMeta" }
         }
       },
       "StatusSuccess": {

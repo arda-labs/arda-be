@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/media-service/internal/domain"
@@ -160,6 +161,84 @@ func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request, publicID s
 		userID, tenantID, orgID, publicID, ip, userAgent)
 
 	writeJSON(w, r, http.StatusOK, map[string]any{"status": "deleted"})
+}
+
+// ListByEntity serves GET /api/media/files?entity_type=&entity_id=&module=&limit=
+// with the files attached to the given entity, newest first.
+func (h *MediaHandler) ListByEntity(w http.ResponseWriter, r *http.Request) {
+	scope, ok := mediaScope(r)
+	if !ok {
+		writeError(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
+		return
+	}
+	q := r.URL.Query()
+	entityType := strings.TrimSpace(q.Get("entity_type"))
+	entityID := strings.TrimSpace(q.Get("entity_id"))
+	if entityType == "" || entityID == "" {
+		writeError(w, r, http.StatusBadRequest, "validation.invalid_input", "entity_type and entity_id are required")
+		return
+	}
+	limit := 0
+	if raw := strings.TrimSpace(q.Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, r, http.StatusBadRequest, "validation.invalid_input", "limit must be an integer")
+			return
+		}
+		limit = parsed
+	}
+
+	files, err := h.service.ListFilesByEntity(r.Context(), scope, q.Get("module"), entityType, entityID, limit)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+
+	items := make([]map[string]any, 0, len(files))
+	for _, file := range files {
+		items = append(items, publicFileJSON(file))
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"files": items, "count": len(items)})
+}
+
+// Attach serves POST /api/media/files/attach — moves uploaded temp files into
+// status 'attached' linked to the given owner entity. Files keep their entity
+// link across cleanup because AttachFiles clears the temp expiry.
+func (h *MediaHandler) Attach(w http.ResponseWriter, r *http.Request) {
+	scope, ok := mediaScope(r)
+	if !ok {
+		writeError(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
+		return
+	}
+	var req struct {
+		PublicIDs []string `json:"public_ids"`
+		OwnerType string   `json:"owner_type"`
+		OwnerID   string   `json:"owner_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "Request body is not valid JSON")
+		return
+	}
+	req.OwnerType = strings.TrimSpace(req.OwnerType)
+	req.OwnerID = strings.TrimSpace(req.OwnerID)
+	if len(req.PublicIDs) == 0 || req.OwnerType == "" || req.OwnerID == "" {
+		writeError(w, r, http.StatusBadRequest, "validation.invalid_input", "public_ids, owner_type and owner_id are required")
+		return
+	}
+	userID := firstHeader(r, "X-Actor-User-Id", "X-User-Id", "X-User-Subject")
+
+	err := h.service.AttachFiles(r.Context(), req.PublicIDs, scope.TenantID, scope.OrgID, userID, req.OwnerType, req.OwnerID)
+	if err != nil {
+		fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s owner_type=%s owner_id=%s action=attach count=%d ip=%s ua=%s result=failed error=%v\n",
+			userID, scope.TenantID, scope.OrgID, req.OwnerType, req.OwnerID, len(req.PublicIDs), r.RemoteAddr, r.UserAgent(), err)
+		writeServiceError(w, r, err)
+		return
+	}
+
+	fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s owner_type=%s owner_id=%s action=attach count=%d ip=%s ua=%s result=success\n",
+		userID, scope.TenantID, scope.OrgID, req.OwnerType, req.OwnerID, len(req.PublicIDs), r.RemoteAddr, r.UserAgent())
+
+	writeJSON(w, r, http.StatusOK, map[string]any{"attached": len(req.PublicIDs)})
 }
 
 func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, publicID string, download bool) {

@@ -275,6 +275,59 @@ RETURNING id`
 	return tx.Commit()
 }
 
+// ListFilesByEntity returns files linked to an entity (entity_type +
+// entity_id), newest first. Only files in status 'attached' carry entity
+// fields — temp uploads stay unlinked until AttachFiles — so the listing
+// never leaks another user's in-flight temp files.
+func (r *MediaRepository) ListFilesByEntity(ctx context.Context, scope domain.FileScope, module, entityType, entityID string, limit int) ([]domain.File, error) {
+	query := `
+SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,''), module,
+  COALESCE(entity_type,''), COALESCE(entity_id,''), original_filename, content_type,
+  COALESCE(extension,''), size_bytes, COALESCE(checksum_sha256,''), status, scan_status,
+  storage_provider, bucket, object_key, storage_class, version_id, visibility,
+  COALESCE(created_by,''), created_at, uploaded_at, expires_at
+FROM media_files
+WHERE tenant_id = $1
+  AND COALESCE(org_id, '') = $2
+  AND entity_type = $3
+  AND entity_id = $4
+  AND status = 'attached'
+  AND deleted_at IS NULL`
+	args := []any{scope.TenantID, scope.OrgID, entityType, entityID}
+	if module != "" {
+		args = append(args, module)
+		query += fmt.Sprintf(`
+  AND module = $%d`, len(args))
+	}
+	args = append(args, limit)
+	query += fmt.Sprintf(`
+ORDER BY created_at DESC
+LIMIT $%d`, len(args))
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []domain.File
+	for rows.Next() {
+		var file domain.File
+		err := rows.Scan(
+			&file.ID, &file.PublicID, &file.TenantID, &file.OrgID, &file.OwnerUserID, &file.Module,
+			&file.EntityType, &file.EntityID, &file.OriginalFilename, &file.ContentType,
+			&file.Extension, &file.SizeBytes, &file.ChecksumSHA256, &file.Status, &file.ScanStatus,
+			&file.StorageProvider, &file.Bucket, &file.ObjectKey, &file.StorageClass, &file.VersionID, &file.Visibility,
+			&file.CreatedBy, &file.CreatedAt, &file.UploadedAt, &file.ExpiresAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, file)
+	}
+	return files, nil
+}
+
 func (r *MediaRepository) GetExpiredTempFiles(ctx context.Context, limit int) ([]domain.File, error) {
 	const query = `
 SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,''), module,

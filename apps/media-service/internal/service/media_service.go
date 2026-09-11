@@ -398,6 +398,28 @@ func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequ
 	return updated, nil
 }
 
+const (
+	defaultEntityFileLimit = 50
+	maxEntityFileLimit     = 200
+)
+
+// ListFilesByEntity returns files attached to an entity (entity_type +
+// entity_id), newest first, scoped to the caller's tenant and organization.
+func (s *MediaService) ListFilesByEntity(ctx context.Context, scope domain.FileScope, module, entityType, entityID string, limit int) ([]domain.File, error) {
+	entityType = strings.TrimSpace(entityType)
+	entityID = strings.TrimSpace(entityID)
+	if entityType == "" || entityID == "" {
+		return nil, fmt.Errorf("%w: entity_type and entity_id are required", ErrInvalidInput)
+	}
+	if limit <= 0 {
+		limit = defaultEntityFileLimit
+	}
+	if limit > maxEntityFileLimit {
+		limit = maxEntityFileLimit
+	}
+	return s.repo.ListFilesByEntity(ctx, scope, strings.TrimSpace(module), entityType, entityID, limit)
+}
+
 func (s *MediaService) AttachFiles(ctx context.Context, publicIDs []string, tenantID, orgID, userID string, ownerType, ownerID string) error {
 	if len(publicIDs) == 0 {
 		return nil

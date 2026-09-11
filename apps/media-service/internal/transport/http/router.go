@@ -22,6 +22,21 @@ func NewRouter(mediaHandler *handler.MediaHandler) http.Handler {
 			methodNotAllowed(w, r)
 		}
 	})
+	mux.HandleFunc("/api/media/files", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			mediaHandler.ListByEntity(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/media/files/attach", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			mediaHandler.Attach(w, r)
+			return
+		}
+		methodNotAllowed(w, r)
+	})
 	mux.HandleFunc("/api/media/files/init-upload", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			mediaHandler.InitUpload(w, r)

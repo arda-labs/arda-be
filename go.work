@@ -18,6 +18,7 @@ use (
 	./apps/workflow-service
 	./libs/go/arda-auth
 	./libs/go/arda-crypto
+	./libs/go/arda-doc
 	./libs/go/arda-errors
 	./libs/go/arda-events
 	./libs/go/arda-export
