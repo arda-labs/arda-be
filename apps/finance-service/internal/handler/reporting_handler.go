@@ -99,6 +99,21 @@ func (h *ReportingHandler) GetFinancialSummary(w http.ResponseWriter, r *http.Re
 	respondJSON(w, r, http.StatusOK, summary)
 }
 
+// GetRiskExceptions handles GET /api/finance/reports/risk-exceptions — the
+// deterministic risk/exception report (FAC #18).
+func (h *ReportingHandler) GetRiskExceptions(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.daily.RiskExceptions(r.Context(), tenantID, r.URL.Query().Get("as_of"))
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
 // RunStatement handles GET /api/finance/statements/{code}/run?as_of=&coa_version=
 // — renders the statement rows from fin_trial_balance_daily (read-only,
 // idempotent; amounts are minor units, debit-positive unless sign flips).

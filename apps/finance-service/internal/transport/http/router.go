@@ -60,6 +60,7 @@ func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHa
 	mux.HandleFunc("/api/finance/statements/{code}/run", method("GET", reportingHandler.RunStatement))
 	mux.HandleFunc("/api/finance/statements/{code}/export", method("GET", reportingHandler.ExportStatement))
 	mux.HandleFunc("/api/finance/reports/financial-summary", method("GET", reportingHandler.GetFinancialSummary))
+	mux.HandleFunc("/api/finance/reports/risk-exceptions", method("GET", reportingHandler.GetRiskExceptions))
 
 	// VCM cash treasury (P2.4b)
 	mux.HandleFunc("/api/finance/cash", func(w http.ResponseWriter, r *http.Request) {

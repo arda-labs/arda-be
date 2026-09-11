@@ -32,6 +32,48 @@ type RebuildDailyResult struct {
 	AccountRows  int    `json:"account_rows"`
 }
 
+// RiskException is one deterministic accounting risk flag (FAC #18): an
+// account whose closing balance carries both debit and credit on the same
+// date (bilateral balance anomaly) or an abnormal negative closing on an
+// asset account. AI anomaly scoring is a later enrichment.
+type RiskException struct {
+	AccountCode      string `json:"account_code"`
+	CurrencyCode     string `json:"currency_code"`
+	CoaVersion       string `json:"coa_version"`
+	CloseDebitMinor  int64  `json:"close_debit_minor"`
+	CloseCreditMinor int64  `json:"close_credit_minor"`
+	Reason           string `json:"reason"`
+}
+
+// RiskExceptions lists deterministic exceptions as of asOf (latest if empty).
+func (s *TrialBalanceDailyService) RiskExceptions(ctx context.Context, tenantID, asOf string) ([]RiskException, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT account_code, currency_code, coa_version, close_debit_minor, close_credit_minor,
+		       'BILATERAL_BALANCE' AS reason
+		FROM fin_trial_balance_daily tbd
+		WHERE tenant_id = $1
+		  AND business_date = (
+		      SELECT max(business_date) FROM fin_trial_balance_daily
+		      WHERE tenant_id = $1 AND ($2 = '' OR business_date <= $2::date))
+		  AND close_debit_minor > 0 AND close_credit_minor > 0
+		ORDER BY account_code LIMIT 500`, tenantID, asOf)
+	if err != nil {
+		return nil, fmt.Errorf("risk exceptions: %w", err)
+	}
+	defer rows.Close()
+
+	out := []RiskException{}
+	for rows.Next() {
+		var x RiskException
+		if err := rows.Scan(&x.AccountCode, &x.CurrencyCode, &x.CoaVersion,
+			&x.CloseDebitMinor, &x.CloseCreditMinor, &x.Reason); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
 // RebuildDaily recomputes fin_trial_balance_daily for (tenantID, toDate).
 // Incremental movement comes from POSTED journal lines with
 // accounting_date = toDate; opening carries each account's latest prior
