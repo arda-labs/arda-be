@@ -114,6 +114,24 @@ func (c *Client) GetContract(ctx context.Context, contractID string) (*loanv1.Co
 	return c.api.GetContract(callCtx, &loanv1.GetContractRequest{ContractId: contractID})
 }
 
+// GetOperationMetrics returns the TT92 performance aggregates (collection
+// volume in period + non-performing balance). Tenant is stamped into outgoing
+// gRPC metadata since the caller (finance statement run) is not itself a gRPC
+// request.
+func (c *Client) GetOperationMetrics(ctx context.Context, tenantID, fromDate, toDate string) (*loanv1.GetOperationMetricsResponse, error) {
+	if c == nil {
+		return nil, errors.New("loan client is nil")
+	}
+	ctx = ardametadata.AppendToOutgoing(ctx, ardametadata.Context{TenantID: tenantID})
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	return c.api.GetOperationMetrics(callCtx, &loanv1.GetOperationMetricsRequest{
+		TenantId: tenantID,
+		FromDate: fromDate,
+		ToDate:   toDate,
+	})
+}
+
 // CheckFormation validates the contract is actionable (BPMN validate).
 func (c *Client) CheckFormation(ctx context.Context, contractID string) (bool, string, error) {
 	if c == nil {

@@ -180,7 +180,6 @@ func (s *LoanServer) ResolveDisbursement(ctx context.Context, req *loanv1.Resolv
 	return &loanv1.ResolveDisbursementResponse{Ok: true}, nil
 }
 
-
 // ── Collection flow (P1b.4, LNM.301.02) ──
 
 func (s *LoanServer) CheckCollection(ctx context.Context, req *loanv1.CheckCollectionRequest) (*loanv1.CheckCollectionResponse, error) {
@@ -238,7 +237,7 @@ func (s *LoanServer) ResolveCollection(ctx context.Context, req *loanv1.ResolveC
 // request field selects the service. Defaults to the disbursement register
 // leg for backward safety with older workers.
 func (s *LoanServer) batchDisbSvc() *service.BatchDisbursementService { return s.disbBatches }
-func (s *LoanServer) batchColSvc() *service.BatchCollectionService   { return s.colBatches }
+func (s *LoanServer) batchColSvc() *service.BatchCollectionService    { return s.colBatches }
 
 func isCollectionBatchType(batchType string) bool {
 	return batchType == domain.BatchTypeCollection
@@ -396,4 +395,21 @@ func (s *LoanServer) ResolveSpecificProvision(ctx context.Context, req *loanv1.R
 		return &loanv1.ResolveSpecificProvisionResponse{Ok: false}, nil
 	}
 	return &loanv1.ResolveSpecificProvisionResponse{Ok: true}, nil
+}
+
+// GetOperationMetrics serves the TT92 performance aggregates finance-service
+// needs for PLIIb (collection volume in period + non-performing balance).
+func (s *LoanServer) GetOperationMetrics(ctx context.Context, req *loanv1.GetOperationMetricsRequest) (*loanv1.GetOperationMetricsResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	volume, npl, err := s.contracts.OperationMetrics(ctx, tenantID, req.GetFromDate(), req.GetToDate())
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &loanv1.GetOperationMetricsResponse{
+		CollectionVolumeMinor: volume,
+		NplBalanceMinor:       npl,
+	}, nil
 }

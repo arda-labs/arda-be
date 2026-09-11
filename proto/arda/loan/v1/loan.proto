@@ -28,6 +28,21 @@ service LoanCommandService {
   rpc ResolveGeneralProvision(ResolveGeneralProvisionRequest) returns (ResolveGeneralProvisionResponse);
   rpc CheckSpecificProvision(CheckSpecificProvisionRequest) returns (CheckSpecificProvisionResponse);
   rpc ResolveSpecificProvision(ResolveSpecificProvisionRequest) returns (ResolveSpecificProvisionResponse);
+  // GetOperationMetrics is the read surface finance-service uses for the TT92
+  // performance statement (PLIIb.009/.017): period collection volume and the
+  // current non-performing balance by debt group.
+  rpc GetOperationMetrics(GetOperationMetricsRequest) returns (GetOperationMetricsResponse);
+}
+
+message GetOperationMetricsRequest {
+  string tenant_id = 1;
+  string from_date = 2; // YYYY-MM-DD
+  string to_date = 3;   // YYYY-MM-DD
+}
+
+message GetOperationMetricsResponse {
+  int64 collection_volume_minor = 1; // Σ collections (principal + interest) in [from,to]
+  int64 npl_balance_minor = 2;       // Σ outstanding, debt groups 3..5
 }
 
 message UpdateContractStatusRequest {

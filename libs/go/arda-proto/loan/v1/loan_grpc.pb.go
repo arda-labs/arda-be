@@ -40,6 +40,7 @@ const (
 	LoanCommandService_ResolveGeneralProvision_FullMethodName      = "/arda.loan.v1.LoanCommandService/ResolveGeneralProvision"
 	LoanCommandService_CheckSpecificProvision_FullMethodName       = "/arda.loan.v1.LoanCommandService/CheckSpecificProvision"
 	LoanCommandService_ResolveSpecificProvision_FullMethodName     = "/arda.loan.v1.LoanCommandService/ResolveSpecificProvision"
+	LoanCommandService_GetOperationMetrics_FullMethodName          = "/arda.loan.v1.LoanCommandService/GetOperationMetrics"
 )
 
 // LoanCommandServiceClient is the client API for LoanCommandService service.
@@ -70,6 +71,10 @@ type LoanCommandServiceClient interface {
 	ResolveGeneralProvision(ctx context.Context, in *ResolveGeneralProvisionRequest, opts ...grpc.CallOption) (*ResolveGeneralProvisionResponse, error)
 	CheckSpecificProvision(ctx context.Context, in *CheckSpecificProvisionRequest, opts ...grpc.CallOption) (*CheckSpecificProvisionResponse, error)
 	ResolveSpecificProvision(ctx context.Context, in *ResolveSpecificProvisionRequest, opts ...grpc.CallOption) (*ResolveSpecificProvisionResponse, error)
+	// GetOperationMetrics is the read surface finance-service uses for the TT92
+	// performance statement (PLIIb.009/.017): period collection volume and the
+	// current non-performing balance by debt group.
+	GetOperationMetrics(ctx context.Context, in *GetOperationMetricsRequest, opts ...grpc.CallOption) (*GetOperationMetricsResponse, error)
 }
 
 type loanCommandServiceClient struct {
@@ -290,6 +295,16 @@ func (c *loanCommandServiceClient) ResolveSpecificProvision(ctx context.Context,
 	return out, nil
 }
 
+func (c *loanCommandServiceClient) GetOperationMetrics(ctx context.Context, in *GetOperationMetricsRequest, opts ...grpc.CallOption) (*GetOperationMetricsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOperationMetricsResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_GetOperationMetrics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LoanCommandServiceServer is the server API for LoanCommandService service.
 // All implementations must embed UnimplementedLoanCommandServiceServer
 // for forward compatibility.
@@ -318,6 +333,10 @@ type LoanCommandServiceServer interface {
 	ResolveGeneralProvision(context.Context, *ResolveGeneralProvisionRequest) (*ResolveGeneralProvisionResponse, error)
 	CheckSpecificProvision(context.Context, *CheckSpecificProvisionRequest) (*CheckSpecificProvisionResponse, error)
 	ResolveSpecificProvision(context.Context, *ResolveSpecificProvisionRequest) (*ResolveSpecificProvisionResponse, error)
+	// GetOperationMetrics is the read surface finance-service uses for the TT92
+	// performance statement (PLIIb.009/.017): period collection volume and the
+	// current non-performing balance by debt group.
+	GetOperationMetrics(context.Context, *GetOperationMetricsRequest) (*GetOperationMetricsResponse, error)
 	mustEmbedUnimplementedLoanCommandServiceServer()
 }
 
@@ -390,6 +409,9 @@ func (UnimplementedLoanCommandServiceServer) CheckSpecificProvision(context.Cont
 }
 func (UnimplementedLoanCommandServiceServer) ResolveSpecificProvision(context.Context, *ResolveSpecificProvisionRequest) (*ResolveSpecificProvisionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveSpecificProvision not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) GetOperationMetrics(context.Context, *GetOperationMetricsRequest) (*GetOperationMetricsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetOperationMetrics not implemented")
 }
 func (UnimplementedLoanCommandServiceServer) mustEmbedUnimplementedLoanCommandServiceServer() {}
 func (UnimplementedLoanCommandServiceServer) testEmbeddedByValue()                            {}
@@ -790,6 +812,24 @@ func _LoanCommandService_ResolveSpecificProvision_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LoanCommandService_GetOperationMetrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOperationMetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).GetOperationMetrics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_GetOperationMetrics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).GetOperationMetrics(ctx, req.(*GetOperationMetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LoanCommandService_ServiceDesc is the grpc.ServiceDesc for LoanCommandService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -880,6 +920,10 @@ var LoanCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveSpecificProvision",
 			Handler:    _LoanCommandService_ResolveSpecificProvision_Handler,
+		},
+		{
+			MethodName: "GetOperationMetrics",
+			Handler:    _LoanCommandService_GetOperationMetrics_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

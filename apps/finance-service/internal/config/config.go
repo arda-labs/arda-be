@@ -17,6 +17,7 @@ type Config struct {
 	DatabaseDSN      string `yaml:"database_dsn"`
 	PlatformGRPCAddr string `yaml:"platform_grpc_addr"`
 	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr"`
+	LoanGRPCAddr     string `yaml:"loan_grpc_addr"`
 	NATSURL          string `yaml:"nats_url"`
 
 	MaxConcurrentTransactions int `yaml:"max_concurrent_transactions"`
@@ -33,6 +34,7 @@ func Load() Config {
 		DatabaseDSN:      "",
 		PlatformGRPCAddr: "localhost:9090",
 		WorkflowGRPCAddr: "localhost:9090",
+		LoanGRPCAddr:     "localhost:9090",
 		NATSURL:          "nats://localhost:4222",
 
 		MaxConcurrentTransactions: 100,
@@ -55,6 +57,7 @@ func Load() Config {
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("PLATFORM_GRPC_ADDR", &cfg.PlatformGRPCAddr)
 	envStr("WORKFLOW_GRPC_ADDR", &cfg.WorkflowGRPCAddr)
+	envStr("LOAN_GRPC_ADDR", &cfg.LoanGRPCAddr)
 	envStr("NATS_URL", &cfg.NATSURL)
 	envInt("MAX_CONCURRENT_TXNS", &cfg.MaxConcurrentTransactions)
 
@@ -83,6 +86,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("database_dsn", &c.DatabaseDSN)
 	setStr("platform_grpc_addr", &c.PlatformGRPCAddr)
 	setStr("workflow_grpc_addr", &c.WorkflowGRPCAddr)
+	setStr("loan_grpc_addr", &c.LoanGRPCAddr)
 	setStr("nats_url", &c.NATSURL)
 	return true
 }

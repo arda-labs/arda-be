@@ -17,11 +17,23 @@ import (
 // balances of listed accounts, rows sum evaluated sibling lines, none marks
 // a pure grouping header.
 type StatementService struct {
-	db *sql.DB
+	db      *sql.DB
+	metrics ExternalMetricsProvider
+}
+
+// ExternalMetricsProvider resolves cross-domain metrics for statement rows of
+// type "external" (finance cannot read the loan DB directly).
+type ExternalMetricsProvider interface {
+	OperationMetrics(ctx context.Context, tenantID, fromDate, toDate string) (collectionMinor, nplMinor int64, err error)
 }
 
 func NewStatementService(db *sql.DB) *StatementService {
 	return &StatementService{db: db}
+}
+
+// SetExternalMetrics wires the optional cross-domain metrics provider.
+func (s *StatementService) SetExternalMetrics(provider ExternalMetricsProvider) {
+	s.metrics = provider
 }
 
 // formula is the JSONB shape stored in fin_statement_formula.formula.
@@ -34,6 +46,9 @@ type formula struct {
 	Side string `json:"side,omitempty"`
 	// Prefix makes Codes account prefixes (EPAS ACC_COA_CODE LIKE 'acc%').
 	Prefix bool `json:"prefix,omitempty"`
+	// Dataset names an external metric for {"type":"external"} rows (resolved
+	// via ExternalMetricsProvider, e.g. "loan.collection_volume").
+	Dataset string `json:"dataset,omitempty"`
 }
 
 // accountValue carries both ledger sides of one balance/movement so rows can
@@ -151,10 +166,30 @@ func (s *StatementService) RunStatement(ctx context.Context, tenantID, statement
 		return nil, err
 	}
 
+	// External (cross-domain) datasets — only fetched when the statement
+	// actually has external rows (loan metrics for the TT92 PLIIb form).
+	external := map[string]int64{}
+	for _, d := range defs {
+		if d.Formula.Type != "external" {
+			continue
+		}
+		if s.metrics == nil {
+			return nil, fmt.Errorf("statement %q requires external metrics but no provider is configured", statementCode)
+		}
+		collection, npl, err := s.metrics.OperationMetrics(ctx, tenantID, fromDate, asOf)
+		if err != nil {
+			return nil, fmt.Errorf("external metrics: %w", err)
+		}
+		external["loan.collection_volume"] = collection
+		external["loan.npl_balance"] = npl
+		break
+	}
+
 	result, err := evaluateStatement(defs, statementInputs{
 		asOf:     acctBal,
 		opening:  openBal,
 		movement: movement,
+		external: external,
 	})
 	if err != nil {
 		return nil, err
@@ -192,6 +227,7 @@ type statementInputs struct {
 	asOf     map[string]accountValue
 	opening  map[string]accountValue
 	movement map[string]accountValue
+	external map[string]int64
 }
 
 // sumAccountValues sums the selected side of the listed accounts (exact codes,
@@ -264,6 +300,9 @@ func evaluateStatement(defs []statementDef, in statementInputs) (*StatementResul
 			hasAmount = true
 		case "movement":
 			sum = sumAccountValues(in.movement, d.Formula.Codes, d.Formula.Side, d.Formula.Prefix)
+			hasAmount = true
+		case "external":
+			sum = in.external[d.Formula.Dataset]
 			hasAmount = true
 		case "rows":
 			for _, m := range d.Formula.Members {

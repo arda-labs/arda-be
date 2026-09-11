@@ -441,3 +441,18 @@ func (s *LoanService) Dossier(ctx context.Context, tenantID, contractID string) 
 		CaseIDs:       caseIDs,
 	}, nil
 }
+
+// OperationMetrics returns the TT92 performance aggregates finance-service
+// reads for PLIIb: collection volume in [fromDate, toDate] and the current
+// non-performing balance (debt groups 3-5).
+func (s *LoanService) OperationMetrics(ctx context.Context, tenantID, fromDate, toDate string) (int64, int64, error) {
+	volume, err := s.repo.CollectionVolume(ctx, tenantID, fromDate, toDate)
+	if err != nil {
+		return 0, 0, err
+	}
+	npl, err := s.repo.NPLBalance(ctx, tenantID)
+	if err != nil {
+		return 0, 0, err
+	}
+	return volume, npl, nil
+}

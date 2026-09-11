@@ -307,3 +307,35 @@ func (r *LoanRepository) LoanReconciliation(ctx context.Context, tenantID, contr
 	}
 	return out, rows.Err()
 }
+
+// CollectionVolume sums POSTED collections (principal + interest) in
+// [fromDate, toDate] — the TT92 "thu nợ trong kỳ" figure.
+func (r *LoanRepository) CollectionVolume(ctx context.Context, tenantID, fromDate, toDate string) (int64, error) {
+	var total int64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(principal_minor + interest_minor), 0)
+		FROM lnm_collections
+		WHERE tenant_id = $1 AND status = 'POSTED'
+		  AND ($2 = '' OR collection_date >= $2::date)
+		  AND ($3 = '' OR collection_date <= $3::date)`,
+		tenantID, fromDate, toDate).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("collection volume: %w", err)
+	}
+	return total, nil
+}
+
+// NPLBalance sums the outstanding balance of agreements in debt groups 3-5
+// (Arda GROUP_3/GROUP_4/GROUP_5) — the TT92 "dư nợ xấu" figure.
+func (r *LoanRepository) NPLBalance(ctx context.Context, tenantID string) (int64, error) {
+	var total int64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(outstanding_amt_minor), 0)
+		FROM lnm_agreements
+		WHERE tenant_id = $1 AND debt_group_code IN ('GROUP_3', 'GROUP_4', 'GROUP_5')`,
+		tenantID).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("npl balance: %w", err)
+	}
+	return total, nil
+}

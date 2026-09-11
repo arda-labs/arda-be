@@ -26,13 +26,27 @@ import (
 	transport "github.com/arda-labs/arda/apps/finance-service/internal/transport/http"
 	"github.com/nats-io/nats.go"
 
+	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
-	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 )
+
+// loanMetricsAdapter adapts the loan gRPC client to service.ExternalMetricsProvider.
+type loanMetricsAdapter struct {
+	client *loanclient.Client
+}
+
+func (a loanMetricsAdapter) OperationMetrics(ctx context.Context, tenantID, fromDate, toDate string) (int64, int64, error) {
+	resp, err := a.client.GetOperationMetrics(ctx, tenantID, fromDate, toDate)
+	if err != nil {
+		return 0, 0, err
+	}
+	return resp.GetCollectionVolumeMinor(), resp.GetNplBalanceMinor(), nil
+}
 
 func main() {
 	cfg := config.Load()
@@ -74,6 +88,14 @@ func main() {
 	}
 	defer workflow.Close()
 
+	// ── Loan client (TT92 external statement metrics; optional) ──
+	loan, loanErr := loanclient.Dial(context.Background(), cfg.LoanGRPCAddr, cfg.AppName, logger)
+	if loanErr != nil {
+		logger.Warn("loan grpc dial failed; external statement metrics unavailable", "err", loanErr)
+	} else {
+		defer loan.Close()
+	}
+
 	// ── Services ──
 	accountSvc := service.NewAccountService(accountRepo)
 	trialBalanceSvc := service.NewTrialBalanceService(db)
@@ -85,6 +107,9 @@ func main() {
 	postingCaseSvc := service.NewPostingCaseService(postingSvc, workflow)
 	trialBalanceDailySvc := service.NewTrialBalanceDailyService(db)
 	statementSvc := service.NewStatementService(db)
+	if loan != nil {
+		statementSvc.SetExternalMetrics(loanMetricsAdapter{client: loan})
+	}
 
 	// ── Handlers ──
 	financeHandler := handler.NewFinanceHandler(accountSvc, trialBalanceSvc, accountingConfigSvc, cashSvc)
