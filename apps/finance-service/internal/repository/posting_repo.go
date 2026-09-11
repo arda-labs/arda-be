@@ -331,7 +331,7 @@ func (r *PostingRepository) FindEntryByEntryNo(ctx context.Context, tenantID str
 func (r *PostingRepository) InsertOutbox(ctx context.Context, tx *sql.Tx, tenantID, entryID string, payload []byte) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO fin_outbox (tenant_id, event_type, aggregate_id, payload)
-		VALUES ($1, 'finance.journal.posted.v1', $2, $3)`, tenantID, entryID, payload)
+		VALUES ($1, 'arda.finance.journal.posted.v1', $2, $3)`, tenantID, entryID, payload)
 	return err
 }
 
@@ -442,13 +442,13 @@ func encodeAnalytics(a *financev1.Analytics) []byte {
 
 // LedgerLine is one posted journal line for the account ledger.
 type LedgerLine struct {
-	EntryNo     int64  `json:"entry_no"`
-	EntryDate   string `json:"entry_date"`
+	EntryNo      int64  `json:"entry_no"`
+	EntryDate    string `json:"entry_date"`
 	DocumentType string `json:"document_type"`
-	Description string `json:"description"`
-	DebitMinor  int64  `json:"debit_minor"`
-	CreditMinor int64  `json:"credit_minor"`
-	EntryID     string `json:"entry_id"`
+	Description  string `json:"description"`
+	DebitMinor   int64  `json:"debit_minor"`
+	CreditMinor  int64  `json:"credit_minor"`
+	EntryID      string `json:"entry_id"`
 }
 
 // Ledger returns the opening net movement before fromDate plus the posted

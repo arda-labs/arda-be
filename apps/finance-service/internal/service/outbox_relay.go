@@ -32,7 +32,7 @@ func NewOutboxRelay(db *sql.DB, conn *nats.Conn, logger *slog.Logger) *OutboxRel
 	if _, err := js.StreamInfo(stream); err != nil {
 		if _, err := js.AddStream(&nats.StreamConfig{
 			Name:     stream,
-			Subjects: []string{"finance.journal.>"},
+			Subjects: []string{"arda.>"},
 			Storage:  nats.FileStorage,
 		}); err != nil && err != nats.ErrStreamNameAlreadyInUse {
 			logger.Error("outbox relay: add stream", "err", err)
@@ -95,7 +95,7 @@ func (r *OutboxRelay) publishOnce(ctx context.Context) {
 	rows.Close()
 
 	for _, p := range batch {
-		subject := "finance.journal.posted.v1"
+		subject := "arda.finance.journal.posted.v1"
 		if _, err := r.js.Publish(subject, p.payload); err != nil {
 			r.logger.Error("outbox relay: publish", "id", p.id, "err", err)
 			_, _ = r.db.ExecContext(ctx, `
