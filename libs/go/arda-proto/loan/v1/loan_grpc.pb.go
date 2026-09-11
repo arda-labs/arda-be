@@ -38,6 +38,8 @@ const (
 	LoanCommandService_ResolveBatch_FullMethodName                 = "/arda.loan.v1.LoanCommandService/ResolveBatch"
 	LoanCommandService_CheckGeneralProvision_FullMethodName        = "/arda.loan.v1.LoanCommandService/CheckGeneralProvision"
 	LoanCommandService_ResolveGeneralProvision_FullMethodName      = "/arda.loan.v1.LoanCommandService/ResolveGeneralProvision"
+	LoanCommandService_CheckSpecificProvision_FullMethodName       = "/arda.loan.v1.LoanCommandService/CheckSpecificProvision"
+	LoanCommandService_ResolveSpecificProvision_FullMethodName     = "/arda.loan.v1.LoanCommandService/ResolveSpecificProvision"
 )
 
 // LoanCommandServiceClient is the client API for LoanCommandService service.
@@ -66,6 +68,8 @@ type LoanCommandServiceClient interface {
 	ResolveBatch(ctx context.Context, in *ResolveBatchRequest, opts ...grpc.CallOption) (*ResolveBatchResponse, error)
 	CheckGeneralProvision(ctx context.Context, in *CheckGeneralProvisionRequest, opts ...grpc.CallOption) (*CheckGeneralProvisionResponse, error)
 	ResolveGeneralProvision(ctx context.Context, in *ResolveGeneralProvisionRequest, opts ...grpc.CallOption) (*ResolveGeneralProvisionResponse, error)
+	CheckSpecificProvision(ctx context.Context, in *CheckSpecificProvisionRequest, opts ...grpc.CallOption) (*CheckSpecificProvisionResponse, error)
+	ResolveSpecificProvision(ctx context.Context, in *ResolveSpecificProvisionRequest, opts ...grpc.CallOption) (*ResolveSpecificProvisionResponse, error)
 }
 
 type loanCommandServiceClient struct {
@@ -266,6 +270,26 @@ func (c *loanCommandServiceClient) ResolveGeneralProvision(ctx context.Context, 
 	return out, nil
 }
 
+func (c *loanCommandServiceClient) CheckSpecificProvision(ctx context.Context, in *CheckSpecificProvisionRequest, opts ...grpc.CallOption) (*CheckSpecificProvisionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckSpecificProvisionResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_CheckSpecificProvision_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *loanCommandServiceClient) ResolveSpecificProvision(ctx context.Context, in *ResolveSpecificProvisionRequest, opts ...grpc.CallOption) (*ResolveSpecificProvisionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveSpecificProvisionResponse)
+	err := c.cc.Invoke(ctx, LoanCommandService_ResolveSpecificProvision_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LoanCommandServiceServer is the server API for LoanCommandService service.
 // All implementations must embed UnimplementedLoanCommandServiceServer
 // for forward compatibility.
@@ -292,6 +316,8 @@ type LoanCommandServiceServer interface {
 	ResolveBatch(context.Context, *ResolveBatchRequest) (*ResolveBatchResponse, error)
 	CheckGeneralProvision(context.Context, *CheckGeneralProvisionRequest) (*CheckGeneralProvisionResponse, error)
 	ResolveGeneralProvision(context.Context, *ResolveGeneralProvisionRequest) (*ResolveGeneralProvisionResponse, error)
+	CheckSpecificProvision(context.Context, *CheckSpecificProvisionRequest) (*CheckSpecificProvisionResponse, error)
+	ResolveSpecificProvision(context.Context, *ResolveSpecificProvisionRequest) (*ResolveSpecificProvisionResponse, error)
 	mustEmbedUnimplementedLoanCommandServiceServer()
 }
 
@@ -358,6 +384,12 @@ func (UnimplementedLoanCommandServiceServer) CheckGeneralProvision(context.Conte
 }
 func (UnimplementedLoanCommandServiceServer) ResolveGeneralProvision(context.Context, *ResolveGeneralProvisionRequest) (*ResolveGeneralProvisionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveGeneralProvision not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) CheckSpecificProvision(context.Context, *CheckSpecificProvisionRequest) (*CheckSpecificProvisionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckSpecificProvision not implemented")
+}
+func (UnimplementedLoanCommandServiceServer) ResolveSpecificProvision(context.Context, *ResolveSpecificProvisionRequest) (*ResolveSpecificProvisionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveSpecificProvision not implemented")
 }
 func (UnimplementedLoanCommandServiceServer) mustEmbedUnimplementedLoanCommandServiceServer() {}
 func (UnimplementedLoanCommandServiceServer) testEmbeddedByValue()                            {}
@@ -722,6 +754,42 @@ func _LoanCommandService_ResolveGeneralProvision_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LoanCommandService_CheckSpecificProvision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckSpecificProvisionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).CheckSpecificProvision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_CheckSpecificProvision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).CheckSpecificProvision(ctx, req.(*CheckSpecificProvisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LoanCommandService_ResolveSpecificProvision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveSpecificProvisionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LoanCommandServiceServer).ResolveSpecificProvision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LoanCommandService_ResolveSpecificProvision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LoanCommandServiceServer).ResolveSpecificProvision(ctx, req.(*ResolveSpecificProvisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LoanCommandService_ServiceDesc is the grpc.ServiceDesc for LoanCommandService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -804,6 +872,14 @@ var LoanCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveGeneralProvision",
 			Handler:    _LoanCommandService_ResolveGeneralProvision_Handler,
+		},
+		{
+			MethodName: "CheckSpecificProvision",
+			Handler:    _LoanCommandService_CheckSpecificProvision_Handler,
+		},
+		{
+			MethodName: "ResolveSpecificProvision",
+			Handler:    _LoanCommandService_ResolveSpecificProvision_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

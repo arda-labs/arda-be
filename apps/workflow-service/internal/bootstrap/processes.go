@@ -71,6 +71,9 @@ var rptSubmit []byte
 //go:embed lnm-general-provision-v2.bpmn
 var lnmGeneralProvision []byte
 
+//go:embed lnm-specific-provision-v1.bpmn
+var lnmSpecificProvision []byte
+
 //go:embed lnm-mortgage-adjust-v2.bpmn
 var lnmMortgageAdjust []byte
 
@@ -252,6 +255,14 @@ func BuiltInProcesses() []Process {
 			Name:         "Trích lập dự phòng chung (v2)",
 			ResourceName: "lnm-general-provision-v2.bpmn",
 			Content:      lnmGeneralProvision,
+		},
+		{
+			// LNM.306 specific provision: per-loan with collateral deduction;
+			// provisional rule card LNM_PROVISION_306 (chờ dev_fac).
+			ProcessCode:  "LNM_SPECIFIC_PROVISION_V1",
+			Name:         "Trích lập dự phòng cụ thể (v1)",
+			ResourceName: "lnm-specific-provision-v1.bpmn",
+			Content:      lnmSpecificProvision,
 		},
 		{
 			// Mortgage-adjust was registered as the 11th adjustment kind with

@@ -382,3 +382,42 @@ func (c *Client) ResolveGeneralProvision(ctx context.Context, id, decision, deci
 	})
 	return err
 }
+
+// SpecificProvisioner is the narrow surface the workflow LNM.306 workers need.
+type SpecificProvisioner interface {
+	CheckSpecificProvision(ctx context.Context, id string) (bool, string, error)
+	ResolveSpecificProvision(ctx context.Context, id, decision, decidedBy, note string) error
+}
+
+// CheckSpecificProvision validates the request is actionable (BPMN validate).
+func (c *Client) CheckSpecificProvision(ctx context.Context, id string) (bool, string, error) {
+	if c == nil {
+		return false, "", errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.CheckSpecificProvision(callCtx, &loanv1.CheckSpecificProvisionRequest{
+		SpecificProvisionId: id,
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+// ResolveSpecificProvision APPROVE recomputes + posts the LNM_PROVISION_306
+// card; REJECT closes the request.
+func (c *Client) ResolveSpecificProvision(ctx context.Context, id, decision, decidedBy, note string) error {
+	if c == nil {
+		return errors.New("loan client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.api.ResolveSpecificProvision(callCtx, &loanv1.ResolveSpecificProvisionRequest{
+		SpecificProvisionId: id,
+		Decision:            decision,
+		DecidedBy:           decidedBy,
+		Note:                note,
+	})
+	return err
+}

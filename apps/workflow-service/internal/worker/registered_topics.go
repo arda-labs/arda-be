@@ -38,6 +38,10 @@ var RegisteredJobTopics = []string{
 	"lnm.general-provision.validate",
 	"lnm.general-provision.execute",
 	"lnm.general-provision.cancel",
+	// Specific provision (lnm-specific-provision-v1.bpmn)
+	"lnm.specific-provision.validate",
+	"lnm.specific-provision.execute",
+	"lnm.specific-provision.cancel",
 	// Deposit settlement (dpm-settle-v2.bpmn)
 	"dpm.settle.validate",
 	"dpm.settle.execute",

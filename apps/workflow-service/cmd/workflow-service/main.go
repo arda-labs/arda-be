@@ -242,6 +242,16 @@ func main() {
 		defer gpcw.Close()
 		logger.Info("workflow general provision workers registered")
 
+		spWorkers := worker.NewSpecificProvisionWorkers(loanClient, caseRepo)
+		spv, spe, spc := spWorkers.Handlers()
+		spvw := zeebeSvc.NewJobWorker("lnm.specific-provision.validate", spv)
+		spew := zeebeSvc.NewJobWorker("lnm.specific-provision.execute", spe)
+		spcw := zeebeSvc.NewJobWorker("lnm.specific-provision.cancel", spc)
+		defer spvw.Close()
+		defer spew.Close()
+		defer spcw.Close()
+		logger.Info("workflow specific provision workers registered")
+
 		// Loan formation (LOAN_FORMATION_V2, EPAS LNM.201.01): validate reads
 		// the contract state, execute activates the contract, cancel rejects
 		// it. No finance involvement — formation moves no money.

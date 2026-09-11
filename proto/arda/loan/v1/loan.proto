@@ -26,6 +26,8 @@ service LoanCommandService {
   rpc ResolveBatch(ResolveBatchRequest) returns (ResolveBatchResponse);
   rpc CheckGeneralProvision(CheckGeneralProvisionRequest) returns (CheckGeneralProvisionResponse);
   rpc ResolveGeneralProvision(ResolveGeneralProvisionRequest) returns (ResolveGeneralProvisionResponse);
+  rpc CheckSpecificProvision(CheckSpecificProvisionRequest) returns (CheckSpecificProvisionResponse);
+  rpc ResolveSpecificProvision(ResolveSpecificProvisionRequest) returns (ResolveSpecificProvisionResponse);
 }
 
 message UpdateContractStatusRequest {
@@ -294,5 +296,30 @@ message ResolveGeneralProvisionRequest {
 }
 
 message ResolveGeneralProvisionResponse {
+  bool ok = 1;
+}
+
+// ── Specific provision flow (LNM.306, LNM_SPECIFIC_PROVISION_V1) ──
+//
+// Per-agreement provision with collateral deduction; APPROVE recomputes and
+// posts the LNM_PROVISION_306 card (provisional accounts, chờ dev_fac).
+
+message CheckSpecificProvisionRequest {
+  string specific_provision_id = 1;
+}
+
+message CheckSpecificProvisionResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message ResolveSpecificProvisionRequest {
+  string specific_provision_id = 1;
+  string decision = 2; // APPROVE | REJECT
+  string decided_by = 3;
+  string note = 4;
+}
+
+message ResolveSpecificProvisionResponse {
   bool ok = 1;
 }

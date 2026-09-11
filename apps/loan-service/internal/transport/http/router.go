@@ -10,7 +10,7 @@ import (
 
 // NewRouter wires the loan-service HTTP surface. Adjustment routes are
 // generated from the shared kind list so adding a flow never touches here.
-func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, rp *handler.ReportHandler, pl *handler.PlanHandler, kinds []string) http.Handler {
+func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, rp *handler.ReportHandler, pl *handler.PlanHandler, sp *handler.SpecificProvisionHandler, kinds []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -72,6 +72,19 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 			gp.ListGeneralProvisions(w, r)
 		case http.MethodPost:
 			gp.SubmitGeneralProvision(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+
+	// Specific provision (LNM.306): preview, submit, list.
+	mux.HandleFunc("/api/loan/specific-provisions/calculate", method("POST", sp.CalculateSpecificProvision))
+	mux.HandleFunc("/api/loan/specific-provisions", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			sp.ListSpecificProvisions(w, r)
+		case http.MethodPost:
+			sp.SubmitSpecificProvision(w, r)
 		default:
 			methodNotAllowed(w, r)
 		}

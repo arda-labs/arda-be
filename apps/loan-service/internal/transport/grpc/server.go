@@ -27,10 +27,11 @@ type LoanServer struct {
 	disbBatches   *service.BatchDisbursementService
 	colBatches    *service.BatchCollectionService
 	generalProv   *service.GeneralProvisionService
+	specificProv  *service.SpecificProvisionService
 }
 
-func NewLoanServer(contracts *service.LoanService, adj *service.AdjustmentService, disbursements *service.DisbursementService, collections *service.CollectionService, disbBatches *service.BatchDisbursementService, colBatches *service.BatchCollectionService, generalProv *service.GeneralProvisionService) *LoanServer {
-	return &LoanServer{contracts: contracts, adj: adj, disbursements: disbursements, collections: collections, disbBatches: disbBatches, colBatches: colBatches, generalProv: generalProv}
+func NewLoanServer(contracts *service.LoanService, adj *service.AdjustmentService, disbursements *service.DisbursementService, collections *service.CollectionService, disbBatches *service.BatchDisbursementService, colBatches *service.BatchCollectionService, generalProv *service.GeneralProvisionService, specificProv *service.SpecificProvisionService) *LoanServer {
+	return &LoanServer{contracts: contracts, adj: adj, disbursements: disbursements, collections: collections, disbBatches: disbBatches, colBatches: colBatches, generalProv: generalProv, specificProv: specificProv}
 }
 
 func tenantFromContext(ctx context.Context) (string, error) {
@@ -364,4 +365,35 @@ func (s *LoanServer) ResolveGeneralProvision(ctx context.Context, req *loanv1.Re
 		return &loanv1.ResolveGeneralProvisionResponse{Ok: false}, nil
 	}
 	return &loanv1.ResolveGeneralProvisionResponse{Ok: true}, nil
+}
+
+func (s *LoanServer) CheckSpecificProvision(ctx context.Context, req *loanv1.CheckSpecificProvisionRequest) (*loanv1.CheckSpecificProvisionResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if req.GetSpecificProvisionId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "specific_provision_id is required")
+	}
+	ok, message, err := s.specificProv.Check(ctx, tenantID, req.GetSpecificProvisionId())
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &loanv1.CheckSpecificProvisionResponse{Ok: ok, Message: message}, nil
+}
+
+func (s *LoanServer) ResolveSpecificProvision(ctx context.Context, req *loanv1.ResolveSpecificProvisionRequest) (*loanv1.ResolveSpecificProvisionResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+	if req.GetSpecificProvisionId() == "" || req.GetDecision() == "" {
+		return nil, status.Error(codes.InvalidArgument, "specific_provision_id and decision are required")
+	}
+	if err := s.specificProv.Resolve(ctx, tenantID, req.GetSpecificProvisionId(),
+		req.GetDecision(), req.GetDecidedBy(), req.GetNote()); err != nil {
+		slog.Warn("loan grpc: resolve specific provision failed", "id", req.GetSpecificProvisionId(), "err", err)
+		return &loanv1.ResolveSpecificProvisionResponse{Ok: false}, nil
+	}
+	return &loanv1.ResolveSpecificProvisionResponse{Ok: true}, nil
 }
