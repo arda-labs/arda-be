@@ -43,14 +43,17 @@ func NewConsumer(conn *nats.Conn, subject, durable string) (*Consumer, error) {
 	return &Consumer{js: js, stream: eventStreamName, subject: subject, durable: durable}, nil
 }
 
-// Run uses an explicit durable consumer, manual acknowledgement, bounded
-// redelivery and a stream-local DLQ subject. The handler remains responsible
-// for an inbox/dedupe commit; NATS acknowledgement follows that commit.
+// Run uses an explicit durable consumer shared across replicas via a queue
+// group (all pods bind the same durable; only one is "bound" as a plain push
+// subscriber, so a queue group is required for replicas > 1), manual
+// acknowledgement, bounded redelivery and a stream-local DLQ subject. The
+// handler remains responsible for an inbox/dedupe commit; NATS acknowledgement
+// follows that commit.
 func (c *Consumer) Run(ctx context.Context, handler EventHandler) error {
 	if c == nil || c.js == nil || handler == nil {
 		return fmt.Errorf("consumer and handler are required")
 	}
-	sub, err := c.js.SubscribeSync(c.subject,
+	sub, err := c.js.QueueSubscribeSync(c.subject, c.durable,
 		nats.Durable(c.durable),
 		nats.ManualAck(),
 		nats.AckWait(consumerAckWait),

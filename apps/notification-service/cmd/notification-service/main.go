@@ -134,7 +134,7 @@ func main() {
 	// (notification.inbox.created) with at-least-once semantics. No business
 	// side effect yet — the marker is the integration fixture the event
 	// registry asks for.
-	consumer, consumerErr := appevents.NewConsumer(nc, "arda.notification.inbox.created.v1", "notification-inbox")
+	consumer, consumerErr := appevents.NewConsumer(nc, "arda.notification.inbox.created.v1", "notification-inbox-cg")
 	if consumerErr != nil {
 		logger.Error("JetStream consumer setup failed", "err", consumerErr)
 		os.Exit(1)
