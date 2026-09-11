@@ -939,6 +939,86 @@ func nullStringPtr(v sql.NullString) *string {
 	return &v.String
 }
 
+// AnalyticsOverview is the workflow dashboard summary (W6).
+type AnalyticsOverview struct {
+	CasesTotal   int            `json:"cases_total"`
+	ByStatus     map[string]int `json:"by_status"`
+	ByCaseType   map[string]int `json:"by_case_type"`
+	OpenTasks    int            `json:"open_tasks"`
+	OverdueTasks int            `json:"overdue_tasks"`
+}
+
+// AnalyticsOverview aggregates cases by status/case type and open/overdue
+// tasks in the [from, to] created-at window (dates optional).
+func (r *CaseRepository) AnalyticsOverview(ctx context.Context, tenantID, fromDate, toDate string) (*AnalyticsOverview, error) {
+	where := []string{"tenant_id = $1"}
+	args := []any{tenantID}
+	if fromDate != "" {
+		args = append(args, fromDate)
+		where = append(where, fmt.Sprintf("created_at >= $%d::date", len(args)))
+	}
+	if toDate != "" {
+		args = append(args, toDate)
+		where = append(where, fmt.Sprintf("created_at < ($%d::date + INTERVAL '1 day')", len(args)))
+	}
+	wc := strings.Join(where, " AND ")
+
+	out := &AnalyticsOverview{ByStatus: map[string]int{}, ByCaseType: map[string]int{}}
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM business_cases WHERE "+wc, args...).Scan(&out.CasesTotal); err != nil {
+		return nil, err
+	}
+
+	statusRows, err := r.db.QueryContext(ctx, "SELECT status, COUNT(*) FROM business_cases WHERE "+wc+" GROUP BY status", args...)
+	if err != nil {
+		return nil, err
+	}
+	for statusRows.Next() {
+		var status string
+		var count int
+		if err := statusRows.Scan(&status, &count); err != nil {
+			statusRows.Close()
+			return nil, err
+		}
+		out.ByStatus[status] = count
+	}
+	statusRows.Close()
+
+	typeRows, err := r.db.QueryContext(ctx,
+		"SELECT case_type, COUNT(*) FROM business_cases WHERE "+wc+" GROUP BY case_type ORDER BY COUNT(*) DESC LIMIT 20", args...)
+	if err != nil {
+		return nil, err
+	}
+	for typeRows.Next() {
+		var caseType string
+		var count int
+		if err := typeRows.Scan(&caseType, &count); err != nil {
+			typeRows.Close()
+			return nil, err
+		}
+		out.ByCaseType[caseType] = count
+	}
+	typeRows.Close()
+
+	taskWhere := []string{"c.tenant_id = $1", "t.status IN ('READY','CLAIMED','CREATED')"}
+	taskArgs := []any{tenantID}
+	if fromDate != "" {
+		taskArgs = append(taskArgs, fromDate)
+		taskWhere = append(taskWhere, fmt.Sprintf("c.created_at >= $%d::date", len(taskArgs)))
+	}
+	if toDate != "" {
+		taskArgs = append(taskArgs, toDate)
+		taskWhere = append(taskWhere, fmt.Sprintf("c.created_at < ($%d::date + INTERVAL '1 day')", len(taskArgs)))
+	}
+	taskWC := strings.Join(taskWhere, " AND ")
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*), COUNT(*) FILTER (WHERE t.sla_due_at < now())
+		FROM workflow_tasks t JOIN business_cases c ON c.id = t.case_id
+		WHERE `+taskWC, taskArgs...).Scan(&out.OpenTasks, &out.OverdueTasks); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func ptr(s string) *string {
 	return &s
 }

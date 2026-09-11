@@ -43,6 +43,8 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 
 	mux.HandleFunc("/api/platform/eod/run", eodHandler.RunCOB)
 	mux.HandleFunc("/api/platform/eod/seed", eodHandler.SeedCOBJobs)
+	mux.HandleFunc("GET /api/platform/jobs", eodHandler.ListJobs)
+	mux.HandleFunc("GET /api/platform/jobs/runs", eodHandler.ListJobRuns)
 
 	mux.HandleFunc("/api/platform/public/branding", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

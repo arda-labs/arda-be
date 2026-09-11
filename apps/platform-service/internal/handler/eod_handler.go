@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
@@ -58,4 +59,48 @@ func (h *EODHandler) SeedCOBJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]bool{"seeded": true})
+}
+
+// ListJobs handles GET /api/platform/jobs.
+func (h *EODHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	jobs, err := h.svc.ListJobs(r.Context(), tenantID)
+	if err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusInternalServerError, ardaerrors.New(ardaerrors.CodeInternal, err.Error()))
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, jobs)
+}
+
+// ListJobRuns handles GET /api/platform/jobs/runs.
+func (h *EODHandler) ListJobRuns(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	limit := 100
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			limit = parsed
+		}
+	}
+	runs, err := h.svc.ListJobRuns(r.Context(), tenantID, r.URL.Query().Get("job_code"), limit)
+	if err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusInternalServerError, ardaerrors.New(ardaerrors.CodeInternal, err.Error()))
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, runs)
 }

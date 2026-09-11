@@ -17,6 +17,7 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
+	ardaexport "github.com/arda-labs/arda/libs/go/arda-export"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 	"google.golang.org/grpc/codes"
@@ -897,6 +898,73 @@ func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request
 		items = visibleIncomingWorkItems(items)
 	}
 	writeJSON(w, r, http.StatusOK, map[string]any{"nodes": workItemSummary(items, currentUserID(r))})
+}
+
+// Analytics handles GET /api/workflow/analytics/overview (W6 dashboard).
+func (h *WorkflowHandler) Analytics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		writeAPIError(w, r, http.StatusForbidden, "tenant scope is required")
+		return
+	}
+	overview, err := h.caseRepo.AnalyticsOverview(r.Context(), tenantID,
+		r.URL.Query().Get("from"), r.URL.Query().Get("to"))
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query analytics: "+err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, overview)
+}
+
+// ExportWorkItems handles GET /api/workflow/work-items/export — streams the
+// filtered work-item list as XLSX (W6).
+func (h *WorkflowHandler) ExportWorkItems(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	filter := workItemFilter(r)
+	filter.Limit = 5000
+	items, err := h.caseRepo.ListWorkItems(r.Context(), filter)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work items: "+err.Error())
+		return
+	}
+	index := 0
+	supplier := func() ([]any, error) {
+		if index >= len(items) {
+			return nil, io.EOF
+		}
+		item := items[index]
+		index++
+		return []any{
+			item.CaseCode, item.CaseType, item.Title, item.StepCode, item.Status,
+			item.CandidateRole, item.AssignedToName, item.TransactionStatus,
+		}, nil
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"work-items.xlsx\"")
+	if err := ardaexport.StreamXLSX(r.Context(), w, ardaexport.StreamOptions{
+		Title:     "Work items",
+		SheetName: "WorkItems",
+		Columns: []ardaexport.Column{
+			{Header: "Case", Key: "case", Type: ardaexport.CellTypeCode},
+			{Header: "Case type", Key: "case_type", Type: ardaexport.CellTypeString},
+			{Header: "Title", Key: "title", Type: ardaexport.CellTypeString},
+			{Header: "Step", Key: "step", Type: ardaexport.CellTypeString},
+			{Header: "Status", Key: "status", Type: ardaexport.CellTypeString},
+			{Header: "Role", Key: "role", Type: ardaexport.CellTypeString},
+			{Header: "Assignee", Key: "assignee", Type: ardaexport.CellTypeString},
+			{Header: "Txn status", Key: "txn_status", Type: ardaexport.CellTypeString},
+		},
+		TotalCount: len(items),
+	}, supplier); err != nil {
+		slog.Error("export work items failed", "err", err)
+	}
 }
 
 func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {

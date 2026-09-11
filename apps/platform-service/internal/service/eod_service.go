@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -195,4 +196,68 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// JobRun is one COB run history row (W6 jobs UI).
+type JobRun struct {
+	JobCode      string `json:"job_code"`
+	BusinessDate string `json:"business_date"`
+	Status       string `json:"status"`
+	Error        string `json:"error,omitempty"`
+	StartedAt    string `json:"started_at,omitempty"`
+	FinishedAt   string `json:"finished_at,omitempty"`
+}
+
+// ListJobs returns the configured COB steps.
+func (s *EODService) ListJobs(ctx context.Context, tenantID string) ([]JobDefinition, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT code, name, sequence, endpoint, is_enabled
+		FROM plt_job_definitions WHERE tenant_id = $1 ORDER BY sequence, code`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []JobDefinition{}
+	for rows.Next() {
+		var j JobDefinition
+		if err := rows.Scan(&j.Code, &j.Name, &j.Sequence, &j.Endpoint, &j.IsEnabled); err != nil {
+			return nil, err
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+// ListJobRuns returns recent run history (optionally one job code).
+func (s *EODService) ListJobRuns(ctx context.Context, tenantID, jobCode string, limit int) ([]JobRun, error) {
+	if limit < 1 || limit > 500 {
+		limit = 100
+	}
+	where := []string{"tenant_id = $1"}
+	args := []any{tenantID}
+	if jobCode != "" {
+		args = append(args, jobCode)
+		where = append(where, fmt.Sprintf("job_code = $%d", len(args)))
+	}
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT job_code, business_date::text, status, COALESCE(error,''),
+		       COALESCE(started_at::text,''), COALESCE(finished_at::text,'')
+		FROM plt_job_runs WHERE %s
+		ORDER BY business_date DESC, started_at DESC NULLS LAST
+		LIMIT $%d`, strings.Join(where, " AND "), len(args)), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []JobRun{}
+	for rows.Next() {
+		var run JobRun
+		if err := rows.Scan(&run.JobCode, &run.BusinessDate, &run.Status, &run.Error,
+			&run.StartedAt, &run.FinishedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, run)
+	}
+	return out, rows.Err()
 }
