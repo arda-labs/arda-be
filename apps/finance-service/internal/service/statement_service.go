@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -26,8 +27,20 @@ func NewStatementService(db *sql.DB) *StatementService {
 // formula is the JSONB shape stored in fin_statement_formula.formula.
 type formula struct {
 	Type    string          `json:"type"`
-	Codes   []string        `json:"codes,omitempty"`   // accounts: plain list
+	Codes   []string        `json:"codes,omitempty"`   // accounts/opening/movement: account list
 	Members []formulaMember `json:"members,omitempty"` // rows: member + role sign
+	// Side selects which ledger side an accounts/opening/movement row reads:
+	// DEBIT or CREDIT (EPAS "+N<acc>"/"+C<acc>" tokens); empty/NET = debit - credit.
+	Side string `json:"side,omitempty"`
+	// Prefix makes Codes account prefixes (EPAS ACC_COA_CODE LIKE 'acc%').
+	Prefix bool `json:"prefix,omitempty"`
+}
+
+// accountValue carries both ledger sides of one balance/movement so rows can
+// read a single side (EPAS N/C tokens) instead of only the net.
+type accountValue struct {
+	Debit  int64
+	Credit int64
 }
 
 // formulaMember is one row reference inside a rows-formula. Sign is the
@@ -172,17 +185,54 @@ type statementDef struct {
 }
 
 // statementInputs carries the per-account maps the evaluator reads. asOf is
-// the standing net balance at as_of; opening is the standing net balance
-// before from_date; movement is the period movement (incr debit - incr credit)
-// between from_date and as_of.
+// the standing balance at as_of; opening is the standing balance before
+// from_date; movement is the period movement between from_date and as_of.
+// Each value keeps both ledger sides (EPAS N/C tokens read one side).
 type statementInputs struct {
-	asOf     map[string]int64
-	opening  map[string]int64
-	movement map[string]int64
+	asOf     map[string]accountValue
+	opening  map[string]accountValue
+	movement map[string]accountValue
 }
 
-// evaluateStatement renders rows from definitions + per-account net
-// balances. Pure function — DB I/O stays in RunStatement.
+// sumAccountValues sums the selected side of the listed accounts (exact codes,
+// or prefixes when prefix is true). side DEBIT/CREDIT read one ledger side;
+// otherwise the net debit-positive value is returned (historical behaviour).
+func sumAccountValues(values map[string]accountValue, codes []string, side string, prefix bool) int64 {
+	if len(codes) == 0 {
+		return 0
+	}
+	side = strings.ToUpper(strings.TrimSpace(side))
+	var total int64
+	for code, value := range values {
+		matched := false
+		for _, want := range codes {
+			if prefix {
+				if strings.HasPrefix(code, want) {
+					matched = true
+					break
+				}
+			} else if code == want {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		switch side {
+		case "DEBIT":
+			total += value.Debit
+		case "CREDIT":
+			total += value.Credit
+		default:
+			total += value.Debit - value.Credit
+		}
+	}
+	return total
+}
+
+// evaluateStatement renders rows from definitions + per-account balances.
+// Pure function — DB I/O stays in RunStatement.
 //
 // Two independent sign layers (the classic statement-engine split):
 //   - row Sign = presentation: AmountMinor = expression sum × Sign, so a
@@ -207,19 +257,13 @@ func evaluateStatement(defs []statementDef, in statementInputs) (*StatementResul
 		hasAmount := false
 		switch d.Formula.Type {
 		case "accounts":
-			for _, code := range d.Formula.Codes {
-				sum += in.asOf[code]
-			}
+			sum = sumAccountValues(in.asOf, d.Formula.Codes, d.Formula.Side, d.Formula.Prefix)
 			hasAmount = true
 		case "opening":
-			for _, code := range d.Formula.Codes {
-				sum += in.opening[code]
-			}
+			sum = sumAccountValues(in.opening, d.Formula.Codes, d.Formula.Side, d.Formula.Prefix)
 			hasAmount = true
 		case "movement":
-			for _, code := range d.Formula.Codes {
-				sum += in.movement[code]
-			}
+			sum = sumAccountValues(in.movement, d.Formula.Codes, d.Formula.Side, d.Formula.Prefix)
 			hasAmount = true
 		case "rows":
 			for _, m := range d.Formula.Members {
@@ -331,16 +375,16 @@ func (s *StatementService) latestRebuiltDate(ctx context.Context, tenantID strin
 	return d.String, nil
 }
 
-// accountBalances returns net debit-positive balance per account_code as of
-// asOf: sum of all daily close deltas up to asOf (last close ≤ asOf per
-// account + movement on dates without rebuild). Because the COB rebuilds
-// every day contiguously, taking each account's latest close ≤ asOf is the
-// correct standing balance.
-func (s *StatementService) accountBalances(ctx context.Context, tenantID, asOf, coaVersion string) (map[string]int64, error) {
+// accountBalances returns the per-account standing balance as of asOf: sum of
+// all daily close deltas up to asOf (last close ≤ asOf per account + movement
+// on dates without rebuild). Both ledger sides are kept so rows can read one
+// side (EPAS N/C tokens). Because the COB rebuilds every day contiguously,
+// taking each account's latest close ≤ asOf is the correct standing balance.
+func (s *StatementService) accountBalances(ctx context.Context, tenantID, asOf, coaVersion string) (map[string]accountValue, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT ON (tbd.coa_version, tbd.account_code, tbd.currency_code)
 		       tbd.coa_version, tbd.account_code,
-		       tbd.close_debit_minor - tbd.close_credit_minor AS net_minor
+		       tbd.close_debit_minor, tbd.close_credit_minor
 		FROM fin_trial_balance_daily tbd
 		WHERE tbd.tenant_id = $1 AND tbd.business_date <= $2::date
 		ORDER BY tbd.coa_version, tbd.account_code, tbd.currency_code, tbd.business_date DESC`,
@@ -350,28 +394,29 @@ func (s *StatementService) accountBalances(ctx context.Context, tenantID, asOf, 
 	}
 	defer rows.Close()
 
-	bal := map[string]int64{}
+	bal := map[string]accountValue{}
 	for rows.Next() {
 		var v, code string
-		var net int64
-		if err := rows.Scan(&v, &code, &net); err != nil {
+		var debit, credit int64
+		if err := rows.Scan(&v, &code, &debit, &credit); err != nil {
 			return nil, err
 		}
 		if coaVersion != "" && v != coaVersion {
 			continue
 		}
-		bal[code] += net
+		cur := bal[code]
+		bal[code] = accountValue{Debit: cur.Debit + debit, Credit: cur.Credit + credit}
 	}
 	return bal, rows.Err()
 }
 
-// accountOpeningBalances returns the standing net balance immediately before
+// accountOpeningBalances returns the standing balance immediately before
 // fromDate (business_date < from_date) — the opening balance of a period.
-func (s *StatementService) accountOpeningBalances(ctx context.Context, tenantID, fromDate, coaVersion string) (map[string]int64, error) {
+func (s *StatementService) accountOpeningBalances(ctx context.Context, tenantID, fromDate, coaVersion string) (map[string]accountValue, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT ON (tbd.coa_version, tbd.account_code, tbd.currency_code)
 		       tbd.coa_version, tbd.account_code,
-		       tbd.close_debit_minor - tbd.close_credit_minor AS net_minor
+		       tbd.close_debit_minor, tbd.close_credit_minor
 		FROM fin_trial_balance_daily tbd
 		WHERE tbd.tenant_id = $1 AND tbd.business_date < $2::date
 		ORDER BY tbd.coa_version, tbd.account_code, tbd.currency_code, tbd.business_date DESC`,
@@ -381,27 +426,29 @@ func (s *StatementService) accountOpeningBalances(ctx context.Context, tenantID,
 	}
 	defer rows.Close()
 
-	bal := map[string]int64{}
+	bal := map[string]accountValue{}
 	for rows.Next() {
 		var v, code string
-		var net int64
-		if err := rows.Scan(&v, &code, &net); err != nil {
+		var debit, credit int64
+		if err := rows.Scan(&v, &code, &debit, &credit); err != nil {
 			return nil, err
 		}
 		if coaVersion != "" && v != coaVersion {
 			continue
 		}
-		bal[code] += net
+		cur := bal[code]
+		bal[code] = accountValue{Debit: cur.Debit + debit, Credit: cur.Credit + credit}
 	}
 	return bal, rows.Err()
 }
 
-// accountMovements sums period movement (incr debit - incr credit) per
-// account_code over [fromDate, asOf] — the input for B03 cash-flow rows.
-func (s *StatementService) accountMovements(ctx context.Context, tenantID, fromDate, asOf, coaVersion string) (map[string]int64, error) {
+// accountMovements sums period movement per account_code over [fromDate, asOf]
+// — the input for B03 cash-flow and EPAS "điều chỉnh tăng/giảm" rows. Both
+// sides are kept so a row can read only the debit or credit increment.
+func (s *StatementService) accountMovements(ctx context.Context, tenantID, fromDate, asOf, coaVersion string) (map[string]accountValue, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT tbd.coa_version, tbd.account_code,
-		       SUM(tbd.incr_debit_minor - tbd.incr_credit_minor) AS net_minor
+		       SUM(tbd.incr_debit_minor), SUM(tbd.incr_credit_minor)
 		FROM fin_trial_balance_daily tbd
 		WHERE tbd.tenant_id = $1
 		  AND tbd.business_date >= $2::date AND tbd.business_date <= $3::date
@@ -413,17 +460,18 @@ func (s *StatementService) accountMovements(ctx context.Context, tenantID, fromD
 	}
 	defer rows.Close()
 
-	bal := map[string]int64{}
+	bal := map[string]accountValue{}
 	for rows.Next() {
 		var v, code string
-		var net int64
-		if err := rows.Scan(&v, &code, &net); err != nil {
+		var debit, credit int64
+		if err := rows.Scan(&v, &code, &debit, &credit); err != nil {
 			return nil, err
 		}
 		if coaVersion != "" && v != coaVersion {
 			continue
 		}
-		bal[code] += net
+		cur := bal[code]
+		bal[code] = accountValue{Debit: cur.Debit + debit, Credit: cur.Credit + credit}
 	}
 	return bal, rows.Err()
 }

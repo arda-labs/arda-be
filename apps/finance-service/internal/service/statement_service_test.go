@@ -17,11 +17,11 @@ func TestEvaluateStatementCDKT(t *testing.T) {
 		{RowCode: "ASSETS_TOTAL", ParentCode: "ASSETS", Label: "Tổng tài sản", Level: 1, SortOrder: 70, Sign: 1, IsTotal: true, Formula: formula{Type: "rows", Members: []formulaMember{{Code: "CASH"}, {Code: "BANK"}, {Code: "LOANS_GROSS"}, {Code: "PROVISION", Sign: -1}}}},
 	}
 	// Net debit-positive balances: 1319 carries a credit balance → negative.
-	acctBal := map[string]int64{
-		"1011": 500,
-		"1131": 12_000_000,
-		"1311": 50_000_000,
-		"1319": -300_000,
+	acctBal := map[string]accountValue{
+		"1011": {Debit: 500},
+		"1131": {Debit: 12_000_000},
+		"1311": {Debit: 50_000_000},
+		"1319": {Credit: 300_000},
 	}
 	res, err := evaluateStatement(defs, statementInputs{asOf: acctBal})
 	if err != nil {
@@ -58,7 +58,7 @@ func TestEvaluateStatementB02Profit(t *testing.T) {
 		{RowCode: "EXPENSE_TOTAL", SortOrder: 70, Sign: 1, IsTotal: true, Formula: formula{Type: "rows", Members: []formulaMember{{Code: "PROVISION_EXP"}}}},
 		{RowCode: "PROFIT", SortOrder: 80, Sign: 1, IsTotal: true, Formula: formula{Type: "rows", Members: []formulaMember{{Code: "INCOME_TOTAL"}, {Code: "EXPENSE_TOTAL", Sign: -1}}}},
 	}
-	acctBal := map[string]int64{"5111": -3_000_000, "1319": -1_000_000}
+	acctBal := map[string]accountValue{"5111": {Credit: 3_000_000}, "1319": {Credit: 1_000_000}}
 	res, err := evaluateStatement(defs, statementInputs{asOf: acctBal})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
@@ -114,8 +114,8 @@ func TestEvaluateStatementB03CashFlow(t *testing.T) {
 		{RowCode: "CLOSING_CASH", ParentCode: "CASHFLOW", Label: "Tiền cuối kỳ", Level: 1, SortOrder: 40, Sign: 1, IsTotal: true, Formula: formula{Type: "rows", Members: []formulaMember{{Code: "OPENING_CASH"}, {Code: "NET_CASH"}}}},
 	}
 	res, err := evaluateStatement(defs, statementInputs{
-		opening:  map[string]int64{"1011": 100, "1131": 900},
-		movement: map[string]int64{"1011": 50, "1131": -200},
+		opening:  map[string]accountValue{"1011": {Debit: 100}, "1131": {Debit: 900}},
+		movement: map[string]accountValue{"1011": {Debit: 50}, "1131": {Credit: 200}},
 	})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
@@ -132,5 +132,36 @@ func TestEvaluateStatementB03CashFlow(t *testing.T) {
 	}
 	if got := byCode["CLOSING_CASH"].AmountMinor; got != 850 {
 		t.Fatalf("CLOSING_CASH = %d, want 850", got)
+	}
+}
+
+// EPAS DSL port: side + prefix. "+C418" reads only the credit close of every
+// account whose code starts with 418; "+N121" reads only the debit side.
+func TestEvaluateStatementSideAndPrefix(t *testing.T) {
+	defs := []statementDef{
+		{RowCode: "FUNDS", SortOrder: 10, Sign: 1, Formula: formula{Type: "accounts", Codes: []string{"418"}, Side: "CREDIT", Prefix: true}},
+		{RowCode: "LOANS", SortOrder: 20, Sign: 1, Formula: formula{Type: "accounts", Codes: []string{"121"}, Side: "DEBIT", Prefix: true}},
+	}
+	res, err := evaluateStatement(defs, statementInputs{
+		asOf: map[string]accountValue{
+			"41801": {Credit: 1_000},
+			"41802": {Credit: 2_000, Debit: 300},
+			"411":   {Credit: 9_999},
+			"1211":  {Debit: 50_000, Credit: 1_000},
+		},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	byCode := map[string]StatementRow{}
+	for _, r := range res.Rows {
+		byCode[r.RowCode] = r
+	}
+	// 41801 + 41802 credit = 3000 (411 excluded by prefix; 41802 debit ignored).
+	if got := byCode["FUNDS"].AmountMinor; got != 3_000 {
+		t.Fatalf("FUNDS = %d, want 3000", got)
+	}
+	if got := byCode["LOANS"].AmountMinor; got != 50_000 {
+		t.Fatalf("LOANS = %d, want 50000", got)
 	}
 }
