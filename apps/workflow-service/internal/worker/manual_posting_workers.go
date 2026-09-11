@@ -65,6 +65,22 @@ var ClosingFlow = ManualPostingFlow{
 	DocumentType:      "FIN_CLOSING",
 }
 
+// FundAppropriationFlow is the trích lập quỹ leg (FIN_FUND_APPROP_V2): the
+// case variables carry the finance-built postingRequest (Nợ 4211 / Có quỹ).
+var FundAppropriationFlow = ManualPostingFlow{
+	TopicPrefix:       "fin.fund-appropriation",
+	IdempotencyPrefix: "fin-fund-appropriation",
+	DocumentType:      "FIN_FUND_APPROP",
+}
+
+// FundUtilizationFlow is the sử dụng quỹ leg (FIN_FUND_USE_V2): the case
+// variables carry the finance-built postingRequest (Nợ quỹ / Có 1131).
+var FundUtilizationFlow = ManualPostingFlow{
+	TopicPrefix:       "fin.fund-utilization",
+	IdempotencyPrefix: "fin-fund-utilization",
+	DocumentType:      "FIN_FUND_USE",
+}
+
 // postingPolicySentinels are the finance posting-date policy error codes
 // (finance service posting_policy_service.go). They arrive inside the gRPC
 // error message of Reserve/Post. A policy violation is a proposal problem —

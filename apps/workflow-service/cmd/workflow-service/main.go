@@ -446,7 +446,7 @@ func main() {
 	// on approve, cancel releases on reject. Registered only when
 	// finance-service is reachable.
 	if financeClient != nil {
-		for _, flow := range []worker.ManualPostingFlow{worker.SingleEntryFlow, worker.DoubleEntryFlow, worker.OffBalanceFlow, worker.ClosingFlow} {
+		for _, flow := range []worker.ManualPostingFlow{worker.SingleEntryFlow, worker.DoubleEntryFlow, worker.OffBalanceFlow, worker.ClosingFlow, worker.FundAppropriationFlow, worker.FundUtilizationFlow} {
 			manualPosting := worker.NewManualPostingWorkers(flow, financeClient, caseRepo)
 			mi, mv, me, mc := manualPosting.Handlers()
 			miw := zeebeSvc.NewJobWorker(flow.TopicPrefix+".init", mi)

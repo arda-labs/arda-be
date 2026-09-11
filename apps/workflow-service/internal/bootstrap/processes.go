@@ -122,6 +122,12 @@ var finTxnCancel []byte
 //go:embed fin-closing-v2.bpmn
 var finClosing []byte
 
+//go:embed fin-fund-appropriation-v2.bpmn
+var finFundAppropriation []byte
+
+//go:embed fin-fund-utilization-v2.bpmn
+var finFundUtilization []byte
+
 type Process struct {
 	ProcessCode  string
 	Name         string
@@ -392,6 +398,22 @@ func BuiltInProcesses() []Process {
 			Name:         "Kết chuyển thu chi (v2)",
 			ResourceName: "fin-closing-v2.bpmn",
 			Content:      finClosing,
+		},
+		{
+			// Quỹ: trích lập quỹ (Nợ 4211 / Có quỹ) — maker-checker, finance
+			// builds the lines from the FUND_* class maps. Same worker shape
+			// as the manual posting legs.
+			ProcessCode:  "FIN_FUND_APPROP_V2",
+			Name:         "Trích lập quỹ (v2)",
+			ResourceName: "fin-fund-appropriation-v2.bpmn",
+			Content:      finFundAppropriation,
+		},
+		{
+			// Quỹ: sử dụng quỹ (Nợ quỹ / Có 1131).
+			ProcessCode:  "FIN_FUND_USE_V2",
+			Name:         "Sử dụng quỹ (v2)",
+			ResourceName: "fin-fund-utilization-v2.bpmn",
+			Content:      finFundUtilization,
 		},
 		{
 			ProcessCode:  "HRM_EMPLOYEE_REGISTRATION",

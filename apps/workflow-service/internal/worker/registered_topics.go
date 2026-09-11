@@ -132,6 +132,15 @@ var RegisteredJobTopics = []string{
 	"fin.closing.validate",
 	"fin.closing.execute",
 	"fin.closing.cancel",
+	// Quỹ: trích lập (fin-fund-appropriation-v2.bpmn) + sử dụng (fin-fund-utilization-v2.bpmn)
+	"fin.fund-appropriation.init",
+	"fin.fund-appropriation.validate",
+	"fin.fund-appropriation.execute",
+	"fin.fund-appropriation.cancel",
+	"fin.fund-utilization.init",
+	"fin.fund-utilization.validate",
+	"fin.fund-utilization.execute",
+	"fin.fund-utilization.cancel",
 	// Notification (no BPMN service task yet; registered for future flows)
 	"notification.email",
 	"notification.sms",

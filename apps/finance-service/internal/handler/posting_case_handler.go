@@ -69,6 +69,19 @@ type createClosingBody struct {
 	Rows           []createClosingRowBody        `json:"rows"`
 }
 
+// createFundBody is the FUND flow request (trích lập/sử dụng quỹ): the fund
+// code, action and amount; finance-service builds the lines from the FUND_*
+// class maps and rides the standard two-phase lifecycle.
+type createFundBody struct {
+	AccountingDate string                        `json:"accounting_date"`
+	Action         string                        `json:"action"`
+	FundCode       string                        `json:"fund_code"`
+	AmountMinor    int64                         `json:"amount_minor"`
+	Description    string                        `json:"description"`
+	Trader         *createCancellationTraderBody `json:"trader"`
+	IdempotencyKey string                        `json:"idempotency_key"`
+}
+
 // createPostingCaseBody is the request contract: flow + posting_request /
 // cancellation_request / closing_request in the documented snake_case JSON
 // shape. posting_request is raw protojson (protojson accepts both spellings
@@ -80,6 +93,7 @@ type createPostingCaseBody struct {
 	PostingRequest      json.RawMessage         `json:"posting_request"`
 	CancellationRequest *createCancellationBody `json:"cancellation_request"`
 	ClosingRequest      *createClosingBody      `json:"closing_request"`
+	FundRequest         *createFundBody         `json:"fund_request"`
 }
 
 // CreatePostingCase handles POST /api/finance/posting-cases: structural +
@@ -122,6 +136,9 @@ func (h *PostingCaseHandler) CreatePostingCase(w http.ResponseWriter, r *http.Re
 	}
 	if in.Flow == service.FlowClosing {
 		input.Closing = mapClosingInput(in.ClosingRequest)
+	}
+	if in.Flow == service.FlowFund {
+		input.Fund = mapFundInput(in.FundRequest)
 	}
 
 	result, err := h.svc.CreatePostingCase(r.Context(), tenantID, actor, input)
@@ -225,6 +242,33 @@ func (h *PostingCaseHandler) ListClosingAccounts(w http.ResponseWriter, r *http.
 		return
 	}
 	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// mapFundInput maps the FUND flow body to the service shape.
+func mapFundInput(body *createFundBody) *service.FundCaseInput {
+	if body == nil {
+		return nil
+	}
+	in := &service.FundCaseInput{
+		AccountingDate: body.AccountingDate,
+		Action:         body.Action,
+		FundCode:       body.FundCode,
+		AmountMinor:    body.AmountMinor,
+		Description:    body.Description,
+		IdempotencyKey: body.IdempotencyKey,
+	}
+	if body.Trader != nil {
+		in.Trader = &service.CancellationTrader{
+			ObjectType: body.Trader.ObjectType,
+			ObjectCode: body.Trader.ObjectCode,
+			ObjectName: body.Trader.ObjectName,
+			IDNumber:   body.Trader.IDNumber,
+			IssueDate:  body.Trader.IssueDate,
+			IssuePlace: body.Trader.IssuePlace,
+			Address:    body.Trader.Address,
+		}
+	}
+	return in
 }
 
 // mapCancellationInput translates the wire body onto the service input.

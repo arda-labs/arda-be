@@ -66,6 +66,7 @@ type PostingCaseInput struct {
 	PostingRequest *financev1.PostingRequest
 	Cancellation   *CancellationCaseInput
 	Closing        *ClosingCaseInput
+	Fund           *FundCaseInput
 }
 
 // CancellationTrader is the person raising the cancellation (mirror of the
@@ -254,6 +255,9 @@ func (s *PostingCaseService) CreatePostingCase(ctx context.Context, tenantID, ac
 	}
 	if in.Flow == FlowClosing {
 		return s.CreateClosingCase(ctx, tenantID, actor, in.Closing)
+	}
+	if in.Flow == FlowFund {
+		return s.CreateFundCase(ctx, tenantID, actor, in.Fund)
 	}
 	if err := validateManualPostingFlow(in.Flow, in.PostingRequest); err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
