@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/arda-labs/arda/apps/statistical-service/internal/reports"
@@ -234,4 +235,156 @@ func (s *StatisticalService) ExportReport(ctx context.Context, tenantID, code st
 		return nil, "", ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
 	return data, definition.Code + ".xlsx", nil
+}
+
+// CatalogKinds is the whitelist of QCMS catalog kinds (W5) — one kind is one
+// EPAS catalog screen.
+var CatalogKinds = []string{
+	"indicator-type",
+	"stat-code-map",
+	"regulation",
+	"regulation-type",
+	"response-define",
+	"txn-status",
+	"rule-define",
+	"rule-type",
+	"kpi-type",
+	"report-group",
+	"report-param",
+	"import-template",
+	"import-type",
+	"cmms-scenario-group",
+	"cmms-scenario",
+	"cmms-compliance-period",
+}
+
+func isCatalogKind(kind string) bool {
+	for _, known := range CatalogKinds {
+		if known == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// ListCatalogItems returns rows of one kind.
+func (s *StatisticalService) ListCatalogItems(ctx context.Context, tenantID, kind, q string, includeInactive bool) ([]repository.CatalogItem, error) {
+	if !isCatalogKind(kind) {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown catalog kind: "+kind)
+	}
+	return s.repo.ListCatalogItems(ctx, tenantID, kind, q, includeInactive)
+}
+
+// UpsertCatalogItem creates or updates one catalog row.
+func (s *StatisticalService) UpsertCatalogItem(ctx context.Context, tenantID, actor, kind string, in *repository.CatalogItem) (*repository.CatalogItem, error) {
+	if !isCatalogKind(kind) {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown catalog kind: "+kind)
+	}
+	if in.Code == "" || in.Name == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "code and name are required")
+	}
+	in.TenantID = tenantID
+	in.Kind = kind
+	in.CreatedBy = actor
+	created, err := s.repo.UpsertCatalogItem(ctx, in)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeConflict, err.Error())
+	}
+	return created, nil
+}
+
+// SetCatalogItemActive toggles one catalog row.
+func (s *StatisticalService) SetCatalogItemActive(ctx context.Context, tenantID, kind, id string, active bool) error {
+	if !isCatalogKind(kind) {
+		return ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown catalog kind: "+kind)
+	}
+	if err := s.repo.SetCatalogItemActive(ctx, tenantID, kind, id, active); err != nil {
+		return ardaerrors.New(ardaerrors.CodeNotFound, err.Error())
+	}
+	return nil
+}
+
+// ListFormTemplates returns the form/template catalog (W5b).
+func (s *StatisticalService) ListFormTemplates(ctx context.Context, tenantID string, includeInactive bool) ([]repository.FormTemplate, error) {
+	return s.repo.ListFormTemplates(ctx, tenantID, includeInactive)
+}
+
+// UpsertFormTemplate creates or updates one form template.
+func (s *StatisticalService) UpsertFormTemplate(ctx context.Context, tenantID, actor string, in *repository.FormTemplate) (*repository.FormTemplate, error) {
+	if in.Code == "" || in.Name == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "code and name are required")
+	}
+	in.TenantID = tenantID
+	in.CreatedBy = actor
+	created, err := s.repo.UpsertFormTemplate(ctx, in)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeConflict, err.Error())
+	}
+	return created, nil
+}
+
+// ExportFormTemplate renders one template as portable JSON (import elsewhere).
+func (s *StatisticalService) ExportFormTemplate(ctx context.Context, tenantID, code string) ([]byte, string, error) {
+	template, err := s.repo.GetFormTemplateByCode(ctx, tenantID, code)
+	if err != nil {
+		return nil, "", ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	if template == nil {
+		return nil, "", ardaerrors.New(ardaerrors.CodeNotFound, "form template not found: "+code)
+	}
+	payload, err := json.Marshal(map[string]any{
+		"code":               template.Code,
+		"name":               template.Name,
+		"schema":             template.Schema,
+		"workflow_case_type": template.WorkflowCaseType,
+		"media_file_id":      template.MediaFileID,
+	})
+	if err != nil {
+		return nil, "", ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	return payload, template.Code + ".json", nil
+}
+
+// ImportFormTemplate upserts one template from the exported JSON shape.
+func (s *StatisticalService) ImportFormTemplate(ctx context.Context, tenantID, actor string, payload []byte) (*repository.FormTemplate, error) {
+	var in struct {
+		Code             string          `json:"code"`
+		Name             string          `json:"name"`
+		Schema           json.RawMessage `json:"schema"`
+		WorkflowCaseType string          `json:"workflow_case_type"`
+		MediaFileID      *string         `json:"media_file_id"`
+	}
+	if err := json.Unmarshal(payload, &in); err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "invalid template JSON")
+	}
+	return s.UpsertFormTemplate(ctx, tenantID, actor, &repository.FormTemplate{
+		Code:             in.Code,
+		Name:             in.Name,
+		Schema:           in.Schema,
+		WorkflowCaseType: in.WorkflowCaseType,
+		MediaFileID:      in.MediaFileID,
+	})
+}
+
+// Dashboard returns the QCMS activity summary (W5c).
+func (s *StatisticalService) Dashboard(ctx context.Context, tenantID string) (map[string]any, error) {
+	statuses, err := s.repo.SubmissionStatusCounts(ctx, tenantID)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	catalogKinds, err := s.repo.CatalogKindCounts(ctx, tenantID)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	definitions, indicators, forms, err := s.repo.ActiveCounts(ctx, tenantID)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	return map[string]any{
+		"submissions_by_status": statuses,
+		"catalog_by_kind":       catalogKinds,
+		"report_definitions":    definitions,
+		"indicators":            indicators,
+		"form_templates":        forms,
+	}, nil
 }

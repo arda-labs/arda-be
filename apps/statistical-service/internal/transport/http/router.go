@@ -52,6 +52,23 @@ func NewRouter(h *handler.StatisticalHandler) http.Handler {
 	mux.HandleFunc("/api/statistical/submissions/{id}/submit", method("POST", h.SubmitSubmission))
 	mux.HandleFunc("GET /api/statistical/reports/{code}/run", h.RunReport)
 	mux.HandleFunc("GET /api/statistical/reports/{code}/export", h.ExportReport)
+	mux.HandleFunc("GET /api/statistical/catalogs", h.ListCatalogKinds)
+	mux.HandleFunc("GET /api/statistical/catalogs/{kind}", h.ListCatalogItems)
+	mux.HandleFunc("POST /api/statistical/catalogs/{kind}", h.UpsertCatalogItem)
+	mux.HandleFunc("DELETE /api/statistical/catalogs/{kind}/{id}", h.DeactivateCatalogItem)
+	mux.HandleFunc("/api/statistical/form-templates", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.ListFormTemplates(w, r)
+		case http.MethodPost:
+			h.UpsertFormTemplate(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("GET /api/statistical/form-templates/{code}/export", h.ExportFormTemplate)
+	mux.HandleFunc("POST /api/statistical/form-templates/import", h.ImportFormTemplate)
+	mux.HandleFunc("GET /api/statistical/dashboard", h.Dashboard)
 	return mux
 }
 
