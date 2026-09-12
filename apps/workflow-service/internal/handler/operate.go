@@ -15,67 +15,70 @@ import (
 // ─── Response types ──────────────────────────────────────────────────────────────
 
 type OperateProcessDef struct {
-	ID            string                  `json:"id"`
-	ProcessCode   string                  `json:"processCode"`
-	Name          string                  `json:"name"`
-	BpmnProcessID string                  `json:"bpmnProcessId"`
-	Version       int                     `json:"version"`
-	ResourceName  string                  `json:"resourceName"`
-	Status        string                  `json:"status"`
-	DeploymentKey *int64                  `json:"deploymentKey,omitempty"`
-	DeployedAt    *string                 `json:"deployedAt,omitempty"`
-	InstanceCount int                     `json:"instanceCount"`
-	IncidentCount int                     `json:"incidentCount"`
-	ActiveCount   int                     `json:"activeCount"`
-	ElementStats  []OperateElementStat    `json:"elementStats"`
+	ID            string               `json:"id"`
+	ProcessCode   string               `json:"processCode"`
+	Name          string               `json:"name"`
+	BpmnProcessID string               `json:"bpmnProcessId"`
+	Version       int                  `json:"version"`
+	ResourceName  string               `json:"resourceName"`
+	Status        string               `json:"status"`
+	DeploymentKey *int64               `json:"deploymentKey,omitempty"`
+	DeployedAt    *string              `json:"deployedAt,omitempty"`
+	InstanceCount int                  `json:"instanceCount"`
+	IncidentCount int                  `json:"incidentCount"`
+	ActiveCount   int                  `json:"activeCount"`
+	ElementStats  []OperateElementStat `json:"elementStats"`
 }
 
 type OperateProcessInstance struct {
-	ProcessInstanceKey  string `json:"processInstanceKey"`
-	BpmnProcessId       string `json:"bpmnProcessId"`
-	Version             int    `json:"version"`
-	BusinessKey         string `json:"businessKey,omitempty"`
-	State               string `json:"state"`
-	ElementId           string `json:"elementId,omitempty"`
-	StartTime           string `json:"startTime"`
-	RunningDuration     string `json:"runningDuration,omitempty"`
+	ProcessInstanceKey string `json:"processInstanceKey"`
+	BpmnProcessId      string `json:"bpmnProcessId"`
+	Version            int    `json:"version"`
+	BusinessKey        string `json:"businessKey,omitempty"`
+	State              string `json:"state"`
+	ElementId          string `json:"elementId,omitempty"`
+	StartTime          string `json:"startTime"`
+	RunningDuration    string `json:"runningDuration,omitempty"`
 }
 
 type OperateIncident struct {
-	IncidentKey         string `json:"incidentKey"`
-	ProcessInstanceKey  string `json:"processInstanceKey"`
-	BpmnProcessId       string `json:"bpmnProcessId"`
-	ElementId           string `json:"elementId"`
-	ElementInstanceKey  string `json:"elementInstanceKey"`
-	JobKey              string `json:"jobKey,omitempty"`
-	ErrorType           string `json:"errorType"`
-	ErrorMessage        string `json:"errorMessage"`
-	State               string `json:"state"`
-	CreatedAt           string `json:"createdAt"`
+	IncidentKey        string `json:"incidentKey"`
+	ProcessInstanceKey string `json:"processInstanceKey"`
+	BpmnProcessId      string `json:"bpmnProcessId"`
+	ElementId          string `json:"elementId"`
+	ElementInstanceKey string `json:"elementInstanceKey"`
+	JobKey             string `json:"jobKey,omitempty"`
+	ErrorType          string `json:"errorType"`
+	ErrorMessage       string `json:"errorMessage"`
+	State              string `json:"state"`
+	CreatedAt          string `json:"createdAt"`
 }
 
 type OperateJob struct {
-	JobKey              string `json:"jobKey"`
-	Type                string `json:"type"`
-	ProcessInstanceKey  string `json:"processInstanceKey"`
-	BpmnProcessId       string `json:"bpmnProcessId"`
-	ElementId           string `json:"elementId"`
-	State               string `json:"state"`
-	Retries             int    `json:"retries"`
-	MaxRetries          int    `json:"maxRetries"`
-	CreatedAt           string `json:"createdAt"`
-	Worker              string `json:"worker,omitempty"`
-	ErrorMessage        string `json:"errorMessage,omitempty"`
+	JobKey             string `json:"jobKey"`
+	Type               string `json:"type"`
+	ProcessInstanceKey string `json:"processInstanceKey"`
+	BpmnProcessId      string `json:"bpmnProcessId"`
+	ElementId          string `json:"elementId"`
+	State              string `json:"state"`
+	Retries            int    `json:"retries"`
+	MaxRetries         int    `json:"maxRetries"`
+	CreatedAt          string `json:"createdAt"`
+	Worker             string `json:"worker,omitempty"`
+	ErrorMessage       string `json:"errorMessage,omitempty"`
 }
 
 type OperateJobDefinition struct {
-	JobDefinitionKey    string `json:"jobDefinitionKey"`
-	Type                string `json:"type"`
+	JobDefinitionKey     string `json:"jobDefinitionKey"`
+	Type                 string `json:"type"`
 	ProcessDefinitionKey string `json:"processDefinitionKey"`
-	BpmnProcessId       string `json:"bpmnProcessId"`
-	State               string `json:"state"`
-	Retries             int    `json:"retries"`
-	CreatedAt           string `json:"createdAt"`
+	BpmnProcessId        string `json:"bpmnProcessId"`
+	ElementID            string `json:"elementId,omitempty"`
+	ElementName          string `json:"elementName,omitempty"`
+	Version              int    `json:"version,omitempty"`
+	State                string `json:"state"`
+	Retries              int    `json:"retries"`
+	CreatedAt            string `json:"createdAt"`
 }
 
 type OperateElementStat struct {
@@ -319,14 +322,52 @@ func (h *WorkflowHandler) OperateJobs(w http.ResponseWriter, r *http.Request) {
 	h.operateSearchJobs(w, r)
 }
 
+// OperateJobDefinitions derives job definitions from the stored BPMN XML
+// (zeebe:taskDefinition type/retries) — Operate's importer does the same from
+// the deployed model, and this deployment has no Operate.
 func (h *WorkflowHandler) OperateJobDefinitions(w http.ResponseWriter, r *http.Request) {
-	// Job definitions require Zeebe REST API which may not be available.
-	// Return empty array for now.
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w, r)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, []OperateJobDefinition{})
+	filterBpmnID := strings.TrimSpace(r.URL.Query().Get("bpmnProcessId"))
+	defs, err := h.processDefinition.ListWithXML(r.Context())
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query process definitions: "+err.Error())
+		return
+	}
+
+	out := make([]OperateJobDefinition, 0)
+	for _, d := range defs {
+		if filterBpmnID != "" && d.BpmnProcessID != filterBpmnID {
+			continue
+		}
+		jobs, err := repository.ExtractBPMNJobDefinitions([]byte(d.XMLContent))
+		if err != nil {
+			continue
+		}
+		for _, job := range jobs {
+			retries := 3
+			if job.Retries != "" {
+				if parsed, err := strconv.Atoi(job.Retries); err == nil && parsed > 0 {
+					retries = parsed
+				}
+			}
+			out = append(out, OperateJobDefinition{
+				JobDefinitionKey:     d.BpmnProcessID + ":" + job.ElementID,
+				Type:                 job.Type,
+				ProcessDefinitionKey: d.ID,
+				BpmnProcessId:        d.BpmnProcessID,
+				ElementID:            job.ElementID,
+				ElementName:          job.ElementName,
+				Version:              d.Version,
+				State:                "ACTIVE",
+				Retries:              retries,
+				CreatedAt:            operateDateTime(d.UpdatedAt),
+			})
+		}
+	}
+	writeJSON(w, r, http.StatusOK, out)
 }
 
 func (h *WorkflowHandler) OperateElementStats(w http.ResponseWriter, r *http.Request) {

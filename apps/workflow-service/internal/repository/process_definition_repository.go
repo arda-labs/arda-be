@@ -66,6 +66,29 @@ func (r *ProcessDefinitionRepository) List(ctx context.Context) ([]ProcessDefini
 	return out, rows.Err()
 }
 
+func (r *ProcessDefinitionRepository) ListWithXML(ctx context.Context) ([]ProcessDefinition, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, process_code, name, bpmn_process_id, version, resource_name, xml_content,
+		       deployment_key, status, deployed_at, created_at, updated_at
+		FROM workflow_process_definitions
+		ORDER BY updated_at DESC, process_code
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ProcessDefinition
+	for rows.Next() {
+		item, err := scanProcessDefinition(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (r *ProcessDefinitionRepository) Get(ctx context.Context, id string) (*ProcessDefinition, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, process_code, name, bpmn_process_id, version, resource_name, xml_content,
