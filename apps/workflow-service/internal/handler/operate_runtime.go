@@ -815,6 +815,61 @@ func (h *WorkflowHandler) OperateUserTaskAssign(w http.ResponseWriter, r *http.R
 	})
 }
 
+// OperateSetInstanceVariables updates variables for an incident fix (Operate's
+// "update variables" action). The element scope comes from the variable row the
+// operator is editing; the root scope is the process instance key.
+func (h *WorkflowHandler) OperateSetInstanceVariables(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	key, ok := parsePathInt64(r.URL.Path, "/api/workflow/operate/process-instances/", "/variables")
+	if !ok {
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid process instance key")
+		return
+	}
+	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), key)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to scope instance: "+err.Error())
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Process instance not found")
+		return
+	}
+	if h.zeebeSvc == nil {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
+		return
+	}
+
+	var req struct {
+		Variables          map[string]any `json:"variables"`
+		ElementInstanceKey int64          `json:"elementInstanceKey"`
+		Local              bool           `json:"local"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if len(req.Variables) == 0 {
+		writeAPIError(w, r, http.StatusBadRequest, "variables must not be empty")
+		return
+	}
+	scope := req.ElementInstanceKey
+	if scope <= 0 {
+		scope = key
+	}
+	if err := h.zeebeSvc.SetVariables(r.Context(), scope, req.Variables, req.Local); err != nil {
+		writeAPIError(w, r, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{
+		"status":             "updated",
+		"elementInstanceKey": strconv.FormatInt(scope, 10),
+		"variables":          len(req.Variables),
+	})
+}
+
 // ─── Query helpers ──────────────────────────────────────────────────────────────
 
 func queryInt64(r *http.Request, name string) int64 {

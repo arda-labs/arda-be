@@ -90,6 +90,32 @@ func (s *ZeebeService) Close() {
 	}
 }
 
+// SetVariables updates variables at the given element scope, which is the
+// process root when elementInstanceKey equals the process instance key.
+// Local=true restricts the update to that scope instead of merging upward.
+func (s *ZeebeService) SetVariables(ctx context.Context, elementInstanceKey int64, variables map[string]any, local bool) error {
+	if elementInstanceKey <= 0 {
+		return fmt.Errorf("invalid element instance key")
+	}
+	if len(variables) == 0 {
+		return fmt.Errorf("no variables provided")
+	}
+	dispatch, err := s.client.NewSetVariablesCommand().
+		ElementInstanceKey(elementInstanceKey).
+		VariablesFromMap(variables)
+	if err != nil {
+		return fmt.Errorf("encode variables: %w", err)
+	}
+	if local {
+		dispatch = dispatch.Local(true)
+	}
+	if _, err := dispatch.Send(ctx); err != nil {
+		return fmt.Errorf("set variables: %w", err)
+	}
+	slog.Info("zeebe variables updated", "elementInstanceKey", elementInstanceKey, "variables", len(variables))
+	return nil
+}
+
 func (s *ZeebeService) DeployWorkflow(ctx context.Context, name string, content []byte) (int64, error) {
 	resp, err := s.client.NewDeployResourceCommand().
 		AddResource(content, name).
