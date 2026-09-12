@@ -196,6 +196,44 @@ func TestSearchJobsFoldsStateAndFilters(t *testing.T) {
 	}
 }
 
+func TestSearchUserTasksFoldsStateAndFilters(t *testing.T) {
+	created := `{"key":501,"timestamp":1000,"intent":"CREATED","valueType":"USER_TASK",
+		"value":{"userTaskKey":501,"elementId":"UT_CheckerReview","elementInstanceKey":500,"processInstanceKey":9,
+		"bpmnProcessId":"crm-reg","candidateGroupsList":["CUSTOMER_CHECKER"],"creationTimestamp":900}}`
+	assigned := `{"key":501,"timestamp":2000,"intent":"ASSIGNED","valueType":"USER_TASK",
+		"value":{"userTaskKey":501,"assignee":"user-1"}}`
+	completed := `{"key":502,"timestamp":3000,"intent":"COMPLETED","valueType":"USER_TASK",
+		"value":{"userTaskKey":502,"elementId":"UT_MakerRevise","processInstanceKey":9}}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"aggregations":{"entities":{"buckets":[
+			{"key":{"entityKey":501},
+			 "first":{"hits":{"hits":[{"_source":` + created + `}]}},
+			 "latest":{"hits":{"hits":[{"_source":` + assigned + `}]}}},
+			{"key":{"entityKey":502},
+			 "first":{"hits":{"hits":[{"_source":` + completed + `}]}},
+			 "latest":{"hits":{"hits":[{"_source":` + completed + `}]}}}
+		]}}}`))
+	}))
+	defer server.Close()
+
+	index := service.NewZeebeMonitoringIndex(server.URL)
+	items, _, err := index.SearchUserTasks(context.Background(), service.UserTaskSearchParams{
+		State:    "CREATED",
+		PageSize: 5,
+	})
+	if err != nil {
+		t.Fatalf("SearchUserTasks: %v", err)
+	}
+	if len(items) != 1 || items[0].UserTaskKey != 501 {
+		t.Fatalf("expected only the open task, got %+v", items)
+	}
+	if items[0].Assignee != "user-1" || len(items[0].CandidateGroups) != 1 || items[0].CreatedAt == "" {
+		t.Fatalf("expected merged latest/first fields, got %+v", items[0])
+	}
+}
+
 func TestListHistoryPaginatesByPosition(t *testing.T) {
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

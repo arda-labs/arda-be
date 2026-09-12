@@ -149,6 +149,14 @@ var jobRecordIncludes = []string{
 	"value.errorMessage", "value.errorCode",
 }
 
+var userTaskRecordIncludes = []string{
+	"position", "timestamp", "key", "intent", "valueType",
+	"value.userTaskKey", "value.elementId", "value.elementInstanceKey",
+	"value.processInstanceKey", "value.bpmnProcessId", "value.assignee",
+	"value.candidateGroups", "value.candidateGroupsList", "value.dueDate",
+	"value.followUpDate", "value.priority", "value.creationTimestamp",
+}
+
 // ─── Elasticsearch plumbing ─────────────────────────────────────────────────────
 
 func (c *ZeebeMonitoringIndex) searchRaw(ctx context.Context, body map[string]any) ([]byte, error) {
@@ -1267,6 +1275,214 @@ func (c *ZeebeMonitoringIndex) ListHistory(ctx context.Context, processInstanceK
 		next = records[len(records)-1].Position.String()
 	}
 	return out, next, nil
+}
+
+// ─── Global user task search ────────────────────────────────────────────────────
+
+// UserTaskSearchParams filters the folded global user task list. State values
+// follow the UI contract: CREATED (open), COMPLETED, CANCELED, "" (all).
+type UserTaskSearchParams struct {
+	State              string
+	Assignee           string
+	CandidateGroup     string
+	BpmnProcessID      string
+	ProcessInstanceKey int64
+	ElementID          string
+	PageSize           int
+	Cursor             int64
+}
+
+type esUserTaskCompositeResponse struct {
+	Aggregations struct {
+		Entities struct {
+			AfterKey struct {
+				EntityKey json.Number `json:"entityKey"`
+			} `json:"after_key"`
+			Buckets []struct {
+				Key struct {
+					EntityKey json.Number `json:"entityKey"`
+				} `json:"key"`
+				Latest esTopHits `json:"latest"`
+				First  esTopHits `json:"first"`
+			} `json:"buckets"`
+		} `json:"entities"`
+	} `json:"aggregations"`
+}
+
+// SearchUserTasks folds USER_TASK records by user task key.
+func (c *ZeebeMonitoringIndex) SearchUserTasks(ctx context.Context, p UserTaskSearchParams) ([]ZeebeUserTask, string, error) {
+	if !c.Enabled() {
+		return nil, "", fmt.Errorf("zeebe elasticsearch index is not configured")
+	}
+	pageSize := clampPageSize(p.PageSize)
+	bucketSize := clampBucketSize(pageSize)
+
+	filters := []any{esTerm("valueType", "USER_TASK")}
+	if p.BpmnProcessID != "" {
+		filters = append(filters, esTerm("value.bpmnProcessId", p.BpmnProcessID))
+	}
+	if p.ProcessInstanceKey > 0 {
+		filters = append(filters, esTerm("value.processInstanceKey", p.ProcessInstanceKey))
+	}
+	if p.ElementID != "" {
+		filters = append(filters, esTerm("value.elementId", p.ElementID))
+	}
+	if p.Assignee != "" {
+		filters = append(filters, esTerm("value.assignee", p.Assignee))
+	}
+	if p.CandidateGroup != "" {
+		filters = append(filters, map[string]any{"match": map[string]any{
+			"value.candidateGroupsList": p.CandidateGroup,
+		}})
+	}
+
+	out := make([]ZeebeUserTask, 0, pageSize)
+	cursor := ""
+	after := p.Cursor
+	for attempt := 0; attempt < 4; attempt++ {
+		composite := map[string]any{
+			"size": bucketSize,
+			"sources": []any{map[string]any{
+				"entityKey": map[string]any{"terms": map[string]any{
+					"field": "value.userTaskKey",
+					"order": "desc",
+				}},
+			}},
+		}
+		if after > 0 {
+			composite["after"] = map[string]any{"entityKey": after}
+		}
+		body := map[string]any{
+			"size":             0,
+			"track_total_hits": false,
+			"query":            map[string]any{"bool": map[string]any{"filter": filters}},
+			"aggs": map[string]any{
+				"entities": map[string]any{
+					"composite": composite,
+					"aggs": map[string]any{
+						"latest": topHitsAgg("desc", userTaskRecordIncludes),
+						"first":  topHitsAgg("asc", userTaskRecordIncludes),
+					},
+				},
+			},
+		}
+
+		raw, err := c.searchRaw(ctx, body)
+		if err != nil {
+			return nil, "", err
+		}
+		var parsed esUserTaskCompositeResponse
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			return nil, "", fmt.Errorf("decode elasticsearch user task search: %w", err)
+		}
+
+		for _, bucket := range parsed.Aggregations.Entities.Buckets {
+			taskKey := jsonInt64(bucket.Key.EntityKey)
+			if taskKey <= 0 {
+				continue
+			}
+			task, ok := foldUserTask(taskKey, bucket.First.firstSource(), bucket.Latest.firstSource())
+			if !ok {
+				continue
+			}
+			if p.State != "" && !strings.EqualFold(task.State, p.State) {
+				continue
+			}
+			out = append(out, task)
+			if len(out) >= pageSize {
+				cursor = strconv.FormatInt(taskKey, 10)
+				return out, cursor, nil
+			}
+		}
+
+		next := jsonInt64(parsed.Aggregations.Entities.AfterKey.EntityKey)
+		if next == 0 || next == after {
+			return out, "", nil
+		}
+		after = next
+		if attempt == 3 {
+			return out, strconv.FormatInt(after, 10), nil
+		}
+	}
+	return out, cursor, nil
+}
+
+func foldUserTask(taskKey int64, firstRaw, latestRaw json.RawMessage) (ZeebeUserTask, bool) {
+	var first esUserTaskRecord
+	if !decodeRaw(firstRaw, &first) {
+		return ZeebeUserTask{}, false
+	}
+	var latest esUserTaskRecord
+	if decodeRaw(latestRaw, &latest) == false {
+		latest = first
+	}
+	return mergeUserTask(taskKey, first, latest)
+}
+
+func mergeUserTask(taskKey int64, first, latest esUserTaskRecord) (ZeebeUserTask, bool) {
+	task, err := first.Value.toUserTask(first.Intent)
+	if err != nil {
+		return ZeebeUserTask{}, false
+	}
+	task.UserTaskKey = taskKey
+	task.State = userTaskState(strings.ToUpper(strings.TrimSpace(first.Intent)))
+
+	if assignee := strings.TrimSpace(latest.Value.Assignee); assignee != "" {
+		task.Assignee = assignee
+	}
+	groups := latest.Value.CandidateGroupsList
+	if len(groups) == 0 {
+		groups = latest.Value.CandidateGroups
+	}
+	if len(groups) > 0 {
+		task.CandidateGroups = groups
+	}
+	if due := strings.TrimSpace(latest.Value.DueDate); due != "" {
+		task.DueDate = due
+	}
+	if followUp := strings.TrimSpace(latest.Value.FollowUpDate); followUp != "" {
+		task.FollowUpDate = followUp
+	}
+	if priority := int(jsonInt64(latest.Value.Priority)); priority > 0 {
+		task.Priority = priority
+	}
+	task.State = userTaskState(strings.ToUpper(strings.TrimSpace(latest.Intent)))
+	return task, true
+}
+
+// GetUserTask returns the folded user task for one task key.
+func (c *ZeebeMonitoringIndex) GetUserTask(ctx context.Context, userTaskKey int64) (*ZeebeUserTask, error) {
+	if !c.Enabled() {
+		return nil, fmt.Errorf("zeebe elasticsearch index is not configured")
+	}
+	if userTaskKey <= 0 {
+		return nil, fmt.Errorf("userTaskKey is required")
+	}
+	raw, err := c.searchRaw(ctx, map[string]any{
+		"size":             50,
+		"track_total_hits": false,
+		"sort":             []any{map[string]any{"position": map[string]any{"order": "asc"}}},
+		"_source":          map[string]any{"includes": userTaskRecordIncludes},
+		"query": map[string]any{"bool": map[string]any{"filter": []any{
+			esTerm("valueType", "USER_TASK"),
+			esTerm("value.userTaskKey", userTaskKey),
+		}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	records, err := decodeHits[esUserTaskRecord](raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		return nil, nil
+	}
+	task, ok := mergeUserTask(userTaskKey, records[0], records[len(records)-1])
+	if !ok {
+		return nil, nil
+	}
+	return &task, nil
 }
 
 // ─── Hit decoding helpers ───────────────────────────────────────────────────────

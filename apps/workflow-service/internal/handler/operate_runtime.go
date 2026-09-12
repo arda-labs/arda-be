@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 // Runtime monitoring reads (Operate replacement). Everything is scoped to the
@@ -437,6 +441,378 @@ func (h *WorkflowHandler) OperateInstanceHistory(w http.ResponseWriter, r *http.
 		return
 	}
 	writeJSON(w, r, http.StatusOK, map[string]any{"items": events, "nextCursor": next})
+}
+
+// ─── Runtime summary ────────────────────────────────────────────────────────────
+
+const (
+	summaryInstanceScanPages = 20 // 100 items per page
+	summaryIncidentScanPages = 10
+	summaryJobScanPages      = 10
+	summaryBreakdownLimit    = 5
+)
+
+type operateSummaryCount struct {
+	Label string `json:"label"`
+	Count int    `json:"count"`
+}
+
+type operateSummary struct {
+	ActiveInstances    int                   `json:"activeInstances"`
+	OpenIncidents      int                   `json:"openIncidents"`
+	FailedJobs         int                   `json:"failedJobs"`
+	Truncated          bool                  `json:"truncated"`
+	IncidentsByType    []operateSummaryCount `json:"incidentsByType"`
+	FailedJobsByType   []operateSummaryCount `json:"failedJobsByType"`
+	InstancesByProcess []operateSummaryCount `json:"instancesByProcess"`
+}
+
+// OperateSummary aggregates tenant-scoped runtime counters. Counts come from
+// bounded scans of the exporter read model (no cross-tenant aggregations on
+// Zeebe's shared <default> tenant), so heavy deployments see truncated=true.
+func (h *WorkflowHandler) OperateSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	summary := operateSummary{
+		IncidentsByType:    []operateSummaryCount{},
+		FailedJobsByType:   []operateSummaryCount{},
+		InstancesByProcess: []operateSummaryCount{},
+	}
+	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
+		writeJSON(w, r, http.StatusOK, summary)
+		return
+	}
+
+	summary.ActiveInstances, summary.InstancesByProcess, summary.Truncated = h.summaryActiveInstances(r)
+	incidents, incidentsByType, truncatedIncidents := h.summaryOpenIncidents(r)
+	summary.OpenIncidents = incidents
+	summary.IncidentsByType = incidentsByType
+	jobs, jobsByType, truncatedJobs := h.summaryFailedJobs(r)
+	summary.FailedJobs = jobs
+	summary.FailedJobsByType = jobsByType
+	summary.Truncated = summary.Truncated || truncatedIncidents || truncatedJobs
+
+	writeJSON(w, r, http.StatusOK, summary)
+}
+
+func (h *WorkflowHandler) summaryActiveInstances(r *http.Request) (int, []operateSummaryCount, bool) {
+	counts := map[string]int{}
+	total := 0
+	cursor := ""
+	truncated := false
+	params := service.ProcessInstanceSearchParams{State: "ACTIVE", PageSize: 100}
+	for page := 0; page < summaryInstanceScanPages; page++ {
+		params.Cursor = parseCursor(cursor)
+		items, next, err := h.MonitoringIndex.SearchProcessInstances(r.Context(), params)
+		if err != nil {
+			break
+		}
+		total += h.countOwnedInstances(r, items, counts)
+		if next == "" {
+			break
+		}
+		cursor = next
+		if page == summaryInstanceScanPages-1 {
+			truncated = true
+		}
+	}
+	return total, topSummaryCounts(counts), truncated
+}
+
+func (h *WorkflowHandler) summaryOpenIncidents(r *http.Request) (int, []operateSummaryCount, bool) {
+	counts := map[string]int{}
+	total := 0
+	cursor := ""
+	truncated := false
+	params := service.IncidentSearchParams{State: "CREATED", PageSize: 100}
+	for page := 0; page < summaryIncidentScanPages; page++ {
+		params.Cursor = parseCursor(cursor)
+		items, next, err := h.MonitoringIndex.SearchIncidents(r.Context(), params)
+		if err != nil {
+			break
+		}
+		keys := make([]int64, 0, len(items))
+		for _, item := range items {
+			if item.ProcessInstanceKey > 0 {
+				keys = append(keys, item.ProcessInstanceKey)
+			}
+		}
+		cases, err := h.caseRepo.CasesByProcessInstanceKeys(r.Context(), keys)
+		if err != nil {
+			break
+		}
+		for _, item := range items {
+			if _, owned := cases[item.ProcessInstanceKey]; !owned {
+				continue
+			}
+			total++
+			label := item.ErrorType
+			if label == "" {
+				label = "UNKNOWN"
+			}
+			counts[label]++
+		}
+		if next == "" {
+			break
+		}
+		cursor = next
+		if page == summaryIncidentScanPages-1 {
+			truncated = true
+		}
+	}
+	return total, topSummaryCounts(counts), truncated
+}
+
+func (h *WorkflowHandler) summaryFailedJobs(r *http.Request) (int, []operateSummaryCount, bool) {
+	counts := map[string]int{}
+	total := 0
+	cursor := ""
+	truncated := false
+	params := service.JobSearchParams{State: "FAILED", PageSize: 100}
+	for page := 0; page < summaryJobScanPages; page++ {
+		params.Cursor = parseCursor(cursor)
+		items, next, err := h.MonitoringIndex.SearchJobs(r.Context(), params)
+		if err != nil {
+			break
+		}
+		keys := make([]int64, 0, len(items))
+		for _, item := range items {
+			if key, err := strconv.ParseInt(item.ProcessInstanceKey, 10, 64); err == nil {
+				keys = append(keys, key)
+			}
+		}
+		cases, err := h.caseRepo.CasesByProcessInstanceKeys(r.Context(), keys)
+		if err != nil {
+			break
+		}
+		for _, item := range items {
+			key, _ := strconv.ParseInt(item.ProcessInstanceKey, 10, 64)
+			if _, owned := cases[key]; !owned {
+				continue
+			}
+			total++
+			counts[item.Type]++
+		}
+		if next == "" {
+			break
+		}
+		cursor = next
+		if page == summaryJobScanPages-1 {
+			truncated = true
+		}
+	}
+	return total, topSummaryCounts(counts), truncated
+}
+
+func (h *WorkflowHandler) countOwnedInstances(r *http.Request, items []service.ZeebeProcessInstance, counts map[string]int) int {
+	keys := make([]int64, 0, len(items))
+	for _, item := range items {
+		if key, err := strconv.ParseInt(item.ProcessInstanceKey, 10, 64); err == nil {
+			keys = append(keys, key)
+		}
+	}
+	cases, err := h.caseRepo.CasesByProcessInstanceKeys(r.Context(), keys)
+	if err != nil {
+		return 0
+	}
+	total := 0
+	for _, item := range items {
+		key, _ := strconv.ParseInt(item.ProcessInstanceKey, 10, 64)
+		if _, owned := cases[key]; !owned {
+			continue
+		}
+		total++
+		counts[item.BpmnProcessID]++
+	}
+	return total
+}
+
+func topSummaryCounts(counts map[string]int) []operateSummaryCount {
+	out := make([]operateSummaryCount, 0, len(counts))
+	for label, count := range counts {
+		out = append(out, operateSummaryCount{Label: label, Count: count})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count == out[j].Count {
+			return out[i].Label < out[j].Label
+		}
+		return out[i].Count > out[j].Count
+	})
+	if len(out) > summaryBreakdownLimit {
+		out = out[:summaryBreakdownLimit]
+	}
+	return out
+}
+
+// ─── Global user tasks ──────────────────────────────────────────────────────────
+
+type operateUserTaskRow struct {
+	UserTaskKey        string   `json:"userTaskKey"`
+	ElementID          string   `json:"elementId,omitempty"`
+	ElementInstanceKey string   `json:"elementInstanceKey,omitempty"`
+	ProcessInstanceKey string   `json:"processInstanceKey"`
+	BpmnProcessID      string   `json:"bpmnProcessId,omitempty"`
+	State              string   `json:"state"`
+	Assignee           string   `json:"assignee,omitempty"`
+	CandidateGroups    []string `json:"candidateGroups,omitempty"`
+	Priority           int      `json:"priority,omitempty"`
+	DueDate            string   `json:"dueDate,omitempty"`
+	FollowUpDate       string   `json:"followUpDate,omitempty"`
+	CreatedAt          string   `json:"createdAt,omitempty"`
+	CaseID             string   `json:"caseId,omitempty"`
+	BusinessKey        string   `json:"businessKey,omitempty"`
+}
+
+type operateUserTaskPage struct {
+	Items      []operateUserTaskRow `json:"items"`
+	NextCursor string               `json:"nextCursor,omitempty"`
+	Source     string               `json:"source"`
+}
+
+func (h *WorkflowHandler) OperateUserTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
+		writeJSON(w, r, http.StatusOK, operateUserTaskPage{Items: []operateUserTaskRow{}, Source: "unavailable"})
+		return
+	}
+
+	pageSize := clampOperatePageSize(int(queryInt64(r, "pageSize")))
+	params := service.UserTaskSearchParams{
+		State:              strings.TrimSpace(r.URL.Query().Get("state")),
+		Assignee:           strings.TrimSpace(r.URL.Query().Get("assignee")),
+		CandidateGroup:     strings.TrimSpace(r.URL.Query().Get("candidateGroup")),
+		BpmnProcessID:      strings.TrimSpace(r.URL.Query().Get("bpmnProcessId")),
+		ProcessInstanceKey: queryInt64(r, "processInstanceKey"),
+		ElementID:          strings.TrimSpace(r.URL.Query().Get("elementId")),
+		PageSize:           pageSize,
+		Cursor:             queryInt64(r, "cursor"),
+	}
+
+	rows := make([]operateUserTaskRow, 0, pageSize)
+	cursor := ""
+	for attempt := 0; attempt < 4; attempt++ {
+		items, next, err := h.MonitoringIndex.SearchUserTasks(r.Context(), params)
+		if err != nil {
+			writeAPIError(w, r, http.StatusBadGateway, "Runtime monitoring is unavailable: "+err.Error())
+			return
+		}
+		keys := make([]int64, 0, len(items))
+		for _, item := range items {
+			if item.ProcessInstanceKey > 0 {
+				keys = append(keys, item.ProcessInstanceKey)
+			}
+		}
+		cases, err := h.caseRepo.CasesByProcessInstanceKeys(r.Context(), keys)
+		if err != nil {
+			writeAPIError(w, r, http.StatusInternalServerError, "Failed to scope user tasks: "+err.Error())
+			return
+		}
+		for _, item := range items {
+			bc, owned := cases[item.ProcessInstanceKey]
+			if !owned {
+				continue
+			}
+			rows = append(rows, operateUserTaskRow{
+				UserTaskKey:        strconv.FormatInt(item.UserTaskKey, 10),
+				ElementID:          item.ElementID,
+				ElementInstanceKey: formatKey(item.ElementInstanceKey),
+				ProcessInstanceKey: strconv.FormatInt(item.ProcessInstanceKey, 10),
+				BpmnProcessID:      item.BpmnProcessID,
+				State:              item.State,
+				Assignee:           item.Assignee,
+				CandidateGroups:    item.CandidateGroups,
+				Priority:           item.Priority,
+				DueDate:            item.DueDate,
+				FollowUpDate:       item.FollowUpDate,
+				CreatedAt:          item.CreatedAt,
+				CaseID:             bc.ID,
+				BusinessKey:        bc.CaseCode,
+			})
+		}
+		cursor = next
+		if len(rows) >= pageSize || cursor == "" {
+			break
+		}
+		params.Cursor = parseCursor(cursor)
+		if params.Cursor <= 0 {
+			cursor = ""
+			break
+		}
+	}
+
+	writeJSON(w, r, http.StatusOK, operateUserTaskPage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
+}
+
+func (h *WorkflowHandler) OperateUserTaskAssign(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	key, ok := parsePathInt64(r.URL.Path, "/api/workflow/operate/user-tasks/", "/assign")
+	if !ok {
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid user task key")
+		return
+	}
+	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Runtime monitoring requires ZEEBE_ES_URL")
+		return
+	}
+	if h.zeebeRest == nil || !h.zeebeRest.Enabled() {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe REST client is not configured")
+		return
+	}
+
+	var req struct {
+		Assignee string `json:"assignee"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	assignee := strings.TrimSpace(req.Assignee)
+	if assignee == "" {
+		assignee = strings.TrimSpace(ardametadata.FromOutgoing(r.Context()).UserID)
+	}
+	if assignee == "" {
+		writeAPIError(w, r, http.StatusBadRequest, "assignee is required")
+		return
+	}
+
+	// Verify the task belongs to an instance owned by the caller tenant before
+	// assigning an actor on the shared Zeebe cluster.
+	task, err := h.MonitoringIndex.GetUserTask(r.Context(), key)
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadGateway, "Runtime monitoring is unavailable: "+err.Error())
+		return
+	}
+	if task == nil {
+		writeAPIError(w, r, http.StatusNotFound, "User task not found")
+		return
+	}
+	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), task.ProcessInstanceKey)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to scope user task: "+err.Error())
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "User task not found")
+		return
+	}
+
+	if err := h.zeebeRest.AssignUserTask(r.Context(), key, assignee); err != nil {
+		writeAPIError(w, r, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]string{
+		"status":      "assigned",
+		"userTaskKey": strconv.FormatInt(key, 10),
+		"assignee":    assignee,
+	})
 }
 
 // ─── Query helpers ──────────────────────────────────────────────────────────────

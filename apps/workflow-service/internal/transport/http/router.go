@@ -112,6 +112,15 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 		}
 	})
 	mux.HandleFunc("/api/workflow/operate/element-stats", wfHandler.OperateElementStats)
+	mux.HandleFunc("/api/workflow/operate/summary", wfHandler.OperateSummary)
+	mux.HandleFunc("/api/workflow/operate/user-tasks", wfHandler.OperateUserTasks)
+	mux.HandleFunc("/api/workflow/operate/user-tasks/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/assign") {
+			wfHandler.OperateUserTaskAssign(w, r)
+			return
+		}
+		writeNotFound(w, r)
+	})
 
 	// Dynamic paths
 	mux.HandleFunc("/api/workflow/instances/", func(w http.ResponseWriter, r *http.Request) {

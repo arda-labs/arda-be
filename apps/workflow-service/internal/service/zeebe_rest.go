@@ -14,12 +14,18 @@ import (
 
 // ZeebeUserTask is a native Zeebe user task (Camunda 8.5+), managed via the gateway REST API.
 type ZeebeUserTask struct {
-	UserTaskKey        int64
-	ElementID          string
-	ProcessInstanceKey int64
-	State              string
-	CandidateGroups    []string
-	Assignee           string
+	UserTaskKey        int64    `json:"userTaskKey"`
+	ElementID          string   `json:"elementId,omitempty"`
+	ElementInstanceKey int64    `json:"elementInstanceKey,omitempty"`
+	ProcessInstanceKey int64    `json:"processInstanceKey"`
+	BpmnProcessID      string   `json:"bpmnProcessId,omitempty"`
+	State              string   `json:"state"`
+	CandidateGroups    []string `json:"candidateGroups,omitempty"`
+	Assignee           string   `json:"assignee,omitempty"`
+	Priority           int      `json:"priority,omitempty"`
+	DueDate            string   `json:"dueDate,omitempty"`
+	FollowUpDate       string   `json:"followUpDate,omitempty"`
+	CreatedAt          string   `json:"createdAt,omitempty"`
 }
 
 type ZeebeRestClient struct {

@@ -127,15 +127,23 @@ type esUserTaskRecord struct {
 }
 
 type esUserTaskValue struct {
-	UserTaskKey        json.Number `json:"userTaskKey"`
-	ElementID          string      `json:"elementId"`
-	ProcessInstanceKey json.Number `json:"processInstanceKey"`
-	CandidateGroups    []string    `json:"candidateGroups"`
-	CandidateGroupsList []string   `json:"candidateGroupsList"`
-	Assignee           string      `json:"assignee"`
+	UserTaskKey         json.Number `json:"userTaskKey"`
+	ElementID           string      `json:"elementId"`
+	ElementInstanceKey  json.Number `json:"elementInstanceKey"`
+	ProcessInstanceKey  json.Number `json:"processInstanceKey"`
+	BpmnProcessID       string      `json:"bpmnProcessId"`
+	CandidateGroups     []string    `json:"candidateGroups"`
+	CandidateGroupsList []string    `json:"candidateGroupsList"`
+	Assignee            string      `json:"assignee"`
+	DueDate             string      `json:"dueDate"`
+	FollowUpDate        string      `json:"followUpDate"`
+	Priority            json.Number `json:"priority"`
+	CreationTimestamp   json.Number `json:"creationTimestamp"`
 }
 
-func activeUserTasksFromES(raw []byte, wantState string) ([]ZeebeUserTask, error) {
+// userTasksFromES folds user task records by key; the latest intent wins and
+// maps onto OPEN (CREATED) / COMPLETED / CANCELED states.
+func userTasksFromES(raw []byte) ([]ZeebeUserTask, error) {
 	var parsed esSearchResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return nil, fmt.Errorf("decode elasticsearch user task search: %w", err)
@@ -160,12 +168,39 @@ func activeUserTasksFromES(raw []byte, wantState string) ([]ZeebeUserTask, error
 		byKey[task.UserTaskKey] = tracked{intent: strings.ToUpper(strings.TrimSpace(rec.Intent)), task: task}
 	}
 
-	out := make([]ZeebeUserTask, 0)
+	out := make([]ZeebeUserTask, 0, len(byKey))
 	for _, item := range byKey {
-		if !isActiveUserTaskIntent(item.intent) {
+		task := item.task
+		task.State = userTaskState(item.intent)
+		out = append(out, task)
+	}
+	return out, nil
+}
+
+func userTaskState(intent string) string {
+	switch intent {
+	case "COMPLETED":
+		return "COMPLETED"
+	case "CANCELED":
+		return "CANCELED"
+	default:
+		if isActiveUserTaskIntent(intent) {
+			return "CREATED"
+		}
+		return intent
+	}
+}
+
+func activeUserTasksFromES(raw []byte, wantState string) ([]ZeebeUserTask, error) {
+	tasks, err := userTasksFromES(raw)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ZeebeUserTask, 0, len(tasks))
+	for _, task := range tasks {
+		if task.State != "CREATED" {
 			continue
 		}
-		task := item.task
 		task.State = wantState
 		out = append(out, task)
 	}
@@ -194,14 +229,25 @@ func (v esUserTaskValue) toUserTask(intent string) (ZeebeUserTask, error) {
 	if len(groups) == 0 {
 		groups = v.CandidateGroups
 	}
-	return ZeebeUserTask{
+	task := ZeebeUserTask{
 		UserTaskKey:        key,
 		ElementID:          strings.TrimSpace(v.ElementID),
 		ProcessInstanceKey: pik,
-		State:              strings.TrimSpace(intent),
+		State:              strings.ToUpper(strings.TrimSpace(intent)),
 		CandidateGroups:    groups,
 		Assignee:           strings.TrimSpace(v.Assignee),
-	}, nil
+		BpmnProcessID:      strings.TrimSpace(v.BpmnProcessID),
+		DueDate:            strings.TrimSpace(v.DueDate),
+		FollowUpDate:       strings.TrimSpace(v.FollowUpDate),
+		Priority:           int(jsonInt64(v.Priority)),
+	}
+	if elemKey, err := v.ElementInstanceKey.Int64(); err == nil {
+		task.ElementInstanceKey = elemKey
+	}
+	if creation, err := v.CreationTimestamp.Int64(); err == nil && creation > 0 {
+		task.CreatedAt = time.UnixMilli(creation).UTC().Format(time.RFC3339)
+	}
+	return task, nil
 }
 
 // ActiveUserTasksFromESForTest exposes ES record folding for unit tests.
