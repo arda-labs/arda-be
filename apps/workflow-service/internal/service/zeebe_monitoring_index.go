@@ -1021,6 +1021,254 @@ func (c *ZeebeMonitoringIndex) OpenIncidentCounts(ctx context.Context, processIn
 	return counts, nil
 }
 
+// ─── Global job search ──────────────────────────────────────────────────────────
+
+// JobSearchParams filters the folded global job list.
+type JobSearchParams struct {
+	State              string
+	Type               string
+	BpmnProcessID      string
+	ProcessInstanceKey int64
+	ElementID          string
+	PageSize           int
+	Cursor             int64
+}
+
+type esJobCompositeResponse struct {
+	Aggregations struct {
+		Entities struct {
+			AfterKey struct {
+				EntityKey json.Number `json:"entityKey"`
+			} `json:"after_key"`
+			Buckets []struct {
+				Key struct {
+					EntityKey json.Number `json:"entityKey"`
+				} `json:"key"`
+				Latest esTopHits `json:"latest"`
+				First  esTopHits `json:"first"`
+			} `json:"buckets"`
+		} `json:"entities"`
+	} `json:"aggregations"`
+}
+
+// SearchJobs folds JOB records by job key. The job key is the record key on
+// 8.5 (the value object carries no jobKey field).
+func (c *ZeebeMonitoringIndex) SearchJobs(ctx context.Context, p JobSearchParams) ([]ZeebeJob, string, error) {
+	if !c.Enabled() {
+		return nil, "", fmt.Errorf("zeebe elasticsearch index is not configured")
+	}
+	pageSize := clampPageSize(p.PageSize)
+	bucketSize := clampBucketSize(pageSize)
+
+	filters := []any{esTerm("valueType", "JOB")}
+	if p.Type != "" {
+		filters = append(filters, esTerm("value.type", p.Type))
+	}
+	if p.BpmnProcessID != "" {
+		filters = append(filters, esTerm("value.bpmnProcessId", p.BpmnProcessID))
+	}
+	if p.ProcessInstanceKey > 0 {
+		filters = append(filters, esTerm("value.processInstanceKey", p.ProcessInstanceKey))
+	}
+	if p.ElementID != "" {
+		filters = append(filters, esTerm("value.elementId", p.ElementID))
+	}
+
+	out := make([]ZeebeJob, 0, pageSize)
+	cursor := ""
+	after := p.Cursor
+	for attempt := 0; attempt < 4; attempt++ {
+		composite := map[string]any{
+			"size": bucketSize,
+			"sources": []any{map[string]any{
+				"entityKey": map[string]any{"terms": map[string]any{
+					"field": "key",
+					"order": "desc",
+				}},
+			}},
+		}
+		if after > 0 {
+			composite["after"] = map[string]any{"entityKey": after}
+		}
+		body := map[string]any{
+			"size":             0,
+			"track_total_hits": false,
+			"query":            map[string]any{"bool": map[string]any{"filter": filters}},
+			"aggs": map[string]any{
+				"entities": map[string]any{
+					"composite": composite,
+					"aggs": map[string]any{
+						"latest": topHitsAgg("desc", jobRecordIncludes),
+						"first":  topHitsAgg("asc", jobRecordIncludes),
+					},
+				},
+			},
+		}
+
+		raw, err := c.searchRaw(ctx, body)
+		if err != nil {
+			return nil, "", err
+		}
+		var parsed esJobCompositeResponse
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			return nil, "", fmt.Errorf("decode elasticsearch job search: %w", err)
+		}
+
+		for _, bucket := range parsed.Aggregations.Entities.Buckets {
+			jobKey := jsonInt64(bucket.Key.EntityKey)
+			if jobKey <= 0 {
+				continue
+			}
+			job, ok := foldJob(jobKey, bucket.First.firstSource(), bucket.Latest.firstSource())
+			if !ok {
+				continue
+			}
+			if p.State != "" && !strings.EqualFold(job.State, p.State) {
+				continue
+			}
+			out = append(out, job)
+			if len(out) >= pageSize {
+				cursor = strconv.FormatInt(jobKey, 10)
+				return out, cursor, nil
+			}
+		}
+
+		next := jsonInt64(parsed.Aggregations.Entities.AfterKey.EntityKey)
+		if next == 0 || next == after {
+			return out, "", nil
+		}
+		after = next
+		if attempt == 3 {
+			return out, strconv.FormatInt(after, 10), nil
+		}
+	}
+	return out, cursor, nil
+}
+
+func foldJob(jobKey int64, firstRaw, latestRaw json.RawMessage) (ZeebeJob, bool) {
+	var first esJobRecord
+	if !decodeRaw(firstRaw, &first) {
+		if !decodeRaw(latestRaw, &first) {
+			return ZeebeJob{}, false
+		}
+	}
+	latest := first
+	if decodeRaw(latestRaw, &latest) == false {
+		latest = first
+	}
+	retries := int(jsonInt64(latest.Value.Retries))
+	errorMessage := strings.TrimSpace(latest.Value.ErrorMessage)
+	if errorMessage == "" {
+		errorMessage = strings.TrimSpace(first.Value.ErrorMessage)
+	}
+	return ZeebeJob{
+		JobKey:             strconv.FormatInt(jobKey, 10),
+		Type:               strings.TrimSpace(first.Value.Type),
+		State:              jobState(latest.Intent, retries),
+		Retries:            retries,
+		Worker:             strings.TrimSpace(latest.Value.Worker),
+		ElementID:          strings.TrimSpace(first.Value.ElementID),
+		ElementInstanceKey: positiveKeyString(first.Value.ElementInstanceKey),
+		ProcessInstanceKey: positiveKeyString(first.Value.ProcessInstanceKey),
+		BpmnProcessID:      strings.TrimSpace(first.Value.BpmnProcessID),
+		ErrorMessage:       errorMessage,
+		CreatedAt:          formatESTime(first.Timestamp.Time),
+		UpdatedAt:          formatESTime(latest.Timestamp.Time),
+	}, true
+}
+
+// ─── Instance history ───────────────────────────────────────────────────────────
+
+// ZeebeHistoryEvent is one exporter record of an instance, newest-last.
+type ZeebeHistoryEvent struct {
+	Position      string `json:"position"`
+	Timestamp     string `json:"timestamp"`
+	ValueType     string `json:"valueType"`
+	Intent        string `json:"intent"`
+	ElementID     string `json:"elementId,omitempty"`
+	JobType       string `json:"jobType,omitempty"`
+	ErrorMessage  string `json:"errorMessage,omitempty"`
+	VariableName  string `json:"variableName,omitempty"`
+	VariableValue string `json:"variableValue,omitempty"`
+	UserTaskKey   string `json:"userTaskKey,omitempty"`
+}
+
+type esHistoryRecord struct {
+	Position  json.Number `json:"position"`
+	Timestamp esTime      `json:"timestamp"`
+	ValueType string      `json:"valueType"`
+	Intent    string      `json:"intent"`
+	Value     struct {
+		ElementID    string      `json:"elementId"`
+		Type         string      `json:"type"`
+		ErrorMessage string      `json:"errorMessage"`
+		Name         string      `json:"name"`
+		VariableJSON string      `json:"value"`
+		UserTaskKey  json.Number `json:"userTaskKey"`
+	} `json:"value"`
+}
+
+// ListHistory returns raw exporter records for one instance ordered by stream
+// position. Pagination uses search_after on the position cursor.
+func (c *ZeebeMonitoringIndex) ListHistory(ctx context.Context, processInstanceKey int64, cursor int64, limit int) ([]ZeebeHistoryEvent, string, error) {
+	if !c.Enabled() {
+		return nil, "", fmt.Errorf("zeebe elasticsearch index is not configured")
+	}
+	if processInstanceKey <= 0 {
+		return nil, "", fmt.Errorf("processInstanceKey is required")
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	body := map[string]any{
+		"size":             limit,
+		"track_total_hits": false,
+		"sort":             []any{map[string]any{"position": map[string]any{"order": "asc"}}},
+		"query": map[string]any{"bool": map[string]any{"filter": []any{
+			map[string]any{"terms": map[string]any{"valueType": []string{
+				"PROCESS_INSTANCE", "JOB", "VARIABLE", "INCIDENT", "USER_TASK",
+			}}},
+			esTerm("value.processInstanceKey", processInstanceKey),
+		}}},
+	}
+	if cursor > 0 {
+		body["search_after"] = []any{cursor}
+	}
+	raw, err := c.searchRaw(ctx, body)
+	if err != nil {
+		return nil, "", err
+	}
+	records, err := decodeHits[esHistoryRecord](raw)
+	if err != nil {
+		return nil, "", err
+	}
+	out := make([]ZeebeHistoryEvent, 0, len(records))
+	for _, rec := range records {
+		event := ZeebeHistoryEvent{
+			Position:     rec.Position.String(),
+			Timestamp:    formatESTime(rec.Timestamp.Time),
+			ValueType:    strings.TrimSpace(rec.ValueType),
+			Intent:       strings.ToUpper(strings.TrimSpace(rec.Intent)),
+			ElementID:    strings.TrimSpace(rec.Value.ElementID),
+			JobType:      strings.TrimSpace(rec.Value.Type),
+			ErrorMessage: strings.TrimSpace(rec.Value.ErrorMessage),
+		}
+		if event.ValueType == "VARIABLE" {
+			event.VariableName = strings.TrimSpace(rec.Value.Name)
+			event.VariableValue = rec.Value.VariableJSON
+		}
+		if event.ValueType == "USER_TASK" {
+			event.UserTaskKey = positiveKeyString(rec.Value.UserTaskKey)
+		}
+		out = append(out, event)
+	}
+	next := ""
+	if len(records) == limit {
+		next = records[len(records)-1].Position.String()
+	}
+	return out, next, nil
+}
+
 // ─── Hit decoding helpers ───────────────────────────────────────────────────────
 
 func decodeHits[T any](raw []byte) ([]T, error) {

@@ -334,6 +334,111 @@ func (h *WorkflowHandler) operateSearchIncidents(w http.ResponseWriter, r *http.
 	writeJSON(w, r, http.StatusOK, operateIncidentPage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
 }
 
+type operateJobRow struct {
+	service.ZeebeJob
+	CaseID      string `json:"caseId,omitempty"`
+	BusinessKey string `json:"businessKey,omitempty"`
+}
+
+type operateJobPage struct {
+	Items      []operateJobRow `json:"items"`
+	NextCursor string          `json:"nextCursor,omitempty"`
+	Source     string          `json:"source"`
+}
+
+func (h *WorkflowHandler) operateSearchJobs(w http.ResponseWriter, r *http.Request) {
+	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
+		writeJSON(w, r, http.StatusOK, operateJobPage{Items: []operateJobRow{}, Source: "unavailable"})
+		return
+	}
+
+	pageSize := clampOperatePageSize(int(queryInt64(r, "pageSize")))
+	params := service.JobSearchParams{
+		State:              strings.TrimSpace(r.URL.Query().Get("state")),
+		Type:               strings.TrimSpace(r.URL.Query().Get("type")),
+		BpmnProcessID:      strings.TrimSpace(r.URL.Query().Get("bpmnProcessId")),
+		ProcessInstanceKey: queryInt64(r, "processInstanceKey"),
+		ElementID:          strings.TrimSpace(r.URL.Query().Get("elementId")),
+		PageSize:           pageSize,
+		Cursor:             queryInt64(r, "cursor"),
+	}
+
+	rows := make([]operateJobRow, 0, pageSize)
+	cursor := ""
+	for attempt := 0; attempt < 4; attempt++ {
+		items, next, err := h.MonitoringIndex.SearchJobs(r.Context(), params)
+		if err != nil {
+			writeAPIError(w, r, http.StatusBadGateway, "Runtime monitoring is unavailable: "+err.Error())
+			return
+		}
+		keys := make([]int64, 0, len(items))
+		for _, item := range items {
+			if key, err := strconv.ParseInt(item.ProcessInstanceKey, 10, 64); err == nil {
+				keys = append(keys, key)
+			}
+		}
+		cases, err := h.caseRepo.CasesByProcessInstanceKeys(r.Context(), keys)
+		if err != nil {
+			writeAPIError(w, r, http.StatusInternalServerError, "Failed to scope jobs: "+err.Error())
+			return
+		}
+		for _, item := range items {
+			key, _ := strconv.ParseInt(item.ProcessInstanceKey, 10, 64)
+			bc, owned := cases[key]
+			if !owned {
+				continue
+			}
+			rows = append(rows, operateJobRow{
+				ZeebeJob:    item,
+				CaseID:      bc.ID,
+				BusinessKey: bc.CaseCode,
+			})
+		}
+		cursor = next
+		if len(rows) >= pageSize || cursor == "" {
+			break
+		}
+		params.Cursor = parseCursor(cursor)
+		if params.Cursor <= 0 {
+			cursor = ""
+			break
+		}
+	}
+
+	writeJSON(w, r, http.StatusOK, operateJobPage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
+}
+
+func (h *WorkflowHandler) OperateInstanceHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, r)
+		return
+	}
+	key, ok := parsePathInt64(r.URL.Path, "/api/workflow/operate/process-instances/", "/history")
+	if !ok {
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid process instance key")
+		return
+	}
+	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), key)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to scope instance: "+err.Error())
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Process instance not found")
+		return
+	}
+	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Runtime monitoring requires ZEEBE_ES_URL")
+		return
+	}
+	events, next, err := h.MonitoringIndex.ListHistory(r.Context(), key, queryInt64(r, "cursor"), int(queryInt64(r, "limit")))
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadGateway, "Runtime monitoring is unavailable: "+err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": events, "nextCursor": next})
+}
+
 // ─── Query helpers ──────────────────────────────────────────────────────────────
 
 func queryInt64(r *http.Request, name string) int64 {

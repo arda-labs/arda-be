@@ -316,50 +316,7 @@ func (h *WorkflowHandler) OperateJobs(w http.ResponseWriter, r *http.Request) {
 		writeMethodNotAllowed(w, r)
 		return
 	}
-
-	if h.zeebeSvc == nil {
-		writeJSON(w, r, http.StatusOK, []OperateJob{})
-		return
-	}
-
-	cases, err := h.caseRepo.ListCases(r.Context(), repository.CaseListFilter{Limit: 100})
-	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query cases: "+err.Error())
-		return
-	}
-
-	out := make([]OperateJob, 0)
-	for _, c := range cases {
-		if c.ProcessInstanceKey == nil || c.BpmnProcessID == nil {
-			continue
-		}
-		jobs, err := h.zeebeSvc.FindProcessJobs(r.Context(), *c.ProcessInstanceKey)
-		if err != nil || len(jobs) == 0 {
-			continue
-		}
-		for _, j := range jobs {
-			state := "ACTIVATABLE"
-			if j.Retries <= 0 {
-				state = "FAILED"
-			}
-			out = append(out, OperateJob{
-				JobKey:             strconv.FormatInt(j.JobKey, 10),
-				Type:               j.JobType,
-				ProcessInstanceKey: strconv.FormatInt(j.ProcessInstanceKey, 10),
-				BpmnProcessId:      *c.BpmnProcessID,
-				ElementId:          j.ElementID,
-				State:              state,
-				Retries:            int(j.Retries),
-				MaxRetries:         3,
-				CreatedAt:          operateDateTime(time.Now()),
-				ErrorMessage:       j.ErrorMessage,
-			})
-		}
-	}
-	if out == nil {
-		out = []OperateJob{}
-	}
-	writeJSON(w, r, http.StatusOK, out)
+	h.operateSearchJobs(w, r)
 }
 
 func (h *WorkflowHandler) OperateJobDefinitions(w http.ResponseWriter, r *http.Request) {

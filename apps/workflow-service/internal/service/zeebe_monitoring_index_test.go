@@ -150,6 +150,87 @@ func TestOpenIncidentsFromESUsesRecordKeyOn85(t *testing.T) {
 	}
 }
 
+func TestSearchJobsFoldsStateAndFilters(t *testing.T) {
+	first := `{"key":77,"timestamp":1000,"intent":"CREATED","valueType":"JOB",
+		"value":{"type":"crm.sync","retries":3,"worker":"","elementId":"Task_A","processInstanceKey":9,"bpmnProcessId":"crm-reg"}}`
+	latest := `{"key":77,"timestamp":2000,"intent":"FAILED","valueType":"JOB",
+		"value":{"type":"crm.sync","retries":0,"worker":"default","elementId":"Task_A","processInstanceKey":9,"errorMessage":"boom"}}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"aggregations":{"entities":{"buckets":[
+			{"key":{"entityKey":77},
+			 "first":{"hits":{"hits":[{"_source":` + first + `}]}},
+			 "latest":{"hits":{"hits":[{"_source":` + latest + `}]}}}
+		]}}}`))
+	}))
+	defer server.Close()
+
+	index := service.NewZeebeMonitoringIndex(server.URL)
+	items, cursor, err := index.SearchJobs(context.Background(), service.JobSearchParams{
+		State:    "FAILED",
+		PageSize: 5,
+	})
+	if err != nil {
+		t.Fatalf("SearchJobs: %v", err)
+	}
+	if len(items) != 1 || items[0].JobKey != "77" || items[0].Retries != 0 {
+		t.Fatalf("unexpected folded job: %+v", items)
+	}
+	if items[0].ErrorMessage != "boom" || items[0].CreatedAt == "" || items[0].BpmnProcessID != "crm-reg" {
+		t.Fatalf("expected first-record metadata and error message: %+v", items[0])
+	}
+	if cursor != "" {
+		t.Fatalf("expected no cursor at the end of results, got %q", cursor)
+	}
+
+	filtered, _, err := index.SearchJobs(context.Background(), service.JobSearchParams{
+		State:    "COMPLETED",
+		PageSize: 5,
+	})
+	if err != nil {
+		t.Fatalf("SearchJobs filtered: %v", err)
+	}
+	if len(filtered) != 0 {
+		t.Fatalf("expected the state filter to drop the failed job, got %+v", filtered)
+	}
+}
+
+func TestListHistoryPaginatesByPosition(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &requestBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":{"hits":[
+			{"_source":{"position":10,"timestamp":1000,"valueType":"PROCESS_INSTANCE","intent":"ELEMENT_ACTIVATED","value":{"elementId":"crm-reg"}}},
+			{"_source":{"position":12,"timestamp":2000,"valueType":"VARIABLE","intent":"CREATED","value":{"name":"amount","value":"250","scopeKey":9}}}
+		]}}`))
+	}))
+	defer server.Close()
+
+	index := service.NewZeebeMonitoringIndex(server.URL)
+	events, next, err := index.ListHistory(context.Background(), 9, 0, 2)
+	if err != nil {
+		t.Fatalf("ListHistory: %v", err)
+	}
+	if len(events) != 2 || events[1].VariableName != "amount" || events[1].VariableValue != "250" {
+		t.Fatalf("unexpected history events: %+v", events)
+	}
+	if next != "12" {
+		t.Fatalf("expected next cursor 12, got %q", next)
+	}
+
+	_, _, err = index.ListHistory(context.Background(), 9, 12, 2)
+	if err != nil {
+		t.Fatalf("ListHistory page 2: %v", err)
+	}
+	serialized, _ := json.Marshal(requestBody)
+	if !strings.Contains(string(serialized), `"search_after":[12]`) {
+		t.Fatalf("expected search_after cursor in the request, got %s", serialized)
+	}
+}
+
 func TestSearchProcessInstancesPostFiltersAndCursors(t *testing.T) {
 	activeFirst := `{"key":101,"timestamp":1000,"intent":"ELEMENT_ACTIVATED","valueType":"PROCESS_INSTANCE",
 		"value":{"processInstanceKey":101,"processDefinitionKey":5,"bpmnProcessId":"p1","version":1,"elementId":"p1","bpmnElementType":"PROCESS"}}`

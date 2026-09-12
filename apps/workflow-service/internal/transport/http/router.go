@@ -79,6 +79,8 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 			wfHandler.OperateInstanceVariables(w, r)
 		case strings.HasSuffix(p, "/jobs"):
 			wfHandler.OperateInstanceJobs(w, r)
+		case strings.HasSuffix(p, "/history"):
+			wfHandler.OperateInstanceHistory(w, r)
 		case r.Method == http.MethodGet:
 			wfHandler.OperateProcessInstanceDetail(w, r)
 		default:
