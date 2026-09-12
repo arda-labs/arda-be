@@ -66,13 +66,22 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 	mux.HandleFunc("/api/workflow/operate/process-instances", wfHandler.OperateProcessInstances)
 	mux.HandleFunc("/api/workflow/operate/process-instances/", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if strings.HasSuffix(p, "/pause") {
+		switch {
+		case strings.HasSuffix(p, "/pause"):
 			wfHandler.OperatePauseInstance(w, r)
-		} else if strings.HasSuffix(p, "/resume") {
+		case strings.HasSuffix(p, "/resume"):
 			wfHandler.OperateResumeInstance(w, r)
-		} else if strings.HasSuffix(p, "/cancel") {
+		case strings.HasSuffix(p, "/cancel"):
 			wfHandler.OperateCancelInstance(w, r)
-		} else {
+		case strings.HasSuffix(p, "/element-instances"):
+			wfHandler.OperateInstanceElementInstances(w, r)
+		case strings.HasSuffix(p, "/variables"):
+			wfHandler.OperateInstanceVariables(w, r)
+		case strings.HasSuffix(p, "/jobs"):
+			wfHandler.OperateInstanceJobs(w, r)
+		case r.Method == http.MethodGet:
+			wfHandler.OperateProcessInstanceDetail(w, r)
+		default:
 			writeNotFound(w, r)
 		}
 	})

@@ -37,6 +37,9 @@ type WorkflowHandler struct {
 	// from main; both nil-safe (features degrade instead of failing).
 	AssignmentResolver *service.AssignmentResolver
 	IncidentIndex      *service.ZeebeIncidentIndex
+	// MonitoringIndex is the Zeebe exporter read model behind the operate
+	// search/detail endpoints (Camunda 8.5 has no Operate and no REST search).
+	MonitoringIndex *service.ZeebeMonitoringIndex
 }
 
 func NewWorkflowHandler(

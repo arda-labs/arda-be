@@ -712,6 +712,60 @@ func (r *CaseRepository) GetCaseByProcessInstanceKey(ctx context.Context, proces
 	return &bc, nil
 }
 
+// CasesByProcessInstanceKeys returns tenant-scoped cases keyed by process
+// instance key. Runtime monitoring reads Zeebe exporter records (which are not
+// tenant-isolated on this deployment) and uses this map to scope every result
+// page to the caller tenant.
+func (r *CaseRepository) CasesByProcessInstanceKeys(ctx context.Context, processInstanceKeys []int64) (map[int64]BusinessCase, error) {
+	out := map[int64]BusinessCase{}
+	if len(processInstanceKeys) == 0 {
+		return out, nil
+	}
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	placeholders := make([]string, 0, len(processInstanceKeys))
+	args := make([]any, 0, len(processInstanceKeys)+1)
+	args = append(args, tenant)
+	n := 2
+	for _, key := range processInstanceKeys {
+		if key <= 0 {
+			continue
+		}
+		placeholders = append(placeholders, fmt.Sprintf("$%d", n))
+		args = append(args, key)
+		n++
+	}
+	if len(placeholders) == 0 {
+		return out, nil
+	}
+	query := fmt.Sprintf(`
+		SELECT id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
+		       domain_service, status, current_step, priority, created_by, assigned_to,
+		       candidate_role, sla_policy_id, sla_due_at, process_instance_key,
+		       bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
+		       submit_idempotency_key, idempotency_request_hash, submit_request_hash
+		FROM business_cases
+		WHERE tenant_id = $1 AND process_instance_key IN (%s)
+	`, strings.Join(placeholders, ","))
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		bc, err := scanBusinessCase(rows)
+		if err != nil {
+			return nil, err
+		}
+		if bc.ProcessInstanceKey != nil {
+			out[*bc.ProcessInstanceKey] = bc
+		}
+	}
+	return out, rows.Err()
+}
+
 func (r *CaseRepository) AddTimelineEvent(ctx context.Context, caseID, eventType, note string) error {
 	if caseID == "" || eventType == "" {
 		return nil

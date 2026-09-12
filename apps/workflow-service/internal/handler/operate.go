@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -212,41 +213,7 @@ func (h *WorkflowHandler) OperateProcessInstances(w http.ResponseWriter, r *http
 		writeMethodNotAllowed(w, r)
 		return
 	}
-
-	cases, err := h.caseRepo.ListCases(r.Context(), repository.CaseListFilter{Limit: 500})
-	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query cases: "+err.Error())
-		return
-	}
-
-	out := make([]OperateProcessInstance, 0, len(cases))
-	for _, c := range cases {
-		if c.ProcessInstanceKey == nil {
-			continue // Skip cases without Zeebe process instance
-		}
-		bpmnId := ""
-		if c.BpmnProcessID != nil {
-			bpmnId = *c.BpmnProcessID
-		}
-		version := 0
-		if c.BpmnVersion != nil {
-			version = *c.BpmnVersion
-		}
-		out = append(out, OperateProcessInstance{
-			ProcessInstanceKey: strconv.FormatInt(*c.ProcessInstanceKey, 10),
-			BpmnProcessId:      bpmnId,
-			Version:            version,
-			BusinessKey:        c.CaseCode,
-			State:              caseState(&c),
-			ElementId:          c.CurrentStep,
-			StartTime:          operateDateTime(c.CreatedAt),
-			RunningDuration:    formatDuration(c.CreatedAt, nil),
-		})
-	}
-	if out == nil {
-		out = []OperateProcessInstance{}
-	}
-	writeJSON(w, r, http.StatusOK, out)
+	h.operateSearchProcessInstances(w, r)
 }
 
 func (h *WorkflowHandler) OperateIncidents(w http.ResponseWriter, r *http.Request) {
@@ -254,11 +221,16 @@ func (h *WorkflowHandler) OperateIncidents(w http.ResponseWriter, r *http.Reques
 		writeMethodNotAllowed(w, r)
 		return
 	}
+	h.operateSearchIncidents(w, r)
+}
 
-	cases, err := h.caseRepo.ListCases(r.Context(), repository.CaseListFilter{Limit: 500})
+// operateIncidentsFromTimeline is the degraded list used when the Zeebe
+// Elasticsearch read model is not configured; it only understands incidents
+// recorded in the Arda case timeline.
+func (h *WorkflowHandler) operateIncidentsFromTimeline(ctx context.Context) []OperateIncident {
+	cases, err := h.caseRepo.ListCases(ctx, repository.CaseListFilter{Limit: 500})
 	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query cases: "+err.Error())
-		return
+		return []OperateIncident{}
 	}
 
 	out := make([]OperateIncident, 0)
@@ -266,7 +238,7 @@ func (h *WorkflowHandler) OperateIncidents(w http.ResponseWriter, r *http.Reques
 		if c.ProcessInstanceKey == nil {
 			continue
 		}
-		timeline, err := h.caseRepo.ListTimeline(r.Context(), c.ID)
+		timeline, err := h.caseRepo.ListTimeline(ctx, c.ID)
 		if err != nil || len(timeline) == 0 {
 			continue
 		}
@@ -301,10 +273,42 @@ func (h *WorkflowHandler) OperateIncidents(w http.ResponseWriter, r *http.Reques
 			})
 		}
 	}
-	if out == nil {
-		out = []OperateIncident{}
+	return out
+}
+
+// operateInstancesFromDB is the degraded list used when the Zeebe
+// Elasticsearch read model is not configured: case projection only.
+func (h *WorkflowHandler) operateInstancesFromDB(ctx context.Context) []OperateProcessInstance {
+	cases, err := h.caseRepo.ListCases(ctx, repository.CaseListFilter{Limit: 500})
+	if err != nil {
+		return []OperateProcessInstance{}
 	}
-	writeJSON(w, r, http.StatusOK, out)
+
+	out := make([]OperateProcessInstance, 0, len(cases))
+	for _, c := range cases {
+		if c.ProcessInstanceKey == nil {
+			continue // Skip cases without Zeebe process instance
+		}
+		bpmnId := ""
+		if c.BpmnProcessID != nil {
+			bpmnId = *c.BpmnProcessID
+		}
+		version := 0
+		if c.BpmnVersion != nil {
+			version = *c.BpmnVersion
+		}
+		out = append(out, OperateProcessInstance{
+			ProcessInstanceKey: strconv.FormatInt(*c.ProcessInstanceKey, 10),
+			BpmnProcessId:      bpmnId,
+			Version:            version,
+			BusinessKey:        c.CaseCode,
+			State:              caseState(&c),
+			ElementId:          c.CurrentStep,
+			StartTime:          operateDateTime(c.CreatedAt),
+			RunningDuration:    formatDuration(c.CreatedAt, nil),
+		})
+	}
+	return out
 }
 
 func (h *WorkflowHandler) OperateJobs(w http.ResponseWriter, r *http.Request) {
@@ -486,39 +490,93 @@ func (h *WorkflowHandler) OperateRetryIncident(w http.ResponseWriter, r *http.Re
 		writeMethodNotAllowed(w, r)
 		return
 	}
-	// Parse jobKey from path: /api/workflow/operate/incidents/{incidentKey}/retry
-	// We store incidentKey = inc-{timelineId} format, or jobKey directly
-	rest := strings.TrimPrefix(r.URL.Path, "/api/workflow/operate/incidents/")
-	parts := strings.Split(strings.TrimSuffix(rest, "/retry"), "/retry")
-	if len(parts) == 0 || parts[0] == "" {
+	incidentKey, ok := incidentPathKey(r.URL.Path, "/retry")
+	if !ok {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid incident key")
-		return
-	}
-	keyStr := strings.TrimPrefix(parts[0], "inc-")
-	jobKey, err := strconv.ParseInt(keyStr, 10, 64)
-	if err != nil || jobKey <= 0 {
-		writeAPIError(w, r, http.StatusBadRequest, "Invalid job key: "+parts[0])
 		return
 	}
 	if h.zeebeSvc == nil {
 		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
 	}
-	if err := h.zeebeSvc.RetryJob(r.Context(), jobKey, 3); err != nil {
+
+	// A real exporter incident: retry the failing job and resolve the incident,
+	// mirroring Operate's retry action. Without the read model the path key is
+	// treated as a job key (legacy inc-<timelineId> rows).
+	if h.MonitoringIndex != nil && h.MonitoringIndex.Enabled() {
+		incident, err := h.MonitoringIndex.GetIncident(r.Context(), incidentKey)
+		if err != nil {
+			writeAPIError(w, r, http.StatusBadGateway, err.Error())
+			return
+		}
+		if incident == nil || incident.JobKey <= 0 {
+			writeAPIError(w, r, http.StatusNotFound, "Incident not found or has no retryable job")
+			return
+		}
+		if err := h.zeebeSvc.RetryJob(r.Context(), incident.JobKey, 3); err != nil {
+			writeAPIError(w, r, http.StatusBadGateway, err.Error())
+			return
+		}
+		if h.zeebeRest != nil && h.zeebeRest.Enabled() {
+			if err := h.zeebeRest.ResolveIncident(r.Context(), incidentKey); err != nil {
+				writeAPIError(w, r, http.StatusBadGateway, err.Error())
+				return
+			}
+		}
+		writeJSON(w, r, http.StatusOK, map[string]string{
+			"status":      "retried",
+			"incidentKey": strconv.FormatInt(incidentKey, 10),
+			"jobKey":      strconv.FormatInt(incident.JobKey, 10),
+		})
+		return
+	}
+
+	if err := h.zeebeSvc.RetryJob(r.Context(), incidentKey, 3); err != nil {
 		writeAPIError(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]string{"status": "retried", "jobKey": keyStr})
+	writeJSON(w, r, http.StatusOK, map[string]string{"status": "retried", "jobKey": strconv.FormatInt(incidentKey, 10)})
 }
 
 func (h *WorkflowHandler) OperateResolveIncident(w http.ResponseWriter, r *http.Request) {
-	// Marking resolved — in Zeebe, incidents auto-resolve when the job succeeds.
-	// We just acknowledge the resolution.
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, r)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]string{"status": "resolved"})
+	incidentKey, ok := incidentPathKey(r.URL.Path, "/resolve")
+	if !ok {
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid incident key")
+		return
+	}
+	if h.zeebeRest == nil || !h.zeebeRest.Enabled() {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe REST client is not configured")
+		return
+	}
+	if err := h.zeebeRest.ResolveIncident(r.Context(), incidentKey); err != nil {
+		writeAPIError(w, r, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]string{
+		"status":      "resolved",
+		"incidentKey": strconv.FormatInt(incidentKey, 10),
+	})
+}
+
+// incidentPathKey extracts the incident key from an operate incident action
+// path, tolerating the legacy inc-<timelineId> shape.
+func incidentPathKey(path, suffix string) (int64, bool) {
+	raw := strings.TrimPrefix(path, "/api/workflow/operate/incidents/")
+	raw = strings.TrimSuffix(raw, suffix)
+	raw = strings.Trim(raw, "/")
+	raw = strings.TrimPrefix(raw, "inc-")
+	if raw == "" {
+		return 0, false
+	}
+	key, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || key <= 0 {
+		return 0, false
+	}
+	return key, true
 }
 
 func (h *WorkflowHandler) OperateUpdateJobRetries(w http.ResponseWriter, r *http.Request) {

@@ -14,16 +14,17 @@ import (
 
 // ZeebeIncident is an incident observed on the Zeebe Elasticsearch exporter.
 type ZeebeIncident struct {
-	IncidentKey         int64  `json:"incidentKey"`
-	ProcessInstanceKey  int64  `json:"processInstanceKey"`
-	ProcessDefinitionKey int64 `json:"processDefinitionKey,omitempty"`
-	ElementInstanceKey  int64  `json:"elementInstanceKey,omitempty"`
-	ElementID           string `json:"elementId,omitempty"`
-	JobKey              int64  `json:"jobKey,omitempty"`
-	ErrorType           string `json:"errorType,omitempty"`
-	ErrorMessage        string `json:"errorMessage,omitempty"`
-	State               string `json:"state"`
-	CreationTime        string `json:"creationTime,omitempty"`
+	IncidentKey          int64  `json:"incidentKey"`
+	ProcessInstanceKey   int64  `json:"processInstanceKey"`
+	ProcessDefinitionKey int64  `json:"processDefinitionKey,omitempty"`
+	ElementInstanceKey   int64  `json:"elementInstanceKey,omitempty"`
+	ElementID            string `json:"elementId,omitempty"`
+	JobKey               int64  `json:"jobKey,omitempty"`
+	ErrorType            string `json:"errorType,omitempty"`
+	ErrorMessage         string `json:"errorMessage,omitempty"`
+	State                string `json:"state"`
+	BpmnProcessID        string `json:"bpmnProcessId,omitempty"`
+	CreationTime         string `json:"creationTime,omitempty"`
 }
 
 // ZeebeIncidentIndex reads incident records from the Zeebe Elasticsearch
@@ -94,7 +95,17 @@ func (c *ZeebeIncidentIndex) SearchIncidents(ctx context.Context, processInstanc
 		return nil, fmt.Errorf("elasticsearch incident search HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
-	return openIncidentsFromES(raw), nil
+	incidents, err := incidentsFromES(raw)
+	if err != nil {
+		return nil, err
+	}
+	open := make([]ZeebeIncident, 0, len(incidents))
+	for _, incident := range incidents {
+		if incident.State == "CREATED" {
+			open = append(open, incident)
+		}
+	}
+	return open, nil
 }
 
 type esIncidentSearchResponse struct {
@@ -106,9 +117,12 @@ type esIncidentSearchResponse struct {
 }
 
 type esIncidentRecord struct {
-	Intent    string            `json:"intent"`
-	ValueType string            `json:"valueType"`
-	Value     esIncidentValue   `json:"value"`
+	Position  json.Number     `json:"position"`
+	Key       json.Number     `json:"key"`
+	Timestamp esTime          `json:"timestamp"`
+	Intent    string          `json:"intent"`
+	ValueType string          `json:"valueType"`
+	Value     esIncidentValue `json:"value"`
 }
 
 type esIncidentValue struct {
@@ -120,13 +134,17 @@ type esIncidentValue struct {
 	JobKey               json.Number `json:"jobKey"`
 	ErrorType            string      `json:"errorType"`
 	ErrorMessage         string      `json:"errorMessage"`
+	BpmnProcessID        string      `json:"bpmnProcessId"`
 	CreationTime         string      `json:"creationTime"`
 }
 
-func openIncidentsFromES(raw []byte) []ZeebeIncident {
+// incidentsFromES folds records by incident key; the latest intent wins.
+// On Zeebe 8.5 the incident key is the record key — the value object has no
+// incidentKey field (older fixtures used value.incidentKey, kept as fallback).
+func incidentsFromES(raw []byte) ([]ZeebeIncident, error) {
 	var parsed esIncidentSearchResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return []ZeebeIncident{}
+		return nil, fmt.Errorf("decode elasticsearch incident search: %w", err)
 	}
 
 	byKey := map[int64]ZeebeIncident{}
@@ -135,55 +153,103 @@ func openIncidentsFromES(raw []byte) []ZeebeIncident {
 		if rec.ValueType != "" && rec.ValueType != "INCIDENT" {
 			continue
 		}
-		incident, err := rec.Value.toIncident(rec.Intent)
-		if err != nil {
+		incident, ok := incidentFromRecord(rec, jsonInt64(rec.Key))
+		if !ok {
 			continue
 		}
-		byKey[incident.IncidentKey] = incident
+		byKey[incident.IncidentKey] = mergeIncident(byKey[incident.IncidentKey], incident)
 	}
 
 	out := make([]ZeebeIncident, 0, len(byKey))
 	for _, incident := range byKey {
-		// A RESOLVED record replaces its CREATED record during folding, so
-		// anything left here is an open incident.
-		if incident.State != "CREATED" {
-			continue
-		}
 		out = append(out, incident)
 	}
-	return out
+	return out, nil
 }
 
-func (v esIncidentValue) toIncident(intent string) (ZeebeIncident, error) {
-	key, err := v.IncidentKey.Int64()
-	if err != nil {
-		return ZeebeIncident{}, fmt.Errorf("incidentKey: %w", err)
+// incidentFromRecord builds the folded incident shape from one record. Fields
+// may be missing on terminal (RESOLVED) records; callers fold in record order
+// so a CREATED record usually provides them.
+func incidentFromRecord(rec esIncidentRecord, recordKey int64) (ZeebeIncident, bool) {
+	key := recordKey
+	if v := jsonInt64(rec.Value.IncidentKey); v > 0 {
+		key = v
 	}
-	// processInstanceKey may be absent on terminal records (RESOLVED); the
-	// query already filters by instance, so zero is acceptable for folding.
-	pik, _ := v.ProcessInstanceKey.Int64()
+	if key <= 0 {
+		return ZeebeIncident{}, false
+	}
+	created := rec.Timestamp.Time
+	if strings.TrimSpace(rec.Value.CreationTime) != "" {
+		var parsed esTime
+		if parsed.UnmarshalJSON([]byte(rec.Value.CreationTime)) == nil && !parsed.Time.IsZero() {
+			created = parsed.Time
+		}
+	}
 	incident := ZeebeIncident{
 		IncidentKey:        key,
-		ProcessInstanceKey: pik,
-		ElementID:          strings.TrimSpace(v.ElementID),
-		ErrorType:          strings.TrimSpace(v.ErrorType),
-		ErrorMessage:       strings.TrimSpace(v.ErrorMessage),
-		State:              strings.ToUpper(strings.TrimSpace(intent)),
-		CreationTime:       strings.TrimSpace(v.CreationTime),
+		ProcessInstanceKey: jsonInt64(rec.Value.ProcessInstanceKey),
+		ElementID:          strings.TrimSpace(rec.Value.ElementID),
+		ErrorType:          strings.TrimSpace(rec.Value.ErrorType),
+		ErrorMessage:       strings.TrimSpace(rec.Value.ErrorMessage),
+		State:              strings.ToUpper(strings.TrimSpace(rec.Intent)),
+		BpmnProcessID:      strings.TrimSpace(rec.Value.BpmnProcessID),
+		CreationTime:       formatESTime(created),
 	}
-	if defKey, err := v.ProcessDefinitionKey.Int64(); err == nil {
-		incident.ProcessDefinitionKey = defKey
+	incident.ProcessDefinitionKey = jsonInt64(rec.Value.ProcessDefinitionKey)
+	incident.ElementInstanceKey = jsonInt64(rec.Value.ElementInstanceKey)
+	incident.JobKey = jsonInt64(rec.Value.JobKey)
+	return incident, true
+}
+
+// mergeIncident keeps fields from the CREATED record when a later terminal
+// record arrives without them; the state always follows the newest record.
+func mergeIncident(prev, next ZeebeIncident) ZeebeIncident {
+	merged := prev
+	if merged.IncidentKey == 0 {
+		merged.IncidentKey = next.IncidentKey
 	}
-	if elemKey, err := v.ElementInstanceKey.Int64(); err == nil {
-		incident.ElementInstanceKey = elemKey
+	merged.State = next.State
+	if next.ProcessInstanceKey != 0 {
+		merged.ProcessInstanceKey = next.ProcessInstanceKey
 	}
-	if jobKey, err := v.JobKey.Int64(); err == nil {
-		incident.JobKey = jobKey
+	if next.ProcessDefinitionKey != 0 {
+		merged.ProcessDefinitionKey = next.ProcessDefinitionKey
 	}
-	return incident, nil
+	if next.ElementInstanceKey != 0 {
+		merged.ElementInstanceKey = next.ElementInstanceKey
+	}
+	if next.ElementID != "" {
+		merged.ElementID = next.ElementID
+	}
+	if next.JobKey != 0 {
+		merged.JobKey = next.JobKey
+	}
+	if next.ErrorType != "" {
+		merged.ErrorType = next.ErrorType
+	}
+	if next.ErrorMessage != "" {
+		merged.ErrorMessage = next.ErrorMessage
+	}
+	if next.BpmnProcessID != "" {
+		merged.BpmnProcessID = next.BpmnProcessID
+	}
+	if next.CreationTime != "" {
+		merged.CreationTime = next.CreationTime
+	}
+	return merged
 }
 
 // OpenIncidentsFromESForTest exposes ES incident folding for unit tests.
 func OpenIncidentsFromESForTest(raw []byte) []ZeebeIncident {
-	return openIncidentsFromES(raw)
+	incidents, err := incidentsFromES(raw)
+	if err != nil {
+		return []ZeebeIncident{}
+	}
+	open := make([]ZeebeIncident, 0, len(incidents))
+	for _, incident := range incidents {
+		if incident.State == "CREATED" {
+			open = append(open, incident)
+		}
+	}
+	return open
 }

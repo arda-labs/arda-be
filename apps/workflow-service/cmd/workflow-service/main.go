@@ -576,6 +576,7 @@ func main() {
 	wfHandler := handler.NewWorkflowHandler(zeebeSvc, zeebeRest, crmClient, mappingRepo, caseRepo, processDefinitionRepo)
 	wfHandler.AssignmentResolver = assignmentResolver
 	wfHandler.IncidentIndex = service.NewZeebeIncidentIndex(esURL)
+	wfHandler.MonitoringIndex = service.NewZeebeMonitoringIndex(esURL)
 	notiClient, err := notificationclient.New(cfg.NotificationGRPCAddr)
 	if err != nil {
 		logger.Error("notification grpc client is required; refusing to start", "err", err)
