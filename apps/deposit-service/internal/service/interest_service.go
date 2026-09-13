@@ -118,6 +118,7 @@ func (s *InterestService) SubmitRate(ctx context.Context, tenantID, actor, reque
 	if err := s.repo.SetRateRequestCase(ctx, tenantID, request.ID, caseCreated.Id); err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
+	request.WorkflowCaseID = &caseCreated.Id
 	request.Status = "SUBMITTED"
 	return request, nil
 }
@@ -326,9 +327,11 @@ func (s *InterestService) SubmitInterest(ctx context.Context, tenantID, actor, s
 		if opType == "CAPITALIZE" {
 			caseType = CaseCapitalize
 		}
-		if err := s.startInterestCase(ctx, tenantID, actor, caseType, created, nil); err != nil {
+		caseID, err := s.startInterestCase(ctx, tenantID, actor, caseType, created, nil)
+		if err != nil {
 			return nil, nil, err
 		}
+		created.WorkflowCaseID = &caseID
 		created.Status = "SUBMITTED"
 		return created, nil, nil
 	case "BATCH":
@@ -364,11 +367,13 @@ func (s *InterestService) SubmitInterest(ctx context.Context, tenantID, actor, s
 		for i := range ops {
 			ids = append(ids, ops[i].ID)
 		}
-		if err := s.startInterestBatchCase(ctx, tenantID, actor, ids); err != nil {
+		caseID, err := s.startInterestBatchCase(ctx, tenantID, actor, ids)
+		if err != nil {
 			return nil, nil, err
 		}
 		for i := range ops {
 			ops[i].Status = "SUBMITTED"
+			ops[i].WorkflowCaseID = &caseID
 		}
 		return nil, ops, nil
 	default:
@@ -376,7 +381,7 @@ func (s *InterestService) SubmitInterest(ctx context.Context, tenantID, actor, s
 	}
 }
 
-func (s *InterestService) startInterestCase(ctx context.Context, tenantID, actor, caseType string, op *repository.InterestOp, batchID *string) error {
+func (s *InterestService) startInterestCase(ctx context.Context, tenantID, actor, caseType string, op *repository.InterestOp, batchID *string) (string, error) {
 	caseCreated, err := s.workflow.CreateCase(ctx, workflowclient.CaseCreate{
 		TenantID:          tenantID,
 		CaseType:          caseType,
@@ -389,22 +394,22 @@ func (s *InterestService) startInterestCase(ctx context.Context, tenantID, actor
 		IdempotencyKey:    fmt.Sprintf("dpm-interest-%s", op.ID),
 	})
 	if err != nil {
-		return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
+		return "", ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
 	}
 	if _, err = s.workflow.SubmitCase(ctx, caseCreated.Id, actor, map[string]any{
 		"opId":        op.ID,
 		"opType":      op.OpType,
 		"savingsCode": op.SavingsCode,
 	}, fmt.Sprintf("dpm-interest-%s-submit", op.ID)); err != nil {
-		return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
+		return "", ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
 	}
 	if err := s.repo.SetInterestOpCase(ctx, tenantID, op.ID, caseCreated.Id); err != nil {
-		return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+		return "", ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
-	return nil
+	return caseCreated.Id, nil
 }
 
-func (s *InterestService) startInterestBatchCase(ctx context.Context, tenantID, actor string, ids []string) error {
+func (s *InterestService) startInterestBatchCase(ctx context.Context, tenantID, actor string, ids []string) (string, error) {
 	caseCreated, err := s.workflow.CreateCase(ctx, workflowclient.CaseCreate{
 		TenantID:          tenantID,
 		CaseType:          CaseBatchInterest,
@@ -417,21 +422,21 @@ func (s *InterestService) startInterestBatchCase(ctx context.Context, tenantID, 
 		IdempotencyKey:    fmt.Sprintf("dpm-interest-batch-%s", ids[0]),
 	})
 	if err != nil {
-		return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
+		return "", ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
 	}
 	// One case processes every op; each op is stamped with the batch case.
 	if _, err = s.workflow.SubmitCase(ctx, caseCreated.Id, actor, map[string]any{
-		"opIds": ids,
+		"opIds":  ids,
 		"opType": "BATCH",
 	}, fmt.Sprintf("dpm-interest-batch-%s-submit", ids[0])); err != nil {
-		return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
+		return "", ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
 	}
 	for _, id := range ids {
 		if err := s.repo.SetInterestOpCase(ctx, tenantID, id, caseCreated.Id); err != nil {
-			return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+			return "", ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
 	}
-	return nil
+	return caseCreated.Id, nil
 }
 
 // CheckInterestOp validates one staged op.
