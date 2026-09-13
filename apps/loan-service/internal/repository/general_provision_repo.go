@@ -10,22 +10,22 @@ import (
 // GeneralProvisionRow is one LNM.307 per-org provision period (the approved
 // row is the cumulative provision source for the next period).
 type GeneralProvisionRow struct {
-	ID               string
-	TenantID         string
-	OrgCode          string
-	ProvisionDate    string
-	RatePercent      float64
-	TotalOutstanding int64
-	Accum            int64
-	Required         int64
-	Alloc            int64
-	Reverse          int64
-	Status           string
-	WorkflowCaseID   string
-	WorkflowCaseCode string
-	JournalEntryID   string
-	CreatedBy        string
-	CreatedAt        string
+	ID               string  `json:"id"`
+	TenantID         string  `json:"tenant_id"`
+	OrgCode          string  `json:"org_code"`
+	ProvisionDate    string  `json:"provision_date"`
+	RatePercent      float64 `json:"rate_percent"`
+	TotalOutstanding int64   `json:"total_outstanding_minor"`
+	Accum            int64   `json:"accum_provision_minor"`
+	Required         int64   `json:"required_provision_minor"`
+	Alloc            int64   `json:"alloc_minor"`
+	Reverse          int64   `json:"reverse_minor"`
+	Status           string  `json:"status"`
+	WorkflowCaseID   string  `json:"workflow_case_id,omitempty"`
+	WorkflowCaseCode string  `json:"workflow_case_code,omitempty"`
+	JournalEntryID   string  `json:"journal_entry_id,omitempty"`
+	CreatedBy        string  `json:"created_by"`
+	CreatedAt        string  `json:"created_at"`
 }
 
 const generalProvisionColumns = `

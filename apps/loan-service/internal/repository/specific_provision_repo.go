@@ -9,23 +9,23 @@ import (
 
 // SpecificProvisionRow is one LNM.306 per-agreement provision request (W7).
 type SpecificProvisionRow struct {
-	ID               string
-	TenantID         string
-	ContractCode     string
-	AgreementCode    string
-	ProvisionDate    string
-	OutstandingMinor int64
-	DebtGroupCode    string
-	RatePercent      float64
-	DeductionMinor   int64
-	BaseMinor        int64
-	AmountMinor      int64
-	Status           string
-	WorkflowCaseID   string
-	WorkflowCaseCode string
-	JournalEntryID   string
-	CreatedBy        string
-	CreatedAt        string
+	ID               string  `json:"id"`
+	TenantID         string  `json:"tenant_id"`
+	ContractCode     string  `json:"contract_code"`
+	AgreementCode    string  `json:"agreement_code"`
+	ProvisionDate    string  `json:"provision_date"`
+	OutstandingMinor int64   `json:"outstanding_minor"`
+	DebtGroupCode    string  `json:"debt_group_code"`
+	RatePercent      float64 `json:"rate_percent"`
+	DeductionMinor   int64   `json:"deduction_minor"`
+	BaseMinor        int64   `json:"base_minor"`
+	AmountMinor      int64   `json:"amount_minor"`
+	Status           string  `json:"status"`
+	WorkflowCaseID   string  `json:"workflow_case_id,omitempty"`
+	WorkflowCaseCode string  `json:"workflow_case_code,omitempty"`
+	JournalEntryID   string  `json:"journal_entry_id,omitempty"`
+	CreatedBy        string  `json:"created_by"`
+	CreatedAt        string  `json:"created_at"`
 }
 
 const specificProvisionColumns = `

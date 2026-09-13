@@ -8,11 +8,11 @@ import (
 )
 
 type ProcessMapping struct {
-	BusinessKey        string
-	ProcessInstanceKey int64
-	BpmnProcessID      string
-	Status             string
-	CreatedAt          time.Time
+	BusinessKey        string    `json:"business_key"`
+	ProcessInstanceKey int64     `json:"process_instance_key"`
+	BpmnProcessID      string    `json:"bpmn_process_id"`
+	Status             string    `json:"status"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 type MappingRepository struct {
