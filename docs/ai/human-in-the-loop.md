@@ -47,27 +47,40 @@ tenant, amount, or arguments after the approval summary is created.
 
 ## Implemented proposal boundary
 
-The Go AI service has a disabled-by-default HITL boundary. With
+The Go AI service enforces a fail-closed HITL boundary for every `confirm`-kind
+catalog tool. Enforcement lives in the sandbox engine (`sandbox.SDKMethod`
+carries `RequiresApproval` propagated from `CatalogEntry.Kind`), so a
+dispatcher can no longer decide for itself whether a mutation runs. With
 `AI_ENABLE_HITL_PROPOSALS=true`:
 
-1. When the model requests a `confirm`-kind tool (currently
-   `crm.customer.export.prepare`, `customerId` plus `csv`/`json` format), the
-   registry refuses direct execution and the agent loop persists a redacted
+1. When a script calls a `confirm`-kind method (currently the
+   `crm.exportCustomer` stub), the engine raises the approval flow **before**
+   the dispatcher executes, and the Code Mode suite persists a redacted
    `PENDING` approval with a deterministic idempotency key
-   (`sha256(runId|tool|arguments)`), pauses the run in `WAITING_APPROVAL`,
-   and streams the proposal record to the UI inside the tool result.
+   (`sha256(tenant|tool|arguments)`), pauses the run in `WAITING_APPROVAL`,
+   and returns a typed `tools.ApprovalPending` result. The agent loop streams
+   the proposal record inside the tool result and ends the run with an AG-UI
+   `RUN_FINISHED` `interrupt` outcome.
 2. An independent approver decides through
    `POST /api/ai/approvals/{id}/decision`; self-approval is rejected, expiry
    is enforced, and rejection finishes the run as `FAILED`.
 3. Approval does not execute anything by itself. Only the **run owner** may
-   resume through `POST /api/ai/approvals/{id}/execution`, which re-resolves
-   permissions against live gateway headers, executes the stored tool within
-   the original tenant scope, persists the tool result, and finishes the run.
-   Failed executions revert the execution row so the owner can retry.
+   resume through `POST /api/ai/approvals/{id}/execution` or the AG-UI resume
+   entries, which re-resolve the tool against the catalog
+   (`catalog.ExecutionResolver`, confirm-kind only, live permission check),
+   execute the stored arguments within the original tenant scope, persist the
+   tool result, and continue the agent loop.
+4. If HITL is disabled or the approval store is unavailable, the tool call is
+   refused with `approval_unavailable`; the service never fabricates a
+   proposal id and never executes the mutation.
 
-`prepare` still creates no export artifact — it verifies CRM readability and
-returns a bounded payload. Production keeps this flag disabled until an
-owning-domain executor design is approved for real side effects.
+`crm.exportCustomer` still creates no export artifact — it verifies scope and
+returns a bounded payload. Production keeps real side effects disabled until an
+owning-domain executor design is approved.
+
+The FE-initiated proposal endpoint (`POST /api/ai/approvals`) validates tool
+names against `RouterOptions.ProposalTools`, which `main.go` builds from the
+registered catalog, so the allowlist cannot drift from the tool registry.
 
 ## Safety rules
 

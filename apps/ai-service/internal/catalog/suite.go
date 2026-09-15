@@ -12,7 +12,6 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/events"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox"
-	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
@@ -36,6 +35,10 @@ type CodeModeSuite struct {
 	// TypeDefs is the generated arda.* TypeScript declaration file injected
 	// into the model context once per run.
 	TypeDefs string
+	// UnwiredServices lists contract services referenced by the generated
+	// catalog that have no configured base URL in this deployment. A non-empty
+	// list is fatal in production (fail closed) and logged elsewhere.
+	UnwiredServices []string
 }
 
 func (s *CodeModeSuite) SetEventPublisher(p events.Publisher) {
@@ -45,13 +48,12 @@ func (s *CodeModeSuite) SetEventPublisher(p events.Publisher) {
 }
 
 // NewCodeModeSuite builds the 3-meta-tool suite (search & execute & readResult)
-// backed by the Goja sandbox. Clients carry the service identity and delegate
-// subject headers to target services.
+// backed by the Goja sandbox. clients carries one signed transport per wired
+// service, keyed by the canonical contract service name; the generated catalog
+// registers only the entries whose service is present and reports the rest via
+// UnwiredServices.
 func NewCodeModeSuite(
-	crmClient *svcclient.CRMClient,
-	financeClient *svcclient.FinanceClient,
-	hrmClient *svcclient.HRMClient,
-	iamClient *svcclient.IAMClient,
+	clients ClientSet,
 	store repository.RunStore,
 	enableHITL bool,
 	ragClient ragSearcher,
@@ -61,22 +63,18 @@ func NewCodeModeSuite(
 
 	RegisterBuiltinCatalog(dispatcherReg, ragClient)
 	RegisterDocsCatalog(dispatcherReg, docsClient)
-	RegisterGeneratedCatalog(dispatcherReg, ClientSet{
-		CRM:     crmClient,
-		Finance: financeClient,
-		HRM:     hrmClient,
-		IAM:     iamClient,
-	})
+	unwired := RegisterGeneratedCatalog(dispatcherReg, clients)
 	catalogIndex := NewIndex(dispatcherReg.AllEntries())
 	sandboxEngine := sandbox.NewEngine(dispatcherReg)
 	resultStore := sandbox.NewResultStore()
 
 	suite := &CodeModeSuite{
-		Catalog:     catalogIndex,
-		Engine:      sandboxEngine,
-		Registry:    dispatcherReg,
-		ResultStore: resultStore,
-		TypeDefs:    GenerateTypeDefinitions(dispatcherReg.AllEntries()),
+		Catalog:         catalogIndex,
+		Engine:          sandboxEngine,
+		Registry:        dispatcherReg,
+		ResultStore:     resultStore,
+		TypeDefs:        GenerateTypeDefinitions(dispatcherReg.AllEntries()),
+		UnwiredServices: unwired,
 	}
 
 	searchTool := tools.NewSearchMetaTool(func(query, domain string, scope tools.Context) (string, int, error) {
@@ -132,34 +130,42 @@ func NewCodeModeSuite(
 			out["logs"] = res.Logs
 		}
 
-		// If a mutation was called inside the sandbox, persist the ApprovalProposal in DB
+		// A confirm-kind SDK call was refused by the sandbox engine and is now
+		// converted into a durable approval proposal. Fail closed: without
+		// HITL or an approval store there is no proposal, and the model is
+		// told the action is unavailable instead of receiving a fake id.
 		if res.ApprovalNeeded {
+			if !enableHITL {
+				return nil, tools.ErrApprovalUnavailable
+			}
+			approvalStore, ok := store.(repository.ApprovalStore)
+			if !ok {
+				return nil, tools.ErrApprovalUnavailable
+			}
+
 			scopeRun := repository.RunContext{
 				TenantID:    scope.TenantID,
 				ActorUserID: scope.ActorUserID,
 			}
+			rawArgs, _ := json.Marshal(res.ProposalArgs)
+			key := sha256.Sum256([]byte(strings.Join([]string{scope.TenantID, res.ProposalTool, string(rawArgs)}, "|")))
+			risk := res.ProposalRisk
+			if strings.TrimSpace(risk) == "" {
+				risk = "medium"
+			}
 
-			proposalID := "prop-" + res.ScriptHash[:8]
-			expiresAt := time.Now().UTC().Add(15 * time.Minute)
-
-			if approvalStore, ok := store.(repository.ApprovalStore); ok && enableHITL {
-				rawArgs, _ := json.Marshal(res.ProposalArgs)
-				key := sha256.Sum256([]byte(strings.Join([]string{scope.TenantID, res.ProposalTool, string(rawArgs)}, "|")))
-
-				record, createErr := approvalStore.CreateApprovalProposal(ctx, repository.ApprovalProposal{
-					Run:               scopeRun,
-					ToolName:          res.ProposalTool,
-					ToolVersion:       1,
-					Risk:              "medium",
-					ArgumentsRedacted: string(rawArgs),
-					SummaryRedacted:   fmt.Sprintf(`{"action":"%s","arguments":%s}`, res.ProposalTool, string(rawArgs)),
-					ExpiresAt:         expiresAt,
-					IdempotencyKey:    hex.EncodeToString(key[:16]),
-				})
-				if createErr == nil {
-					proposalID = record.ID
-					expiresAt = record.ExpiresAt
-				}
+			record, createErr := approvalStore.CreateApprovalProposal(ctx, repository.ApprovalProposal{
+				Run:               scopeRun,
+				ToolName:          res.ProposalTool,
+				ToolVersion:       1,
+				Risk:              risk,
+				ArgumentsRedacted: string(rawArgs),
+				SummaryRedacted:   fmt.Sprintf(`{"action":"%s","arguments":%s}`, res.ProposalTool, string(rawArgs)),
+				ExpiresAt:         time.Now().UTC().Add(15 * time.Minute),
+				IdempotencyKey:    hex.EncodeToString(key[:16]),
+			})
+			if createErr != nil {
+				return nil, fmt.Errorf("create approval proposal: %w", createErr)
 			}
 
 			if suite.EventPublisher != nil {
@@ -169,25 +175,25 @@ func NewCodeModeSuite(
 					scope.ActorUserID,
 					scope.RequestID,
 					"",
-					proposalID,
+					record.ID,
 					events.ApprovalRequestedData{
-						ApprovalID:         proposalID,
+						ApprovalID:         record.ID,
 						ToolName:           res.ProposalTool,
 						SummaryRedacted:    fmt.Sprintf(`{"action":"%s"}`, res.ProposalTool),
 						RequiredCapability: "ai.approval.execute",
-						ExpiresAt:          expiresAt.Format(time.RFC3339),
+						ExpiresAt:          record.ExpiresAt.Format(time.RFC3339),
 					},
 				))
 			}
 
-			out["approval"] = map[string]any{
-				"id":        proposalID,
-				"status":    "PENDING",
-				"tool":      res.ProposalTool,
-				"args":      res.ProposalArgs,
-				"expiresAt": expiresAt.Format(time.RFC3339),
-			}
-			out["status"] = "WAITING_APPROVAL"
+			return nil, &tools.ApprovalPendingError{Proposal: tools.ApprovalPending{
+				ProposalID: record.ID,
+				Tool:       res.ProposalTool,
+				Version:    1,
+				Risk:       risk,
+				Args:       res.ProposalArgs,
+				ExpiresAt:  record.ExpiresAt,
+			}}
 		}
 
 		return out, nil

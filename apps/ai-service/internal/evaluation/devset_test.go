@@ -39,3 +39,35 @@ func TestDevCorpusEvaluationSetParses(t *testing.T) {
 		t.Error("dev set must include at least one no-answer case")
 	}
 }
+
+// TestAnswerEvaluationSetParses keeps the committed answer-level golden set
+// valid offline: unique ids, at least one no-answer case, and answered cases
+// must assert either citations or keywords (otherwise they cannot fail).
+func TestAnswerEvaluationSetParses(t *testing.T) {
+	raw, err := os.ReadFile("../../../../docs/ai/answer-evaluation-set.yaml")
+	if err != nil {
+		t.Skipf("answer evaluation set not present: %v", err)
+	}
+	set, err := ParseAnswerSet(raw)
+	if err != nil {
+		t.Fatalf("parse answer evaluation set: %v", err)
+	}
+	seen := make(map[string]struct{}, len(set.Cases))
+	noAnswer := 0
+	for _, c := range set.Cases {
+		if _, ok := seen[c.ID]; ok {
+			t.Errorf("duplicate case id %q", c.ID)
+		}
+		seen[c.ID] = struct{}{}
+		if c.Expected.AllowNoAnswer {
+			noAnswer++
+			continue
+		}
+		if !c.Expected.MustCite && len(c.Expected.SourceKeys) == 0 && len(c.Expected.Keywords) == 0 {
+			t.Errorf("case %q cannot fail: it asserts no citation, source key or keyword", c.ID)
+		}
+	}
+	if noAnswer == 0 {
+		t.Error("answer set must include at least one no-answer case")
+	}
+}

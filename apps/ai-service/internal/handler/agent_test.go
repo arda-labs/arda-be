@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
@@ -126,7 +127,7 @@ func TestAgentLoopCreatesApprovalProposalForConfirmTool(t *testing.T) {
 	store := &agentRunStore{}
 	resolver := tools.NewRegistry(handlerConfirmTool{})
 	options := RouterOptions{
-		ModelProvider:         model.NewClient(server.URL, "k", "m", server.Client()),
+		ModelProvider:       model.NewClient(server.URL, "k", "m", server.Client()),
 		AgentMaxSteps:       3,
 		EnableHITLProposals: true,
 	}
@@ -170,6 +171,80 @@ func TestAgentLoopCreatesApprovalProposalForConfirmTool(t *testing.T) {
 	if store.finished {
 		t.Fatalf("run must stay WAITING_APPROVAL, not finished")
 	}
+}
+
+// TestAgentLoopCodeModeApprovalEmitsInterrupt locks the Code Mode HITL path:
+// the sandbox meta-tool returns a typed Result.Approval, the handler emits the
+// standard proposal payload, RUN_FINISHED carries outcome=interrupt, and the
+// run is not finished.
+func TestAgentLoopCodeModeApprovalEmitsInterrupt(t *testing.T) {
+	server := newModelServer(t, [][]string{{
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-9","type":"function","function":{"name":"execute","arguments":"{\"code\":\"return await arda.crm.exportCustomer({ customerId: 'c1' })\"}"}}]}}]}`,
+		`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+	}})
+	defer server.Close()
+
+	store := &agentRunStore{}
+	resolver := tools.NewRegistry(handlerApprovalPendingTool{})
+	options := RouterOptions{
+		ModelProvider:       model.NewClient(server.URL, "k", "m", server.Client()),
+		AgentMaxSteps:       3,
+		EnableHITLProposals: true,
+	}
+	router := NewRouterWithOptions(store, resolver, options)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/agent", strings.NewReader(`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"xuất dữ liệu"}]}`))
+	gatewayHeaders(req)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	events := decodeSSEEvents(t, res.Body.String())
+	var proposalID any
+	var finishedOutcome map[string]any
+	for _, event := range events {
+		switch event["type"] {
+		case "TOOL_CALL_RESULT":
+			content, _ := event["content"].(string)
+			var payload map[string]any
+			if json.Unmarshal([]byte(content), &payload) == nil {
+				if proposal, ok := payload["proposal"].(map[string]any); ok {
+					proposalID = proposal["id"]
+				}
+			}
+		case "RUN_FINISHED":
+			if outcome, ok := event["outcome"].(map[string]any); ok {
+				finishedOutcome = outcome
+			}
+		}
+	}
+	if proposalID != "approval-9" {
+		t.Fatalf("proposal id = %v, want approval-9; events: %v", proposalID, eventTypes(events))
+	}
+	if finishedOutcome == nil || finishedOutcome["type"] != "interrupt" {
+		t.Fatalf("RUN_FINISHED outcome = %v, want interrupt", finishedOutcome)
+	}
+	if store.finished {
+		t.Fatal("run must stay WAITING_APPROVAL, not finished")
+	}
+	if !store.toolFinished {
+		t.Fatal("the meta-tool execution row must be finished, not left dangling")
+	}
+}
+
+type handlerApprovalPendingTool struct{}
+
+func (handlerApprovalPendingTool) Definition() tools.Definition {
+	return tools.Definition{Name: "execute", Version: 1, Kind: "read", Timeout: time.Second, Risk: "low"}
+}
+
+func (handlerApprovalPendingTool) Execute(_ context.Context, _ tools.Context, _ json.RawMessage) (tools.Result, error) {
+	data, _ := json.Marshal(map[string]any{"status": "WAITING_APPROVAL"})
+	return tools.Result{
+		Data:     data,
+		Summary:  "waiting for approval",
+		Source:   "ai-sandbox",
+		Approval: &tools.ApprovalPending{ProposalID: "approval-9", Tool: "crm.exportCustomer", Version: 1, Risk: "medium", ExpiresAt: time.Now().UTC().Add(15 * time.Minute)},
+	}, nil
 }
 
 func TestExecuteApprovedToolRequiresOwnerAndApprovalState(t *testing.T) {

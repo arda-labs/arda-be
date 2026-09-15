@@ -57,10 +57,7 @@ func evalRegistry(t *testing.T) (*DispatcherRegistry, *Index) {
 	t.Helper()
 	reg := NewDispatcherRegistry()
 	RegisterBuiltinCatalog(reg, stubSearcher{})
-	RegisterGeneratedCatalog(reg, genClients("http://iam.local", "http://crm.local", "http://finance.local"))
-	set := genClients("", "", "")
-	set.HRM = testHRMClient("http://hrm.local")
-	RegisterGeneratedCatalog(reg, set)
+	RegisterGeneratedCatalog(reg, genClientsWithHRM("http://hrm.local"))
 	return reg, NewIndex(reg.AllEntries())
 }
 

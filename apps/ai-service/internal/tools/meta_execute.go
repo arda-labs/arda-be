@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -59,6 +60,39 @@ func (t *ExecuteMetaTool) Execute(ctx context.Context, scope Context, arguments 
 
 	execResult, err := t.executeFn(ctx, scope, input.Code)
 	if err != nil {
+		// A confirm-kind SDK call inside the sandbox was converted into a
+		// human-approval proposal: surface it as a typed Result so the agent
+		// loop emits an interrupt and stops the run.
+		var pending *ApprovalPendingError
+		if errors.As(err, &pending) {
+			data, marshalErr := json.Marshal(map[string]any{
+				"status":   "WAITING_APPROVAL",
+				"approval": pending.Proposal,
+			})
+			if marshalErr != nil {
+				return Result{}, marshalErr
+			}
+			return Result{
+				Data:      data,
+				Summary:   "Action requires human approval; a proposal was created and the run is waiting for a decision.",
+				Source:    "ai-sandbox",
+				RequestID: scope.RequestID,
+				FreshAt:   time.Now().UTC(),
+				Approval:  &pending.Proposal,
+			}, nil
+		}
+		if errors.Is(err, ErrApprovalUnavailable) {
+			data, marshalErr := json.Marshal(map[string]any{"error": "approval_unavailable"})
+			if marshalErr == nil {
+				return Result{
+					Data:      data,
+					Summary:   "Action refused: human approval is not available in this deployment.",
+					Source:    "ai-sandbox",
+					RequestID: scope.RequestID,
+					FreshAt:   time.Now().UTC(),
+				}, nil
+			}
+		}
 		// Even on error, return structured error details in Result so model can inspect or rephrase
 		data, marshalErr := json.Marshal(map[string]any{
 			"error": err.Error(),

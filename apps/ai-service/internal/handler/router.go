@@ -65,6 +65,14 @@ type RouterOptions struct {
 	RAGService *knowledge.Service
 	// CatalogTools is the list of SDK tools surfaced via GET /api/ai/tools.
 	CatalogTools []CatalogToolDTO
+	// ApprovalResolver resolves confirm-kind tools when executing an approved
+	// proposal. Production wires the catalog-backed resolver; when nil the
+	// model-tool resolver is used (tests that register confirm tools directly).
+	ApprovalResolver executionResolver
+	// ProposalTools declares the confirm-kind tools accepted by the
+	// FE-initiated proposal endpoint (POST /api/ai/approvals). Built from the
+	// registered catalog in main.go so the allowlist cannot drift from it.
+	ProposalTools []ProposalToolSpec
 	// ReadyCheck lets the process wire database/provider diagnostics into the
 	// Kubernetes readiness endpoint without exposing infrastructure details.
 	ReadyCheck func(context.Context) error
@@ -76,6 +84,7 @@ type CatalogToolDTO struct {
 	MethodName          string   `json:"methodName"`
 	SDKPath             string   `json:"sdkPath"`
 	Domain              string   `json:"domain"`
+	Service             string   `json:"service,omitempty"`
 	Signature           string   `json:"signature"`
 	JSDoc               string   `json:"jsdoc"`
 	Keywords            []string `json:"keywords,omitempty"`
@@ -83,6 +92,25 @@ type CatalogToolDTO struct {
 	RequiredPermissions []string `json:"requiredPermissions"`
 	Risk                string   `json:"risk"`
 	TimeoutMs           int64    `json:"timeoutMs"`
+}
+
+// ProposalToolSpec declares one confirm-kind tool accepted by the FE-initiated
+// proposal endpoint. It is built from the registered catalog so the allowlist
+// cannot drift from the tool registry.
+type ProposalToolSpec struct {
+	Name               string
+	Version            int
+	Risk               string
+	RequiredPermission string
+}
+
+func findProposalTool(specs []ProposalToolSpec, name string, version int) (ProposalToolSpec, bool) {
+	for _, spec := range specs {
+		if spec.Name == name && spec.Version == version {
+			return spec, true
+		}
+	}
+	return ProposalToolSpec{}, false
 }
 
 type runStore interface {
@@ -110,6 +138,9 @@ type runInput struct {
 	Context         json.RawMessage   `json:"context"`
 	Tool            *toolCallInput    `json:"tool,omitempty"`
 	Resume          []agUiResumeEntry `json:"resume,omitempty"`
+	// ForwardedProps carries per-run client metadata (AG-UI standard field).
+	// Arda reads only forwardedProps.ardaContext; everything else is ignored.
+	ForwardedProps json.RawMessage `json:"forwardedProps,omitempty"`
 }
 
 type inputMessage struct {
@@ -480,11 +511,6 @@ type approvalDecisionInput struct {
 	Decision string `json:"decision"`
 }
 
-type customerExportProposalArguments struct {
-	CustomerID string `json:"customerId"`
-	Format     string `json:"format"`
-}
-
 func createApproval(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {
 	if !options.EnableHITLProposals {
 		problem(w, http.StatusNotFound, "ai.hitl_not_enabled")
@@ -513,18 +539,18 @@ func createApproval(w http.ResponseWriter, r *http.Request, store runStore, opti
 		problem(w, http.StatusBadRequest, "ai.run_identifiers_required")
 		return
 	}
-	if input.Tool.Name != "crm.customer.export.prepare" || normalizeVersion(input.Tool.Version) != 1 {
+	spec, allowlisted := findProposalTool(options.ProposalTools, input.Tool.Name, normalizeVersion(input.Tool.Version))
+	if !allowlisted {
 		problem(w, http.StatusBadRequest, "ai.proposal_not_allowlisted")
 		return
 	}
-	arguments, err := validateCustomerExportProposal(input.Tool.Arguments)
-	if err != nil {
-		problem(w, http.StatusBadRequest, "ai.invalid_proposal_arguments")
-		return
-	}
-	if !hasPermission(r.Header.Get("X-Permissions"), "crm.customer.read") {
+	if spec.RequiredPermission != "" && !hasPermission(r.Header.Get("X-Permissions"), spec.RequiredPermission) {
 		problem(w, http.StatusForbidden, "ai.proposal_forbidden")
 		return
+	}
+	argumentData := input.Tool.Arguments
+	if len(argumentData) == 0 {
+		argumentData = json.RawMessage(`{}`)
 	}
 	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
 	if idempotencyKey == "" {
@@ -547,11 +573,9 @@ func createApproval(w http.ResponseWriter, r *http.Request, store runStore, opti
 		problem(w, http.StatusBadRequest, "ai.resource_version_invalid")
 		return
 	}
-	argumentData, _ := json.Marshal(arguments)
 	summaryData, _ := json.Marshal(map[string]any{
-		"action":     "prepare_customer_export",
-		"customerId": arguments.CustomerID,
-		"format":     arguments.Format,
+		"action":    spec.Name,
+		"arguments": json.RawMessage(sanitizeTranscript(string(argumentData))),
 	})
 	approvalStore, ok := store.(repository.ApprovalStore)
 	if !ok || approvalStore == nil {
@@ -560,10 +584,10 @@ func createApproval(w http.ResponseWriter, r *http.Request, store runStore, opti
 	}
 	record, err := approvalStore.CreateApprovalProposal(r.Context(), repository.ApprovalProposal{
 		Run:               repository.RunContext{TenantID: scope.TenantID, ActorUserID: scope.ActorUserID, ExternalThread: input.ThreadID, ExternalRun: input.RunID},
-		ToolName:          input.Tool.Name,
-		ToolVersion:       1,
-		Risk:              "confirm",
-		ArgumentsRedacted: string(argumentData),
+		ToolName:          spec.Name,
+		ToolVersion:       spec.Version,
+		Risk:              spec.Risk,
+		ArgumentsRedacted: sanitizeTranscript(string(argumentData)),
 		SummaryRedacted:   string(summaryData),
 		ResourceVersion:   resourceVersion,
 		PermissionVersion: strings.TrimSpace(r.Header.Get("X-Auth-Version")),
@@ -756,24 +780,6 @@ func approvalScope(w http.ResponseWriter, r *http.Request, permission string) (t
 		return tools.Context{}, false
 	}
 	return scopeFromRequest(r), true
-}
-
-func validateCustomerExportProposal(raw json.RawMessage) (customerExportProposalArguments, error) {
-	var arguments customerExportProposalArguments
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&arguments); err != nil {
-		return customerExportProposalArguments{}, err
-	}
-	if err := ensureEOF(decoder); err != nil {
-		return customerExportProposalArguments{}, err
-	}
-	arguments.CustomerID = strings.TrimSpace(arguments.CustomerID)
-	arguments.Format = strings.ToLower(strings.TrimSpace(arguments.Format))
-	if arguments.CustomerID == "" || len(arguments.CustomerID) > 128 || (arguments.Format != "csv" && arguments.Format != "json") {
-		return customerExportProposalArguments{}, errors.New("invalid customer export proposal")
-	}
-	return arguments, nil
 }
 
 func ensureEOF(decoder *json.Decoder) error {

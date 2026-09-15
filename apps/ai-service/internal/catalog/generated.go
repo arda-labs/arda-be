@@ -54,6 +54,114 @@ type GeneratedArg struct {
 func GeneratedCatalog() []GeneratedEntry {
 	return []GeneratedEntry{
 		{
+			SDKPath:   "arda.capital.listContracts",
+			Domain:    "capital",
+			Signature: "arda.capital.listContracts(args: {search?: string; status?: string; sort?: string; order?: string; cursor?: number; limit?: number}): Promise<CapitalContractListPage>;",
+			JSDoc: `/**
+ * List fund contracts in the delegated tenant and organization scope.
+ *
+ * List fund contracts (hợp đồng vốn) in the active tenant, narrowed by the delegated organization scope. Returns contract economics (amount, interest_rate, currency_code), dates, status and business codes per contract, with pagination. Internal fields (tenant_id, workflow_case_id, journal_entry_id, created_by, timestamps) are dropped by the handler and again by this response allowlist.
+ * @param args.search Free-text filter on contract code, counterparty code or fund-type code
+ * @param args.status Optional contract lifecycle status filter
+ * @param args.sort Optional whitelisted sort column
+ * @param args.order Sort direction, asc or desc
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns CapitalContractListPage { items: [{ id, contract_code, fund_type_code, product_code, counterparty_code, contract_date, maturity_date, amount_minor, interest_rate, currency_code, status, org_code }], page, per_page, total }
+ * @requires capital.read
+ * @domain capital
+ */`,
+			Keywords:            []string{"capital", "contract", "contracts", "fund contract", "fund", "disbursement", "maturity", "interest rate", "amount", "status", "list", "search", "hợp đồng vốn", "hợp đồng", "nguồn vốn", "số tiền", "lãi suất", "đáo hạn", "trạng thái", "danh sách hợp đồng"},
+			Kind:                "read",
+			RequiredPermissions: []string{"capital.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "capital-service",
+			Method:              "GET",
+			Path:                "/internal/ai/contracts",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "status", Param: "status", In: "query", Required: false, Type: "string", MaxLength: 0, Min: nil, Max: nil, Default: "", Transform: "upper", Enum: []string{"PENDING_APPROVAL", "ACTIVE", "REJECTED", "CLOSED"}},
+				{Name: "sort", Param: "sort", In: "query", Required: false, Type: "string", MaxLength: 0, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{"contract_code", "contract_date"}},
+				{Name: "order", Param: "order", In: "query", Required: false, Type: "string", MaxLength: 0, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{"asc", "desc"}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"amount_minor":{"type":"integer"},"contract_code":{"type":"string"},"contract_date":{"type":"string"},"counterparty_code":{"type":"string"},"currency_code":{"type":"string"},"fund_type_code":{"type":"string"},"id":{"type":"string"},"interest_rate":{"type":"number"},"maturity_date":{"type":"string"},"org_code":{"type":"string"},"product_code":{"type":"string"},"status":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.capital.listFundTypes",
+			Domain:    "capital",
+			Signature: "arda.capital.listFundTypes(args: {search?: string; cursor?: number; limit?: number}): Promise<FundTypeListPage>;",
+			JSDoc: `/**
+ * List active capital fund types in the delegated tenant.
+ *
+ * List active fund classifications (loại quỹ) in the active tenant. Returns id, code, name and is_active per fund type, with pagination. Internal fields (tenant_id, created_by, timestamps) are dropped by the handler and again by this response allowlist.
+ * @param args.search Free-text filter on fund-type code/name
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns FundTypeListPage { items: [{ id, code, name, is_active }], page, per_page, total }
+ * @requires capital.read
+ * @domain capital
+ */`,
+			Keywords:            []string{"capital", "fund type", "fund types", "fund classification", "fund source", "list", "search", "loại quỹ", "loại vốn", "nguồn vốn", "quỹ", "danh mục", "danh sách loại quỹ"},
+			Kind:                "read",
+			RequiredPermissions: []string{"capital.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "capital-service",
+			Method:              "GET",
+			Path:                "/internal/ai/fund-types",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.capital.listProducts",
+			Domain:    "capital",
+			Signature: "arda.capital.listProducts(args: {search?: string; cursor?: number; limit?: number}): Promise<CapitalProductListPage>;",
+			JSDoc: `/**
+ * List active capital products (fund products) in the delegated tenant.
+ *
+ * List active capital products (sản phẩm vốn) in the active tenant. Returns id, code, name, fund_type_code, term_months, interest_rate, currency_code and is_active per product, with pagination. Internal fields (tenant_id, created_by, timestamps) are dropped by the handler and again by this response allowlist.
+ * @param args.search Free-text filter on product code/name
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns CapitalProductListPage { items: [{ id, code, name, fund_type_code, term_months, interest_rate, currency_code, is_active }], page, per_page, total }
+ * @requires capital.read
+ * @domain capital
+ */`,
+			Keywords:            []string{"capital", "product", "products", "fund product", "term", "interest rate", "list", "search", "sản phẩm", "sản phẩm vốn", "kỳ hạn", "lãi suất", "danh mục sản phẩm"},
+			Kind:                "read",
+			RequiredPermissions: []string{"capital.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "capital-service",
+			Method:              "GET",
+			Path:                "/internal/ai/products",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"currency_code":{"type":"string"},"fund_type_code":{"type":"string"},"id":{"type":"string"},"interest_rate":{"type":"number"},"is_active":{"type":"boolean"},"name":{"type":"string"},"term_months":{"type":"integer"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
 			SDKPath:   "arda.crm.getCustomer",
 			Domain:    "crm",
 			Signature: "arda.crm.getCustomer(args: {customerId: string}): Promise<CustomerSummary>;",
@@ -78,6 +186,106 @@ func GeneratedCatalog() []GeneratedEntry {
 			},
 			ScopeQuery:     []GeneratedScopeQuery{},
 			ResponseSchema: `{"type":"object","properties":{"customerCode":{"type":"string"},"customerType":{"type":"string"},"id":{"type":"string"},"name":{"type":"string"},"orgId":{"type":"string"},"rank":{"type":"string"},"riskLevel":{"type":"string"},"segment":{"type":"string"},"status":{"type":"string"},"updatedAt":{"type":"string"}}}`,
+		},
+		{
+			SDKPath:   "arda.deposit.getSavingsDetail",
+			Domain:    "deposit",
+			Signature: "arda.deposit.getSavingsDetail(args: {savingsCode: string}): Promise<DepositSavingsDetail>;",
+			JSDoc: `/**
+ * Read one savings passbook and its recent movements.
+ *
+ * Read one savings account by savings code. Returns the redacted savings row plus a bounded preview of the 20 newest transactions (type, amount, currency, date, status) and the total transaction count. tenant_id, internal row ids, journal/workflow linkage and audit fields are never returned.
+ * @param args.savingsCode Savings code from arda.deposit.listSavings (max 128 chars)
+ * @returns DepositSavingsDetail { savings: { savings_code, customer_code, product_code, open_date, maturity_date, principal_minor, accrued_minor, currency_code, status }, transactions: [{ txn_type, amount_minor, currency_code, txn_date, status }], transaction_count }
+ * @requires deposit.read
+ * @domain deposit
+ */`,
+			Keywords:            []string{"deposit", "savings", "savings account", "passbook", "savings detail", "transaction", "movement", "deposit history", "accrued interest", "get", "read", "chi tiết sổ tiết kiệm", "lịch sử giao dịch", "biến động số dư", "tiền gửi thêm", "rút tiền", "lãi đã trả"},
+			Kind:                "read",
+			RequiredPermissions: []string{"deposit.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "deposit-service",
+			Method:              "GET",
+			Path:                "/internal/ai/savings/{code}",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "savingsCode", Param: "code", In: "path", Required: true, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"savings":{"type":"object","properties":{"accrued_minor":{"type":"integer"},"currency_code":{"type":"string"},"customer_code":{"type":"string"},"maturity_date":{"type":"string"},"open_date":{"type":"string"},"principal_minor":{"type":"integer"},"product_code":{"type":"string"},"savings_code":{"type":"string"},"status":{"type":"string"}}},"transaction_count":{"type":"integer"},"transactions":{"type":"array","items":{"type":"object","properties":{"amount_minor":{"type":"integer"},"currency_code":{"type":"string"},"status":{"type":"string"},"txn_date":{"type":"string"},"txn_type":{"type":"string"}}}}}}`,
+		},
+		{
+			SDKPath:   "arda.deposit.listInterestRates",
+			Domain:    "deposit",
+			Signature: "arda.deposit.listInterestRates(args: {productCode?: string; cursor?: number; limit?: number}): Promise<DepositInterestRateListPage>;",
+			JSDoc: `/**
+ * List active savings interest-rate tiers in the delegated tenant.
+ *
+ * List active deposit rate tiers, optionally narrowed to one product_code, newest effective date first, with pagination. Returns the redacted tier (product code, term months, method, denominator, rate, effective date, active flag) — tenant_id, row id and audit fields are never returned.
+ * @param args.productCode Savings product code to narrow the tiers (also matches the default/global tier)
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns DepositInterestRateListPage { items: [{ product_code, term_months, method, denominator, rate, effective_from, is_active }], page, per_page, total }
+ * @requires deposit.read
+ * @domain deposit
+ */`,
+			Keywords:            []string{"deposit", "savings", "interest rate", "deposit rate", "savings rate", "rate tier", "term", "product", "list", "search", "lãi suất huy động", "lãi suất tiết kiệm", "biểu lãi suất", "lãi suất theo kỳ hạn", "sản phẩm tiền gửi", "danh sách lãi suất"},
+			Kind:                "read",
+			RequiredPermissions: []string{"deposit.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "deposit-service",
+			Method:              "GET",
+			Path:                "/internal/ai/interest-rates",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "productCode", Param: "product_code", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"denominator":{"type":"integer"},"effective_from":{"type":"string"},"is_active":{"type":"boolean"},"method":{"type":"string"},"product_code":{"type":"string"},"rate":{"type":"number"},"term_months":{"type":"integer"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.deposit.listSavings",
+			Domain:    "deposit",
+			Signature: "arda.deposit.listSavings(args: {search?: string; status?: string; cursor?: number; limit?: number}): Promise<DepositSavingsListPage>;",
+			JSDoc: `/**
+ * List savings accounts in the delegated tenant.
+ *
+ * List savings accounts in the active tenant and delegated org scope, newest open date first, with pagination. q narrows savings_code/customer_code; status is an exact uppercase match. Returns the redacted savings row (code, customer code, product, open/maturity dates, principal, accrued interest, currency, status) — tenant_id, internal row id, org/workflow/journal linkage and audit fields are never returned.
+ * @param args.search Free-text filter on savings code or customer code
+ * @param args.status Exact savings status filter (ACTIVE, SETTLED, MATURED, ...)
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns DepositSavingsListPage { items: [{ savings_code, customer_code, product_code, open_date, maturity_date, principal_minor, accrued_minor, currency_code, status }], page, per_page, total }
+ * @requires deposit.read
+ * @domain deposit
+ */`,
+			Keywords:            []string{"deposit", "savings", "savings account", "passbook", "term deposit", "customer", "principal", "accrued interest", "maturity", "list", "search", "sổ tiết kiệm", "tiền gửi tiết kiệm", "tiền gửi có kỳ hạn", "danh sách sổ tiết kiệm", "số dư tiết kiệm", "lãi dự trả", "ngày đáo hạn"},
+			Kind:                "read",
+			RequiredPermissions: []string{"deposit.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "deposit-service",
+			Method:              "GET",
+			Path:                "/internal/ai/savings",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "status", Param: "status", In: "query", Required: false, Type: "string", MaxLength: 32, Min: nil, Max: nil, Default: "", Transform: "upper", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"accrued_minor":{"type":"integer"},"currency_code":{"type":"string"},"customer_code":{"type":"string"},"maturity_date":{"type":"string"},"open_date":{"type":"string"},"principal_minor":{"type":"integer"},"product_code":{"type":"string"},"savings_code":{"type":"string"},"status":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
 		},
 		{
 			SDKPath:   "arda.finance.getAccount",
@@ -178,6 +386,659 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"email":{"type":"string"},"id":{"type":"string"},"name":{"type":"string"},"roles":{"type":"array","items":{"type":"string"}},"status":{"type":"string"},"username":{"type":"string"}}}},"page":{"type":"integer"},"perPage":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.loan.getContract",
+			Domain:    "loan",
+			Signature: "arda.loan.getContract(args: {contractId: string}): Promise<LoanContractDetail>;",
+			JSDoc: `/**
+ * Read one redacted credit contract in the delegated tenant.
+ *
+ * Read one credit contract by Arda contract id. The id comes from arda.loan.listContracts. Returns the redacted detail (codes, term, dates, amount, rate, repayment frequencies, status); tenant_id, employee_code, org/workflow linkage and audit fields are never returned.
+ * @param args.contractId Arda contract identifier from arda.loan.listContracts (max 128 chars)
+ * @returns LoanContractDetail { id, contract_code, contract_no, customer_code, contract_type_code, product_code, contract_date, loan_term, term_unit, maturity_date, loan_amt_minor, interest_rate, interest_rate_type, interest_payment_freq, principal_payment_freq, status }
+ * @requires loan.read
+ * @domain loan
+ */`,
+			Keywords:            []string{"loan", "credit", "contract", "credit contract", "loan contract", "contract detail", "term", "maturity", "interest rate", "repayment", "get", "read", "chi tiết hợp đồng vay", "hợp đồng tín dụng", "kỳ hạn", "ngày đáo hạn", "lãi suất", "phương thức trả nợ"},
+			Kind:                "read",
+			RequiredPermissions: []string{"loan.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "loan-service",
+			Method:              "GET",
+			Path:                "/internal/ai/contracts/{id}",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "contractId", Param: "id", In: "path", Required: true, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"contract_code":{"type":"string"},"contract_date":{"type":"string"},"contract_no":{"type":"string"},"contract_type_code":{"type":"string"},"customer_code":{"type":"string"},"id":{"type":"string"},"interest_payment_freq":{"type":"string"},"interest_rate":{"type":"number"},"interest_rate_type":{"type":"string"},"loan_amt_minor":{"type":"integer"},"loan_term":{"type":"integer"},"maturity_date":{"type":"string"},"principal_payment_freq":{"type":"string"},"product_code":{"type":"string"},"status":{"type":"string"},"term_unit":{"type":"string"}}}`,
+		},
+		{
+			SDKPath:   "arda.loan.listContracts",
+			Domain:    "loan",
+			Signature: "arda.loan.listContracts(args: {search?: string; status?: string; cursor?: number; limit?: number}): Promise<LoanContractListPage>;",
+			JSDoc: `/**
+ * List credit contracts in the delegated tenant.
+ *
+ * List credit contracts in the active tenant, newest first, with pagination. q narrows contract_no/customer_code/contract_code; status is an exact uppercase match. Returns the redacted contract summary (code, customer code, product, dates, amount, rate, status) — tenant_id, employee_code, org/workflow linkage and audit fields are never returned.
+ * @param args.search Free-text filter on contract number, customer code or contract code
+ * @param args.status Exact contract status filter (DRAFT, PENDING, ACTIVE, REJECTED, CLOSED)
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns LoanContractListPage { items: [{ id, contract_code, contract_no, customer_code, contract_type_code, product_code, contract_date, maturity_date, loan_amt_minor, interest_rate, status }], page, per_page, total }
+ * @requires loan.read
+ * @domain loan
+ */`,
+			Keywords:            []string{"loan", "credit", "contract", "contracts", "credit contract", "loan contract", "customer", "product", "outstanding", "list", "search", "hợp đồng vay", "hợp đồng tín dụng", "khoản vay", "danh sách hợp đồng", "tìm hợp đồng vay", "mã khách hàng", "dư nợ"},
+			Kind:                "read",
+			RequiredPermissions: []string{"loan.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "loan-service",
+			Method:              "GET",
+			Path:                "/internal/ai/contracts",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "status", Param: "status", In: "query", Required: false, Type: "string", MaxLength: 32, Min: nil, Max: nil, Default: "", Transform: "upper", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"contract_code":{"type":"string"},"contract_date":{"type":"string"},"contract_no":{"type":"string"},"contract_type_code":{"type":"string"},"customer_code":{"type":"string"},"id":{"type":"string"},"interest_rate":{"type":"number"},"loan_amt_minor":{"type":"integer"},"maturity_date":{"type":"string"},"product_code":{"type":"string"},"status":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.loan.listRepayPlans",
+			Domain:    "loan",
+			Signature: "arda.loan.listRepayPlans(args: {contractCode?: string; agreementCode?: string; cursor?: number; limit?: number}): Promise<LoanRepayPlanListPage>;",
+			JSDoc: `/**
+ * List the repayment schedule of one contract or agreement.
+ *
+ * List repayment schedule rows for one contract_code or agreement_code in the active tenant, ordered by agreement and term. contract_code or agreement_code is required: without a schedule key the query would span the whole tenant. Returns the redacted plan (term window, planned and collected principal/interest, rate, active flag) — tenant_id, row id and audit timestamps are never returned.
+ * @param args.contractCode Contract code the schedule belongs to (contract_code or agreement_code is required)
+ * @param args.agreementCode Disbursement agreement code (contract_code or agreement_code is required)
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns LoanRepayPlanListPage { items: [{ contract_code, agreement_code, plan_no, term_no, from_date, to_date, interest_rate, plan_principal_amt_minor, plan_interest_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor, is_active }], page, per_page, total }
+ * @requires loan.read
+ * @domain loan
+ */`,
+			Keywords:            []string{"loan", "repayment", "repay plan", "schedule", "installment", "amortization", "principal", "interest", "due date", "contract", "list", "lịch trả nợ", "kế hoạch trả nợ", "trả gốc", "trả lãi", "kỳ hạn trả nợ", "số tiền phải trả", "hợp đồng vay"},
+			Kind:                "read",
+			RequiredPermissions: []string{"loan.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "loan-service",
+			Method:              "GET",
+			Path:                "/internal/ai/repay-plans",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "contractCode", Param: "contract_code", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "agreementCode", Param: "agreement_code", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"agreement_code":{"type":"string"},"coln_interest_amt_minor":{"type":"integer"},"coln_principal_amt_minor":{"type":"integer"},"contract_code":{"type":"string"},"from_date":{"type":"string"},"interest_rate":{"type":"number"},"is_active":{"type":"boolean"},"plan_interest_amt_minor":{"type":"integer"},"plan_no":{"type":"integer"},"plan_principal_amt_minor":{"type":"integer"},"term_no":{"type":"integer"},"to_date":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.mdm.listCountries",
+			Domain:    "mdm",
+			Signature: "arda.mdm.listCountries(args: {search?: string; cursor?: number; limit?: number}): Promise<CountryListPage>;",
+			JSDoc: `/**
+ * List active countries in the delegated tenant.
+ *
+ * List active countries in the active tenant's master data. Returns id, code, name and display-safe attributes (nationality) per country, with pagination.
+ * @param args.search Free-text filter on country code/name
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns CountryListPage { items: [{ id, code, name, description, is_active, attributes: { nationality } }], page, per_page, total }
+ * @requires mdm.read
+ * @domain mdm
+ */`,
+			Keywords:            []string{"mdm", "country", "countries", "nationality", "nation", "code", "list", "search", "quốc gia", "quốc tịch", "danh mục", "danh sách quốc gia"},
+			Kind:                "read",
+			RequiredPermissions: []string{"mdm.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "mdm-service",
+			Method:              "GET",
+			Path:                "/internal/ai/countries",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"attributes":{"type":"object","properties":{"nationality":{"type":"string"}}},"code":{"type":"string"},"description":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.mdm.listCurrencies",
+			Domain:    "mdm",
+			Signature: "arda.mdm.listCurrencies(args: {search?: string; cursor?: number; limit?: number}): Promise<CurrencyListPage>;",
+			JSDoc: `/**
+ * List active currencies in the delegated tenant.
+ *
+ * List active currencies in the active tenant's master data. Returns id, code, name and display-safe attributes (symbol, decimal_places) per currency, with pagination.
+ * @param args.search Free-text filter on currency code/name
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns CurrencyListPage { items: [{ id, code, name, description, is_active, attributes: { symbol, decimal_places } }], page, per_page, total }
+ * @requires mdm.read
+ * @domain mdm
+ */`,
+			Keywords:            []string{"mdm", "currency", "currencies", "money", "symbol", "decimal places", "list", "search", "tiền tệ", "đồng tiền", "mã tiền", "ký hiệu tiền", "danh mục"},
+			Kind:                "read",
+			RequiredPermissions: []string{"mdm.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "mdm-service",
+			Method:              "GET",
+			Path:                "/internal/ai/currencies",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"attributes":{"type":"object","properties":{"decimal_places":{"type":"integer"},"symbol":{"type":"string"}}},"code":{"type":"string"},"description":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.mdm.listInterestRates",
+			Domain:    "mdm",
+			Signature: "arda.mdm.listInterestRates(args: {search?: string; cursor?: number; limit?: number}): Promise<InterestRateListPage>;",
+			JSDoc: `/**
+ * List active interest rates in the delegated tenant.
+ *
+ * List active interest-rate headers in the active tenant. Returns id, code, name, rate_type, apply_type, currency_code per rate, with pagination. Rate tiers (decision numbers/dates) are never returned.
+ * @param args.search Free-text filter on rate code/name
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns InterestRateListPage { items: [{ id, code, name, rate_type, apply_type, currency_code, description, is_active }], page, per_page, total }
+ * @requires mdm.read
+ * @domain mdm
+ */`,
+			Keywords:            []string{"mdm", "interest", "interest rate", "rate", "rates", "loan rate", "deposit rate", "base rate", "list", "search", "lãi suất", "lãi suất cho vay", "lãi suất huy động", "lãi suất cơ bản", "danh mục", "danh sách lãi suất"},
+			Kind:                "read",
+			RequiredPermissions: []string{"mdm.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "mdm-service",
+			Method:              "GET",
+			Path:                "/internal/ai/interest-rates",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"apply_type":{"type":"string"},"code":{"type":"string"},"currency_code":{"type":"string"},"description":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"},"rate_type":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.notification.listInbox",
+			Domain:    "notification",
+			Signature: "arda.notification.listInbox(args: {limit?: number}): Promise<InboxPage>;",
+			JSDoc: `/**
+ * List the delegated user's notification inbox.
+ *
+ * List recent inbox notifications for the delegated user (X-User-Id / X-User-Subject) within the active tenant. Returns id, type, titleKey, bodyKey, href, readAt and createdAt per item, newest first. The params map is redacted.
+ * @param args.limit Maximum number of inbox items, 1-20
+ * @returns InboxPage { items: [{ id, type, titleKey, bodyKey, href, readAt, createdAt }] }
+ * @requires notification.read
+ * @domain notification
+ */`,
+			Keywords:            []string{"notification", "notifications", "inbox", "message", "alert", "unread", "thong bao", "thông báo", "hộp thư", "hộp thư đến", "tin nhắn", "chưa đọc", "thông báo mới"},
+			Kind:                "read",
+			RequiredPermissions: []string{"notification.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "notification-service",
+			Method:              "GET",
+			Path:                "/internal/ai/notifications",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "limit", Param: "limit", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"bodyKey":{"type":"string"},"createdAt":{"type":"string"},"href":{"type":"string"},"id":{"type":"string"},"readAt":{"type":"string"},"titleKey":{"type":"string"},"type":{"type":"string"}}}}}}`,
+		},
+		{
+			SDKPath:   "arda.notification.unreadCount",
+			Domain:    "notification",
+			Signature: "arda.notification.unreadCount(args: {}): Promise<UnreadCount>;",
+			JSDoc: `/**
+ * Count the delegated user's unread notifications.
+ *
+ * Return the number of unread inbox notifications for the delegated user within the active tenant.
+ * @returns UnreadCount { count: number }
+ * @requires notification.read
+ * @domain notification
+ */`,
+			Keywords:            []string{"notification", "notifications", "unread", "count", "badge", "thong bao", "thông báo", "chưa đọc", "số lượng thông báo", "đếm thông báo"},
+			Kind:                "read",
+			RequiredPermissions: []string{"notification.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "notification-service",
+			Method:              "GET",
+			Path:                "/internal/ai/notifications/unread-count",
+			Envelope:            "result",
+			Args:                []GeneratedArg{},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"count":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.platform.calendarStatus",
+			Domain:    "platform",
+			Signature: "arda.platform.calendarStatus(args: {branchCode?: string}): Promise<SystemDate>;",
+			JSDoc: `/**
+ * Get the business calendar status.
+ *
+ * Return the current business calendar state for the given branch: current, previous and next business dates plus the system-date status (OPEN, EOD_PROCESSING, CLOSED).
+ * @param args.branchCode Branch code; defaults to HEAD_OFFICE
+ * @returns SystemDate { id, branch_code, current_business_date, previous_business_date, next_business_date, status, last_eod_at, updated_at }
+ * @requires platform.read
+ * @domain platform
+ */`,
+			Keywords:            []string{"platform", "calendar", "business date", "system date", "working day", "eod", "calendar", "ngày làm việc", "ngày kế toán", "lịch hệ thống", "ngày nghỉ", "kết thúc ngày"},
+			Kind:                "read",
+			RequiredPermissions: []string{"platform.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "platform-service",
+			Method:              "GET",
+			Path:                "/internal/ai/calendar/status",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "branchCode", Param: "branchCode", In: "query", Required: false, Type: "string", MaxLength: 64, Min: nil, Max: nil, Default: "HEAD_OFFICE", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"branch_code":{"type":"string"},"current_business_date":{"type":"string"},"id":{"type":"string"},"last_eod_at":{"type":"string"},"next_business_date":{"type":"string"},"previous_business_date":{"type":"string"},"status":{"type":"string"},"updated_at":{"type":"string"}}}`,
+		},
+		{
+			SDKPath:   "arda.platform.listOrganizations",
+			Domain:    "platform",
+			Signature: "arda.platform.listOrganizations(args: {search?: string; page?: number; limit?: number}): Promise<OrganizationListPage>;",
+			JSDoc: `/**
+ * List organizations in the delegated tenant.
+ *
+ * List organizations of the active tenant, optionally filtered by a free-text query on code/name. Returns id, code, name, parentId, parentName and isActive per organization, with pagination.
+ * @param args.search Free-text filter on organization code/name
+ * @param args.page One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns OrganizationListPage { items: [{ id, code, name, parentId, parentName, isActive }], page, per_page, total }
+ * @requires platform.read
+ * @domain platform
+ */`,
+			Keywords:            []string{"platform", "organization", "organizations", "org unit", "org chart", "list", "search", "tổ chức", "cơ cấu tổ chức", "đơn vị", "phòng ban", "liệt kê tổ chức"},
+			Kind:                "read",
+			RequiredPermissions: []string{"platform.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "platform-service",
+			Method:              "GET",
+			Path:                "/internal/ai/organizations",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "page", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "20", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"id":{"type":"string"},"isActive":{"type":"boolean"},"name":{"type":"string"},"parentId":{"type":"string"},"parentName":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.platform.listParameters",
+			Domain:    "platform",
+			Signature: "arda.platform.listParameters(args: {scopeType?: string}): Promise<ParameterList>;",
+			JSDoc: `/**
+ * List tenant parameters (secrets excluded).
+ *
+ * List configuration parameters of the active tenant, optionally filtered by scope type. Rows marked is_secret are never returned, so Parameter.value only appears for non-secret parameters.
+ * @param args.scopeType Optional filter by parameter scope type
+ * @returns ParameterList { items: [{ id, key, value, valueType, scopeType, description }] }
+ * @requires platform.read
+ * @domain platform
+ */`,
+			Keywords:            []string{"platform", "parameter", "parameters", "setting", "settings", "config", "tham số", "cấu hình", "thiết lập", "liệt kê tham số"},
+			Kind:                "read",
+			RequiredPermissions: []string{"platform.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "platform-service",
+			Method:              "GET",
+			Path:                "/internal/ai/parameters",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "scopeType", Param: "scope_type", In: "query", Required: false, Type: "string", MaxLength: 0, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{"global", "tenant", "org", "branch", "department"}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"description":{"type":"string"},"id":{"type":"string"},"key":{"type":"string"},"scopeType":{"type":"string"},"value":{"type":"string"},"valueType":{"type":"string"}}}}}}`,
+		},
+		{
+			SDKPath:   "arda.platform.lookupValues",
+			Domain:    "platform",
+			Signature: "arda.platform.lookupValues(args: {lookupCode: string}): Promise<LookupValueList>;",
+			JSDoc: `/**
+ * List values of a lookup category.
+ *
+ * List the active-tenant values of the given lookup category. Returns id, code, name, sortOrder and isActive per value.
+ * @param args.lookupCode Lookup category code, at most 64 characters
+ * @returns LookupValueList { items: [{ id, code, name, sortOrder, isActive }] }
+ * @requires platform.read
+ * @domain platform
+ */`,
+			Keywords:            []string{"platform", "lookup", "lookup values", "dictionary", "master data", "lookup", "danh mục", "từ điển dữ liệu", "liệt kê danh mục"},
+			Kind:                "read",
+			RequiredPermissions: []string{"platform.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "platform-service",
+			Method:              "GET",
+			Path:                "/internal/ai/lookups/{lookupCode}/values",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "lookupCode", Param: "lookupCode", In: "path", Required: true, Type: "string", MaxLength: 64, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"id":{"type":"string"},"isActive":{"type":"boolean"},"name":{"type":"string"},"sortOrder":{"type":"integer"}}}}}}`,
+		},
+		{
+			SDKPath:   "arda.statistical.listIndicators",
+			Domain:    "statistical",
+			Signature: "arda.statistical.listIndicators(args: {search?: string; cursor?: number; limit?: number}): Promise<IndicatorListPage>;",
+			JSDoc: `/**
+ * List active statistical indicators in the delegated tenant.
+ *
+ * List active statistical indicators (chỉ tiêu thống kê) in the active tenant. Returns id, code, name, unit, group_code and is_active per indicator, with pagination. Internal fields (tenant_id, created_by, timestamps) are dropped by the handler and again by this response allowlist.
+ * @param args.search Free-text filter on indicator code/name
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns IndicatorListPage { items: [{ id, code, name, unit, group_code, is_active }], page, per_page, total }
+ * @requires statistical.read
+ * @domain statistical
+ */`,
+			Keywords:            []string{"statistical", "indicator", "indicators", "metric", "kpi", "unit", "group", "list", "search", "chỉ tiêu", "chỉ tiêu thống kê", "thống kê", "đơn vị tính", "danh mục chỉ tiêu"},
+			Kind:                "read",
+			RequiredPermissions: []string{"statistical.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "statistical-service",
+			Method:              "GET",
+			Path:                "/internal/ai/indicators",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"group_code":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"},"unit":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.statistical.listReportDefinitions",
+			Domain:    "statistical",
+			Signature: "arda.statistical.listReportDefinitions(args: {search?: string; cursor?: number; limit?: number}): Promise<ReportDefinitionListPage>;",
+			JSDoc: `/**
+ * List active report definitions in the delegated tenant.
+ *
+ * List active report definitions (danh mục báo cáo) in the active tenant. Returns id, code, name, group_code, output_format and is_active per definition, with pagination. Internal wiring (query_id, param_schema, template_file_id, actor ids, timestamps) is dropped by the handler and again by this response allowlist.
+ * @param args.search Free-text filter on report code/name
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns ReportDefinitionListPage { items: [{ id, code, name, group_code, output_format, is_active }], page, per_page, total }
+ * @requires statistical.read
+ * @domain statistical
+ */`,
+			Keywords:            []string{"statistical", "report", "reports", "report definition", "report catalog", "output format", "list", "search", "báo cáo", "danh mục báo cáo", "biểu mẫu báo cáo", "thống kê", "định nghĩa báo cáo"},
+			Kind:                "read",
+			RequiredPermissions: []string{"statistical.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "statistical-service",
+			Method:              "GET",
+			Path:                "/internal/ai/report-definitions",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "search", Param: "q", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"group_code":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"},"output_format":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.statistical.listSubmissions",
+			Domain:    "statistical",
+			Signature: "arda.statistical.listSubmissions(args: {reportCode?: string; periodCode?: string; status?: string; cursor?: number; limit?: number}): Promise<SubmissionStatusListPage>;",
+			JSDoc: `/**
+ * List report submission statuses in the delegated tenant.
+ *
+ * List report submission periods (trạng thái nộp báo cáo) in the active tenant, optionally narrowed by report_code, period_code and lifecycle status. Returns id, report_code, period_code, status and submitted_at per submission. The raw payload (report data), workflow case, submitter identity and internal timestamps are dropped by the handler and again by this response allowlist.
+ * @param args.reportCode Optional report code filter (substring match)
+ * @param args.periodCode Optional reporting period code filter (substring match, e.g. 2026-08)
+ * @param args.status Optional submission lifecycle status filter
+ * @param args.cursor One-based page number
+ * @param args.limit Page size, 1-20
+ * @returns SubmissionStatusListPage { items: [{ id, report_code, period_code, status, submitted_at }], page, per_page, total }
+ * @requires statistical.read
+ * @domain statistical
+ */`,
+			Keywords:            []string{"statistical", "submission", "submissions", "report submission", "period", "status", "approved", "rejected", "list", "search", "nộp báo cáo", "trạng thái báo cáo", "kỳ báo cáo", "phê duyệt báo cáo", "thống kê"},
+			Kind:                "read",
+			RequiredPermissions: []string{"statistical.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "statistical-service",
+			Method:              "GET",
+			Path:                "/internal/ai/submissions",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "reportCode", Param: "report_code", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "periodCode", Param: "period_code", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "status", Param: "status", In: "query", Required: false, Type: "string", MaxLength: 0, Min: nil, Max: nil, Default: "", Transform: "upper", Enum: []string{"DRAFT", "SUBMITTED", "APPROVED", "REJECTED"}},
+				{Name: "cursor", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"period_code":{"type":"string"},"report_code":{"type":"string"},"status":{"type":"string"},"submitted_at":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.workflow.caseTimeline",
+			Domain:    "workflow",
+			Signature: "arda.workflow.caseTimeline(args: {caseId: string}): Promise<TimelinePage>;",
+			JSDoc: `/**
+ * Read the status timeline of a business case in the delegated tenant.
+ *
+ * Read the timeline events of one business case in the active tenant, ordered oldest first. Returns id, eventType, createdAt per event; raw event data, actor identities and notes are dropped.
+ * @param args.caseId Business case identifier (max 128 chars)
+ * @returns TimelinePage { items: [{ id, eventType, createdAt }], page, per_page, total }
+ * @requires workflow.read
+ * @domain workflow
+ */`,
+			Keywords:            []string{"workflow", "timeline", "lịch sử", "lịch sử hồ sơ", "tiến trình", "case history", "hồ sơ"},
+			Kind:                "read",
+			RequiredPermissions: []string{"workflow.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "workflow-service",
+			Method:              "GET",
+			Path:                "/internal/ai/cases/{caseId}/timeline",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "caseId", Param: "caseId", In: "path", Required: true, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"createdAt":{"type":"string"},"eventType":{"type":"string"},"id":{"type":"integer"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.workflow.getCase",
+			Domain:    "workflow",
+			Signature: "arda.workflow.getCase(args: {caseId: string}): Promise<AiBusinessCase>;",
+			JSDoc: `/**
+ * Read a single business case in the delegated tenant.
+ *
+ * Read one business case by id in the active tenant. Returns the redacted case shape: id, caseCode, caseType, status, title, createdAt, updatedAt.
+ * @param args.caseId Business case identifier (max 128 chars)
+ * @returns AiBusinessCase { id, caseCode, caseType, status, title, createdAt, updatedAt }
+ * @requires workflow.read
+ * @domain workflow
+ */`,
+			Keywords:            []string{"workflow", "case", "hồ sơ", "chi tiết hồ sơ", "xem hồ sơ", "trạng thái hồ sơ"},
+			Kind:                "read",
+			RequiredPermissions: []string{"workflow.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "workflow-service",
+			Method:              "GET",
+			Path:                "/internal/ai/cases/{caseId}",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "caseId", Param: "caseId", In: "path", Required: true, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"caseCode":{"type":"string"},"caseType":{"type":"string"},"createdAt":{"type":"string"},"id":{"type":"string"},"status":{"type":"string"},"title":{"type":"string"},"updatedAt":{"type":"string"}}}`,
+		},
+		{
+			SDKPath:   "arda.workflow.getWorkItem",
+			Domain:    "workflow",
+			Signature: "arda.workflow.getWorkItem(args: {workItemId: string}): Promise<AiWorkItem>;",
+			JSDoc: `/**
+ * Read a single work item in the delegated tenant.
+ *
+ * Read one work item by id in the active tenant. Returns the redacted work-item shape: id, caseCode, caseType, taskType, stepCode, title, status, transactionStatus, slaStatus, slaDueAt, createdAt, updatedAt, canClaim, canOpen, canReassign.
+ * @param args.workItemId Workflow work item identifier (max 128 chars)
+ * @returns AiWorkItem { id, caseCode, caseType, taskType, stepCode, title, status, transactionStatus, slaStatus, slaDueAt, createdAt, updatedAt, canClaim, canOpen, canReassign }
+ * @requires workflow.read
+ * @domain workflow
+ */`,
+			Keywords:            []string{"workflow", "work item", "công việc", "task", "chi tiết", "xem việc", "sla", "trạng thái"},
+			Kind:                "read",
+			RequiredPermissions: []string{"workflow.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "workflow-service",
+			Method:              "GET",
+			Path:                "/internal/ai/work-items/{itemId}",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "workItemId", Param: "itemId", In: "path", Required: true, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"canClaim":{"type":"boolean"},"canOpen":{"type":"boolean"},"canReassign":{"type":"boolean"},"caseCode":{"type":"string"},"caseType":{"type":"string"},"createdAt":{"type":"string"},"id":{"type":"string"},"slaDueAt":{"type":"string"},"slaStatus":{"type":"string"},"status":{"type":"string"},"stepCode":{"type":"string"},"taskType":{"type":"string"},"title":{"type":"string"},"transactionStatus":{"type":"string"},"updatedAt":{"type":"string"}}}`,
+		},
+		{
+			SDKPath:   "arda.workflow.listCases",
+			Domain:    "workflow",
+			Signature: "arda.workflow.listCases(args: {status?: string; keyword?: string; page?: number; perPage?: number}): Promise<CaseListPage>;",
+			JSDoc: `/**
+ * List business cases in the delegated tenant.
+ *
+ * List business cases in the active tenant, optionally filtered by status and a keyword matched against case code, title and primary object id. Returns id, caseCode, caseType, status, title, createdAt, updatedAt per case, with pagination over the newest fetched window.
+ * @param args.status Filter by case status (e.g. SUBMITTED, IN_REVIEW, COMPLETED)
+ * @param args.keyword Free-text filter on case code, title and primary object id (max 128 chars)
+ * @param args.page One-based page number
+ * @param args.perPage Page size, 1-20
+ * @returns CaseListPage { items: [{ id, caseCode, caseType, status, title, createdAt, updatedAt }], page, per_page, total }
+ * @requires workflow.read
+ * @domain workflow
+ */`,
+			Keywords:            []string{"workflow", "case", "hồ sơ", "business case", "quy trình", "tìm hồ sơ", "danh sách hồ sơ", "tra cứu"},
+			Kind:                "read",
+			RequiredPermissions: []string{"workflow.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "workflow-service",
+			Method:              "GET",
+			Path:                "/internal/ai/cases",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "status", Param: "status", In: "query", Required: false, Type: "string", MaxLength: 0, Min: nil, Max: nil, Default: "", Transform: "upper", Enum: []string{}},
+				{Name: "keyword", Param: "keyword", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "page", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "perPage", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"caseCode":{"type":"string"},"caseType":{"type":"string"},"createdAt":{"type":"string"},"id":{"type":"string"},"status":{"type":"string"},"title":{"type":"string"},"updatedAt":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+		},
+		{
+			SDKPath:   "arda.workflow.listWorkItems",
+			Domain:    "workflow",
+			Signature: "arda.workflow.listWorkItems(args: {direction?: string; status?: string; page?: number; perPage?: number}): Promise<WorkItemListPage>;",
+			JSDoc: `/**
+ * List workflow work items (work queues) in the delegated tenant.
+ *
+ * List work items in the active tenant's incoming or outgoing work queue for the delegated user. Incoming items are filtered to what the user can claim, is assigned to, or created (maker track). Returns id, caseCode, caseType, taskType, stepCode, title, status, transactionStatus, slaStatus, slaDueAt, createdAt, updatedAt, canClaim, canOpen, canReassign per item, with pagination over the newest fetched window.
+ * @param args.direction Work queue direction; INCOMING (default) or OUTGOING. Search/ALL is not exposed to the assistant.
+ * @param args.status Filter by case transaction status (e.g. SUBMITTED, IN_REVIEW)
+ * @param args.page One-based page number
+ * @param args.perPage Page size, 1-20
+ * @returns WorkItemListPage { items: [{ id, caseCode, caseType, taskType, stepCode, title, status, transactionStatus, slaStatus, slaDueAt, createdAt, updatedAt, canClaim, canOpen, canReassign }], page, per_page, total }
+ * @requires workflow.read
+ * @domain workflow
+ */`,
+			Keywords:            []string{"workflow", "work item", "công việc", "việc của tôi", "task", "hàng đợi", "inbox", "giao dịch đến", "giao dịch đi", "cần xử lý", "sla"},
+			Kind:                "read",
+			RequiredPermissions: []string{"workflow.read"},
+			Risk:                "medium",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "workflow-service",
+			Method:              "GET",
+			Path:                "/internal/ai/work-items",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "direction", Param: "direction", In: "query", Required: false, Type: "string", MaxLength: 0, Min: nil, Max: nil, Default: "INCOMING", Transform: "", Enum: []string{"INCOMING", "OUTGOING"}},
+				{Name: "status", Param: "status", In: "query", Required: false, Type: "string", MaxLength: 0, Min: nil, Max: nil, Default: "", Transform: "upper", Enum: []string{}},
+				{Name: "page", Param: "page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: nil, Default: "1", Transform: "", Enum: []string{}},
+				{Name: "perPage", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"canClaim":{"type":"boolean"},"canOpen":{"type":"boolean"},"canReassign":{"type":"boolean"},"caseCode":{"type":"string"},"caseType":{"type":"string"},"createdAt":{"type":"string"},"id":{"type":"string"},"slaDueAt":{"type":"string"},"slaStatus":{"type":"string"},"status":{"type":"string"},"stepCode":{"type":"string"},"taskType":{"type":"string"},"title":{"type":"string"},"transactionStatus":{"type":"string"},"updatedAt":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
 		},
 	}
 }

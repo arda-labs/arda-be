@@ -14,15 +14,16 @@ import (
 // config per tenant). The deployment only supplies shared security controls:
 // the AI Gateway token and the allowed provider base-URL prefixes.
 type Config struct {
-	AppName             string
-	HTTPAddr            string
-	Mode                string
-	DatabaseDSN         string
-	ServiceAuthSecret   string
-	CRMServiceURL       string
-	FinanceServiceURL   string
-	HRMServiceURL       string
-	IAMServiceURL       string
+	AppName           string
+	HTTPAddr          string
+	Mode              string
+	DatabaseDSN       string
+	ServiceAuthSecret string
+	// ServiceURLs holds the configured base URL per canonical service name
+	// (see service_urls.go). A missing entry means the deployment does not run
+	// that service; generated catalog entries for it are reported, never
+	// silently ignored.
+	ServiceURLs         map[string]string
 	RAGServiceURL       string
 	ProblemDocsURL      string
 	EnableReadTools     bool
@@ -108,10 +109,7 @@ func Load() Config {
 		Mode:                mode,
 		DatabaseDSN:         os.Getenv("DATABASE_DSN"),
 		ServiceAuthSecret:   os.Getenv("ARDA_SERVICE_AUTH_SECRET"),
-		CRMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("CRM_SERVICE_URL")), "/"),
-		FinanceServiceURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("FINANCE_SERVICE_URL")), "/"),
-		HRMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("HRM_SERVICE_URL")), "/"),
-		IAMServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("IAM_SERVICE_URL")), "/"),
+		ServiceURLs:         LoadServiceURLs(),
 		RAGServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), "/"),
 		ProblemDocsURL:      strings.TrimRight(strings.TrimSpace(envOr("PROBLEM_DOCS_URL", "https://docs.arda.io.vn")), "/"),
 		EnableReadTools:     enableReadTools,

@@ -33,3 +33,22 @@ func TestLoadEmbeddingConfigStaysUnsetForDevelopment(t *testing.T) {
 		t.Fatalf("embedding config must not inherit chat config: %+v", cfg)
 	}
 }
+
+func TestLoadServiceURLsUsesCanonicalRegistry(t *testing.T) {
+	for _, envName := range ServiceURLEnv {
+		t.Setenv(envName, "")
+	}
+	t.Setenv("CRM_SERVICE_URL", "http://crm-service:8080/")
+	t.Setenv("WORKFLOW_SERVICE_URL", " http://workflow-service:8080 ")
+
+	cfg := Load()
+	if got := cfg.ServiceURLs["crm-service"]; got != "http://crm-service:8080" {
+		t.Fatalf("crm-service URL must be trimmed of whitespace and trailing slash, got %q", got)
+	}
+	if got := cfg.ServiceURLs["workflow-service"]; got != "http://workflow-service:8080" {
+		t.Fatalf("workflow-service URL not loaded, got %q", got)
+	}
+	if _, present := cfg.ServiceURLs["mdm-service"]; present {
+		t.Fatal("unset service URL must be omitted, not defaulted")
+	}
+}

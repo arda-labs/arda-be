@@ -159,14 +159,24 @@ func main() {
 		} else if ragClient != nil {
 			ragSearcher = ragClient
 		}
+		serviceClients := catalog.ClientSet(svcclient.NewServiceClients(cfg.ServiceURLs, "ai-service", cfg.ServiceAuthSecret, nil))
 		suite := catalog.NewCodeModeSuite(
-			svcclient.NewCRMClient(cfg.CRMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
-			svcclient.NewFinanceClient(cfg.FinanceServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
-			svcclient.NewHRMClient(cfg.HRMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
-			svcclient.NewIAMClient(cfg.IAMServiceURL, "ai-service", cfg.ServiceAuthSecret, nil),
+			serviceClients,
 			store, cfg.EnableHITLProposals, ragSearcher,
 			catalog.NewHTTPDocsLookuper(cfg.ProblemDocsURL),
 		)
+		// Fail closed: a contract service without a base URL means its tools
+		// would silently disappear. Production refuses to start; other
+		// environments log the gap loudly.
+		if len(suite.UnwiredServices) > 0 {
+			if cfg.Mode == "production" {
+				logger.Error("generated AI tools reference services without a configured base URL",
+					"services", suite.UnwiredServices,
+					"hint", "set <SERVICE>_SERVICE_URL in arda-infra/k8s/apps/ai-service.yaml")
+				os.Exit(1)
+			}
+			logger.Warn("generated AI tools skipped: service base URL not configured", "services", suite.UnwiredServices)
+		}
 		if eventPublisher != nil {
 			suite.SetEventPublisher(eventPublisher)
 		}
@@ -183,6 +193,7 @@ func main() {
 					MethodName:          e.MethodName,
 					SDKPath:             e.SDKPath,
 					Domain:              e.Domain,
+					Service:             e.Service,
 					Signature:           e.Signature,
 					JSDoc:               e.JSDoc,
 					Keywords:            e.Keywords,
@@ -193,7 +204,14 @@ func main() {
 				})
 			}
 			routerOptions.CatalogTools = toolsDTO
+			logger.Info("code mode catalog registered",
+				"entries", len(entries),
+				"services", len(serviceClients),
+				"unwired_services", suite.UnwiredServices,
+			)
 		}
+		routerOptions.ApprovalResolver = catalog.NewExecutionResolver(suite.Registry)
+		routerOptions.ProposalTools = proposalToolSpecs(suite.Registry.AllEntries())
 	}
 
 	mux := handler.NewRouterWithOptions(store, resolver, routerOptions)
@@ -241,4 +259,27 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("AI service stopped gracefully")
+}
+
+// proposalToolSpecs builds the FE-initiated proposal allowlist from the
+// registered catalog: only confirm-kind tools can be proposed, and the
+// permission gating their execution travels with the spec.
+func proposalToolSpecs(entries []catalog.CatalogEntry) []handler.ProposalToolSpec {
+	specs := make([]handler.ProposalToolSpec, 0)
+	for _, entry := range entries {
+		if entry.Kind != "confirm" {
+			continue
+		}
+		permission := ""
+		if len(entry.RequiredPermissions) > 0 {
+			permission = entry.RequiredPermissions[0]
+		}
+		specs = append(specs, handler.ProposalToolSpec{
+			Name:               entry.MethodName,
+			Version:            1,
+			Risk:               entry.Risk,
+			RequiredPermission: permission,
+		})
+	}
+	return specs
 }

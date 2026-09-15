@@ -1,0 +1,59 @@
+# Answer-level evaluation set (WS6).
+#
+# Chạy: go run ./cmd/ai-answer-eval (cần tenant model đã cấu hình + corpus đã
+# publish). Khác với evaluation-set.yaml (chỉ đo retrieval), bộ này chạy full
+# agent và chấm câu trả lời cuối: citation, source key, keyword, no-answer.
+#
+# Quy ước:
+# - must_cite: bắt buộc có ít nhất 1 citation [source:heading] trong tool result
+#   hoặc câu trả lời.
+# - keywords: tất cả phải xuất hiện trong câu trả lời (không phân biệt hoa/thường).
+# - allow_no_answer: pass khi agent không trích nguồn nào (câu ngoài corpus).
+# - source_keys: tuỳ chọn — id nguồn (chuỗi số) hoặc đường dẫn source kỳ vọng.
+version: 1
+description: Answer-level golden questions cho corpus docs-as-code (FAQ Olorin).
+cases:
+  - id: faq-olorin-la-gi
+    query: Olorin là gì?
+    expected:
+      must_cite: true
+      keywords:
+        - trợ lý AI
+
+  - id: faq-olorin-lam-duoc-gi
+    query: Làm sao để biết Olorin có thể làm được những gì?
+    expected:
+      must_cite: true
+      keywords:
+        - khả năng
+
+  - id: faq-phe-duyet
+    query: Tại sao có thao tác phải chờ phê duyệt?
+    expected:
+      must_cite: true
+      keywords:
+        - phê duyệt
+
+  - id: faq-khi-nao-khong-co-du-lieu
+    query: Khi nào Olorin trả lời chưa có dữ liệu?
+    expected:
+      must_cite: true
+      keywords:
+        - chưa có dữ liệu
+
+  - id: faq-xuat-du-lieu-khach-hang
+    query: Theo quy định, khi xuất dữ liệu khách hàng thì cần gì trước khi hệ thống thực thi?
+    expected:
+      must_cite: true
+      keywords:
+        - phê duyệt
+
+  - id: out-of-corpus-gia-vang
+    query: Giá vàng hôm nay là bao nhiêu?
+    expected:
+      allow_no_answer: true
+
+  - id: out-of-corpus-thoi-tiet
+    query: Thời tiết Hà Nội ngày mai thế nào?
+    expected:
+      allow_no_answer: true

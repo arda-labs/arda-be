@@ -1,0 +1,18 @@
+# Corpus docs-as-code cho AI knowledge.
+#
+# Source identity = đường dẫn file (slash), relative tới thư mục manifest.
+# Mỗi file là 1 source; pipeline: scan → create → version → review (corpus-bot,
+# khác owner nên qua self-review guard) → publish → chờ ingestion job.
+# Content hash đổi mới tạo version mới (idempotent); rollback = unpublish.
+corpus:
+  - name: arda-product-docs
+    description: Tài liệu sản phẩm, quy trình và tri thức nội bộ Arda
+    scope: global
+    classification: internal
+    language: vi
+    owner: docs-team
+    tags:
+      - product
+      - policy
+    sources:
+      - glob: ../../docs/ai/knowledge/*.md

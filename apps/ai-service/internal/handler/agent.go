@@ -131,7 +131,7 @@ func runAgentStream(
 		))
 	}
 
-	messages := buildModelMessages(ctx, store, options, scope, scopeRun, latestUserMessage(input.Messages))
+	messages := buildModelMessages(ctx, store, options, scope, scopeRun, latestUserMessage(input.Messages), uiContextFromForwardedProps(input.ForwardedProps))
 	agentStepsLoop(w, r, store, resolver, scope, scopeRun, input, sse, options, modelProvider, messages)
 }
 
@@ -612,7 +612,7 @@ func persistAgentRunTerminal(
 	}
 }
 
-func buildModelMessages(ctx context.Context, store runStore, options RouterOptions, scope tools.Context, scopeRun repository.RunContext, latestUser string) []model.Message {
+func buildModelMessages(ctx context.Context, store runStore, options RouterOptions, scope tools.Context, scopeRun repository.RunContext, latestUser string, uiContext string) []model.Message {
 	messages := make([]model.Message, 0, 24)
 	if prompt := strings.TrimSpace(options.ModelSystemPrompt); prompt != "" {
 		messages = append(messages, model.Message{Role: "system", Content: prompt})
@@ -624,6 +624,9 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 		// model discovers capabilities through search/execute and the
 		// runtime enforces authorization at execution time.
 		messages = append(messages, model.Message{Role: "system", Content: identity})
+	}
+	if uiContext != "" {
+		messages = append(messages, model.Message{Role: "system", Content: uiContextPrompt(uiContext)})
 	}
 	if sdkTypes := sdkTypesMessage(options.ModelSDKTypes); sdkTypes != nil {
 		messages = append(messages, *sdkTypes)
@@ -900,6 +903,35 @@ func executeModelToolCall(
 	var executionID string
 	if hasToolStore {
 		executionID, _ = toolStore.StartTool(ctx, scopeRun, definition.Name, definition.Version, definition.Risk, "allow_model", sanitizeTranscript(call.Arguments))
+	}
+
+	// A confirm-kind call inside the sandbox was converted into a durable
+	// approval proposal. Surface the same {"proposal":{...}} payload the
+	// direct-tool path emits so the SSE writer finishes the run with
+	// outcome=interrupt and the run stays WAITING_APPROVAL for resume.
+	if execErr == nil && result.Approval != nil {
+		content := boundContent(string(result.Data))
+		if hasToolStore && executionID != "" {
+			_ = toolStore.FinishTool(ctx, executionID, "SUCCEEDED", content, "")
+			recordToolOutcome("SUCCEEDED", definition.Risk)
+		}
+		sse.event(agentEvent{
+			Type: "TOOL_CALL_END", ThreadID: input.ThreadID, RunID: input.RunID,
+			ToolCallID: call.ID, ToolName: call.Name, ToolCallName: call.Name,
+		})
+		payload := mustJSON(map[string]any{"proposal": map[string]any{
+			"id": result.Approval.ProposalID, "status": "PENDING", "expiresAt": result.Approval.ExpiresAt,
+		}})
+		sse.event(agentEvent{
+			Type: "TOOL_CALL_RESULT", ThreadID: input.ThreadID, RunID: input.RunID,
+			ToolCallID: call.ID, ToolName: call.Name, ToolCallName: call.Name,
+			Result: json.RawMessage(payload),
+		})
+		feedback := mustJSON(map[string]any{
+			"status": "WAITING_APPROVAL", "approvalId": result.Approval.ProposalID,
+			"note": "Người dùng cần phê duyệt trước khi hành động được thực hiện.",
+		})
+		return true, feedback
 	}
 
 	content := ""

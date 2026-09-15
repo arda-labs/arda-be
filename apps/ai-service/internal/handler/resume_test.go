@@ -102,7 +102,7 @@ func TestBuildResumeMessagesPairsToolCall(t *testing.T) {
 
 	messages := buildResumeMessages(context.Background(), store, options, tools.Context{
 		TenantID: "tenant-1", ActorUserID: "user-1",
-	}, exec, `{"prepared":true}`)
+	}, exec, `{"prepared":true}`, "")
 
 	// [system identity user assistant tool] — identity context is injected
 	// after the base system prompt.

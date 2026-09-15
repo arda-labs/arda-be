@@ -1,12 +1,13 @@
 # Domain onboarding runbook — expose a domain capability to the AI assistant
 
-> **Status (2026-09-01): validated end-to-end by the hrm pilot** —
-> `arda.hrm.listEmployees` went from handler (`hrm-service`) through
-> `hrm-v1.json` → `catalog-gen` → ai-service registration with zero
-> ai-service code changes (only config/ClientSet wiring, one-time per new
-> service, not per tool). `scripts/check-ai-catalog.mjs` now also fails when
-> a contracted service is missing `<PREFIX>_SERVICE_URL` in the arda-infra
-> ai-service Deployment (sibling checkout present only).
+> **Status (2026-09-14): generic service transport shipped** — ai-service no
+> longer has per-service typed clients. `internal/config/service_urls.go` is the
+> single source of truth for runtime-supported services; `svcclient.NewServiceClients`
+> builds one signed transport per configured URL. Adding a tool for an already
+> supported service = contract annotation + `catalog-gen` + deployment env, zero
+> ai-service code. Adding a brand-new service = one entry in `service_urls.go`
+> + env. CI fails when a contract declares a service missing from the registry,
+> and production refuses to start when a contracted service has no base URL.
 
 Goal: a domain team (hrm, crm, finance, workflow, ...) adds one AI tool for
 Olorin **without touching ai-service code**. End to end this is a commit in
@@ -83,11 +84,17 @@ Commit `generated.go` in the same PR as the spec — CI fails if it is stale.
 ### 5. Deployment wiring (two places — the 2026-09-01 lesson)
 
 - **ai-service Deployment** (`arda-infra/k8s/apps/ai-service.yaml`): add
-  `<DOMAIN>_SERVICE_URL: http://<domain>-service:8080`. A missing URL means
-  the tool silently does not register (deployment rule: unwired service =
-  invisible tool, not broken tool).
+  `<DOMAIN>_SERVICE_URL: http://<domain>-service:8080`. A missing URL for a
+  service that appears in the generated catalog is **fatal in production**
+  (ai-service refuses to start, fail closed) and logged as a warning in
+  development — never a silently missing tool.
+- If the service is brand new to the AI surface, add it to
+  `apps/ai-service/internal/config/service_urls.go` first (one entry:
+  canonical service name → env var). CI (`check-ai-catalog.mjs`) fails when a
+  contract references a service that is missing from that map.
 - **Your service's Deployment**: nothing new if it already runs; confirm the
   `ARDA_SERVICE_AUTH_SECRET` env is present (service-to-service signing).
+  `mdm-service` needed this added on 2026-09-14.
 - Commit both to `arda-infra` — `kubectl edit` is overwritten by Argo CD
   selfHeal.
 
@@ -110,8 +117,10 @@ Commit `generated.go` in the same PR as the spec — CI fails if it is stale.
 
 ## Anti-patterns
 
-- Do NOT add a typed client in ai-service for a new tool — generated entries
-  ride the generic executor. Typed clients remain only for legacy entries.
+- Do NOT add a typed client in ai-service for a new tool — the generated
+  executor covers every contract entry, and per-service typed clients were
+  removed on 2026-09-14. Do NOT register a service by editing Go switch
+  statements: add it to `internal/config/service_urls.go` (CI enforces parity).
 - Do NOT expose aggregate/report endpoints that need orchestration across
   services as a single `x-ai-tool` — put those in the hand-written catalog
   (`internal/catalog/`) instead, or compose in the sandbox.

@@ -14,33 +14,23 @@ import (
 // testSecret satisfies identity.Issue's minimum length (32 chars).
 const testSecret = "01234567890123456789012345678901"
 
-func testIAMClient(baseURL string) *svcclient.IAMClient {
-	return svcclient.NewIAMClient(baseURL, "ai-service", testSecret, nil)
-}
-
-func testCRMClient(baseURL string) *svcclient.CRMClient {
-	return svcclient.NewCRMClient(baseURL, "ai-service", testSecret, nil)
-}
-
-func testFinanceClient(baseURL string) *svcclient.FinanceClient {
-	return svcclient.NewFinanceClient(baseURL, "ai-service", testSecret, nil)
-}
-
-func testHRMClient(baseURL string) *svcclient.HRMClient {
-	return svcclient.NewHRMClient(baseURL, "ai-service", testSecret, nil)
+// testClient builds the generic signed transport for one service; the service
+// name is the HMAC audience the target service verifies.
+func testClient(service, baseURL string) *svcclient.Client {
+	return svcclient.NewClient(service, baseURL, "ai-service", testSecret, nil)
 }
 
 func genClients(iamURL, crmURL, financeURL string) ClientSet {
 	return ClientSet{
-		IAM:     testIAMClient(iamURL),
-		CRM:     testCRMClient(crmURL),
-		Finance: testFinanceClient(financeURL),
+		"iam-service":     testClient("iam-service", iamURL),
+		"crm-service":     testClient("crm-service", crmURL),
+		"finance-service": testClient("finance-service", financeURL),
 	}
 }
 
 func genClientsWithHRM(hrmURL string) ClientSet {
 	set := genClients("http://iam.local", "http://crm.local", "http://finance.local")
-	set.HRM = testHRMClient(hrmURL)
+	set["hrm-service"] = testClient("hrm-service", hrmURL)
 	return set
 }
 

@@ -42,14 +42,20 @@ type ExecutionResult struct {
 	Error          string         `json:"error,omitempty"`
 	ApprovalNeeded bool           `json:"approvalNeeded,omitempty"`
 	ProposalTool   string         `json:"proposalTool,omitempty"`
+	ProposalRisk   string         `json:"proposalRisk,omitempty"`
 	ProposalArgs   map[string]any `json:"proposalArgs,omitempty"`
 }
 
 type SDKMethod struct {
-	MethodName       string
-	SDKPath          string
-	Domain           string
-	Timeout          time.Duration
+	MethodName string
+	SDKPath    string
+	Domain     string
+	Timeout    time.Duration
+	// RequiresApproval marks confirm-kind methods. The engine refuses to
+	// dispatch them and raises the approval flow instead; a dispatcher can no
+	// longer decide for itself whether a mutation runs.
+	RequiresApproval bool
+	Risk             string
 	CheckPermissions func(scope tools.Context) error
 	Dispatcher       func(ctx context.Context, scope tools.Context, args map[string]any) (any, error)
 }
@@ -179,6 +185,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 	methodCalls := map[string]int{}
 	var approvalRequiredErr error
 	var approvalTool string
+	var approvalRisk string
 	var approvalArgs map[string]any
 
 	// 4. Inject arda.* SDK Tree
@@ -232,6 +239,25 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 			}
 			if rawArgs == nil {
 				rawArgs = make(map[string]any)
+			}
+
+			// Confirm-kind methods never dispatch: the engine raises the
+			// approval flow before the dispatcher can run. This is the
+			// enforcement point — dispatchers are not trusted to gate
+			// themselves.
+			if methodCopy.RequiresApproval {
+				mu.Lock()
+				approvalRequiredErr = tools.ErrApprovalRequired
+				approvalTool = methodCopy.MethodName
+				approvalRisk = methodCopy.Risk
+				approvalArgs = rawArgs
+				mu.Unlock()
+				panic(vm.ToValue(map[string]any{
+					"code":    "approval_required",
+					"domain":  methodCopy.Domain,
+					"method":  methodCopy.SDKPath,
+					"message": "Action requires human approval",
+				}))
 			}
 
 			// Execute dispatcher
@@ -298,6 +324,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 		if approvalRequiredErr != nil {
 			res.ApprovalNeeded = true
 			res.ProposalTool = approvalTool
+			res.ProposalRisk = approvalRisk
 			res.ProposalArgs = approvalArgs
 			return res, nil
 		}
@@ -323,6 +350,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 				if approvalRequiredErr != nil {
 					res.ApprovalNeeded = true
 					res.ProposalTool = approvalTool
+					res.ProposalRisk = approvalRisk
 					res.ProposalArgs = approvalArgs
 					return res, nil
 				}

@@ -14,55 +14,36 @@ import (
 )
 
 // ClientSet carries the per-service transport clients used by generated
-// entries. A client with an empty BaseURL means the target service is not
-// wired for this deployment and its generated tools are skipped.
-type ClientSet struct {
-	CRM     *svcclient.CRMClient
-	Finance *svcclient.FinanceClient
-	HRM     *svcclient.HRMClient
-	IAM     *svcclient.IAMClient
-}
+// entries, keyed by the canonical service name declared in the contract
+// (x-ai-tool.service, e.g. "crm-service"). A missing entry means the target
+// service is not wired for this deployment; RegisterGeneratedCatalog reports
+// those services instead of silently dropping their tools.
+type ClientSet map[string]*svcclient.Client
 
 func (s ClientSet) client(service string) *svcclient.Client {
-	switch service {
-	case "crm-service":
-		if s.CRM == nil {
-			return nil
-		}
-		return s.CRM.Client
-	case "finance-service":
-		if s.Finance == nil {
-			return nil
-		}
-		return s.Finance.Client
-	case "hrm-service":
-		if s.HRM == nil {
-			return nil
-		}
-		return s.HRM.Client
-	case "iam-service":
-		if s.IAM == nil {
-			return nil
-		}
-		return s.IAM.Client
-	default:
+	if s == nil {
 		return nil
 	}
+	return s[service]
 }
 
-// RegisterGeneratedCatalog registers every entry from
-// GeneratedCatalog() (contracts/ai-internal/*.json via tools/catalog-gen)
-// onto a single generic HTTP dispatcher. Tool availability follows the same
-// deployment rule as the typed catalogs: a tool whose target service has no
-// base URL is not registered at all.
-func RegisterGeneratedCatalog(reg *DispatcherRegistry, set ClientSet) {
+// RegisterGeneratedCatalog registers every generated entry whose target
+// service has a configured base URL, and returns the sorted list of services
+// that were skipped because no base URL is wired. Callers must surface the
+// list: production refuses to start with unwired services that the generated
+// catalog references, so a missing *_SERVICE_URL is a visible deployment
+// error rather than a silently missing tool.
+func RegisterGeneratedCatalog(reg *DispatcherRegistry, set ClientSet) []string {
+	skipped := make(map[string]struct{})
 	for _, gen := range GeneratedCatalog() {
 		client := set.client(gen.Service)
 		if client == nil || client.BaseURL == "" {
+			skipped[gen.Service] = struct{}{}
 			continue
 		}
 		registerGeneratedEntry(reg, client, gen)
 	}
+	return sortedKeys(skipped)
 }
 
 func registerGeneratedEntry(reg *DispatcherRegistry, client *svcclient.Client, gen GeneratedEntry) {
@@ -70,6 +51,7 @@ func registerGeneratedEntry(reg *DispatcherRegistry, client *svcclient.Client, g
 		MethodName:          strings.TrimPrefix(gen.SDKPath, "arda."),
 		SDKPath:             gen.SDKPath,
 		Domain:              gen.Domain,
+		Service:             gen.Service,
 		Signature:           gen.Signature,
 		JSDoc:               gen.JSDoc,
 		Keywords:            gen.Keywords,

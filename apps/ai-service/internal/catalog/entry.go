@@ -16,6 +16,7 @@ type CatalogEntry struct {
 	MethodName          string   // e.g. "crm.getCustomer"
 	SDKPath             string   // e.g. "arda.crm.getCustomer"
 	Domain              string   // e.g. "crm", "hrm", "finance", "knowledge"
+	Service             string   // owning service for generated entries, e.g. "crm-service"; empty for local builtins
 	Signature           string   // TypeScript function signature
 	JSDoc               string   // Description, @param, @returns, @requires
 	Keywords            []string // Indexed terms for BM25/keyword search
@@ -82,6 +83,8 @@ func (r *DispatcherRegistry) AllSDKMethods() []sandbox.SDKMethod {
 			SDKPath:          entry.SDKPath,
 			Domain:           entry.Domain,
 			Timeout:          entry.Timeout,
+			RequiresApproval: entry.Kind == "confirm",
+			Risk:             entry.Risk,
 			CheckPermissions: entryCopy.CheckPermissions,
 			Dispatcher:       fn,
 		})

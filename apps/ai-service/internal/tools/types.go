@@ -9,11 +9,41 @@ import (
 )
 
 var (
-	ErrUnknownTool      = errors.New("unknown AI tool")
-	ErrToolForbidden    = errors.New("AI tool permission denied")
-	ErrInvalidArgument  = errors.New("invalid AI tool arguments")
-	ErrApprovalRequired = errors.New("AI tool requires human approval")
+	ErrUnknownTool         = errors.New("unknown AI tool")
+	ErrToolForbidden       = errors.New("AI tool permission denied")
+	ErrInvalidArgument     = errors.New("invalid AI tool arguments")
+	ErrApprovalRequired    = errors.New("AI tool requires human approval")
+	ErrApprovalUnavailable = errors.New("AI tool approval is not available")
+	ErrApprovalPending     = errors.New("AI tool approval pending")
 )
+
+// ApprovalPending describes a human-approval proposal created in place of a
+// tool execution. The agent loop turns it into an AG-UI interrupt; the run
+// stays WAITING_APPROVAL until the proposal is decided and resumed.
+type ApprovalPending struct {
+	ProposalID string         `json:"proposalId"`
+	Tool       string         `json:"tool"`
+	Version    int            `json:"version"`
+	Risk       string         `json:"risk"`
+	Args       map[string]any `json:"args,omitempty"`
+	ExpiresAt  time.Time      `json:"expiresAt"`
+}
+
+// ApprovalPendingError lets a tool executor (the Code Mode sandbox closure)
+// signal that a call was converted into a proposal without executing. The
+// sandbox meta-tool unwraps it into Result.Approval instead of an error.
+type ApprovalPendingError struct {
+	Proposal ApprovalPending
+}
+
+func (e *ApprovalPendingError) Error() string {
+	if e == nil {
+		return ErrApprovalPending.Error()
+	}
+	return "approval pending for " + e.Proposal.Tool
+}
+
+func (e *ApprovalPendingError) Unwrap() error { return ErrApprovalPending }
 
 type Definition struct {
 	Name                string
@@ -59,6 +89,10 @@ type Result struct {
 	Source    string
 	RequestID string
 	FreshAt   time.Time
+	// Approval is set when the call produced a human-approval proposal instead
+	// of executing. The agent loop must emit an interrupt and stop the run;
+	// treating this as a completed tool call would strand the proposal.
+	Approval *ApprovalPending
 }
 
 type Tool interface {

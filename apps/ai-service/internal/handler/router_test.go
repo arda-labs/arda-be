@@ -98,7 +98,7 @@ func TestRunRequiresAssistantPermission(t *testing.T) {
 }
 
 func TestModelMessagesMarkRetrievedKnowledgeAsUntrusted(t *testing.T) {
-	messages := buildModelMessages(context.Background(), nil, RouterOptions{}, tools.Context{}, repository.RunContext{}, "policy")
+	messages := buildModelMessages(context.Background(), nil, RouterOptions{}, tools.Context{}, repository.RunContext{}, "policy", "")
 	if len(messages) == 0 || !strings.Contains(messages[0].Content, "untrusted evidence") {
 		t.Fatalf("knowledge safety policy missing from model context: %#v", messages)
 	}
@@ -163,31 +163,52 @@ func TestRunExecutesAllowlistedReadToolAndEmitsToolEvents(t *testing.T) {
 
 func TestApprovalProposalIsTypedAndFeatureFlagged(t *testing.T) {
 	store := &fakeToolRunStore{}
-	body := `{"threadId":"t-approval","runId":"r-approval","idempotencyKey":"idem-1","tool":{"name":"crm.customer.export.prepare","version":1,"arguments":{"customerId":"customer-1","format":"csv"}}}`
+	options := RouterOptions{
+		EnableHITLProposals: true,
+		ProposalTools: []ProposalToolSpec{{
+			Name: "crm.exportCustomer", Version: 1, Risk: "medium", RequiredPermission: "crm.customer.manage",
+		}},
+	}
+	body := `{"threadId":"t-approval","runId":"r-approval","idempotencyKey":"idem-1","tool":{"name":"crm.exportCustomer","version":1,"arguments":{"customerId":"customer-1","format":"csv"}}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/ai/approvals", strings.NewReader(body))
 	for key, value := range map[string]string{
 		"X-Auth-Checked": "true", "X-User-Id": "user-1", "X-Tenant-Id": "tenant-1",
-		"X-Permissions": "ai.assistant.use,ai.approval.propose,crm.customer.read",
+		"X-Permissions": "ai.assistant.use,ai.approval.propose,crm.customer.manage",
 	} {
 		req.Header.Set(key, value)
 	}
 	res := httptest.NewRecorder()
-	NewRouterWithOptions(store, nil, RouterOptions{EnableHITLProposals: true}).ServeHTTP(res, req)
+	NewRouterWithOptions(store, nil, options).ServeHTTP(res, req)
 	if res.Code != http.StatusCreated || !store.approvalCreated || !strings.Contains(res.Body.String(), `"status":"PENDING"`) {
 		t.Fatalf("proposal response = %d/%v/%s", res.Code, store.approvalCreated, res.Body.String())
 	}
 
-	bad := httptest.NewRequest(http.MethodPost, "/api/ai/approvals", strings.NewReader(`{"threadId":"t","runId":"r","idempotencyKey":"i","tool":{"name":"crm.customer.export.prepare","arguments":{"customerId":"c","format":"csv","secret":"no"}}}`))
+	// A tool absent from the registered proposal allowlist is rejected.
+	bad := httptest.NewRequest(http.MethodPost, "/api/ai/approvals", strings.NewReader(`{"threadId":"t","runId":"r","idempotencyKey":"i","tool":{"name":"crm.customer.export.prepare","arguments":{"customerId":"c"}}}`))
 	for key, value := range map[string]string{
 		"X-Auth-Checked": "true", "X-User-Id": "user-1", "X-Tenant-Id": "tenant-1",
-		"X-Permissions": "ai.assistant.use,ai.approval.propose,crm.customer.read",
+		"X-Permissions": "ai.assistant.use,ai.approval.propose,crm.customer.manage",
 	} {
 		bad.Header.Set(key, value)
 	}
 	badResponse := httptest.NewRecorder()
-	NewRouterWithOptions(store, nil, RouterOptions{EnableHITLProposals: true}).ServeHTTP(badResponse, bad)
+	NewRouterWithOptions(store, nil, options).ServeHTTP(badResponse, bad)
 	if badResponse.Code != http.StatusBadRequest {
-		t.Fatalf("invalid proposal status = %d", badResponse.Code)
+		t.Fatalf("unallowlisted proposal status = %d", badResponse.Code)
+	}
+
+	// An allowlisted tool without its required permission is forbidden.
+	forbidden := httptest.NewRequest(http.MethodPost, "/api/ai/approvals", strings.NewReader(body))
+	for key, value := range map[string]string{
+		"X-Auth-Checked": "true", "X-User-Id": "user-1", "X-Tenant-Id": "tenant-1",
+		"X-Permissions": "ai.assistant.use,ai.approval.propose",
+	} {
+		forbidden.Header.Set(key, value)
+	}
+	forbiddenResponse := httptest.NewRecorder()
+	NewRouterWithOptions(store, nil, options).ServeHTTP(forbiddenResponse, forbidden)
+	if forbiddenResponse.Code != http.StatusForbidden {
+		t.Fatalf("missing tool permission status = %d", forbiddenResponse.Code)
 	}
 
 	disabled := httptest.NewRecorder()

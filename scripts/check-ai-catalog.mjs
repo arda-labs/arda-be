@@ -19,10 +19,21 @@ if (policyPermissions.size === 0) throw new Error("no permission IDs parsed from
 const VALID_KINDS = new Set(["read", "confirm"]);
 const VALID_RISKS = new Set(["low", "medium", "high"]);
 const VALID_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
-const VALID_SERVICES = new Set([
-  "iam-service", "crm-service", "finance-service", "hrm-service",
-  "workflow-service", "notification-service", "mdm-service", "platform-service",
-]);
+
+// Runtime service registry: ai-service only registers generated tools for
+// services wired in internal/config/service_urls.go. Parsing that file — rather
+// than keeping a duplicate list here — keeps CI and runtime in lockstep: a
+// contract that declares an unsupported service fails CI instead of producing
+// a tool that silently never registers.
+const serviceRegistryURL = new URL("../apps/ai-service/internal/config/service_urls.go", import.meta.url);
+const serviceRegistrySource = await readFile(serviceRegistryURL, "utf8");
+const serviceEnvByName = new Map();
+for (const match of serviceRegistrySource.matchAll(/"([a-z][a-z0-9-]*service)":\s*"([A-Z0-9_]+)"/g)) {
+  serviceEnvByName.set(match[1], match[2]);
+}
+if (serviceEnvByName.size === 0) {
+  throw new Error("no service entries parsed from apps/ai-service/internal/config/service_urls.go");
+}
 
 let totalTools = 0;
 const seenPaths = new Set();
@@ -54,8 +65,12 @@ for (const file of files) {
         issues.push(`${at}: sdkPath ${tool.sdkPath} must match arda.<domain>.<method> with domain=${tool.domain}`);
       }
       if (!tool.service) issues.push(`${at}: x-ai-tool.service is required`);
-      else if (!VALID_SERVICES.has(tool.service)) issues.push(`${at}: unknown service ${tool.service}`);
-      if (tool.service) declaredServices.add(tool.service.replace("-service", "").toUpperCase());
+      else if (!serviceEnvByName.has(tool.service)) {
+        issues.push(`${at}: unknown service ${tool.service} — add it to apps/ai-service/internal/config/service_urls.go or the tool would never register`);
+      }
+      if (tool.service && serviceEnvByName.has(tool.service)) {
+        declaredServices.add(serviceEnvByName.get(tool.service).replace(/_SERVICE_URL$/, ""));
+      }
       const kind = tool.kind ?? (method === "get" ? "read" : "confirm");
       if (!VALID_KINDS.has(kind)) issues.push(`${at}: invalid kind ${kind}`);
       if (kind === "read" && method !== "get") {

@@ -1,0 +1,57 @@
+name: knowledge-sync
+
+# Docs-as-code corpus sync (WS3). Manual dispatch only: it publishes into a
+# live environment, so an operator chooses the target URL and tenant and the
+# run is auditable in the Actions log. Rollback = unpublish the source in AI
+# Center (no content is deleted).
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "ai-service base URL (e.g. https://api.arda.io.vn)"
+        required: true
+        type: string
+      tenant:
+        description: "Tenant id the corpus pipeline runs in"
+        required: true
+        type: string
+      dry_run:
+        description: "Resolve and scan only (no API writes)"
+        required: false
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: knowledge-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+          cache: true
+      - name: Sync corpus
+        working-directory: apps/ai-service
+        env:
+          # Secret must be the same ARDA_SERVICE_AUTH_SECRET the cluster uses;
+          # it is only ever sent as a workload signature, never logged.
+          ARDA_SERVICE_AUTH_SECRET: ${{ secrets.ARDA_SERVICE_AUTH_SECRET }}
+          # The gateway in front of ai-service enforces the session cookie for
+          # browser traffic; a dedicated corpus service account is required for
+          # non-dry-run dispatches.
+          AI_EVAL_COOKIE: ${{ secrets.AI_CORPUS_COOKIE }}
+        run: |
+          set -euo pipefail
+          go run ./cmd/knowledge-indexer \
+            --manifest ../../scripts/ai-knowledge/manifest.yaml \
+            --base-url "${{ inputs.base_url }}" \
+            --tenant "${{ inputs.tenant }}" \
+            ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}

@@ -253,6 +253,40 @@ func TestEngine_MutationYieldsApprovalNeeded(t *testing.T) {
 	}
 }
 
+// TestEngine_ConfirmKindNeverDispatches locks the enforcement point: a
+// confirm-kind method is gated by the engine itself, so a dispatcher that
+// would happily execute never runs.
+func TestEngine_ConfirmKindNeverDispatches(t *testing.T) {
+	dispatched := false
+	reg := &mockRegistry{methods: []SDKMethod{{
+		MethodName:       "crm.exportCustomer",
+		SDKPath:          "arda.crm.exportCustomer",
+		Domain:           "crm",
+		Timeout:          time.Second,
+		RequiresApproval: true,
+		Risk:             "medium",
+		CheckPermissions: func(tools.Context) error { return nil },
+		Dispatcher: func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
+			dispatched = true
+			return map[string]any{"status": "PREPARED"}, nil
+		},
+	}}}
+
+	result, err := NewEngine(reg).Execute(context.Background(), testScope(), `return await arda.crm.exportCustomer({ customerId: "c1" });`)
+	if err != nil {
+		t.Fatalf("unexpected execution error: %v", err)
+	}
+	if dispatched {
+		t.Fatal("confirm-kind dispatcher must never run inside the sandbox")
+	}
+	if !result.ApprovalNeeded || result.ProposalTool != "crm.exportCustomer" || result.ProposalRisk != "medium" {
+		t.Fatalf("approval gate result = %+v", result)
+	}
+	if result.ProposalArgs["customerId"] != "c1" {
+		t.Fatalf("proposal args = %v, want customerId c1", result.ProposalArgs)
+	}
+}
+
 func TestEngine_PermissionDenied(t *testing.T) {
 	engine, _ := setupTestEngine()
 	ctx := context.Background()

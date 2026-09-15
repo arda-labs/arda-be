@@ -17,6 +17,18 @@ type executionResolver interface {
 	ResolveForExecution(call tools.Call, scope tools.Context) (tools.Tool, tools.Definition, error)
 }
 
+// approvalExecutionResolver returns the resolver used to execute an approved
+// proposal. Production wires RouterOptions.ApprovalResolver (catalog-backed, so
+// proposals created inside Code Mode can execute); tests that register confirm
+// tools directly on the model registry keep the legacy path.
+func approvalExecutionResolver(resolver toolResolver, options RouterOptions) executionResolver {
+	if options.ApprovalResolver != nil {
+		return options.ApprovalResolver
+	}
+	direct, _ := resolver.(executionResolver)
+	return direct
+}
+
 // runResumeStore is the capability store needed to continue the agent loop
 // after an approved tool executes (LangGraph-style interrupt/resume).
 type runResumeStore interface {
@@ -49,8 +61,8 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 		problem(w, http.StatusServiceUnavailable, "ai.approval_persistence_unavailable")
 		return
 	}
-	resumeResolver, hasResumeResolver := resolver.(executionResolver)
-	if !hasResumeResolver {
+	resumeResolver := approvalExecutionResolver(resolver, options)
+	if resumeResolver == nil {
 		problem(w, http.StatusServiceUnavailable, "ai.tool_persistence_unavailable")
 		return
 	}
@@ -175,7 +187,7 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 		return
 	}
 
-	messages := buildResumeMessages(ctx, resumeStore, options, scope, exec, content)
+	messages := buildResumeMessages(ctx, resumeStore, options, scope, exec, content, "")
 	agentStepsLoop(w, r, store, resolver, scope, exec.Run, resumeInput, sse, options, modelProvider, messages)
 }
 
@@ -189,6 +201,7 @@ func buildResumeMessages(
 	scope tools.Context,
 	exec repository.ApprovedExecution,
 	toolResultContent string,
+	uiContext string,
 ) []model.Message {
 	messages := make([]model.Message, 0, 32)
 	if prompt := strings.TrimSpace(options.ModelSystemPrompt); prompt != "" {
@@ -196,6 +209,9 @@ func buildResumeMessages(
 	}
 	if identity := buildIdentityContext(scope); identity != "" {
 		messages = append(messages, model.Message{Role: "system", Content: identity})
+	}
+	if uiContext != "" {
+		messages = append(messages, model.Message{Role: "system", Content: uiContextPrompt(uiContext)})
 	}
 	if sdkTypes := sdkTypesMessage(options.ModelSDKTypes); sdkTypes != nil {
 		messages = append(messages, *sdkTypes)
@@ -241,8 +257,8 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 		problem(w, http.StatusServiceUnavailable, "ai.approval_persistence_unavailable")
 		return
 	}
-	resumeResolver, hasResumeResolver := resolver.(executionResolver)
-	if !hasResumeResolver {
+	resumeResolver := approvalExecutionResolver(resolver, options)
+	if resumeResolver == nil {
 		problem(w, http.StatusServiceUnavailable, "ai.tool_persistence_unavailable")
 		return
 	}
@@ -355,7 +371,7 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 		return
 	}
 
-	messages := buildResumeMessages(ctx, resumeStore, options, scope, executed[0].exec, executed[0].content)
+	messages := buildResumeMessages(ctx, resumeStore, options, scope, executed[0].exec, executed[0].content, uiContextFromForwardedProps(input.ForwardedProps))
 	agentStepsLoop(w, r, store, resolver, scope, run, resumeInput, sse, options, modelProvider, messages)
 }
 
