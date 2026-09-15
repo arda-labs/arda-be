@@ -24,6 +24,9 @@ type GeneratedEntry struct {
 	ScopeQuery          []GeneratedScopeQuery
 	ResponseSchema      string
 	Note                string
+	// Enabled is the contract-level default (ADR-003): false is a hard floor
+	// the runtime override in ai_tool_settings can never lift.
+	Enabled bool
 }
 
 // GeneratedScopeQuery binds a query parameter to a verified scope source
@@ -92,6 +95,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"amount_minor":{"type":"integer"},"contract_code":{"type":"string"},"contract_date":{"type":"string"},"counterparty_code":{"type":"string"},"currency_code":{"type":"string"},"fund_type_code":{"type":"string"},"id":{"type":"string"},"interest_rate":{"type":"number"},"maturity_date":{"type":"string"},"org_code":{"type":"string"},"product_code":{"type":"string"},"status":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.capital.listFundTypes",
@@ -126,6 +130,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.capital.listProducts",
@@ -160,6 +165,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"currency_code":{"type":"string"},"fund_type_code":{"type":"string"},"id":{"type":"string"},"interest_rate":{"type":"number"},"is_active":{"type":"boolean"},"name":{"type":"string"},"term_months":{"type":"integer"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.crm.getCustomer",
@@ -186,6 +192,7 @@ func GeneratedCatalog() []GeneratedEntry {
 			},
 			ScopeQuery:     []GeneratedScopeQuery{},
 			ResponseSchema: `{"type":"object","properties":{"customerCode":{"type":"string"},"customerType":{"type":"string"},"id":{"type":"string"},"name":{"type":"string"},"orgId":{"type":"string"},"rank":{"type":"string"},"riskLevel":{"type":"string"},"segment":{"type":"string"},"status":{"type":"string"},"updatedAt":{"type":"string"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.deposit.getSavingsDetail",
@@ -216,6 +223,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"savings":{"type":"object","properties":{"accrued_minor":{"type":"integer"},"currency_code":{"type":"string"},"customer_code":{"type":"string"},"maturity_date":{"type":"string"},"open_date":{"type":"string"},"principal_minor":{"type":"integer"},"product_code":{"type":"string"},"savings_code":{"type":"string"},"status":{"type":"string"}}},"transaction_count":{"type":"integer"},"transactions":{"type":"array","items":{"type":"object","properties":{"amount_minor":{"type":"integer"},"currency_code":{"type":"string"},"status":{"type":"string"},"txn_date":{"type":"string"},"txn_type":{"type":"string"}}}}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.deposit.listInterestRates",
@@ -250,6 +258,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"denominator":{"type":"integer"},"effective_from":{"type":"string"},"is_active":{"type":"boolean"},"method":{"type":"string"},"product_code":{"type":"string"},"rate":{"type":"number"},"term_months":{"type":"integer"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.deposit.listSavings",
@@ -286,6 +295,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"accrued_minor":{"type":"integer"},"currency_code":{"type":"string"},"customer_code":{"type":"string"},"maturity_date":{"type":"string"},"open_date":{"type":"string"},"principal_minor":{"type":"integer"},"product_code":{"type":"string"},"savings_code":{"type":"string"},"status":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.finance.getAccount",
@@ -314,6 +324,7 @@ func GeneratedCatalog() []GeneratedEntry {
 			},
 			ScopeQuery:     []GeneratedScopeQuery{},
 			ResponseSchema: `{"type":"object","properties":{"account":{"type":"object","properties":{"code":{"type":"string"},"currency":{"type":"string"},"id":{"type":"string"},"isActive":{"type":"boolean"},"name":{"type":"string"},"normalBalance":{"type":"string"},"type":{"type":"string"}}},"balance":{}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.hrm.listEmployees",
@@ -350,6 +361,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"employeeCode":{"type":"string"},"fullName":{"type":"string"},"id":{"type":"string"},"status":{"type":"string"}}}},"page":{"type":"integer"},"perPage":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.iam.listUsers",
@@ -386,6 +398,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"email":{"type":"string"},"id":{"type":"string"},"name":{"type":"string"},"roles":{"type":"array","items":{"type":"string"}},"status":{"type":"string"},"username":{"type":"string"}}}},"page":{"type":"integer"},"perPage":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.loan.getContract",
@@ -416,6 +429,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"contract_code":{"type":"string"},"contract_date":{"type":"string"},"contract_no":{"type":"string"},"contract_type_code":{"type":"string"},"customer_code":{"type":"string"},"id":{"type":"string"},"interest_payment_freq":{"type":"string"},"interest_rate":{"type":"number"},"interest_rate_type":{"type":"string"},"loan_amt_minor":{"type":"integer"},"loan_term":{"type":"integer"},"maturity_date":{"type":"string"},"principal_payment_freq":{"type":"string"},"product_code":{"type":"string"},"status":{"type":"string"},"term_unit":{"type":"string"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.loan.listContracts",
@@ -452,6 +466,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"contract_code":{"type":"string"},"contract_date":{"type":"string"},"contract_no":{"type":"string"},"contract_type_code":{"type":"string"},"customer_code":{"type":"string"},"id":{"type":"string"},"interest_rate":{"type":"number"},"loan_amt_minor":{"type":"integer"},"maturity_date":{"type":"string"},"product_code":{"type":"string"},"status":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.loan.listRepayPlans",
@@ -488,6 +503,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"agreement_code":{"type":"string"},"coln_interest_amt_minor":{"type":"integer"},"coln_principal_amt_minor":{"type":"integer"},"contract_code":{"type":"string"},"from_date":{"type":"string"},"interest_rate":{"type":"number"},"is_active":{"type":"boolean"},"plan_interest_amt_minor":{"type":"integer"},"plan_no":{"type":"integer"},"plan_principal_amt_minor":{"type":"integer"},"term_no":{"type":"integer"},"to_date":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.mdm.listCountries",
@@ -522,6 +538,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"attributes":{"type":"object","properties":{"nationality":{"type":"string"}}},"code":{"type":"string"},"description":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.mdm.listCurrencies",
@@ -556,6 +573,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"attributes":{"type":"object","properties":{"decimal_places":{"type":"integer"},"symbol":{"type":"string"}}},"code":{"type":"string"},"description":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.mdm.listInterestRates",
@@ -590,6 +608,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"apply_type":{"type":"string"},"code":{"type":"string"},"currency_code":{"type":"string"},"description":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"},"rate_type":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.notification.listInbox",
@@ -620,6 +639,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"bodyKey":{"type":"string"},"createdAt":{"type":"string"},"href":{"type":"string"},"id":{"type":"string"},"readAt":{"type":"string"},"titleKey":{"type":"string"},"type":{"type":"string"}}}}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.notification.unreadCount",
@@ -647,6 +667,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"count":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.platform.calendarStatus",
@@ -677,6 +698,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"branch_code":{"type":"string"},"current_business_date":{"type":"string"},"id":{"type":"string"},"last_eod_at":{"type":"string"},"next_business_date":{"type":"string"},"previous_business_date":{"type":"string"},"status":{"type":"string"},"updated_at":{"type":"string"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.platform.listOrganizations",
@@ -711,6 +733,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"id":{"type":"string"},"isActive":{"type":"boolean"},"name":{"type":"string"},"parentId":{"type":"string"},"parentName":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.platform.listParameters",
@@ -741,6 +764,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"description":{"type":"string"},"id":{"type":"string"},"key":{"type":"string"},"scopeType":{"type":"string"},"value":{"type":"string"},"valueType":{"type":"string"}}}}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.platform.lookupValues",
@@ -771,6 +795,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"id":{"type":"string"},"isActive":{"type":"boolean"},"name":{"type":"string"},"sortOrder":{"type":"integer"}}}}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.statistical.listIndicators",
@@ -805,6 +830,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"group_code":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"},"unit":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.statistical.listReportDefinitions",
@@ -839,6 +865,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"group_code":{"type":"string"},"id":{"type":"string"},"is_active":{"type":"boolean"},"name":{"type":"string"},"output_format":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.statistical.listSubmissions",
@@ -877,6 +904,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"period_code":{"type":"string"},"report_code":{"type":"string"},"status":{"type":"string"},"submitted_at":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.workflow.caseTimeline",
@@ -907,6 +935,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"createdAt":{"type":"string"},"eventType":{"type":"string"},"id":{"type":"integer"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.workflow.getCase",
@@ -937,6 +966,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"caseCode":{"type":"string"},"caseType":{"type":"string"},"createdAt":{"type":"string"},"id":{"type":"string"},"status":{"type":"string"},"title":{"type":"string"},"updatedAt":{"type":"string"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.workflow.getWorkItem",
@@ -967,6 +997,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"canClaim":{"type":"boolean"},"canOpen":{"type":"boolean"},"canReassign":{"type":"boolean"},"caseCode":{"type":"string"},"caseType":{"type":"string"},"createdAt":{"type":"string"},"id":{"type":"string"},"slaDueAt":{"type":"string"},"slaStatus":{"type":"string"},"status":{"type":"string"},"stepCode":{"type":"string"},"taskType":{"type":"string"},"title":{"type":"string"},"transactionStatus":{"type":"string"},"updatedAt":{"type":"string"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.workflow.listCases",
@@ -1003,6 +1034,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"caseCode":{"type":"string"},"caseType":{"type":"string"},"createdAt":{"type":"string"},"id":{"type":"string"},"status":{"type":"string"},"title":{"type":"string"},"updatedAt":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 		{
 			SDKPath:   "arda.workflow.listWorkItems",
@@ -1039,6 +1071,7 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"canClaim":{"type":"boolean"},"canOpen":{"type":"boolean"},"canReassign":{"type":"boolean"},"caseCode":{"type":"string"},"caseType":{"type":"string"},"createdAt":{"type":"string"},"id":{"type":"string"},"slaDueAt":{"type":"string"},"slaStatus":{"type":"string"},"status":{"type":"string"},"stepCode":{"type":"string"},"taskType":{"type":"string"},"title":{"type":"string"},"transactionStatus":{"type":"string"},"updatedAt":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
 		},
 	}
 }

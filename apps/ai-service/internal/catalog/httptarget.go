@@ -59,6 +59,7 @@ func registerGeneratedEntry(reg *DispatcherRegistry, client *svcclient.Client, g
 		RequiredPermissions: gen.RequiredPermissions,
 		Risk:                gen.Risk,
 		Timeout:             gen.Timeout,
+		Enabled:             gen.Enabled,
 	}
 	genCopy := gen
 	reg.Register(entry, func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {

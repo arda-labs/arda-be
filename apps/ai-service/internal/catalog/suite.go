@@ -32,9 +32,10 @@ type CodeModeSuite struct {
 	Registry       *DispatcherRegistry
 	ResultStore    *sandbox.ResultStore
 	EventPublisher events.Publisher
-	// TypeDefs is the generated arda.* TypeScript declaration file injected
-	// into the model context once per run.
-	TypeDefs string
+	// Governance owns the platform-level enabled/disabled overrides
+	// (ADR-003). Set via SetGovernance before the suite is served; nil means
+	// every entry follows its contract default.
+	Governance *Governance
 	// UnwiredServices lists contract services referenced by the generated
 	// catalog that have no configured base URL in this deployment. A non-empty
 	// list is fatal in production (fail closed) and logged elsewhere.
@@ -45,6 +46,31 @@ func (s *CodeModeSuite) SetEventPublisher(p events.Publisher) {
 	if s != nil {
 		s.EventPublisher = p
 	}
+}
+
+// SetGovernance wires tool governance into the registry (execution + model
+// surfaces) and the search index. Called once at startup, before serving.
+func (s *CodeModeSuite) SetGovernance(gov *Governance) {
+	if s == nil {
+		return
+	}
+	s.Governance = gov
+	if s.Registry != nil {
+		s.Registry.SetEnabledPredicate(gov.IsEnabled)
+	}
+	if s.Catalog != nil {
+		s.Catalog.SetFilter(gov.IsEnabled)
+	}
+}
+
+// TypeDefinitions renders the model-visible arda.* TypeScript declarations from
+// the currently enabled catalog. It is evaluated per run so a tool disabled at
+// runtime disappears from the model context without a restart (ADR-003).
+func (s *CodeModeSuite) TypeDefinitions() string {
+	if s == nil || s.Registry == nil {
+		return ""
+	}
+	return GenerateTypeDefinitions(s.Registry.EnabledEntries())
 }
 
 // NewCodeModeSuite builds the 3-meta-tool suite (search & execute & readResult)
@@ -73,7 +99,6 @@ func NewCodeModeSuite(
 		Engine:          sandboxEngine,
 		Registry:        dispatcherReg,
 		ResultStore:     resultStore,
-		TypeDefs:        GenerateTypeDefinitions(dispatcherReg.AllEntries()),
 		UnwiredServices: unwired,
 	}
 
@@ -83,6 +108,10 @@ func NewCodeModeSuite(
 	})
 
 	executeTool := tools.NewExecuteMetaTool(func(ctx context.Context, scope tools.Context, code string) (map[string]any, error) {
+		// Refresh the governance snapshot before building the sandbox SDK
+		// surface: a tool disabled at runtime must not be injected into this
+		// run (ADR-003). A store error keeps the previous snapshot.
+		_ = suite.Governance.EnsureFresh(ctx)
 		res, err := sandboxEngine.Execute(ctx, scope, code)
 		if err != nil {
 			if suite.EventPublisher != nil {

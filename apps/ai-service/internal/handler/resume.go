@@ -213,7 +213,7 @@ func buildResumeMessages(
 	if uiContext != "" {
 		messages = append(messages, model.Message{Role: "system", Content: uiContextPrompt(uiContext)})
 	}
-	if sdkTypes := sdkTypesMessage(options.ModelSDKTypes); sdkTypes != nil {
+	if sdkTypes := sdkTypesMessage(sdkTypesFor(options)); sdkTypes != nil {
 		messages = append(messages, *sdkTypes)
 	}
 	if items, err := store.RunMessages(ctx, exec.Run); err == nil {
@@ -264,6 +264,11 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 	}
 	ctx := r.Context()
 	scope := scopeFromRequest(r)
+	// Refresh governance before executing approved tools: a tool disabled
+	// after the proposal was created must fail closed (ADR-003).
+	if options.ToolGovernance != nil {
+		_ = options.ToolGovernance.EnsureFresh(ctx)
+	}
 
 	// Execute every resolved interrupt (typically one per run).
 	type executedTool struct {

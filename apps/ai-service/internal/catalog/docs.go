@@ -74,7 +74,7 @@ func RegisterDocsCatalog(reg *DispatcherRegistry, docs docsLookuper) {
 			JSDoc: `/**
 	 * Look up an Arda API error code in the problem-details catalog
 	 * (docs.arda.io.vn). Use when a user asks what an error means, why an API
-	 * call failed, or how to recover. Pass the exact problem `+"`code`"+` from an
+	 * call failed, or how to recover. Pass the exact problem ` + "`code`" + ` from an
 	 * error response (e.g. "recent_auth_required", "validation.invalid_input").
 	 * Unknown codes return suggestions of similar documented codes.
 	 * @param args.code Stable problem code (dotted or snake_case machine code)
@@ -86,6 +86,7 @@ func RegisterDocsCatalog(reg *DispatcherRegistry, docs docsLookuper) {
 			RequiredPermissions: nil, // any authenticated actor; the catalog is public
 			Risk:                "low",
 			Timeout:             5 * time.Second,
+			Enabled:             true,
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
 			code, _ := args["code"].(string)

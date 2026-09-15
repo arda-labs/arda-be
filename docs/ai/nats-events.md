@@ -279,6 +279,25 @@ Published when a detected cross-tenant access attempt is blocked.
 }
 ```
 
+### `ai.audit.tool_governance_changed`
+
+Published when a platform admin sets or clears a tool enable/disable override
+via `PATCH /api/ai/tools/{methodName}` (ADR-003). The `clear` action deletes
+the override row, so this event is the durable audit trail for it.
+
+```json
+{
+  "type": "ai.audit.tool_governance_changed",
+  "data": {
+    "methodName": "crm.getCustomer",
+    "action": "set",
+    "previousEffective": true,
+    "newEffective": false,
+    "updatedBy": "user-1"
+  }
+}
+```
+
 ---
 
 ## 7. NATS JetStream Configuration

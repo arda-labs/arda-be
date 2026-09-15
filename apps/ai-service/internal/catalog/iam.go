@@ -32,6 +32,7 @@ func RegisterIAMCatalog(reg *DispatcherRegistry) {
 			RequiredPermissions: []string{"ai.assistant.use"},
 			Risk:                "low",
 			Timeout:             500 * time.Millisecond,
+			Enabled:             true,
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
 			return map[string]any{
@@ -73,6 +74,7 @@ func RegisterIAMCatalog(reg *DispatcherRegistry) {
 			RequiredPermissions: []string{"ai.assistant.use"},
 			Risk:                "low",
 			Timeout:             1 * time.Second,
+			Enabled:             true,
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
 			return listCapabilities(reg, scope, args)
@@ -106,8 +108,9 @@ func listCapabilities(reg *DispatcherRegistry, scope tools.Context, args map[str
 		cursor = int(c)
 	}
 
-	// Collect entries the actor is allowed to call.
-	entries := reg.AllEntries()
+	// Collect entries the actor is allowed to call. Disabled tools are not
+	// capabilities (ADR-003), so only enabled entries are listed.
+	entries := reg.EnabledEntries()
 	filtered := make([]CatalogEntry, 0, len(entries))
 	for _, entry := range entries {
 		if domain != "" && !strings.EqualFold(entry.Domain, domain) {

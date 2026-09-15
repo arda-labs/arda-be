@@ -45,6 +45,7 @@ func RegisterKnowledgeCatalog(reg *DispatcherRegistry, rag ragSearcher) {
 			RequiredPermissions: []string{"ai.knowledge.read"},
 			Risk:                "low",
 			Timeout:             3 * time.Second,
+			Enabled:             true,
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
 			query, _ := args["query"].(string)

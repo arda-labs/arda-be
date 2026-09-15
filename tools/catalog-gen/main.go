@@ -19,6 +19,9 @@
 //	  "service": "iam-service",        // target service in the ClientSet
 //	  "envelope": "result",            // response envelope key (default "result" when the 200 schema wraps one)
 //	  "returns": "TypeName { shape }"  // JSDoc @returns text; first token = TS return type
+//	  "enabled": false                 // optional contract-level default; absent = true.
+//	                                   // false is a hard floor: the runtime override
+//	                                   // (ai_tool_settings) can only disable further (ADR-003).
 //	}
 //
 // Parameters bind SDK arguments to the wire: `x-ai-arg` names the SDK
@@ -54,6 +57,10 @@ type aiTool struct {
 	Envelope      string   `json:"envelope"`
 	Returns       string   `json:"returns"`
 	Note          string   `json:"note"`
+	// Enabled is the contract-level default. A pointer distinguishes "absent"
+	// (true) from an explicit false, which is a hard floor the runtime
+	// override can never lift (ADR-003).
+	Enabled *bool `json:"enabled"`
 }
 
 type paramSchema struct {
@@ -196,6 +203,7 @@ type goEntry struct {
 	ScopeQuery          []scopeQueryArg
 	ResponseSchema      string
 	Note                string
+	Enabled             bool
 }
 
 // scopeQueryArg binds a query parameter to a verified scope source ("tenant").
@@ -417,6 +425,9 @@ func buildEntry(file string, doc *document, route, method string, op operation) 
 		Args:                args,
 		ScopeQuery:          scopeQuery,
 		Note:                tool.Note,
+		// Contract-level default: absent = enabled. false is a hard floor for
+		// the runtime override (ADR-003).
+		Enabled: tool.Enabled == nil || *tool.Enabled,
 	}
 	entry.Signature = buildSignature(tool.SDKPath, args, tool.Returns)
 	entry.JSDoc = buildJSDoc(summary, desc, args, tool)
@@ -596,6 +607,9 @@ type GeneratedEntry struct {
 	ScopeQuery          []GeneratedScopeQuery
 	ResponseSchema      string
 	Note                string
+	// Enabled is the contract-level default (ADR-003): false is a hard floor
+	// the runtime override in ai_tool_settings can never lift.
+	Enabled bool
 }
 
 // GeneratedScopeQuery binds a query parameter to a verified scope source
@@ -656,6 +670,7 @@ func GeneratedCatalog() []GeneratedEntry {
 		if e.Note != "" {
 			fmt.Fprintf(&b, "\t\t\tNote: %q,\n", e.Note)
 		}
+		fmt.Fprintf(&b, "\t\t\tEnabled: %v,\n", e.Enabled)
 		fmt.Fprintf(&b, "\t\t},\n")
 	}
 	b.WriteString("\t}\n}\n")

@@ -71,7 +71,7 @@ self-hosted k3s, Go-native boundary). Bổ sung bất biến riêng của catalo
 | CLI `catalog-gen` | ❌ chưa có | `tools/` (có `arda-cli` sẵn) |
 | CI consistency check catalog ↔ OpenAPI ↔ policy | ❌ chưa có | `scripts/check-*.mjs` |
 | Semantic re-ranking | ❌ (chủ ý — BM25 đủ ở quy mô này) | — |
-| MCP exposure | ❌ (chờ client ngoài — M4 mảnh 3) | — |
+| MCP exposure | ❌ (chờ client ngoài — M4 mảnh 3; boundary chốt tại ADR-003) | — |
 
 ## 3. Kiến trúc đích
 
@@ -188,6 +188,11 @@ Chỉ làm khi xuất hiện client ngoài thật (IDE, Claude Desktop, agent c�
 khách): adapter read-only render Registry ra MCP `tools/list` + `tools/call`,
 giữ Registry làm source of truth duy nhất. Không thiết kế trước khi có
 consumer — tránh spec/view hoài.
+
+> **ADR-003 (2026-09-15) chốt boundary:** WP9 là *exposure* (chờ client
+> ngoài); *consume* MCP server ngoài phải có ADR bảo mật riêng (egress,
+> secret, tool trust, risk mặc định); tab "Máy chủ MCP ngoài" mock trong
+> `arda-mfe` phải gỡ hoặc thay bằng empty state trung thực (P0).
 
 ## 5. Thứ tự thực thi
 

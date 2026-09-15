@@ -45,6 +45,12 @@ func runAgentStream(
 	r, cancelRun := requestWithRunTimeout(r, options)
 	defer cancelRun()
 	ctx := r.Context()
+	// Refresh the tool-governance snapshot before anything model-visible is
+	// built (SDK types, sandbox surface). A store error keeps the previous
+	// snapshot (ADR-003).
+	if options.ToolGovernance != nil {
+		_ = options.ToolGovernance.EnsureFresh(ctx)
+	}
 	scopeRun := repository.RunContext{
 		TenantID: scope.TenantID, ActorUserID: scope.ActorUserID,
 		ExternalThread: strings.TrimSpace(input.ThreadID), ExternalRun: strings.TrimSpace(input.RunID),
@@ -101,7 +107,7 @@ func runAgentStream(
 
 	if options.EventPublisher != nil {
 		mode := "direct_tool"
-		if options.ModelSDKTypes != "" {
+		if options.ModelSDKTypes != "" || options.ModelSDKTypesProvider != nil {
 			mode = "code_mode"
 		}
 		pName := "unknown"
@@ -628,7 +634,7 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 	if uiContext != "" {
 		messages = append(messages, model.Message{Role: "system", Content: uiContextPrompt(uiContext)})
 	}
-	if sdkTypes := sdkTypesMessage(options.ModelSDKTypes); sdkTypes != nil {
+	if sdkTypes := sdkTypesMessage(sdkTypesFor(options)); sdkTypes != nil {
 		messages = append(messages, *sdkTypes)
 	}
 	if historyStore, ok := store.(repository.HistoryStore); ok {
@@ -663,6 +669,16 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 	}
 	messages = append(messages, model.Message{Role: "user", Content: latestUser})
 	return messages
+}
+
+// sdkTypesFor returns the model-visible arda.* declarations, preferring the
+// per-run provider so runtime governance changes apply without a restart
+// (ADR-003). Falls back to the static string used by tests/older wiring.
+func sdkTypesFor(options RouterOptions) string {
+	if options.ModelSDKTypesProvider != nil {
+		return options.ModelSDKTypesProvider()
+	}
+	return options.ModelSDKTypes
 }
 
 // sdkTypesMessage builds the system message carrying the generated arda.*

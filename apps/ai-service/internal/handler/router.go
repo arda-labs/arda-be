@@ -50,6 +50,15 @@ type RouterOptions struct {
 	// injected once into the model context so the model knows the whole SDK
 	// surface without re-searching. Empty = not injected (direct-tool mode).
 	ModelSDKTypes string
+	// ModelSDKTypesProvider renders the model-visible declarations from the
+	// current governance state, evaluated per run so a tool disabled at
+	// runtime disappears from the model context without a restart (ADR-003).
+	// Preferred over ModelSDKTypes when set.
+	ModelSDKTypesProvider func() string
+	// ToolGovernance evaluates and updates the platform-level enabled/disabled
+	// overrides from ai_tool_settings (ADR-003). Nil means no override support
+	// (tests, deployments without a database).
+	ToolGovernance ToolGovernance
 	// ModelBaseURLAllowlist restricts tenant-provided base URLs; empty = disabled.
 	ModelBaseURLAllowlist []string
 	// ModelGatewayToken is the shared AI Gateway credential (platform secret)
@@ -92,6 +101,31 @@ type CatalogToolDTO struct {
 	RequiredPermissions []string `json:"requiredPermissions"`
 	Risk                string   `json:"risk"`
 	TimeoutMs           int64    `json:"timeoutMs"`
+	// Tool governance state (ADR-003). Enabled is the derived effective
+	// state; ContractEnabled is the compile-time default from the contract
+	// (a hard floor the runtime override can never lift); OverrideEnabled is
+	// the runtime override, null when the tool follows the contract.
+	Enabled         bool  `json:"enabled"`
+	ContractEnabled bool  `json:"contractEnabled"`
+	OverrideEnabled *bool `json:"overrideEnabled"`
+	// Source identifies the tool origin. "internal" today; "mcp" when the MCP
+	// adapter lands (ADR-003 §4).
+	Source string `json:"source"`
+	// UpdatedBy/UpdatedAt describe the latest runtime override (PATCH
+	// responses; empty while the tool follows the contract).
+	UpdatedBy string `json:"updatedBy,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
+}
+
+// ToolGovernance is the handler-facing view of the platform-level tool
+// governance (implemented by catalog.Governance). Kept as an interface so the
+// handler package does not depend on the catalog package.
+type ToolGovernance interface {
+	EnsureFresh(ctx context.Context) error
+	Snapshot() map[string]bool
+	Available() bool
+	SetOverride(ctx context.Context, methodName string, enabled bool, actor string) (time.Time, error)
+	ClearOverride(ctx context.Context, methodName string, actor string) (time.Time, error)
 }
 
 // ProposalToolSpec declares one confirm-kind tool accepted by the FE-initiated
@@ -234,6 +268,9 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	})
 	mux.HandleFunc("/api/ai/tools", func(w http.ResponseWriter, r *http.Request) {
 		handleListTools(w, r, options)
+	})
+	mux.HandleFunc("/api/ai/tools/", func(w http.ResponseWriter, r *http.Request) {
+		handleUpdateTool(w, r, options)
 	})
 	mux.HandleFunc("/api/ai/analytics/overview", func(w http.ResponseWriter, r *http.Request) {
 		handleGetAnalytics(w, r, store, options)
@@ -544,6 +581,10 @@ func createApproval(w http.ResponseWriter, r *http.Request, store runStore, opti
 		problem(w, http.StatusBadRequest, "ai.proposal_not_allowlisted")
 		return
 	}
+	if !toolGovernanceAllows(r.Context(), options, input.Tool.Name) {
+		problem(w, http.StatusForbidden, "ai.tool_disabled")
+		return
+	}
 	if spec.RequiredPermission != "" && !hasPermission(r.Header.Get("X-Permissions"), spec.RequiredPermission) {
 		problem(w, http.StatusForbidden, "ai.proposal_forbidden")
 		return
@@ -708,26 +749,231 @@ func handleListApprovals(w http.ResponseWriter, r *http.Request, store runStore,
 	writeJSON(w, http.StatusOK, list)
 }
 
+// describeTools returns the catalog with governance applied. It copies the
+// startup DTOs so RouterOptions stays immutable across requests: contract
+// fields come from startup, override state is refreshed per request.
+func describeTools(ctx context.Context, options RouterOptions) []CatalogToolDTO {
+	out := make([]CatalogToolDTO, len(options.CatalogTools))
+	copy(out, options.CatalogTools)
+	var overrides map[string]bool
+	if options.ToolGovernance != nil {
+		_ = options.ToolGovernance.EnsureFresh(ctx)
+		overrides = options.ToolGovernance.Snapshot()
+	}
+	for i := range out {
+		override, ok := overrides[out[i].MethodName]
+		out[i].Enabled = out[i].ContractEnabled && (!ok || override)
+		if ok {
+			value := override
+			out[i].OverrideEnabled = &value
+		} else {
+			out[i].OverrideEnabled = nil
+		}
+	}
+	return out
+}
+
+func findCatalogTool(toolsList []CatalogToolDTO, methodName string) (CatalogToolDTO, bool) {
+	for _, item := range toolsList {
+		if item.MethodName == methodName {
+			return item, true
+		}
+	}
+	return CatalogToolDTO{}, false
+}
+
+func catalogToolMatches(tool CatalogToolDTO, search string) bool {
+	haystack := strings.ToLower(tool.MethodName + " " + tool.SDKPath + " " + tool.Domain + " " + tool.JSDoc + " " + strings.Join(tool.Keywords, " "))
+	return strings.Contains(haystack, search)
+}
+
+// toolGovernanceAllows reports whether the effective state enables a tool.
+// Unknown names are allowed here; the caller's allowlist check runs first.
+func toolGovernanceAllows(ctx context.Context, options RouterOptions, methodName string) bool {
+	if options.ToolGovernance == nil {
+		return true
+	}
+	_ = options.ToolGovernance.EnsureFresh(ctx)
+	entry, known := findCatalogTool(options.CatalogTools, methodName)
+	if !known {
+		return true
+	}
+	override, hasOverride := options.ToolGovernance.Snapshot()[methodName]
+	return entry.ContractEnabled && (!hasOverride || override)
+}
+
 func handleListTools(w http.ResponseWriter, r *http.Request, options RouterOptions) {
 	if r.Method != http.MethodGet {
 		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
 		return
 	}
-	toolsList := options.CatalogTools
-	if toolsList == nil {
-		toolsList = []CatalogToolDTO{}
-	}
-	domain := r.URL.Query().Get("domain")
-	if domain != "" {
-		filtered := make([]CatalogToolDTO, 0, len(toolsList))
-		for _, t := range toolsList {
-			if strings.EqualFold(t.Domain, domain) {
-				filtered = append(filtered, t)
+	toolsList := describeTools(r.Context(), options)
+
+	query := r.URL.Query()
+	domain := strings.TrimSpace(query.Get("domain"))
+	kind := strings.TrimSpace(query.Get("kind"))
+	risk := strings.TrimSpace(query.Get("risk"))
+	search := strings.ToLower(strings.TrimSpace(query.Get("q")))
+	enabledFilter := strings.TrimSpace(query.Get("enabled"))
+
+	filtered := make([]CatalogToolDTO, 0, len(toolsList))
+	for _, tool := range toolsList {
+		if domain != "" && !strings.EqualFold(tool.Domain, domain) {
+			continue
+		}
+		if kind != "" && !strings.EqualFold(tool.Kind, kind) {
+			continue
+		}
+		if risk != "" && !strings.EqualFold(tool.Risk, risk) {
+			continue
+		}
+		switch enabledFilter {
+		case "true":
+			if !tool.Enabled {
+				continue
+			}
+		case "false":
+			if tool.Enabled {
+				continue
 			}
 		}
-		toolsList = filtered
+		if search != "" && !catalogToolMatches(tool, search) {
+			continue
+		}
+		filtered = append(filtered, tool)
 	}
-	writeJSON(w, http.StatusOK, toolsList)
+
+	// Optional limit/cursor paging keeps the endpoint usable as the catalog
+	// grows; the response stays a JSON array (backward compatible).
+	limit := 0
+	if value := strings.TrimSpace(query.Get("limit")); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 || parsed > 200 {
+			problem(w, http.StatusBadRequest, "ai.invalid_pagination")
+			return
+		}
+		limit = parsed
+	}
+	if limit > 0 {
+		cursor := 0
+		if value := strings.TrimSpace(query.Get("cursor")); value != "" {
+			parsed, err := strconv.Atoi(value)
+			if err != nil || parsed < 0 {
+				problem(w, http.StatusBadRequest, "ai.invalid_pagination")
+				return
+			}
+			cursor = parsed
+		}
+		start := min(cursor, len(filtered))
+		end := min(start+limit, len(filtered))
+		filtered = filtered[start:end]
+	}
+
+	writeJSON(w, http.StatusOK, filtered)
+}
+
+type updateToolRequest struct {
+	Enabled       *bool `json:"enabled"`
+	ClearOverride *bool `json:"clearOverride"`
+}
+
+// handleUpdateTool serves PATCH /api/ai/tools/{methodName}: set or clear the
+// platform-level runtime override (ADR-003). The response is the updated
+// catalog entry so the frontend does not need to refetch the list.
+func handleUpdateTool(w http.ResponseWriter, r *http.Request, options RouterOptions) {
+	if r.Method != http.MethodPatch {
+		problem(w, http.StatusMethodNotAllowed, "ai.method_not_allowed")
+		return
+	}
+	methodName := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/ai/tools/"), "/")
+	if methodName == "" {
+		problem(w, http.StatusNotFound, "ai.tool_not_found")
+		return
+	}
+	entry, known := findCatalogTool(options.CatalogTools, methodName)
+	if !known {
+		problem(w, http.StatusNotFound, "ai.tool_not_found")
+		return
+	}
+	if options.ToolGovernance == nil || !options.ToolGovernance.Available() {
+		problem(w, http.StatusServiceUnavailable, "ai.tool_persistence_unavailable")
+		return
+	}
+
+	var input updateToolRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		problem(w, http.StatusBadRequest, "ai.invalid_request_body")
+		return
+	}
+	if err := ensureEOF(decoder); err != nil {
+		problem(w, http.StatusBadRequest, "ai.invalid_request_body")
+		return
+	}
+	if (input.Enabled == nil) == (input.ClearOverride == nil) {
+		problem(w, http.StatusBadRequest, "ai.invalid_tool_update")
+		return
+	}
+	if input.ClearOverride != nil && !*input.ClearOverride {
+		problem(w, http.StatusBadRequest, "ai.invalid_tool_update")
+		return
+	}
+
+	scope, ok := identityScope(w, r)
+	if !ok {
+		return
+	}
+	_ = options.ToolGovernance.EnsureFresh(r.Context())
+
+	// The contract default is a hard floor: an override can disable, never
+	// enable beyond the contract (ADR-003 §2).
+	if input.Enabled != nil && *input.Enabled && !entry.ContractEnabled {
+		problem(w, http.StatusConflict, "ai.tool_contract_disabled")
+		return
+	}
+
+	overridesBefore := options.ToolGovernance.Snapshot()
+	previousOverride, hadPrevious := overridesBefore[methodName]
+	previousEffective := entry.ContractEnabled && (!hadPrevious || previousOverride)
+
+	action := "set"
+	var updatedAt time.Time
+	var err error
+	if input.ClearOverride != nil {
+		action = "clear"
+		updatedAt, err = options.ToolGovernance.ClearOverride(r.Context(), methodName, scope.ActorUserID)
+	} else {
+		updatedAt, err = options.ToolGovernance.SetOverride(r.Context(), methodName, *input.Enabled, scope.ActorUserID)
+	}
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "ai.tool_update_failed")
+		return
+	}
+
+	updated, _ := findCatalogTool(describeTools(r.Context(), options), methodName)
+	updated.UpdatedBy = scope.ActorUserID
+	updated.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
+
+	if options.EventPublisher != nil {
+		_ = options.EventPublisher.Publish(r.Context(), events.SubjectAuditToolGovernanceChanged, events.NewEnvelope(
+			events.TypeAuditToolGovernanceChanged,
+			scope.TenantID,
+			scope.ActorUserID,
+			scope.RequestID,
+			scope.TraceID,
+			"",
+			events.AuditToolGovernanceChangedData{
+				MethodName:        methodName,
+				Action:            action,
+				PreviousEffective: previousEffective,
+				NewEffective:      updated.Enabled,
+				UpdatedBy:         scope.ActorUserID,
+			},
+		))
+	}
+
+	writeJSON(w, http.StatusOK, updated)
 }
 
 func handleGetAnalytics(w http.ResponseWriter, r *http.Request, store runStore, options RouterOptions) {

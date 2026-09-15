@@ -38,6 +38,7 @@ if (serviceEnvByName.size === 0) {
 let totalTools = 0;
 const seenPaths = new Set();
 const declaredServices = new Set();
+const declaredEnabled = new Map();
 const issues = [];
 
 for (const file of files) {
@@ -91,6 +92,10 @@ for (const file of files) {
         issues.push(`${at}: keywords must list at least one search term`);
       }
       if (!tool.returns) issues.push(`${at}: returns (JSDoc @returns text) is required`);
+      if (tool.enabled !== undefined && typeof tool.enabled !== "boolean") {
+        issues.push(`${at}: x-ai-tool.enabled must be a boolean when present`);
+      }
+      declaredEnabled.set(tool.sdkPath, tool.enabled !== false);
 
       if (seenPaths.has(tool.sdkPath)) issues.push(`${at}: duplicate sdkPath ${tool.sdkPath}`);
       seenPaths.add(tool.sdkPath);
@@ -134,6 +139,34 @@ if (gen.status !== 0) {
   throw new Error("ai-catalog: generated.go is stale — run `go run ./tools/catalog-gen` and commit");
 }
 console.log(gen.stdout.trim());
+
+// enabled mapping (ADR-003): the committed generated.go must mirror every
+// contract-level `enabled` default — a drift here would silently enable or
+// disable tools at runtime.
+const generatedURL = new URL("../apps/ai-service/internal/catalog/generated.go", import.meta.url);
+const generatedSource = await readFile(generatedURL, "utf8");
+const generatedEnabled = new Map();
+for (const block of generatedSource.split(/\n\t\t\{\n/).slice(1)) {
+  const path = block.match(/SDKPath:\s+"([^"]+)"/);
+  const enabled = block.match(/Enabled:\s+(true|false)/);
+  if (path && enabled) generatedEnabled.set(path[1], enabled[1] === "true");
+}
+if (generatedEnabled.size !== totalTools) {
+  throw new Error(
+    `ai-catalog: generated.go declares ${generatedEnabled.size} enabled flags for ${totalTools} annotated tools`,
+  );
+}
+for (const [sdkPath, expected] of declaredEnabled) {
+  const actual = generatedEnabled.get(sdkPath);
+  if (actual === undefined) {
+    throw new Error(`ai-catalog: ${sdkPath} is missing from generated.go`);
+  }
+  if (actual !== expected) {
+    throw new Error(
+      `ai-catalog: ${sdkPath} generated Enabled=${actual} does not match contract enabled=${expected}`,
+    );
+  }
+}
 
 // Deployment wiring cross-check (WP6): every tool's service must have a
 // <PREFIX>_SERVICE_URL env on the ai-service Deployment, else the tool

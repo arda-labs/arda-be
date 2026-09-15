@@ -57,6 +57,16 @@ routes:
       - superadmin
       - platform.manage
 
+  - id: ai-tools-write
+    path: /api/ai/tools/**
+    methods: [PATCH]
+    auth: true
+    risk: high
+    permissions:
+      - ai.admin
+      - superadmin
+      - platform.manage
+
   - id: ai-analytics-read
     path: /api/ai/analytics/**
     methods: [GET]

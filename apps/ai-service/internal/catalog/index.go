@@ -16,6 +16,18 @@ type Index struct {
 	avgLen  float64
 	docFreq map[string]int
 	tf      []map[string]int
+	// filter excludes entries from search results (tool governance, ADR-003).
+	// Set once at startup via SetFilter before the index is served.
+	filter func(CatalogEntry) bool
+}
+
+// SetFilter wires the governance predicate so disabled tools never surface
+// through the search meta-tool. Nil means "no filtering".
+func (idx *Index) SetFilter(fn func(CatalogEntry) bool) {
+	if idx == nil {
+		return
+	}
+	idx.filter = fn
 }
 
 func NewIndex(entries []CatalogEntry) *Index {
@@ -77,6 +89,11 @@ func (idx *Index) Search(query string, domain string, scope tools.Context, maxRe
 	var hits []searchHit
 
 	for i, entry := range idx.entries {
+		// Governance filter: disabled tools stay out of search results.
+		if idx.filter != nil && !idx.filter(entry) {
+			continue
+		}
+
 		// Domain filter
 		if domain != "" && domain != "all" && !strings.EqualFold(entry.Domain, domain) {
 			continue

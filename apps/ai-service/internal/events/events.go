@@ -26,9 +26,10 @@ const (
 	SubjectKnowledgePublished = "arda.ai.knowledge.published"
 	SubjectKnowledgeRetired   = "arda.ai.knowledge.retired"
 
-	SubjectAuditToolDenied         = "arda.ai.audit.tool_denied"
-	SubjectAuditSandboxRejected    = "arda.ai.audit.sandbox_rejected"
-	SubjectAuditCrossTenantAttempt = "arda.ai.audit.cross_tenant_attempt"
+	SubjectAuditToolDenied            = "arda.ai.audit.tool_denied"
+	SubjectAuditSandboxRejected       = "arda.ai.audit.sandbox_rejected"
+	SubjectAuditCrossTenantAttempt    = "arda.ai.audit.cross_tenant_attempt"
+	SubjectAuditToolGovernanceChanged = "arda.ai.audit.tool_governance_changed"
 
 	TypeRunStarted   = "ai.run.started"
 	TypeRunFinished  = "ai.run.finished"
@@ -43,9 +44,10 @@ const (
 	TypeKnowledgePublished = "ai.knowledge.published"
 	TypeKnowledgeRetired   = "ai.knowledge.retired"
 
-	TypeAuditToolDenied         = "ai.audit.tool_denied"
-	TypeAuditSandboxRejected    = "ai.audit.sandbox_rejected"
-	TypeAuditCrossTenantAttempt = "ai.audit.cross_tenant_attempt"
+	TypeAuditToolDenied            = "ai.audit.tool_denied"
+	TypeAuditSandboxRejected       = "ai.audit.sandbox_rejected"
+	TypeAuditCrossTenantAttempt    = "ai.audit.cross_tenant_attempt"
+	TypeAuditToolGovernanceChanged = "ai.audit.tool_governance_changed"
 )
 
 type EventEnvelope struct {
@@ -152,6 +154,17 @@ type AuditCrossTenantAttemptData struct {
 	AttemptedTenantID string `json:"attemptedTenantId"`
 	ResolvedTenantID  string `json:"resolvedTenantId"`
 	ToolName          string `json:"toolName"`
+}
+
+// AuditToolGovernanceChangedData records a platform-level enable/disable
+// change from PATCH /api/ai/tools/{methodName} (ADR-003). The clear action
+// deletes the override row, so this event is the durable audit trail for it.
+type AuditToolGovernanceChangedData struct {
+	MethodName        string `json:"methodName"`
+	Action            string `json:"action"` // "set" | "clear"
+	PreviousEffective bool   `json:"previousEffective"`
+	NewEffective      bool   `json:"newEffective"`
+	UpdatedBy         string `json:"updatedBy"`
 }
 
 func NewEnvelope(

@@ -153,6 +153,16 @@ func main() {
 		// embedded Goja sandbox via typed clients with signed caller identity
 		// and delegated subject. Raw results stay in the sandbox store; the
 		// model fetches full output via readResult.
+		//
+		// Tool governance (ADR-003): platform-level runtime overrides on top
+		// of the contract defaults. Without a database the overrides are
+		// unavailable and every entry follows its contract default.
+		governance := catalog.NewGovernance(nil)
+		if store != nil {
+			governance = catalog.NewGovernance(store)
+		}
+		routerOptions.ToolGovernance = governance
+
 		var ragSearcher catalog.RAGSearcher
 		if inProcessRAG != nil {
 			ragSearcher = inProcessRAG
@@ -165,6 +175,7 @@ func main() {
 			store, cfg.EnableHITLProposals, ragSearcher,
 			catalog.NewHTTPDocsLookuper(cfg.ProblemDocsURL),
 		)
+		suite.SetGovernance(governance)
 		// Fail closed: a contract service without a base URL means its tools
 		// would silently disappear. Production refuses to start; other
 		// environments log the gap loudly.
@@ -183,7 +194,9 @@ func main() {
 		// readResult is model-visible so the agent can fetch full sandbox
 		// outputs by resultId when the inline preview is truncated.
 		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool, suite.ReadTool)
-		routerOptions.ModelSDKTypes = suite.TypeDefs
+		// Evaluated per run: a runtime disable disappears from the model
+		// context without a restart (ADR-003).
+		routerOptions.ModelSDKTypesProvider = suite.TypeDefinitions
 
 		if suite.Registry != nil {
 			entries := suite.Registry.AllEntries()
@@ -201,6 +214,8 @@ func main() {
 					RequiredPermissions: e.RequiredPermissions,
 					Risk:                e.Risk,
 					TimeoutMs:           e.Timeout.Milliseconds(),
+					ContractEnabled:     e.Enabled,
+					Source:              "internal",
 				})
 			}
 			routerOptions.CatalogTools = toolsDTO
@@ -211,7 +226,9 @@ func main() {
 			)
 		}
 		routerOptions.ApprovalResolver = catalog.NewExecutionResolver(suite.Registry)
-		routerOptions.ProposalTools = proposalToolSpecs(suite.Registry.AllEntries())
+		// The FE-initiated proposal allowlist only covers tools the contract
+		// enables; runtime overrides are re-checked per request.
+		routerOptions.ProposalTools = proposalToolSpecs(suite.Registry.EnabledEntries())
 	}
 
 	mux := handler.NewRouterWithOptions(store, resolver, routerOptions)

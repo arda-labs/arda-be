@@ -25,6 +25,7 @@ gates.
 - Adopt AG-UI as the agent-to-UI contract: `ai-service` emits AG-UI SSE events, and the frontend runs the official assistant-ui AG-UI runtime (`useAgUiRuntime` + `HttpAgent`).
 - All knowledge tables are managed in PostgreSQL `ai` database via Goose migrations in `apps/ai-service/migrations`.
 - Historical/obsolete design spikes (Node.js runtime, CopilotKit, Python rag-service) are archived in `archive/`.
+- Tool governance follows [adr-003-tool-governance-and-sources.md](adr-003-tool-governance-and-sources.md): platform-level enable/disable (governance, not authorization), a source-driven catalog UI in `/ai/tools`, and MCP kept as an integration boundary (exposure adapter deferred until a real client; external MCP consumption needs its own ADR).
 
 ## Documents
 
@@ -51,6 +52,12 @@ gates.
     negative cases used to gate RAG quality and tenant isolation.
 14. [adr-001-rag-vertical-slice.md](adr-001-rag-vertical-slice.md) — the first
     read-only RAG acceptance scope and release gates.
+15. [adr-002-tool-authorization.md](adr-002-tool-authorization.md) —
+    permission-first tool execution, the `enabled` registry flag, and the
+    HIGH-risk tier.
+16. [adr-003-tool-governance-and-sources.md](adr-003-tool-governance-and-sources.md)
+    — catalog enable/disable governance, source-driven catalog UI, and the MCP
+    exposure/consumption boundary.
 
 The retrieval gate can be run with `go run ./cmd/ai-eval` from
 `apps/ai-service`; it consumes `evaluation-set.yaml` and exits non-zero in

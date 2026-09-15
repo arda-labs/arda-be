@@ -37,6 +37,7 @@ func RegisterCRMCatalog(reg *DispatcherRegistry) {
 			RequiredPermissions: []string{"crm.customer.manage"},
 			Risk:                "medium",
 			Timeout:             3 * time.Second,
+			Enabled:             true,
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
 			customerID, _ := args["customerId"].(string)
