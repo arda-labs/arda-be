@@ -1,0 +1,459 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Arda MDM internal AI surface",
+    "version": "1.0.0",
+    "description": "Operations the MDM service exposes to ai-service on /internal/ai/*. Signed service-to-service transport; delegated subject headers are forwarded by ai-service and re-validated by the MDM handler/middleware. Catalog names are hard-coded per route, never taken from tool arguments."
+  },
+  "paths": {
+    "/internal/ai/currencies": {
+      "get": {
+        "operationId": "aiListCurrencies",
+        "summary": "List active currencies in the delegated tenant.",
+        "description": "List active currencies in the active tenant's master data. Returns id, code, name and display-safe attributes (symbol, decimal_places) per currency, with pagination.",
+        "x-ai-tool": {
+          "sdkPath": "arda.mdm.listCurrencies",
+          "domain": "mdm",
+          "kind": "read",
+          "risk": "low",
+          "timeoutMs": 3000,
+          "keywords": [
+            "mdm",
+            "currency",
+            "currencies",
+            "money",
+            "symbol",
+            "decimal places",
+            "list",
+            "search",
+            "tiền tệ",
+            "đồng tiền",
+            "mã tiền",
+            "ký hiệu tiền",
+            "danh mục"
+          ],
+          "requiredPerms": [
+            "mdm.read"
+          ],
+          "service": "mdm-service",
+          "envelope": "result",
+          "returns": "CurrencyListPage { items: [{ id, code, name, description, is_active, attributes: { symbol, decimal_places } }], page, per_page, total }"
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "x-ai-arg": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Free-text filter on currency code/name"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "x-ai-arg": "cursor",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "One-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "x-ai-arg": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "description": "Page size, 1-20"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "x-ai-scope": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted paginated currency page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AiCurrency"
+                          }
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "per_page": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/ai/countries": {
+      "get": {
+        "operationId": "aiListCountries",
+        "summary": "List active countries in the delegated tenant.",
+        "description": "List active countries in the active tenant's master data. Returns id, code, name and display-safe attributes (nationality) per country, with pagination.",
+        "x-ai-tool": {
+          "sdkPath": "arda.mdm.listCountries",
+          "domain": "mdm",
+          "kind": "read",
+          "risk": "low",
+          "timeoutMs": 3000,
+          "keywords": [
+            "mdm",
+            "country",
+            "countries",
+            "nationality",
+            "nation",
+            "code",
+            "list",
+            "search",
+            "quốc gia",
+            "quốc tịch",
+            "danh mục",
+            "danh sách quốc gia"
+          ],
+          "requiredPerms": [
+            "mdm.read"
+          ],
+          "service": "mdm-service",
+          "envelope": "result",
+          "returns": "CountryListPage { items: [{ id, code, name, description, is_active, attributes: { nationality } }], page, per_page, total }"
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "x-ai-arg": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Free-text filter on country code/name"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "x-ai-arg": "cursor",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "One-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "x-ai-arg": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "description": "Page size, 1-20"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "x-ai-scope": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted paginated country page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AiCountry"
+                          }
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "per_page": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/ai/interest-rates": {
+      "get": {
+        "operationId": "aiListInterestRates",
+        "summary": "List active interest rates in the delegated tenant.",
+        "description": "List active interest-rate headers in the active tenant. Returns id, code, name, rate_type, apply_type, currency_code per rate, with pagination. Rate tiers (decision numbers/dates) are never returned.",
+        "x-ai-tool": {
+          "sdkPath": "arda.mdm.listInterestRates",
+          "domain": "mdm",
+          "kind": "read",
+          "risk": "low",
+          "timeoutMs": 3000,
+          "keywords": [
+            "mdm",
+            "interest",
+            "interest rate",
+            "rate",
+            "rates",
+            "loan rate",
+            "deposit rate",
+            "base rate",
+            "list",
+            "search",
+            "lãi suất",
+            "lãi suất cho vay",
+            "lãi suất huy động",
+            "lãi suất cơ bản",
+            "danh mục",
+            "danh sách lãi suất"
+          ],
+          "requiredPerms": [
+            "mdm.read"
+          ],
+          "service": "mdm-service",
+          "envelope": "result",
+          "returns": "InterestRateListPage { items: [{ id, code, name, rate_type, apply_type, currency_code, description, is_active }], page, per_page, total }"
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "x-ai-arg": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Free-text filter on rate code/name"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "x-ai-arg": "cursor",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "One-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "x-ai-arg": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "description": "Page size, 1-20"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "x-ai-scope": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted paginated interest-rate page. Tiers and their decision_no/decision_date audit fields are never exposed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AiInterestRate"
+                          }
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "per_page": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AiCurrency": {
+        "type": "object",
+        "description": "Redacted currency exposed to the AI SDK. tenant_id and timestamps are dropped by the MDM handler and again by this response allowlist; only display-safe attribute keys (symbol, decimal_places) are exposed.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "attributes": {
+            "type": "object",
+            "properties": {
+              "symbol": {
+                "type": "string"
+              },
+              "decimal_places": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "AiCountry": {
+        "type": "object",
+        "description": "Redacted country exposed to the AI SDK. tenant_id and timestamps are dropped by the MDM handler and again by this response allowlist; only the display-safe attribute key (nationality) is exposed.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "attributes": {
+            "type": "object",
+            "properties": {
+              "nationality": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "AiInterestRate": {
+        "type": "object",
+        "description": "Redacted interest-rate header exposed to the AI SDK. tenant_id, created_at/updated_at and any tier data (decision_no, decision_date, rate values) are dropped by the MDM handler and again by this response allowlist.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rate_type": {
+            "type": "string",
+            "enum": [
+              "central",
+              "loan",
+              "deposit"
+            ]
+          },
+          "apply_type": {
+            "type": "string",
+            "enum": [
+              "by_balance",
+              "by_term",
+              "negotiated"
+            ]
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

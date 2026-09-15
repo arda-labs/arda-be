@@ -6,6 +6,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/handler"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
@@ -269,7 +270,29 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 		}
 	})
 
+	// Internal AI surface: ai-service calls here with a signed caller
+	// assertion and the delegated subject as headers. Tenant scoping applies
+	// inside the handlers via the X-Tenant-Id guard (see InternalAIListOrganizations).
+	mux.Handle("GET /internal/ai/organizations", internalAIService(http.HandlerFunc(platformHandler.InternalAIListOrganizations)))
+	mux.Handle("GET /internal/ai/parameters", internalAIService(http.HandlerFunc(platformHandler.InternalAIListParameters)))
+	mux.Handle("GET /internal/ai/lookups/{lookupCode}/values", internalAIService(http.HandlerFunc(platformHandler.InternalAILookupValues)))
+	mux.Handle("GET /internal/ai/calendar/status", internalAIService(http.HandlerFunc(calendarHandler.InternalAICalendarStatus)))
+
 	return mux
+}
+
+// internalAIService authenticates the ai-service caller on the internal AI
+// surface. Missing/invalid tokens are hard-rejected; the delegated subject
+// (X-Tenant-Id, X-User-Id, ...) is forwarded by the caller, not trusted from
+// browsers — this route is never exposed to them.
+func internalAIService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
+		})
+	}
+	return identity.RequireServiceAuth(secret, "platform-service", identity.AllowedSources("ai-service"))(next)
 }
 
 func health(status string) http.HandlerFunc {

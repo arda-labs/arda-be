@@ -5,13 +5,14 @@ import (
 
 	"github.com/arda-labs/arda/apps/mdm-service/internal/handler"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // NewRouter wires every registered catalog plus the versioned interest-rate
 // domain. Catalog routes are generated from the service registry so adding a
 // catalog never requires touching this file.
-func NewRouter(catalogHandler *handler.CatalogHandler, rateHandler *handler.InterestRateHandler, catalogs []string) http.Handler {
+func NewRouter(catalogHandler *handler.CatalogHandler, rateHandler *handler.InterestRateHandler, internalAIHandler *handler.InternalAIHandler, catalogs []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -66,7 +67,28 @@ func NewRouter(catalogHandler *handler.CatalogHandler, rateHandler *handler.Inte
 		}
 	})
 
+	// Internal AI surface: ai-service calls here with a signed caller
+	// assertion and the delegated subject as headers. Resource-level scoping
+	// still applies inside the handler (tenant re-check + repository filter).
+	mux.Handle("GET /internal/ai/currencies", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListCurrencies)))
+	mux.Handle("GET /internal/ai/countries", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListCountries)))
+	mux.Handle("GET /internal/ai/interest-rates", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListInterestRates)))
+
 	return mux
+}
+
+// internalAIService authenticates the ai-service caller on the internal AI
+// surface. Missing/invalid tokens are hard-rejected; the delegated subject
+// (X-Tenant-Id, ...) is forwarded by the caller, not trusted from browsers —
+// this route is never exposed to them.
+func internalAIService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
+		})
+	}
+	return identity.RequireServiceAuth(secret, "mdm-service", identity.AllowedSources("ai-service"))(next)
 }
 
 func registerCatalog(mux *http.ServeMux, h *handler.CatalogHandler, catalog string) {

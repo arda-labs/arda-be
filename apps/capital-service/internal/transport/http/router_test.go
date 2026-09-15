@@ -14,7 +14,7 @@ import (
 )
 
 type fakeCapitalService struct {
-	movement     *repository.CapitalMovement
+	movement        *repository.CapitalMovement
 	amendContractID string
 	amendReason     string
 	detailID        string
@@ -80,7 +80,7 @@ func (f *fakeCapitalService) FundSourceTransactions(context.Context, string, str
 
 func TestRouterMovementRouteCarriesContractID(t *testing.T) {
 	svc := &fakeCapitalService{}
-	mux := NewRouter(handler.NewCapitalHandler(svc))
+	mux := NewRouter(handler.NewCapitalHandler(svc), handler.NewInternalAIHandler(svc))
 
 	body := bytes.NewBufferString(`{"movement_type":"RECEIPT","amount_minor":1000,"movement_date":"2026-09-11"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/capital/contracts/CTR-001/movements", body)
@@ -101,7 +101,7 @@ func TestRouterMovementRouteCarriesContractID(t *testing.T) {
 
 func TestRouterDetailAndAmendmentRoutesCarryID(t *testing.T) {
 	svc := &fakeCapitalService{}
-	mux := NewRouter(handler.NewCapitalHandler(svc))
+	mux := NewRouter(handler.NewCapitalHandler(svc), handler.NewInternalAIHandler(svc))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/capital/contracts/CTR-002", nil)
 	req.Header.Set("X-Tenant-Id", "tenant-1")
@@ -123,7 +123,7 @@ func TestRouterDetailAndAmendmentRoutesCarryID(t *testing.T) {
 
 func TestRouterFundTypeDeleteCarriesID(t *testing.T) {
 	svc := &fakeCapitalService{}
-	mux := NewRouter(handler.NewCapitalHandler(svc))
+	mux := NewRouter(handler.NewCapitalHandler(svc), handler.NewInternalAIHandler(svc))
 	req := httptest.NewRequest(http.MethodDelete, "/api/capital/fund-types/FT-9", nil)
 	req.Header.Set("X-Tenant-Id", "tenant-1")
 	rec := httptest.NewRecorder()

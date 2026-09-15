@@ -56,10 +56,11 @@ func main() {
 
 	catalogHandler := handler.NewCatalogHandler(masterSvc)
 	rateHandler := handler.NewInterestRateHandler(rateSvc)
+	internalAIHandler := handler.NewInternalAIHandler(masterSvc, rateSvc)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(catalogHandler, rateHandler, service.CatalogNames())),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(catalogHandler, rateHandler, internalAIHandler, service.CatalogNames())),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

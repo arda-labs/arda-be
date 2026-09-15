@@ -1,0 +1,461 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Arda statistical internal AI surface",
+    "version": "1.0.0",
+    "description": "Operations the statistical service exposes to ai-service on /internal/ai/*. Signed service-to-service transport; the delegated subject (X-Tenant-Id) is forwarded by ai-service and re-validated by the statistical handler and repository. Only report metadata is exposed: raw report rows, query ids, param schemas and submission payloads are never reachable from this surface."
+  },
+  "paths": {
+    "/internal/ai/report-definitions": {
+      "get": {
+        "operationId": "aiListReportDefinitions",
+        "summary": "List active report definitions in the delegated tenant.",
+        "description": "List active report definitions (danh mục báo cáo) in the active tenant. Returns id, code, name, group_code, output_format and is_active per definition, with pagination. Internal wiring (query_id, param_schema, template_file_id, actor ids, timestamps) is dropped by the handler and again by this response allowlist.",
+        "x-ai-tool": {
+          "sdkPath": "arda.statistical.listReportDefinitions",
+          "domain": "statistical",
+          "kind": "read",
+          "risk": "low",
+          "timeoutMs": 3000,
+          "keywords": [
+            "statistical",
+            "report",
+            "reports",
+            "report definition",
+            "report catalog",
+            "output format",
+            "list",
+            "search",
+            "báo cáo",
+            "danh mục báo cáo",
+            "biểu mẫu báo cáo",
+            "thống kê",
+            "định nghĩa báo cáo"
+          ],
+          "requiredPerms": [
+            "statistical.read"
+          ],
+          "service": "statistical-service",
+          "envelope": "result",
+          "returns": "ReportDefinitionListPage { items: [{ id, code, name, group_code, output_format, is_active }], page, per_page, total }"
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "x-ai-arg": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Free-text filter on report code/name"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "x-ai-arg": "cursor",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "One-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "x-ai-arg": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "description": "Page size, 1-20"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "x-ai-scope": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted paginated report-definition page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AiReportDefinition"
+                          }
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "per_page": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/ai/indicators": {
+      "get": {
+        "operationId": "aiListIndicators",
+        "summary": "List active statistical indicators in the delegated tenant.",
+        "description": "List active statistical indicators (chỉ tiêu thống kê) in the active tenant. Returns id, code, name, unit, group_code and is_active per indicator, with pagination. Internal fields (tenant_id, created_by, timestamps) are dropped by the handler and again by this response allowlist.",
+        "x-ai-tool": {
+          "sdkPath": "arda.statistical.listIndicators",
+          "domain": "statistical",
+          "kind": "read",
+          "risk": "low",
+          "timeoutMs": 3000,
+          "keywords": [
+            "statistical",
+            "indicator",
+            "indicators",
+            "metric",
+            "kpi",
+            "unit",
+            "group",
+            "list",
+            "search",
+            "chỉ tiêu",
+            "chỉ tiêu thống kê",
+            "thống kê",
+            "đơn vị tính",
+            "danh mục chỉ tiêu"
+          ],
+          "requiredPerms": [
+            "statistical.read"
+          ],
+          "service": "statistical-service",
+          "envelope": "result",
+          "returns": "IndicatorListPage { items: [{ id, code, name, unit, group_code, is_active }], page, per_page, total }"
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "x-ai-arg": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Free-text filter on indicator code/name"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "x-ai-arg": "cursor",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "One-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "x-ai-arg": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "description": "Page size, 1-20"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "x-ai-scope": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted paginated indicator page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AiIndicator"
+                          }
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "per_page": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/ai/submissions": {
+      "get": {
+        "operationId": "aiListSubmissions",
+        "summary": "List report submission statuses in the delegated tenant.",
+        "description": "List report submission periods (trạng thái nộp báo cáo) in the active tenant, optionally narrowed by report_code, period_code and lifecycle status. Returns id, report_code, period_code, status and submitted_at per submission. The raw payload (report data), workflow case, submitter identity and internal timestamps are dropped by the handler and again by this response allowlist.",
+        "x-ai-tool": {
+          "sdkPath": "arda.statistical.listSubmissions",
+          "domain": "statistical",
+          "kind": "read",
+          "risk": "low",
+          "timeoutMs": 3000,
+          "keywords": [
+            "statistical",
+            "submission",
+            "submissions",
+            "report submission",
+            "period",
+            "status",
+            "approved",
+            "rejected",
+            "list",
+            "search",
+            "nộp báo cáo",
+            "trạng thái báo cáo",
+            "kỳ báo cáo",
+            "phê duyệt báo cáo",
+            "thống kê"
+          ],
+          "requiredPerms": [
+            "statistical.read"
+          ],
+          "service": "statistical-service",
+          "envelope": "result",
+          "returns": "SubmissionStatusListPage { items: [{ id, report_code, period_code, status, submitted_at }], page, per_page, total }"
+        },
+        "parameters": [
+          {
+            "name": "report_code",
+            "in": "query",
+            "x-ai-arg": "reportCode",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Optional report code filter (substring match)"
+          },
+          {
+            "name": "period_code",
+            "in": "query",
+            "x-ai-arg": "periodCode",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Optional reporting period code filter (substring match, e.g. 2026-08)"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "x-ai-arg": "status",
+            "x-ai-transform": "upper",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "SUBMITTED",
+                "APPROVED",
+                "REJECTED"
+              ]
+            },
+            "description": "Optional submission lifecycle status filter"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "x-ai-arg": "cursor",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "One-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "x-ai-arg": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "description": "Page size, 1-20"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "x-ai-scope": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted paginated submission-status page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AiSubmission"
+                          }
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "per_page": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AiReportDefinition": {
+        "type": "object",
+        "description": "Redacted report-definition metadata exposed to the AI SDK. query_id, param_schema, template_file_id, tenant_id, actor ids and timestamps are dropped by the handler and again by this response allowlist.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "group_code": {
+            "type": "string"
+          },
+          "output_format": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AiIndicator": {
+        "type": "object",
+        "description": "Redacted indicator metadata exposed to the AI SDK. tenant_id, actor ids and timestamps are dropped by the handler and again by this response allowlist.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "group_code": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AiSubmission": {
+        "type": "object",
+        "description": "Redacted report-submission status exposed to the AI SDK. The raw payload (report data), workflow_case_id, submitted_by/created_by identities and internal timestamps are dropped by the handler and again by this response allowlist.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "report_code": {
+            "type": "string"
+          },
+          "period_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}

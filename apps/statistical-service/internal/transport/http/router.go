@@ -4,10 +4,11 @@ import (
 	"net/http"
 
 	"github.com/arda-labs/arda/apps/statistical-service/internal/handler"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 )
 
 // NewRouter wires the statistical-service HTTP surface.
-func NewRouter(h *handler.StatisticalHandler) http.Handler {
+func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.InternalAIHandler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -87,7 +88,31 @@ func NewRouter(h *handler.StatisticalHandler) http.Handler {
 	mux.HandleFunc("POST /api/statistical/import-transactions/{id}/submit", h.SubmitImportTransaction)
 	mux.HandleFunc("GET /api/statistical/cmms/results", h.ListCmmsResults)
 	mux.HandleFunc("POST /api/statistical/cmms/run", h.RunCmms)
+
+	// Internal AI surface: ai-service calls here with a signed caller
+	// assertion and the delegated subject as headers. Only report metadata is
+	// exposed (definitions, indicators, submission status): raw report rows,
+	// query ids and payloads are never reachable from this surface. Scoping is
+	// re-enforced in the handler and the repository.
+	mux.Handle("GET /internal/ai/report-definitions", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListReportDefinitions)))
+	mux.Handle("GET /internal/ai/indicators", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListIndicators)))
+	mux.Handle("GET /internal/ai/submissions", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListSubmissions)))
+
 	return mux
+}
+
+// internalAIService authenticates the ai-service caller on the internal AI
+// surface. Missing/invalid tokens are hard-rejected; the delegated subject
+// (X-Tenant-Id) is forwarded by the caller, never trusted from browsers —
+// these routes are not exposed through auth-gateway.
+func internalAIService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
+		})
+	}
+	return identity.RequireServiceAuth(secret, "statistical-service", identity.AllowedSources("ai-service"))(next)
 }
 
 func method(verb string, fn http.HandlerFunc) http.HandlerFunc {

@@ -4,6 +4,9 @@ import (
 	"net/http"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/handler"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 func NewRouter(notificationHandler *handler.NotificationHandler) http.Handler {
@@ -38,5 +41,25 @@ func NewRouter(notificationHandler *handler.NotificationHandler) http.Handler {
 	mux.HandleFunc("POST /api/notifications/dlq/{id}/retry", notificationHandler.RetryDLQ)
 	mux.HandleFunc("DELETE /api/notifications/dlq/{id}", notificationHandler.DiscardDLQ)
 
+	// Internal AI surface: ai-service calls here with a signed caller
+	// assertion and the delegated subject as headers. The handler reuses the
+	// same user-level scoping as the public inbox routes (see InternalAIListInbox).
+	mux.Handle("GET /internal/ai/notifications", internalAIService(http.HandlerFunc(notificationHandler.InternalAIListInbox)))
+	mux.Handle("GET /internal/ai/notifications/unread-count", internalAIService(http.HandlerFunc(notificationHandler.InternalAIUnreadCount)))
+
 	return mux
+}
+
+// internalAIService authenticates the ai-service caller on the internal AI
+// surface. Missing/invalid tokens are hard-rejected; the delegated subject
+// (X-Tenant-Id, X-User-Id, ...) is forwarded by the caller, not trusted from
+// browsers — this route is never exposed to them.
+func internalAIService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
+		})
+	}
+	return identity.RequireServiceAuth(secret, "notification-service", identity.AllowedSources("ai-service"))(next)
 }

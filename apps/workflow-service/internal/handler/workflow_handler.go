@@ -40,6 +40,10 @@ type WorkflowHandler struct {
 	// MonitoringIndex is the Zeebe exporter read model behind the operate
 	// search/detail endpoints (Camunda 8.5 has no Operate and no REST search).
 	MonitoringIndex *service.ZeebeMonitoringIndex
+	// aiStoreOverride swaps the store behind the internal AI surface
+	// (/internal/ai/*) — tests inject a fake; production leaves it nil so
+	// caseRepo is used.
+	aiStoreOverride AIWorkflowStore
 }
 
 func NewWorkflowHandler(

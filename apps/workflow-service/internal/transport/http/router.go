@@ -6,6 +6,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/handler"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
@@ -54,6 +55,16 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 	mux.HandleFunc("/api/workflow/tasks/", wfHandler.CompleteUserTask)
 	mux.HandleFunc("/api/workflow/cases", wfHandler.Cases)
 	mux.HandleFunc("/api/workflow/cases/", wfHandler.CaseByID)
+
+	// Internal AI surface: ai-service calls here with a signed caller
+	// assertion and the delegated subject as headers. These routes are never
+	// reachable from browsers (no gateway policy points here); tenant/user
+	// scoping is re-enforced inside the handler and the repository layer.
+	mux.Handle("GET /internal/ai/work-items", internalAIService(http.HandlerFunc(wfHandler.InternalAIListWorkItems)))
+	mux.Handle("GET /internal/ai/work-items/{itemId}", internalAIService(http.HandlerFunc(wfHandler.InternalAIGetWorkItem)))
+	mux.Handle("GET /internal/ai/cases", internalAIService(http.HandlerFunc(wfHandler.InternalAIListCases)))
+	mux.Handle("GET /internal/ai/cases/{caseId}", internalAIService(http.HandlerFunc(wfHandler.InternalAIGetCase)))
+	mux.Handle("GET /internal/ai/cases/{caseId}/timeline", internalAIService(http.HandlerFunc(wfHandler.InternalAICaseTimeline)))
 
 	// Case-scoped runtime monitoring + incident resolution (real Zeebe data)
 	mux.HandleFunc("/api/workflow/cases/{id}/monitor", wfHandler.CaseMonitor)
@@ -144,6 +155,20 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 	})
 
 	return ardametadata.HTTPMiddleware(requireTenantScope(mux))
+}
+
+// internalAIService authenticates the ai-service caller on the internal AI
+// surface. Missing/invalid tokens are hard-rejected; the delegated subject
+// (X-Tenant-Id, X-User-Id, ...) is forwarded by the caller, not trusted from
+// browsers — these routes are never exposed to them.
+func internalAIService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
+		})
+	}
+	return identity.RequireServiceAuth(secret, "workflow-service", identity.AllowedSources("ai-service"))(next)
 }
 
 func requireTenantScope(next http.Handler) http.Handler {

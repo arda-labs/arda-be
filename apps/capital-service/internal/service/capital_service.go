@@ -34,11 +34,11 @@ const (
 
 // ContractDetail is the aggregate read model for the contract detail screen.
 type ContractDetail struct {
-	Contract    *repository.CapitalContract    `json:"contract"`
-	FundType    *repository.FundType           `json:"fund_type,omitempty"`
-	Product     *repository.CapitalProduct     `json:"product,omitempty"`
-	Movements   []repository.CapitalMovement   `json:"movements"`
-	Amendments  []repository.ContractAmendment `json:"amendments"`
+	Contract   *repository.CapitalContract    `json:"contract"`
+	FundType   *repository.FundType           `json:"fund_type,omitempty"`
+	Product    *repository.CapitalProduct     `json:"product,omitempty"`
+	Movements  []repository.CapitalMovement   `json:"movements"`
+	Amendments []repository.ContractAmendment `json:"amendments"`
 }
 
 // CapitalService runs CFM fund flows: formation/amendments and movements all

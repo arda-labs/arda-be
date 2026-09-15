@@ -1,0 +1,488 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Arda loan internal AI surface",
+    "version": "1.0.0",
+    "description": "Operations the loan service exposes to ai-service on /internal/ai/*. Signed service-to-service transport; delegated subject headers are forwarded by ai-service and re-validated by the loan handler. Tenant scope is sourced from the verified actor scope, never from tool arguments. Responses are redacted by the handler and again by this response allowlist: tenant_id, staff/org linkage, workflow/audit fields are never exposed."
+  },
+  "paths": {
+    "/internal/ai/contracts": {
+      "get": {
+        "operationId": "aiListLoanContracts",
+        "summary": "List credit contracts in the delegated tenant.",
+        "description": "List credit contracts in the active tenant, newest first, with pagination. q narrows contract_no/customer_code/contract_code; status is an exact uppercase match. Returns the redacted contract summary (code, customer code, product, dates, amount, rate, status) — tenant_id, employee_code, org/workflow linkage and audit fields are never returned.",
+        "x-ai-tool": {
+          "sdkPath": "arda.loan.listContracts",
+          "domain": "loan",
+          "kind": "read",
+          "risk": "medium",
+          "timeoutMs": 3000,
+          "keywords": [
+            "loan",
+            "credit",
+            "contract",
+            "contracts",
+            "credit contract",
+            "loan contract",
+            "customer",
+            "product",
+            "outstanding",
+            "list",
+            "search",
+            "hợp đồng vay",
+            "hợp đồng tín dụng",
+            "khoản vay",
+            "danh sách hợp đồng",
+            "tìm hợp đồng vay",
+            "mã khách hàng",
+            "dư nợ"
+          ],
+          "requiredPerms": [
+            "loan.read"
+          ],
+          "service": "loan-service",
+          "envelope": "result",
+          "returns": "LoanContractListPage { items: [{ id, contract_code, contract_no, customer_code, contract_type_code, product_code, contract_date, maturity_date, loan_amt_minor, interest_rate, status }], page, per_page, total }"
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "x-ai-arg": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Free-text filter on contract number, customer code or contract code"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "x-ai-arg": "status",
+            "x-ai-transform": "upper",
+            "schema": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "description": "Exact contract status filter (DRAFT, PENDING, ACTIVE, REJECTED, CLOSED)"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "x-ai-arg": "cursor",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "One-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "x-ai-arg": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "description": "Page size, 1-20"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "x-ai-scope": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted paginated contract page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AiLoanContractSummary"
+                          }
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "per_page": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/ai/contracts/{id}": {
+      "get": {
+        "operationId": "aiGetLoanContract",
+        "summary": "Read one redacted credit contract in the delegated tenant.",
+        "description": "Read one credit contract by Arda contract id. The id comes from arda.loan.listContracts. Returns the redacted detail (codes, term, dates, amount, rate, repayment frequencies, status); tenant_id, employee_code, org/workflow linkage and audit fields are never returned.",
+        "x-ai-tool": {
+          "sdkPath": "arda.loan.getContract",
+          "domain": "loan",
+          "kind": "read",
+          "risk": "medium",
+          "timeoutMs": 3000,
+          "keywords": [
+            "loan",
+            "credit",
+            "contract",
+            "credit contract",
+            "loan contract",
+            "contract detail",
+            "term",
+            "maturity",
+            "interest rate",
+            "repayment",
+            "get",
+            "read",
+            "chi tiết hợp đồng vay",
+            "hợp đồng tín dụng",
+            "kỳ hạn",
+            "ngày đáo hạn",
+            "lãi suất",
+            "phương thức trả nợ"
+          ],
+          "requiredPerms": [
+            "loan.read"
+          ],
+          "service": "loan-service",
+          "envelope": "result",
+          "returns": "LoanContractDetail { id, contract_code, contract_no, customer_code, contract_type_code, product_code, contract_date, loan_term, term_unit, maturity_date, loan_amt_minor, interest_rate, interest_rate_type, interest_payment_freq, principal_payment_freq, status }"
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "x-ai-arg": "contractId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Arda contract identifier from arda.loan.listContracts (max 128 chars)"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "x-ai-scope": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted contract detail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "$ref": "#/components/schemas/AiLoanContractDetail"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/ai/repay-plans": {
+      "get": {
+        "operationId": "aiListLoanRepayPlans",
+        "summary": "List the repayment schedule of one contract or agreement.",
+        "description": "List repayment schedule rows for one contract_code or agreement_code in the active tenant, ordered by agreement and term. contract_code or agreement_code is required: without a schedule key the query would span the whole tenant. Returns the redacted plan (term window, planned and collected principal/interest, rate, active flag) — tenant_id, row id and audit timestamps are never returned.",
+        "x-ai-tool": {
+          "sdkPath": "arda.loan.listRepayPlans",
+          "domain": "loan",
+          "kind": "read",
+          "risk": "medium",
+          "timeoutMs": 3000,
+          "keywords": [
+            "loan",
+            "repayment",
+            "repay plan",
+            "schedule",
+            "installment",
+            "amortization",
+            "principal",
+            "interest",
+            "due date",
+            "contract",
+            "list",
+            "lịch trả nợ",
+            "kế hoạch trả nợ",
+            "trả gốc",
+            "trả lãi",
+            "kỳ hạn trả nợ",
+            "số tiền phải trả",
+            "hợp đồng vay"
+          ],
+          "requiredPerms": [
+            "loan.read"
+          ],
+          "service": "loan-service",
+          "envelope": "result",
+          "returns": "LoanRepayPlanListPage { items: [{ contract_code, agreement_code, plan_no, term_no, from_date, to_date, interest_rate, plan_principal_amt_minor, plan_interest_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor, is_active }], page, per_page, total }"
+        },
+        "parameters": [
+          {
+            "name": "contract_code",
+            "in": "query",
+            "x-ai-arg": "contractCode",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Contract code the schedule belongs to (contract_code or agreement_code is required)"
+          },
+          {
+            "name": "agreement_code",
+            "in": "query",
+            "x-ai-arg": "agreementCode",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "Disbursement agreement code (contract_code or agreement_code is required)"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "x-ai-arg": "cursor",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "One-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "x-ai-arg": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "description": "Page size, 1-20"
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "x-ai-scope": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted paginated repayment schedule page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AiLoanRepayPlan"
+                          }
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "per_page": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AiLoanContractSummary": {
+        "type": "object",
+        "description": "Redacted credit-contract summary exposed to the AI SDK. tenant_id, employee_code, org_code, workflow linkage and audit fields are dropped by the loan handler and again by this response allowlist; credit-classification codes (purpose/industry/loan method) are omitted as well.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "contract_code": {
+            "type": "string"
+          },
+          "contract_no": {
+            "type": "string"
+          },
+          "customer_code": {
+            "type": "string"
+          },
+          "contract_type_code": {
+            "type": "string"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "contract_date": {
+            "type": "string"
+          },
+          "maturity_date": {
+            "type": "string"
+          },
+          "loan_amt_minor": {
+            "type": "integer"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "AiLoanContractDetail": {
+        "type": "object",
+        "description": "Redacted credit-contract detail exposed to the AI SDK. Same drops as AiLoanContractSummary plus the schedule/term fields the assistant needs to answer contract questions.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "contract_code": {
+            "type": "string"
+          },
+          "contract_no": {
+            "type": "string"
+          },
+          "customer_code": {
+            "type": "string"
+          },
+          "contract_type_code": {
+            "type": "string"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "contract_date": {
+            "type": "string"
+          },
+          "loan_term": {
+            "type": "integer"
+          },
+          "term_unit": {
+            "type": "string"
+          },
+          "maturity_date": {
+            "type": "string"
+          },
+          "loan_amt_minor": {
+            "type": "integer"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "interest_rate_type": {
+            "type": "string"
+          },
+          "interest_payment_freq": {
+            "type": "string"
+          },
+          "principal_payment_freq": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "AiLoanRepayPlan": {
+        "type": "object",
+        "description": "Redacted repayment-schedule row exposed to the AI SDK. tenant_id, row id and audit timestamps are dropped by the loan handler and again by this response allowlist.",
+        "properties": {
+          "contract_code": {
+            "type": "string"
+          },
+          "agreement_code": {
+            "type": "string"
+          },
+          "plan_no": {
+            "type": "integer"
+          },
+          "term_no": {
+            "type": "integer"
+          },
+          "from_date": {
+            "type": "string"
+          },
+          "to_date": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "plan_principal_amt_minor": {
+            "type": "integer"
+          },
+          "plan_interest_amt_minor": {
+            "type": "integer"
+          },
+          "coln_principal_amt_minor": {
+            "type": "integer"
+          },
+          "coln_interest_amt_minor": {
+            "type": "integer"
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

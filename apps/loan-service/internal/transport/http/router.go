@@ -5,12 +5,13 @@ import (
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/handler"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // NewRouter wires the loan-service HTTP surface. Adjustment routes are
 // generated from the shared kind list so adding a flow never touches here.
-func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, rp *handler.ReportHandler, pl *handler.PlanHandler, sp *handler.SpecificProvisionHandler, kinds []string) http.Handler {
+func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, rp *handler.ReportHandler, pl *handler.PlanHandler, sp *handler.SpecificProvisionHandler, ai *handler.InternalAIHandler, kinds []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -243,7 +244,29 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 		mux.HandleFunc(base+"/{id}/submit", method("POST", h.SubmitAdjustment))
 	}
 
+	// Internal AI surface: ai-service calls here with a signed caller
+	// assertion and the delegated subject as headers. Resource-level scoping
+	// still applies inside every handler (tenant re-check + repository
+	// filter).
+	mux.Handle("GET /internal/ai/contracts", internalAIService(http.HandlerFunc(ai.InternalAIListContracts)))
+	mux.Handle("GET /internal/ai/contracts/{id}", internalAIService(http.HandlerFunc(ai.InternalAIGetContract)))
+	mux.Handle("GET /internal/ai/repay-plans", internalAIService(http.HandlerFunc(ai.InternalAIListRepayPlans)))
+
 	return mux
+}
+
+// internalAIService authenticates the ai-service caller on the internal AI
+// surface. Missing/invalid tokens are hard-rejected; the delegated subject
+// (X-Tenant-Id, ...) is forwarded by the caller, not trusted from browsers —
+// this route is never exposed to them.
+func internalAIService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
+		})
+	}
+	return identity.RequireServiceAuth(secret, "loan-service", identity.AllowedSources("ai-service"))(next)
 }
 
 func method(verb string, fn http.HandlerFunc) http.HandlerFunc {

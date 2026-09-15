@@ -73,6 +73,7 @@ func main() {
 	loanSvc := service.NewLoanService(repo, workflow)
 	adjSvc := service.NewAdjustmentService(repo, workflow)
 	loanHandler := handler.NewLoanHandler(loanSvc, adjSvc)
+	internalAIHandler := handler.NewInternalAIHandler(loanSvc)
 	disbSvc := service.NewDisbursementService(repo, workflow)
 	disbHandler := handler.NewDisbursementHandler(disbSvc)
 	var financeClient *financeclient.Client
@@ -109,7 +110,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:        cfg.HTTPAddr,
-		Handler:     ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, specificProvHandler, loangrpc.Kinds))),
+		Handler:     ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, specificProvHandler, internalAIHandler, loangrpc.Kinds))),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

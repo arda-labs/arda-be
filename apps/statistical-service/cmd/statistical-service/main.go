@@ -64,6 +64,7 @@ func main() {
 	repo := repository.NewStatisticalRepository(db)
 	statisticalSvc := service.NewStatisticalService(repo, workflow)
 	statisticalHandler := handler.NewStatisticalHandler(statisticalSvc)
+	internalAIHandler := handler.NewInternalAIHandler(statisticalSvc)
 
 	// ── gRPC server (StatisticalCommandService) ──
 	serviceSecret, err := identity.SecretFromEnv()
@@ -103,7 +104,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(statisticalHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(statisticalHandler, internalAIHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
