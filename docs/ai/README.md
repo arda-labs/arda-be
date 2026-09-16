@@ -58,6 +58,13 @@ gates.
 16. [adr-003-tool-governance-and-sources.md](adr-003-tool-governance-and-sources.md)
     — catalog enable/disable governance, source-driven catalog UI, and the MCP
     exposure/consumption boundary.
+17. [adr-004-budget-and-error-contract.md](adr-004-budget-and-error-contract.md)
+    — the deadline tree for tool execution, the machine-readable AI error
+    contract, and the CI gates that enforce both.
+
+The September 2026 stack audit — findings with file/line and production
+evidence, severity, and the Phase A cleanup order — is
+[audit-2026-09.md](audit-2026-09.md).
 
 The retrieval gate can be run with `go run ./cmd/ai-eval` from
 `apps/ai-service`; it consumes `evaluation-set.yaml` and exits non-zero in
