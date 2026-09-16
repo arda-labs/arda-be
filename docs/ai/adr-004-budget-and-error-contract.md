@@ -70,7 +70,7 @@ Normative rules:
    the rule for every entry.
 2. **R2.** A pipeline with optional stages must run them **concurrently** with
    the mandatory stage, under a constant cap strictly smaller than the ceiling
-   (`knowledge.search`: `rewriteBudget` = 1 500 ms), and must **skip** optional
+   (`knowledge.search`: `rewriteBudget` = 3 000 ms), and must **skip** optional
    work once the remaining deadline cannot cover the mandatory continuation
    plus a margin (`variantMinBudget` ≥ the measured primary-stage cost, floor
    1 000 ms).

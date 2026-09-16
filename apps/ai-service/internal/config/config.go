@@ -55,6 +55,10 @@ type Config struct {
 	RAGEmbeddingAPIKey     string
 	RAGEmbeddingModel      string
 	RAGEmbeddingDimensions int
+	// RAGEmbeddingCacheTTLSeconds caches query embeddings (single-text calls)
+	// in Redis with an in-process fallback, so repeated queries, retries, and
+	// eval runs do not pay the external provider again. 0 disables caching.
+	RAGEmbeddingCacheTTLSeconds int
 
 	// RAGMinSimilarity is the cosine-similarity floor a chunk must clear to
 	// count as evidence in hybrid retrieval. Queries whose best chunk falls
@@ -105,6 +109,12 @@ func Load() Config {
 	if embeddingModel == "" {
 		embeddingModel = "@cf/qwen/qwen3-embedding-0.6b"
 	}
+	// Allow an explicit 0 to disable the cache; envIntOr would coerce it back
+	// to the default.
+	embeddingCacheTTL := 21600
+	if raw, err := strconv.Atoi(os.Getenv("AI_RAG_EMBEDDING_CACHE_TTL_SECONDS")); err == nil && raw >= 0 {
+		embeddingCacheTTL = raw
+	}
 
 	return Config{
 		AppName:             envOr("APP_NAME", "ai-service"),
@@ -131,13 +141,14 @@ func Load() Config {
 		RAGRerankerModel:      strings.TrimSpace(os.Getenv("AI_RAG_RERANKER_MODEL")),
 		// Production always fails closed when embeddings are unavailable. The
 		// environment flag allows CI/staging to opt into the same behavior.
-		RAGRequireEmbedding:    mode == "production" || envBoolOr("AI_RAG_REQUIRE_EMBEDDING", false),
-		RAGQueryRewrite:        envBoolOr("AI_RAG_QUERY_REWRITE", true),
-		RAGEmbeddingBaseURL:    embeddingBaseURL,
-		RAGEmbeddingAPIKey:     embeddingAPIKey,
-		RAGEmbeddingModel:      embeddingModel,
-		RAGEmbeddingDimensions: envIntOr("AI_RAG_EMBEDDING_DIMENSIONS", 1024),
-		RAGMinSimilarity:       envFloatOr("AI_RAG_MIN_SIMILARITY", 0.5),
+		RAGRequireEmbedding:         mode == "production" || envBoolOr("AI_RAG_REQUIRE_EMBEDDING", false),
+		RAGQueryRewrite:             envBoolOr("AI_RAG_QUERY_REWRITE", true),
+		RAGEmbeddingBaseURL:         embeddingBaseURL,
+		RAGEmbeddingAPIKey:          embeddingAPIKey,
+		RAGEmbeddingModel:           embeddingModel,
+		RAGEmbeddingDimensions:      envIntOr("AI_RAG_EMBEDDING_DIMENSIONS", 1024),
+		RAGEmbeddingCacheTTLSeconds: embeddingCacheTTL,
+		RAGMinSimilarity:            envFloatOr("AI_RAG_MIN_SIMILARITY", 0.5),
 
 		NATSURL:  envOr("NATS_URL", envOr("AI_NATS_URL", "")),
 		RedisURL: envOr("REDIS_URL", ""),

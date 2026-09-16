@@ -27,6 +27,7 @@ import (
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	ardaredis "github.com/arda-labs/arda/libs/go/arda-redis"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -71,6 +72,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Redis backs the rate limiter and the query-embedding cache. A failure
+	// degrades both to in-process behaviour instead of failing startup.
+	var rdb *redis.Client
+	if cfg.RedisURL != "" {
+		connected, err := ardaredis.Connect(context.Background(), cfg.RedisURL)
+		if err != nil {
+			logger.Warn("redis unavailable; rate limiter and embedding cache fall back to in-process", "err", err)
+		} else {
+			rdb = connected
+			defer rdb.Close()
+		}
+	}
+
 	var knowledgeSvc *knowledge.Service
 	var inProcessRAG *knowledge.InProcessRAGAdapter
 	if db != nil {
@@ -78,6 +92,13 @@ func main() {
 		var embedder knowledge.Embedder
 		if cfg.RAGEmbeddingBaseURL != "" {
 			embedder = knowledge.NewOpenAIEmbedder(cfg.RAGEmbeddingBaseURL, cfg.RAGEmbeddingAPIKey, cfg.RAGEmbeddingModel, cfg.RAGEmbeddingDimensions, nil)
+			if cfg.RAGEmbeddingCacheTTLSeconds > 0 {
+				var cache knowledge.EmbeddingCache = knowledge.NewMemoryEmbeddingCache(0)
+				if rdb != nil {
+					cache = knowledge.NewRedisEmbeddingCache(rdb, logger)
+				}
+				embedder = knowledge.NewCachedEmbedder(embedder, cache, time.Duration(cfg.RAGEmbeddingCacheTTLSeconds)*time.Second)
+			}
 		}
 		knowledgeSvc = knowledge.NewService(knowledgeRepo, embedder, logger)
 		knowledgeSvc.SetRequireEmbedding(cfg.RAGRequireEmbedding)
@@ -229,15 +250,9 @@ func main() {
 
 	mux := handler.NewRouterWithOptions(store, resolver, routerOptions)
 	var rateLimitStore handler.RateLimitStore
-	if cfg.RedisURL != "" {
-		rdb, err := ardaredis.Connect(context.Background(), cfg.RedisURL)
-		if err != nil {
-			logger.Warn("redis rate limiter unavailable; using the in-process limiter", "err", err)
-		} else {
-			defer rdb.Close()
-			rateLimitStore = handler.NewRedisRateLimitStore(rdb, cfg.RateLimitPerMinute)
-			logger.Info("rate limiter: redis")
-		}
+	if rdb != nil {
+		rateLimitStore = handler.NewRedisRateLimitStore(rdb, cfg.RateLimitPerMinute)
+		logger.Info("rate limiter: redis")
 	}
 	handlerChain := ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(handler.ServiceAuthMiddleware(
 		handler.RateLimitMiddleware(mux, cfg.RateLimitPerMinute, rateLimitStore),

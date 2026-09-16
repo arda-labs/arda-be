@@ -193,7 +193,7 @@ Multi-stage tools that fan out internally (e.g. `arda.knowledge.search`:
 optional LLM query rewrite → embedding round-trip → hybrid search) must bound
 each *optional* stage by the deadline that remains on the request context, not
 by their own generous client timeouts. `knowledge.search` runs its rewrite
-concurrently under a 1.5 s cap and skips rewrite variants once the remaining
+concurrently under a 3 s cap and skips rewrite variants once the remaining
 budget no longer covers an embedding round-trip plus a search; the primary
 query stays fail-closed. Without that rule an inner 10 s LLM call silently
 consumes the caller budget and every call fails with `ai.sandbox_timeout`.

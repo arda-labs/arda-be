@@ -19,8 +19,10 @@ const (
 	// enhancement, never a correctness requirement: bounding it keeps a slow
 	// model from consuming the budget the primary retrieval needs. The rewrite
 	// runs concurrently with the primary query, so this caps the extra latency
-	// it can add rather than adding a sequential cost.
-	rewriteBudget = 1500 * time.Millisecond
+	// it can add rather than adding a sequential cost. Production rewrites with
+	// the tenant chat model exceeded the original 1.5s cap on every attempt
+	// (2026-09-16 17:39-17:43), so the cap moved to 3s.
+	rewriteBudget = 3000 * time.Millisecond
 	// variantMinBudget is the floor for the minimum request-deadline budget
 	// required before another rewrite variant is searched. One variant costs
 	// an embedding round-trip plus a hybrid search; without that headroom the

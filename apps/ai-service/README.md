@@ -44,13 +44,18 @@ Knowledge ingestion uses an OpenAI-compatible embedding endpoint with a
 `AI_RAG_EMBEDDING_API_KEY`, and `AI_RAG_EMBEDDING_MODEL` explicitly; embedding
 configuration is independent of the tenant chat model. Production mode fails
 closed when embeddings are missing; development can opt into the same behavior
-with `AI_RAG_REQUIRE_EMBEDDING=true`. Optional Cohere-compatible reranking is
+with `AI_RAG_REQUIRE_EMBEDDING=true`. Embedding calls retry once within the
+caller deadline (the deadline is split between attempts so one provider spike
+cannot consume it), and query vectors are cached for
+`AI_RAG_EMBEDDING_CACHE_TTL_SECONDS` (default 6h; Redis with an in-process
+fallback, 0 disables). Optional Cohere-compatible reranking is
 enabled with `AI_RAG_RERANKER_BASE_URL`, `AI_RAG_RERANKER_API_KEY`, and
 `AI_RAG_RERANKER_MODEL`. Optional multi-query rewrite asks the tenant model for
 up to two additional Vietnamese search queries and fuses the result sets with
 RRF; it is enabled by default and can be disabled with
 `AI_RAG_QUERY_REWRITE=false`. The rewrite is best-effort and runs concurrently
-with the primary query under a bounded budget (1.5s): a slow model degrades
+with the primary query under a bounded budget (3s, raised from 1.5s after
+production rewrites never completed in time): a slow model degrades
 recall instead of failing the call, and rewrite variants are skipped when the
 request deadline no longer leaves room for an embedding round-trip plus a
 search. Inside the Code Mode sandbox the caller deadline bounds the whole
