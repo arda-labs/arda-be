@@ -12,7 +12,6 @@ import (
 	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
-
 type Repository struct {
 	db *sql.DB
 }
@@ -397,6 +396,51 @@ type candidateHit struct {
 	URL             *string
 }
 
+// rankedID is one leg's ranked chunk: chunkID plus its 1-based rank.
+type rankedID struct {
+	chunkID string
+	rank    int
+}
+
+// scoredHit is a fused chunk score produced by fuseRRF.
+type scoredHit struct {
+	chunkID string
+	score   float64
+}
+
+// fuseRRF combines the vector and full-text ranked lists with Reciprocal Rank
+// Fusion (k=60) and returns the top-ranked chunks, bounded by topK (0 = no
+// bound). A chunk present in both legs accumulates both contributions. Order
+// is deterministic: the vector leg's insertion order wins ties, so identical
+// scores never reorder between runs (the previous map-based fusion did).
+func fuseRRF(vectorRanks, ftsRanks []rankedID, topK int) []scoredHit {
+	scores := make(map[string]float64, len(vectorRanks)+len(ftsRanks))
+	order := make([]string, 0, len(vectorRanks)+len(ftsRanks))
+
+	add := func(chunkID string, rank int) {
+		if _, seen := scores[chunkID]; !seen {
+			order = append(order, chunkID)
+		}
+		scores[chunkID] += 1.0 / (60.0 + float64(rank))
+	}
+	for _, item := range vectorRanks {
+		add(item.chunkID, item.rank)
+	}
+	for _, item := range ftsRanks {
+		add(item.chunkID, item.rank)
+	}
+
+	scored := make([]scoredHit, 0, len(order))
+	for _, chunkID := range order {
+		scored = append(scored, scoredHit{chunkID: chunkID, score: scores[chunkID]})
+	}
+	sort.SliceStable(scored, func(i, j int) bool { return scored[i].score > scored[j].score })
+	if topK > 0 && len(scored) > topK {
+		scored = scored[:topK]
+	}
+	return scored
+}
+
 // HybridSearch fuses a pgvector cosine leg with a SQLite-style FTS leg via
 // reciprocal rank fusion. minSimilarity is the cosine floor a chunk must clear
 // to count as evidence: chunks below it are dropped from both legs, so an
@@ -416,10 +460,6 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 	}
 
 	// 1. Vector leg
-	type rankedID struct {
-		chunkID string
-		rank    int
-	}
 	var vectorRanks []rankedID
 	candidateMap := make(map[string]candidateHit)
 
@@ -509,30 +549,7 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 	}
 
 	// 3. RRF Fusion
-	rrfScores := make(map[string]float64)
-	const k = 60.0
-	for _, vr := range vectorRanks {
-		rrfScores[vr.chunkID] += 1.0 / (k + float64(vr.rank))
-	}
-	for _, fr := range ftsRanks {
-		rrfScores[fr.chunkID] += 1.0 / (k + float64(fr.rank))
-	}
-
-	type scoredHit struct {
-		chunkID string
-		score   float64
-	}
-	var scored []scoredHit
-	for chunkID, score := range rrfScores {
-		scored = append(scored, scoredHit{chunkID: chunkID, score: score})
-	}
-	sort.Slice(scored, func(i, j int) bool {
-		return scored[i].score > scored[j].score
-	})
-
-	if len(scored) > topK {
-		scored = scored[:topK]
-	}
+	scored := fuseRRF(vectorRanks, ftsRanks, topK)
 
 	var results []QueryHit
 	for _, s := range scored {
