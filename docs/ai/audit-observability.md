@@ -52,10 +52,12 @@ and the A6 context families `arda_ai_prompt_bytes` and
 `arda_ai_context_truncated_total`. Contract:
 `contracts/observability/arda-observability-v1.json` (15 AI metrics).
 
-Still missing: a scraper/alerting stack in the cluster (no Prometheus or
-VictoriaMetrics is deployed today, so `/metrics` is not collected and the
-publish-failure counter cannot page anyone), approval-wait/context-size
-metrics, and OpenTelemetry spans. Tracked as audit-2026-09 A3.
+Still missing: alert *delivery* (no Alertmanager/Telegram channel — firing
+alerts are logged by vmalert and exposed as `vmalert_alerts_firing`), plus
+approval-wait/context-size counters and OpenTelemetry spans. The scrape stack
+itself landed 2026-09-17: VictoriaMetrics single-node scrapes every service
+`/metrics` (`k8s/monitoring/victoria-metrics.yaml`) and vmalert evaluates the
+Arda AI rules. Tracked as audit-2026-09 A3.
 
 ## Tracing
 
