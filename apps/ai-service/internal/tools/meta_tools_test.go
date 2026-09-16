@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -65,6 +66,33 @@ func TestExecuteMetaTool_Execution(t *testing.T) {
 	_, err = executeTool.Execute(ctx, scope, json.RawMessage(`{"code":""}`))
 	if err == nil {
 		t.Fatal("expected error on empty code, got nil")
+	}
+}
+
+func TestExecuteMetaToolReportsSandboxErrorCode(t *testing.T) {
+	executeTool := NewExecuteMetaTool(func(ctx context.Context, scope Context, code string) (map[string]any, error) {
+		return nil, &SandboxError{Code: "ai.sandbox_timeout", Err: errors.New("ai.sandbox_timeout: script execution exceeded time limit")}
+	})
+
+	res, err := executeTool.Execute(
+		context.Background(),
+		Context{TenantID: "tenant-1", ActorUserID: "user-1"},
+		json.RawMessage(`{"code":"while(true){}"}`),
+	)
+	if err != nil {
+		t.Fatalf("sandbox failures must stay structured results, got error: %v", err)
+	}
+	if res.ErrorCode != "ai.sandbox_timeout" {
+		t.Errorf("expected ai.sandbox_timeout, got %q", res.ErrorCode)
+	}
+	if !strings.Contains(string(res.Data), "ai.sandbox_timeout") {
+		t.Errorf("expected the model-facing data to carry the failure, got: %s", string(res.Data))
+	}
+}
+
+func TestErrorCodeDefaultsToGenericToolCode(t *testing.T) {
+	if got := ErrorCode(errors.New("boom")); got != "ai.tool_execution_failed" {
+		t.Errorf("expected ai.tool_execution_failed, got %q", got)
 	}
 }
 

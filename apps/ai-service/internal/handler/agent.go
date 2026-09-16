@@ -1027,9 +1027,13 @@ func executeModelToolCall(
 		content = `{"error":"` + errorCode + `"}`
 	} else {
 		content = boundContent(string(result.Data))
+		// The Code Mode meta-tool reports sandbox failures as structured
+		// Result data so the model can inspect them. The audit row must still
+		// record the real outcome instead of SUCCEEDED.
+		errorCode = result.ErrorCode
 	}
 	status := "SUCCEEDED"
-	if execErr != nil {
+	if execErr != nil || errorCode != "" {
 		status = "FAILED"
 	}
 	if hasToolStore && executionID != "" {

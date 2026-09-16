@@ -116,7 +116,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 	default:
 		return ExecutionResult{
 			Error: ErrSandboxBusy.Error(),
-		}, ErrSandboxBusy
+		}, &tools.SandboxError{Code: "ai.sandbox_busy", Err: ErrSandboxBusy}
 	}
 	select {
 	case e.sem <- struct{}{}:
@@ -124,7 +124,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 	default:
 		return ExecutionResult{
 			Error: ErrSandboxBusy.Error(),
-		}, ErrSandboxBusy
+		}, &tools.SandboxError{Code: "ai.sandbox_busy", Err: ErrSandboxBusy}
 	}
 
 	start := time.Now()
@@ -332,7 +332,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 		errMsg := err.Error()
 		if strings.Contains(errMsg, ErrSandboxTimeout.Error()) {
 			res.Error = ErrSandboxTimeout.Error()
-			return res, ErrSandboxTimeout
+			return res, &tools.SandboxError{Code: "ai.sandbox_timeout", Err: ErrSandboxTimeout}
 		}
 		res.Error = errMsg
 		return res, err
@@ -370,7 +370,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 			if len(b) > MaxOutputSizeBytes {
 				res.Error = "ai.sandbox_output_too_large: result exceeded 64 KiB limit"
 				res.Output = nil
-				return res, errors.New(res.Error)
+				return res, &tools.SandboxError{Code: "ai.sandbox_output_too_large", Err: errors.New(res.Error)}
 			}
 		}
 	}

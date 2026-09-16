@@ -97,10 +97,50 @@ type Result struct {
 	Source    string
 	RequestID string
 	FreshAt   time.Time
+	// ErrorCode carries the machine-readable failure code when the tool
+	// surfaced a structured error inside Data instead of returning it (the
+	// Code Mode meta-tool does this so the model can inspect the failure).
+	// The audit trail records this code and marks the execution FAILED;
+	// callers that only look at (Result, error) must consult it too.
+	ErrorCode string
 	// Approval is set when the call produced a human-approval proposal instead
 	// of executing. The agent loop must emit an interrupt and stop the run;
 	// treating this as a completed tool call would strand the proposal.
 	Approval *ApprovalPending
+}
+
+// SandboxError attaches the machine-readable code of a Code Mode sandbox
+// failure (ai.sandbox_timeout, ai.sandbox_busy, ...) to the underlying error.
+// The sandbox package produces it; the meta-tool reads it so audit rows and
+// run metrics record the real outcome instead of SUCCEEDED.
+type SandboxError struct {
+	Code string
+	Err  error
+}
+
+func (e *SandboxError) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *SandboxError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// ErrorCode resolves the machine-readable failure code of a tool execution
+// error: the sandbox code when one is attached, the generic tool code
+// otherwise.
+func ErrorCode(err error) string {
+	var sandboxErr *SandboxError
+	if errors.As(err, &sandboxErr) && sandboxErr.Code != "" {
+		return sandboxErr.Code
+	}
+	return "ai.tool_execution_failed"
 }
 
 type Tool interface {

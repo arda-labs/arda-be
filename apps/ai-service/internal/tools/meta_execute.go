@@ -90,6 +90,7 @@ func (t *ExecuteMetaTool) Execute(ctx context.Context, scope Context, arguments 
 					Source:    "ai-sandbox",
 					RequestID: scope.RequestID,
 					FreshAt:   time.Now().UTC(),
+					ErrorCode: "ai.approval_unavailable",
 				}, nil
 			}
 		}
@@ -104,6 +105,7 @@ func (t *ExecuteMetaTool) Execute(ctx context.Context, scope Context, arguments 
 				Source:    "ai-sandbox",
 				RequestID: scope.RequestID,
 				FreshAt:   time.Now().UTC(),
+				ErrorCode: ErrorCode(err),
 			}, nil
 		}
 		return Result{}, err
