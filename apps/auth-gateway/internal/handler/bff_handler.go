@@ -1126,28 +1126,11 @@ func (h *BFFHandler) verifyMFA(ctx context.Context, userID, code string) error {
 	if h.iamClient == nil {
 		return fmt.Errorf("iam client is not configured")
 	}
-	body, err := json.Marshal(map[string]string{
-		"userId": userID,
-		"code":   code,
-	})
-	if err != nil {
-		return err
-	}
-	endpoint := h.iamClient.InternalBaseURL() + "/api/iam/me/mfa/verify"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := h.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("iam mfa verify returned status %d", resp.StatusCode)
-	}
-	return nil
+	// Verify through the service-authenticated internal route. The public
+	// /api/iam/me/mfa/verify route is actor-scoped (X-User-Id) and must never
+	// accept a caller-declared user id, so a server-side step-up uses the same
+	// client path as login MFA.
+	return h.iamClient.VerifyMFA(ctx, userID, code)
 }
 
 func (h *BFFHandler) KratosWhoami(w http.ResponseWriter, r *http.Request) {
