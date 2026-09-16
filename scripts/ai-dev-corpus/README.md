@@ -55,7 +55,8 @@ Run through a port-forward to the deployed `ai-service` (production mode,
 embedding provider enabled, no reranker):
 
 - 12/12 cases pass with `AI_EVAL_STRICT=1`; recall@10 = 1.0 on answerable cases.
-- Distant out-of-corpus and cross-tenant queries return 0 hits (floor 0.35).
+- Distant out-of-corpus and cross-tenant queries return 0 hits (floor 0.5 since
+  2026-09-17; production cosines for off-topic queries measured 0.38–0.46).
 - Measured limitation: a *near-domain* hard negative ("làm việc 4 ngày mỗi
   tuần") still returns lexically related chunks above the floor. Retrieval-level
   floors cannot separate that case; it needs answer-level abstention

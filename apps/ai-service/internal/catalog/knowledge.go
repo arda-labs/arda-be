@@ -36,7 +36,8 @@ func RegisterKnowledgeCatalog(reg *DispatcherRegistry, rag ragSearcher) {
 	 * Search published knowledge sources and business documentation with citations.
 	 * @param args.query Natural language search query (max 512 chars)
 	 * @param args.limit Number of items, 1-5 (default 3)
-	 * @returns KnowledgeSearchResult[] { runId, sourceId, sourceKey, sourceTitle, content, citations[], matchScore }
+	 * @returns KnowledgeSearchResult[] { runId, sourceId, sourceKey, sourceTitle, content, citations[], matchScore } — matchScore is the cosine similarity to the query
+	 * @remarks An empty array means no published source cleared the evidence floor: the knowledge base has no matching content. Report that plainly and do not cite unrelated documents.
 	 * @requires ai.knowledge.read
 	 * @domain knowledge
 	 */`,

@@ -60,7 +60,9 @@ type Config struct {
 	// count as evidence in hybrid retrieval. Queries whose best chunk falls
 	// below the floor return zero hits instead of top-k filler, so the
 	// answer layer can say "no evidence" instead of hallucinating. 0 disables
-	// the gate.
+	// the gate. Measured 2026-09-16: off-topic Vietnamese queries scored
+	// 0.38–0.46 against generic procedure docs while genuine in-corpus
+	// matches scored ~0.70, so the floor moved from 0.35 to 0.5.
 	RAGMinSimilarity float64
 
 	NATSURL string
@@ -86,7 +88,9 @@ Quy tắc quan trọng:
 - Có thể dùng console.log() để ghi nhận log kiểm tra.
 - Mọi hành động thay đổi/ghi dữ liệu (mutation) đều tự động chuyển thành đề xuất chờ con người phê duyệt trước khi thực thi.
 - Nếu search() 2 lần liên tiếp không trả về phương thức SDK phù hợp, hãy dừng và nói thẳng cho người dùng biết bạn chưa có khả năng xử lý yêu cầu đó (ví dụ: "Tôi hiện chưa hỗ trợ thao tác này trong tenant của bạn."). Đừng lặp lại search với các từ khóa khác nhau nhiều lần.
-- Nếu một phương thức đọc dữ liệu trả về kết quả rỗng sau 2 lần thử với truy vấn khác nhau, hãy dừng và trả lời thẳng rằng hệ thống chưa có dữ liệu phù hợp (ví dụ: "Hiện chưa có nội dung nào được đăng tải cho yêu cầu này.") thay vì tiếp tục thử lại hay chuyển sang câu hỏi khác — kết quả rỗng không phải yêu cầu quá phức tạp.`
+- Nếu một phương thức đọc dữ liệu trả về kết quả rỗng sau 2 lần thử với truy vấn khác nhau, hãy dừng và trả lời thẳng rằng hệ thống chưa có dữ liệu phù hợp (ví dụ: "Hiện chưa có nội dung nào được đăng tải cho yêu cầu này.") thay vì tiếp tục thử lại hay chuyển sang câu hỏi khác — kết quả rỗng không phải yêu cầu quá phức tạp.
+- Với arda.knowledge.search: kết quả rỗng nghĩa là kho tri thức chưa có tài liệu phù hợp (đã qua sàn bằng chứng), KHÔNG phải tool lỗi. Khi đó trả lời thẳng là chưa có nội dung và TUYỆT ĐỐI không tạo mục "Nguồn tham khảo".
+- Chỉ liệt kê "Nguồn tham khảo" gồm đúng những tài liệu bạn thực sự dùng để trả lời và có trong kết quả tool (kèm citation dạng [id:tiêu đề mục]); không thêm tài liệu khác chủ đề chỉ vì nó xuất hiện trong kết quả tìm kiếm.`
 
 func Load() Config {
 	mode := envOr("AI_MODE", "development")
@@ -133,7 +137,7 @@ func Load() Config {
 		RAGEmbeddingAPIKey:     embeddingAPIKey,
 		RAGEmbeddingModel:      embeddingModel,
 		RAGEmbeddingDimensions: envIntOr("AI_RAG_EMBEDDING_DIMENSIONS", 1024),
-		RAGMinSimilarity:       envFloatOr("AI_RAG_MIN_SIMILARITY", 0.35),
+		RAGMinSimilarity:       envFloatOr("AI_RAG_MIN_SIMILARITY", 0.5),
 
 		NATSURL:  envOr("NATS_URL", envOr("AI_NATS_URL", "")),
 		RedisURL: envOr("REDIS_URL", ""),
