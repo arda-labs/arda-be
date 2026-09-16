@@ -61,6 +61,8 @@ gates.
 17. [adr-004-budget-and-error-contract.md](adr-004-budget-and-error-contract.md)
     — the deadline tree for tool execution, the machine-readable AI error
     contract, and the CI gates that enforce both.
+18. [adr-005-run-lifecycle.md](adr-005-run-lifecycle.md) — proposed step-durable
+    run lifecycle and shared result store (audit item A7).
 
 The September 2026 stack audit — findings with file/line and production
 evidence, severity, and the Phase A cleanup order — is
@@ -77,10 +79,11 @@ Deferred designs stay in this directory until their phase starts: [multi-provide
 - `arda-be` has Go services with service-owned PostgreSQL databases and Goose
   migrations. IAM owns users, tenants, permissions, MFA, and security audit.
 - `arda-be/apps/ai-service` serves the AG-UI protocol on
-  `/api/ai/agent` (events + `resume` entries for HITL interrupts), an optional
-  model-driven agent loop (`AI_ENABLE_AGENT` + OpenAI-compatible provider),
-  Goose migrations, tenant/actor-owned conversation persistence (list,
-  messages, delete, auto-title), replay protection, production workload
+  `/api/ai/agent` (events + `resume` entries for HITL interrupts), a
+  model-driven agent loop (tenant-owned provider profiles configured in the AI
+  Settings UI; the deployment supplies only a shared gateway token and base-URL
+  allowlist), Goose migrations, tenant/actor-owned conversation persistence
+  (list, messages, delete, auto-title), replay protection, production workload
   identity verification, and redacted read tools with knowledge citations.
   Internal HTTP tools (`iam.listUsers`, `crm.getCustomer`, `finance.getAccount`)
   are generated from `contracts/ai-internal/*.json` (`x-ai-tool`) via
@@ -115,9 +118,11 @@ an environment-specific rollout check.
 
 `crm.customer.export.prepare` still creates no export artifact — it only
 verifies scope; a real export executor must be designed with the owning domain
-service. Multi-provider routing (cloud vs local model per tenant) is prepared
-through the `model.Provider` interface but not implemented; provider
-configuration is environment-based today (design in
-[multi-provider-design.md](multi-provider-design.md)). NATS event publishing is
-designed ([nats-events.md](nats-events.md)) but not yet wired into the service.
-The service executes no other side effects.
+service. Multi-provider routing (cloud vs local model per tenant) is
+implemented through provider profiles and the `model.Provider` pool (design in
+[multi-provider-design.md](multi-provider-design.md)); the applied profile +
+model is the single source of truth, and the legacy `ai_tenant_settings` path
+was removed with audit-2026-09 item A5. NATS event publishing is wired
+([nats-events.md](nats-events.md)); the JetStream publish bug that silently
+buffered every event was fixed in 2026-09. The service executes no other side
+effects.

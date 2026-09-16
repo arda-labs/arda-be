@@ -42,12 +42,23 @@ tenant class, and provider—not by raw prompt:
 - retrieval latency, empty result, citation, ACL-denial, and stale-source rate;
 - context size, truncation, and redaction counters.
 
+**Implementation status (2026-09):** the eight `arda_ai_*` families in the
+contract exist today: runs, tool executions, LLM tokens, run duration, provider
+probes, model errors, and the two citation-guard counters. The remaining
+bullets (TTFT, retrieval latency, context size/truncation, approval-wait
+histograms) are targets, not code — tracked as audit-2026-09 item A3.
+
 ## Tracing
 
 Propagate request/trace context from the gateway through AI service, tools,
 domain calls, provider calls, and persistence. Keep provider spans scrubbed of
 prompt/message content by default; record sizes, model IDs, and hashes or
 references only where needed for debugging.
+
+**Implementation status (2026-09):** not implemented. `apps/ai-service` has no
+OpenTelemetry instrumentation; request IDs propagate and audit rows record
+durations, but there are no spans and no per-segment latency fields. Closing
+this is audit-2026-09 item A3; do not treat this section as deployed behaviour.
 
 ## SLO starting point
 

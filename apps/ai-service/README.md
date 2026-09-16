@@ -5,13 +5,14 @@ HTTP/SSE endpoint with persistent conversations and runs, an optional
 model-driven agent loop, allowlisted tools, server-enforced human approval,
 and owner-scoped conversation APIs.
 
-With read tools enabled, production exposes `crm.customer.get` and
-`knowledge.search`. CRM requires `crm.customer.read`; knowledge requires the
-separate `ai.knowledge.read` permission. Both use server-resolved tenant scope
-and return bounded, redacted data; knowledge results include citations.
+With Code Mode enabled (`AI_ENABLE_READ_TOOLS=true`, the production value) the
+model only sees three meta-tools — `search`, `execute`, `readResult` — and
+reaches the typed `arda.*` SDK inside the Goja sandbox. Permission checks run
+per SDK method (`ai.knowledge.read` for knowledge, `crm.customer.read` for CRM,
+…), results stay bounded and redacted, and knowledge results include citations.
 
-HITL endpoints are guarded by `AI_ENABLE_HITL_PROPOSALS` and remain disabled
-in the production manifest. When enabled, `confirm`-kind tools (currently
+HITL endpoints are guarded by `AI_ENABLE_HITL_PROPOSALS` (enabled in the
+production manifest). `confirm`-kind tools (currently
 `crm.customer.export.prepare`) can never execute directly: the agent loop
 turns them into persisted approval proposals, an independent approver decides,
 and only the run owner can trigger execution afterwards. `prepare` still
@@ -26,24 +27,24 @@ go run ./cmd/ai-service
 
 ## Agent mode (model provider)
 
-Set the following to enable the model-driven agent loop:
+Model credentials are tenant-owned: configure a profile in the AI Settings UI
+(`/ai/settings`). The service resolves the applied profile + model per tenant;
+production never reads model credentials from deployment env. The deployment
+supplies only shared controls:
 
 ```dotenv
-AI_ENABLE_AGENT=true
-AI_MODEL_BASE_URL=https://api.openai.com/v1
-AI_MODEL_API_KEY=<provider key, secret via K8s secretKeyRef only>
-AI_MODEL_ID=<model id>
 AI_AGENT_MAX_STEPS=6
 AI_RATE_LIMIT_PER_MINUTE=30
+AI_MODEL_GATEWAY_TOKEN=<shared AI Gateway token, secret via K8s secretKeyRef>
+AI_MODEL_BASE_URL_ALLOWLIST=https://ai-gateway.arda.io.vn/compat
 ```
 
 Knowledge ingestion uses an OpenAI-compatible embedding endpoint with a
 1024-dimension vector. Set `AI_RAG_EMBEDDING_BASE_URL`,
-`AI_RAG_EMBEDDING_API_KEY`, and `AI_RAG_EMBEDDING_MODEL` explicitly when the
-embedding provider differs from chat; they fall back to the chat URL/key for
-backward compatibility. Production mode fails closed when embeddings are
-missing; development can opt into the same behavior with
-`AI_RAG_REQUIRE_EMBEDDING=true`. Optional Cohere-compatible reranking is
+`AI_RAG_EMBEDDING_API_KEY`, and `AI_RAG_EMBEDDING_MODEL` explicitly; embedding
+configuration is independent of the tenant chat model. Production mode fails
+closed when embeddings are missing; development can opt into the same behavior
+with `AI_RAG_REQUIRE_EMBEDDING=true`. Optional Cohere-compatible reranking is
 enabled with `AI_RAG_RERANKER_BASE_URL`, `AI_RAG_RERANKER_API_KEY`, and
 `AI_RAG_RERANKER_MODEL`. Optional multi-query rewrite asks the tenant model for
 up to two additional Vietnamese search queries and fuses the result sets with

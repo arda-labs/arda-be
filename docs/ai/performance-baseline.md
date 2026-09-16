@@ -4,6 +4,16 @@ Status: **Required before Code Mode production rollout**. Defines token cost
 targets, latency budgets, quota thresholds, and monitoring requirements for the
 `ai-service` in both direct-tool and Code Mode configurations.
 
+> **Implementation status (2026-09-16):** Code Mode is the production
+> configuration (`AI_ENABLE_READ_TOOLS=true`); direct-tool mode is historical.
+> The sandbox budget rules in §4.3 are normative and machine-checked
+> (`scripts/check-ai-budgets.mjs`, ADR-004). The quota and cost-ledger parts of
+> §2 exist (`ai_quota_reservations`, per-model usage); the `X-Budget-Warning`
+> header and the eight-segment latency instrumentation in §3 are **targets, not
+> code** — see `audit-2026-09.md` items A3/A6. Measured production runs on
+> 2026-09-16 used 2 962–37 877 prompt tokens and 3–30 s wall-clock per run,
+> above the §1 targets for the multi-tool conversations.
+
 ---
 
 ## 1. Cost & Latency Model

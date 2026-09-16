@@ -89,13 +89,14 @@ Thiết kế lại `ai_tenant_settings` (không cần migration schema):
 1. **Tenant route là bắt buộc (chốt 2026-09-08):** production không còn wire
    `AI_MODEL_BASE_URL/ID/API_KEY` vào Deployment — `cmd/ai-service/main.go`
    chỉ dựng platform provider ở non-production (dev local không DB). Mọi
-   model config nằm trong `ai_tenant_settings` (AI Settings UI), key mã hóa
+   model config nằm trong model profile (`ai_model_profiles` +
+   `ai_profile_models`, AI Settings UI), key mã hóa
    `enc:v1:` bằng `ARDA_SERVICE_AUTH_SECRET`. Tenant chưa cấu hình → run
    FAILED với hướng dẫn vào AI Settings (`ai.model_unavailable`).
 2. **Allowlist:** env `AI_MODEL_BASE_URL_ALLOWLIST` (comma-separated domain).
-   Validate **ở cả hai chỗ**: upsert `/api/ai/settings` (reject 400 + audit)
-   và tại use trong `agent.go` trước khi tạo client (defense in depth). Đây
-   đồng thời là bản vá SSRF. Hiện chưa set = không enforce.
+   Validate **ở cả hai chỗ**: upsert `/api/ai/settings/profiles` (reject 400 +
+   audit) và tại use trong `agent.go` trước khi tạo client (defense in depth).
+   Đây đồng thời là bản vá SSRF. Hiện chưa set = không enforce.
 3. **API key tenant** trở thành key scope-gateway — provider key thật nằm ở gateway, ai-service không bao giờ thấy (mã hóa `enc:v1:` hiện có giữ nguyên).
 4. Khi chuyển gateway→LiteLLM: thêm domain LiteLLM vào allowlist, tenant rows đổi base_url trong UI, không đổi code.
 
@@ -257,5 +258,5 @@ ai_tenant_settings                   ── key tenant = key scope-gateway (Lite
 Nguyên tắc:
 1. **Không một workload nào trong cluster giữ provider key gốc** — mất secret k8s không lộ được key ra ngoài.
 2. Xoay key ở gateway không cần deploy lại ai-service (ai-service chỉ thấy gateway token, vốn tự nó xoay riêng).
-3. Runbook xoay nằm ở `arda-infra/docs/` (viết khi triển khai §3.4): tạo key mới ở provider → cập nhật gateway → test `/api/ai/settings/test` → thu hồi key cũ.
-4. Endpoint `/api/ai/settings/test` hiện có chính là công cụ verify sau mỗi lần xoay — thêm vào runbook.
+3. Runbook xoay nằm ở `arda-infra/docs/` (viết khi triển khai §3.4): tạo key mới ở provider → cập nhật gateway → test `POST /api/ai/settings/profiles/{id}/test` → thu hồi key cũ.
+4. Endpoint test model của profile hiện có chính là công cụ verify sau mỗi lần xoay — thêm vào runbook.

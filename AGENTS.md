@@ -60,9 +60,11 @@ tokens against the unreachable Ory Hydra.
   `ai-conversations-read`, `ai-conversations-delete`, `ai-approvals-write`
   (all require permission `ai.assistant.use`). Gateway signs workload tokens
   with audience `ai-service`; `AI_SERVICE_URL=http://ai-service:8080`.
-* Model config lives in secret `arda-app-secrets` (`AI_MODEL_API_KEY`) plus
-  Deployment env (`AI_MODEL_BASE_URL=https://opencode.ai/zen/v1`,
-  `AI_MODEL_ID=x-preview-f-free`, `AI_ENABLE_AGENT=true`). Never commit keys.
+* Model config is tenant-owned: profiles + applied model in the AI Settings UI
+  (`ai_model_profiles` / `ai_profile_models`, API keys encrypted `enc:v1`).
+  The deployment only supplies `AI_MODEL_GATEWAY_TOKEN` and
+  `AI_MODEL_BASE_URL_ALLOWLIST`; embedding uses `AI_RAG_EMBEDDING_*`. Never
+  commit keys.
 * Deploy flow: push `arda-be` main -> GitHub Actions images -> ArgoCD image
   updater rewrites digests in `arda-infra` -> ArgoCD sync. A green CI build
   does NOT mean pods updated; compare the pinned `sha256:` digest on the
