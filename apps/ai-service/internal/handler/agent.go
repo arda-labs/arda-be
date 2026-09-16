@@ -355,8 +355,10 @@ func agentStepsLoop(
 		var turnText strings.Builder
 		var turnReasoning strings.Builder
 		var collected []model.ToolCall
+		modelTimer := startModelStreamTimer()
 		finishReason, usage, err := modelProvider.StreamChat(ctx, messages, defs, model.StreamCallbacks{
 			OnTextDelta: func(delta string) {
+				modelTimer.firstDelta()
 				turnText.WriteString(delta)
 				startText()
 				sse.event(agentEvent{
@@ -365,10 +367,12 @@ func agentStepsLoop(
 				})
 			},
 			OnToolCall: func(call model.ToolCall) {
+				modelTimer.firstDelta()
 				collected = append(collected, call)
 			},
 			OnFinish: func(_ string, _ model.Usage) {},
 			OnReasoningDelta: func(delta string) {
+				modelTimer.firstDelta()
 				// Chain-of-thought streams to reasoning-aware clients and is
 				// kept on the assistant turn so thinking-mode providers accept
 				// the follow-up request within this run. It is never persisted
@@ -380,6 +384,7 @@ func agentStepsLoop(
 				})
 			},
 		})
+		modelTimer.observe()
 		if ctx.Err() != nil {
 			endText()
 			terminateAgentRunOnContext(ctx, store, scopeRun, input, sse)

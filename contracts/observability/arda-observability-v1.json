@@ -75,6 +75,36 @@
       "type": "counter",
       "labels": ["kind"],
       "purpose": "fabricated citation tokens removed from persisted answers"
+    },
+    {
+      "name": "arda_ai_model_ttft_seconds",
+      "type": "histogram",
+      "labels": [],
+      "purpose": "time to the first streamed model delta"
+    },
+    {
+      "name": "arda_ai_model_duration_seconds",
+      "type": "histogram",
+      "labels": [],
+      "purpose": "model stream wall-clock duration per turn"
+    },
+    {
+      "name": "arda_ai_retrieval_embed_seconds",
+      "type": "histogram",
+      "labels": [],
+      "purpose": "query embedding round-trip duration"
+    },
+    {
+      "name": "arda_ai_retrieval_search_seconds",
+      "type": "histogram",
+      "labels": [],
+      "purpose": "hybrid (vector + full-text) knowledge search duration"
+    },
+    {
+      "name": "arda_ai_event_publish_failures_total",
+      "type": "counter",
+      "labels": ["subject"],
+      "purpose": "events that could not reach the durable stream and fell back to the in-process buffer"
     }
   ],
   "slo_classes": [

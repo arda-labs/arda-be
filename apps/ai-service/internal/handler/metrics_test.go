@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
@@ -46,5 +47,32 @@ func TestAIMetricsRenderedAfterRun(t *testing.T) {
 	}
 	if !strings.Contains(metrics, "arda_ai_run_duration_seconds_count ") {
 		t.Fatalf("missing duration histogram in metrics:\n%s", metrics)
+	}
+	// Segment latency families (audit-2026-09 A3): one model turn ran, so TTFT
+	// and total model duration must have observations.
+	if !strings.Contains(metrics, "arda_ai_model_ttft_seconds_count ") {
+		t.Fatalf("missing model TTFT histogram in metrics:\n%s", metrics)
+	}
+	if !strings.Contains(metrics, "arda_ai_model_duration_seconds_count ") {
+		t.Fatalf("missing model duration histogram in metrics:\n%s", metrics)
+	}
+}
+
+func TestSegmentMetricsRender(t *testing.T) {
+	RecordRetrievalStage("embed", 1500*time.Millisecond)
+	RecordRetrievalStage("search", 40*time.Millisecond)
+	RecordEventPublishFailure("arda.ai.runs.finished")
+
+	metricsBuffer := &strings.Builder{}
+	RenderAIMetrics(metricsBuffer)
+	metrics := metricsBuffer.String()
+	if !strings.Contains(metrics, "arda_ai_retrieval_embed_seconds_count ") {
+		t.Fatalf("missing embed histogram in metrics:\n%s", metrics)
+	}
+	if !strings.Contains(metrics, "arda_ai_retrieval_search_seconds_count ") {
+		t.Fatalf("missing search histogram in metrics:\n%s", metrics)
+	}
+	if !strings.Contains(metrics, `arda_ai_event_publish_failures_total{subject="arda.ai.runs.finished"} 1`) {
+		t.Fatalf("missing publish failure counter in metrics:\n%s", metrics)
 	}
 }

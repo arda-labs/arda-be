@@ -79,6 +79,11 @@ type NATSPublisher struct {
 	closeCh chan struct{}
 	wg      sync.WaitGroup
 	logger  *slog.Logger
+	// OnPublishFailure, when set, is notified for every event that could not
+	// reach the durable stream (dispatch failure or full queue). Wired to the
+	// arda_ai_event_publish_failures_total counter so the silent-buffering
+	// class of failure is alertable (audit-2026-09 A3).
+	OnPublishFailure func(subject string)
 }
 
 func NewNATSPublisher(natsURL string, appName string, logger *slog.Logger) (*NATSPublisher, error) {
@@ -175,6 +180,9 @@ func (p *NATSPublisher) dispatch(item bufferedItem) {
 	_, pubErr := p.js.PublishMsg(msg, nats.Context(ctx))
 	if pubErr != nil {
 		p.logger.Warn("NATS JetStream publish failed; buffering event", "subject", item.subject, "err", pubErr)
+		if p.OnPublishFailure != nil {
+			p.OnPublishFailure(item.subject)
+		}
 		_ = p.buffer.Publish(context.Background(), item.subject, item.envelope)
 	}
 }
@@ -186,6 +194,9 @@ func (p *NATSPublisher) Publish(ctx context.Context, subject string, envelope Ev
 		return nil
 	default:
 		// Queue full, fallback to ring buffer
+		if p.OnPublishFailure != nil {
+			p.OnPublishFailure(subject)
+		}
 		return p.buffer.Publish(ctx, subject, envelope)
 	}
 }

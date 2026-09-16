@@ -171,6 +171,34 @@ var (
 		"Fabricated [source]/[citation]/[chunk] tokens removed from persisted answers.",
 		"kind",
 	)
+	// Segment latency families (audit-2026-09 A3): the run duration alone could
+	// not tell model latency apart from retrieval or domain latency, which made
+	// the 2026-09 knowledge-search outage hard to localise.
+	aiModelTTFT = newAIHistogram(
+		"arda_ai_model_ttft_seconds",
+		"Time to the first streamed model delta (text, reasoning, or tool call).",
+		0.1, 0.25, 0.5, 1, 1.5, 2, 3, 5, 8, 15,
+	)
+	aiModelDuration = newAIHistogram(
+		"arda_ai_model_duration_seconds",
+		"Model stream wall-clock duration per turn.",
+		0.25, 0.5, 1, 2, 3, 5, 10, 15, 30, 60,
+	)
+	aiRetrievalEmbedDuration = newAIHistogram(
+		"arda_ai_retrieval_embed_seconds",
+		"Query embedding round-trip duration (external provider).",
+		0.1, 0.25, 0.5, 1, 1.5, 2, 3, 5, 8, 15,
+	)
+	aiRetrievalSearchDuration = newAIHistogram(
+		"arda_ai_retrieval_search_seconds",
+		"Hybrid (vector + full-text) knowledge search duration.",
+		0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5,
+	)
+	aiEventPublishFailures = newAICounterVec(
+		"arda_ai_event_publish_failures_total",
+		"NATS event publishes that failed and fell back to the in-process buffer.",
+		"subject",
+	)
 )
 
 // RenderAIMetrics appends the arda_ai_* metric family to /metrics.
@@ -183,6 +211,11 @@ func RenderAIMetrics(w io.Writer) {
 	aiModelErrorsTotal.render(w)
 	aiCitationGuardTotal.render(w)
 	aiInventedCitationsTotal.render(w)
+	aiModelTTFT.render(w)
+	aiModelDuration.render(w)
+	aiRetrievalEmbedDuration.render(w)
+	aiRetrievalSearchDuration.render(w)
+	aiEventPublishFailures.render(w)
 }
 
 // RecordProviderProbe records one readiness health probe without exposing
@@ -259,4 +292,56 @@ func (t *aiRunTimer) observe() {
 
 func (t *aiRunTimer) durationMs() int64 {
 	return time.Since(t.start).Milliseconds()
+}
+
+// modelStreamTimer measures one StreamChat call: time to the first delta and
+// total stream duration. Callbacks run on the StreamChat goroutine, so no
+// locking is required.
+type modelStreamTimer struct {
+	start time.Time
+	first time.Duration
+}
+
+func startModelStreamTimer() *modelStreamTimer {
+	return &modelStreamTimer{start: time.Now()}
+}
+
+// firstDelta records the first streamed output of any kind. Later calls are
+// ignored.
+func (t *modelStreamTimer) firstDelta() {
+	if t.first == 0 {
+		t.first = time.Since(t.start)
+	}
+}
+
+func (t *modelStreamTimer) observe() {
+	if t.first > 0 {
+		aiModelTTFT.observe(t.first.Seconds())
+	}
+	aiModelDuration.observe(time.Since(t.start).Seconds())
+}
+
+// RecordRetrievalStage records one knowledge-retrieval stage duration for
+// /metrics. The knowledge service calls it through SetStageObserver so the two
+// packages do not import each other.
+func RecordRetrievalStage(stage string, d time.Duration) {
+	switch stage {
+	case "embed":
+		aiRetrievalEmbedDuration.observe(d.Seconds())
+	case "search":
+		aiRetrievalSearchDuration.observe(d.Seconds())
+	case "rerank":
+		// Reranking is optional and currently unconfigured in production; the
+		// stage is accepted so enabling it does not require a new hook.
+	}
+}
+
+// RecordEventPublishFailure counts one event that could not reach the durable
+// NATS stream and fell back to the in-process buffer (audit-2026-09 A3: the
+// previous WARN-only path left the outage invisible).
+func RecordEventPublishFailure(subject string) {
+	if subject == "" {
+		subject = "unknown"
+	}
+	aiEventPublishFailures.add(1, subject)
 }

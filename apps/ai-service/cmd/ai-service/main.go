@@ -103,6 +103,7 @@ func main() {
 		knowledgeSvc = knowledge.NewService(knowledgeRepo, embedder, logger)
 		knowledgeSvc.SetRequireEmbedding(cfg.RAGRequireEmbedding)
 		knowledgeSvc.SetMinSimilarity(cfg.RAGMinSimilarity)
+		knowledgeSvc.SetStageObserver(handler.RecordRetrievalStage)
 		if cfg.RAGRerankerBaseURL != "" {
 			knowledgeSvc.SetReranker(knowledge.NewCohereReranker(cfg.RAGRerankerBaseURL, cfg.RAGRerankerAPIKey, cfg.RAGRerankerModel, nil))
 		}
@@ -118,6 +119,7 @@ func main() {
 			eventPublisher = events.NewBufferedPublisher(1000, logger)
 		} else {
 			eventPublisher = natsPub
+			natsPub.OnPublishFailure = handler.RecordEventPublishFailure
 			logger.Info("AI service NATS JetStream event publisher started", "nats_url", cfg.NATSURL, "stream", events.StreamName)
 		}
 	} else {

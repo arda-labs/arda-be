@@ -42,11 +42,19 @@ tenant class, and provider—not by raw prompt:
 - retrieval latency, empty result, citation, ACL-denial, and stale-source rate;
 - context size, truncation, and redaction counters.
 
-**Implementation status (2026-09):** the eight `arda_ai_*` families in the
-contract exist today: runs, tool executions, LLM tokens, run duration, provider
-probes, model errors, and the two citation-guard counters. The remaining
-bullets (TTFT, retrieval latency, context size/truncation, approval-wait
-histograms) are targets, not code — tracked as audit-2026-09 item A3.
+**Implementation status (2026-09-17):** thirteen `arda_ai_*` families are
+implemented and rendered by `RenderAIMetrics`: runs, tool executions, LLM
+tokens, run duration, provider probes, model errors, the two citation-guard
+counters, and the A3 segment families — `arda_ai_model_ttft_seconds`,
+`arda_ai_model_duration_seconds`, `arda_ai_retrieval_embed_seconds`,
+`arda_ai_retrieval_search_seconds`, and
+`arda_ai_event_publish_failures_total`. Contract:
+`contracts/observability/arda-observability-v1.json` (13 AI metrics).
+
+Still missing: a scraper/alerting stack in the cluster (no Prometheus or
+VictoriaMetrics is deployed today, so `/metrics` is not collected and the
+publish-failure counter cannot page anyone), approval-wait/context-size
+metrics, and OpenTelemetry spans. Tracked as audit-2026-09 A3.
 
 ## Tracing
 
@@ -57,8 +65,8 @@ references only where needed for debugging.
 
 **Implementation status (2026-09):** not implemented. `apps/ai-service` has no
 OpenTelemetry instrumentation; request IDs propagate and audit rows record
-durations, but there are no spans and no per-segment latency fields. Closing
-this is audit-2026-09 item A3; do not treat this section as deployed behaviour.
+durations, but there are no spans. Closing this is audit-2026-09 item A3; do not
+treat this section as deployed behaviour.
 
 ## SLO starting point
 

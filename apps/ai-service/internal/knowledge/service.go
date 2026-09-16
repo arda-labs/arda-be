@@ -57,6 +57,10 @@ type Service struct {
 	// 0 disables the gate.
 	minSimilarity  float64
 	eventPublisher EventPublisher
+	// stageObserver receives per-stage retrieval durations (embed, search,
+	// rerank) for observability. Nil disables it; the handler wires it through
+	// SetStageObserver so the packages stay decoupled.
+	stageObserver func(stage string, d time.Duration)
 }
 
 // QueryRewriter produces alternative retrieval queries for a user question.
@@ -112,6 +116,19 @@ func (s *Service) SetQueryRewriter(rewriter QueryRewriter) {
 	}
 }
 
+// SetStageObserver registers a callback for per-stage retrieval timings.
+func (s *Service) SetStageObserver(observer func(stage string, d time.Duration)) {
+	if s != nil {
+		s.stageObserver = observer
+	}
+}
+
+func (s *Service) observeStage(stage string, d time.Duration) {
+	if s != nil && s.stageObserver != nil {
+		s.stageObserver(stage, d)
+	}
+}
+
 func (s *Service) SetEventPublisher(pub EventPublisher) {
 	if s != nil {
 		s.eventPublisher = pub
@@ -163,7 +180,9 @@ func (s *Service) Query(ctx context.Context, req QueryRequest, tenantID string) 
 	retrievedCount := len(hits)
 	rerankedCount := 0
 	if s.reranker != nil && len(hits) > 0 {
+		rerankStart := time.Now()
 		reranked, rerankErr := s.reranker.Rerank(ctx, queryText, hits, topK)
+		s.observeStage("rerank", time.Since(rerankStart))
 		if rerankErr != nil {
 			s.logger.Warn("reranking failed; retaining hybrid order", "err", rerankErr)
 		} else if len(reranked) > 0 {
@@ -318,14 +337,18 @@ func (s *Service) multiQuerySearch(ctx context.Context, queryText string, varian
 	embedded := false
 
 	search := func(query string, required bool) error {
+		embedStart := time.Now()
 		vector, err := s.embedQuery(ctx, query, required)
+		s.observeStage("embed", time.Since(embedStart))
 		if err != nil {
 			return err
 		}
 		if len(vector) > 0 {
 			embedded = true
 		}
+		searchStart := time.Now()
 		hits, err := s.repo.HybridSearch(ctx, query, vector, tenantID, limit, s.minSimilarity)
+		s.observeStage("search", time.Since(searchStart))
 		if err != nil {
 			return err
 		}
