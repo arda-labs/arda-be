@@ -23,3 +23,5 @@ jobs:
         run: node scripts/check-ai-budgets.mjs
       - name: Validate AI error contract
         run: node scripts/check-ai-errors.mjs
+      - name: Validate AI eval set copy
+        run: node scripts/check-ai-eval-set.mjs

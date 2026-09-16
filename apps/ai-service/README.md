@@ -146,7 +146,12 @@ go run ./cmd/ai-eval
 
 It reports source recall, citation coverage, hit counts, latency, and a
 machine-readable per-case result. A strict run exits non-zero when a case
-violates its expected evidence or no-answer policy.
+violates its expected evidence or no-answer policy. The same binary ships in
+the service image (`/app/ai-eval`) and runs nightly in-cluster via the
+`ai-eval` CronJob in `arda-infra` (LAN-only clusters cannot be reached from
+GitHub-hosted runners); the bundled golden set is a verified copy of
+`scripts/ai-dev-corpus/evaluation-set.yaml` and
+`scripts/check-ai-eval-set.mjs` fails CI when the two diverge.
 
 For the end-to-end gateway check, provide a short-lived authenticated session
 cookie and run `node scripts/gateway-smoke.mjs`. The script verifies the SSE
