@@ -168,7 +168,11 @@ func (p *NATSPublisher) dispatch(item bufferedItem) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, pubErr := p.js.PublishMsg(msg, nats.Context(ctx), nats.AckWait(5*time.Second))
+	// nats.AckWait cannot be combined with nats.Context: the JetStream client
+	// rejects the pair with ErrContextAndTimeout ("nats: context and timeout
+	// can not both be set"), which made every publish fall through to the
+	// in-memory buffer. The context already bounds the ack wait.
+	_, pubErr := p.js.PublishMsg(msg, nats.Context(ctx))
 	if pubErr != nil {
 		p.logger.Warn("NATS JetStream publish failed; buffering event", "subject", item.subject, "err", pubErr)
 		_ = p.buffer.Publish(context.Background(), item.subject, item.envelope)
