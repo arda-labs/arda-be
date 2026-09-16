@@ -246,6 +246,17 @@ func modelProviderStatus(err error) int {
 	return 0
 }
 
+// providerDiagnostic returns a bounded, secret-scrubbed snippet of an untrusted
+// provider error body for the operator log only. It is never persisted into the
+// transcript (which is replayed to the model) and never returned to clients.
+func providerDiagnostic(err error) string {
+	var statusErr *model.ProviderStatusError
+	if !errors.As(err, &statusErr) || statusErr == nil {
+		return ""
+	}
+	return truncateRunes(sanitizeTranscript(statusErr.Body), 1024)
+}
+
 // modelFailureMessage is the static user-visible reply persisted for a failed
 // model turn. It must never interpolate err.Error(): provider bodies are
 // untrusted/secret-bearing and this string is replayed into later turns.
@@ -375,11 +386,14 @@ func agentStepsLoop(
 			// The provider body is untrusted (it can echo credentials, request
 			// payloads, or tenant data) and the transcript is replayed to the
 			// model on later turns. Log only the mapped code and HTTP status,
-			// and persist a static, code-bearing reply.
+			// and persist a static, code-bearing reply. A short, secret-scrubbed
+			// snippet goes to the operator log so provider-side 4xx can be
+			// diagnosed without leaking into the transcript.
 			slog.Error("LLM model stream failed",
 				"code", errorCode,
 				"provider_status", modelProviderStatus(err),
 				"error_type", fmt.Sprintf("%T", err),
+				"provider_body", providerDiagnostic(err),
 				"thread_id", input.ThreadID,
 				"run_id", input.RunID,
 				"tenant_id", scope.TenantID,
