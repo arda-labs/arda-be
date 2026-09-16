@@ -606,6 +606,62 @@ func TestMeReadsTheBFFSessionCookie(t *testing.T) {
 	}
 }
 
+func TestSessionRenewsWhenHalfTheTTLHasPassed(t *testing.T) {
+	store := session.NewMemoryStore()
+	handler := &BFFHandler{
+		cfg:   config.Config{SessionCookieName: "arda_sid", SessionTTL: 3600},
+		store: store,
+	}
+
+	fresh := &session.Session{ExpiresAt: time.Now().Add(50 * time.Minute), CreatedAt: time.Now(), User: completeSessionUser()}
+	stale := &session.Session{ExpiresAt: time.Now().Add(5 * time.Minute), CreatedAt: time.Now().Add(-2 * time.Hour), User: completeSessionUser()}
+	capped := &session.Session{ExpiresAt: time.Now().Add(5 * time.Minute), CreatedAt: time.Now().Add(-40 * 24 * time.Hour), User: completeSessionUser()}
+	for _, sess := range []*session.Session{fresh, stale, capped} {
+		if err := store.Create(nil, sess, time.Hour); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Create() stamps CreatedAt; the absolute-cap case needs an older origin.
+	capped.CreatedAt = time.Now().Add(-40 * 24 * time.Hour)
+
+	callMe := func(sess *session.Session) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+		req.AddCookie(&http.Cookie{Name: "arda_sid", Value: sess.ID})
+		rec := httptest.NewRecorder()
+		handler.Me(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		return rec
+	}
+
+	if cookies := callMe(fresh).Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("a fresh session must not re-issue the cookie, got %v", cookies)
+	}
+
+	rec := callMe(stale)
+	renewed := false
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == "arda_sid" && cookie.MaxAge > 0 {
+			renewed = true
+		}
+	}
+	if !renewed {
+		t.Fatal("a session past half its TTL must re-issue the cookie")
+	}
+	stored, err := store.Get(nil, stale.ID)
+	if err != nil || stored == nil {
+		t.Fatalf("stored session missing: %v", err)
+	}
+	if time.Until(stored.ExpiresAt) < 30*time.Minute {
+		t.Fatalf("stored expiry must slide forward, got %v", time.Until(stored.ExpiresAt))
+	}
+
+	if cookies := callMe(capped).Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("the absolute lifetime cap must stop renewal, got %v", cookies)
+	}
+}
+
 func TestAcceptConsentFailsClosedWhenHydraConsentLookupFails(t *testing.T) {
 	calls := 0
 	handler := &BFFHandler{

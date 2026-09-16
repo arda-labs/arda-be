@@ -1312,6 +1312,37 @@ func (h *BFFHandler) clearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
+// sessionAbsoluteMax caps how long activity may keep sliding a session
+// forward; a stolen cookie still dies eventually.
+const sessionAbsoluteMax = 30 * 24 * time.Hour
+
+// maybeRenewSession slides an active session forward once half of its TTL has
+// elapsed: the browser cookie is re-issued with a fresh Max-Age and the stored
+// expiry moves with it. Without this, a browser drops the cookie at the
+// original 24h mark even while the user is working (2026-09-16 incident).
+func (h *BFFHandler) maybeRenewSession(w http.ResponseWriter, ctx context.Context, sess *session.Session) {
+	if sess == nil || sess.ID == "" || h.store == nil {
+		return
+	}
+	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	now := time.Now()
+	if !sess.ExpiresAt.IsZero() && sess.ExpiresAt.Sub(now) > ttl/2 {
+		return
+	}
+	if !sess.CreatedAt.IsZero() && now.Sub(sess.CreatedAt) > sessionAbsoluteMax {
+		return
+	}
+	sess.ExpiresAt = now.Add(ttl)
+	h.updateSession(ctx, sess)
+	h.setSessionCookie(w, sess.ID, ttl)
+	if h.logger != nil {
+		h.logger.Info("session renewed", "session_id", sess.ID)
+	}
+}
+
 func (h *BFFHandler) updateSession(ctx context.Context, sess *session.Session) {
 	if sess == nil || sess.ID == "" {
 		return
@@ -1320,11 +1351,16 @@ func (h *BFFHandler) updateSession(ctx context.Context, sess *session.Session) {
 	if ttl <= 0 {
 		return
 	}
-	if err := h.store.Update(ctx, sess, ttl); err != nil {
-		h.logger.Warn("update session failed", "session_id", sess.ID, "err", err)
+	if h.store == nil {
 		return
 	}
-	if sess.User != nil {
+	if err := h.store.Update(ctx, sess, ttl); err != nil {
+		if h.logger != nil {
+			h.logger.Warn("update session failed", "session_id", sess.ID, "err", err)
+		}
+		return
+	}
+	if sess.User != nil && h.logger != nil {
 		h.logger.Debug("session user context refreshed", "session_id", sess.ID, "user_id", sess.User.UserID, "auth_version", sess.User.AuthVersion)
 	}
 }
@@ -1352,6 +1388,7 @@ func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ensureDuration := time.Since(ensureStart)
+	h.maybeRenewSession(w, r.Context(), sess)
 	writeStart := time.Now()
 	ardahttp.WriteSuccess(w, r, http.StatusOK, sess.User)
 	writeDuration := time.Since(writeStart)
@@ -1494,15 +1531,24 @@ func sessionViews(sessions []*session.Session, currentID string) []sessionView {
 
 func (h *BFFHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	sessionID := h.readSessionCookie(r)
+	userID := ""
 	if sessionID != "" {
-		if sess, _ := h.store.Get(r.Context(), sessionID); sess != nil && sess.IAMSessionID != "" && h.iamClient != nil {
-			if err := h.iamClient.RevokeSession(r.Context(), sess.IAMSessionID); err != nil {
-				h.logger.Warn("revoke iam session failed", "session_id", sess.IAMSessionID, "err", err)
+		if sess, _ := h.store.Get(r.Context(), sessionID); sess != nil {
+			if sess.User != nil {
+				userID = sess.User.UserID
+			}
+			if sess.IAMSessionID != "" && h.iamClient != nil {
+				if err := h.iamClient.RevokeSession(r.Context(), sess.IAMSessionID); err != nil {
+					h.logger.Warn("revoke iam session failed", "session_id", sess.IAMSessionID, "err", err)
+				}
 			}
 		}
 		h.store.Delete(r.Context(), sessionID)
 	}
 	h.clearSessionCookie(w)
+	if h.logger != nil {
+		h.logger.Info("session logout", "session_present", sessionID != "", "user_id", userID, "request_id", ardahttp.RequestID(r))
+	}
 	respondJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }
 
@@ -1702,6 +1748,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			ensureDuration = time.Since(ensureStart)
+			h.maybeRenewSession(w, r.Context(), sess)
 			if match != nil && len(match.Route.Permissions) > 0 && !sess.User.IsGlobalAdmin && !permission.HasAny(sess.User.Permissions, match.Route.Permissions...) {
 				h.logProxyDenied(r, requestID, traceID, http.StatusForbidden, "insufficient_permissions", sess)
 				respondRequestError(w, r, http.StatusForbidden, "insufficient_permissions")
@@ -1808,6 +1855,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 	if isEventStreamRequest(r) {
 		copyEventStream(w, resp.Body)
+		h.logProxyAccess(r, requestID, traceID, resp.StatusCode, time.Since(start), sess, 0)
 		return
 	}
 	copyStart := time.Now()
@@ -1830,6 +1878,32 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			"copy_err", copyErr,
 		)
 	}
+	h.logProxyAccess(r, requestID, traceID, resp.StatusCode, totalDuration, sess, bytesCopied)
+}
+
+// logProxyAccess records every proxied request. Denials and upstream errors
+// were already logged, but without a success line a lost-cookie incident
+// cannot be reconstructed from the gateway's own logs (2026-09-16).
+func (h *BFFHandler) logProxyAccess(r *http.Request, requestID, traceID string, status int, duration time.Duration, sess *session.Session, bytes int64) {
+	if h.logger == nil {
+		return
+	}
+	attrs := []any{
+		"method", r.Method,
+		"path", r.URL.Path,
+		"status", status,
+		"duration_ms", duration.Milliseconds(),
+		"session_present", sess != nil,
+		"request_id", requestID,
+		"trace_id", traceID,
+	}
+	if bytes > 0 {
+		attrs = append(attrs, "bytes", bytes)
+	}
+	if sess != nil && sess.User != nil {
+		attrs = append(attrs, "user_id", sess.User.UserID, "tenant_id", sess.User.TenantID)
+	}
+	h.logger.Info("proxy request", attrs...)
 }
 
 func (h *BFFHandler) logProxyDenied(r *http.Request, requestID, traceID string, status int, reason string, sess *session.Session) {
