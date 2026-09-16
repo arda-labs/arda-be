@@ -1,11 +1,13 @@
 # ADR-004: Deadline budgets and the AI error contract
 
 **Status:** Proposed (2026-09-16)
-**Implementation status:** partially landed — bounded retrieval rewrite, sandbox
-error codes, and the NATS publish fix shipped in `e037b220`…`bd1f575f`
-(2026-09-16). The enforcement gates (`check-ai-budgets.mjs`,
-`check-ai-errors.mjs`) and the doc alignment are Phase A of
-[audit-2026-09.md](audit-2026-09.md).
+**Implementation status:** P0 landed (`e037b220`…`bd1f575f`, 2026-09-16):
+bounded retrieval rewrite, sandbox error codes, audit status/code, NATS publish
+fix. P1 landed (`ca6e9e19`…, 2026-09-16): `check-ai-budgets.mjs`,
+`check-ai-errors.mjs`, the `docs.problemLookup` timeout, the retired
+rag-service client, the legacy tenant-settings path, and the doc drift sweep.
+P2 (segment latency) and P3 (async long-running tools) remain open —
+[audit-2026-09.md](audit-2026-09.md) tracks them.
 **Supersedes:** nothing
 **Amends:** `performance-baseline.md` §4.3 (the 1.5 s sandbox rule becomes
 normative and machine-checked), `audit-observability.md` (metric families gain
@@ -60,8 +62,8 @@ agent run (AI_AGENT_RUN_TIMEOUT_SECONDS, 300 s)
 Normative rules:
 
 1. **R1.** No catalog entry may declare a timeout greater than the sandbox
-   ceiling. Today `docs.problemLookup` violates this (5 000 ms) and must come
-   down.
+   ceiling. `docs.problemLookup` (was 5 000 ms) was lowered to 2 000 ms in this
+   pass; the checker enforces the rule for every entry.
 2. **R2.** A pipeline with optional stages must run them **concurrently** with
    the mandatory stage, under a constant cap strictly smaller than the ceiling
    (`knowledge.search`: `rewriteBudget` = 1 500 ms), and must **skip** optional
@@ -117,8 +119,10 @@ Normative rules:
    meta-tool sets `Result.ErrorCode` even when it returns structured error data
    to the model; the agent loop persists `FAILED` + `error_code`.
 3. **R8.** Every new code must be added to the taxonomy table and (when
-   API-facing) to `docs/problems/`. The checker fails on orphans in either
-   direction.
+   API-facing) to `docs/problems/`. The checker fails when an API-facing code
+   has no page and when a sandbox code is missing from §2; orphan pages (a page
+   whose code no longer appears anywhere in the service) are reported for
+   deliberate cleanup — retired surfaces are tracked in audit-2026-09 item A5.
 4. **R9.** A code must not encode the same condition twice with different
    names. The historical `ai.execution_failed` / `ai.tool_execution_failed`
    overlap is resolved in favour of `ai.tool_execution_failed` for tool paths.
@@ -130,8 +134,9 @@ Normative rules:
   R1/R2/R5 are violated.
 - `scripts/check-ai-errors.mjs` — extracts `ai.*` codes emitted by the service
   (constants and literals), cross-checks the taxonomy and the problem catalog,
-  and fails on orphans.
-- Both run in `.github/workflows/verify.yml` next to `check-ai-catalog.mjs`.
+  and fails on missing pages or missing taxonomy rows.
+- Both run in `.github/workflows/ai-invariants.yml` (node-only, so they report
+  independently from `verify.yml`, which still runs `check-ai-catalog.mjs`).
 
 ## Alternatives considered
 
@@ -166,7 +171,7 @@ Invariants to keep green:
 | Phase | Work | Gate |
 |---|---|---|
 | P0 (done, `e037b220`…`bd1f575f`) | Bounded rewrite; sandbox error codes; audit status/code; NATS publish fix | `go test ./...`; production `ai_rag_runs` rows appear |
-| P1 (Phase A, ~1–2 days) | Both check scripts + CI wiring; lower `docs.problemLookup` timeout; taxonomy table in docs; doc drift sweep | CI red on a seeded violation; `check-ai-errors` covers at least sandbox/tool/model classes |
+| P1 (done, 2026-09-16) | Both check scripts + `ai-invariants.yml`; `docs.problemLookup` timeout; taxonomy table; doc drift sweep; retired rag-service client and legacy tenant-settings path removed; 25 orphan problem pages removed | `check-ai-budgets`/`check-ai-errors` green and red on a seeded violation; `go test ./...`; `bun run typecheck` (MFE) |
 | P2 (follow-up) | Segment latency fields/spans per `audit-observability.md`; alert on publish failures | Grafana/dashboards show model TTFT vs retrieval vs domain latency |
 | P3 (async) | Long-running tool pattern (R5): job + notification, sandbox only starts it | First real export/report tool uses the pattern |
 

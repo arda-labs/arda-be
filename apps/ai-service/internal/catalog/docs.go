@@ -29,7 +29,9 @@ type HTTPDocsLookuper struct {
 func NewHTTPDocsLookuper(baseURL string) *HTTPDocsLookuper {
 	return &HTTPDocsLookuper{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		client:  &http.Client{Timeout: 5 * time.Second},
+		// Backstop only: the SDK method's own timeout (and the sandbox wall
+		// clock) bound this call. See ADR-004 R1/R4.
+		client: &http.Client{Timeout: 2 * time.Second},
 	}
 }
 
@@ -88,8 +90,11 @@ func RegisterDocsCatalog(reg *DispatcherRegistry, docs docsLookuper) {
 			Kind:                "read",
 			RequiredPermissions: nil, // any authenticated actor; the catalog is public
 			Risk:                "low",
-			Timeout:             5 * time.Second,
-			Enabled:             true,
+			// One docs-site HTTP round-trip. Must stay under the sandbox wall
+			// clock (ADR-004 R1) so the method times out with its own error
+			// instead of the generic sandbox interrupt.
+			Timeout: 2 * time.Second,
+			Enabled: true,
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
 			code, _ := args["code"].(string)

@@ -1,0 +1,25 @@
+name: ai-invariants
+
+# AI contract gates from ADR-004 and audit-2026-09. Kept in a separate
+# workflow (node-only, no toolchain setup) so they report independently from
+# the main verify job. See docs/ai/adr-004-budget-and-error-contract.md.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate AI deadline budgets
+        run: node scripts/check-ai-budgets.mjs
+      - name: Validate AI error contract
+        run: node scripts/check-ai-errors.mjs
