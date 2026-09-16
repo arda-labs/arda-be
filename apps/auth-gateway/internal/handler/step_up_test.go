@@ -63,7 +63,7 @@ func TestStepUpVerifiesMFAThroughInternalServiceRoute(t *testing.T) {
 		streamHTTPClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/step-up", strings.NewReader(`{"code":"123456"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/step-up", strings.NewReader(`{"code":"482913"}`))
 	req.AddCookie(&http.Cookie{Name: session.DefaultCookieName, Value: sess.ID})
 	rec := httptest.NewRecorder()
 	h.StepUp(rec, req)
