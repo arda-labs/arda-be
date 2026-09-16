@@ -14,6 +14,24 @@ import (
 	"uuid"
 )
 
+const (
+	// rewriteBudget caps the optional LLM query rewrite. Rewriting is a recall
+	// enhancement, never a correctness requirement: bounding it keeps a slow
+	// model from consuming the budget the primary retrieval needs. The rewrite
+	// runs concurrently with the primary query, so this caps the extra latency
+	// it can add rather than adding a sequential cost.
+	rewriteBudget = 1500 * time.Millisecond
+	// variantMinBudget is the floor for the minimum request-deadline budget
+	// required before another rewrite variant is searched. One variant costs
+	// an embedding round-trip plus a hybrid search; without that headroom the
+	// variant is skipped and the already-ranked hits are returned instead of
+	// risking a deadline error for the whole tool call. The actual requirement
+	// is sized from the primary search's measured cost, so a slow embedding
+	// provider raises the bar instead of crossing the deadline. A request
+	// without a deadline (e.g. the standalone RAG endpoint) always has room.
+	variantMinBudget = 1 * time.Second
+)
+
 type Service struct {
 	repo     *Repository
 	embedder Embedder
@@ -112,17 +130,19 @@ func (s *Service) Query(ctx context.Context, req QueryRequest, tenantID string) 
 		topK = 20
 	}
 
-	queries := s.expandQueries(ctx, tenantID, queryText)
-	rewritten := len(queries) > 1
+	// The optional rewrite runs alongside the primary retrieval so a slow
+	// model can never push the first hit past the caller's deadline.
+	variants := s.startQueryRewrite(ctx, tenantID, queryText)
 
 	retrievalK := topK
 	if s.reranker != nil {
 		retrievalK = minInt(topK*3, 40)
 	}
-	ranked, embedded, err := s.multiQuerySearch(ctx, queries, tenantID, retrievalK)
+	ranked, embedded, variantsUsed, err := s.multiQuerySearch(ctx, queryText, variants, tenantID, retrievalK)
 	if err != nil {
 		return nil, fmt.Errorf("hybrid search: %w", err)
 	}
+	rewritten := variantsUsed > 0
 	hits := make([]QueryHit, 0, len(ranked))
 	for _, entry := range ranked {
 		hits = append(hits, entry.hit)
@@ -174,27 +194,53 @@ func (s *Service) Query(ctx context.Context, req QueryRequest, tenantID string) 
 	}, nil
 }
 
-// expandQueries returns the original query plus up to two rewrite variants.
-// Rewrite failures and empty/duplicate variants are ignored.
-func (s *Service) expandQueries(ctx context.Context, tenantID, queryText string) []string {
-	queries := []string{queryText}
+// startQueryRewrite launches the optional rewrite in the background and
+// returns a channel that yields the variants exactly once (nil on failure or
+// when rewriting is disabled). The rewrite context is bounded by both the
+// request deadline and rewriteBudget, so a slow provider cannot outlive the
+// call. Errors degrade to no variants and are logged, never returned.
+func (s *Service) startQueryRewrite(ctx context.Context, tenantID, queryText string) <-chan []string {
+	out := make(chan []string, 1)
 	if s.rewriter == nil {
-		return queries
+		out <- nil
+		return out
 	}
-	rewriteCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	variants, err := s.rewriter.Rewrite(rewriteCtx, tenantID, queryText)
-	if err != nil {
-		s.logger.Warn("query rewrite failed; using the original query", "err", err)
-		return queries
+	go func() {
+		rewriteCtx, cancel := context.WithTimeout(ctx, rewriteBudget)
+		defer cancel()
+		variants, err := s.rewriter.Rewrite(rewriteCtx, tenantID, queryText)
+		if err != nil {
+			s.logger.Warn("query rewrite failed; using the original query", "err", err)
+			out <- nil
+			return
+		}
+		out <- variants
+	}()
+	return out
+}
+
+// collectVariants waits for the background rewrite, then keeps at most two
+// usable variants: non-empty, distinct from the original query, and
+// de-duplicated. The wait is bounded by the rewrite's own deadline (see
+// startQueryRewrite) and by the request deadline.
+func collectVariants(ctx context.Context, queryText string, variants <-chan []string) []string {
+	if variants == nil {
+		return nil
 	}
-	for _, variant := range variants {
+	var raw []string
+	select {
+	case raw = <-variants:
+	case <-ctx.Done():
+		return nil
+	}
+	var out []string
+	for _, variant := range raw {
 		variant = strings.TrimSpace(variant)
 		if variant == "" || variant == queryText || len(variant) > 2000 {
 			continue
 		}
 		duplicate := false
-		for _, existing := range queries {
+		for _, existing := range out {
 			if existing == variant {
 				duplicate = true
 				break
@@ -203,12 +249,22 @@ func (s *Service) expandQueries(ctx context.Context, tenantID, queryText string)
 		if duplicate {
 			continue
 		}
-		queries = append(queries, variant)
-		if len(queries) >= 3 {
+		out = append(out, variant)
+		if len(out) >= 2 {
 			break
 		}
 	}
-	return queries
+	return out
+}
+
+// hasRetrievalBudget reports whether the request deadline still leaves room
+// for one more variant search that is expected to cost `needed`.
+func hasRetrievalBudget(ctx context.Context, needed time.Duration) bool {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return true
+	}
+	return time.Until(deadline) >= needed
 }
 
 type rankedHit struct {
@@ -216,24 +272,27 @@ type rankedHit struct {
 	rrf float64
 }
 
-// multiQuerySearch runs hybrid search for every query and fuses the results
-// with Reciprocal Rank Fusion (1/(60+rank)). The reported Score stays the best
+// multiQuerySearch runs the primary query first, then searches any rewrite
+// variants that still fit in the request deadline, fusing the results with
+// Reciprocal Rank Fusion (1/(60+rank)). The reported Score stays the best
 // cosine similarity seen for the chunk, so the evidence floor keeps meaning.
-func (s *Service) multiQuerySearch(ctx context.Context, queries []string, tenantID string, limit int) ([]rankedHit, bool, error) {
+// The returned count is the number of variants that contributed hits.
+func (s *Service) multiQuerySearch(ctx context.Context, queryText string, variants <-chan []string, tenantID string, limit int) ([]rankedHit, bool, int, error) {
 	merged := make(map[string]*rankedHit)
 	order := make([]string, 0)
 	embedded := false
-	for queryIndex, query := range queries {
-		vector, err := s.embedQuery(ctx, query, queryIndex == 0)
+
+	search := func(query string, required bool) error {
+		vector, err := s.embedQuery(ctx, query, required)
 		if err != nil {
-			return nil, false, err
+			return err
 		}
 		if len(vector) > 0 {
 			embedded = true
 		}
 		hits, err := s.repo.HybridSearch(ctx, query, vector, tenantID, limit, s.minSimilarity)
 		if err != nil {
-			return nil, false, err
+			return err
 		}
 		for rank, hit := range hits {
 			key := fmt.Sprintf("%d|%s|%s", hit.SourceVersionID, hit.Heading, hit.Content)
@@ -249,13 +308,49 @@ func (s *Service) multiQuerySearch(ctx context.Context, queries []string, tenant
 				entry.hit.Score = hit.Score
 			}
 		}
+		return nil
 	}
+
+	// The primary query is mandatory and fail-closed: its embedding failure is
+	// a retrieval failure, not a degraded result.
+	primaryStarted := time.Now()
+	if err := search(queryText, true); err != nil {
+		return nil, false, 0, err
+	}
+	// Size the next-variant requirement from the primary search's measured
+	// cost (plus a margin) instead of a fixed guess: when the embedding
+	// provider is slow, starting a variant would cross the caller's deadline
+	// and turn a working retrieval into a tool error.
+	variantNeeds := variantMinBudget
+	if elapsed := time.Since(primaryStarted); elapsed > variantNeeds {
+		variantNeeds = elapsed + elapsed/5
+	}
+
+	variantsUsed := 0
+	for _, variant := range collectVariants(ctx, queryText, variants) {
+		if !hasRetrievalBudget(ctx, variantNeeds) {
+			// The caller (the Code Mode sandbox for tool calls) enforces a
+			// hard deadline; starting another search would fail it and turn
+			// a partially successful retrieval into a tool error.
+			s.logger.Warn("rewrite variants skipped: retrieval budget exhausted", "variants_used", variantsUsed)
+			break
+		}
+		if err := search(variant, false); err != nil {
+			if ctx.Err() != nil {
+				return nil, false, variantsUsed, err
+			}
+			s.logger.Warn("rewrite variant search failed; skipping", "err", err)
+			continue
+		}
+		variantsUsed++
+	}
+
 	ranked := make([]rankedHit, 0, len(order))
 	for _, key := range order {
 		ranked = append(ranked, *merged[key])
 	}
 	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].rrf > ranked[j].rrf })
-	return ranked, embedded, nil
+	return ranked, embedded, variantsUsed, nil
 }
 
 // embedQuery embeds one query. required controls fail-closed behavior for the

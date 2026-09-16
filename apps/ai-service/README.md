@@ -48,7 +48,12 @@ enabled with `AI_RAG_RERANKER_BASE_URL`, `AI_RAG_RERANKER_API_KEY`, and
 `AI_RAG_RERANKER_MODEL`. Optional multi-query rewrite asks the tenant model for
 up to two additional Vietnamese search queries and fuses the result sets with
 RRF; it is enabled by default and can be disabled with
-`AI_RAG_QUERY_REWRITE=false`.
+`AI_RAG_QUERY_REWRITE=false`. The rewrite is best-effort and runs concurrently
+with the primary query under a bounded budget (1.5s): a slow model degrades
+recall instead of failing the call, and rewrite variants are skipped when the
+request deadline no longer leaves room for an embedding round-trip plus a
+search. Inside the Code Mode sandbox the enclosing 3s tool deadline is what
+bounds the whole retrieval, so the budget is never exceeded on purpose.
 
 The provider must speak the OpenAI-compatible chat-completions SSE protocol.
 AI Settings stores a server-owned provider preset alongside each profile:

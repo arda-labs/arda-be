@@ -175,6 +175,16 @@ Recommendation: set domain API timeouts to **1 500 ms** inside the sandbox
 (vs. 3 000 ms for direct tool calls) so that two sequential domain calls still
 fit within the 3-second budget.
 
+Multi-stage tools that fan out internally (e.g. `arda.knowledge.search`:
+optional LLM query rewrite → embedding round-trip → hybrid search) must bound
+each *optional* stage by the deadline that remains on the request context, not
+by their own generous client timeouts. `knowledge.search` runs its rewrite
+concurrently under a 1.5 s cap and skips rewrite variants once the remaining
+budget no longer covers an embedding round-trip plus a search; the primary
+query stays fail-closed. Without that rule an inner 10 s LLM call silently
+consumes the whole 3 s sandbox budget and every call fails with
+`ai.sandbox_timeout`.
+
 ---
 
 ## 5. Baseline Measurement Plan
