@@ -100,7 +100,7 @@ func runAgentStream(
 	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: input.ThreadID, RunID: input.RunID})
 	stopHeartbeat := startSSEHeartbeat(sse)
 	defer stopHeartbeat()
-	if terminateAgentRunOnContext(ctx, store, scopeRun, input, sse) {
+	if terminateAgentRunOnContext(ctx, store, scopeRun, input, sse, "") {
 		return
 	}
 
@@ -396,7 +396,7 @@ func agentStepsLoop(
 		modelTimer.observe()
 		if ctx.Err() != nil {
 			endText()
-			terminateAgentRunOnContext(ctx, store, scopeRun, input, sse)
+			terminateAgentRunOnContext(ctx, store, scopeRun, input, sse, turnText.String())
 			return
 		}
 		if err != nil {
@@ -594,7 +594,7 @@ func agentStepsLoop(
 			}
 			if ctx.Err() != nil {
 				endText()
-				terminateAgentRunOnContext(ctx, store, scopeRun, input, sse)
+				terminateAgentRunOnContext(ctx, store, scopeRun, input, sse, turnText.String())
 				return
 			}
 		}
@@ -647,6 +647,7 @@ func terminateAgentRunOnContext(
 	run repository.RunContext,
 	input runInput,
 	sse *sseWriter,
+	partial string,
 ) bool {
 	if ctx == nil || ctx.Err() == nil {
 		return false
@@ -658,6 +659,13 @@ func terminateAgentRunOnContext(
 		code = "ai.run_timeout"
 		status = "FAILED"
 		message = "Run exceeded its time limit."
+	}
+	// Persist whatever the model already streamed so a later turn in the same
+	// thread has the partial answer instead of losing it (ADR-005: a dropped
+	// SSE connection must not erase completed work).
+	if trimmed := strings.TrimSpace(partial); trimmed != "" {
+		sanitized, _ := sanitizeInventedCitations(trimmed, nil)
+		message = sanitized + "\n\n[Ghi chú hệ thống: câu trả lời bị ngắt trước khi hoàn tất.]"
 	}
 	if sse != nil {
 		// RUN_FINISHED with an error is translated to one terminal RUN_ERROR

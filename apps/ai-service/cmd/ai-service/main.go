@@ -22,6 +22,7 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/rewrite"
+	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox"
 	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -245,6 +246,11 @@ func main() {
 			)
 		}
 		routerOptions.ApprovalResolver = catalog.NewExecutionResolver(suite.Registry)
+		if rdb != nil {
+			// Share sandbox results across replicas and restarts; without Redis
+			// the in-process store is the bounded fallback (ADR-005 §2).
+			suite.SetResultStore(sandbox.NewRedisResultStore(rdb, logger))
+		}
 		// The FE-initiated proposal allowlist only covers tools the contract
 		// enables; runtime overrides are re-checked per request.
 		routerOptions.ProposalTools = proposalToolSpecs(suite.Registry.EnabledEntries())

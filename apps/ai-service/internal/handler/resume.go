@@ -192,7 +192,7 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID})
 	stopHeartbeat := startSSEHeartbeat(sse)
 	defer stopHeartbeat()
-	if terminateAgentRunOnContext(ctx, store, exec.Run, resumeInput, sse) {
+	if terminateAgentRunOnContext(ctx, store, exec.Run, resumeInput, sse, "") {
 		return
 	}
 
@@ -397,7 +397,7 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 	sse.event(agentEvent{Type: "RUN_STARTED", ThreadID: resumeInput.ThreadID, RunID: resumeInput.RunID})
 	stopHeartbeat := startSSEHeartbeat(sse)
 	defer stopHeartbeat()
-	if terminateAgentRunOnContext(ctx, store, run, resumeInput, sse) {
+	if terminateAgentRunOnContext(ctx, store, run, resumeInput, sse, "") {
 		return
 	}
 

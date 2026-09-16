@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -58,5 +59,42 @@ func TestBoundedHistoryIgnoresToolRoles(t *testing.T) {
 	}
 	if len(replayed) != 1 || replayed[0].Role != "user" {
 		t.Fatalf("only user/assistant replay, got %+v", replayed)
+	}
+}
+
+// A dropped SSE connection must not lose the partial answer: the streamed text
+// is persisted as the assistant turn so the next message in the thread can
+// continue from it (ADR-005).
+func TestTerminatePersistsPartialAnswer(t *testing.T) {
+	store := &fakeRunStore{}
+	run := repository.RunContext{TenantID: "t1", ActorUserID: "u1", ExternalThread: "th", ExternalRun: "r"}
+	store.started = run
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	terminal := terminateAgentRunOnContext(ctx, store, run, runInput{ThreadID: "th", RunID: "r"}, nil, "Đây là câu trả lời đang viết dở")
+	if !terminal {
+		t.Fatal("expected the cancelled run to be terminalized")
+	}
+	if !strings.Contains(store.finishMessage, "đang viết dở") {
+		t.Fatalf("partial answer must be persisted, got %q", store.finishMessage)
+	}
+	if !strings.Contains(store.finishMessage, "bị ngắt") {
+		t.Fatalf("expected the interruption note, got %q", store.finishMessage)
+	}
+}
+
+func TestTerminateWithoutPartialKeepsStaticMessage(t *testing.T) {
+	store := &fakeRunStore{}
+	run := repository.RunContext{TenantID: "t1", ActorUserID: "u1", ExternalThread: "th", ExternalRun: "r"}
+	store.started = run
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	terminateAgentRunOnContext(ctx, store, run, runInput{ThreadID: "th", RunID: "r"}, nil, "")
+	if !strings.Contains(store.finishMessage, "cancelled") {
+		t.Fatalf("expected the static cancellation message, got %q", store.finishMessage)
 	}
 }

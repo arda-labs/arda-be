@@ -105,7 +105,7 @@ func TestResultStore_PerNamespaceEvictionKeepsOtherRuns(t *testing.T) {
 }
 
 func TestResultStore_NilStore(t *testing.T) {
-	var store *ResultStore
+	var store *MemoryResultStore
 	if id := store.Put("run-1", json.RawMessage(`{"x":1}`), nil); id != "" {
 		t.Errorf("nil store Put should return empty id, got %q", id)
 	}

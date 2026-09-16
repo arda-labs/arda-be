@@ -30,7 +30,7 @@ type CodeModeSuite struct {
 	Catalog        *Index
 	Engine         *sandbox.Engine
 	Registry       *DispatcherRegistry
-	ResultStore    *sandbox.ResultStore
+	ResultStore    sandbox.ResultStore
 	EventPublisher events.Publisher
 	// Governance owns the platform-level enabled/disabled overrides
 	// (ADR-003). Set via SetGovernance before the suite is served; nil means
@@ -46,6 +46,30 @@ func (s *CodeModeSuite) SetEventPublisher(p events.Publisher) {
 	if s != nil {
 		s.EventPublisher = p
 	}
+}
+
+// SetResultStore swaps the sandbox result store, e.g. for the Redis-backed
+// implementation in production so readResult works across replicas and pod
+// restarts (ADR-005 §2). Called at startup, before serving.
+func (s *CodeModeSuite) SetResultStore(store sandbox.ResultStore) {
+	if s != nil && store != nil {
+		s.ResultStore = store
+	}
+}
+
+// resultNamespace scopes stored sandbox results to the conversation rather
+// than a single request, so a resultId from an earlier turn still resolves
+// (ADR-005 §2). Tenant and actor are part of the key, so guessing another
+// user's thread id cannot read their stored output.
+func resultNamespace(scope tools.Context) string {
+	thread := strings.TrimSpace(scope.ExternalThread)
+	if thread == "" {
+		thread = strings.TrimSpace(scope.RequestID)
+	}
+	if thread == "" {
+		thread = "anonymous"
+	}
+	return scope.TenantID + "|" + scope.ActorUserID + "|" + thread
 }
 
 // SetGovernance wires tool governance into the registry (execution + model
@@ -138,7 +162,7 @@ func NewCodeModeSuite(
 		// Raw output stays in the sandbox store; the model gets a bounded
 		// preview plus a resultId to fetch the full data via readResult.
 		rawOutput, _ := json.Marshal(res.Output)
-		resultID := resultStore.Put(scope.RequestID, rawOutput, res.Logs)
+		resultID := suite.ResultStore.Put(resultNamespace(scope), rawOutput, res.Logs)
 
 		out := map[string]any{
 			"durationMs":    res.DurationMs,
@@ -243,7 +267,7 @@ func NewCodeModeSuite(
 	})
 
 	readTool := tools.NewReadResultMetaTool(func(ctx context.Context, scope tools.Context, resultID string) (map[string]any, error) {
-		data, logs, ok := resultStore.Get(scope.RequestID, resultID)
+		data, logs, ok := suite.ResultStore.Get(resultNamespace(scope), resultID)
 		if !ok {
 			return nil, fmt.Errorf("result %q not found or expired", resultID)
 		}

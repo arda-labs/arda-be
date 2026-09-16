@@ -28,8 +28,16 @@ type storedResult struct {
 // the model only receives a summary + resultId in the conversation and can
 // fetch the full data on demand via readResult — the Anthropic/Cloudflare
 // "filesystem as context" pattern instead of truncating data into tool
-// feedback.
-type ResultStore struct {
+// feedback. The in-process store and the Redis-backed store (ADR-005) both
+// implement it.
+type ResultStore interface {
+	Put(namespace string, data json.RawMessage, logs []string) string
+	Get(namespace, resultID string) (json.RawMessage, []string, bool)
+}
+
+// MemoryResultStore is the in-process ResultStore: bounded by entry count and
+// a TTL, and scoped per pod.
+type MemoryResultStore struct {
 	mu              sync.Mutex
 	items           map[string]storedResult
 	seq             atomic.Uint64
@@ -38,9 +46,9 @@ type ResultStore struct {
 	perNamespaceMax int
 }
 
-// NewResultStore returns a bounded, TTL-backed result store.
-func NewResultStore() *ResultStore {
-	return &ResultStore{
+// NewResultStore returns a bounded, TTL-backed in-process store.
+func NewResultStore() *MemoryResultStore {
+	return &MemoryResultStore{
 		items:           make(map[string]storedResult),
 		ttl:             resultStoreTTL,
 		max:             resultStoreMaxEntries,
@@ -48,10 +56,10 @@ func NewResultStore() *ResultStore {
 	}
 }
 
-// Put stores data under namespace (scope.RequestID per run) and returns a
-// short resultId the model can pass to readResult. Evicts expired entries and
+// Put stores data under namespace (the conversation scope per run) and returns
+// a short resultId the model can pass to readResult. Evicts expired entries and
 // enforces the entry cap.
-func (s *ResultStore) Put(namespace string, data json.RawMessage, logs []string) string {
+func (s *MemoryResultStore) Put(namespace string, data json.RawMessage, logs []string) string {
 	if s == nil {
 		return ""
 	}
@@ -106,7 +114,7 @@ func (s *ResultStore) Put(namespace string, data json.RawMessage, logs []string)
 // Get returns the stored result for a resultId produced by Put. The resultId
 // embeds the namespace, so lookups only succeed for the same run/request that
 // created the result — cross-tenant reads are impossible.
-func (s *ResultStore) Get(namespace, resultID string) (json.RawMessage, []string, bool) {
+func (s *MemoryResultStore) Get(namespace, resultID string) (json.RawMessage, []string, bool) {
 	if s == nil || resultID == "" || !hasNamespacePrefix(resultID, namespace) {
 		return nil, nil, false
 	}
@@ -123,7 +131,7 @@ func (s *ResultStore) Get(namespace, resultID string) (json.RawMessage, []string
 	return item.Data, item.Logs, true
 }
 
-func (s *ResultStore) evictLocked() {
+func (s *MemoryResultStore) evictLocked() {
 	for key, item := range s.items {
 		if time.Since(item.CreatedAt) > s.ttl {
 			delete(s.items, key)
