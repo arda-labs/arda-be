@@ -146,7 +146,10 @@ go run ./cmd/ai-eval
 
 It reports source recall, citation coverage, hit counts, latency, and a
 machine-readable per-case result. A strict run exits non-zero when a case
-violates its expected evidence or no-answer policy. The same binary ships in
+violates its expected evidence or no-answer policy. The same binary also runs
+the answer-level evaluation (`-mode=answer` or `AI_EVAL_MODE=answer`, set
+`AI_ANSWER_EVAL_SET`/`AI_ANSWER_EVAL_STRICT`), which drives the full agent and
+scores citations, source keys, keywords and no-answer behaviour. It ships in
 the service image (`/app/ai-eval`) and runs nightly in-cluster via the
 `ai-eval` CronJob in `arda-infra` (LAN-only clusters cannot be reached from
 GitHub-hosted runners); the bundled golden set is a verified copy of
