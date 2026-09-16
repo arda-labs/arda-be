@@ -3,6 +3,7 @@ package reports
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // P2.8b report query builders — parameterised, no free-form SQL (Q8).
@@ -51,20 +52,16 @@ func validateCommon(p Params) error {
 	return nil
 }
 
+// validPeriod reports whether p is a canonical YYYY-MM calendar month.
+// time.Parse rejects month 00 and 13+ ("2026-00", "2026-19"), and the
+// canonical round-trip rejects non-padded input ("2026-1") that time.Parse
+// would otherwise accept.
 func validPeriod(p string) bool {
-	if len(p) != 7 || p[4] != '-' {
+	t, err := time.Parse("2006-01", p)
+	if err != nil {
 		return false
 	}
-	y, m := p[:4], p[5:]
-	for _, ch := range y {
-		if ch < '0' || ch > '9' {
-			return false
-		}
-	}
-	if len(m) != 2 || m[0] < '0' || m[0] > '1' {
-		return false
-	}
-	return true
+	return t.Format("2006-01") == p
 }
 
 // Registry of known query builders. rpt_report_definitions.query_id must
@@ -121,6 +118,13 @@ func KnownQueryIDs() []string {
 // buildLoanPortfolioSummary: outstanding theo debt group (from loan DB —
 // the query runs on the loan database via the loan-service read API or the
 // statistical job runner against the loan DSN; the SQL itself is fixed).
+//
+// The report is a dư nợ snapshot, not a disbursement flow: include ACTIVE
+// agreements disbursed on or before the period end and sum their outstanding
+// balance. Assumption (no balance history in lnm_agreements — it stores only
+// the current outstanding_amt_minor, so an exact as-of-period-end balance is
+// not reconstructable): agreements repaid before the run are excluded via
+// status != 'ACTIVE' even when they were still open at the period end.
 func buildLoanPortfolioSummary(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT debt_group_code,
@@ -129,7 +133,8 @@ SELECT debt_group_code,
 FROM lnm_agreements
 WHERE tenant_id = $1
   AND status = 'ACTIVE'
-  AND date_trunc('month', disburse_date) = date_trunc('month', ($2::date - INTERVAL '1 month'))
+  AND disburse_date IS NOT NULL
+  AND disburse_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')
 GROUP BY debt_group_code
 ORDER BY debt_group_code`
 	return &ReportQuery{
@@ -184,14 +189,26 @@ ORDER BY 1`
 }
 
 // buildLoanDebtClassification (rpt-loan-classification): phân loại nợ theo
-// nhóm, kèm dư nợ, dự phòng và số khoản quá hạn (maturity_date < cuối kỳ).
+// nhóm, kèm dư nợ, dự phòng và số khoản quá hạn thực tế tại thời điểm chạy
+// báo cáo.
+//
+// Assumption: lnm_agreements has no overdue_amt_minor / DPD column (checked
+// all loan-service migrations; the only overdue amount lives on collections),
+// so an agreement counts as overdue once maturity_date has passed:
+// maturity_date < CURRENT_DATE. The previous condition compared against the
+// end of the reporting month, which counted loans whose maturity was still in
+// the future. A true as-of-period-end NPL needs repayment-plan aging
+// (lnm_repay_plans.to_date vs collected amounts) or a DPD snapshot; that view
+// is not exposed to the statistical DB yet. Because the balance/provision
+// columns are also current values, the period_code parameter is intentionally
+// not used by this builder.
 func buildLoanDebtClassification(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT debt_group_code,
        COUNT(*) AS agreement_count,
        SUM(outstanding_amt_minor) AS outstanding_minor,
        SUM(provision_amt_minor) AS provision_minor,
-       SUM(CASE WHEN maturity_date IS NOT NULL AND maturity_date < ($2::date + INTERVAL '1 month') THEN 1 ELSE 0 END) AS overdue_count
+       SUM(CASE WHEN maturity_date IS NOT NULL AND maturity_date < CURRENT_DATE THEN 1 ELSE 0 END) AS overdue_count
 FROM lnm_agreements
 WHERE tenant_id = $1
   AND status = 'ACTIVE'
@@ -200,7 +217,7 @@ ORDER BY debt_group_code`
 	return &ReportQuery{
 		QueryID: QueryLoanDebtClassification,
 		SQL:     sqlText,
-		Args:    []any{p.TenantID, p.PeriodCode + "-01"},
+		Args:    []any{p.TenantID},
 		Columns: []string{"debt_group_code", "agreement_count", "outstanding_minor", "provision_minor", "overdue_count"},
 	}, nil
 }

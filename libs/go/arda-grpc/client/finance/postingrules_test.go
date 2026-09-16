@@ -1,6 +1,7 @@
 package finance
 
 import (
+	"context"
 	"testing"
 
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
@@ -98,7 +99,7 @@ func TestFetchPostingRulesNilClient(t *testing.T) {
 	// A nil client degrades to nil — the caller falls back to its built-in
 	// legs without failing the flow. A dial failure or an unseeded document
 	// type degrades through the error/empty paths of Client.ListPostingRules.
-	if got := FetchPostingRules(nil, "LNM_ACCRUAL"); got != nil {
+	if got := FetchPostingRules(context.Background(), nil, "LNM_ACCRUAL"); got != nil {
 		t.Fatalf("nil client = %+v, want nil", got)
 	}
 }

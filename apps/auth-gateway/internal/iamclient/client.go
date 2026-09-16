@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +13,11 @@ import (
 
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 )
+
+// ErrUserNotFound is returned when IAM reports that a user context does not
+// exist (deleted user or unlinked identity). Callers use it to distinguish a
+// definitive revocation from a transient transport/server failure.
+var ErrUserNotFound = errors.New("iam user not found")
 
 // UserContext mirrors the IAM internal API response.
 type UserContext struct {
@@ -28,6 +34,7 @@ type UserContext struct {
 	Gender                   string             `json:"gender,omitempty"`
 	Address                  string             `json:"address,omitempty"`
 	Country                  string             `json:"country,omitempty"`
+	Status                   string             `json:"status,omitempty"`
 	PictureURL               string             `json:"picture,omitempty"`
 	AvatarFileID             string             `json:"avatarFileId,omitempty"`
 	CoverImageURL            string             `json:"coverImage,omitempty"`
@@ -260,6 +267,9 @@ func (c *Client) doUserContext(req *http.Request) (*UserContext, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: status %d", ErrUserNotFound, resp.StatusCode)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("iam returned status %d", resp.StatusCode)
 	}
@@ -391,15 +401,18 @@ func (c *Client) CheckMFA(ctx context.Context, userID, deviceToken string) (*MFA
 }
 
 func (c *Client) VerifyMFA(ctx context.Context, userID, code string) error {
-	body, err := json.Marshal(map[string]string{"user_id": userID, "code": code})
+	body, err := json.Marshal(map[string]string{"code": code})
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/iam/me/mfa/verify", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/iam/users/"+url.PathEscape(userID)+"/mfa/verify", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if err := c.authorizeInternal(req); err != nil {
+		return err
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {

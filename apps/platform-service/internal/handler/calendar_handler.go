@@ -2,10 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 type CalendarHandler struct {
@@ -37,6 +41,13 @@ func (h *CalendarHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CalendarHandler) TriggerEOD(w http.ResponseWriter, r *http.Request) {
+	// EOD shifts the business date in plt_system_dates, which is global (one
+	// row per branch code, default HEAD_OFFICE) and therefore affects every
+	// tenant. The gateway only grants platform.manage per route, so the
+	// in-service global-admin check is the tenant/global boundary here.
+	if !requireGlobalAdmin(w, r) {
+		return
+	}
 	branchCode := r.URL.Query().Get("branchCode")
 	if branchCode == "" {
 		branchCode = "HEAD_OFFICE"
@@ -44,6 +55,10 @@ func (h *CalendarHandler) TriggerEOD(w http.ResponseWriter, r *http.Request) {
 
 	sd, err := h.service.RunEOD(r.Context(), branchCode)
 	if err != nil {
+		if errors.Is(err, domain.ErrEODInProgress) {
+			ardahttp.WriteProblem(w, r, http.StatusConflict, ardaerrors.New(ardaerrors.CodeConflict, err.Error()))
+			return
+		}
 		writeErrorCode(w, http.StatusBadRequest, "calendar.error.eod_failed", err.Error())
 		return
 	}

@@ -26,6 +26,7 @@ import (
 const assistantPermission = "ai.assistant.use"
 const approvalProposePermission = "ai.approval.propose"
 const approvalExecutePermission = "ai.approval.execute"
+const knowledgeReadPermission = "ai.knowledge.read"
 
 // ragFeedbacker is the RAG feedback surface used by the handler. Narrow
 // interface so the handler never imports the full svcclient package.
@@ -409,6 +410,11 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 		TenantID: scope.TenantID, ActorUserID: scope.ActorUserID,
 		ExternalThread: strings.TrimSpace(input.ThreadID), ExternalRun: strings.TrimSpace(input.RunID),
 	}
+	// Direct tool executions (including the Code Mode `execute` meta-tool) get
+	// the run identity on the scope so any HITL proposal they raise resolves
+	// the owning ai_runs row.
+	scope.ExternalThread = scopeRun.ExternalThread
+	scope.ExternalRun = scopeRun.ExternalRun
 	if store != nil {
 		if err := store.Start(r.Context(), scopeRun, sanitizeTranscript(latestUserMessage(input.Messages))); err != nil {
 			if errors.Is(err, repository.ErrRunAlreadyExists) {
@@ -614,9 +620,10 @@ func createApproval(w http.ResponseWriter, r *http.Request, store runStore, opti
 		problem(w, http.StatusBadRequest, "ai.resource_version_invalid")
 		return
 	}
+	redactedArguments := redactArgumentsJSON(string(argumentData))
 	summaryData, _ := json.Marshal(map[string]any{
 		"action":    spec.Name,
-		"arguments": json.RawMessage(sanitizeTranscript(string(argumentData))),
+		"arguments": json.RawMessage(redactedArguments),
 	})
 	approvalStore, ok := store.(repository.ApprovalStore)
 	if !ok || approvalStore == nil {
@@ -628,7 +635,8 @@ func createApproval(w http.ResponseWriter, r *http.Request, store runStore, opti
 		ToolName:          spec.Name,
 		ToolVersion:       spec.Version,
 		Risk:              spec.Risk,
-		ArgumentsRedacted: sanitizeTranscript(string(argumentData)),
+		ArgumentsRedacted: redactedArguments,
+		Arguments:         string(argumentData),
 		SummaryRedacted:   string(summaryData),
 		ResourceVersion:   resourceVersion,
 		PermissionVersion: strings.TrimSpace(r.Header.Get("X-Auth-Version")),
@@ -643,6 +651,8 @@ func createApproval(w http.ResponseWriter, r *http.Request, store runStore, opti
 			problem(w, http.StatusConflict, "ai.run_not_awaiting_approval")
 		case errors.Is(err, repository.ErrApprovalIdempotencyMatch):
 			problem(w, http.StatusConflict, "ai.idempotency_conflict")
+		case errors.Is(err, repository.ErrApprovalArgumentsInvalid):
+			problem(w, http.StatusBadRequest, "ai.invalid_proposal_arguments")
 		default:
 			problem(w, http.StatusServiceUnavailable, "ai.approval_persistence_unavailable")
 		}
@@ -1061,6 +1071,25 @@ func hasPermission(raw, wanted string) bool {
 	return false
 }
 
+// hasRequestPermission reports whether the gateway-verified request carries a
+// permission in either the tenant scope (X-Permissions) or the global scope
+// (X-Global-Permissions). Global admins bypass individual permission checks,
+// mirroring the auth-gateway policy engine (bff_handler: IsGlobalAdmin skips
+// route permissions) while still requiring the X-Auth-Checked identity
+// headers. The "superadmin" sentinel is treated as a wildcard by hasPermission.
+func hasRequestPermission(r *http.Request, wanted string) bool {
+	if r == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Global-Admin")), "true") {
+		return true
+	}
+	if hasPermission(r.Header.Get("X-Permissions"), wanted) {
+		return true
+	}
+	return hasPermission(r.Header.Get("X-Global-Permissions"), wanted)
+}
+
 func permissionSet(raw string) map[string]struct{} {
 	permissions := make(map[string]struct{})
 	for _, value := range strings.Split(raw, ",") {
@@ -1127,11 +1156,82 @@ func sanitizeTranscript(value string) string {
 	return truncateRunes(value, 16*1024)
 }
 
+// redactArgumentsJSON builds the display/audit copy of tool arguments. It is
+// JSON-aware: redaction rewrites string values (never raw text) so the result
+// always parses, and an oversized payload degrades to a bounded marker object
+// instead of a truncated fragment. The executable payload is stored separately
+// (encrypted) — this copy must never be handed back to a tool.
+func redactArgumentsJSON(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "{}"
+	}
+	var value any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		// The repository rejects such a proposal before persistence; keep the
+		// audit column valid for callers that still want the marker.
+		fallback, marshalErr := json.Marshal(map[string]any{
+			"redacted":    sanitizeTranscript(raw),
+			"invalidJson": true,
+		})
+		if marshalErr != nil {
+			return `{"redacted":true}`
+		}
+		return string(fallback)
+	}
+	redacted, err := json.Marshal(redactJSONSecrets(value, 0))
+	if err != nil {
+		return `{"redacted":true}`
+	}
+	if len(redacted) <= 16*1024 {
+		return string(redacted)
+	}
+	// 4 KiB of JSON text escapes to at most ~8 KiB, so the marker itself
+	// stays under the 16 KiB audit bound.
+	bounded, err := json.Marshal(map[string]any{
+		"truncated": true,
+		"bytes":     len(redacted),
+		"preview":   truncateRunes(string(redacted), 4*1024),
+	})
+	if err != nil {
+		return `{"truncated":true}`
+	}
+	if len(bounded) > 16*1024 {
+		return `{"truncated":true}`
+	}
+	return string(bounded)
+}
+
+// redactJSONSecrets walks decoded JSON and redacts secret-looking string
+// values in place. Depth is bounded so a hostile payload cannot force deep
+// recursion.
+func redactJSONSecrets(value any, depth int) any {
+	if depth > 32 {
+		return "[REDACTED]"
+	}
+	switch item := value.(type) {
+	case string:
+		return sanitizeTranscript(item)
+	case []any:
+		for index := range item {
+			item[index] = redactJSONSecrets(item[index], depth+1)
+		}
+		return item
+	case map[string]any:
+		for key, entry := range item {
+			item[key] = redactJSONSecrets(entry, depth+1)
+		}
+		return item
+	default:
+		return value
+	}
+}
+
 func redactToolArguments(arguments json.RawMessage) string {
 	if len(arguments) == 0 {
 		return `{}`
 	}
-	return sanitizeTranscript(string(arguments))
+	return redactArgumentsJSON(string(arguments))
 }
 
 func toolErrorCode(err error) string {

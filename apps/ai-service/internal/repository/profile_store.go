@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -92,7 +93,11 @@ func (s *SQLRunStore) profileByID(ctx context.Context, tenantID, profileID strin
 		}
 		return nil, fmt.Errorf("query model profile: %w", err)
 	}
-	p.APIKey = s.decryptSecret(rawAPIKey)
+	p.APIKey, err = s.decryptSecret(rawAPIKey)
+	if err != nil {
+		slog.Error("decrypt model profile api key failed", "tenant_id", tenantID, "profile_id", profileID, "err", err)
+		return nil, fmt.Errorf("decrypt model profile api key: %w", err)
+	}
 
 	models, err := s.profileModels(ctx, p.ID)
 	if err != nil {
@@ -147,7 +152,12 @@ func (s *SQLRunStore) ListProfiles(ctx context.Context, tenantID string) ([]AIMo
 		if err := rows.Scan(&p.ID, &p.TenantID, &p.Name, &p.BaseURL, &rawAPIKey, &p.IsActive, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
-		p.APIKey = s.decryptSecret(rawAPIKey)
+		apiKey, decryptErr := s.decryptSecret(rawAPIKey)
+		if decryptErr != nil {
+			slog.Error("decrypt model profile api key failed", "tenant_id", tenantID, "profile_id", p.ID, "err", decryptErr)
+			return nil, fmt.Errorf("decrypt model profile api key: %w", decryptErr)
+		}
+		p.APIKey = apiKey
 		profiles = append(profiles, p)
 	}
 	if err := rows.Err(); err != nil {

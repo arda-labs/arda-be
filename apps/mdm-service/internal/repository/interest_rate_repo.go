@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/mdm-service/internal/domain"
 )
@@ -79,7 +80,7 @@ func (r *InterestRateRepository) Update(ctx context.Context, item domain.Interes
 	row := r.db.QueryRowContext(ctx, fmt.Sprintf(`
 		UPDATE mdm_interest_rates
 		SET code = $3, name = $4, rate_type = $5, apply_type = $6, currency_code = $7, description = $8, is_active = $9, updated_at = now()
-		WHERE id = $1 AND (tenant_id IS NULL OR tenant_id = $2)
+		WHERE id = $1 AND tenant_id = $2
 		RETURNING %s`, rateColumns),
 		item.ID, item.TenantID, item.Code, item.Name, item.RateType, item.ApplyType, item.CurrencyCode, item.Description, item.IsActive)
 	updated, err := scanRate(row)
@@ -90,20 +91,34 @@ func (r *InterestRateRepository) Update(ctx context.Context, item domain.Interes
 }
 
 func (r *InterestRateRepository) Delete(ctx context.Context, tenantID, id string) error {
-	// Tiers are owned by the rate header; remove them first so no orphan
-	// validity windows survive a header delete.
-	if _, err := r.db.ExecContext(ctx, `DELETE FROM mdm_interest_rate_tiers WHERE rate_id = $1`, id); err != nil {
-		return err
+	if strings.TrimSpace(tenantID) == "" {
+		return fmt.Errorf("%w", ErrNotFound)
 	}
-	res, err := r.db.ExecContext(ctx,
-		`DELETE FROM mdm_interest_rates WHERE id = $1 AND (tenant_id IS NULL OR tenant_id = $2)`, id, tenantID)
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
+	defer tx.Rollback()
+
+	// Only tenant-owned rates are deletable; verify ownership before touching
+	// the tiers so another tenant's validity windows can never be wiped.
+	var owner string
+	err = tx.QueryRowContext(ctx,
+		`SELECT COALESCE(tenant_id, '') FROM mdm_interest_rates WHERE id = $1 FOR UPDATE`, id).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) || owner != tenantID {
 		return fmt.Errorf("%w", ErrNotFound)
 	}
-	return nil
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM mdm_interest_rate_tiers WHERE rate_id = $1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM mdm_interest_rates WHERE id = $1 AND tenant_id = $2`, id, tenantID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 const tierColumns = `id, rate_id, effective_from::text, effective_to::text, amount_from_minor, amount_to_minor, rate_value, min_rate, max_rate, decision_no, decision_date::text, created_at, updated_at`

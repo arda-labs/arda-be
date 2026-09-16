@@ -38,7 +38,10 @@ func (h *AuditHandler) Query(w http.ResponseWriter, r *http.Request) {
 	eventTypes := r.URL.Query()["event_type"]
 	subject := r.URL.Query().Get("subject")
 	result := r.URL.Query().Get("result")
-	tenantID := firstNonEmpty(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId"))
+	tenantID, ok := resolveAdminReadTenant(w, r)
+	if !ok {
+		return
+	}
 	sort := firstNonEmpty(listQuery.Sort, r.URL.Query().Get("sort"))
 
 	var from, to time.Time
@@ -82,7 +85,10 @@ func (h *AuditHandler) ExportAudit(w http.ResponseWriter, r *http.Request) {
 	eventTypes := r.URL.Query()["event_type"]
 	subject := r.URL.Query().Get("subject")
 	result := r.URL.Query().Get("result")
-	tenantID := firstNonEmpty(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId"))
+	tenantID, ok := resolveAdminReadTenant(w, r)
+	if !ok {
+		return
+	}
 	sort := firstNonEmpty(listQuery.Sort, r.URL.Query().Get("sort"))
 	formatStr := r.URL.Query().Get("format")
 
@@ -182,6 +188,11 @@ func (h *AuditHandler) ExportAudit(w http.ResponseWriter, r *http.Request) {
 // Stats returns audit statistics.
 // GET /api/admin/audit/stats
 func (h *AuditHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := resolveAdminReadTenant(w, r)
+	if !ok {
+		return
+	}
+
 	now := time.Now()
 	fromStr := r.URL.Query().Get("from")
 	toStr := r.URL.Query().Get("to")
@@ -200,7 +211,7 @@ func (h *AuditHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stats, err := h.svc.Stats(r.Context(), from, to)
+	stats, err := h.svc.Stats(r.Context(), tenantID, from, to)
 	if err != nil {
 		respondAdminError(w, r, http.StatusInternalServerError, err.Error())
 		return
@@ -212,6 +223,11 @@ func (h *AuditHandler) Stats(w http.ResponseWriter, r *http.Request) {
 // Verify checks hash chain integrity.
 // GET /api/admin/audit/verify
 func (h *AuditHandler) Verify(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := resolveAdminReadTenant(w, r)
+	if !ok {
+		return
+	}
+
 	now := time.Now()
 	fromStr := r.URL.Query().Get("from")
 	toStr := r.URL.Query().Get("to")
@@ -230,7 +246,7 @@ func (h *AuditHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.svc.VerifyChain(r.Context(), from, to)
+	result, err := h.svc.VerifyChain(r.Context(), tenantID, from, to)
 	if err != nil {
 		respondAdminError(w, r, http.StatusInternalServerError, err.Error())
 		return

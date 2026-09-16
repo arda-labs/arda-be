@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/libs/go/arda-grpc/client/retry"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
@@ -66,6 +67,14 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 	conn, err := grpc.NewClient(
 		addr,
 		grpc.WithTransportCredentials(transportCreds),
+		// Only read-only RPCs are retried; Update/Settle/Resolve writes are
+		// never replayed.
+		retry.ReadOnly("arda.loan.v1.LoanCommandService",
+			"GetContract", "GetOperationMetrics",
+			"CheckFormation", "CheckAdjustment", "CheckDisbursement",
+			"GetDisbursementPostingDetail", "CheckCollection",
+			"GetCollectionPostingDetail", "GetBatchPostingDetail", "CheckBatch",
+			"CheckGeneralProvision", "CheckSpecificProvision"),
 		grpc.WithChainUnaryInterceptor(
 			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
 			interceptors.UnaryClientServiceAuth(secret, sourceService, "loan-service"),
@@ -240,7 +249,6 @@ func (c *Client) ResolveDisbursement(ctx context.Context, disbursementID, decisi
 	})
 	return err
 }
-
 
 // CheckCollection validates the collection is actionable (BPMN validate).
 func (c *Client) CheckCollection(ctx context.Context, collectionID string) (bool, string, error) {

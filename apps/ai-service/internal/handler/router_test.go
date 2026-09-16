@@ -15,9 +15,10 @@ import (
 )
 
 type fakeRunStore struct {
-	started  repository.RunContext
-	message  string
-	finished bool
+	started       repository.RunContext
+	message       string
+	finishMessage string
+	finished      bool
 }
 
 func (s *fakeRunStore) Start(_ context.Context, run repository.RunContext, message string) error {
@@ -26,17 +27,19 @@ func (s *fakeRunStore) Start(_ context.Context, run repository.RunContext, messa
 	return nil
 }
 
-func (s *fakeRunStore) Finish(_ context.Context, run repository.RunContext, _ string, _ string) error {
+func (s *fakeRunStore) Finish(_ context.Context, run repository.RunContext, message, _ string) error {
 	s.finished = run == s.started
+	s.finishMessage = message
 	return nil
 }
 
 type fakeToolRunStore struct {
 	fakeRunStore
-	toolStarted     bool
-	toolFinished    bool
-	approvalCreated bool
-	approvalDecided bool
+	toolStarted      bool
+	toolFinished     bool
+	approvalCreated  bool
+	approvalDecided  bool
+	approvalProposal repository.ApprovalProposal
 }
 
 func (s *fakeToolRunStore) StartTool(_ context.Context, _ repository.RunContext, _ string, _ int, _, _, _ string) (string, error) {
@@ -49,8 +52,9 @@ func (s *fakeToolRunStore) FinishTool(_ context.Context, _, _, _, _ string) erro
 	return nil
 }
 
-func (s *fakeToolRunStore) CreateApprovalProposal(_ context.Context, _ repository.ApprovalProposal) (repository.ApprovalRecord, error) {
+func (s *fakeToolRunStore) CreateApprovalProposal(_ context.Context, proposal repository.ApprovalProposal) (repository.ApprovalRecord, error) {
 	s.approvalCreated = true
+	s.approvalProposal = proposal
 	return repository.ApprovalRecord{ID: "approval-1", Status: "PENDING", ExpiresAt: time.Now().UTC().Add(time.Minute)}, nil
 }
 

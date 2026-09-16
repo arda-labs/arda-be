@@ -42,6 +42,63 @@ func (r *CalendarRepository) GetSystemDate(ctx context.Context, branchCode strin
 	return &sd, nil
 }
 
+// ClaimEOD atomically moves a branch into EOD_PROCESSING and returns the
+// claimed row. The conditional UPDATE plus RowsAffected is the concurrency
+// gate: only one caller can transition a row out of a non-processing status,
+// so two parallel triggers can never both pass and advance the business date
+// twice (the previous GetSystemDate -> check -> UpdateSystemDate sequence
+// could). A rejected claim reports whether the row is missing or already
+// processing.
+func (r *CalendarRepository) ClaimEOD(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE plt_system_dates
+		SET status = $2,
+		    updated_at = now()
+		WHERE branch_code = $1
+		  AND status <> $2`, branchCode, domain.SystemDateEODProcessing)
+	if err != nil {
+		return nil, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		// No row matched: either the branch has no system date row or another
+		// EOD run already claimed it. Read once to tell the caller which one.
+		current, getErr := r.GetSystemDate(ctx, branchCode)
+		if getErr != nil {
+			return nil, getErr
+		}
+		if current == nil {
+			return nil, domain.ErrSystemDateNotFound
+		}
+		return nil, domain.ErrEODInProgress
+	}
+	sd, err := r.GetSystemDate(ctx, branchCode)
+	if err != nil {
+		return nil, err
+	}
+	if sd == nil {
+		return nil, domain.ErrSystemDateNotFound
+	}
+	return sd, nil
+}
+
+// ReleaseEOD clears the EOD_PROCESSING gate without touching business dates,
+// so a failed job or DB error can never leave the branch stuck in
+// EOD_PROCESSING. The status predicate keeps the release idempotent and
+// harmless when the final transition already committed.
+func (r *CalendarRepository) ReleaseEOD(ctx context.Context, branchCode string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE plt_system_dates
+		SET status = $2,
+		    updated_at = now()
+		WHERE branch_code = $1
+		  AND status = $3`, branchCode, domain.SystemDateOpen, domain.SystemDateEODProcessing)
+	return err
+}
+
 func (r *CalendarRepository) UpdateSystemDate(ctx context.Context, sd *domain.SystemDate) error {
 	query := `
 		UPDATE plt_system_dates

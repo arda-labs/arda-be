@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -185,7 +186,7 @@ func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, a
 		if savings.AccruedMinor > 0 {
 			entryID, err = s.postSettlementV3(ctx, tenantID, savings)
 		} else {
-			entryID, err = s.post(ctx, tenantID, "DPM_SETTLEMENT", "DPM_SETTLEMENT", idempotencyKey("dpm-settlement", savingsCode),
+			entryID, err = s.post(ctx, tenantID, "DPM_SETTLEMENT", "DPM_SETTLEMENT", settlementIdempotencyKey(savingsCode),
 				savings.SavingsCode, savings.CustomerCode, todayDep(ctx), savings.CurrencyCode, payoutMinor,
 				"DPM_DEPOSIT_LIABILITY", "CASH_SETTLEMENT_ACCOUNT")
 		}
@@ -194,6 +195,9 @@ func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, a
 		}
 	}
 	if err := s.repo.CloseSavings(ctx, tenantID, savings.ID, entryID, actor); err != nil {
+		if errors.Is(err, repository.ErrSavingsNotActive) {
+			return nil, ardaerrors.New(ardaerrors.CodeConflict, "savings is no longer ACTIVE — settlement already applied")
+		}
 		return nil, mapErr(err)
 	}
 	return savings, nil
@@ -210,7 +214,7 @@ func (s *SettlementService) postSettlementV3(ctx context.Context, tenantID strin
 	}
 	payout := savings.PrincipalMinor + savings.AccruedMinor
 	resp, err := s.finance.Post(ctx, &financev1.PostingRequest{
-		IdempotencyKey: idempotencyKey("dpm-settlement", savings.SavingsCode),
+		IdempotencyKey: settlementIdempotencyKey(savings.SavingsCode),
 		AccountingDate: todayDep(ctx),
 		CurrencyCode:   savings.CurrencyCode,
 		Description:    "DPM_SETTLEMENT_V3 " + savings.SavingsCode,
@@ -220,7 +224,7 @@ func (s *SettlementService) postSettlementV3(ctx context.Context, tenantID strin
 			DocumentCode: savings.SavingsCode,
 		},
 		Lines: financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(s.finance, "DPM_SETTLEMENT_V3"),
+			financeclient.FetchPostingRules(ctx, s.finance, "DPM_SETTLEMENT_V3"),
 			[]financeclient.PostingLeg{
 				{CardLine: 1, Fallback: "DPM_DEPOSIT_LIABILITY", Direction: "DEBIT", AmountMinor: savings.PrincipalMinor, Analytics: analytics()},
 				{CardLine: 2, Fallback: "DPM_INTEREST_PAYABLE", Direction: "DEBIT", AmountMinor: savings.AccruedMinor, Analytics: analytics()},
@@ -255,7 +259,7 @@ func (s *SettlementService) post(ctx context.Context, tenantID, refType, cardTyp
 			DocumentCode: savingsCode,
 		},
 		Lines: financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(s.finance, cardType),
+			financeclient.FetchPostingRules(ctx, s.finance, cardType),
 			[]financeclient.PostingLeg{
 				{CardLine: 1, Fallback: debitFallback, Direction: "DEBIT", AmountMinor: amountMinor, Analytics: analytics()},
 				{CardLine: 2, Fallback: creditFallback, Direction: "CREDIT", AmountMinor: amountMinor, Analytics: analytics()},
@@ -270,8 +274,17 @@ func (s *SettlementService) post(ctx context.Context, tenantID, refType, cardTyp
 	return resp.GetJournalEntryId(), nil
 }
 
-// idempotencyKey returns "<prefix>-<code>-<random>" so distinct submissions
-// never replay each other; the random suffix is the uniqueness component.
+// settlementIdempotencyKey is deterministic per savings account: a retried or
+// duplicated settlement case must replay the same journal entry instead of
+// paying the account out twice.
+func settlementIdempotencyKey(savingsCode string) string {
+	return "dpm-settlement-" + strings.TrimSpace(savingsCode)
+}
+
+// idempotencyKey returns "<prefix>-<code>-<random>" for flows where every
+// accepted submission is a distinct movement (additional deposit, product
+// request). Settlement/posting keys that must be replay-safe use a
+// deterministic key instead.
 func idempotencyKey(prefix, code string) string {
 	buf := make([]byte, 8)
 	if _, err := rand.Read(buf); err != nil {

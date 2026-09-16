@@ -1,12 +1,25 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 // SystemDate status types.
 const (
 	SystemDateOpen          = "OPEN"
 	SystemDateEODProcessing = "EOD_PROCESSING"
 	SystemDateClosed        = "CLOSED"
+)
+
+// Business-date claim errors. They live in the domain so the repository
+// (conditional UPDATE + rows-affected) and the HTTP layer can classify the
+// same failure without importing each other.
+var (
+	// ErrSystemDateNotFound means plt_system_dates has no row for the branch.
+	ErrSystemDateNotFound = errors.New("system date config not found")
+	// ErrEODInProgress means another EOD run already holds EOD_PROCESSING.
+	ErrEODInProgress = errors.New("EOD process is already in progress")
 )
 
 // SystemDate tracks the business calendar state.

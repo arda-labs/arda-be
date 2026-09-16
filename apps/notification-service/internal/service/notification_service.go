@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
+	"github.com/arda-labs/arda/apps/notification-service/internal/netguard"
 	"github.com/arda-labs/arda/apps/notification-service/internal/push"
 	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
 )
@@ -24,6 +25,7 @@ var (
 	ErrTenantScopeRequired     = errors.New("tenant scope is required")
 	ErrTenantMigrationRequired = errors.New("tenant migration is required")
 	ErrUserContextRequired     = errors.New("authenticated user context is required")
+	ErrPushEndpointOwned       = errors.New("push endpoint is already registered to another account")
 )
 
 func NewNotificationService(repo *repository.NotificationRepository, pushSender *push.Sender) *NotificationService {
@@ -173,7 +175,7 @@ func (s *NotificationService) dispatchWebPush(ctx context.Context, in AcceptInpu
 			})
 			if err != nil {
 				slog.Warn("web push send failed", "userId", item.UserID, "err", err)
-				_ = s.repo.DeletePushSubscriptionByEndpoint(ctx, item.TenantID, sub.Endpoint)
+				_ = s.repo.DeletePushSubscriptionByEndpoint(ctx, item.TenantID, item.UserID, sub.Endpoint)
 			}
 		}
 	}
@@ -240,7 +242,10 @@ func (s *NotificationService) SubscribePush(ctx context.Context, tenantID, userI
 	if endpoint == "" || p256dh == "" || auth == "" {
 		return errors.New("endpoint and keys are required")
 	}
-	return s.repo.UpsertPushSubscription(ctx, repository.PushSubscription{
+	if err := push.ValidateEndpoint(endpoint); err != nil {
+		return fmt.Errorf("invalid push endpoint: %w", err)
+	}
+	err := s.repo.UpsertPushSubscription(ctx, repository.PushSubscription{
 		TenantID:  tenantID,
 		UserID:    userID,
 		Endpoint:  endpoint,
@@ -248,6 +253,10 @@ func (s *NotificationService) SubscribePush(ctx context.Context, tenantID, userI
 		Auth:      auth,
 		UserAgent: strings.TrimSpace(userAgent),
 	})
+	if errors.Is(err, repository.ErrPushSubscriptionOwnedByAnotherUser) {
+		return ErrPushEndpointOwned
+	}
+	return err
 }
 
 func (s *NotificationService) UnsubscribePush(ctx context.Context, tenantID, userID, endpoint string) error {
@@ -451,13 +460,23 @@ func (s *NotificationService) UpsertSender(ctx context.Context, tenantID, actor 
 	if tenantID == "" {
 		return nil, ErrTenantScopeRequired
 	}
+	in.Host = strings.TrimSpace(in.Host)
 	if in.Host == "" || in.FromAddress == "" {
 		return nil, errors.New("host and from_address are required")
+	}
+	// A tenant-supplied SMTP host is dialled by the delivery worker, so it must
+	// be a public destination (no loopback, private, link-local, CGNAT or
+	// intranet/metadata host).
+	if err := netguard.ValidateHost(in.Host); err != nil {
+		return nil, fmt.Errorf("sender host is not allowed: %w", err)
 	}
 	in.TenantID = tenantID
 	if in.Channel == "" {
 		in.Channel = "email"
 	}
+	// SMTP delivery always requires STARTTLS (see internal/mailer); persist the
+	// flag as enabled so the stored config matches the enforced behaviour.
+	in.UseTLS = true
 	created, err := s.repo.UpsertSender(ctx, in)
 	if err != nil {
 		return nil, errors.New("could not save the sender config")

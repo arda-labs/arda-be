@@ -98,7 +98,7 @@ func (s *AccrualService) RunDaily(ctx context.Context, tenantID, toDate, actor s
 		// leg keep the accrual scope (debt group / org / contract /
 		// agreement) and the classification is stamped from the card.
 		lines := financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(s.finance, "LNM_ACCRUAL"),
+			financeclient.FetchPostingRules(ctx, s.finance, "LNM_ACCRUAL"),
 			[]financeclient.PostingLeg{
 				{
 					CardLine:    1,

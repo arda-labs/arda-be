@@ -11,6 +11,11 @@ type MFASettings struct {
 	EnrolledAt *time.Time
 	LastUsedAt *time.Time
 	UpdatedAt  time.Time
+
+	// FailedAttempts/LockedUntil throttle online guessing of TOTP and
+	// backup codes. They are reset on a successful verification.
+	FailedAttempts int
+	LockedUntil    *time.Time
 }
 
 // MFABackupCode stores a one-time backup code hash.

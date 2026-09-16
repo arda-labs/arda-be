@@ -25,6 +25,11 @@ var (
 	// whose status left the DRAFT/PENDING window between the service guard
 	// read and the guarded UPDATE (race backstop).
 	ErrContractNotEditable = errors.New("lnm: contract not editable")
+	// ErrAdjustmentNotPending marks a workflow decision against an adjustment
+	// that is not in PENDING anymore: either already resolved (target status
+	// reached — the repository reports that as an idempotent no-op instead)
+	// or still in a pre-submit state.
+	ErrAdjustmentNotPending = errors.New("lnm: adjustment is not pending")
 )
 
 // NewID generates a prefixed random-hex identifier.
@@ -42,6 +47,16 @@ type LoanRepository struct {
 
 func NewLoanRepository(db *sql.DB) *LoanRepository {
 	return &LoanRepository{db: db}
+}
+
+// repoTX is the query surface shared by *sql.DB and *sql.Tx. Repository
+// helpers take it so a caller can keep a state transition and its side
+// effects in a single transaction (adjustment resolve) instead of the
+// default "each helper opens its own tx" shape.
+type repoTX interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 func mapNoRows(err error) error {
@@ -304,7 +319,13 @@ func (r *LoanRepository) GetAgreement(ctx context.Context, tenantID, id string) 
 }
 
 func (r *LoanRepository) GetAgreementByCode(ctx context.Context, tenantID, agreementCode string) (domain.Agreement, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT `+agreementColumns+` FROM lnm_agreements WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode)
+	return getAgreementByCode(ctx, r.db, tenantID, agreementCode)
+}
+
+// getAgreementByCode reads one agreement through any query surface so
+// callers can stay inside their own transaction.
+func getAgreementByCode(ctx context.Context, q repoTX, tenantID, agreementCode string) (domain.Agreement, error) {
+	row := q.QueryRowContext(ctx, `SELECT `+agreementColumns+` FROM lnm_agreements WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode)
 	item, err := scanAgreement(row)
 	return item, mapNoRows(err)
 }
@@ -339,12 +360,16 @@ func (r *LoanRepository) CreateAgreement(ctx context.Context, a *domain.Agreemen
 // ── Repay plans ──
 
 func (r *LoanRepository) ListRepayPlans(ctx context.Context, tenantID, contractCode, agreementCode string) ([]domain.RepayPlan, error) {
+	// Only the active version is exposed: a restructure retires the previous
+	// schedule (is_active = FALSE) instead of deleting it, so collected
+	// history survives in the table while the working schedule stays clean.
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, plan_no, term_no, from_date::text, to_date::text,
 		       interest_rate, plan_principal_amt_minor, plan_interest_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor,
 		       is_active, created_at, updated_at
 		FROM lnm_repay_plans
-		WHERE tenant_id = $1 AND ($2 = '' OR contract_code = $2) AND ($3 = '' OR agreement_code = $3)
+		WHERE tenant_id = $1 AND is_active
+		  AND ($2 = '' OR contract_code = $2) AND ($3 = '' OR agreement_code = $3)
 		ORDER BY agreement_code NULLS LAST, term_no`, tenantID, contractCode, agreementCode)
 	if err != nil {
 		return nil, err
@@ -363,16 +388,33 @@ func (r *LoanRepository) ListRepayPlans(ctx context.Context, tenantID, contractC
 	return items, rows.Err()
 }
 
-// ReplaceRepayPlans rewrites the active schedule for one agreement
-// (restructure / plan generation semantics — mirrors EPAS plan regeneration).
+// ReplaceRepayPlans publishes a new active schedule version for one
+// agreement (restructure / plan generation semantics — mirrors EPAS plan
+// regeneration). The previous version is retired with is_active = FALSE, it
+// is never deleted: its coln_* snapshot is the record of what was already
+// collected, and dropping it would make the system believe the customer
+// never paid. The new rows are the only ones readers select (is_active), and
+// their totals are computed from the agreement's current outstanding balance,
+// so the collected amounts are not double-counted either.
 func (r *LoanRepository) ReplaceRepayPlans(ctx context.Context, tenantID, agreementCode string, plans []domain.RepayPlan) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM lnm_repay_plans WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode); err != nil {
+	if err := replaceRepayPlansTx(ctx, tx, tenantID, agreementCode, plans); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// replaceRepayPlansTx retires the current active version and inserts the new
+// one through the caller's query surface, so a restructure decision can do
+// the agreement update and the schedule version swap atomically.
+func replaceRepayPlansTx(ctx context.Context, q repoTX, tenantID, agreementCode string, plans []domain.RepayPlan) error {
+	if _, err := q.ExecContext(ctx, `
+		UPDATE lnm_repay_plans SET is_active = FALSE, updated_at = now()
+		WHERE tenant_id = $1 AND agreement_code = $2 AND is_active`, tenantID, agreementCode); err != nil {
 		return err
 	}
 	for i := range plans {
@@ -380,7 +422,10 @@ func (r *LoanRepository) ReplaceRepayPlans(ctx context.Context, tenantID, agreem
 		if p.ID == "" {
 			p.ID = NewID("plan")
 		}
-		if _, err := tx.ExecContext(ctx, `
+		if p.AgreementCode == "" {
+			p.AgreementCode = agreementCode
+		}
+		if _, err := q.ExecContext(ctx, `
 			INSERT INTO lnm_repay_plans (id, tenant_id, contract_code, agreement_code, plan_no, term_no,
 				from_date, to_date, interest_rate, plan_principal_amt_minor, plan_interest_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor, is_active)
 			VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,$11,$12,$13,TRUE)`,
@@ -390,7 +435,7 @@ func (r *LoanRepository) ReplaceRepayPlans(ctx context.Context, tenantID, agreem
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // ── Mortgages / collaterals ──
@@ -614,7 +659,12 @@ func (r *LoanRepository) ListAdjustments(ctx context.Context, table, tenantID, c
 }
 
 func (r *LoanRepository) GetAdjustment(ctx context.Context, table, tenantID, id string) (domain.Adjustment, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT `+adjustmentColumns+` FROM `+table+` WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	return getAdjustment(ctx, r.db, table, tenantID, id)
+}
+
+// getAdjustment reads one adjustment row through any query surface.
+func getAdjustment(ctx context.Context, q repoTX, table, tenantID, id string) (domain.Adjustment, error) {
+	row := q.QueryRowContext(ctx, `SELECT `+adjustmentColumns+` FROM `+table+` WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	item, err := scanAdjustment(row)
 	return item, mapNoRows(err)
 }
@@ -645,38 +695,95 @@ func (r *LoanRepository) SetAdjustmentWorkflowCase(ctx context.Context, table, t
 	return nil
 }
 
-// ResolveAdjustment applies a workflow decision. Approving a debt-change or
-// rate-change also applies the side effect onto the target agreement — the
-// two flows whose outcome is a plain field update.
-func (r *LoanRepository) ResolveAdjustment(ctx context.Context, table, tenantID, id, decision, decidedBy, note string) (domain.Adjustment, error) {
-	status := decision
+// resolveDecisionStatus maps a workflow decision onto the adjustment's
+// target status — one source of truth for the guarded transition and the
+// idempotent-replay check.
+func resolveDecisionStatus(decision string) (string, error) {
 	switch strings.ToUpper(decision) {
 	case "APPROVE":
-		status = domain.AdjustmentActive
+		return domain.AdjustmentActive, nil
 	case "REJECT":
-		status = domain.AdjustmentRejected
+		return domain.AdjustmentRejected, nil
 	case "CANCEL":
-		status = domain.AdjustmentCancelled
+		return domain.AdjustmentCancelled, nil
 	default:
-		return domain.Adjustment{}, fmt.Errorf("unknown decision %q", decision)
+		return "", fmt.Errorf("unknown decision %q", decision)
 	}
-	row := r.db.QueryRowContext(ctx, `
-		UPDATE `+table+` SET status = $3, decided_by = $4, decision_note = $5, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2
-		RETURNING `+adjustmentColumns, tenantID, id, status, decidedBy, note)
-	item, err := scanAdjustment(row)
-	if err = mapNoRows(err); err != nil {
+}
+
+// replayOutcome interprets a guarded-resolve miss (no PENDING row matched):
+// the same decision already committed is an idempotent no-op; any other
+// status is a conflict that needs an operator, not a retry.
+func replayOutcome(currentStatus, targetStatus string) error {
+	if currentStatus == targetStatus {
+		return nil
+	}
+	return fmt.Errorf("%w (status=%s)", ErrAdjustmentNotPending, currentStatus)
+}
+
+// ResolveAdjustment applies a workflow decision as a guarded PENDING →
+// terminal transition. The state change and every side effect (debt-group /
+// rate update, schedule version swap, waiver, writeoff, recovery) run in one
+// transaction, so:
+//
+//   - a retry after a committed decision finds the target status already set
+//     and returns the row as an idempotent no-op — nothing is applied twice;
+//   - a side-effect failure rolls the transition back, letting the worker
+//     retry the whole step safely instead of leaving a decided-but-unapplied
+//     adjustment behind.
+//
+// A decision against any other status (never submitted, or a different
+// terminal status) is rejected as a conflict.
+//
+// NOTE: waiver/writeoff/recovery currently mutate balances and schedules
+// only; they intentionally do NOT post GL entries yet. That gap is tracked
+// outside this change — do not add postings here without wiring the finance
+// posting rules and the worker settle step.
+func (r *LoanRepository) ResolveAdjustment(ctx context.Context, table, tenantID, id, decision, decidedBy, note string) (domain.Adjustment, error) {
+	status, err := resolveDecisionStatus(decision)
+	if err != nil {
 		return domain.Adjustment{}, err
 	}
-	if status == domain.AdjustmentActive {
-		if err := r.applyAdjustmentSideEffect(ctx, tenantID, table, item); err != nil {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Adjustment{}, err
+	}
+	defer tx.Rollback()
+
+	row := tx.QueryRowContext(ctx, `
+		UPDATE `+table+` SET status = $3, decided_by = $4, decision_note = $5, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND status = $6
+		RETURNING `+adjustmentColumns, tenantID, id, status, decidedBy, note, domain.AdjustmentPending)
+	item, err := scanAdjustment(row)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
 			return domain.Adjustment{}, err
 		}
+		current, getErr := getAdjustment(ctx, tx, table, tenantID, id)
+		if getErr != nil {
+			return domain.Adjustment{}, getErr
+		}
+		if err := replayOutcome(current.Status, status); err != nil {
+			return domain.Adjustment{}, err
+		}
+		// Idempotent replay of the same decision: transition and side effect
+		// committed together, so there is nothing left to do.
+		return current, nil
+	}
+	if status == domain.AdjustmentActive {
+		if err := applyAdjustmentSideEffect(ctx, tx, tenantID, table, item); err != nil {
+			return domain.Adjustment{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Adjustment{}, err
 	}
 	return item, nil
 }
 
-func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID, table string, item domain.Adjustment) error {
+// applyAdjustmentSideEffect applies the approved flow's effect through the
+// resolve transaction — it must never open its own connection or tx.
+func applyAdjustmentSideEffect(ctx context.Context, q repoTX, tenantID, table string, item domain.Adjustment) error {
 	var payload map[string]any
 	if len(item.Payload) > 0 {
 		_ = json.Unmarshal(item.Payload, &payload)
@@ -697,7 +804,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 	case "lnm_debt_changes":
 		toGroup := payloadString("to_debt_group_code")
 		if item.AgreementCode != nil && *item.AgreementCode != "" && toGroup != "" {
-			if _, err := r.db.ExecContext(ctx, `
+			if _, err := q.ExecContext(ctx, `
 				UPDATE lnm_agreements SET debt_group_code = $3, updated_at = now()
 				WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, *item.AgreementCode, toGroup); err != nil {
 				return err
@@ -706,7 +813,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 	case "lnm_rate_changes":
 		newRate := payloadString("new_rate")
 		if item.AgreementCode != nil && *item.AgreementCode != "" && newRate != "" {
-			if _, err := r.db.ExecContext(ctx, `
+			if _, err := q.ExecContext(ctx, `
 				UPDATE lnm_agreements SET interest_rate = $3, updated_at = now()
 				WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, *item.AgreementCode, newRate); err != nil {
 				return err
@@ -724,7 +831,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 			termCount = v
 		}
 		if newMaturity != "" {
-			if _, err := r.db.ExecContext(ctx, `
+			if _, err := q.ExecContext(ctx, `
 				UPDATE lnm_agreements SET maturity_date = $3::date, updated_at = now()
 				WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, *item.AgreementCode, newMaturity); err != nil {
 				return err
@@ -736,7 +843,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 				today := ardatime.TodayCtx(ctx)
 				start = &today
 			}
-			if err := r.RegeneratePlans(ctx, tenantID, *item.AgreementCode, termCount, *start); err != nil {
+			if err := regeneratePlansTx(ctx, q, tenantID, *item.AgreementCode, termCount, *start); err != nil {
 				return err
 			}
 		}
@@ -747,7 +854,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 		if item.Amount != nil {
 			amount = *item.Amount
 		} else if pct, ok := payloadInt("waiver_percent"); ok {
-			row := r.db.QueryRowContext(ctx, `
+			row := q.QueryRowContext(ctx, `
 				SELECT COALESCE(SUM(plan_interest_amt_minor - coln_interest_amt_minor), 0)
 				FROM lnm_repay_plans
 				WHERE tenant_id = $1 AND agreement_code = $2 AND is_active AND plan_interest_amt_minor > coln_interest_amt_minor`,
@@ -763,7 +870,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 				ardamoney.FromMinor(total, "USD").Mul(decimal.NewFromInt(int64(pct))).Div(decimal.NewFromInt(100)), "USD")
 		}
 		if amount > 0 && item.AgreementCode != nil && *item.AgreementCode != "" {
-			if _, err := r.ReducePlanInterest(ctx, tenantID, *item.AgreementCode, amount); err != nil {
+			if _, err := reducePlanInterestTx(ctx, q, tenantID, *item.AgreementCode, amount); err != nil {
 				return err
 			}
 		}
@@ -771,7 +878,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 		// Real write-off: remove the written-off amount from outstanding and
 		// close the agreement once nothing is left.
 		if item.AgreementCode != nil && *item.AgreementCode != "" && item.Amount != nil {
-			if _, err := r.db.ExecContext(ctx, `
+			if _, err := q.ExecContext(ctx, `
 				UPDATE lnm_agreements
 				SET outstanding_amt_minor = GREATEST(outstanding_amt_minor - $3, 0),
 				    status = CASE WHEN GREATEST(outstanding_amt_minor - $3, 0) = 0 THEN 'CLOSED' ELSE status END,
@@ -782,7 +889,7 @@ func (r *LoanRepository) applyAdjustmentSideEffect(ctx context.Context, tenantID
 		}
 	case "lnm_recoveries":
 		if item.AgreementCode != nil && *item.AgreementCode != "" && item.Amount != nil {
-			if _, err := r.db.ExecContext(ctx, `
+			if _, err := q.ExecContext(ctx, `
 				UPDATE lnm_agreements SET outstanding_amt_minor = GREATEST(outstanding_amt_minor - $3, 0), coln_principal_amt_minor = coln_principal_amt_minor + $3, updated_at = now()
 				WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, *item.AgreementCode, *item.Amount); err != nil {
 				return err
@@ -889,15 +996,47 @@ func (r *LoanRepository) UpsertProduct(ctx context.Context, p *domain.LoanProduc
 	return &out, err
 }
 
-// RegeneratePlans rebuilds an even-principal monthly schedule for one
-// agreement (restructure semantics): outstanding spread over termCount
-// months at the agreement's current rate.
+// RegeneratePlans publishes a new active schedule version for one agreement
+// (restructure semantics): the outstanding balance is spread over termCount
+// months at the agreement's current rate. The previous version is retired
+// with is_active = FALSE, never deleted — see ReplaceRepayPlans.
 func (r *LoanRepository) RegeneratePlans(ctx context.Context, tenantID, agreementCode string, termCount int, startDate string) error {
-	agreement, err := r.GetAgreementByCode(ctx, tenantID, agreementCode)
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	// Money math goes through arda-money (decimal + currency rounding), never float64.
+	defer tx.Rollback()
+	if err := regeneratePlansTx(ctx, tx, tenantID, agreementCode, termCount, startDate); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// regeneratePlansTx builds and publishes the new schedule through the
+// caller's query surface (a restructure resolve runs it inside the decision
+// transaction).
+func regeneratePlansTx(ctx context.Context, q repoTX, tenantID, agreementCode string, termCount int, startDate string) error {
+	agreement, err := getAgreementByCode(ctx, q, tenantID, agreementCode)
+	if err != nil {
+		return err
+	}
+	plans, err := buildEvenPrincipalPlans(agreement, termCount, startDate)
+	if err != nil {
+		return err
+	}
+	return replaceRepayPlansTx(ctx, q, tenantID, agreementCode, plans)
+}
+
+// buildEvenPrincipalPlans is the pure schedule math for a restructure: an
+// even-principal monthly schedule whose principal shares sum exactly to the
+// agreement's outstanding balance (the LoanReconciliation invariant) and
+// whose interest is charged on the declining balance at the agreement rate.
+// Money math goes through arda-money (decimal + currency rounding), never
+// float64.
+func buildEvenPrincipalPlans(agreement domain.Agreement, termCount int, startDate string) ([]domain.RepayPlan, error) {
+	if termCount <= 0 {
+		return nil, fmt.Errorf("term count must be positive, got %d", termCount)
+	}
 	currency := agreement.CurrencyCode
 	if currency == "" {
 		currency = "VND"
@@ -908,7 +1047,7 @@ func (r *LoanRepository) RegeneratePlans(ctx context.Context, tenantID, agreemen
 
 	start, err := time.Parse("2006-01-02", startDate)
 	if err != nil {
-		return fmt.Errorf("invalid effective start date %q: %w", startDate, err)
+		return nil, fmt.Errorf("invalid effective start date %q: %w", startDate, err)
 	}
 	plans := make([]domain.RepayPlan, 0, termCount)
 	remaining := outstanding
@@ -929,13 +1068,33 @@ func (r *LoanRepository) RegeneratePlans(ctx context.Context, tenantID, agreemen
 		})
 		remaining = remaining.Sub(principal)
 	}
-	return r.ReplaceRepayPlans(ctx, tenantID, agreementCode, plans)
+	return plans, nil
 }
 
-// ReducePlanInterest applies an interest waiver across unpaid schedule rows
-// (coln < plan), largest balance first, until the waiver amount is consumed.
+// ReducePlanInterest applies an interest waiver across unpaid active schedule
+// rows (coln < plan), earliest due date first, until the waiver amount is
+// consumed. It owns its transaction; callers already inside one (adjustment
+// resolve) use reducePlanInterestTx.
 func (r *LoanRepository) ReducePlanInterest(ctx context.Context, tenantID, agreementCode string, waiverAmountMinor int64) (int64, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	applied, err := reducePlanInterestTx(ctx, tx, tenantID, agreementCode, waiverAmountMinor)
+	if err != nil {
+		return applied, err
+	}
+	if err := tx.Commit(); err != nil {
+		return applied, err
+	}
+	return applied, nil
+}
+
+// reducePlanInterestTx shaves unpaid schedule interest through the caller's
+// query surface so a waiver resolve stays in one transaction.
+func reducePlanInterestTx(ctx context.Context, q repoTX, tenantID, agreementCode string, waiverAmountMinor int64) (int64, error) {
+	rows, err := q.QueryContext(ctx, `
 		SELECT id, plan_interest_amt_minor - coln_interest_amt_minor
 		FROM lnm_repay_plans
 		WHERE tenant_id = $1 AND agreement_code = $2 AND is_active
@@ -969,7 +1128,7 @@ func (r *LoanRepository) ReducePlanInterest(ctx context.Context, tenantID, agree
 		if reduce > remaining {
 			reduce = remaining
 		}
-		if _, err := r.db.ExecContext(ctx, `
+		if _, err := q.ExecContext(ctx, `
 			UPDATE lnm_repay_plans SET plan_interest_amt_minor = plan_interest_amt_minor - $3, updated_at = now()
 			WHERE tenant_id = $1 AND id = $2`, tenantID, t.id, reduce); err != nil {
 			return applied, err
@@ -1326,6 +1485,100 @@ func (r *LoanRepository) SettleCompleteDisbursement(ctx context.Context, tenantI
 	return err
 }
 
+// SettleDisbursementRegister atomically marks one REGISTER drawdown POSTED and
+// applies its agreement side effect (outstanding + in-transit pending bump,
+// PENDING → ACTIVE). Returns false when the disbursement was already settled,
+// keeping worker retries idempotent instead of double-counting the drawdown.
+func (r *LoanRepository) SettleDisbursementRegister(ctx context.Context, tenantID, id, agreementCode string, amountMinor int64, journalEntryID, updatedBy string) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE lnm_disbursements
+		SET status = 'POSTED', journal_entry_id = $3, updated_by = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2
+		  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')`,
+		tenantID, id, nullText(journalEntryID), updatedBy)
+	if err != nil {
+		return false, err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return false, nil
+	}
+
+	res, err = tx.ExecContext(ctx, `
+		UPDATE lnm_agreements
+		SET outstanding_amt_minor = outstanding_amt_minor + $3,
+		    pending_disburse_amt_minor = pending_disburse_amt_minor + $3,
+		    status = CASE WHEN status = 'PENDING' THEN 'ACTIVE' ELSE status END,
+		    updated_at = now()
+		WHERE tenant_id = $1 AND agreement_code = $2`,
+		tenantID, agreementCode, amountMinor)
+	if err != nil {
+		return false, err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return false, fmt.Errorf("agreement %s not found while settling disbursement", agreementCode)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// SettleDisbursementComplete is the COMPLETE counterpart of
+// SettleDisbursementRegister: it marks the drawdown POSTED, unwinds the
+// in-transit pending and activates the contract once a completed drawdown
+// exists. Returns false on idempotent replay.
+func (r *LoanRepository) SettleDisbursementComplete(ctx context.Context, tenantID, id, contractCode, agreementCode string, amountMinor int64, journalEntryID, updatedBy string) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE lnm_disbursements
+		SET status = 'POSTED', journal_entry_id = $3, updated_by = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2
+		  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')`,
+		tenantID, id, nullText(journalEntryID), updatedBy)
+	if err != nil {
+		return false, err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return false, nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE lnm_agreements
+		SET pending_disburse_amt_minor = GREATEST(pending_disburse_amt_minor - $3, 0),
+		    updated_at = now()
+		WHERE tenant_id = $1 AND agreement_code = $2`,
+		tenantID, agreementCode, amountMinor); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE lnm_contracts c SET status = 'ACTIVE', updated_at = now()
+		WHERE c.tenant_id = $1
+		  AND c.contract_code = $2
+		  AND c.status IN ('DRAFT', 'PENDING')
+		  AND EXISTS (
+		        SELECT 1 FROM lnm_disbursements d
+		        WHERE d.tenant_id = $1 AND d.contract_code = c.contract_code
+		          AND d.flow_type = 'COMPLETE' AND d.status = 'POSTED')`,
+		tenantID, contractCode); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // SumAgreementOutstanding totals the settled principal across one contract's
 // agreements — the consumed share of the contract's loan-amount headroom
 // (register over-limit guard).
@@ -1333,6 +1586,24 @@ func (r *LoanRepository) SumAgreementOutstanding(ctx context.Context, tenantID, 
 	row := r.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(outstanding_amt_minor), 0)
 		FROM lnm_agreements WHERE tenant_id = $1 AND contract_code = $2`, tenantID, contractCode)
+	var total int64
+	return total, row.Scan(&total)
+}
+
+// SumContractRegisterExposure totals the contract's committed REGISTER
+// drawdowns: settled outstanding plus in-flight (SUBMITTED/APPROVED) register
+// disbursements. Agreements start at outstanding 0 until their drawdown
+// settles, so the in-flight part is what keeps concurrent registers from
+// overshooting the contract headroom.
+func (r *LoanRepository) SumContractRegisterExposure(ctx context.Context, tenantID, contractCode string) (int64, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE((SELECT SUM(outstanding_amt_minor) FROM lnm_agreements
+		                 WHERE tenant_id = $1 AND contract_code = $2), 0)
+		     + COALESCE((SELECT SUM(disburse_amt_minor) FROM lnm_disbursements
+		                 WHERE tenant_id = $1 AND contract_code = $2
+		                   AND flow_type = 'REGISTER'
+		                   AND status IN ('SUBMITTED', 'APPROVED')), 0)`,
+		tenantID, contractCode)
 	var total int64
 	return total, row.Scan(&total)
 }

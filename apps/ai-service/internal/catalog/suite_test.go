@@ -37,9 +37,11 @@ func (f *fakeApprovalSuiteStore) ListApprovals(context.Context, string, string, 
 
 func codeModeScope() tools.Context {
 	return tools.Context{
-		TenantID:    "tenant-1",
-		ActorUserID: "user-1",
-		RequestID:   "req-1",
+		TenantID:       "tenant-1",
+		ActorUserID:    "user-1",
+		RequestID:      "req-1",
+		ExternalThread: "thread-1",
+		ExternalRun:    "run-1",
 		Permissions: map[string]struct{}{
 			"ai.assistant.use":    {},
 			"crm.customer.manage": {},
@@ -64,6 +66,14 @@ func TestCodeModeConfirmToolCreatesApprovalProposal(t *testing.T) {
 	}
 	if store.created == nil {
 		t.Fatal("approval proposal was not persisted")
+	}
+	// The store resolves the owning ai_runs row by (tenant, actor,
+	// external_run_id): the full run identity must reach the proposal.
+	if store.created.Run.ExternalRun != "run-1" || store.created.Run.ExternalThread != "thread-1" {
+		t.Fatalf("proposal run identity = %+v, want thread-1/run-1", store.created.Run)
+	}
+	if store.created.Run.TenantID != "tenant-1" || store.created.Run.ActorUserID != "user-1" {
+		t.Fatalf("proposal run ownership = %+v, want tenant-1/user-1", store.created.Run)
 	}
 	if store.created.ToolName != "crm.exportCustomer" || store.created.Risk != "medium" {
 		t.Fatalf("proposal = %+v, want crm.exportCustomer/medium", store.created)
@@ -101,6 +111,37 @@ func TestCodeModeConfirmToolFailsClosedWithoutHITL(t *testing.T) {
 	}
 	if strings.Contains(string(result.Data), "PREPARED") {
 		t.Fatal("confirm-kind dispatcher must not execute when HITL is disabled")
+	}
+}
+
+// TestCodeModeConfirmToolRequiresRunIdentity locks the fail-loud contract for a
+// scope without the durable run id: nothing is persisted, no typed approval is
+// returned, and the model gets an explicit missing-run error instead of the
+// misleading ai.run_not_found the SQL lookup would produce.
+func TestCodeModeConfirmToolRequiresRunIdentity(t *testing.T) {
+	store := &fakeApprovalSuiteStore{}
+	suite := NewCodeModeSuite(ClientSet{}, store, true, nil, nil)
+
+	scope := codeModeScope()
+	scope.ExternalThread = ""
+	scope.ExternalRun = ""
+
+	result, err := suite.ExecuteTool.Execute(
+		context.Background(),
+		scope,
+		json.RawMessage(`{"code":"return await arda.crm.exportCustomer({ customerId: 'c1' })"}`),
+	)
+	if err != nil {
+		t.Fatalf("execute meta-tool error: %v", err)
+	}
+	if store.created != nil {
+		t.Fatal("no proposal may be persisted without the run identity")
+	}
+	if result.Approval != nil {
+		t.Fatal("no typed approval may be returned without the run identity")
+	}
+	if !strings.Contains(string(result.Data), "external run id") {
+		t.Fatalf("expected a clear missing-run error, got %s", result.Data)
 	}
 }
 

@@ -25,6 +25,7 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/svcclient"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	ardaredis "github.com/arda-labs/arda/libs/go/arda-redis"
 )
 
@@ -54,6 +55,7 @@ func main() {
 			logger.Error("failed to ping AI database", "err", err)
 			os.Exit(1)
 		}
+		ardapostgres.ConfigureDefaultPool(db, logger)
 		if err := migration.Run(db, "postgres"); err != nil {
 			logger.Error("failed to apply AI migrations", "err", err)
 			os.Exit(1)

@@ -1160,10 +1160,17 @@ func foldJob(jobKey int64, firstRaw, latestRaw json.RawMessage) (ZeebeJob, bool)
 			return ZeebeJob{}, false
 		}
 	}
-	latest := first
-	if decodeRaw(latestRaw, &latest) == false {
+	var latest esJobRecord
+	if !decodeRaw(latestRaw, &latest) {
 		latest = first
 	}
+	return foldJobRecords(jobKey, first, latest), true
+}
+
+// foldJobRecords merges the first (created) and latest (state-carrying) record
+// of one job key. Exposed separately so GetJob can fold decoded records without
+// re-serializing them.
+func foldJobRecords(jobKey int64, first, latest esJobRecord) ZeebeJob {
 	retries := int(jsonInt64(latest.Value.Retries))
 	errorMessage := strings.TrimSpace(latest.Value.ErrorMessage)
 	if errorMessage == "" {
@@ -1182,7 +1189,41 @@ func foldJob(jobKey int64, firstRaw, latestRaw json.RawMessage) (ZeebeJob, bool)
 		ErrorMessage:       errorMessage,
 		CreatedAt:          formatESTime(first.Timestamp.Time),
 		UpdatedAt:          formatESTime(latest.Timestamp.Time),
-	}, true
+	}
+}
+
+// GetJob returns the folded job for one job key, or nil when the exporter has
+// no record of it. Handlers use it to authorize a job key against the caller's
+// tenant (job → process instance → case) before any Zeebe mutation.
+func (c *ZeebeMonitoringIndex) GetJob(ctx context.Context, jobKey int64) (*ZeebeJob, error) {
+	if !c.Enabled() {
+		return nil, fmt.Errorf("zeebe elasticsearch index is not configured")
+	}
+	if jobKey <= 0 {
+		return nil, fmt.Errorf("jobKey is required")
+	}
+	raw, err := c.searchRaw(ctx, map[string]any{
+		"size":             50,
+		"track_total_hits": false,
+		"sort":             []any{map[string]any{"position": map[string]any{"order": "asc"}}},
+		"_source":          map[string]any{"includes": jobRecordIncludes},
+		"query": map[string]any{"bool": map[string]any{"filter": []any{
+			esTerm("valueType", "JOB"),
+			esTerm("key", jobKey),
+		}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	records, err := decodeHits[esJobRecord](raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		return nil, nil
+	}
+	job := foldJobRecords(jobKey, records[0], records[len(records)-1])
+	return &job, nil
 }
 
 // ─── Instance history ───────────────────────────────────────────────────────────

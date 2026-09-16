@@ -79,7 +79,7 @@ func (w *CollectionWorkers) buildPostingRequest(ctx context.Context, job entitie
 			DocumentId:   detail.GetCollectionId(),
 			CaseId:       detail.GetWorkflowCaseId(),
 		},
-		Lines: postingLinesFromRules(fetchPostingRules(w.financeClient, "LNM_COLLECTION"), collectionLegs(detail), detail.GetCurrencyCode()),
+		Lines: postingLinesFromRules(fetchPostingRules(ctx, w.financeClient, "LNM_COLLECTION"), collectionLegs(detail), detail.GetCurrencyCode()),
 	}, nil
 }
 

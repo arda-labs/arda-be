@@ -2,29 +2,50 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
 	"github.com/arda-labs/arda/apps/notification-service/internal/mailer"
+	"github.com/arda-labs/arda/apps/notification-service/internal/netguard"
 	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
 	ardacrypto "github.com/arda-labs/arda/libs/go/arda-crypto"
 )
 
+// defaultMaxDeliveryAttempts applies when a row has no max_attempts budget.
+const defaultMaxDeliveryAttempts = 6
+
+// deliveryRepository is the repository surface the worker needs. It is an
+// interface so tests can substitute a fake without a database.
+type deliveryRepository interface {
+	ClaimQueuedDeliveries(ctx context.Context, limit int) ([]domain.Delivery, error)
+	GetDeliveryMailContext(ctx context.Context, deliveryID string) (*repository.DeliveryMailContext, error)
+	ActiveSender(ctx context.Context, tenantID, channel string) (*repository.SenderConfig, string, error)
+	FindTemplate(ctx context.Context, tenantID, eventCode, channel, locale string) (*repository.NotificationTemplate, error)
+	RetryDelivery(ctx context.Context, id, code, message string, delay time.Duration) error
+	MarkDeliveryFailed(ctx context.Context, id, code, message string) error
+	MarkDeliverySent(ctx context.Context, id string) error
+}
+
 // DeliveryWorker dispatches queued deliveries. Email rides SMTP using the
-// tenant sender config + optional noti_templates text; unconfigured channels
-// keep deferring (previous behaviour).
+// tenant sender config + optional noti_templates text; channels without a
+// provider are retried up to max_attempts and then marked failed.
 type DeliveryWorker struct {
-	repo     *repository.NotificationRepository
+	repo     deliveryRepository
 	mailer   mailer.Mailer
 	secret   string
 	interval time.Duration
 }
 
 func NewDeliveryWorker(repo *repository.NotificationRepository, m mailer.Mailer, secret string) *DeliveryWorker {
+	return newDeliveryWorker(repo, m, secret)
+}
+
+func newDeliveryWorker(repo deliveryRepository, m mailer.Mailer, secret string) *DeliveryWorker {
 	if m == nil {
 		m = mailer.NewSMTP()
 	}
@@ -55,15 +76,20 @@ func (w *DeliveryWorker) runOnce(ctx context.Context) error {
 	}
 	for _, delivery := range deliveries {
 		if delivery.Channel != domain.ChannelEmail {
-			if err := w.repo.DeferDelivery(ctx, delivery.ID, "provider dispatch is not configured yet", time.Minute); err != nil {
+			if err := w.failDelivery(ctx, delivery, "PROVIDER_NOT_CONFIGURED", errors.New("provider dispatch is not configured yet")); err != nil {
 				return err
 			}
 			continue
 		}
 		if err := w.sendEmail(ctx, delivery); err != nil {
-			slog.Warn("email delivery failed", "delivery_id", delivery.ID, "err", err)
-			if deferErr := w.repo.DeferDelivery(ctx, delivery.ID, err.Error(), 2*time.Minute); deferErr != nil {
-				return deferErr
+			slog.Warn("email delivery failed",
+				"delivery_id", delivery.ID,
+				"attempt", delivery.AttemptCount+1,
+				"max_attempts", maxAttempts(delivery),
+				"err", err,
+			)
+			if err := w.failDelivery(ctx, delivery, "DELIVERY_FAILED", err); err != nil {
+				return err
 			}
 			continue
 		}
@@ -72,6 +98,45 @@ func (w *DeliveryWorker) runOnce(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// failDelivery records one failed attempt. Once the attempt budget is spent the
+// delivery is marked failed instead of being deferred forever.
+func (w *DeliveryWorker) failDelivery(ctx context.Context, delivery domain.Delivery, code string, cause error) error {
+	message := cause.Error()
+	limit := maxAttempts(delivery)
+	if delivery.AttemptCount+1 >= limit {
+		slog.Error("delivery attempt budget exhausted",
+			"delivery_id", delivery.ID,
+			"channel", delivery.Channel,
+			"attempts", delivery.AttemptCount+1,
+			"max_attempts", limit,
+			"err", message,
+		)
+		return w.repo.MarkDeliveryFailed(ctx, delivery.ID, code, message)
+	}
+	return w.repo.RetryDelivery(ctx, delivery.ID, code, message, retryDelay(delivery.AttemptCount))
+}
+
+func maxAttempts(delivery domain.Delivery) int {
+	if delivery.MaxAttempts > 0 {
+		return delivery.MaxAttempts
+	}
+	return defaultMaxDeliveryAttempts
+}
+
+// retryDelay backs off exponentially (30s, 1m, 2m, ...) up to 15 minutes so a
+// failing provider is not hammered by every tick.
+func retryDelay(attempt int) time.Duration {
+	const maxDelay = 15 * time.Minute
+	delay := 30 * time.Second
+	for i := 0; i < attempt; i++ {
+		delay *= 2
+		if delay >= maxDelay {
+			return maxDelay
+		}
+	}
+	return delay
 }
 
 func (w *DeliveryWorker) sendEmail(ctx context.Context, delivery domain.Delivery) error {
@@ -85,6 +150,12 @@ func (w *DeliveryWorker) sendEmail(ctx context.Context, delivery domain.Delivery
 	}
 	if sender == nil {
 		return errors.New("email sender config is not configured")
+	}
+	// Re-validate at dispatch time: sender configs stored before host
+	// validation was enforced (or edited directly in the database) must not be
+	// dialled.
+	if err := netguard.ValidateHost(sender.Host); err != nil {
+		return fmt.Errorf("email sender host is not allowed: %w", err)
 	}
 	password := ""
 	if encrypted != "" {
@@ -133,6 +204,8 @@ func (w *DeliveryWorker) render(ctx context.Context, mailCtx *repository.Deliver
 	return subject, string(body), nil
 }
 
+// renderPlaceholders substitutes {{key}} with payload values. Values are used
+// verbatim here; the mailer neutralises CR/LF before they reach the headers.
 func renderPlaceholders(text string, payload map[string]any) string {
 	out := text
 	for key, value := range payload {
@@ -168,4 +241,3 @@ func destinationAddress(destination json.RawMessage) string {
 	}
 	return ""
 }
-

@@ -246,7 +246,9 @@ func (s *LoanService) CreateAgreement(ctx context.Context, tenantID, createdBy s
 	in.ID = repository.NewID("agrt")
 	in.TenantID = tenantID
 	in.CreatedBy = createdBy
-	in.OutstandingAmt = in.DisburseAmt
+	// Outstanding is derived from settled drawdowns: a freshly created
+	// agreement carries no debt until the REGISTER settlement bumps it.
+	in.OutstandingAmt = 0
 	return s.repo.CreateAgreement(ctx, in)
 }
 

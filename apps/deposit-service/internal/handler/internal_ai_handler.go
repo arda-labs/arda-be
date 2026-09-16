@@ -82,9 +82,9 @@ func (h *InternalAIHandler) InternalAIListSavings(w http.ResponseWriter, r *http
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	paged, total, page, perPage := ardahttp.PageSlice(items, listReq.ListQuery)
+	res := ardahttp.PageSlice(items, listReq.ListQuery)
 	ardahttp.WriteSuccess(w, r, http.StatusOK,
-		ardahttp.NewListResponse(page, perPage, total, toAISavings(paged)))
+		ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, toAISavings(res.Items)))
 }
 
 // InternalAIGetSavingsDetail serves GET /internal/ai/savings/{code} for
@@ -143,9 +143,9 @@ func (h *InternalAIHandler) InternalAIListInterestRates(w http.ResponseWriter, r
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	paged, total, page, perPage := ardahttp.PageSlice(items, listReq.ListQuery)
+	res := ardahttp.PageSlice(items, listReq.ListQuery)
 	ardahttp.WriteSuccess(w, r, http.StatusOK,
-		ardahttp.NewListResponse(page, perPage, total, toAIDepositRates(paged)))
+		ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, toAIDepositRates(res.Items)))
 }
 
 // aiTenantID reads the delegated tenant off the signed request headers. The

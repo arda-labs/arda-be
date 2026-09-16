@@ -235,15 +235,250 @@ func TestSessionUserCacheKeysAllowLegacyVersion(t *testing.T) {
 	}
 }
 
+func TestSessionAuthRefreshDue(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		lastCheck  time.Time
+		interval   time.Duration
+		forceFresh bool
+		want       bool
+	}{
+		{name: "force fresh always revalidates", lastCheck: now, interval: time.Hour, forceFresh: true, want: true},
+		{name: "force fresh on new session", interval: time.Minute, forceFresh: true, want: true},
+		{name: "zero interval disables scheduled checks", lastCheck: now.Add(-time.Hour), want: false},
+		{name: "negative interval disables scheduled checks", lastCheck: now.Add(-time.Hour), interval: -time.Minute, want: false},
+		{name: "legacy session without check timestamp", interval: time.Minute, want: true},
+		{name: "not yet due", lastCheck: now.Add(-30 * time.Second), interval: time.Minute, want: false},
+		{name: "due at interval boundary", lastCheck: now.Add(-time.Minute), interval: time.Minute, want: true},
+		{name: "clock skew is not due", lastCheck: now.Add(time.Minute), interval: time.Minute, want: false},
+	}
+	for _, test := range tests {
+		if got := sessionAuthRefreshDue(now, test.lastCheck, test.interval, test.forceFresh); got != test.want {
+			t.Fatalf("%s: due = %v, want %v", test.name, got, test.want)
+		}
+	}
+}
+
+// completeSessionUser mirrors the fields sessionUserComplete requires; tests
+// bypass IAM unless the session is due for re-validation.
+func completeSessionUser(perms ...string) *session.UserInfo {
+	return &session.UserInfo{
+		UserID:                   "11111111-1111-1111-1111-111111111111",
+		Subject:                  "subject-1",
+		AuthVersion:              1,
+		GroupIDs:                 []string{},
+		TenantMemberships:        []session.TenantMembership{},
+		GlobalCapabilitiesLoaded: true,
+		Permissions:              perms,
+	}
+}
+
+func newIAMStubHandler(t *testing.T, intervalSeconds int, status int, body string) (*BFFHandler, *session.MemoryStore, *int) {
+	t.Helper()
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Header.Get("X-Service-Auth") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(server.Close)
+	store := session.NewMemoryStore()
+	handler := NewBFFHandler(
+		config.Config{SessionCookieName: "arda_sid", SessionAuthCheckInterval: intervalSeconds},
+		store,
+		iamclient.New(server.URL, strings.Repeat("s", 32)),
+		nil,
+	)
+	return handler, store, &calls
+}
+
+func TestEnsureSessionUserRefreshesChangedAuthVersion(t *testing.T) {
+	handler, store, _ := newIAMStubHandler(t, 60, http.StatusOK, `{
+		"userId":"11111111-1111-1111-1111-111111111111",
+		"subject":"subject-1",
+		"username":"u1",
+		"status":"ACTIVE",
+		"authVersion":7,
+		"groupIds":[],
+		"tenantMemberships":[],
+		"globalCapabilitiesLoaded":true,
+		"roles":["TENANT_ADMIN"],
+		"permissions":["iam.user.read"]
+	}`)
+	sess := &session.Session{
+		User:          completeSessionUser(),
+		ExpiresAt:     time.Now().Add(time.Hour),
+		LastAuthCheck: time.Now().Add(-2 * time.Minute),
+	}
+	if err := store.Create(context.Background(), sess, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
+	if !handler.ensureSessionUser(context.Background(), sess, false) {
+		t.Fatal("scheduled re-validation failed")
+	}
+	if sess.User.AuthVersion != 7 {
+		t.Fatalf("auth version = %d, want 7", sess.User.AuthVersion)
+	}
+	if !containsString(sess.User.Permissions, "iam.user.read") {
+		t.Fatalf("permissions = %#v, want refreshed permission", sess.User.Permissions)
+	}
+	if sess.LastAuthCheck.IsZero() || time.Since(sess.LastAuthCheck) > time.Minute {
+		t.Fatalf("last auth check = %v, want now", sess.LastAuthCheck)
+	}
+}
+
+func TestEnsureSessionUserRevokesSessionWhenIAMNoLongerResolvesUser(t *testing.T) {
+	handler, store, _ := newIAMStubHandler(t, 60, http.StatusNotFound, `{"error":"user not found"}`)
+	sess := &session.Session{
+		User:          completeSessionUser(),
+		ExpiresAt:     time.Now().Add(time.Hour),
+		LastAuthCheck: time.Now().Add(-2 * time.Minute),
+	}
+	if err := store.Create(context.Background(), sess, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
+	if handler.ensureSessionUser(context.Background(), sess, false) {
+		t.Fatal("revoked user was accepted")
+	}
+	stored, err := store.Get(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != nil {
+		t.Fatalf("session was not deleted after revocation: %#v", stored.ID)
+	}
+}
+
+func TestEnsureSessionUserRevokesDisabledAccount(t *testing.T) {
+	handler, store, _ := newIAMStubHandler(t, 60, http.StatusOK, `{
+		"userId":"11111111-1111-1111-1111-111111111111",
+		"subject":"subject-1",
+		"username":"u1",
+		"status":"DISABLED",
+		"authVersion":9,
+		"groupIds":[],
+		"tenantMemberships":[],
+		"globalCapabilitiesLoaded":true,
+		"roles":["TENANT_ADMIN"],
+		"permissions":["iam.user.read"]
+	}`)
+	sess := &session.Session{
+		User:          completeSessionUser("iam.user.read"),
+		ExpiresAt:     time.Now().Add(time.Hour),
+		LastAuthCheck: time.Now().Add(-2 * time.Minute),
+	}
+	if err := store.Create(context.Background(), sess, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
+	if handler.ensureSessionUser(context.Background(), sess, false) {
+		t.Fatal("disabled account kept its session")
+	}
+	if stored, _ := store.Get(context.Background(), sess.ID); stored != nil {
+		t.Fatalf("disabled account session was not deleted: %#v", stored.ID)
+	}
+}
+
+func TestEnsureSessionUserKeepsSessionWhenIAMIsUnavailable(t *testing.T) {
+	handler, store, _ := newIAMStubHandler(t, 60, http.StatusInternalServerError, `{}`)
+	lastCheck := time.Now().Add(-2 * time.Minute)
+	sess := &session.Session{
+		User:          completeSessionUser(),
+		ExpiresAt:     time.Now().Add(time.Hour),
+		LastAuthCheck: lastCheck,
+	}
+	if err := store.Create(context.Background(), sess, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
+	if !handler.ensureSessionUser(context.Background(), sess, false) {
+		t.Fatal("transient IAM failure must not drop a complete session")
+	}
+	if !sess.LastAuthCheck.Equal(lastCheck) {
+		t.Fatalf("last auth check = %v, want retry on the next request", sess.LastAuthCheck)
+	}
+	stored, _ := store.Get(context.Background(), sess.ID)
+	if stored == nil {
+		t.Fatal("transient IAM failure deleted the session")
+	}
+
+	// The high-risk forceFresh flow keeps failing closed.
+	if handler.ensureSessionUser(context.Background(), sess, true) {
+		t.Fatal("forceFresh user resolution must fail closed when IAM is unavailable")
+	}
+	if stored, _ := store.Get(context.Background(), sess.ID); stored == nil {
+		t.Fatal("forceFresh failure deleted the session")
+	}
+}
+
+func TestPolicyRoutesRequiresSessionAndPermission(t *testing.T) {
+	store := session.NewMemoryStore()
+	pol := &policy.Policy{Routes: []policy.Route{{
+		ID: "admin-read", Path: "/api/admin/**", Methods: []string{"GET"}, Auth: true, Permissions: []string{"iam.user.read"},
+	}}}
+	handler := NewBFFHandler(config.Config{SessionCookieName: "arda_sid"}, store, nil, pol)
+
+	call := func(cookie *session.Session) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/policy-routes", nil)
+		if cookie != nil {
+			req.AddCookie(&http.Cookie{Name: "arda_sid", Value: cookie.ID})
+		}
+		rec := httptest.NewRecorder()
+		handler.PolicyRoutes(rec, req)
+		return rec
+	}
+
+	if rec := call(nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	unauthorized := &session.Session{ExpiresAt: time.Now().Add(time.Hour), User: completeSessionUser()}
+	if err := store.Create(context.Background(), unauthorized, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if rec := call(unauthorized); rec.Code != http.StatusForbidden {
+		t.Fatalf("session without iam.user.read status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	reader := &session.Session{ExpiresAt: time.Now().Add(time.Hour), User: completeSessionUser("iam.user.read")}
+	if err := store.Create(context.Background(), reader, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	rec := call(reader)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("iam.user.read status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "admin-read") {
+		t.Fatalf("policy routes not exposed: %s", rec.Body.String())
+	}
+
+	admin := &session.Session{ExpiresAt: time.Now().Add(time.Hour), User: completeSessionUser()}
+	admin.User.IsGlobalAdmin = true
+	if err := store.Create(context.Background(), admin, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if rec := call(admin); rec.Code != http.StatusOK {
+		t.Fatalf("global admin status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
 func TestResolveSessionUserFailsClosedWithoutIAMClient(t *testing.T) {
 	handler := &BFFHandler{}
-	user, ok := handler.resolveSessionUser(
+	user, ok, revoked := handler.resolveSessionUser(
 		context.Background(),
 		&session.UserInfo{UserID: "u1", Subject: "s1", AuthVersion: 1, GroupIDs: []string{}},
 		false,
 	)
-	if ok || user != nil {
-		t.Fatalf("missing IAM client resolved a session user: user=%#v ok=%v", user, ok)
+	if ok || revoked || user != nil {
+		t.Fatalf("missing IAM client resolved a session user: user=%#v ok=%v revoked=%v", user, ok, revoked)
 	}
 }
 

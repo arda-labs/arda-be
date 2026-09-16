@@ -122,7 +122,7 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 			       COALESCE(SUM(l.amount_minor) FILTER (WHERE l.direction = 'CREDIT'), 0) AS c
 			FROM fin_journal_lines l
 			JOIN fin_journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id
-			WHERE l.tenant_id = $1 AND e.accounting_date = $2::date AND e.status = 'POSTED'
+			WHERE l.tenant_id = $1 AND e.accounting_date = $2::date AND e.status IN ('POSTED', 'REVERSED')
 			GROUP BY 1, 2, 3
 		),
 		openings AS (

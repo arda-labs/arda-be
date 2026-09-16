@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -137,5 +138,29 @@ func TestHTTPDocsLookuperIntegration(t *testing.T) {
 	}
 	if unknownMap["found"] != false {
 		t.Fatalf("expected found=false for unknown code, got %v", unknownMap["found"])
+	}
+}
+
+// TestHTTPDocsLookuperEscapesCode guards the query construction: the code is
+// model-supplied, so URL metacharacters must be escaped instead of forging
+// extra query parameters or a fragment.
+func TestHTTPDocsLookuperEscapesCode(t *testing.T) {
+	var gotCode, gotRawQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCode = r.URL.Query().Get("code")
+		gotRawQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"found":false}`))
+	}))
+	defer srv.Close()
+
+	lookup := NewHTTPDocsLookuper(srv.URL)
+	if _, err := lookup.Lookup(context.Background(), "validation.invalid input&x=1#frag"); err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if gotCode != "validation.invalid input&x=1#frag" {
+		t.Fatalf("code should round-trip, got %q", gotCode)
+	}
+	if strings.Contains(gotRawQuery, "&x=1") || strings.Contains(gotRawQuery, "#") {
+		t.Fatalf("raw query must stay escaped, got %q", gotRawQuery)
 	}
 }

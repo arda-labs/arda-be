@@ -24,13 +24,24 @@ var (
 )
 
 type MediaService struct {
-	cfg     config.Config
-	repo    *repository.MediaRepository
-	storage storage.Provider
+	cfg          config.Config
+	repo         *repository.MediaRepository
+	storage      storage.Provider
+	uploadPolicy UploadPolicy
 }
 
 func NewMediaService(cfg config.Config, repo *repository.MediaRepository, provider storage.Provider) *MediaService {
-	return &MediaService{cfg: cfg, repo: repo, storage: provider}
+	return &MediaService{cfg: cfg, repo: repo, storage: provider, uploadPolicy: NewUploadPolicy(cfg.AllowedUploadMIME)}
+}
+
+// MaxUploadBytes returns the hard request-body cap for uploads: the configured
+// file limit plus multipart overhead.
+func (s *MediaService) MaxUploadBytes() int64 {
+	limitMB := s.cfg.UploadMaxSizeMB
+	if limitMB <= 0 {
+		limitMB = 100
+	}
+	return limitMB*1024*1024 + (1 << 20)
 }
 
 func (s *MediaService) InitUpload(ctx context.Context, req domain.InitUploadRequest) (domain.InitUploadResponse, error) {
@@ -44,6 +55,11 @@ func (s *MediaService) InitUpload(ctx context.Context, req domain.InitUploadRequ
 	if req.Module == "" || req.OriginalFilename == "" || req.ContentType == "" {
 		return domain.InitUploadResponse{}, fmt.Errorf("%w: module, original_filename and content_type are required", ErrInvalidInput)
 	}
+	resolvedType, err := s.uploadPolicy.ValidateDeclared(req.ContentType, req.OriginalFilename)
+	if err != nil {
+		return domain.InitUploadResponse{}, err
+	}
+	req.ContentType = resolvedType
 	if req.SizeBytes < 0 {
 		return domain.InitUploadResponse{}, fmt.Errorf("%w: size_bytes must be positive", ErrInvalidInput)
 	}
@@ -146,6 +162,10 @@ func (s *MediaService) CompleteUpload(ctx context.Context, fileID string) (domai
 	if err != nil {
 		return domain.CompleteUploadResponse{}, err
 	}
+	resolvedType, err := s.resolveStoredContentType(ctx, file, info.ContentType)
+	if err != nil {
+		return domain.CompleteUploadResponse{}, err
+	}
 
 	nextStatus := domain.StatusTemp
 	scanStatus := domain.ScanNotRequired
@@ -154,14 +174,14 @@ func (s *MediaService) CompleteUpload(ctx context.Context, fileID string) (domai
 		scanStatus = domain.ScanPending
 	}
 
-	updated, err := s.repo.CompleteUpload(ctx, fileID, info.SizeBytes, info.ContentType, nextStatus, scanStatus, map[string]any{
+	updated, err := s.repo.CompleteUpload(ctx, fileID, info.SizeBytes, resolvedType, nextStatus, scanStatus, map[string]any{
 		"file_id":      file.ID,
 		"tenant_id":    file.TenantID,
 		"org_id":       file.OrgID,
 		"module":       file.Module,
 		"entity_type":  file.EntityType,
 		"entity_id":    file.EntityID,
-		"content_type": defaultString(info.ContentType, file.ContentType),
+		"content_type": resolvedType,
 		"size_bytes":   info.SizeBytes,
 	})
 	if err != nil {
@@ -188,15 +208,19 @@ func (s *MediaService) CompleteUploadScoped(ctx context.Context, scope domain.Fi
 	if err != nil {
 		return domain.CompleteUploadResponse{}, err
 	}
+	resolvedType, err := s.resolveStoredContentType(ctx, file, info.ContentType)
+	if err != nil {
+		return domain.CompleteUploadResponse{}, err
+	}
 	nextStatus := domain.StatusTemp
 	scanStatus := domain.ScanNotRequired
 	if s.cfg.RequireScanBeforeReady {
 		nextStatus = domain.StatusScanPending
 		scanStatus = domain.ScanPending
 	}
-	updated, err := s.repo.CompleteUploadScoped(ctx, scope, file.ID, info.SizeBytes, info.ContentType, nextStatus, scanStatus, map[string]any{
+	updated, err := s.repo.CompleteUploadScoped(ctx, scope, file.ID, info.SizeBytes, resolvedType, nextStatus, scanStatus, map[string]any{
 		"file_id": file.ID, "tenant_id": file.TenantID, "org_id": file.OrgID,
-		"module": file.Module, "content_type": defaultString(info.ContentType, file.ContentType), "size_bytes": info.SizeBytes,
+		"module": file.Module, "content_type": resolvedType, "size_bytes": info.SizeBytes,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -266,7 +290,7 @@ func (s *MediaService) GetContentRedirectURLByPublicIDScoped(ctx context.Context
 		return "", ErrNotReady
 	}
 	input := storage.PresignGetInput{Bucket: file.Bucket, Key: file.ObjectKey, ExpiresIn: s.cfg.PresignDownloadTTL}
-	if download {
+	if download || !CanServeInline(file.ContentType) {
 		input.ResponseContentDisposition = fmt.Sprintf("attachment; filename=%q", file.OriginalFilename)
 	}
 	presigned, err := s.storage.PresignGetObject(ctx, input)
@@ -288,7 +312,7 @@ func (s *MediaService) GetPublicContentRedirectURLByPublicID(ctx context.Context
 		return "", ErrNotReady
 	}
 	input := storage.PresignGetInput{Bucket: file.Bucket, Key: file.ObjectKey, ExpiresIn: s.cfg.PresignDownloadTTL}
-	if download {
+	if download || !CanServeInline(file.ContentType) {
 		input.ResponseContentDisposition = fmt.Sprintf("attachment; filename=%q", file.OriginalFilename)
 	}
 	presigned, err := s.storage.PresignGetObject(ctx, input)
@@ -315,6 +339,16 @@ func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequ
 	if s.cfg.UploadMaxSizeMB > 0 && req.SizeBytes > s.cfg.UploadMaxSizeMB*1024*1024 {
 		return domain.File{}, fmt.Errorf("%w: file is larger than upload limit", ErrInvalidInput)
 	}
+
+	head, body, err := ReadSniffHead(body)
+	if err != nil {
+		return domain.File{}, fmt.Errorf("%w: read upload body: %v", ErrInvalidInput, err)
+	}
+	resolvedType, err := s.uploadPolicy.Resolve(req.ContentType, req.OriginalFilename, head)
+	if err != nil {
+		return domain.File{}, err
+	}
+	req.ContentType = resolvedType
 
 	fileID := domain.NewID("file")
 	publicID := domain.NewID("mf")
@@ -351,7 +385,7 @@ func (s *MediaService) UploadFile(ctx context.Context, req domain.InitUploadRequ
 		ExpiresAt:        &tempExpiresAt,
 	}
 
-	err := s.storage.PutObject(ctx, file.Bucket, file.ObjectKey, body, file.SizeBytes, file.ContentType)
+	err = s.storage.PutObject(ctx, file.Bucket, file.ObjectKey, body, file.SizeBytes, file.ContentType)
 	if err != nil {
 		return domain.File{}, fmt.Errorf("upload to S3: %w", err)
 	}
@@ -480,4 +514,26 @@ func defaultString(value, fallback string) string {
 
 func (s *MediaService) GetObjectStream(ctx context.Context, file domain.File) (io.ReadCloser, error) {
 	return s.storage.GetObject(ctx, file.Bucket, file.ObjectKey)
+}
+
+// resolveStoredContentType sniffs the first bytes of a stored object so the
+// persisted content_type reflects real content. Presigned uploads bypass the
+// multipart handler, so CompleteUpload is the enforcement point there.
+func (s *MediaService) resolveStoredContentType(ctx context.Context, file domain.File, declared string) (string, error) {
+	stream, err := s.storage.GetObject(ctx, file.Bucket, file.ObjectKey)
+	if err != nil {
+		return "", fmt.Errorf("open uploaded object: %w", err)
+	}
+	defer stream.Close()
+
+	head := make([]byte, sniffLen)
+	n, readErr := io.ReadFull(stream, head)
+	if readErr != nil && !errors.Is(readErr, io.EOF) && !errors.Is(readErr, io.ErrUnexpectedEOF) {
+		return "", fmt.Errorf("read uploaded object: %w", readErr)
+	}
+	resolved, err := s.uploadPolicy.Resolve(defaultString(declared, file.ContentType), file.OriginalFilename, head[:n])
+	if err != nil {
+		return "", err
+	}
+	return resolved, nil
 }

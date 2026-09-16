@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -22,6 +23,27 @@ func NewPlatformRepository(db *sql.DB) *PlatformRepository {
 func requireTenantID(tenantID string) error {
 	if strings.TrimSpace(tenantID) == "" {
 		return fmt.Errorf("tenant scope is required")
+	}
+	return nil
+}
+
+// ErrNotFound reports that a targeted mutation matched no row, so the HTTP
+// layer can answer 404 instead of returning {"ok": true} for an unknown id
+// (same contract as working_hours_repo SetWorkingHourActive).
+var ErrNotFound = errors.New("record not found")
+
+// affectedOrNotFound converts an Exec outcome into ErrNotFound when the
+// statement matched no row; driver errors are returned unchanged.
+func affectedOrNotFound(res sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	affected, rowsErr := res.RowsAffected()
+	if rowsErr != nil {
+		return rowsErr
+	}
+	if affected == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -376,6 +398,11 @@ func (r *PlatformRepository) CreateOrganization(ctx context.Context, item domain
 	return item, err
 }
 
+// maxGeoAdminUnitLookupRows caps the unpaged lookup variant so a single
+// dropdown/tree request can never stream the whole ~10k-row dataset. Catalog
+// screens use ListGeoAdminUnitsPaged (LIMIT/OFFSET + total) instead.
+const maxGeoAdminUnitLookupRows = 500
+
 func (r *PlatformRepository) ListGeoAdminUnits(ctx context.Context, parentCode string, level int) ([]domain.GeoAdminUnit, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT code, name, full_name, parent_code, level, unit_type, country_code, region_code,
@@ -384,7 +411,8 @@ func (r *PlatformRepository) ListGeoAdminUnits(ctx context.Context, parentCode s
 		WHERE ($1 = '' OR COALESCE(parent_code, '') = $1)
 		  AND ($2 = 0 OR level = $2)
 		  AND is_active = true
-		ORDER BY level, name`, parentCode, level)
+		ORDER BY level, name
+		LIMIT $3`, parentCode, level, maxGeoAdminUnitLookupRows)
 	if err != nil {
 		return nil, err
 	}
@@ -545,35 +573,35 @@ func (r *PlatformRepository) DeleteOrganization(ctx context.Context, tenantID, i
 	if err := requireTenantID(tenantID); err != nil {
 		return err
 	}
-	_, err := r.db.ExecContext(ctx, `UPDATE plt_organizations SET is_active = false, updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id)
-	return err
+	res, err := r.db.ExecContext(ctx, `UPDATE plt_organizations SET is_active = false, updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	return affectedOrNotFound(res, err)
 }
 
 func (r *PlatformRepository) DeleteParameter(ctx context.Context, tenantID, id string) error {
 	if err := requireTenantID(tenantID); err != nil {
 		return err
 	}
-	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_system_parameters WHERE tenant_id = $1 AND id = $2`, tenantID, id)
-	return err
+	res, err := r.db.ExecContext(ctx, `DELETE FROM plt_system_parameters WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	return affectedOrNotFound(res, err)
 }
 
 func (r *PlatformRepository) DeleteLookupCategory(ctx context.Context, tenantID, id string) error {
 	if err := requireTenantID(tenantID); err != nil {
 		return err
 	}
-	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_lookup_categories WHERE tenant_id = $1 AND id = $2`, tenantID, id)
-	return err
+	res, err := r.db.ExecContext(ctx, `DELETE FROM plt_lookup_categories WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	return affectedOrNotFound(res, err)
 }
 
 func (r *PlatformRepository) DeleteLookupValue(ctx context.Context, tenantID, id string) error {
 	if err := requireTenantID(tenantID); err != nil {
 		return err
 	}
-	_, err := r.db.ExecContext(ctx, `
+	res, err := r.db.ExecContext(ctx, `
 		DELETE FROM plt_lookup_values v
 		USING plt_lookup_categories c
 		WHERE v.id = $2 AND v.category_id = c.id AND c.tenant_id = $1`, tenantID, id)
-	return err
+	return affectedOrNotFound(res, err)
 }
 
 func (r *PlatformRepository) ListCreditInstitutions(ctx context.Context, tenantID, status, query string) ([]domain.CreditInstitution, error) {
@@ -851,8 +879,8 @@ func (r *PlatformRepository) DeleteCreditInstitution(ctx context.Context, tenant
 	if err := requireTenantID(tenantID); err != nil {
 		return err
 	}
-	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_credit_institutions WHERE tenant_id = $1 AND id = $2`, tenantID, id)
-	return err
+	res, err := r.db.ExecContext(ctx, `DELETE FROM plt_credit_institutions WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	return affectedOrNotFound(res, err)
 }
 
 func (r *PlatformRepository) ListAreas(ctx context.Context, tenantID, status, areaTypeCode, parentID, query string) ([]domain.Area, error) {
@@ -1119,8 +1147,8 @@ func (r *PlatformRepository) DeleteArea(ctx context.Context, tenantID, id string
 	if err := requireTenantID(tenantID); err != nil {
 		return err
 	}
-	_, err := r.db.ExecContext(ctx, `UPDATE plt_areas SET status = 'inactive', updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id)
-	return err
+	res, err := r.db.ExecContext(ctx, `UPDATE plt_areas SET status = 'inactive', updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	return affectedOrNotFound(res, err)
 }
 
 func (r *PlatformRepository) ListFileTemplates(ctx context.Context, tenantID string) ([]domain.FileTemplate, error) {
@@ -1201,6 +1229,6 @@ func (r *PlatformRepository) DeleteFileTemplate(ctx context.Context, tenantID, i
 	if err := requireTenantID(tenantID); err != nil {
 		return err
 	}
-	_, err := r.db.ExecContext(ctx, `DELETE FROM plt_file_templates WHERE tenant_id = $1 AND id = $2`, tenantID, id)
-	return err
+	res, err := r.db.ExecContext(ctx, `DELETE FROM plt_file_templates WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	return affectedOrNotFound(res, err)
 }

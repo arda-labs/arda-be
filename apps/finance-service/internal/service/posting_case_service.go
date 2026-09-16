@@ -240,6 +240,26 @@ func validateCancellationShape(in *CancellationCaseInput) error {
 	return nil
 }
 
+// postingValidationError renders a failed ValidatePosting preview into one
+// clear reason: global errors (UNBALANCED, PERIOD_CLOSED, ...) first, then the
+// per-line errors (INVALID_AMOUNT, ACCOUNT_NOT_FOUND, ...) prefixed with the
+// line number. ValidatePosting reports business-rule failures through
+// result.Valid=false, not through err, so skipping the flag would let an
+// invalid case reach the workflow and fail only at Reserve time.
+func postingValidationError(result *financev1.ValidationResult) error {
+	reasons := make([]string, 0, len(result.GetGlobalErrors()))
+	reasons = append(reasons, result.GetGlobalErrors()...)
+	for _, l := range result.GetLines() {
+		for _, e := range l.GetErrors() {
+			reasons = append(reasons, fmt.Sprintf("line %d: %s", l.GetLineNo(), e))
+		}
+	}
+	if len(reasons) == 0 {
+		reasons = append(reasons, "posting is invalid")
+	}
+	return fmt.Errorf("posting rejected: %s", strings.Join(reasons, "; "))
+}
+
 // CreatePostingCase validates the posting structurally, previews it through
 // PostingService.ValidatePosting (COA resolution + balance rules), then
 // creates and submits the maker-checker workflow case. The case idempotency
@@ -265,8 +285,12 @@ func (s *PostingCaseService) CreatePostingCase(ctx context.Context, tenantID, ac
 	if s.workflow == nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInternal, "workflow client is not configured")
 	}
-	if _, err := s.posting.ValidatePosting(ctx, tenantID, in.PostingRequest); err != nil {
+	res, err := s.posting.ValidatePosting(ctx, tenantID, in.PostingRequest)
+	if err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
+	}
+	if !res.GetValid() {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, postingValidationError(res).Error())
 	}
 
 	flowLower := strings.ToLower(in.Flow)

@@ -447,8 +447,20 @@ func (h *WorkflowHandler) OperatePauseInstance(w http.ResponseWriter, r *http.Re
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid process instance key")
 		return
 	}
+	bc, err := h.caseForProcessInstanceKey(r.Context(), key)
+	if err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Process instance not found")
+		return
+	}
 	// Zeebe does not have a native pause; we mark the case as SUSPENDED
-	_ = h.caseRepo.SetCaseStatusByProcessKey(r.Context(), key, "SUSPENDED")
+	if err := h.setCaseStatusByProcessKey(r.Context(), key, "SUSPENDED"); err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
 	writeJSON(w, r, http.StatusOK, map[string]string{"status": "paused"})
 }
 
@@ -462,7 +474,19 @@ func (h *WorkflowHandler) OperateResumeInstance(w http.ResponseWriter, r *http.R
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid process instance key")
 		return
 	}
-	_ = h.caseRepo.SetCaseStatusByProcessKey(r.Context(), key, "ACTIVE")
+	bc, err := h.caseForProcessInstanceKey(r.Context(), key)
+	if err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Process instance not found")
+		return
+	}
+	if err := h.setCaseStatusByProcessKey(r.Context(), key, "ACTIVE"); err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
 	writeJSON(w, r, http.StatusOK, map[string]string{"status": "resumed"})
 }
 
@@ -476,7 +500,19 @@ func (h *WorkflowHandler) OperateCancelInstance(w http.ResponseWriter, r *http.R
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid process instance key")
 		return
 	}
-	_ = h.caseRepo.SetCaseStatusByProcessKey(r.Context(), key, "CANCELLED")
+	bc, err := h.caseForProcessInstanceKey(r.Context(), key)
+	if err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Process instance not found")
+		return
+	}
+	if err := h.setCaseStatusByProcessKey(r.Context(), key, "CANCELLED"); err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
 	if h.zeebeSvc != nil {
 		_ = h.zeebeSvc.CancelWorkflow(r.Context(), key)
 	}
@@ -493,14 +529,11 @@ func (h *WorkflowHandler) OperateRetryIncident(w http.ResponseWriter, r *http.Re
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid incident key")
 		return
 	}
-	if h.zeebeSvc == nil {
-		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
-		return
-	}
 
-	// A real exporter incident: retry the failing job and resolve the incident,
-	// mirroring Operate's retry action. Without the read model the path key is
-	// treated as a job key (legacy inc-<timelineId> rows).
+	// A real exporter incident: authorize it against the caller tenant, then
+	// retry the failing job and resolve the incident, mirroring Operate's retry
+	// action. Without the read model the path key is treated as a job key
+	// (legacy inc-<timelineId> rows) and authorized as such.
 	if h.MonitoringIndex != nil && h.MonitoringIndex.Enabled() {
 		incident, err := h.MonitoringIndex.GetIncident(r.Context(), incidentKey)
 		if err != nil {
@@ -509,6 +542,19 @@ func (h *WorkflowHandler) OperateRetryIncident(w http.ResponseWriter, r *http.Re
 		}
 		if incident == nil || incident.JobKey <= 0 {
 			writeAPIError(w, r, http.StatusNotFound, "Incident not found or has no retryable job")
+			return
+		}
+		bc, err := h.caseForProcessInstanceKey(r.Context(), incident.ProcessInstanceKey)
+		if err != nil {
+			writeCaseScopeError(w, r, err)
+			return
+		}
+		if bc == nil {
+			writeAPIError(w, r, http.StatusNotFound, "Incident not found or has no retryable job")
+			return
+		}
+		if h.zeebeSvc == nil {
+			writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 			return
 		}
 		if err := h.zeebeSvc.RetryJob(r.Context(), incident.JobKey, 3); err != nil {
@@ -529,6 +575,19 @@ func (h *WorkflowHandler) OperateRetryIncident(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	bc, err := h.caseForIncidentKey(r.Context(), incidentKey)
+	if err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Incident not found in the verified tenant")
+		return
+	}
+	if h.zeebeSvc == nil {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
+		return
+	}
 	if err := h.zeebeSvc.RetryJob(r.Context(), incidentKey, 3); err != nil {
 		writeAPIError(w, r, http.StatusBadGateway, err.Error())
 		return
@@ -548,6 +607,30 @@ func (h *WorkflowHandler) OperateResolveIncident(w http.ResponseWriter, r *http.
 	}
 	if h.zeebeRest == nil || !h.zeebeRest.Enabled() {
 		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe REST client is not configured")
+		return
+	}
+	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
+		// Resolving a Zeebe incident mutates the shared gateway; without the
+		// read model the key cannot be proven to belong to the caller tenant.
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Resolving incidents requires ZEEBE_ES_URL")
+		return
+	}
+	incident, err := h.MonitoringIndex.GetIncident(r.Context(), incidentKey)
+	if err != nil {
+		writeAPIError(w, r, http.StatusBadGateway, err.Error())
+		return
+	}
+	if incident == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Incident not found")
+		return
+	}
+	bc, err := h.caseForProcessInstanceKey(r.Context(), incident.ProcessInstanceKey)
+	if err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Incident not found")
 		return
 	}
 	if err := h.zeebeRest.ResolveIncident(r.Context(), incidentKey); err != nil {
@@ -602,6 +685,15 @@ func (h *WorkflowHandler) OperateUpdateJobRetries(w http.ResponseWriter, r *http
 	}
 	if req.Retries <= 0 {
 		req.Retries = 3
+	}
+	bc, err := h.caseForJobKey(r.Context(), jobKey)
+	if err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Job not found in the verified tenant")
+		return
 	}
 	if h.zeebeSvc == nil {
 		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")

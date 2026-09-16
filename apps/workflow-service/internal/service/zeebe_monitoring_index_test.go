@@ -364,3 +364,47 @@ func TestSearchIncidentsFoldsDeletedStatesAndFiltersOpen(t *testing.T) {
 		t.Fatalf("expected no cursor at the end of results, got %q", cursor)
 	}
 }
+
+func TestGetJobFoldsRecordsAndFiltersByKey(t *testing.T) {
+	created := `{"key":77,"timestamp":1000,"intent":"CREATED","valueType":"JOB",
+		"value":{"type":"crm.sync","retries":3,"worker":"","elementId":"Task_A","processInstanceKey":9,"bpmnProcessId":"crm-reg"}}`
+	failed := `{"key":77,"timestamp":2000,"intent":"FAILED","valueType":"JOB",
+		"value":{"type":"crm.sync","retries":0,"worker":"default","elementId":"Task_A","processInstanceKey":9,"errorMessage":"boom"}}`
+
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &requestBody)
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(string(body), `"key":77`) {
+			_, _ = w.Write([]byte(`{"hits":{"hits":[{"_source":` + created + `},{"_source":` + failed + `}]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"hits":{"hits":[]}}`))
+	}))
+	defer server.Close()
+
+	index := service.NewZeebeMonitoringIndex(server.URL)
+	job, err := index.GetJob(context.Background(), 77)
+	if err != nil {
+		t.Fatalf("GetJob(77): %v", err)
+	}
+	if job == nil || job.JobKey != "77" || job.State != "FAILED" || job.Retries != 0 {
+		t.Fatalf("unexpected folded job: %+v", job)
+	}
+	if job.ProcessInstanceKey != "9" || job.ErrorMessage != "boom" || job.BpmnProcessID != "crm-reg" {
+		t.Fatalf("expected process scope and error metadata: %+v", job)
+	}
+	serialized, _ := json.Marshal(requestBody)
+	if !strings.Contains(string(serialized), "valueType") || !strings.Contains(string(serialized), `"key":77`) {
+		t.Fatalf("expected the query to filter by valueType and job key: %s", serialized)
+	}
+
+	missing, err := index.GetJob(context.Background(), 88)
+	if err != nil {
+		t.Fatalf("GetJob(88): %v", err)
+	}
+	if missing != nil {
+		t.Fatalf("unexpected job for an unknown key: %+v", missing)
+	}
+}

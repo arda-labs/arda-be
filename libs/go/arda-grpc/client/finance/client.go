@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/libs/go/arda-grpc/client/retry"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
@@ -44,6 +45,10 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 	conn, err := grpc.NewClient(
 		addr,
 		grpc.WithTransportCredentials(transportCreds),
+		// Only read-only RPCs are retried; Post/Reserve/Release/Reverse writes
+		// (and ValidatePosting's dry-run) must never be replayed as a mutation.
+		retry.ReadOnly("arda.finance.v1.PostingService",
+			"ValidatePosting", "GetJournalEntry", "ListPostingRules"),
 		grpc.WithChainUnaryInterceptor(
 			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
 			interceptors.UnaryClientServiceAuth(secret, sourceService, "finance-service"),

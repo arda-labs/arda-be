@@ -36,12 +36,14 @@ type PostingLeg struct {
 }
 
 // FetchPostingRules loads the rule card for a document type. Any failure
-// degrades to nil — the built-in fallback classifications take over.
-func FetchPostingRules(client *Client, documentType string) []*financev1.PostingRule {
+// degrades to nil — the built-in fallback classifications take over. The
+// caller context must carry the tenant scope: without it the finance service
+// rejects the lookup and every flow silently falls back to hardcoded legs.
+func FetchPostingRules(ctx context.Context, client *Client, documentType string) []*financev1.PostingRule {
 	if client == nil {
 		return nil
 	}
-	rules, err := client.ListPostingRules(context.Background(), documentType)
+	rules, err := client.ListPostingRules(ctx, documentType)
 	if err != nil {
 		slog.Warn("posting rule lookup failed — falling back to built-in legs", "documentType", documentType, "err", err)
 		return nil

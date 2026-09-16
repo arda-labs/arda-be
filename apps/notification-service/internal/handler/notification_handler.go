@@ -85,6 +85,10 @@ func (h *NotificationHandler) SubscribePush(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := h.svc.SubscribePush(r.Context(), tenantID, userID, r.UserAgent(), in); err != nil {
+		if errors.Is(err, service.ErrPushEndpointOwned) {
+			writeNotificationError(w, r, err)
+			return
+		}
 		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -211,6 +215,10 @@ func writeNotificationError(w http.ResponseWriter, r *http.Request, err error) {
 		status = http.StatusBadRequest
 		code = ardaerrors.CodeUserContextRequired
 		message = "Authenticated user context is required"
+	case errors.Is(err, service.ErrPushEndpointOwned):
+		status = http.StatusConflict
+		code = ardaerrors.CodeConflict
+		message = "This push endpoint is already registered to another account"
 	}
 
 	ardahttp.WriteProblem(w, r, status, ardaerrors.New(code, message))

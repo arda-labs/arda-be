@@ -108,7 +108,7 @@ func (r *CatalogRepository) Update(ctx context.Context, table string, item domai
 	row := r.db.QueryRowContext(ctx, fmt.Sprintf(`
 		UPDATE %s
 		SET code = $3, name = $4, description = $5, is_active = $6, attributes = $7, updated_at = now()
-		WHERE id = $1 AND (tenant_id IS NULL OR tenant_id = $2)
+		WHERE id = $1 AND tenant_id = $2
 		RETURNING %s`, table, catalogColumns),
 		item.ID, item.TenantID, item.Code, item.Name, item.Description, item.IsActive, nullIfEmpty(item.Attributes))
 	updated, err := scanCatalogItem(row)
@@ -120,7 +120,7 @@ func (r *CatalogRepository) Update(ctx context.Context, table string, item domai
 
 func (r *CatalogRepository) Delete(ctx context.Context, table, tenantID, id string) error {
 	res, err := r.db.ExecContext(ctx, fmt.Sprintf(
-		`DELETE FROM %s WHERE id = $1 AND (tenant_id IS NULL OR tenant_id = $2)`, table), id, tenantID)
+		`DELETE FROM %s WHERE id = $1 AND tenant_id = $2`, table), id, tenantID)
 	if err != nil {
 		return err
 	}

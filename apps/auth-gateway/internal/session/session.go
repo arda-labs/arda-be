@@ -21,6 +21,11 @@ type Session struct {
 	AuthTime     time.Time `json:"auth_time"`
 	IAMSessionID string    `json:"iam_session_id,omitempty"`
 
+	// LastAuthCheck is when the user context of this session was last
+	// re-validated against IAM. It bounds how long a revoked permission or a
+	// disabled account can keep using a live BFF session.
+	LastAuthCheck time.Time `json:"last_auth_check,omitempty"`
+
 	// Device info (tracked on login)
 	DeviceID   string `json:"device_id,omitempty"`
 	DeviceName string `json:"device_name,omitempty"`
@@ -151,9 +156,8 @@ func (s *MemoryStore) Get(_ context.Context, sessionID string) (*Session, error)
 	defer s.mu.RUnlock()
 	entry, ok := s.sessions[sessionID]
 	if !ok || time.Now().After(entry.expires) {
-		if ok {
-			delete(s.sessions, sessionID)
-		}
+		// Expired entries are deleted by cleanupLoop: mutating the map while
+		// holding only the read lock races with concurrent readers.
 		return nil, nil
 	}
 	return entry.session, nil

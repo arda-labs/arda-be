@@ -108,6 +108,7 @@ type UserContext struct {
 	Gender                   string             `json:"gender,omitempty"`
 	Address                  string             `json:"address,omitempty"`
 	Country                  string             `json:"country,omitempty"`
+	Status                   string             `json:"status,omitempty"`
 	PictureURL               string             `json:"picture,omitempty"`
 	AvatarFileID             string             `json:"avatarFileId,omitempty"`
 	CoverImageURL            string             `json:"coverImage,omitempty"`

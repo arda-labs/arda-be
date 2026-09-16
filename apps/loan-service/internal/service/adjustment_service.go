@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -28,6 +29,12 @@ func mapRepoError(err error) error {
 		return nil
 	}
 	switch {
+	case errors.Is(err, repository.ErrAdjustmentNotPending):
+		// The guarded transition refused the decision: the row is not
+		// PENDING (already resolved to another status, or never submitted).
+		// A replay of the same decision is a no-op success inside the
+		// repository, so reaching here means a real conflict.
+		return ardaerrors.Wrap(ardaerrors.CodeConflict, "adjustment is not pending anymore", err)
 	case strings.Contains(err.Error(), "lnm: record not found"):
 		return ardaerrors.New(ardaerrors.CodeNotFound, "loan record not found")
 	case strings.Contains(err.Error(), "lnm: code conflict"):

@@ -25,6 +25,11 @@ const (
 var ErrNotFound = errors.New("not found")
 var ErrIdempotencyConflict = errors.New("idempotency key was already used with a different request")
 
+// ErrTenantScopeRequired is returned when a tenant-scoped query runs without
+// the verified tenant metadata bound by the service boundary. Callers map it
+// to 403 instead of leaking an unscoped result.
+var ErrTenantScopeRequired = errors.New("verified tenant scope is required")
+
 type CaseType struct {
 	CaseType           string     `json:"caseType"`
 	BusinessArea       string     `json:"businessArea"`
@@ -140,7 +145,7 @@ func NewCaseRepository(db *sql.DB) *CaseRepository {
 func verifiedTenant(ctx context.Context) (string, error) {
 	tenant := strings.TrimSpace(ardametadata.FromOutgoing(ctx).TenantID)
 	if tenant == "" {
-		return "", errors.New("verified tenant scope is required")
+		return "", ErrTenantScopeRequired
 	}
 	return tenant, nil
 }
@@ -673,16 +678,34 @@ func (r *CaseRepository) FinishCase(ctx context.Context, processInstanceKey int6
 	return err
 }
 
+// SetCaseStatusByProcessKey updates the case projected from a Zeebe process
+// instance. The update is tenant-scoped and reports ErrNotFound when no row
+// matched, so callers cannot mutate (or silently no-op) another tenant's case
+// even if they can guess the process instance key.
 func (r *CaseRepository) SetCaseStatusByProcessKey(ctx context.Context, processInstanceKey int64, status string) error {
 	if processInstanceKey == 0 {
 		return nil
 	}
-	_, err := r.db.ExecContext(ctx, `
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return err
+	}
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE business_cases
-		SET status = $2, updated_at = CURRENT_TIMESTAMP
-		WHERE process_instance_key = $1
-	`, processInstanceKey, status)
-	return err
+		SET status = $3, updated_at = CURRENT_TIMESTAMP
+		WHERE tenant_id = $1 AND process_instance_key = $2
+	`, tenant, processInstanceKey, status)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *CaseRepository) GetCaseByProcessInstanceKey(ctx context.Context, processInstanceKey int64) (*BusinessCase, error) {

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -55,8 +56,9 @@ type sessionUserResolveCall struct {
 }
 
 type sessionUserResolveResult struct {
-	user *session.UserInfo
-	ok   bool
+	user    *session.UserInfo
+	ok      bool
+	revoked bool
 }
 
 func NewBFFHandler(cfg config.Config, store session.Store, iamClient *iamclient.Client, pol *policy.Policy) *BFFHandler {
@@ -666,7 +668,7 @@ func (h *BFFHandler) establishBFFSession(w http.ResponseWriter, r *http.Request,
 		h.logger.Warn("id token is empty in hydra token response")
 	}
 	var ok bool
-	userInfo, ok = h.resolveSessionUser(r.Context(), userInfo, true)
+	userInfo, ok, _ = h.resolveSessionUser(r.Context(), userInfo, true)
 	if !ok || userInfo.UserID == "" {
 		h.logger.Error("user context resolution failed", "subject", userInfo.Subject)
 		respondError(w, http.StatusBadGateway, "user context unavailable")
@@ -675,7 +677,7 @@ func (h *BFFHandler) establishBFFSession(w http.ResponseWriter, r *http.Request,
 	h.logger.Debug("user context resolved successfully", "user_id", userInfo.UserID, "username", userInfo.Username)
 	ttl := time.Duration(h.cfg.SessionTTL) * time.Second
 	now := time.Now()
-	sess := &session.Session{AccessToken: tokenData.AccessToken, RefreshToken: tokenData.RefreshToken, ExpiresAt: now.Add(ttl), User: userInfo, IPAddress: extractIP(r), AuthTime: now}
+	sess := &session.Session{AccessToken: tokenData.AccessToken, RefreshToken: tokenData.RefreshToken, ExpiresAt: now.Add(ttl), User: userInfo, IPAddress: extractIP(r), AuthTime: now, LastAuthCheck: now}
 	deviceToken := h.readDeviceCookie(r)
 	if deviceToken == "" {
 		deviceToken = generateDeviceToken()
@@ -712,12 +714,12 @@ func (h *BFFHandler) establishBFFSession(w http.ResponseWriter, r *http.Request,
 	return userInfo, true
 }
 
-func (h *BFFHandler) resolveSessionUser(ctx context.Context, fallback *session.UserInfo, useCache bool) (*session.UserInfo, bool) {
+func (h *BFFHandler) resolveSessionUser(ctx context.Context, fallback *session.UserInfo, useCache bool) (*session.UserInfo, bool, bool) {
 	if fallback == nil {
 		fallback = &session.UserInfo{}
 	}
 	if h.iamClient == nil {
-		return nil, false
+		return nil, false, false
 	}
 
 	if fallback.UserID == "" && looksLikeUUID(fallback.Subject) {
@@ -729,7 +731,10 @@ func (h *BFFHandler) resolveSessionUser(ctx context.Context, fallback *session.U
 	if useCache && h.cache != nil && sessionTenantContextComplete(fallback) {
 		for _, key := range sessionUserCacheKeys(fallback.UserID, fallback.Subject, fallback.AuthVersion) {
 			if uc, ok := h.cache.get(key); ok {
-				return sessionUserFromIAM(uc, fallback), true
+				if userContextRevoked(uc) {
+					return nil, false, true
+				}
+				return sessionUserFromIAM(uc, fallback), true, false
 			}
 		}
 	}
@@ -758,26 +763,87 @@ func sessionTenantContextComplete(user *session.UserInfo) bool {
 	return user.TenantMemberships != nil && user.GlobalCapabilitiesLoaded
 }
 
+// sessionAuthRefreshDue decides whether the BFF session user context must be
+// re-resolved from IAM. High-risk routes always force a fresh check; otherwise
+// the context is re-validated at most once per interval, so a revoked
+// permission, role or disabled account stops working within that window
+// instead of for the whole session TTL. A non-positive interval disables the
+// scheduled check (only forceFresh re-validates).
+func sessionAuthRefreshDue(now, lastCheck time.Time, interval time.Duration, forceFresh bool) bool {
+	if forceFresh {
+		return true
+	}
+	if interval <= 0 {
+		return false
+	}
+	if lastCheck.IsZero() {
+		return true
+	}
+	return now.Sub(lastCheck) >= interval
+}
+
+func (h *BFFHandler) sessionAuthCheckInterval() time.Duration {
+	if h.cfg.SessionAuthCheckInterval <= 0 {
+		return 0
+	}
+	return time.Duration(h.cfg.SessionAuthCheckInterval) * time.Second
+}
+
+// userContextRevoked reports whether IAM says the account may no longer hold a
+// session. Disabling a user bumps auth_version but leaves roles/permissions
+// untouched, so the status field is what actually stops a disabled account.
+func userContextRevoked(uc *iamclient.UserContext) bool {
+	return uc != nil && strings.EqualFold(strings.TrimSpace(uc.Status), "DISABLED")
+}
+
 func (h *BFFHandler) ensureSessionUser(ctx context.Context, sess *session.Session, forceFresh bool) bool {
 	if sess == nil {
 		return false
 	}
-	if !forceFresh && sessionUserComplete(sess.User) {
+	due := sessionAuthRefreshDue(time.Now(), sess.LastAuthCheck, h.sessionAuthCheckInterval(), forceFresh)
+	if !due && sessionUserComplete(sess.User) {
 		return true
 	}
 	previous := sess.User
-	userInfo, ok := h.resolveSessionUser(ctx, sess.User, !forceFresh)
-	if !ok || userInfo.UserID == "" {
+	// Scheduled re-validation bypasses the local context cache so it observes
+	// the current IAM state; the legacy "incomplete context" path keeps using
+	// the cache like before.
+	userInfo, ok, revoked := h.resolveSessionUser(ctx, sess.User, !due)
+	if revoked {
+		h.deleteSession(ctx, sess.ID)
+		return false
+	}
+	if !ok || userInfo == nil || userInfo.UserID == "" {
+		// IAM is temporarily unreachable: keep serving the last validated
+		// context instead of logging every live session out during an outage.
+		// LastAuthCheck stays untouched, so the next request retries.
+		if due && !forceFresh && sessionUserComplete(previous) {
+			return true
+		}
 		return false
 	}
 	sess.User = userInfo
-	if !reflect.DeepEqual(previous, userInfo) {
+	if due {
+		sess.LastAuthCheck = time.Now()
+	}
+	if !reflect.DeepEqual(previous, userInfo) || due {
 		h.updateSession(ctx, sess)
 	}
 	return true
 }
 
-func (h *BFFHandler) resolveSessionUserOnce(ctx context.Context, fallback *session.UserInfo) (*session.UserInfo, bool) {
+func (h *BFFHandler) deleteSession(ctx context.Context, sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	if err := h.store.Delete(ctx, sessionID); err != nil {
+		h.logger.Warn("delete revoked session failed", "session_id", sessionID, "err", err)
+		return
+	}
+	h.logger.Info("session revoked", "session_id", sessionID)
+}
+
+func (h *BFFHandler) resolveSessionUserOnce(ctx context.Context, fallback *session.UserInfo) (*session.UserInfo, bool, bool) {
 	key := sessionUserResolveKey(fallback)
 	if key == "" {
 		return h.resolveSessionUserUncached(ctx, fallback)
@@ -788,45 +854,66 @@ func (h *BFFHandler) resolveSessionUserOnce(ctx context.Context, fallback *sessi
 		h.resolveMu.Unlock()
 		<-call.done
 		result := call.result
-		return result.user, result.ok
+		return result.user, result.ok, result.revoked
 	}
 	call := &sessionUserResolveCall{done: make(chan struct{})}
 	h.resolveInflight[key] = call
 	h.resolveMu.Unlock()
 
-	user, ok := h.resolveSessionUserUncached(ctx, fallback)
-	call.result = sessionUserResolveResult{user: user, ok: ok}
+	user, ok, revoked := h.resolveSessionUserUncached(ctx, fallback)
+	call.result = sessionUserResolveResult{user: user, ok: ok, revoked: revoked}
 
 	h.resolveMu.Lock()
 	delete(h.resolveInflight, key)
 	h.resolveMu.Unlock()
 	close(call.done)
-	return user, ok
+	return user, ok, revoked
 }
 
-func (h *BFFHandler) resolveSessionUserUncached(ctx context.Context, fallback *session.UserInfo) (*session.UserInfo, bool) {
+func (h *BFFHandler) resolveSessionUserUncached(ctx context.Context, fallback *session.UserInfo) (*session.UserInfo, bool, bool) {
 	lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
+	// IAM answers 404 when the account is gone; a transport or server failure
+	// must never be mistaken for it. Only when every attempted lookup reports
+	// "not found" is the session revoked.
+	attempted := 0
+	allNotFound := true
+	recordFailure := func(err error) {
+		if !errors.Is(err, iamclient.ErrUserNotFound) {
+			allNotFound = false
+		}
+	}
+
 	if fallback.Subject != "" && !looksLikeUUID(fallback.Subject) {
+		attempted++
 		if uc, err := h.iamClient.GetUserBySubject(lookupCtx, fallback.Subject); err == nil {
+			if userContextRevoked(uc) {
+				return fallback, false, true
+			}
 			h.cacheSessionUser(fallback, uc)
-			return sessionUserFromIAM(uc, fallback), true
+			return sessionUserFromIAM(uc, fallback), true, false
 		} else {
+			recordFailure(err)
 			h.logger.Warn("resolve user by subject failed", "subject", fallback.Subject, "err", err)
 		}
 	}
 
 	for _, id := range iamLookupIDs(fallback) {
+		attempted++
 		if uc, err := h.iamClient.GetUserByID(lookupCtx, id); err == nil {
+			if userContextRevoked(uc) {
+				return fallback, false, true
+			}
 			h.cacheSessionUser(fallback, uc)
-			return sessionUserFromIAM(uc, fallback), true
+			return sessionUserFromIAM(uc, fallback), true, false
 		} else {
+			recordFailure(err)
 			h.logger.Warn("resolve user by id failed", "user_id", id, "err", err)
 		}
 	}
 
-	return fallback, false
+	return fallback, false, attempted > 0 && allNotFound
 }
 
 func sessionUserResolveKey(info *session.UserInfo) string {
@@ -1384,7 +1471,42 @@ func (h *BFFHandler) MeSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessions, _ := h.store.ListByUser(r.Context(), sess.User.UserID)
-	respondJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "current": sessionID})
+	respondJSON(w, http.StatusOK, map[string]any{"sessions": sessionViews(sessions, sessionID), "current": sessionID})
+}
+
+// sessionView is the browser-safe projection of a BFF session. Access and
+// refresh tokens stay server-side; the SPA only needs device/session metadata.
+type sessionView struct {
+	ID         string    `json:"id"`
+	IsCurrent  bool      `json:"is_current"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	AuthTime   time.Time `json:"auth_time"`
+	DeviceID   string    `json:"device_id,omitempty"`
+	DeviceName string    `json:"device_name,omitempty"`
+	DeviceType string    `json:"device_type,omitempty"`
+	IPAddress  string    `json:"ip_address,omitempty"`
+}
+
+func sessionViews(sessions []*session.Session, currentID string) []sessionView {
+	views := make([]sessionView, 0, len(sessions))
+	for _, item := range sessions {
+		if item == nil {
+			continue
+		}
+		views = append(views, sessionView{
+			ID:         item.ID,
+			IsCurrent:  item.ID == currentID,
+			CreatedAt:  item.CreatedAt,
+			ExpiresAt:  item.ExpiresAt,
+			AuthTime:   item.AuthTime,
+			DeviceID:   item.DeviceID,
+			DeviceName: item.DeviceName,
+			DeviceType: item.DeviceType,
+			IPAddress:  item.IPAddress,
+		})
+	}
+	return views
 }
 
 func (h *BFFHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -1776,6 +1898,7 @@ func (h *BFFHandler) upstreamBaseURL(path string) string {
 	}{
 		{"/api/admin", h.cfg.IAMServiceURL},
 		{"/api/iam", h.cfg.IAMServiceURL},
+		{"/api/identity", h.cfg.IAMServiceURL},
 		{"/api/platform", h.cfg.PlatformServiceURL},
 		{"/api/finance", h.cfg.FinanceServiceURL},
 		{"/api/media", h.cfg.MediaServiceURL},
@@ -1835,6 +1958,7 @@ func stripAuthContextHeaders(header http.Header) {
 		"X-Auth-Time",
 		"X-Auth-Risk",
 		"X-Auth-Checked",
+		"X-User-Timezone",
 	} {
 		header.Del(key)
 	}
@@ -2129,9 +2253,42 @@ func containsString(values []string, wanted string) bool {
 	return false
 }
 
+// requirePermission enforces the same session + permission contract as
+// policy.yaml for handlers that are not proxied through Proxy: a valid BFF
+// session, a resolvable user context, and either the global admin capability
+// or one of codes. It writes the 401/403 problem response on denial.
+func (h *BFFHandler) requirePermission(w http.ResponseWriter, r *http.Request, codes ...string) bool {
+	sessionID := h.readSessionCookie(r)
+	if sessionID == "" {
+		respondRequestError(w, r, http.StatusUnauthorized, "not_authenticated")
+		return false
+	}
+	sess, _ := h.store.Get(r.Context(), sessionID)
+	if sess == nil {
+		h.clearSessionCookie(w)
+		respondRequestError(w, r, http.StatusUnauthorized, "not_authenticated")
+		return false
+	}
+	if !h.ensureSessionUser(r.Context(), sess, false) {
+		h.clearSessionCookie(w)
+		respondRequestError(w, r, http.StatusUnauthorized, "user_context_unavailable")
+		return false
+	}
+	if sess.User != nil && (sess.User.IsGlobalAdmin || permission.HasAny(sess.User.Permissions, codes...)) {
+		return true
+	}
+	respondRequestError(w, r, http.StatusForbidden, "insufficient_permissions")
+	return false
+}
+
 // PolicyRoutes exposes the authorization policy entries read-only (W6a
 // resource-management screen): id, path, methods, auth, risk, permissions.
+// The route is registered directly (not proxied), so it repeats the
+// admin-read policy contract before exposing the authorization surface.
 func (h *BFFHandler) PolicyRoutes(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePermission(w, r, "iam.user.read") {
+		return
+	}
 	routes := []any{}
 	if h.policy != nil {
 		for _, route := range h.policy.Routes {

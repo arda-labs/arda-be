@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -28,10 +29,10 @@ const (
 
 // SavingsDetail is the aggregate read model for the savings detail screen.
 type SavingsDetail struct {
-	Savings  *repository.Savings        `json:"savings"`
-	Txns     []repository.DepositTxn    `json:"transactions"`
-	Accruals []repository.Accrual       `json:"accruals"`
-	Interest []repository.InterestOp    `json:"interest_ops"`
+	Savings  *repository.Savings     `json:"savings"`
+	Txns     []repository.DepositTxn `json:"transactions"`
+	Accruals []repository.Accrual    `json:"accruals"`
+	Interest []repository.InterestOp `json:"interest_ops"`
 }
 
 // InterestService runs DPM rate tiers, daily accrual (DPM.305) and
@@ -187,8 +188,41 @@ func (s *InterestService) ResolveRateRequest(ctx context.Context, tenantID, id, 
 
 // ── Accrual (DPM.305, EOD) ──
 
-// RunDaily accrues interest per active savings up to businessDate. Idempotent
-// per savings + period_to.
+// accrualWindow returns the inclusive date range still to accrue for one
+// savings account, given the last confirmed period ("" when none) and the run
+// business date. It is pure so the retry semantics can be unit tested.
+func accrualWindow(openDate, lastPosted, businessDate string) (from string, days int, ok bool) {
+	to, err := time.Parse("2006-01-02", businessDate)
+	if err != nil {
+		return "", 0, false
+	}
+	from = openDate
+	if lastPosted != "" {
+		last, err := time.Parse("2006-01-02", lastPosted)
+		if err != nil {
+			return "", 0, false
+		}
+		from = last.AddDate(0, 0, 1).Format("2006-01-02")
+	}
+	fromDate, err := time.Parse("2006-01-02", from)
+	if err != nil || to.Before(fromDate) {
+		return "", 0, false
+	}
+	days = int(to.Sub(fromDate).Hours()/24) + 1
+	if days <= 0 {
+		return "", 0, false
+	}
+	return from, days, true
+}
+
+// RunDaily accrues interest per active savings up to businessDate.
+//
+// Each day is staged PENDING first and only completed by completeAccrual:
+// post the GL entry with the stable row id as idempotency key, then flip the
+// row POSTED while adding the amount to the savings accrued balance in one
+// transaction. LastAccrualPeriod ignores PENDING rows, so a run that fails
+// midway leaves the day to be retried (not silently skipped) by the next run,
+// and the retry reuses the same GL key so finance de-duplicates the posting.
 func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate string) (int, error) {
 	to, err := time.Parse("2006-01-02", businessDate)
 	if err != nil {
@@ -201,24 +235,31 @@ func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate s
 	posted := 0
 	for i := range savings {
 		item := &savings[i]
+
+		// Complete days stranded by an earlier failed run first: the row keeps
+		// its id, so the GL idempotency key is stable and a retry cannot create
+		// a second journal entry. Finishing them before computing the next
+		// window keeps MAX(period_to) — and the accrual range — in order.
+		for {
+			pending, err := s.repo.FirstPendingAccrual(ctx, tenantID, item.ID)
+			if err != nil {
+				return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+			}
+			if pending == nil {
+				break
+			}
+			if err := s.completeAccrual(ctx, tenantID, item, pending); err != nil {
+				return posted, err
+			}
+			posted++
+		}
+
 		last, err := s.repo.LastAccrualPeriod(ctx, tenantID, item.ID)
 		if err != nil {
 			return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
-		from := item.OpenDate
-		if last != "" {
-			parsedLast, err := time.Parse("2006-01-02", last)
-			if err != nil {
-				continue
-			}
-			from = parsedLast.AddDate(0, 0, 1).Format("2006-01-02")
-		}
-		fromDate, err := time.Parse("2006-01-02", from)
-		if err != nil || to.Before(fromDate) {
-			continue
-		}
-		days := int(to.Sub(fromDate).Hours()/24) + 1
-		if days <= 0 {
+		from, days, ok := accrualWindow(item.OpenDate, last, businessDate)
+		if !ok {
 			continue
 		}
 		rateRow, err := s.repo.FindEffectiveRate(ctx, tenantID, item.ProductCode, 0, businessDate)
@@ -239,6 +280,10 @@ func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate s
 			}
 		}
 		if rate.IsZero() {
+			continue
+		}
+		fromDate, err := time.Parse("2006-01-02", from)
+		if err != nil {
 			continue
 		}
 		result := interest.Calculate(interest.Input{
@@ -271,22 +316,43 @@ func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate s
 			return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
 		if !inserted {
+			// A concurrent worker staged this period first; MarkAccrualPosted is
+			// guarded by the PENDING → POSTED transition, so only one of them can
+			// apply the amount. The survivor is completed by a later run.
 			continue
 		}
-		entryID, err := s.postInterest(ctx, tenantID, "DPM_ACCRUAL", "dpm-accrual-"+accrual.ID,
-			businessDate, item, amount, "DPM_INTEREST_EXPENSE", "DPM_INTEREST_PAYABLE", "Dự chi lãi tiền gửi")
-		if err != nil {
+		if err := s.completeAccrual(ctx, tenantID, item, accrual); err != nil {
 			return posted, err
-		}
-		if err := s.repo.SetAccrualJournal(ctx, tenantID, accrual.ID, entryID); err != nil {
-			return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
-		}
-		if err := s.repo.ApplyAccrualToSavings(ctx, tenantID, item.ID, amount); err != nil {
-			return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
 		posted++
 	}
 	return posted, nil
+}
+
+// completeAccrual finishes one staged accrual: post the GL entry when it is
+// still missing, then atomically flip the row POSTED and add the amount to the
+// savings accrued balance. The row id keeps the GL idempotency key
+// deterministic, so completing a PENDING row twice is safe.
+func (s *InterestService) completeAccrual(ctx context.Context, tenantID string, item *repository.Savings, a *repository.Accrual) error {
+	entryID := ""
+	if a.JournalID != nil {
+		entryID = *a.JournalID
+	}
+	if entryID == "" {
+		var err error
+		entryID, err = s.postInterest(ctx, tenantID, "DPM_ACCRUAL", "dpm-accrual-"+a.ID,
+			a.PeriodTo, item, a.AmountMinor, "DPM_INTEREST_EXPENSE", "DPM_INTEREST_PAYABLE", "Dự chi lãi tiền gửi")
+		if err != nil {
+			return err
+		}
+	}
+	if err := s.repo.MarkAccrualPosted(ctx, tenantID, a.ID, entryID); err != nil {
+		if errors.Is(err, repository.ErrSavingsNotActive) {
+			return ardaerrors.New(ardaerrors.CodeConflict, "savings is no longer ACTIVE — accrual cannot be applied")
+		}
+		return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	return nil
 }
 
 // ── Interest operations (DPM.302/303/304) ──
@@ -448,13 +514,50 @@ func (s *InterestService) CheckInterestOp(ctx context.Context, tenantID, id stri
 	if op == nil {
 		return false, "interest op not found", nil
 	}
-	if op.Status != "SUBMITTED" {
+	// POSTING ops already passed the checker and only failed while posting;
+	// keep them actionable so a retried case resumes instead of blocking.
+	if op.Status != "SUBMITTED" && op.Status != "POSTING" {
 		return false, "status " + op.Status + " is not actionable", nil
 	}
 	return true, "", nil
 }
 
+// opMode describes how ResolveInterestOp must treat the op it loaded. The
+// mapping is pure so the posting state machine is unit tested without a DB.
+type opMode int
+
+const (
+	opModeFresh   opMode = iota // SUBMITTED: reserve the accrued amount, then post GL
+	opModeResume                // POSTING: amount already reserved, finish the GL side
+	opModeSettled               // POSTED: idempotent no-op
+	opModeInvalid               // REJECTED / unknown state
+)
+
+func resolveOpMode(status string) opMode {
+	switch status {
+	case "SUBMITTED":
+		return opModeFresh
+	case "POSTING":
+		return opModeResume
+	case "POSTED":
+		return opModeSettled
+	default:
+		return opModeInvalid
+	}
+}
+
 // ResolveInterestOp posts + applies one op (APPROVE) or rejects it.
+//
+// Ordering decision (money safety): the accrued balance is reserved BEFORE the
+// GL posting, as part of the SUBMITTED → POSTING transition. An op that cannot
+// reserve its amount never reaches finance, so payouts can never exceed the
+// accrued interest (the guarded decrement has no GREATEST() masking), and two
+// concurrent approvals cannot both pass. A failed GL post is compensated
+// (balance restored, op back to SUBMITTED); when the process dies between the
+// two steps the op stays POSTING and the retry resumes at the GL step with the
+// same deterministic key (dpm-interest-<op id>), so finance de-duplicates and
+// the balance is never decremented twice. The state machine therefore cannot be
+// "paid in GL but still carrying accrued interest".
 func (s *InterestService) ResolveInterestOp(ctx context.Context, tenantID, id, decision, actor string) error {
 	op, err := s.repo.GetInterestOpByID(ctx, tenantID, id)
 	if err != nil {
@@ -465,11 +568,12 @@ func (s *InterestService) ResolveInterestOp(ctx context.Context, tenantID, id, d
 	}
 	switch decision {
 	case "APPROVE":
-		if op.Status == "POSTED" {
+		mode := resolveOpMode(op.Status)
+		if mode == opModeSettled {
 			return nil
 		}
-		if op.Status != "SUBMITTED" {
-			return ardaerrors.New(ardaerrors.CodeInvalidInput, "interest op is not SUBMITTED")
+		if mode == opModeInvalid {
+			return ardaerrors.New(ardaerrors.CodeInvalidInput, "interest op status "+op.Status+" is not actionable")
 		}
 		savings, err := s.repo.GetSavingsByCode(ctx, tenantID, op.SavingsCode)
 		if err != nil || savings == nil {
@@ -485,15 +589,39 @@ func (s *InterestService) ResolveInterestOp(ctx context.Context, tenantID, id, d
 			description = "Lãi nhập gốc tiền gửi"
 			capitalize = true
 		}
+		if mode == opModeFresh {
+			if err := s.repo.BeginInterestOpPosting(ctx, tenantID, op.ID, savings.ID, op.AmountMinor, capitalize); err != nil {
+				switch {
+				case errors.Is(err, repository.ErrAccruedInsufficient):
+					return ardaerrors.New(ardaerrors.CodeConflict, "amount exceeds the accrued interest or the savings account is no longer ACTIVE")
+				case errors.Is(err, repository.ErrInterestOpState):
+					// A concurrent worker advanced the op between our read and
+					// the guarded transition; a retry picks up its state.
+					return ardaerrors.New(ardaerrors.CodeConflict, "interest op is already being processed")
+				default:
+					return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+				}
+			}
+		}
 		entryID, err := s.postInterest(ctx, tenantID, card, fmt.Sprintf("dpm-interest-%s", op.ID),
 			op.CreatedAt.Format("2006-01-02"), savings, op.AmountMinor, debit, credit, description)
 		if err != nil {
+			// A concurrent worker may have completed (or compensated) the op
+			// while our posting was failing; re-read before reporting a
+			// failure so a false negative does not raise a permanent error.
+			if cErr := s.repo.CompensateInterestOp(ctx, tenantID, op.ID, savings.ID, op.AmountMinor, capitalize); cErr != nil {
+				if cur, gErr := s.repo.GetInterestOpByID(ctx, tenantID, op.ID); gErr == nil && cur != nil && cur.Status == "POSTED" {
+					return nil
+				}
+				return ardaerrors.Wrap(ardaerrors.CodeInternal,
+					"interest posting failed and the reserved accrual could not be restored; retry resumes from POSTING", err)
+			}
 			return err
 		}
-		if err := s.repo.SetInterestOpJournal(ctx, tenantID, op.ID, "POSTED", entryID); err != nil {
-			return err
+		if err := s.repo.MarkInterestOpPosted(ctx, tenantID, op.ID, entryID); err != nil {
+			return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
-		return s.repo.ApplyInterestOp(ctx, tenantID, savings.ID, op.AmountMinor, capitalize)
+		return nil
 	case "REJECT":
 		if op.Status == "REJECTED" {
 			return nil

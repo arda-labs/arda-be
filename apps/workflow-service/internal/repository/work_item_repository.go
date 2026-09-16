@@ -366,6 +366,32 @@ func (r *CaseRepository) FindActiveWorkTask(ctx context.Context, caseID string, 
 	return &item, nil
 }
 
+// FindWorkItemByJobKey returns the tenant-scoped work item bound to a Zeebe
+// job or native user-task key. Nil means no local projection exists yet (for
+// native tasks the caller still has to verify the task against the process).
+func (r *CaseRepository) FindWorkItemByJobKey(ctx context.Context, jobKey int64) (*WorkItem, error) {
+	if jobKey <= 0 {
+		return nil, nil
+	}
+	tenantID, err := verifiedTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRowContext(ctx, workItemSelectSQL()+`
+		WHERE bc.tenant_id = $1 AND wt.job_key = $2
+		ORDER BY wt.updated_at DESC
+		LIMIT 1
+	`, tenantID, jobKey)
+	item, err := scanWorkItem(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
 func (r *CaseRepository) ListWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
 	var items []WorkItem
 	var err error

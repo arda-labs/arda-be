@@ -194,6 +194,8 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 
 	// ── Internal API (service-to-service) ──
 	mux.Handle("/internal/iam/users/{id}/mfa/check", internalService(method("POST", mfaHandler.CheckMFA)))
+	mux.Handle("/internal/iam/users/{id}/mfa/verify", internalService(method("POST", mfaHandler.InternalVerifyCode)))
+	mux.Handle("/internal/iam/users/{id}/mfa/verify-backup", internalService(method("POST", mfaHandler.InternalVerifyBackupCode)))
 	mux.Handle("/internal/iam/users/by-subject/{subject}", internalService(method("GET", userHandler.GetBySubject)))
 	mux.Handle("/internal/iam/users/by-id/{id}/context", internalService(method("GET", userHandler.GetContextByID)))
 	mux.Handle("/internal/iam/users/by-kratos-identity/{identityId}/context", internalService(method("GET", userHandler.GetContextByKratosIdentityID)))

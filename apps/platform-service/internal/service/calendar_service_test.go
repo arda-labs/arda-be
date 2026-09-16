@@ -13,18 +13,62 @@ type mockCalendarRepo struct {
 	holidays   map[string]bool // Specific year holidays format: "YYYY-MM-DD"
 	recurring  map[string]bool // Recurring holidays format: "MM-DD"
 	cutoff     *domain.CutoffConfig
+
+	claimErr     error
+	releaseErr   error
+	isHolidayErr error
+	updateErr    error
+
+	claimCalls   int
+	releaseCalls int
+	updateCalls  int
 }
 
 func (m *mockCalendarRepo) GetSystemDate(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
 	return m.systemDate, nil
 }
 
+// ClaimEOD mimics the repository's conditional UPDATE: a claim is only granted
+// when the row exists and is not already EOD_PROCESSING.
+func (m *mockCalendarRepo) ClaimEOD(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
+	m.claimCalls++
+	if m.claimErr != nil {
+		return nil, m.claimErr
+	}
+	if m.systemDate == nil {
+		return nil, domain.ErrSystemDateNotFound
+	}
+	if m.systemDate.Status == domain.SystemDateEODProcessing {
+		return nil, domain.ErrEODInProgress
+	}
+	m.systemDate.Status = domain.SystemDateEODProcessing
+	return m.systemDate, nil
+}
+
+func (m *mockCalendarRepo) ReleaseEOD(ctx context.Context, branchCode string) error {
+	m.releaseCalls++
+	if m.releaseErr != nil {
+		return m.releaseErr
+	}
+	if m.systemDate != nil && m.systemDate.Status == domain.SystemDateEODProcessing {
+		m.systemDate.Status = domain.SystemDateOpen
+	}
+	return nil
+}
+
 func (m *mockCalendarRepo) UpdateSystemDate(ctx context.Context, sd *domain.SystemDate) error {
+	m.updateCalls++
+	if m.updateErr != nil {
+		return m.updateErr
+	}
 	m.systemDate = sd
 	return nil
 }
 
 func (m *mockCalendarRepo) IsHoliday(ctx context.Context, date time.Time) (bool, error) {
+	if m.isHolidayErr != nil {
+		return false, m.isHolidayErr
+	}
 	// 1. Check specific date
 	if m.holidays[date.Format("2006-01-02")] {
 		return true, nil

@@ -2,11 +2,18 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 )
+
+// errTaskNotAuthorized marks claim/complete denials so HTTP handlers can map
+// them to 403 instead of an upstream failure.
+var errTaskNotAuthorized = errors.New("task not authorized")
 
 func normalizeUserTaskElementID(elementID string) string {
 	switch strings.TrimSpace(elementID) {
@@ -19,9 +26,12 @@ func normalizeUserTaskElementID(elementID string) string {
 	}
 }
 
-func (h *WorkflowHandler) tryNativeUserTaskClaim(ctx context.Context, filter service.TaskClaimFilter, elementID, actor string) (*service.WorkflowTask, error) {
+func (h *WorkflowHandler) tryNativeUserTaskClaim(ctx context.Context, r *http.Request, filter service.TaskClaimFilter, elementID, actor string) (*service.WorkflowTask, error) {
 	if h.zeebeRest == nil || !h.zeebeRest.Enabled() || filter.ProcessInstanceKey == 0 {
 		return nil, nil
+	}
+	if h.caseRepo == nil {
+		return nil, fmt.Errorf("workflow registry is unavailable")
 	}
 	elementID = normalizeUserTaskElementID(elementID)
 	if !service.IsNativeUserTaskElement(elementID) {
@@ -35,6 +45,29 @@ func (h *WorkflowHandler) tryNativeUserTaskClaim(ctx context.Context, filter ser
 		if ut.ElementID != elementID {
 			continue
 		}
+		// Authorize against the task's own candidate groups before claiming.
+		// The case lookup is tenant-scoped: another tenant's process yields nil.
+		bc, err := h.caseRepo.GetCaseByProcessInstanceKey(ctx, ut.ProcessInstanceKey)
+		if err != nil {
+			return nil, fmt.Errorf("resolve case for task scope: %w", err)
+		}
+		if bc == nil {
+			return nil, fmt.Errorf("%w: task %d does not belong to an accessible case", errTaskNotAuthorized, ut.UserTaskKey)
+		}
+		if !isSuperadminActor(r) {
+			if ut.Assignee != "" && ut.Assignee != actor {
+				return nil, fmt.Errorf("%w: task already assigned to another user", errTaskNotAuthorized)
+			}
+			if ut.Assignee == "" {
+				ok, err := h.canClaimCandidateRole(ctx, r, bc.TenantID, firstCandidateGroup(ut.CandidateGroups))
+				if err != nil {
+					return nil, err
+				}
+				if !ok {
+					return nil, fmt.Errorf("%w: user is not in the candidate role/group for this task", errTaskNotAuthorized)
+				}
+			}
+		}
 		if actor != "" {
 			if err := h.zeebeRest.AssignUserTask(ctx, ut.UserTaskKey, actor); err != nil {
 				slog.Warn("native user task assign failed", "userTaskKey", ut.UserTaskKey, "err", err)
@@ -42,10 +75,8 @@ func (h *WorkflowHandler) tryNativeUserTaskClaim(ctx context.Context, filter ser
 		}
 		variables := map[string]any{}
 		caseID := filter.CaseID
-		if caseID == "" && h.caseRepo != nil {
-			if bc, err := h.caseRepo.GetCaseByProcessInstanceKey(ctx, filter.ProcessInstanceKey); err == nil && bc != nil {
-				caseID = bc.ID
-			}
+		if caseID == "" {
+			caseID = bc.ID
 		}
 		return &service.WorkflowTask{
 			JobKey:             ut.UserTaskKey,

@@ -6,6 +6,7 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/pressly/goose/v3 v3.27.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -16,6 +17,8 @@ replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc
 replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
 
 replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
+
+replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
 
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 

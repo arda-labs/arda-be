@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 
@@ -72,6 +73,7 @@ func ListenAndServe(grpcAddr string, userRepo *repository.UserRepository) (*grpc
 	srv := grpc.NewServer(
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerRecovery(slog.Default()),
 			interceptors.UnaryServerServiceAuth(serviceSecret, "iam-service", map[string]struct{}{"workflow-service": {}}),
 		),
 	)

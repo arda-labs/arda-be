@@ -74,6 +74,10 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 			problem(w, http.StatusConflict, "ai.approval_expired")
 			return
 		}
+		if errors.Is(err, repository.ErrApprovalArgumentsInvalid) {
+			problem(w, http.StatusConflict, "ai.approval_arguments_invalid")
+			return
+		}
 		if errors.Is(err, repository.ErrApprovalNotFound) {
 			problem(w, http.StatusNotFound, "ai.approval_not_found")
 			return
@@ -81,6 +85,19 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 		problem(w, http.StatusServiceUnavailable, "ai.approval_persistence_unavailable")
 		return
 	}
+	// HITL resume re-check (docs/ai/human-in-the-loop.md): the permission
+	// snapshot recorded at proposal time must still match the caller's current
+	// auth version. A changed version means roles/permissions were modified
+	// after the approver reviewed the action — fail closed, never execute.
+	if !approvalPermissionFresh(exec, scope) {
+		failClaimedExecution(ctx, store, exec, "ai.approval_stale")
+		problem(w, http.StatusConflict, "ai.approval_stale")
+		return
+	}
+	// The persisted run owns this execution (and the resumed agent loop), so
+	// its identity is authoritative for tool scope from here on.
+	scope.ExternalThread = exec.Run.ExternalThread
+	scope.ExternalRun = exec.Run.ExternalRun
 
 	selected, definition, err := resumeResolver.ResolveForExecution(tools.Call{
 		Name: exec.ToolName, Version: exec.ToolVersion, Arguments: json.RawMessage(exec.Arguments),
@@ -286,6 +303,10 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 				problem(w, http.StatusConflict, "ai.approval_expired")
 				return
 			}
+			if errors.Is(err, repository.ErrApprovalArgumentsInvalid) {
+				problem(w, http.StatusConflict, "ai.approval_arguments_invalid")
+				return
+			}
 			if errors.Is(err, repository.ErrApprovalNotFound) {
 				problem(w, http.StatusNotFound, "ai.approval_not_found")
 				return
@@ -293,6 +314,18 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 			problem(w, http.StatusServiceUnavailable, "ai.approval_persistence_unavailable")
 			return
 		}
+		// HITL resume re-check: a permission snapshot that changed since the
+		// proposal was approved invalidates the approval (fail closed).
+		if !approvalPermissionFresh(exec, scope) {
+			failClaimedExecution(ctx, store, exec, "ai.approval_stale")
+			problem(w, http.StatusConflict, "ai.approval_stale")
+			return
+		}
+		// The persisted run owns every interrupt in this resume request; keep
+		// the execution scope in sync so a follow-up Code Mode approval still
+		// resolves the same ai_runs row.
+		scope.ExternalThread = exec.Run.ExternalThread
+		scope.ExternalRun = exec.Run.ExternalRun
 		selected, definition, err := resumeResolver.ResolveForExecution(tools.Call{
 			Name: exec.ToolName, Version: exec.ToolVersion, Arguments: json.RawMessage(exec.Arguments),
 		}, scope)
@@ -378,6 +411,24 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 
 	messages := buildResumeMessages(ctx, resumeStore, options, scope, executed[0].exec, executed[0].content, uiContextFromForwardedProps(input.ForwardedProps))
 	agentStepsLoop(w, r, store, resolver, scope, run, resumeInput, sse, options, modelProvider, messages)
+}
+
+// approvalPermissionFresh enforces the resume-time re-check required by
+// docs/ai/human-in-the-loop.md: the permission snapshot recorded when the
+// proposal was created must match the caller's current X-Auth-Version
+// (injected by the auth-gateway from the trusted session, never
+// client-controlled).
+//
+// resource_version is intentionally not enforced: no trusted freshness source
+// exists at resume time yet (the owning domain service would have to expose
+// one), so it is persisted for audit only.
+func approvalPermissionFresh(exec repository.ApprovedExecution, scope tools.Context) bool {
+	if exec.PermissionVersion == "" {
+		// Legacy rows and workload-created proposals carry no snapshot; there
+		// is nothing to compare.
+		return true
+	}
+	return exec.PermissionVersion == scope.AuthVersion
 }
 
 // failClaimedExecution closes an approval execution after it has been claimed

@@ -53,6 +53,39 @@ func TestAllocateEvenNegativeTotal(t *testing.T) {
 	mustEq(t, sum, "-100.02")
 }
 
+func TestExponentNormalisesCurrencyCode(t *testing.T) {
+	if got := Exponent("vnd"); got != 0 {
+		t.Fatalf("lowercase vnd exponent = %d, want 0", got)
+	}
+	if got := Exponent("  VND  "); got != 0 {
+		t.Fatalf("padded VND exponent = %d, want 0", got)
+	}
+	if got := Exponent("kwd"); got != 3 {
+		t.Fatalf("lowercase kwd exponent = %d, want 3", got)
+	}
+	for _, currency := range []string{"BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"} {
+		if got := Exponent(currency); got != 3 {
+			t.Fatalf("%s exponent = %d, want 3", currency, got)
+		}
+	}
+	mustEq(t, Round(MustFromString("1.0005"), "KWD"), "1.001")
+}
+
+func TestAllocateEvenRoundsTotalToMinorUnit(t *testing.T) {
+	// 1.005 USD has sub-minor precision; it must be rounded to 1.01 before
+	// splitting so no share carries a fraction of a cent.
+	shares := AllocateEven(MustFromString("1.005"), 3, "USD")
+
+	sum := decimal.Zero
+	for _, s := range shares {
+		if !s.Equal(Round(s, "USD")) {
+			t.Fatalf("share %s is not a multiple of the USD minor unit", s)
+		}
+		sum = sum.Add(s)
+	}
+	mustEq(t, sum, "1.01")
+}
+
 func TestSubFloor(t *testing.T) {
 	mustEq(t, SubFloor(MustFromString("50"), MustFromString("80")), "0")
 	mustEq(t, SubFloor(MustFromString("80"), MustFromString("30")), "50")

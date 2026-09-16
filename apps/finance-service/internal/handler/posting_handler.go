@@ -71,6 +71,9 @@ var journalListSpec = ardahttp.ListSpec{
 // legacy `limit` param, which stays honored when no paging params are given.
 // from_date/to_date are accepted as aliases of from/to (the FE calendar
 // filter sends the long names); document_type filters the doc type exactly.
+// status (repeatable or comma-separated) narrows the status and defaults to
+// POSTED,REVERSED — PENDING proposals and VOID releases stay hidden unless
+// explicitly requested.
 func (h *PostingHandler) ListJournalEntries(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
@@ -103,6 +106,7 @@ func (h *PostingHandler) ListJournalEntries(w http.ResponseWriter, r *http.Reque
 		FromDate:     from,
 		ToDate:       to,
 		DocumentType: documentType,
+		Statuses:     r.URL.Query()["status"],
 		Search:       listReq.Q,
 		Sort:         listReq.Sort,
 		Order:        listReq.Order,
@@ -110,6 +114,10 @@ func (h *PostingHandler) ListJournalEntries(w http.ResponseWriter, r *http.Reque
 		PerPage:      perPage,
 	})
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidJournalStatus) {
+			respondError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
 		respondError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}

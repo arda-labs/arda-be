@@ -72,6 +72,14 @@ type Context struct {
 	TraceID     string
 	Permissions map[string]struct{}
 
+	// ExternalThread/ExternalRun are the AG-UI protocol ids of the durable run
+	// currently executing. They are resolved server-side by the handler (from
+	// the validated run input, or from the persisted run on resume) — never
+	// from client headers or tool arguments. HITL proposal persistence needs
+	// ExternalRun to attach the proposal to the owning ai_runs row.
+	ExternalThread string
+	ExternalRun    string
+
 	// Identity context injected by the gateway (X-Username, X-User-Email,
 	// X-Roles, X-Global-Roles, X-Global-Admin). Never trusted from the client
 	// directly — the gateway strips and re-injects these headers.

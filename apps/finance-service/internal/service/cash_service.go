@@ -55,10 +55,12 @@ func (s *CashService) Record(ctx context.Context, tenantID string, in *CashTxnIn
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "txn_date must be YYYY-MM-DD")
 	}
 
-	if _, err := s.db.ExecContext(ctx, `
+	var txnID string
+	if err := s.db.QueryRowContext(ctx, `
 		INSERT INTO fin_cash_transactions (tenant_id, txn_date, direction, amount_minor, currency_code, org_code, description, created_by)
-		VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8)`,
-		tenantID, in.TxnDate, in.Direction, in.AmountMinor, in.CurrencyCode, in.OrgCode, in.Description, in.Actor); err != nil {
+		VALUES ($1,$2::date,$3,$4,$5,$6,$7,$8)
+		RETURNING id`,
+		tenantID, in.TxnDate, in.Direction, in.AmountMinor, in.CurrencyCode, in.OrgCode, in.Description, in.Actor).Scan(&txnID); err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
 
@@ -71,7 +73,10 @@ func (s *CashService) Record(ctx context.Context, tenantID string, in *CashTxnIn
 			debit, credit = "CASH_SETTLEMENT_ACCOUNT", "VCM_CASH_ACCOUNT"
 		}
 		req := &financev1.PostingRequest{
-			IdempotencyKey: fmt.Sprintf("vcm-%s-%s-%s", strings.ToLower(in.Direction), in.TxnDate, fmt.Sprint(in.AmountMinor)),
+			// One journal entry per cash transaction row: keying by date+amount
+			// made two same-day/same-amount vouchers replay one entry and lose
+			// the second posting.
+			IdempotencyKey: fmt.Sprintf("vcm-%s-%s", strings.ToLower(in.Direction), txnID),
 			AccountingDate: in.TxnDate,
 			CurrencyCode:   in.CurrencyCode,
 			Description:    "Kho quỹ " + in.Direction,
@@ -110,9 +115,8 @@ func (s *CashService) Record(ctx context.Context, tenantID string, in *CashTxnIn
 		if posted != nil && posted.GetJournalEntryId() != "" {
 			if _, err := s.db.ExecContext(ctx, `
 				UPDATE fin_cash_transactions SET journal_entry_id = $3::uuid, updated_at = now()
-				WHERE tenant_id = $1 AND txn_date = $2::date AND direction = $4
-				  AND amount_minor = $5 AND description = $6 AND journal_entry_id IS NULL`,
-				tenantID, in.TxnDate, posted.GetJournalEntryId(), in.Direction, in.AmountMinor, in.Description); err != nil {
+				WHERE tenant_id = $1 AND id = $2 AND journal_entry_id IS NULL`,
+				tenantID, txnID, posted.GetJournalEntryId()); err != nil {
 				return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 			}
 			in.JournalEntryID = posted.GetJournalEntryId()

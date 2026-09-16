@@ -130,9 +130,9 @@ func (h *InternalAIHandler) InternalAIListRepayPlans(w http.ResponseWriter, r *h
 		writeServiceError(w, r, err)
 		return
 	}
-	paged, total, page, perPage := ardahttp.PageSlice(items, listReq.ListQuery)
+	res := ardahttp.PageSlice(items, listReq.ListQuery)
 	ardahttp.WriteSuccess(w, r, http.StatusOK,
-		ardahttp.NewListResponse(page, perPage, total, toAIRepayPlans(paged)))
+		ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, toAIRepayPlans(res.Items)))
 }
 
 // aiQuery trims the free-text search and clamps it to aiMaxQueryLen

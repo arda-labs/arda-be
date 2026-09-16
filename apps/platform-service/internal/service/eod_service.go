@@ -69,6 +69,26 @@ func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
 	return nil
 }
 
+// eodJob is one enabled step loaded for a run.
+type eodJob struct {
+	code     string
+	endpoint string
+	sequence int
+}
+
+// orderEODJobs keeps steps in configured sequence order: accrual and provision
+// must post before the trial-balance rebuild, so a code-only order (DPM_
+// before FIN_ before LNM_) would produce wrong daily figures. Code is only a
+// deterministic tie-break for equal sequences.
+func orderEODJobs(jobs []eodJob) {
+	sort.Slice(jobs, func(i, j int) bool {
+		if jobs[i].sequence != jobs[j].sequence {
+			return jobs[i].sequence < jobs[j].sequence
+		}
+		return jobs[i].code < jobs[j].code
+	})
+}
+
 // Run executes the enabled COB sequence for one business date under a
 // Postgres advisory lock (single-runner guarantee across replicas — §6
 // leader lock). Each step posts to the domain service internal endpoint
@@ -82,24 +102,23 @@ func (s *EODService) Run(ctx context.Context, tenantID, businessDate string) (*R
 	defer lockConn.Close()
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT code, endpoint FROM plt_job_definitions
+		SELECT code, endpoint, sequence FROM plt_job_definitions
 		WHERE tenant_id = $1 AND is_enabled
 		ORDER BY sequence, code`, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	type job struct{ code, endpoint string }
-	var jobs []job
+	var jobs []eodJob
 	for rows.Next() {
-		var j job
-		if err := rows.Scan(&j.code, &j.endpoint); err != nil {
+		var j eodJob
+		if err := rows.Scan(&j.code, &j.endpoint, &j.sequence); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		jobs = append(jobs, j)
 	}
 	rows.Close()
-	sort.Slice(jobs, func(i, j int) bool { return jobs[i].code < jobs[j].code })
+	orderEODJobs(jobs)
 
 	result := &RunResult{BusinessDate: businessDate}
 	for _, j := range jobs {

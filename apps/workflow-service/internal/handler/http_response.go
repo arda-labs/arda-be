@@ -23,8 +23,8 @@ func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 
 // writeListAll paginates an in-memory slice with the shared framing helper.
 func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
-	paged, total, page, perPage := ardahttp.PageSlice(items, ardahttp.ParseListQuery(r.URL.Query()))
-	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, paged))
+	res := ardahttp.PageSlice(items, ardahttp.ParseListQuery(r.URL.Query()))
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, res.Items))
 }
 
 // writeListAny mirrors the unpaginated envelope for surfaces whose item type

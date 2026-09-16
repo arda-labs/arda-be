@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 )
 
 func TestValidateClosingShape(t *testing.T) {
@@ -59,6 +61,49 @@ func TestValidateClosingShape(t *testing.T) {
 	}
 	if err := validateClosingShape(&ClosingCaseInput{AccountingDate: "2026-09-30", Rows: []ClosingCaseRow{{AccCode: "", AccPurpose: "INC", AmountMinor: 1}}}); err == nil || !strings.Contains(err.Error(), "acc_code is required") {
 		t.Fatalf("missing acc_code error = %v", err)
+	}
+}
+
+func TestCheckClosingRowAmount(t *testing.T) {
+	// Amount equal to or below the natural balance is accepted.
+	if err := checkClosingRowAmount(0, "5111", 500_000, 500_000); err != nil {
+		t.Fatalf("amount == balance rejected: %v", err)
+	}
+	if err := checkClosingRowAmount(0, "5111", 400_000, 500_000); err != nil {
+		t.Fatalf("amount < balance rejected: %v", err)
+	}
+
+	// Overdrawn closing is the fixed case: bút toán must never exceed what
+	// the account holds as of the closing date.
+	err := checkClosingRowAmount(1, "6321", 600_000, 500_000)
+	if err == nil || !strings.Contains(err.Error(), "exceeds the natural balance 500000") {
+		t.Fatalf("over-balance error = %v", err)
+	}
+	if !strings.Contains(err.Error(), "rows[1]") {
+		t.Fatalf("over-balance error must name the row: %v", err)
+	}
+
+	// Zero/negative balances (accounts absent from the candidates) are blocked.
+	for _, balance := range []int64{0, -1} {
+		err := checkClosingRowAmount(0, "5111", 1, balance)
+		if err == nil || !strings.Contains(err.Error(), "no positive") {
+			t.Fatalf("balance %d error = %v", balance, err)
+		}
+	}
+}
+
+func TestClosingBalanceIndexFiltersCurrency(t *testing.T) {
+	candidates := []repository.ClosingCandidate{
+		{AccountCode: "5111", CurrencyCode: "VND", BalanceMinor: 500_000},
+		{AccountCode: "5111", CurrencyCode: "USD", BalanceMinor: 9_999_999},
+		{AccountCode: "6321", CurrencyCode: "VND", BalanceMinor: 200_000},
+	}
+	got := closingBalanceIndex(candidates)
+	if len(got) != 2 {
+		t.Fatalf("index size = %d, want 2 (VND rows only)", len(got))
+	}
+	if got["5111"] != 500_000 || got["6321"] != 200_000 {
+		t.Fatalf("balances = %v, want 5111=500000 6321=200000", got)
 	}
 }
 

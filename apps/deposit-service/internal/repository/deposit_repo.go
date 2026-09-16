@@ -6,10 +6,24 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
+
+// ErrSavingsNotActive reports that a guarded savings mutation matched no
+// ACTIVE row (already closed, or settled concurrently).
+var ErrSavingsNotActive = errors.New("savings is not ACTIVE")
+
+// ErrInterestOpState reports that an interest op is not in the lifecycle state
+// the caller expected (for example a concurrent worker already advanced it).
+var ErrInterestOpState = errors.New("interest op is not in the expected state")
+
+// ErrAccruedInsufficient reports that a guarded accrued-interest decrement
+// matched no row: the requested amount exceeds the accrued balance, or the
+// savings account is no longer ACTIVE.
+var ErrAccruedInsufficient = errors.New("accrued interest is insufficient")
 
 // SavingsProduct is a deposit product catalog row (P2.1).
 type SavingsProduct struct {
@@ -389,12 +403,20 @@ func (r *DepositRepository) GetProductByCode(ctx context.Context, tenantID, code
 	return &p, nil
 }
 
-// CloseSavings marks the account CLOSED after full settlement.
+// CloseSavings marks the account CLOSED after full settlement. It reports
+// ErrSavingsNotActive when no ACTIVE row matched, so a concurrent second
+// settlement cannot silently report success.
 func (r *DepositRepository) CloseSavings(ctx context.Context, tenantID, savingsID, journalEntryID, actor string) error {
-	_, err := r.db.ExecContext(ctx, `
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE dpm_savings SET status = 'CLOSED', journal_entry_id = $3, updated_by = $4, updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'`, tenantID, savingsID, journalEntryID, actor)
-	return err
+	if err != nil {
+		return err
+	}
+	if affected, err := res.RowsAffected(); err == nil && affected == 0 {
+		return ErrSavingsNotActive
+	}
+	return nil
 }
 
 // ApplyTopUp increases principal; ApplyWithdraw decreases.
@@ -787,19 +809,19 @@ type RateRequest struct {
 
 // Accrual is one posted daily-prorated accrual row.
 type Accrual struct {
-	ID           string    `json:"id"`
-	TenantID     string    `json:"tenant_id"`
-	SavingsID    string    `json:"savings_id"`
-	SavingsCode  string    `json:"savings_code"`
-	PeriodFrom   string    `json:"period_from"`
-	PeriodTo     string    `json:"period_to"`
-	Days         int       `json:"days"`
-	BaseMinor    int64     `json:"base_minor"`
-	Rate         float64   `json:"rate"`
-	AmountMinor  int64     `json:"amount_minor"`
-	Status       string    `json:"status"`
-	JournalID    *string   `json:"journal_entry_id,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	TenantID    string    `json:"tenant_id"`
+	SavingsID   string    `json:"savings_id"`
+	SavingsCode string    `json:"savings_code"`
+	PeriodFrom  string    `json:"period_from"`
+	PeriodTo    string    `json:"period_to"`
+	Days        int       `json:"days"`
+	BaseMinor   int64     `json:"base_minor"`
+	Rate        float64   `json:"rate"`
+	AmountMinor int64     `json:"amount_minor"`
+	Status      string    `json:"status"`
+	JournalID   *string   `json:"journal_entry_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // InterestOp is one staged interest pay/capitalize operation.
@@ -958,13 +980,32 @@ func (r *DepositRepository) SetRateRequestStatus(ctx context.Context, tenantID, 
 	return err
 }
 
-// CreateAccrual inserts one accrual row; returns false when the period was
-// already accrued (idempotent per savings+period_to).
+// accrualColumns keeps the accrual scan order in one place.
+const accrualColumns = `id::text, tenant_id, savings_id, savings_code, period_from::text, period_to::text, days,
+	base_minor, rate, amount_minor, status, journal_entry_id::text, created_at`
+
+func scanAccrual(row interface{ Scan(dest ...any) error }) (*Accrual, error) {
+	var a Accrual
+	var journal sql.NullString
+	if err := row.Scan(&a.ID, &a.TenantID, &a.SavingsID, &a.SavingsCode, &a.PeriodFrom, &a.PeriodTo,
+		&a.Days, &a.BaseMinor, &a.Rate, &a.AmountMinor, &a.Status, &journal, &a.CreatedAt); err != nil {
+		return nil, err
+	}
+	if journal.Valid {
+		a.JournalID = &journal.String
+	}
+	return &a, nil
+}
+
+// CreateAccrual stages one accrual row in PENDING; it returns false when the
+// period was already staged (idempotent per savings+period_to). The row only
+// becomes POSTED through MarkAccrualPosted, once finance confirms the GL entry,
+// so a failed posting is retried instead of silently skipped.
 func (r *DepositRepository) CreateAccrual(ctx context.Context, a *Accrual) (bool, error) {
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO dpm_accruals (tenant_id, savings_id, savings_code, period_from, period_to, days,
 			base_minor, rate, amount_minor, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'POSTED')
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING')
 		ON CONFLICT (tenant_id, savings_id, period_to) DO NOTHING
 		RETURNING id::text`,
 		a.TenantID, a.SavingsID, a.SavingsCode, a.PeriodFrom, a.PeriodTo, a.Days,
@@ -978,22 +1019,81 @@ func (r *DepositRepository) CreateAccrual(ctx context.Context, a *Accrual) (bool
 		return false, err
 	}
 	a.ID = id
+	a.Status = "PENDING"
 	return true, nil
 }
 
-// SetAccrualJournal stamps the accrual posting result.
-func (r *DepositRepository) SetAccrualJournal(ctx context.Context, tenantID, id, journalEntryID string) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE dpm_accruals SET journal_entry_id = NULLIF($3,'')::uuid WHERE tenant_id = $1 AND id = $2::uuid`,
-		tenantID, id, journalEntryID)
-	return err
+// MarkAccrualPosted completes one staged accrual: it stamps the journal entry,
+// flips PENDING → POSTED and increments the savings accrued balance in a single
+// transaction. Doing both in one transaction means a failure can never leave a
+// day marked POSTED without the interest actually accrued, and the PENDING →
+// POSTED guard makes a repeated completion of the same row a no-op (so a retry
+// after a partially visible failure cannot double count).
+func (r *DepositRepository) MarkAccrualPosted(ctx context.Context, tenantID, id, journalEntryID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var savingsID string
+	var amountMinor int64
+	err = tx.QueryRowContext(ctx, `
+		UPDATE dpm_accruals SET status = 'POSTED', journal_entry_id = NULLIF($3,'')::uuid
+		WHERE tenant_id = $1 AND id = $2::uuid AND status <> 'POSTED'
+		RETURNING savings_id, amount_minor`, tenantID, id, journalEntryID).Scan(&savingsID, &amountMinor)
+	if err == sql.ErrNoRows {
+		// Already POSTED (concurrent worker or a completed retry): the amount
+		// was applied together with that transition, nothing left to do.
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT true FROM dpm_accruals WHERE tenant_id = $1 AND id = $2::uuid`,
+			tenantID, id).Scan(&exists); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `
+		UPDATE dpm_savings SET accrued_minor = accrued_minor + $3, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'`, tenantID, savingsID, amountMinor)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrSavingsNotActive
+	}
+	return tx.Commit()
 }
 
-// LastAccrualPeriod returns the last accrued-to date for one savings.
+// FirstPendingAccrual returns the oldest accrual row of one savings that is not
+// POSTED yet — a day stranded by a failed GL posting or completion.
+func (r *DepositRepository) FirstPendingAccrual(ctx context.Context, tenantID, savingsID string) (*Accrual, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+accrualColumns+`
+		FROM dpm_accruals WHERE tenant_id = $1 AND savings_id = $2 AND status <> 'POSTED'
+		ORDER BY period_to ASC LIMIT 1`, tenantID, savingsID)
+	a, err := scanAccrual(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// LastAccrualPeriod returns the last *confirmed* accrued-to date for one
+// savings. Rows still PENDING (staged but not confirmed by finance) are
+// deliberately ignored so a failed day is picked up by the retry path on the
+// next run; a PENDING row that already carries a journal entry counts as
+// confirmed to avoid re-posting the same GL key.
 func (r *DepositRepository) LastAccrualPeriod(ctx context.Context, tenantID, savingsID string) (string, error) {
 	var last sql.NullString
 	err := r.db.QueryRowContext(ctx, `
-		SELECT MAX(period_to)::text FROM dpm_accruals WHERE tenant_id = $1 AND savings_id = $2`,
+		SELECT MAX(period_to)::text FROM dpm_accruals
+		WHERE tenant_id = $1 AND savings_id = $2 AND (status = 'POSTED' OR journal_entry_id IS NOT NULL)`,
 		tenantID, savingsID).Scan(&last)
 	if err != nil {
 		return "", err
@@ -1003,9 +1103,7 @@ func (r *DepositRepository) LastAccrualPeriod(ctx context.Context, tenantID, sav
 
 // ListAccrualsBySavings returns accrual rows for one savings account.
 func (r *DepositRepository) ListAccrualsBySavings(ctx context.Context, tenantID, savingsID string) ([]Accrual, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT id::text, tenant_id, savings_id, savings_code, period_from::text, period_to::text, days,
-		       base_minor, rate, amount_minor, status, journal_entry_id::text, created_at
+	rows, err := r.db.QueryContext(ctx, `SELECT `+accrualColumns+`
 		FROM dpm_accruals WHERE tenant_id = $1 AND savings_id = $2 ORDER BY period_to DESC LIMIT 100`,
 		tenantID, savingsID)
 	if err != nil {
@@ -1014,16 +1112,11 @@ func (r *DepositRepository) ListAccrualsBySavings(ctx context.Context, tenantID,
 	defer rows.Close()
 	out := []Accrual{}
 	for rows.Next() {
-		var a Accrual
-		var journal sql.NullString
-		if err := rows.Scan(&a.ID, &a.TenantID, &a.SavingsID, &a.SavingsCode, &a.PeriodFrom, &a.PeriodTo,
-			&a.Days, &a.BaseMinor, &a.Rate, &a.AmountMinor, &a.Status, &journal, &a.CreatedAt); err != nil {
+		a, err := scanAccrual(rows)
+		if err != nil {
 			return nil, err
 		}
-		if journal.Valid {
-			a.JournalID = &journal.String
-		}
-		out = append(out, a)
+		out = append(out, *a)
 	}
 	return out, rows.Err()
 }
@@ -1059,32 +1152,89 @@ func (r *DepositRepository) ListActiveSavingsForAccrual(ctx context.Context, ten
 	return out, rows.Err()
 }
 
-// ApplyAccrualToSavings adds accrued interest to the savings row.
-func (r *DepositRepository) ApplyAccrualToSavings(ctx context.Context, tenantID, savingsID string, amountMinor int64) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE dpm_savings SET accrued_minor = accrued_minor + $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'`, tenantID, savingsID, amountMinor)
-	return err
-}
-
-// ApplyInterestOp updates the savings row for PAY (accrued down) or
-// CAPITALIZE (accrued down + principal up).
-func (r *DepositRepository) ApplyInterestOp(ctx context.Context, tenantID, savingsID string, amountMinor int64, capitalize bool) error {
-	capitalizeSQL := ""
-	if capitalize {
-		capitalizeSQL = ", principal_minor = principal_minor + $3"
+// BeginInterestOpPosting reserves one SUBMITTED op for posting: in a single
+// transaction it flips the op to POSTING and decrements the savings accrued
+// balance (CAPITALIZE moves the amount from accrued into principal as well).
+//
+// The op transition is the guard that makes a crash retry safe: only the run
+// that wins SUBMITTED → POSTING touches the balance, so a resumed POSTING op
+// never decrements twice. The `accrued_minor >= $3` predicate (no GREATEST()
+// masking) means two concurrent payouts cannot both pass the check — the loser
+// matches zero rows, the transaction rolls back and it gets
+// ErrAccruedInsufficient before any GL posting.
+func (r *DepositRepository) BeginInterestOpPosting(ctx context.Context, tenantID, opID, savingsID string, amountMinor int64, capitalize bool) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
-	tag, err := r.db.ExecContext(ctx, `
-		UPDATE dpm_savings SET accrued_minor = GREATEST(accrued_minor - $3, 0)`+capitalizeSQL+`,
-			updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'`, tenantID, savingsID, amountMinor)
+	defer func() { _ = tx.Rollback() }()
+
+	tag, err := tx.ExecContext(ctx, `
+		UPDATE dpm_interest_ops SET status = 'POSTING', updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2::uuid AND status = 'SUBMITTED'`, tenantID, opID)
 	if err != nil {
 		return err
 	}
 	if n, _ := tag.RowsAffected(); n == 0 {
-		return fmt.Errorf("savings account not active")
+		return ErrInterestOpState
 	}
-	return nil
+
+	capitalizeSQL := ""
+	if capitalize {
+		capitalizeSQL = ", principal_minor = principal_minor + $3"
+	}
+	tag, err = tx.ExecContext(ctx, `
+		UPDATE dpm_savings SET accrued_minor = accrued_minor - $3`+capitalizeSQL+`,
+			updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE' AND accrued_minor >= $3`,
+		tenantID, savingsID, amountMinor)
+	if err != nil {
+		return err
+	}
+	if n, _ := tag.RowsAffected(); n == 0 {
+		return ErrAccruedInsufficient
+	}
+	return tx.Commit()
+}
+
+// CompensateInterestOp reverses BeginInterestOpPosting after a failed GL
+// posting so the retry starts from a clean SUBMITTED op: the op leaves POSTING
+// and the accrued balance (and principal for CAPITALIZE) is restored.
+//
+// The balance restore is guarded by the POSTING → SUBMITTED transition, so a
+// compensation that loses the race against a concurrent completion (the op is
+// POSTED) restores nothing and reports ErrInterestOpState instead of inflating
+// the accrued balance. When the compensation itself fails the op stays
+// POSTING; the next attempt then only re-posts the same deterministic GL
+// idempotency key and never decrements the balance a second time.
+func (r *DepositRepository) CompensateInterestOp(ctx context.Context, tenantID, opID, savingsID string, amountMinor int64, capitalize bool) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	tag, err := tx.ExecContext(ctx, `
+		UPDATE dpm_interest_ops SET status = 'SUBMITTED', updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2::uuid AND status = 'POSTING'`, tenantID, opID)
+	if err != nil {
+		return err
+	}
+	if n, _ := tag.RowsAffected(); n == 0 {
+		return ErrInterestOpState
+	}
+
+	capitalizeSQL := ""
+	if capitalize {
+		capitalizeSQL = ", principal_minor = GREATEST(principal_minor - $3, 0)"
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE dpm_savings SET accrued_minor = accrued_minor + $3`+capitalizeSQL+`,
+			updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2`, tenantID, savingsID, amountMinor); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // CreateInterestOp inserts one staged interest op.
@@ -1210,13 +1360,29 @@ func (r *DepositRepository) SetInterestOpCase(ctx context.Context, tenantID, id,
 	return err
 }
 
-// SetInterestOpJournal stamps the posting result.
-func (r *DepositRepository) SetInterestOpJournal(ctx context.Context, tenantID, id, status, journalEntryID string) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE dpm_interest_ops SET status = $3, journal_entry_id = NULLIF($4,'')::uuid,
-			updated_at = now(), version = version + 1 WHERE tenant_id = $1 AND id = $2::uuid`,
-		tenantID, id, status, journalEntryID)
-	return err
+// MarkInterestOpPosted stamps the confirmed GL journal entry and flips the op
+// POSTING → POSTED. A zero-row match means a concurrent worker already
+// completed the op (no-op success); any other state is ErrInterestOpState.
+func (r *DepositRepository) MarkInterestOpPosted(ctx context.Context, tenantID, id, journalEntryID string) error {
+	tag, err := r.db.ExecContext(ctx, `
+		UPDATE dpm_interest_ops SET status = 'POSTED', journal_entry_id = NULLIF($3,'')::uuid,
+			updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2::uuid AND status = 'POSTING'`, tenantID, id, journalEntryID)
+	if err != nil {
+		return err
+	}
+	if n, _ := tag.RowsAffected(); n == 0 {
+		var status string
+		if err := r.db.QueryRowContext(ctx, `
+			SELECT status FROM dpm_interest_ops WHERE tenant_id = $1 AND id = $2::uuid`,
+			tenantID, id).Scan(&status); err != nil {
+			return err
+		}
+		if status != "POSTED" {
+			return ErrInterestOpState
+		}
+	}
+	return nil
 }
 
 // SetInterestOpStatus moves the op between lifecycle states.

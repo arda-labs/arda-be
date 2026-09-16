@@ -543,6 +543,7 @@ func main() {
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerRecovery(logger),
 			interceptors.UnaryServerMetadataPropagate(),
 			interceptors.UnaryServerServiceAuth(serviceSecret, "workflow-service", map[string]struct{}{
 				"crm-service":         {},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
 )
@@ -21,12 +22,14 @@ func NewMFARepository(db *sql.DB) *MFARepository {
 // GetSettings returns MFA settings for a user.
 func (r *MFARepository) GetSettings(ctx context.Context, userID string) (*domain.MFASettings, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT user_id, method, secret, is_enrolled, enrolled_at, last_used_at, updated_at
+		SELECT user_id, method, secret, is_enrolled, enrolled_at, last_used_at, updated_at,
+		       failed_attempts, locked_until
 		FROM iam_mfa_settings WHERE user_id = $1
 	`, userID)
 
 	s := &domain.MFASettings{}
-	err := row.Scan(&s.UserID, &s.Method, &s.Secret, &s.IsEnrolled, &s.EnrolledAt, &s.LastUsedAt, &s.UpdatedAt)
+	err := row.Scan(&s.UserID, &s.Method, &s.Secret, &s.IsEnrolled, &s.EnrolledAt, &s.LastUsedAt, &s.UpdatedAt,
+		&s.FailedAttempts, &s.LockedUntil)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -34,6 +37,33 @@ func (r *MFARepository) GetSettings(ctx context.Context, userID string) (*domain
 		return nil, fmt.Errorf("get mfa settings: %w", err)
 	}
 	return s, nil
+}
+
+// RegisterFailedAttempt increments the failure counter and locks the account
+// for lockFor once maxAttempts consecutive failures are reached.
+func (r *MFARepository) RegisterFailedAttempt(ctx context.Context, userID string, maxAttempts int, lockFor time.Duration) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE iam_mfa_settings
+		SET failed_attempts = failed_attempts + 1,
+		    locked_until = CASE
+		        WHEN failed_attempts + 1 >= $2 THEN now() + make_interval(secs => $3)
+		        ELSE locked_until
+		    END,
+		    updated_at = now()
+		WHERE user_id = $1
+	`, userID, maxAttempts, lockFor.Seconds())
+	return err
+}
+
+// ResetFailedAttempts clears the failure counter and lockout after a
+// successful verification.
+func (r *MFARepository) ResetFailedAttempts(ctx context.Context, userID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE iam_mfa_settings
+		SET failed_attempts = 0, locked_until = NULL, updated_at = now()
+		WHERE user_id = $1
+	`, userID)
+	return err
 }
 
 // UpsertSettings creates or updates MFA settings.

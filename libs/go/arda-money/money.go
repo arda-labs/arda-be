@@ -12,19 +12,24 @@ package ardamoney
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/shopspring/decimal"
 )
 
 // Exponents per currency (ISO 4217 minor units). Unknown currency → 2.
+// Only currencies that differ from the default 2 decimal places are listed.
 var currencyExponents = map[string]int32{
 	"VND": 0, "JPY": 0, "KRW": 0,
+	"BHD": 3, "IQD": 3, "JOD": 3, "KWD": 3, "LYD": 3, "OMR": 3, "TND": 3,
 }
 
 // Exponent returns the ISO 4217 minor-unit exponent of currency
-// (VND/JPY/KRW → 0; unknown → 2).
+// (VND/JPY/KRW → 0; BHD/IQD/JOD/KWD/LYD/OMR/TND → 3; unknown → 2).
+// The currency code is normalised (trimmed, upper-cased) so lowercase or
+// padded values cannot silently fall back to the wrong exponent.
 func Exponent(currency string) int32 {
-	if e, ok := currencyExponents[currency]; ok {
+	if e, ok := currencyExponents[strings.ToUpper(strings.TrimSpace(currency))]; ok {
 		return e
 	}
 	return 2
@@ -69,10 +74,16 @@ func MonthlyInterest(principal decimal.Decimal, annualRatePercent decimal.Decima
 // AllocateEven splits total into parts of equal shares, assigning the
 // remainder (in minor units) to the earliest parts so the sum is exact —
 // the only safe way to spread an amount across schedule rows.
+//
+// total is first rounded to the currency minor unit: a sub-minor input
+// (e.g. 1.005 USD) can otherwise leak fractional minor units into every
+// share. The returned shares therefore always sum to Round(total, currency),
+// never to a value with sub-minor precision.
 func AllocateEven(total decimal.Decimal, parts int, currency string) []decimal.Decimal {
 	if parts <= 0 {
 		return nil
 	}
+	total = Round(total, currency)
 	share := Round(total.Div(decimal.NewFromInt(int64(parts))), currency)
 
 	shares := make([]decimal.Decimal, parts)

@@ -75,7 +75,7 @@ func (c *Client) Attach(ctx context.Context, publicIDs []string, ownerType, owne
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	_, err := c.api.AttachFiles(callCtx, &mediav1.AttachFilesRequest{
-		PublicIds:  publicIDs,
+		PublicIds: publicIDs,
 		OwnerType: strings.TrimSpace(ownerType),
 		OwnerId:   strings.TrimSpace(ownerID),
 	})

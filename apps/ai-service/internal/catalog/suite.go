@@ -172,9 +172,18 @@ func NewCodeModeSuite(
 				return nil, tools.ErrApprovalUnavailable
 			}
 
+			// The proposal must carry the full run identity: the store
+			// resolves ai_runs by (tenant, actor, external_run_id), so a
+			// scope without the run id can only fail. Fail loudly and early
+			// instead of surfacing ai.run_not_found to the model.
 			scopeRun := repository.RunContext{
-				TenantID:    scope.TenantID,
-				ActorUserID: scope.ActorUserID,
+				TenantID:       scope.TenantID,
+				ActorUserID:    scope.ActorUserID,
+				ExternalThread: scope.ExternalThread,
+				ExternalRun:    scope.ExternalRun,
+			}
+			if strings.TrimSpace(scopeRun.ExternalRun) == "" {
+				return nil, fmt.Errorf("%w: the execute call reached the sandbox without an external run id", repository.ErrApprovalRunContextMissing)
 			}
 			rawArgs, _ := json.Marshal(res.ProposalArgs)
 			key := sha256.Sum256([]byte(strings.Join([]string{scope.TenantID, res.ProposalTool, string(rawArgs)}, "|")))
@@ -189,7 +198,9 @@ func NewCodeModeSuite(
 				ToolVersion:       1,
 				Risk:              risk,
 				ArgumentsRedacted: string(rawArgs),
+				Arguments:         string(rawArgs),
 				SummaryRedacted:   fmt.Sprintf(`{"action":"%s","arguments":%s}`, res.ProposalTool, string(rawArgs)),
+				PermissionVersion: strings.TrimSpace(scope.AuthVersion),
 				ExpiresAt:         time.Now().UTC().Add(15 * time.Minute),
 				IdempotencyKey:    hex.EncodeToString(key[:16]),
 			})

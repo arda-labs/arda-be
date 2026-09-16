@@ -38,14 +38,14 @@ type Column struct {
 
 // StreamOptions contains configuration for report generation.
 type StreamOptions struct {
-	Title       string
-	SheetName   string
-	Columns     []Column
-	Metadata    map[string]string
-	Locale      string // "vi-VN" (default) or "en-US"
-	Timezone    *time.Location
-	ScopeLabel  string
-	TotalCount  int
+	Title      string
+	SheetName  string
+	Columns    []Column
+	Metadata   map[string]string
+	Locale     string // "vi-VN" (default) or "en-US"
+	Timezone   *time.Location
+	ScopeLabel string
+	TotalCount int
 }
 
 // RowIterator abstracts database rows or memory iterators.
@@ -228,7 +228,7 @@ func StreamCSV(ctx context.Context, w io.Writer, opts StreamOptions, supplier Ro
 	// Header row
 	headerRecord := make([]string, len(opts.Columns))
 	for i, col := range opts.Columns {
-		headerRecord[i] = col.Header
+		headerRecord[i] = neutralizeCSVFormula(col.Header)
 	}
 	if err := cw.Write(headerRecord); err != nil {
 		return err
@@ -273,6 +273,13 @@ func StreamCSV(ctx context.Context, w io.Writer, opts StreamOptions, supplier Ro
 	return nil
 }
 
+// formatExcelCell formats a value for the XLSX (excelize) writer. CWE-1236 is
+// not applicable on this path: StreamXLSX passes values to
+// excelize.StreamWriter.SetRow, which writes plain strings as inline strings
+// (t="inlineStr", no <f> formula node), and excelize's SetCellValue/SetCellStr
+// call removeFormula before storing a string. Strings starting with "=" are
+// therefore displayed as literal text by Excel and are intentionally left
+// unmodified (adding "'" would alter the visible value).
 func formatExcelCell(v any, colType CellType, isEn bool, loc *time.Location) any {
 	if v == nil {
 		return ""
@@ -368,16 +375,36 @@ func formatCSVCell(v any, colType CellType, isEn bool, loc *time.Location) strin
 	}
 
 	switch val := v.(type) {
+	case string:
+		// Only free-text strings are neutralized. Numeric/boolean/time values
+		// keep their existing formatting (a real negative number must stay
+		// "-5", not "'-5").
+		return neutralizeCSVFormula(val)
 	case time.Time:
 		if val.IsZero() {
 			return "-"
 		}
 		return val.In(loc).Format("02/01/2006 15:04:05")
 	case []string:
-		return strings.Join(val, ", ")
+		return neutralizeCSVFormula(strings.Join(val, ", "))
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// neutralizeCSVFormula defuses CSV formula injection (CWE-1236): spreadsheet
+// applications treat cell text starting with '=', '+', '-', '@', TAB or CR as a
+// formula, so untrusted strings are prefixed with a single quote to force the
+// value to be rendered as literal text.
+func neutralizeCSVFormula(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
 
 func maxInt(a, b int) int {

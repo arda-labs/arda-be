@@ -55,6 +55,12 @@ func runAgentStream(
 		TenantID: scope.TenantID, ActorUserID: scope.ActorUserID,
 		ExternalThread: strings.TrimSpace(input.ThreadID), ExternalRun: strings.TrimSpace(input.RunID),
 	}
+	// Carry the run identity through the tool scratch space so HITL proposals
+	// created inside Code Mode can resolve their owning ai_runs row. The run
+	// was just started with this same identity, so it is server-resolved for
+	// this request even though the protocol ids originate from the client.
+	scope.ExternalThread = scopeRun.ExternalThread
+	scope.ExternalRun = scopeRun.ExternalRun
 	if quota, ok := store.(repository.QuotaGate); ok {
 		if err := quota.ReserveQuota(ctx, scopeRun.TenantID, scopeRun.ExternalRun, 4096); err != nil {
 			if errors.Is(err, repository.ErrQuotaExceeded) {
@@ -230,6 +236,32 @@ func modelErrorCode(err error) string {
 	return "ai.model_unavailable"
 }
 
+// modelProviderStatus extracts the upstream HTTP status for structured logging
+// without touching the response body.
+func modelProviderStatus(err error) int {
+	var statusErr *model.ProviderStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode
+	}
+	return 0
+}
+
+// modelFailureMessage is the static user-visible reply persisted for a failed
+// model turn. It must never interpolate err.Error(): provider bodies are
+// untrusted/secret-bearing and this string is replayed into later turns.
+func modelFailureMessage(errorCode string) string {
+	switch errorCode {
+	case "ai.model_unauthorized":
+		return "I could not complete that request right now: the configured AI model rejected the credentials (ai.model_unauthorized)."
+	case "ai.model_rate_limited":
+		return "I could not complete that request right now: the AI model is rate limited (ai.model_rate_limited). Please try again shortly."
+	case "ai.model_timeout":
+		return "I could not complete that request right now: the AI model timed out (ai.model_timeout). Please try again."
+	default:
+		return "I could not complete that request right now: the AI model is unavailable (ai.model_unavailable)."
+	}
+}
+
 // requestWithRunTimeout bounds a whole agent run (model + tools) with a
 // server-side deadline. A zero timeout keeps the request context as-is.
 func requestWithRunTimeout(r *http.Request, options RouterOptions) (*http.Request, context.CancelFunc) {
@@ -340,9 +372,14 @@ func agentStepsLoop(
 		if err != nil {
 			errorCode := modelErrorCode(err)
 			recordModelError(errorCode)
+			// The provider body is untrusted (it can echo credentials, request
+			// payloads, or tenant data) and the transcript is replayed to the
+			// model on later turns. Log only the mapped code and HTTP status,
+			// and persist a static, code-bearing reply.
 			slog.Error("LLM model stream failed",
-				"err", err,
 				"code", errorCode,
+				"provider_status", modelProviderStatus(err),
+				"error_type", fmt.Sprintf("%T", err),
 				"thread_id", input.ThreadID,
 				"run_id", input.RunID,
 				"tenant_id", scope.TenantID,
@@ -351,7 +388,7 @@ func agentStepsLoop(
 			endText()
 			sse.event(agentEvent{Type: "RUN_FINISHED", ThreadID: input.ThreadID, RunID: input.RunID, Error: errorCode})
 			recordRunOutcome("FAILED")
-			_ = store.Finish(ctx, scopeRun, fmt.Sprintf("I could not complete that request right now: %v", err), "FAILED")
+			_ = store.Finish(ctx, scopeRun, modelFailureMessage(errorCode), "FAILED")
 			if options.EventPublisher != nil {
 				_ = options.EventPublisher.Publish(ctx, events.SubjectRunFailed, events.NewEnvelope(
 					events.TypeRunFailed,
@@ -904,6 +941,26 @@ func executeModelToolCall(
 		return false, `{"error":"invalid_arguments"}`
 	}
 
+	// Audit-first, fail-closed: the execution row is written BEFORE the tool
+	// runs. A tool whose invocation cannot be recorded must not execute, or
+	// the audit trail silently loses a real side effect.
+	toolStore, hasToolStore := store.(repository.ToolExecutionStore)
+	var executionID string
+	if hasToolStore {
+		var startErr error
+		executionID, startErr = toolStore.StartTool(ctx, scopeRun, definition.Name, definition.Version, definition.Risk, "allow_model", sanitizeTranscript(call.Arguments))
+		if startErr != nil {
+			slog.Error("start AI tool execution failed; refusing to run tool",
+				"err", startErr,
+				"tool", definition.Name,
+				"run_id", scopeRun.ExternalRun,
+			)
+			denied := mustJSON(map[string]string{"error": "ai.tool_persistence_unavailable"})
+			emit("TOOL_CALL_RESULT", json.RawMessage(denied), "ai.tool_persistence_unavailable")
+			return false, denied
+		}
+	}
+
 	emit("TOOL_CALL_START", nil, "")
 	sse.event(agentEvent{
 		Type: "TOOL_CALL_ARGS", ThreadID: input.ThreadID, RunID: input.RunID,
@@ -915,12 +972,6 @@ func executeModelToolCall(
 	defer cancel()
 	result, execErr := selected.Execute(toolCtx, scope, json.RawMessage(call.Arguments))
 
-	toolStore, hasToolStore := store.(repository.ToolExecutionStore)
-	var executionID string
-	if hasToolStore {
-		executionID, _ = toolStore.StartTool(ctx, scopeRun, definition.Name, definition.Version, definition.Risk, "allow_model", sanitizeTranscript(call.Arguments))
-	}
-
 	// A confirm-kind call inside the sandbox was converted into a durable
 	// approval proposal. Surface the same {"proposal":{...}} payload the
 	// direct-tool path emits so the SSE writer finishes the run with
@@ -928,7 +979,7 @@ func executeModelToolCall(
 	if execErr == nil && result.Approval != nil {
 		content := boundContent(string(result.Data))
 		if hasToolStore && executionID != "" {
-			_ = toolStore.FinishTool(ctx, executionID, "SUCCEEDED", content, "")
+			finishToolExecution(ctx, toolStore, executionID, "SUCCEEDED", content, "")
 			recordToolOutcome("SUCCEEDED", definition.Risk)
 		}
 		sse.event(agentEvent{
@@ -963,7 +1014,7 @@ func executeModelToolCall(
 		status = "FAILED"
 	}
 	if hasToolStore && executionID != "" {
-		_ = toolStore.FinishTool(ctx, executionID, status, content, errorCode)
+		finishToolExecution(ctx, toolStore, executionID, status, content, errorCode)
 		recordToolOutcome(status, definition.Risk)
 	}
 
@@ -982,6 +1033,20 @@ func executeModelToolCall(
 		Content: feedback, Role: "tool",
 	})
 	return false, feedback
+}
+
+// finishToolExecution persists the terminal state of a tool execution. A
+// failed write is logged and never silently dropped: the tool already ran, so
+// operators must be able to see the audit gap.
+func finishToolExecution(ctx context.Context, store repository.ToolExecutionStore, executionID, status, content, errorCode string) {
+	if err := store.FinishTool(ctx, executionID, status, content, errorCode); err != nil {
+		slog.Error("finish AI tool execution failed",
+			"err", err,
+			"execution_id", executionID,
+			"status", status,
+			"error_code", errorCode,
+		)
+	}
 }
 
 func createProposalForCall(
@@ -1009,14 +1074,16 @@ func createProposalForCall(
 	}
 
 	key := sha256.Sum256([]byte(strings.Join([]string{scopeRun.ExternalRun, call.Name, call.Arguments}, "|")))
+	redactedArguments := redactArgumentsJSON(call.Arguments)
 	record, err := approvalStore.CreateApprovalProposal(r.Context(), repository.ApprovalProposal{
 		Run:               scopeRun,
 		ToolName:          definition.Name,
 		ToolVersion:       definition.Version,
 		Risk:              definition.Risk,
-		ArgumentsRedacted: sanitizeTranscript(call.Arguments),
+		ArgumentsRedacted: redactedArguments,
+		Arguments:         call.Arguments,
 		SummaryRedacted: mustJSON(map[string]any{
-			"action": definition.Name, "arguments": json.RawMessage(sanitizeTranscript(call.Arguments)),
+			"action": definition.Name, "arguments": json.RawMessage(redactedArguments),
 		}),
 		ResourceVersion:   "",
 		PermissionVersion: strings.TrimSpace(r.Header.Get("X-Auth-Version")),
@@ -1024,10 +1091,14 @@ func createProposalForCall(
 		IdempotencyKey:    hex.EncodeToString(key[:16]),
 	})
 	if err != nil {
+		code := "ai.approval_persistence_unavailable"
+		if errors.Is(err, repository.ErrApprovalArgumentsInvalid) {
+			code = "ai.invalid_proposal_arguments"
+		}
 		sse.event(agentEvent{
 			Type: "TOOL_CALL_RESULT", ThreadID: input.ThreadID, RunID: input.RunID,
 			ToolCallID: call.ID, ToolName: call.Name, ToolCallName: call.Name,
-			Result: deniedPayload, Error: "ai.approval_persistence_unavailable",
+			Result: deniedPayload, Error: code,
 		})
 		return false, string(summary)
 	}

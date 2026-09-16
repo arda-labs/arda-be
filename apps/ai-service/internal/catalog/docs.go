@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -36,7 +37,9 @@ func (l *HTTPDocsLookuper) Lookup(ctx context.Context, code string) (any, error)
 	if l.baseURL == "" {
 		return nil, fmt.Errorf("problem docs URL is not configured")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, l.baseURL+"/api/lookup?code="+code, nil)
+	// The code is model/tool-supplied; escape it so query metacharacters
+	// (`&`, `#`, spaces) cannot forge extra query parameters or a fragment.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, l.baseURL+"/api/lookup?code="+url.QueryEscape(code), nil)
 	if err != nil {
 		return nil, fmt.Errorf("docs lookup request error: %w", err)
 	}

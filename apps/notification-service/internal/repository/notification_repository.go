@@ -474,20 +474,35 @@ func (r *NotificationRepository) ClaimQueuedDeliveries(ctx context.Context, limi
 	return deliveries, nil
 }
 
-func (r *NotificationRepository) DeferDelivery(ctx context.Context, id, reason string, delay time.Duration) error {
+// RetryDelivery records one failed attempt and requeues the delivery after
+// delay. attempt_count is incremented here so callers can enforce
+// max_attempts; a delivery that has spent its budget must be terminated with
+// MarkDeliveryFailed instead of being deferred forever.
+func (r *NotificationRepository) RetryDelivery(ctx context.Context, id, code, message string, delay time.Duration) error {
 	if delay <= 0 {
 		delay = time.Minute
+	}
+	if strings.TrimSpace(code) == "" {
+		code = "DELIVERY_FAILED"
 	}
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE noti_deliveries
 		SET status = $2,
+			attempt_count = attempt_count + 1,
 			locked_until = NULL,
 			next_attempt_at = now() + ($3 * interval '1 second'),
-			last_error_code = 'PROVIDER_NOT_CONFIGURED',
-			last_error_message = $4,
+			last_error_code = $4,
+			last_error_message = $5,
 			updated_at = now()
-		WHERE id = $1`, id, domain.DeliveryStatusQueued, int(delay.Seconds()), reason)
+		WHERE id = $1`, id, domain.DeliveryStatusQueued, int(delay.Seconds()), code, message)
 	return err
+}
+
+// DeferDelivery keeps the legacy signature for channels without a provider. It
+// counts the attempt like RetryDelivery so unsupported channels stop being
+// requeued once max_attempts is reached.
+func (r *NotificationRepository) DeferDelivery(ctx context.Context, id, reason string, delay time.Duration) error {
+	return r.RetryDelivery(ctx, id, "PROVIDER_NOT_CONFIGURED", reason, delay)
 }
 
 func (r *NotificationRepository) MarkDeliverySent(ctx context.Context, id string) error {
@@ -498,6 +513,7 @@ func (r *NotificationRepository) MarkDeliverySent(ctx context.Context, id string
 	return err
 }
 
+// MarkDeliveryFailed terminates a delivery whose attempt budget is spent.
 func (r *NotificationRepository) MarkDeliveryFailed(ctx context.Context, id, code, message string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE noti_deliveries
@@ -527,20 +543,35 @@ type PushSubscription struct {
 	UpdatedAt time.Time
 }
 
+// ErrPushSubscriptionOwnedByAnotherUser is returned when an upsert targets an
+// endpoint that already belongs to a different tenant or user. The endpoint is
+// a capability URL: rebinding it to another account would leak that account's
+// notifications, so the existing owner always wins.
+var ErrPushSubscriptionOwnedByAnotherUser = errors.New("push endpoint is already registered to another user")
+
 func (r *NotificationRepository) UpsertPushSubscription(ctx context.Context, item PushSubscription) error {
-	_, err := r.db.ExecContext(ctx, `
+	// The ON CONFLICT ... WHERE guard keeps the original owner: the update only
+	// runs when the stored row has the same tenant_id and user_id. When another
+	// account owns the endpoint the statement updates nothing and RETURNING
+	// yields no row, which is reported as ErrPushSubscriptionOwnedByAnotherUser.
+	var id string
+	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO noti_push_subscriptions (
 			tenant_id, user_id, endpoint, p256dh, auth, user_agent
 		) VALUES ($1,$2,$3,$4,$5,$6)
 		ON CONFLICT (endpoint) DO UPDATE SET
-			tenant_id = EXCLUDED.tenant_id,
-			user_id = EXCLUDED.user_id,
 			p256dh = EXCLUDED.p256dh,
 			auth = EXCLUDED.auth,
 			user_agent = EXCLUDED.user_agent,
-			updated_at = now()`,
+			updated_at = now()
+		WHERE noti_push_subscriptions.tenant_id = EXCLUDED.tenant_id
+		  AND noti_push_subscriptions.user_id = EXCLUDED.user_id
+		RETURNING id::text`,
 		item.TenantID, item.UserID, item.Endpoint, item.P256dh, item.Auth, item.UserAgent,
-	)
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrPushSubscriptionOwnedByAnotherUser
+	}
 	return err
 }
 
@@ -578,9 +609,13 @@ func (r *NotificationRepository) ListPushSubscriptions(ctx context.Context, tena
 	return out, rows.Err()
 }
 
-func (r *NotificationRepository) DeletePushSubscriptionByEndpoint(ctx context.Context, tenantID, endpoint string) error {
+// DeletePushSubscriptionByEndpoint removes one endpoint for its owner. It is
+// scoped by user_id as well as tenant_id so a caller can never remove another
+// account's subscription.
+func (r *NotificationRepository) DeletePushSubscriptionByEndpoint(ctx context.Context, tenantID, userID, endpoint string) error {
 	_, err := r.db.ExecContext(ctx, `
-		DELETE FROM noti_push_subscriptions WHERE tenant_id = $1 AND endpoint = $2`, tenantID, endpoint)
+		DELETE FROM noti_push_subscriptions
+		WHERE tenant_id = $1 AND user_id = $2 AND endpoint = $3`, tenantID, userID, endpoint)
 	return err
 }
 

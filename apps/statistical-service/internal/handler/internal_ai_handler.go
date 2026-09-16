@@ -68,8 +68,8 @@ func (h *InternalAIHandler) InternalAIListReportDefinitions(w http.ResponseWrite
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	paged, total, page, perPage := ardahttp.PageSlice(items, listReq.ListQuery)
-	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, toAIReportDefinitions(paged)))
+	res := ardahttp.PageSlice(items, listReq.ListQuery)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, toAIReportDefinitions(res.Items)))
 }
 
 // InternalAIListIndicators serves GET /internal/ai/indicators for ai-service.
@@ -88,8 +88,8 @@ func (h *InternalAIHandler) InternalAIListIndicators(w http.ResponseWriter, r *h
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	paged, total, page, perPage := ardahttp.PageSlice(items, listReq.ListQuery)
-	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, toAIIndicators(paged)))
+	res := ardahttp.PageSlice(items, listReq.ListQuery)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, toAIIndicators(res.Items)))
 }
 
 // InternalAIListSubmissions serves GET /internal/ai/submissions for

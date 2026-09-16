@@ -46,14 +46,15 @@ type Config struct {
 	ServiceAuthSecret         string `yaml:"-"`
 	PolicyFile                string `yaml:"policy_file"`
 
-	RedisURL            string `yaml:"redis_url"`
-	SessionStore        string `yaml:"session_store"`
-	SessionCookieName   string `yaml:"session_cookie_name"`
-	SessionCookieDomain string `yaml:"session_cookie_domain"`
-	SessionTTL          int    `yaml:"session_ttl_seconds"`
-	RecentAuthWindow    int    `yaml:"recent_auth_window_seconds"`
-	CookieSecure        bool   `yaml:"cookie_secure"`
-	CookieSameSite      string `yaml:"cookie_same_site"`
+	RedisURL                 string `yaml:"redis_url"`
+	SessionStore             string `yaml:"session_store"`
+	SessionCookieName        string `yaml:"session_cookie_name"`
+	SessionCookieDomain      string `yaml:"session_cookie_domain"`
+	SessionTTL               int    `yaml:"session_ttl_seconds"`
+	SessionAuthCheckInterval int    `yaml:"session_auth_check_interval_seconds"`
+	RecentAuthWindow         int    `yaml:"recent_auth_window_seconds"`
+	CookieSecure             bool   `yaml:"cookie_secure"`
+	CookieSameSite           string `yaml:"cookie_same_site"`
 
 	// Kratos + Hydra
 	KratosPublicURL   string `yaml:"kratos_public_url"`
@@ -94,6 +95,7 @@ func Load() Config {
 		SessionCookieName:         "arda_sid",
 		SessionStore:              "redis",
 		SessionTTL:                86400,
+		SessionAuthCheckInterval:  60,
 		RecentAuthWindow:          300,
 		CookieSecure:              true,
 		CookieSameSite:            "Lax",
@@ -153,6 +155,7 @@ func Load() Config {
 	envStr("SESSION_COOKIE_NAME", &cfg.SessionCookieName)
 	envStr("SESSION_COOKIE_DOMAIN", &cfg.SessionCookieDomain)
 	envInt("SESSION_TTL_SECONDS", &cfg.SessionTTL)
+	envInt("SESSION_AUTH_CHECK_INTERVAL_SECONDS", &cfg.SessionAuthCheckInterval)
 	envInt("RECENT_AUTH_WINDOW_SECONDS", &cfg.RecentAuthWindow)
 	envBool("COOKIE_SECURE", &cfg.CookieSecure)
 	envStr("COOKIE_SAMESITE", &cfg.CookieSameSite)
@@ -221,6 +224,9 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("session_cookie_domain", &c.SessionCookieDomain)
 	if v, ok := m["session_ttl_seconds"].(int); ok {
 		c.SessionTTL = v
+	}
+	if v, ok := m["session_auth_check_interval_seconds"].(int); ok {
+		c.SessionAuthCheckInterval = v
 	}
 	if v, ok := m["recent_auth_window_seconds"].(int); ok {
 		c.RecentAuthWindow = v

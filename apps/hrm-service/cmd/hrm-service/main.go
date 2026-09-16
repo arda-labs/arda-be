@@ -26,6 +26,7 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	hrmv1 "github.com/arda-labs/arda/libs/go/arda-proto/hrm/v1"
 )
 
@@ -50,6 +51,7 @@ func main() {
 		logger.Error("ping database", "err", err)
 		os.Exit(1)
 	}
+	ardapostgres.ConfigureDefaultPool(db, logger)
 	if err := migration.Run(db, "postgres"); err != nil {
 		logger.Error("run migrations", "err", err)
 		os.Exit(1)
@@ -78,6 +80,7 @@ func main() {
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerRecovery(logger),
 			interceptors.UnaryServerServiceAuth(serviceSecret, "hrm-service", map[string]struct{}{"workflow-service": {}}),
 			interceptors.UnaryServerLogging(logger),
 		),

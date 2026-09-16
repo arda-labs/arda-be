@@ -130,8 +130,12 @@ func (s *PostingCaseService) CreateFundCase(ctx context.Context, tenantID, actor
 	if err := s.posting.EnsurePostingDateAllowed(ctx, tenantID, docType, in.AccountingDate); err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
 	}
-	if _, err := s.posting.ValidatePosting(ctx, tenantID, req); err != nil {
+	res, err := s.posting.ValidatePosting(ctx, tenantID, req)
+	if err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
+	}
+	if !res.GetValid() {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, postingValidationError(res).Error())
 	}
 
 	idempotencyKey := strings.TrimSpace(in.IdempotencyKey)

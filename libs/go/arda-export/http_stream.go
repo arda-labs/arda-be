@@ -67,15 +67,26 @@ func ServeStreamHTTP(
 		err := streamFunc(ctx, pw)
 		if err != nil {
 			_ = pw.CloseWithError(err)
-			errChan <- err
-			return
 		}
-		errChan <- nil
+		errChan <- err
 	}()
 
-	// Stream from pipe to response
-	_, copyErr := io.Copy(w, pr)
+	// Always release the read side: if the client disconnects, io.Copy stops
+	// reading and a producer blocked in pw.Write would otherwise hang forever,
+	// leaking the goroutine and its open DB rows.
+	defer pr.Close()
 
+	// Stream from pipe to response.
+	_, copyErr := io.Copy(w, pr)
+	if copyErr != nil {
+		// Propagate the write failure to the producer so its pending/next
+		// pw.Write returns immediately instead of blocking on a reader that
+		// will never read again.
+		_ = pr.CloseWithError(copyErr)
+	}
+
+	// The producer reports exactly once; the channel is buffered, so it never
+	// blocks even when this function returns before draining it.
 	streamErr := <-errChan
 	if streamErr != nil {
 		return streamErr

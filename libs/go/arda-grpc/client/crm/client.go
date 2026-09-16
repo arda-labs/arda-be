@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/libs/go/arda-grpc/client/retry"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
@@ -40,6 +41,8 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 	conn, err := grpc.NewClient(
 		addr,
 		grpc.WithTransportCredentials(transportCreds),
+		// Only read-only RPCs are retried; command writes are never replayed.
+		retry.ReadOnly("arda.crm.v1.CustomerCommandService", "CheckDuplicateIdentity"),
 		grpc.WithChainUnaryInterceptor(
 			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
 			interceptors.UnaryClientServiceAuth(secret, sourceService, "crm-service"),

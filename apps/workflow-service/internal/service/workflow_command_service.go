@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
@@ -47,6 +49,10 @@ func (s *WorkflowCommandService) submitCaseLocked(ctx context.Context, id string
 	if in.Actor == "" {
 		in.Actor = bc.CreatedBy
 	}
+	if dropped := dropReservedCaseVariables(in.Variables); len(dropped) > 0 {
+		slog.Warn("ignoring client-supplied reserved case variables",
+			"caseId", bc.ID, "keys", dropped)
+	}
 	requestHash := submitRequestHash(id, in.Actor, in.IdempotencyKey, in.Variables)
 	if bc.BpmnProcessID == nil {
 		return nil, fmt.Errorf("case has no BPMN process configured")
@@ -66,21 +72,7 @@ func (s *WorkflowCommandService) submitCaseLocked(ctx context.Context, id string
 	if s.zeebeSvc == nil {
 		return nil, fmt.Errorf("zeebe service is not configured")
 	}
-	variables := map[string]any{
-		"caseId":            bc.ID,
-		"caseType":          bc.CaseType,
-		"caseCode":          bc.CaseCode,
-		"tenantId":          bc.TenantID,
-		"domainService":     bc.DomainService,
-		"primaryObjectType": bc.PrimaryObjectType,
-		"primaryObjectId":   bc.PrimaryObjectID,
-	}
-	if bc.PrimaryObjectType == "CUSTOMER" {
-		variables["customerId"] = bc.PrimaryObjectID
-	}
-	for key, value := range in.Variables {
-		variables[key] = value
-	}
+	variables := buildCaseVariables(bc, in.Actor, in.Variables)
 	processKey, err := s.zeebeSvc.StartWorkflow(ctx, *bc.BpmnProcessID, variables)
 	if err != nil {
 		return nil, fmt.Errorf("start workflow: %w", err)
@@ -105,4 +97,83 @@ func submitRequestHash(caseID, actor, idempotencyKey string, variables map[strin
 	encoded, _ := json.Marshal(payload)
 	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:])
+}
+
+// reservedCaseVariableKeys are the process variables owned by the service.
+// Client input can never set them: the values are always derived from the
+// persisted case record (tenant, case identity, primary object) or from the
+// verified actor, so a submit body cannot impersonate another tenant, case or
+// actor in the variables consumed by workers and downstream services.
+var reservedCaseVariableKeys = map[string]struct{}{
+	"caseId":            {},
+	"caseType":          {},
+	"caseCode":          {},
+	"tenantId":          {},
+	"domainService":     {},
+	"primaryObjectType": {},
+	"primaryObjectId":   {},
+	"customerId":        {},
+	"actorUserId":       {},
+	"actor_user_id":     {},
+	"createdBy":         {},
+	"created_by":        {},
+}
+
+// dropReservedCaseVariables removes service-owned keys from client-supplied
+// variables and returns the dropped keys (sorted) for logging. The map is
+// mutated so the idempotency request hash matches the variables that are
+// actually sent to Zeebe.
+func dropReservedCaseVariables(variables map[string]any) []string {
+	var dropped []string
+	for key := range variables {
+		if _, reserved := reservedCaseVariableKeys[key]; reserved {
+			delete(variables, key)
+			dropped = append(dropped, key)
+		}
+	}
+	sort.Strings(dropped)
+	return dropped
+}
+
+// authoritativeCaseVariables builds the system variables for a case submit
+// from the persisted case and the verified actor.
+func authoritativeCaseVariables(bc *repository.BusinessCase, actor string) map[string]any {
+	variables := map[string]any{
+		"caseId":            bc.ID,
+		"caseType":          bc.CaseType,
+		"caseCode":          bc.CaseCode,
+		"tenantId":          bc.TenantID,
+		"domainService":     bc.DomainService,
+		"primaryObjectType": bc.PrimaryObjectType,
+		"primaryObjectId":   bc.PrimaryObjectID,
+	}
+	if bc.PrimaryObjectType == "CUSTOMER" {
+		variables["customerId"] = bc.PrimaryObjectID
+	}
+	if actor = strings.TrimSpace(actor); actor != "" {
+		variables["actorUserId"] = actor
+		variables["createdBy"] = actor
+	}
+	return variables
+}
+
+// buildCaseVariables merges client variables over the authoritative system
+// variables. Reserved keys are skipped and the system values are re-asserted
+// last, so buildCaseVariables stays safe even if called with unsanitized input.
+func buildCaseVariables(bc *repository.BusinessCase, actor string, clientVariables map[string]any) map[string]any {
+	system := authoritativeCaseVariables(bc, actor)
+	variables := make(map[string]any, len(system)+len(clientVariables))
+	for key, value := range system {
+		variables[key] = value
+	}
+	for key, value := range clientVariables {
+		if _, reserved := reservedCaseVariableKeys[key]; reserved {
+			continue
+		}
+		variables[key] = value
+	}
+	for key, value := range system {
+		variables[key] = value
+	}
+	return variables
 }

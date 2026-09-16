@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	ardacrypto "github.com/arda-labs/arda/libs/go/arda-crypto"
@@ -45,7 +46,12 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 		LIMIT 1
 	`, tenantID).Scan(&item.TenantID, &item.BaseURL, &rawAPIKey, &item.ModelID)
 	if err == nil {
-		item.APIKey = s.decryptSecret(rawAPIKey)
+		apiKey, decryptErr := s.decryptSecret(rawAPIKey)
+		if decryptErr != nil {
+			slog.Error("decrypt tenant model api key failed", "tenant_id", tenantID, "err", decryptErr)
+			return nil, fmt.Errorf("decrypt tenant model api key: %w", decryptErr)
+		}
+		item.APIKey = apiKey
 		return &item, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -65,7 +71,12 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 		return nil, fmt.Errorf("query tenant settings: %w", err)
 	}
 
-	item.APIKey = s.decryptSecret(rawAPIKey)
+	apiKey, decryptErr := s.decryptSecret(rawAPIKey)
+	if decryptErr != nil {
+		slog.Error("decrypt tenant model api key failed", "tenant_id", tenantID, "err", decryptErr)
+		return nil, fmt.Errorf("decrypt tenant model api key: %w", decryptErr)
+	}
+	item.APIKey = apiKey
 	return &item, nil
 }
 
@@ -74,16 +85,12 @@ func (s *SQLRunStore) UpsertTenantSettings(ctx context.Context, settings TenantS
 		return errors.New("database not available")
 	}
 
-	apiKeyToSave := strings.TrimSpace(settings.APIKey)
-	if apiKeyToSave != "" && !strings.HasPrefix(apiKeyToSave, "enc:v1:") && s.encryptionSecret != "" {
-		encrypted, err := ardacrypto.Encrypt(apiKeyToSave, s.encryptionSecret)
-		if err != nil {
-			return fmt.Errorf("encrypt tenant api key: %w", err)
-		}
-		apiKeyToSave = encrypted
+	apiKeyToSave, err := s.encryptSecret(strings.TrimSpace(settings.APIKey))
+	if err != nil {
+		return fmt.Errorf("encrypt tenant api key: %w", err)
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO public.ai_tenant_settings (
 			tenant_id, base_url, api_key, model_id, is_active, created_at, updated_at
 		) VALUES ($1, $2, $3, $4, true, now(), now())
@@ -101,11 +108,19 @@ func (s *SQLRunStore) UpsertTenantSettings(ctx context.Context, settings TenantS
 	return nil
 }
 
-func (s *SQLRunStore) decryptSecret(raw string) string {
-	if s.encryptionSecret != "" && strings.HasPrefix(raw, "enc:v1:") {
-		if decrypted, err := ardacrypto.Decrypt(raw, s.encryptionSecret); err == nil {
-			return decrypted
-		}
+// decryptSecret resolves a stored secret to plaintext. It fails closed: a
+// value marked `enc:v1:` that cannot be decrypted (missing/rotated secret or
+// damaged ciphertext) must never be forwarded to a provider as ciphertext.
+func (s *SQLRunStore) decryptSecret(raw string) (string, error) {
+	if raw == "" || !strings.HasPrefix(raw, "enc:v1:") {
+		return raw, nil
 	}
-	return raw
+	if strings.TrimSpace(s.encryptionSecret) == "" {
+		return "", errors.New("encryption secret is not configured")
+	}
+	decrypted, err := ardacrypto.Decrypt(raw, s.encryptionSecret)
+	if err != nil {
+		return "", fmt.Errorf("decrypt encrypted value: %w", err)
+	}
+	return decrypted, nil
 }

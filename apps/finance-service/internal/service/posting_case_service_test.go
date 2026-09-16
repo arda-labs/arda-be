@@ -310,3 +310,27 @@ func TestValidateManualPostingFlowDoubleEntry(t *testing.T) {
 		t.Fatalf("partially unbalanced double entry error = %v", err)
 	}
 }
+
+func TestPostingValidationErrorCarriesGlobalAndLineReasons(t *testing.T) {
+	result := &financev1.ValidationResult{
+		Valid:        false,
+		GlobalErrors: []string{"UNBALANCED:VND", "PERIOD_CLOSED"},
+		Lines: []*financev1.ValidationLine{
+			{LineNo: 1, Errors: nil},
+			{LineNo: 2, Errors: []string{"INVALID_AMOUNT"}},
+		},
+	}
+	err := postingValidationError(result)
+	msg := err.Error()
+	for _, want := range []string{"UNBALANCED:VND", "PERIOD_CLOSED", "line 2: INVALID_AMOUNT"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error %q missing %q", msg, want)
+		}
+	}
+
+	// A flag-only failure still yields a usable message.
+	err = postingValidationError(&financev1.ValidationResult{Valid: false})
+	if !strings.Contains(err.Error(), "posting rejected") {
+		t.Fatalf("empty result error = %v", err)
+	}
+}

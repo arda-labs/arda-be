@@ -183,16 +183,19 @@ func (r *PostingRepository) EnsurePeriodOpen(ctx context.Context, tenantID, acco
 }
 
 // FindEntryByIdempotencyKey returns the response of the entry currently
-// holding the key (any status: PENDING / POSTED / VOID / REVERSED), or nil
-// when the key is unused.
-func (r *PostingRepository) FindEntryByIdempotencyKey(ctx context.Context, tenantID, key string) (*financev1.PostingResponse, error) {
+// holding the key (any status: PENDING / POSTED / VOID / REVERSED) for one
+// business document type, or nil when the key is unused. The doc type is part
+// of the identity: a key pinned for one flow must never replay the response
+// of an unrelated document type (the unique index is per tenant+key only).
+func (r *PostingRepository) FindEntryByIdempotencyKey(ctx context.Context, tenantID, key, docType string) (*financev1.PostingResponse, error) {
 	if key == "" {
 		return nil, nil
 	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, entry_no, version, COALESCE(posted_at, created_at), status
 		FROM fin_journal_entries
-		WHERE tenant_id = $1 AND idempotency_key = $2`, tenantID, key)
+		WHERE tenant_id = $1 AND idempotency_key = $2 AND business_doc_type = $3`,
+		tenantID, key, docType)
 	var id string
 	var entryNo int64
 	var version int32
@@ -297,13 +300,22 @@ func (r *PostingRepository) GetEntryForReversal(ctx context.Context, tenantID, e
 	return &e, lines.Err()
 }
 
-// MarkReversed links the original entry to its reversal.
+// MarkReversed links the original entry to its reversal. It only matches an
+// entry that is still POSTED and not yet reversed, so a duplicated reversal
+// cannot overwrite the link.
 func (r *PostingRepository) MarkReversed(ctx context.Context, tx *sql.Tx, tenantID, originalID, reversalID string) error {
-	_, err := tx.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 		UPDATE fin_journal_entries
 		SET reversed_by_entry_id = $3, status = 'REVERSED', updated_at = now()
-		WHERE tenant_id = $1 AND id = $2`, tenantID, originalID, reversalID)
-	return err
+		WHERE tenant_id = $1 AND id = $2 AND status = 'POSTED' AND reversed_by_entry_id IS NULL`,
+		tenantID, originalID, reversalID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("entry already reversed or not posted")
+	}
+	return nil
 }
 
 // JournalEntryRef is the minimal header the posting-case service reads to
@@ -455,11 +467,14 @@ type LedgerLine struct {
 // lines inside [fromDate, toDate] for one account (debit positive / credit negative).
 func (r *PostingRepository) Ledger(ctx context.Context, tenantID, accountCode, fromDate, toDate string) (int64, []LedgerLine, error) {
 	var opening int64
+	// Reversal entries are effective postings; the original is marked REVERSED
+	// but must stay in the sum so the mirror nets it out (otherwise a reversal
+	// would leave a one-sided movement in the ledger).
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(CASE WHEN l.direction = 'DEBIT' THEN l.amount_minor ELSE -l.amount_minor END), 0)
 		FROM fin_journal_lines l
 		JOIN fin_journal_entries e ON e.id = l.entry_id
-		WHERE l.tenant_id = $1 AND l.account_code = $2 AND e.status = 'POSTED'
+		WHERE l.tenant_id = $1 AND l.account_code = $2 AND e.status IN ('POSTED', 'REVERSED')
 		  AND e.accounting_date < $3::date`, tenantID, accountCode, fromDate).Scan(&opening); err != nil {
 		return 0, nil, err
 	}
@@ -470,7 +485,7 @@ func (r *PostingRepository) Ledger(ctx context.Context, tenantID, accountCode, f
 		       e.id::text
 		FROM fin_journal_lines l
 		JOIN fin_journal_entries e ON e.id = l.entry_id
-		WHERE l.tenant_id = $1 AND l.account_code = $2 AND e.status = 'POSTED'
+		WHERE l.tenant_id = $1 AND l.account_code = $2 AND e.status IN ('POSTED', 'REVERSED')
 		  AND e.accounting_date >= $3::date AND e.accounting_date <= $4::date
 		ORDER BY e.accounting_date, e.entry_no, l.line_no`, tenantID, accountCode, fromDate, toDate)
 	if err != nil {

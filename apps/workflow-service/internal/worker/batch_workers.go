@@ -111,7 +111,7 @@ func (w *BatchWorkers) buildPostingRequest(ctx context.Context, job entities.Job
 	if idempotencyKey == "" {
 		idempotencyKey = fmt.Sprintf("%s-%s", w.flow.TopicPrefix, detail.GetBatchId())
 	}
-	lines := w.batchLines(detail)
+	lines := w.batchLines(ctx, detail)
 	if len(lines) == 0 {
 		return nil, fmt.Errorf("batch %s has no positive-amount rows to post", detail.GetBatchId())
 	}
@@ -145,7 +145,7 @@ func (w *BatchWorkers) buildPostingRequest(ctx context.Context, job entities.Job
 // LNM_DISB_COMPLETE lines 1-2, LNM_COLLECTION lines 1-4), skipping zero
 // amounts (closed rows carry amount 0). Classifications come from the
 // finance rule card; the constants are only the fallback.
-func (w *BatchWorkers) batchLines(detail *loanv1.BatchPostingDetail) []*financev1.PostingLine {
+func (w *BatchWorkers) batchLines(ctx context.Context, detail *loanv1.BatchPostingDetail) []*financev1.PostingLine {
 	var legs []financeclient.PostingLeg
 	for _, row := range detail.GetRows() {
 		switch w.flow.BatchType {
@@ -157,7 +157,7 @@ func (w *BatchWorkers) batchLines(detail *loanv1.BatchPostingDetail) []*financev
 			legs = append(legs, disbursementBatchLegs("REGISTER", detail, row)...)
 		}
 	}
-	return postingLinesFromRules(fetchPostingRules(w.financeClient, w.flow.DocumentType), legs, detail.GetCurrencyCode())
+	return postingLinesFromRules(fetchPostingRules(ctx, w.financeClient, w.flow.DocumentType), legs, detail.GetCurrencyCode())
 }
 
 // disbursementBatchLegs builds one row's register/complete pair with the row

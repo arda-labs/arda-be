@@ -36,6 +36,6 @@ func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 // all/services produce identical envelope math (all=1, tree/options views,
 // offset clamping).
 func writeListAll[T any](w http.ResponseWriter, r *http.Request, items []T) {
-	paged, total, page, perPage := ardahttp.PageSlice(items, ardahttp.ParseListQuery(r.URL.Query()))
-	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, paged))
+	res := ardahttp.PageSlice(items, ardahttp.ParseListQuery(r.URL.Query()))
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, res.Items))
 }

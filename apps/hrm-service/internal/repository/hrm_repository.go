@@ -36,11 +36,32 @@ func newID(prefix string) string {
 	return prefix + "_" + hex.EncodeToString(b[:])
 }
 
+// active returns the canonical UPPER-case status for a catalog row. The
+// workflow gRPC callbacks and the hrm_employee_statuses seed catalog both use
+// UPPER-case codes, so the HTTP write paths must persist the same values.
 func active(status string) string {
-	if status == "" {
-		return "active"
+	trimmed := strings.TrimSpace(status)
+	if trimmed == "" {
+		return "ACTIVE"
 	}
-	return status
+	return strings.ToUpper(trimmed)
+}
+
+// normalizeStatusFilter canonicalises a status filter so callers that still
+// send the legacy lower-case values ("active", "inactive", "submitted", …)
+// keep matching rows stored with UPPER-case codes. Comma-separated filters
+// (status=active,inactive) are normalised value by value.
+func normalizeStatusFilter(status string) string {
+	parts := strings.Split(status, ",")
+	normalized := make([]string, 0, len(parts))
+	for _, part := range parts {
+		value := strings.ToUpper(strings.TrimSpace(part))
+		if value == "" {
+			continue
+		}
+		normalized = append(normalized, value)
+	}
+	return strings.Join(normalized, ",")
 }
 
 func tenantID(ctx context.Context) (string, error) {
@@ -68,6 +89,7 @@ func (r *HRMRepository) ListPositions(ctx context.Context, params ListPositionsP
 	if err != nil {
 		return nil, 0, err
 	}
+	params.Status = normalizeStatusFilter(params.Status)
 	where := []string{"tenant_id = $1"}
 	args := []any{tenant}
 	idx := 2
@@ -307,6 +329,7 @@ func (r *HRMRepository) ListOrgUnits(ctx context.Context, params ListOrgUnitsPar
 	if err != nil {
 		return nil, 0, err
 	}
+	params.Status = normalizeStatusFilter(params.Status)
 	where := []string{"tenant_id = $1"}
 	args := []any{tenant}
 	idx := 2
@@ -440,6 +463,7 @@ func (r *HRMRepository) ListEmployees(ctx context.Context, params ListEmployeesP
 	if err != nil {
 		return nil, 0, err
 	}
+	params.Status = normalizeStatusFilter(params.Status)
 	where := []string{"tenant_id = $1"}
 	args := []any{tenant}
 	idx := 2
@@ -551,6 +575,7 @@ func (r *HRMRepository) ListEmployeeRegistrations(ctx context.Context, status st
 	if err != nil {
 		return nil, err
 	}
+	status = normalizeStatusFilter(status)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at
 		FROM hrm_employee_registrations
@@ -588,7 +613,7 @@ func (r *HRMRepository) CreateEmployeeRegistration(ctx context.Context, item dom
 		item.RegistrationCode = code
 	}
 	if item.Status == "" {
-		item.Status = "draft"
+		item.Status = "DRAFT"
 	}
 	if item.Payload == "" {
 		item.Payload = "{}"
@@ -628,7 +653,7 @@ func (r *HRMRepository) UpdateEmployeeRegistration(ctx context.Context, id, payl
 	err = r.db.QueryRowContext(ctx, `
 		UPDATE hrm_employee_registrations
 		SET payload = $3::jsonb, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2 AND status = 'draft'
+		WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT'
 		RETURNING id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at`,
 		tenant, id, payload,
 	).Scan(&item.ID, &item.TenantID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt)
@@ -647,7 +672,7 @@ func (r *HRMRepository) SubmitEmployeeRegistration(ctx context.Context, id, work
 	var item domain.EmployeeRegistration
 	err = r.db.QueryRowContext(ctx, `
 		UPDATE hrm_employee_registrations
-		SET status = 'submitted', workflow_case_id = COALESCE($3, workflow_case_id), updated_at = now()
+		SET status = 'SUBMITTED', workflow_case_id = COALESCE($3, workflow_case_id), updated_at = now()
 		WHERE tenant_id = $1 AND id = $2
 		RETURNING id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at`,
 		tenant, id, caseID,
@@ -663,7 +688,8 @@ func (r *HRMRepository) ListEmployeeStatuses(ctx context.Context, q string) ([]d
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, code, name, description, created_at, updated_at
 		FROM hrm_employee_statuses
-		WHERE tenant_id = $1 AND ($2 = '' OR code ILIKE '%' || $2 || '%' OR name ILIKE '%' || $2 || '%')
+		WHERE (tenant_id IS NULL OR btrim(tenant_id) = '' OR tenant_id = $1)
+		  AND ($2 = '' OR code ILIKE '%' || $2 || '%' OR name ILIKE '%' || $2 || '%')
 		ORDER BY code`, tenant, q)
 	if err != nil {
 		return nil, err

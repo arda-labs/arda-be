@@ -89,7 +89,10 @@ func main() {
 	}
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(serverCreds),
-		grpc.ChainUnaryInterceptor(interceptors.UnaryServerServiceAuth(serviceSecret, "notification-service", map[string]struct{}{"workflow-service": {}})),
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerRecovery(logger),
+			interceptors.UnaryServerServiceAuth(serviceSecret, "notification-service", map[string]struct{}{"workflow-service": {}}),
+		),
 	)
 	notificationv1.RegisterNotificationServiceServer(grpcSrv, notificationgrpc.NewServer(notificationService))
 	grpc_health_v1.RegisterHealthServer(grpcSrv, health.NewServer())

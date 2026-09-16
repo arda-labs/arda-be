@@ -127,13 +127,11 @@ func (h *InternalAIHandler) InternalAIListInterestRates(w http.ResponseWriter, r
 
 // writeAIList pages the redacted slice per the parsed list request and writes
 // the canonical success envelope. It mirrors CatalogHandler.List's pipeline
-// (parse → fetch → sort → PageSlice) but destructures ardahttp.PageSlice with
-// the documented order (paged, total, page, perPage) — the shared listEnvelope
-// helper in master_handler.go assigns those returns as (page, perPage, total),
-// which the AI surface must not inherit.
+// (parse → fetch → sort → PageSlice) and reads the typed ardahttp.PageResult
+// fields, which cannot be swapped like positional returns could.
 func writeAIList[T any](w http.ResponseWriter, r *http.Request, items []T, listReq ardahttp.ListRequest) {
-	paged, total, page, perPage := ardahttp.PageSlice(items, listReq.ListQuery)
-	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, paged))
+	res := ardahttp.PageSlice(items, listReq.ListQuery)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, res.Items))
 }
 
 // aiQuery trims the free-text search and clamps it to aiMaxQueryLen

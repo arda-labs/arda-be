@@ -113,7 +113,7 @@ func (w *DisbursementWorkers) buildPostingRequest(ctx context.Context, job entit
 			DocumentCode: detail.GetDisbursementCode(),
 			CaseId:       detail.GetWorkflowCaseId(),
 		},
-		Lines: postingLinesFromRules(fetchPostingRules(w.financeClient, w.flow.DocumentType), disbursementLegs(w.flow, detail), detail.GetCurrencyCode()),
+		Lines: postingLinesFromRules(fetchPostingRules(ctx, w.financeClient, w.flow.DocumentType), disbursementLegs(w.flow, detail), detail.GetCurrencyCode()),
 	}, nil
 }
 

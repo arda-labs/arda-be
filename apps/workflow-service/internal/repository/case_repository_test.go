@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
@@ -61,7 +62,7 @@ func TestNewID(t *testing.T) {
 }
 
 func TestVerifiedTenantRequiresOutgoingMetadata(t *testing.T) {
-	if _, err := verifiedTenant(context.Background()); err == nil {
+	if _, err := verifiedTenant(context.Background()); !errors.Is(err, ErrTenantScopeRequired) {
 		t.Fatal("verifiedTenant accepted a context without tenant metadata")
 	}
 	ctx := ardametadata.AppendToOutgoing(context.Background(), ardametadata.Context{TenantID: "tenant-1"})
@@ -71,5 +72,17 @@ func TestVerifiedTenantRequiresOutgoingMetadata(t *testing.T) {
 	}
 	if got != "tenant-1" {
 		t.Fatalf("verifiedTenant = %q, want tenant-1", got)
+	}
+}
+
+// TestSetCaseStatusByProcessKeyRequiresVerifiedTenant pins the repository-level
+// gate added for the operate pause/resume/cancel actions: without the verified
+// tenant the statement never reaches the database, so a process instance key
+// alone cannot mutate another tenant's case.
+func TestSetCaseStatusByProcessKeyRequiresVerifiedTenant(t *testing.T) {
+	repo := NewCaseRepository(nil)
+	err := repo.SetCaseStatusByProcessKey(context.Background(), 100, "SUSPENDED")
+	if !errors.Is(err, ErrTenantScopeRequired) {
+		t.Fatalf("SetCaseStatusByProcessKey err = %v, want ErrTenantScopeRequired", err)
 	}
 }

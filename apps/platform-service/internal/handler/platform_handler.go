@@ -268,6 +268,10 @@ func isPagedListQuery(values url.Values) bool {
 func (h *PlatformHandler) ListGeoAdminUnits(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	level, _ := strconv.Atoi(query.Get("level"))
+	// Legacy dropdown/tree callers without page/per_page keep the bare array,
+	// but the unpaged repository variant is hard-capped (see
+	// maxGeoAdminUnitLookupRows) so this can never return the full ~10k rows.
+	// Catalog screens request the paged envelope below.
 	if !isPagedListQuery(query) {
 		items, err := h.svc.ListGeoAdminUnits(r.Context(), query.Get("parent_code"), level)
 		writeResultWithRequest(w, r, items, err)
@@ -292,6 +296,11 @@ func (h *PlatformHandler) ListGeoAdminUnits(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *PlatformHandler) UpsertGeoAdminUnit(w http.ResponseWriter, r *http.Request) {
+	// geo_admin_units is shared reference data (no tenant_id, upsert by code):
+	// a tenant operator must not rewrite the geography every tenant sees.
+	if !requireGlobalAdmin(w, r) {
+		return
+	}
 	var req domain.GeoAdminUnit
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErrorCode(w, http.StatusBadRequest, "validation.invalid_json", "invalid json")
@@ -777,6 +786,17 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 			return
 		}
 		writeErrorCode(w, status, appErr.Code, appErr.Message)
+		return
+	}
+	// Targeted mutations (delete/update by id) report a 404 when no row
+	// matched; everything else stays a 500.
+	if errors.Is(err, repository.ErrNotFound) {
+		notFound := ardaerrors.New(ardaerrors.CodeNotFound, err.Error())
+		if r != nil {
+			ardahttp.WriteProblem(w, r, http.StatusNotFound, notFound)
+			return
+		}
+		writeErrorCode(w, http.StatusNotFound, ardaerrors.CodeNotFound, notFound.Message)
 		return
 	}
 	if r != nil {

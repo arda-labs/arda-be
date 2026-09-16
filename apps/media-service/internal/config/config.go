@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -28,6 +29,7 @@ type Config struct {
 	PresignDownloadTTL     time.Duration `yaml:"presign_download_ttl"`
 	RequireScanBeforeReady bool          `yaml:"require_scan_before_ready"`
 	TempFileTTL            time.Duration `yaml:"temp_file_ttl"`
+	AllowedUploadMIME      []string      `yaml:"allowed_upload_mime"`
 }
 
 func Load() Config {
@@ -98,6 +100,8 @@ func Load() Config {
 	envDuration("MEDIA_TEMP_FILE_TTL", &cfg.TempFileTTL)
 	envBool("REQUIRE_SCAN_BEFORE_READY", &cfg.RequireScanBeforeReady)
 	envBool("MEDIA_REQUIRE_SCAN_BEFORE_READY", &cfg.RequireScanBeforeReady)
+	envList("ALLOWED_UPLOAD_MIME", &cfg.AllowedUploadMIME)
+	envList("MEDIA_ALLOWED_UPLOAD_MIME", &cfg.AllowedUploadMIME)
 
 	return cfg
 }
@@ -108,24 +112,25 @@ func (c *Config) loadYAML(path string) bool {
 		return false
 	}
 	type rawConfig struct {
-		AppName                string `yaml:"app_name"`
-		HTTPAddr               string `yaml:"http_addr"`
-		GRPCAddr               string `yaml:"grpc_addr"`
-		LogLevel               string `yaml:"log_level"`
-		DatabaseDSN            string `yaml:"database_dsn"`
-		NATSURL                string `yaml:"nats_url"`
-		StorageProvider        string `yaml:"storage_provider"`
-		StorageEndpoint        string `yaml:"storage_endpoint"`
-		StorageRegion          string `yaml:"storage_region"`
-		StorageBucket          string `yaml:"storage_bucket"`
-		StorageAccessKey       string `yaml:"storage_access_key"`
-		StorageSecretKey       string `yaml:"storage_secret_key"`
-		StorageForcePathStyle  *bool  `yaml:"storage_force_path_style"`
-		UploadMaxSizeMB        int64  `yaml:"upload_max_size_mb"`
-		PresignUploadTTL       string `yaml:"presign_upload_ttl"`
-		PresignDownloadTTL     string `yaml:"presign_download_ttl"`
-		TempFileTTL            string `yaml:"temp_file_ttl"`
-		RequireScanBeforeReady *bool  `yaml:"require_scan_before_ready"`
+		AppName                string   `yaml:"app_name"`
+		HTTPAddr               string   `yaml:"http_addr"`
+		GRPCAddr               string   `yaml:"grpc_addr"`
+		LogLevel               string   `yaml:"log_level"`
+		DatabaseDSN            string   `yaml:"database_dsn"`
+		NATSURL                string   `yaml:"nats_url"`
+		StorageProvider        string   `yaml:"storage_provider"`
+		StorageEndpoint        string   `yaml:"storage_endpoint"`
+		StorageRegion          string   `yaml:"storage_region"`
+		StorageBucket          string   `yaml:"storage_bucket"`
+		StorageAccessKey       string   `yaml:"storage_access_key"`
+		StorageSecretKey       string   `yaml:"storage_secret_key"`
+		StorageForcePathStyle  *bool    `yaml:"storage_force_path_style"`
+		UploadMaxSizeMB        int64    `yaml:"upload_max_size_mb"`
+		PresignUploadTTL       string   `yaml:"presign_upload_ttl"`
+		PresignDownloadTTL     string   `yaml:"presign_download_ttl"`
+		TempFileTTL            string   `yaml:"temp_file_ttl"`
+		RequireScanBeforeReady *bool    `yaml:"require_scan_before_ready"`
+		AllowedUploadMIME      []string `yaml:"allowed_upload_mime"`
 	}
 	var raw rawConfig
 	if err := yaml.Unmarshal(data, &raw); err != nil {
@@ -168,6 +173,9 @@ func (c *Config) loadYAML(path string) bool {
 	if raw.RequireScanBeforeReady != nil {
 		c.RequireScanBeforeReady = *raw.RequireScanBeforeReady
 	}
+	if len(raw.AllowedUploadMIME) > 0 {
+		c.AllowedUploadMIME = raw.AllowedUploadMIME
+	}
 	return true
 }
 
@@ -189,6 +197,22 @@ func envBool(key string, target *bool) {
 		if err == nil {
 			*target = parsed
 		}
+	}
+}
+
+func envList(key string, target *[]string) {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return
+	}
+	values := make([]string, 0, 4)
+	for _, item := range strings.Split(v, ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			values = append(values, trimmed)
+		}
+	}
+	if len(values) > 0 {
+		*target = values
 	}
 }
 

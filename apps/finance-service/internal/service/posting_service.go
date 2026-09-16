@@ -62,7 +62,8 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 		return nil, err
 	}
 	if req.GetIdempotencyKey() != "" {
-		previous, err := s.repo.FindEntryByIdempotencyKey(ctx, tenantID, req.GetIdempotencyKey())
+		previous, err := s.repo.FindEntryByIdempotencyKey(ctx, tenantID, req.GetIdempotencyKey(),
+			req.GetBusinessReference().GetDocumentType())
 		if err != nil {
 			return nil, err
 		}
@@ -76,6 +77,13 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 				return previous, nil
 			}
 		}
+	}
+	// Direct (system-executed) posts may omit the key. The journal's unique
+	// index is (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL,
+	// so a NULL key cannot be found again; a server-generated key keeps every
+	// entry addressable (same pattern as the case services' fin-<flow>-<uuid>).
+	if strings.TrimSpace(req.GetIdempotencyKey()) == "" {
+		req.IdempotencyKey = "direct-" + newRandomUUID()
 	}
 	result, resolved, err := s.resolve(ctx, tenantID, req)
 	if err != nil {
@@ -92,29 +100,22 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `
+	var entryID string
+	var entryNo, createdAt string
+	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO fin_journal_entries
 			(tenant_id, accounting_date, currency_code, status, description,
 			 business_domain, business_doc_type, business_doc_id, business_doc_code, case_id,
 			 idempotency_key, created_by, posted_at, metadata)
-		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9,$10,$11,now(),$12)`,
+		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9,$10,$11,now(),$12)
+		RETURNING id, entry_no, created_at`,
 		tenantID, req.GetAccountingDate(), req.GetCurrencyCode(), req.GetDescription(),
 		ref.GetDomain(), ref.GetDocumentType(),
 		nullUUIDText(ref.GetDocumentId()), ref.GetDocumentCode(),
 		nullUUIDText(ref.GetCaseId()), nullText(req.GetIdempotencyKey()),
-		metadataActor(req, ref.GetDocumentCode()), metadataJSONB(req.GetMetadata())); err != nil {
-		return nil, fmt.Errorf("insert entry: %w", err)
-	}
-
-	var entryID string
-	var entryNo, createdAt string
-	if err := tx.QueryRowContext(ctx, `
-		SELECT id, entry_no, created_at FROM fin_journal_entries
-		WHERE tenant_id = $1 AND idempotency_key = $2 AND business_doc_type = $3
-		ORDER BY entry_no DESC LIMIT 1`,
-		tenantID, req.GetIdempotencyKey(), ref.GetDocumentType(),
+		metadataActor(req, ref.GetDocumentCode()), metadataJSONB(req.GetMetadata()),
 	).Scan(&entryID, &entryNo, &createdAt); err != nil {
-		return nil, fmt.Errorf("fetch entry: %w", err)
+		return nil, fmt.Errorf("insert entry: %w", err)
 	}
 
 	for _, l := range resolved {
@@ -171,7 +172,8 @@ func (s *PostingService) ReservePosting(ctx context.Context, tenantID string, re
 		return nil, err
 	}
 	if key := req.GetIdempotencyKey(); key != "" {
-		previous, err := s.repo.FindEntryByIdempotencyKey(ctx, tenantID, key)
+		previous, err := s.repo.FindEntryByIdempotencyKey(ctx, tenantID, key,
+			req.GetBusinessReference().GetDocumentType())
 		if err != nil {
 			return nil, err
 		}
@@ -198,29 +200,22 @@ func (s *PostingService) ReservePosting(ctx context.Context, tenantID string, re
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `
+	var entryID string
+	var entryNo, createdAt string
+	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO fin_journal_entries
 			(tenant_id, accounting_date, currency_code, status, description,
 			 business_domain, business_doc_type, business_doc_id, business_doc_code, case_id,
 			 idempotency_key, created_by, metadata)
-		VALUES ($1,$2,$3,'PENDING',$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		VALUES ($1,$2,$3,'PENDING',$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		RETURNING id, entry_no, created_at`,
 		tenantID, req.GetAccountingDate(), req.GetCurrencyCode(), req.GetDescription(),
 		ref.GetDomain(), ref.GetDocumentType(),
 		nullUUIDText(ref.GetDocumentId()), ref.GetDocumentCode(),
 		nullUUIDText(ref.GetCaseId()), nullText(req.GetIdempotencyKey()),
-		metadataActor(req, ref.GetDocumentCode()), metadataJSONB(req.GetMetadata())); err != nil {
-		return nil, fmt.Errorf("insert pending entry: %w", err)
-	}
-
-	var entryID string
-	var entryNo, createdAt string
-	if err := tx.QueryRowContext(ctx, `
-		SELECT id, entry_no, created_at FROM fin_journal_entries
-		WHERE tenant_id = $1 AND idempotency_key = $2 AND business_doc_type = $3
-		ORDER BY entry_no DESC LIMIT 1`,
-		tenantID, req.GetIdempotencyKey(), ref.GetDocumentType(),
+		metadataActor(req, ref.GetDocumentCode()), metadataJSONB(req.GetMetadata()),
 	).Scan(&entryID, &entryNo, &createdAt); err != nil {
-		return nil, fmt.Errorf("fetch pending entry: %w", err)
+		return nil, fmt.Errorf("insert pending entry: %w", err)
 	}
 
 	for _, l := range resolved {
@@ -702,25 +697,39 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `
+	// Re-validate and lock the original inside the transaction: two concurrent
+	// reversal requests must not both post a mirror entry.
+	var lockedStatus string
+	var lockedReversed sql.NullString
+	if err := tx.QueryRowContext(ctx, `
+		SELECT status, reversed_by_entry_id
+		FROM fin_journal_entries
+		WHERE tenant_id = $1 AND id = $2
+		FOR UPDATE`, tenantID, req.GetJournalEntryId()).Scan(&lockedStatus, &lockedReversed); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("journal entry not found")
+		}
+		return nil, err
+	}
+	if lockedReversed.Valid {
+		return nil, fmt.Errorf("entry already reversed")
+	}
+	if lockedStatus != "POSTED" {
+		return nil, fmt.Errorf("entry status %s cannot be reversed", lockedStatus)
+	}
+
+	var entryID, entryNo, createdAt string
+	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO fin_journal_entries
 			(tenant_id, accounting_date, currency_code, status, description,
 			 business_domain, business_doc_type, business_doc_id, idempotency_key, created_by, metadata)
-		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9,$10)`,
+		VALUES ($1,$2,$3,'POSTED',$4,$5,$6,$7,$8,$9,$10)
+		RETURNING id, entry_no, created_at`,
 		tenantID, reversalDate, original.Currency,
 		"REVERSAL: "+req.GetReason(), original.Domain, docType,
 		nullUUIDText(original.DocID), nullText(req.GetIdempotencyKey()), req.GetActor(),
-		metadataJSONB(req.GetMetadata())); err != nil {
+		metadataJSONB(req.GetMetadata())).Scan(&entryID, &entryNo, &createdAt); err != nil {
 		return nil, fmt.Errorf("insert reversal: %w", err)
-	}
-
-	var entryID string
-	var entryNo, createdAt string
-	if err := tx.QueryRowContext(ctx, `
-		SELECT id, entry_no, created_at FROM fin_journal_entries
-		WHERE tenant_id = $1 AND idempotency_key = $2 ORDER BY entry_no DESC LIMIT 1`,
-		tenantID, req.GetIdempotencyKey()).Scan(&entryID, &entryNo, &createdAt); err != nil {
-		return nil, fmt.Errorf("fetch reversal: %w", err)
 	}
 
 	for i, l := range original.Lines {
@@ -1100,21 +1109,77 @@ type JournalFilter struct {
 	FromDate     string
 	ToDate       string
 	DocumentType string
-	Limit        int
+	// Statuses is the explicit status whitelist; empty defaults to the two
+	// readable statuses (POSTED/REVERSED).
+	Statuses []string
+	Limit    int
 }
 
 // JournalListFilter is the paged journal-list contract for the HTTP read
 // surface: q ILIKEs document type / document code / description, sort is a
 // whitelist key (entry_no | accounting_date), paging is SQL LIMIT/OFFSET.
+// Statuses defaults to POSTED/REVERSED so PENDING proposals and VOID releases
+// stay out of the listing; callers opt in explicitly (e.g. status=PENDING).
 type JournalListFilter struct {
 	FromDate     string
 	ToDate       string
 	DocumentType string
+	Statuses     []string
 	Search       string
 	Sort         string
 	Order        string
 	Page         int
 	PerPage      int
+}
+
+// ErrInvalidJournalStatus marks a status filter outside the journal
+// visibility whitelist (the HTTP layer maps it to 400).
+var ErrInvalidJournalStatus = errors.New("invalid journal status filter")
+
+// journalStatusWhitelist are the four fin_journal_entries statuses.
+var journalStatusWhitelist = map[string]bool{
+	"POSTED": true, "REVERSED": true, "PENDING": true, "VOID": true,
+}
+
+// normalizeJournalStatuses validates the requested statuses (each item may
+// also carry a comma-separated list) and defaults an empty filter to the two
+// readable statuses. PENDING proposals and VOID releases stay hidden unless
+// explicitly requested — the same visibility rule GetJournalEntry, the ledger
+// and the trial balance apply.
+func normalizeJournalStatuses(requested []string) ([]string, error) {
+	out := make([]string, 0, len(requested))
+	seen := map[string]bool{}
+	for _, raw := range requested {
+		for _, part := range strings.Split(raw, ",") {
+			status := strings.ToUpper(strings.TrimSpace(part))
+			if status == "" {
+				continue
+			}
+			if !journalStatusWhitelist[status] {
+				return nil, fmt.Errorf("%w: %q must be one of POSTED, REVERSED, PENDING, VOID",
+					ErrInvalidJournalStatus, strings.TrimSpace(part))
+			}
+			if !seen[status] {
+				seen[status] = true
+				out = append(out, status)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return []string{"POSTED", "REVERSED"}, nil
+	}
+	return out, nil
+}
+
+// journalStatusPlaceholders appends the whitelisted statuses to args and
+// returns the matching IN-list fragment ("$5,$6").
+func journalStatusPlaceholders(args *[]any, statuses []string) string {
+	placeholders := make([]string, len(statuses))
+	for i, status := range statuses {
+		*args = append(*args, status)
+		placeholders[i] = fmt.Sprintf("$%d", len(*args))
+	}
+	return strings.Join(placeholders, ",")
 }
 
 // journalOrderClause maps the parsed sort onto a whitelisted ORDER BY. The
@@ -1150,12 +1215,20 @@ type JournalEntryRow struct {
 	TotalAmountMinor int64 `json:"total_amount_minor"`
 }
 
-// ListJournal returns recent entries (header only) ordered newest first.
+// ListJournal returns recent entries (header only) ordered newest first;
+// PENDING/VOID entries are excluded unless explicitly requested.
 func (s *PostingService) ListJournal(ctx context.Context, tenantID string, f JournalFilter) ([]JournalEntryRow, error) {
 	if f.Limit <= 0 || f.Limit > 200 {
 		f.Limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	statuses, err := normalizeJournalStatuses(f.Statuses)
+	if err != nil {
+		return nil, err
+	}
+	args := []any{tenantID, f.FromDate, f.ToDate, f.DocumentType}
+	statusList := journalStatusPlaceholders(&args, statuses)
+	args = append(args, f.Limit)
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, entry_no, accounting_date::text, currency_code, status,
 		       COALESCE(description,''), business_domain, business_doc_type,
 		       COALESCE(business_doc_code,''), COALESCE(case_id::text,''), created_at::text,
@@ -1166,8 +1239,9 @@ func (s *PostingService) ListJournal(ctx context.Context, tenantID string, f Jou
 		  AND ($2 = '' OR fje.accounting_date >= $2::date)
 		  AND ($3 = '' OR fje.accounting_date <= $3::date)
 		  AND ($4 = '' OR fje.business_doc_type = $4)
+		  AND fje.status IN (%s)
 		ORDER BY fje.entry_no DESC
-		LIMIT $5`, tenantID, f.FromDate, f.ToDate, f.DocumentType, f.Limit)
+		LIMIT $%d`, statusList, len(args)), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1190,9 +1264,9 @@ func (s *PostingService) ListJournal(ctx context.Context, tenantID string, f Jou
 // a whitelisted ORDER BY, SQL LIMIT/OFFSET and the unfiltered total.
 // JournalLedger is the per-account ledger view (opening + lines).
 type JournalLedger struct {
-	AccountCode  string                   `json:"account_code"`
-	OpeningMinor int64                    `json:"opening_minor"`
-	Lines        []repository.LedgerLine  `json:"lines"`
+	AccountCode  string                  `json:"account_code"`
+	OpeningMinor int64                   `json:"opening_minor"`
+	Lines        []repository.LedgerLine `json:"lines"`
 }
 
 // Ledger returns the account ledger for [from, to] (opening net + posted lines).
@@ -1216,9 +1290,14 @@ func (s *PostingService) ListJournalPaged(ctx context.Context, tenantID string, 
 	if perPage < 1 || perPage > 200 {
 		perPage = 50
 	}
+	statuses, err := normalizeJournalStatuses(f.Statuses)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	where := []string{"tenant_id = $1"}
 	args := []any{tenantID}
+	where = append(where, "status IN ("+journalStatusPlaceholders(&args, statuses)+")")
 	if f.FromDate != "" {
 		args = append(args, f.FromDate)
 		where = append(where, fmt.Sprintf("accounting_date >= $%d::date", len(args)))

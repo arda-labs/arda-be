@@ -182,7 +182,7 @@ func (s *GeneralProvisionService) Resolve(ctx context.Context, tenantID, id, dec
 	}
 	journalEntryID := ""
 	if preview.AllocMinor > 0 || preview.ReverseMinor > 0 {
-		posted, err := s.finance.Post(ctx, s.postingRequest(row, preview))
+		posted, err := s.finance.Post(ctx, s.postingRequest(ctx, row, preview))
 		if err != nil {
 			return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "provision posting failed", err)
 		}
@@ -194,7 +194,7 @@ func (s *GeneralProvisionService) Resolve(ctx context.Context, tenantID, id, dec
 		journalEntryID, decidedBy))
 }
 
-func (s *GeneralProvisionService) postingRequest(row *repository.GeneralProvisionRow, preview GeneralProvisionPreview) *financev1.PostingRequest {
+func (s *GeneralProvisionService) postingRequest(ctx context.Context, row *repository.GeneralProvisionRow, preview GeneralProvisionPreview) *financev1.PostingRequest {
 	analytics := &financev1.Analytics{OrgUnitCode: row.OrgCode}
 	legs := []financeclient.PostingLeg{}
 	if preview.AllocMinor > 0 {
@@ -221,7 +221,7 @@ func (s *GeneralProvisionService) postingRequest(row *repository.GeneralProvisio
 			DocumentCode: row.OrgCode + "/" + row.ProvisionDate,
 		},
 		Lines: financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(s.finance, generalProvisionDocumentType),
+			financeclient.FetchPostingRules(ctx, s.finance, generalProvisionDocumentType),
 			legs, generalProvisionDefaultCurrency),
 	}
 }

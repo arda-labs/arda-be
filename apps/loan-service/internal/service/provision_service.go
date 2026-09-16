@@ -85,7 +85,7 @@ func (s *ProvisionService) Run(ctx context.Context, tenantID, toDate, actor stri
 			continue
 		}
 
-		lines := s.provisionLines(a, delta)
+		lines := s.provisionLines(ctx, a, delta)
 		postReq := &financev1.PostingRequest{
 			IdempotencyKey: fmt.Sprintf("lnm-provision-%s-%s", a.AgreementCode, toDate),
 			AccountingDate: toDate,
@@ -143,7 +143,7 @@ func (s *ProvisionService) accumulatedProvision(ctx context.Context, tenantID, a
 // card seeded by 20260909100000 drives the classification; the pre-rules
 // hardcoded strings stay as the per-leg fallback so an unseeded/unreachable
 // card never breaks the batch. Analytics per leg keep the provision scope.
-func (s *ProvisionService) provisionLines(a repository.AccruableAgreement, delta int64) []*financev1.PostingLine {
+func (s *ProvisionService) provisionLines(ctx context.Context, a repository.AccruableAgreement, delta int64) []*financev1.PostingLine {
 	amount := delta
 	cardLine, debitFallback, creditFallback := int32(1), "LNM_PROVISION_EXPENSE", "LNM_PROVISION_LIABILITY"
 	if delta < 0 {
@@ -159,7 +159,7 @@ func (s *ProvisionService) provisionLines(a repository.AccruableAgreement, delta
 		}
 	}
 	return financeclient.PostingLinesFromRules(
-		financeclient.FetchPostingRules(s.finance, "LNM_PROVISION"),
+		financeclient.FetchPostingRules(ctx, s.finance, "LNM_PROVISION"),
 		[]financeclient.PostingLeg{
 			{CardLine: cardLine, Fallback: debitFallback, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics()},
 			{CardLine: cardLine + 1, Fallback: creditFallback, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics()},

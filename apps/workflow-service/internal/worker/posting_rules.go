@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"context"
+
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 )
@@ -17,8 +19,8 @@ type postingLeg = financeclient.PostingLeg
 
 // fetchPostingRules loads the rule card for a document type. Any failure
 // degrades to nil — the built-in fallback classifications take over.
-func fetchPostingRules(financeClient *financeclient.Client, documentType string) []*financev1.PostingRule {
-	return financeclient.FetchPostingRules(financeClient, documentType)
+func fetchPostingRules(ctx context.Context, financeClient *financeclient.Client, documentType string) []*financev1.PostingRule {
+	return financeclient.FetchPostingRules(ctx, financeClient, documentType)
 }
 
 // postingLinesFromRules builds the numbered PostingLine list from legs,

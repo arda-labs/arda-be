@@ -36,3 +36,22 @@ func TestWriteNotificationErrorDoesNotMisclassifyTenantAsUnauthorized(t *testing
 		t.Fatal("tenant migration and missing scope errors must remain distinct")
 	}
 }
+
+func TestWriteNotificationErrorMapsPushEndpointConflict(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/notifications/push/subscribe", nil)
+	req.Header.Set(ardahttp.HeaderRequestID, "req-push-conflict")
+	rec := httptest.NewRecorder()
+
+	writeNotificationError(rec, req, service.ErrPushEndpointOwned)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusConflict)
+	}
+	var problem ardahttp.Problem
+	if err := json.NewDecoder(rec.Body).Decode(&problem); err != nil {
+		t.Fatal(err)
+	}
+	if problem.Code != ardaerrors.CodeConflict {
+		t.Fatalf("code = %q, want %q", problem.Code, ardaerrors.CodeConflict)
+	}
+}

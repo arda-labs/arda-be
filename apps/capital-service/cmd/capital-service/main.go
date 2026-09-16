@@ -25,6 +25,7 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	capitalv1 "github.com/arda-labs/arda/libs/go/arda-proto/capital/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -43,6 +44,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	ardapostgres.ConfigureDefaultPool(db, logger)
 
 	if err := migration.Run(db, "postgres"); err != nil {
 		logger.Error("Failed to run migrations", "err", err)
@@ -90,6 +92,7 @@ func main() {
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerRecovery(logger),
 			interceptors.UnaryServerServiceAuth(serviceSecret, "capital-service", map[string]struct{}{"workflow-service": {}}),
 			interceptors.UnaryServerLogging(logger),
 		),

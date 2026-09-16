@@ -273,7 +273,7 @@ type AuditStats struct {
 	To           time.Time      `json:"to"`
 }
 
-func (r *AuditRepository) Stats(ctx context.Context, from, to time.Time) (*AuditStats, error) {
+func (r *AuditRepository) Stats(ctx context.Context, tenantID string, from, to time.Time) (*AuditStats, error) {
 	stats := &AuditStats{
 		From:        from,
 		To:          to,
@@ -281,15 +281,22 @@ func (r *AuditRepository) Stats(ctx context.Context, from, to time.Time) (*Audit
 		ByResult:    make(map[string]int),
 	}
 
-	r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM iam_audit_logs WHERE timestamp >= $1 AND timestamp < $2
-	`, from, to).Scan(&stats.TotalEvents)
+	where := "timestamp >= $1 AND timestamp < $2"
+	args := []any{from, to}
+	if tenantID = strings.TrimSpace(tenantID); tenantID != "" {
+		where += " AND tenant_id = $3"
+		args = append(args, tenantID)
+	}
 
-	rows, err := r.db.QueryContext(ctx, `
+	r.db.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT COUNT(*) FROM iam_audit_logs WHERE %s
+	`, where), args...).Scan(&stats.TotalEvents)
+
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT event_type, COUNT(*) FROM iam_audit_logs
-		WHERE timestamp >= $1 AND timestamp < $2
+		WHERE %s
 		GROUP BY event_type ORDER BY COUNT(*) DESC
-	`, from, to)
+	`, where), args...)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -301,11 +308,11 @@ func (r *AuditRepository) Stats(ctx context.Context, from, to time.Time) (*Audit
 		}
 	}
 
-	rows2, err := r.db.QueryContext(ctx, `
+	rows2, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT result, COUNT(*) FROM iam_audit_logs
-		WHERE timestamp >= $1 AND timestamp < $2
+		WHERE %s
 		GROUP BY result
-	`, from, to)
+	`, where), args...)
 	if err == nil {
 		defer rows2.Close()
 		for rows2.Next() {
@@ -331,7 +338,14 @@ type ChainVerification struct {
 	Tampered []string `json:"tampered,omitempty"`
 }
 
-func (r *AuditRepository) VerifyChain(ctx context.Context, from, to time.Time) (*ChainVerification, error) {
+// VerifyChain checks hash chain integrity within the given time window. The
+// chain itself is global — every insert links to the previous event of the
+// whole system — so the walk always follows the global sequence. When
+// tenantID is set, only that tenant's events are counted and reported, which
+// keeps other tenants' event ids and chain state out of the response while
+// still validating the tenant rows against their real predecessor hashes.
+func (r *AuditRepository) VerifyChain(ctx context.Context, tenantID string, from, to time.Time) (*ChainVerification, error) {
+	scopeTenant := strings.TrimSpace(tenantID)
 	prevHash := ""
 	if !from.IsZero() {
 		err := r.db.QueryRowContext(ctx, `
@@ -345,7 +359,7 @@ func (r *AuditRepository) VerifyChain(ctx context.Context, from, to time.Time) (
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT event_id, chain_prev_hash, chain_hash, timestamp, created_at, result
+		SELECT event_id, tenant_id, chain_prev_hash, chain_hash, timestamp, created_at, result
 		FROM iam_audit_logs
 		WHERE timestamp >= $1 AND timestamp < $2
 		ORDER BY created_at ASC, id ASC
@@ -359,20 +373,24 @@ func (r *AuditRepository) VerifyChain(ctx context.Context, from, to time.Time) (
 
 	for rows.Next() {
 		var eventID, chainPrev, chainHash string
+		var tenant sql.NullString
 		var ts, createdAt time.Time
 		var res string
 
-		if err := rows.Scan(&eventID, &chainPrev, &chainHash, &ts, &createdAt, &res); err != nil {
+		if err := rows.Scan(&eventID, &tenant, &chainPrev, &chainHash, &ts, &createdAt, &res); err != nil {
 			return nil, err
 		}
-		result.Total++
 
-		expectedPrev := prevHash
-		expectedHash := sha256Hex(expectedPrev + eventID + canonicalAuditTimestamp(ts) + res)
+		if scopeTenant == "" || (tenant.Valid && tenant.String == scopeTenant) {
+			result.Total++
 
-		if chainPrev != expectedPrev || chainHash != expectedHash {
-			result.Valid = false
-			result.Tampered = append(result.Tampered, eventID)
+			expectedPrev := prevHash
+			expectedHash := sha256Hex(expectedPrev + eventID + canonicalAuditTimestamp(ts) + res)
+
+			if chainPrev != expectedPrev || chainHash != expectedHash {
+				result.Valid = false
+				result.Tampered = append(result.Tampered, eventID)
+			}
 		}
 
 		prevHash = chainHash

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
@@ -102,16 +103,56 @@ func validateClosingShape(in *ClosingCaseInput) error {
 	return nil
 }
 
+// closingBalanceIndex indexes the positive natural balances of the closing
+// candidate accounts by account code, restricted to the closing posting
+// currency (VND). A duplicate account row (multi-currency) in another
+// currency is ignored; a missing account means no positive balance to close.
+func closingBalanceIndex(candidates []repository.ClosingCandidate) map[string]int64 {
+	balances := make(map[string]int64, len(candidates))
+	for _, c := range candidates {
+		if c.CurrencyCode != closingCurrencyCode {
+			continue
+		}
+		balances[c.AccountCode] += c.BalanceMinor
+	}
+	return balances
+}
+
+// checkClosingRowAmount caps one maker-picked closing amount at the account's
+// natural balance as of the closing date: closing more than the account holds
+// would leave the INC/EXP account with a negative balance after the transfer
+// (and the balancing destination accounts with an inflated one).
+func checkClosingRowAmount(index int, accCode string, amountMinor, balanceMinor int64) error {
+	if balanceMinor <= 0 {
+		return fmt.Errorf(
+			"closing_request.rows[%d]: account %s has no positive %s natural balance to close (asked %d)",
+			index, accCode, closingCurrencyCode, amountMinor)
+	}
+	if amountMinor > balanceMinor {
+		return fmt.Errorf(
+			"closing_request.rows[%d]: amount_minor %d exceeds the natural balance %d of account %s (%s)",
+			index, amountMinor, balanceMinor, accCode, closingCurrencyCode)
+	}
+	return nil
+}
+
 // buildClosingPostingRequest validates every row against the COA (account
-// exists, is postable and carries the purpose the FE picked), resolves the
-// closing destinations and builds the balanced PostingRequest the two-phase
-// lifecycle rides on. Line order puts the destination CREDIT (income close)
-// before the destination DEBIT (expense close) so a same-entry profit net
-// covers its own availability at Reserve.
+// exists, is postable and carries the purpose the FE picked) and against the
+// account's natural balance (a row may never close more than the account
+// holds), resolves the closing destinations and builds the balanced
+// PostingRequest the two-phase lifecycle rides on. Line order puts the
+// destination CREDIT (income close) before the destination DEBIT (expense
+// close) so a same-entry profit net covers its own availability at Reserve.
 func (s *PostingCaseService) buildClosingPostingRequest(ctx context.Context, tenantID string, in *ClosingCaseInput) (*financev1.PostingRequest, closingTotals, error) {
 	lines := make([]*financev1.PostingLine, 0, len(in.Rows)+2)
 	var totals closingTotals
 	totals.PeriodType = in.PeriodType
+
+	candidates, err := s.posting.repo.ClosingCandidateAccounts(ctx, tenantID, in.AccountingDate)
+	if err != nil {
+		return nil, totals, fmt.Errorf("load closing candidate balances: %w", err)
+	}
+	balances := closingBalanceIndex(candidates)
 
 	lineNo := int32(0)
 	nextLineNo := func() int32 {
@@ -128,6 +169,9 @@ func (s *PostingCaseService) buildClosingPostingRequest(ctx context.Context, ten
 			return nil, totals, fmt.Errorf(
 				"closing_request.rows[%d]: account %s carries acc_purpose %q, request says %q",
 				i, row.AccCode, purposeLabel(acc.AccPurpose), row.AccPurpose)
+		}
+		if err := checkClosingRowAmount(i, acc.AccountCode, row.AmountMinor, balances[acc.AccountCode]); err != nil {
+			return nil, totals, err
 		}
 		direction := "DEBIT"
 		if row.AccPurpose == "EXP" {
@@ -237,8 +281,12 @@ func (s *PostingCaseService) CreateClosingCase(ctx context.Context, tenantID, ac
 	}
 	// Preview through the standard validation (period open, ΣD=ΣC, account
 	// resolution) — the same pre-check the manual posting flows run.
-	if _, err := s.posting.ValidatePosting(ctx, tenantID, req); err != nil {
+	res, err := s.posting.ValidatePosting(ctx, tenantID, req)
+	if err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
+	}
+	if !res.GetValid() {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, postingValidationError(res).Error())
 	}
 
 	// The FE may pin the idempotency key (retry-safe replay of the whole

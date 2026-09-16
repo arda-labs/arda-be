@@ -12,6 +12,8 @@ import (
 
 type CalendarRepo interface {
 	GetSystemDate(ctx context.Context, branchCode string) (*domain.SystemDate, error)
+	ClaimEOD(ctx context.Context, branchCode string) (*domain.SystemDate, error)
+	ReleaseEOD(ctx context.Context, branchCode string) error
 	UpdateSystemDate(ctx context.Context, sd *domain.SystemDate) error
 	IsHoliday(ctx context.Context, date time.Time) (bool, error)
 	AddHoliday(ctx context.Context, holiday *domain.HolidayCalendar) error
@@ -98,27 +100,35 @@ func (s *CalendarService) EvaluateAccountingDate(ctx context.Context, branchCode
 }
 
 // RunEOD performs the End-Of-Day transition: shifts business dates forward.
+//
+// The race-prone read-then-write status check was replaced by an atomic claim
+// in the repository (conditional UPDATE with rows-affected): a second
+// concurrent trigger receives domain.ErrEODInProgress instead of advancing the
+// date again. The claim is always released on failure, so a failed job cannot
+// leave the branch stuck in EOD_PROCESSING.
 func (s *CalendarService) RunEOD(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
 	if branchCode == "" {
 		branchCode = "HEAD_OFFICE"
 	}
 
-	sd, err := s.repo.GetSystemDate(ctx, branchCode)
+	sd, err := s.repo.ClaimEOD(ctx, branchCode)
 	if err != nil {
 		return nil, err
 	}
-	if sd == nil {
-		return nil, errors.New("system date config not found")
-	}
 
-	if sd.Status == domain.SystemDateEODProcessing {
-		return nil, errors.New("EOD process is already in progress")
-	}
-
-	sd.Status = domain.SystemDateEODProcessing
-	if err := s.repo.UpdateSystemDate(ctx, sd); err != nil {
-		return nil, fmt.Errorf("failed to update status to EOD_PROCESSING: %w", err)
-	}
+	completed := false
+	defer func() {
+		if completed {
+			return
+		}
+		// Detach from the request context: the release must still run when the
+		// caller timed out or disconnected mid-EOD.
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if releaseErr := s.repo.ReleaseEOD(releaseCtx, branchCode); releaseErr != nil {
+			slog.Error("failed to release EOD processing state", "branch", branchCode, "err", releaseErr)
+		}
+	}()
 
 	slog.Info("EOD process started", "branch", branchCode, "currentBusinessDate", sd.CurrentBusinessDate)
 
@@ -141,6 +151,7 @@ func (s *CalendarService) RunEOD(ctx context.Context, branchCode string) (*domai
 	if err := s.repo.UpdateSystemDate(ctx, sd); err != nil {
 		return nil, fmt.Errorf("failed to complete EOD transition in DB: %w", err)
 	}
+	completed = true
 
 	slog.Info("EOD process completed successfully", "newBusinessDate", sd.CurrentBusinessDate, "nextBusinessDate", sd.NextBusinessDate)
 	return sd, nil

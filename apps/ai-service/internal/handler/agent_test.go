@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -302,9 +303,14 @@ func (handlerConfirmTool) Execute(_ context.Context, _ tools.Context, _ json.Raw
 
 type executionTestStore struct {
 	fakeRunStore
-	started          bool
-	notFound         bool
-	finishToolCalled bool
+	started           bool
+	notFound          bool
+	finishToolCalled  bool
+	arguments         string
+	permissionVersion string
+	resourceVersion   string
+	lastToolStatus    string
+	lastToolErrorCode string
 }
 
 func (s *executionTestStore) Start(_ context.Context, run repository.RunContext, _ string) error {
@@ -321,12 +327,18 @@ func (s *executionTestStore) FetchApprovedExecution(_ context.Context, _, _, _ s
 		s.started = true
 		s.fakeRunStore.started = repository.RunContext{TenantID: "tenant-1", ActorUserID: "user-1", ExternalThread: "t1", ExternalRun: "r1"}
 	}
+	arguments := s.arguments
+	if arguments == "" {
+		arguments = `{"format":"csv"}`
+	}
 	return repository.ApprovedExecution{
-		ExecutionID: "exec-1",
-		Run:         s.fakeRunStore.started,
-		ToolName:    "test.confirm",
-		ToolVersion: 1,
-		Arguments:   `{"format":"csv"}`,
+		ExecutionID:       "exec-1",
+		Run:               s.fakeRunStore.started,
+		ToolName:          "test.confirm",
+		ToolVersion:       1,
+		Arguments:         arguments,
+		PermissionVersion: s.permissionVersion,
+		ResourceVersion:   s.resourceVersion,
 	}, nil
 }
 
@@ -334,7 +346,130 @@ func (s *executionTestStore) StartTool(context.Context, repository.RunContext, s
 	return "exec-1", nil
 }
 
-func (s *executionTestStore) FinishTool(_ context.Context, _, status, _, _ string) error {
+func (s *executionTestStore) FinishTool(_ context.Context, _, status, _, errorCode string) error {
 	s.finishToolCalled = status == "SUCCEEDED"
+	s.lastToolStatus = status
+	s.lastToolErrorCode = errorCode
 	return nil
+}
+
+// scopeCapturingTool records the tools.Context it was executed with, so tests
+// can assert what the handler put on the run scratch space.
+type scopeCapturingTool struct {
+	scope tools.Context
+}
+
+func (t *scopeCapturingTool) Definition() tools.Definition {
+	return tools.Definition{
+		Name:                "test.read",
+		Version:             1,
+		Kind:                "read",
+		RequiredPermissions: []string{"crm.customer.read"},
+		Risk:                "low",
+	}
+}
+
+func (t *scopeCapturingTool) Execute(_ context.Context, scope tools.Context, _ json.RawMessage) (tools.Result, error) {
+	t.scope = scope
+	return tools.Result{Data: json.RawMessage(`{}`), Summary: "ok"}, nil
+}
+
+// TestAgentToolExecutionCarriesRunIdentity locks the handler → tool plumbing
+// Code Mode HITL depends on: a model-initiated tool call must carry the AG-UI
+// run ids on its scope so the sandbox can attach a proposal to the owning
+// ai_runs row.
+func TestAgentToolExecutionCarriesRunIdentity(t *testing.T) {
+	server := newModelServer(t, [][]string{
+		{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"test.read","arguments":"{}"}}]}}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+		},
+		{
+			`{"choices":[{"delta":{"content":"done"}}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		},
+	})
+	defer server.Close()
+
+	capture := &scopeCapturingTool{}
+	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client()), AgentMaxSteps: 3}
+	router := NewRouterWithOptions(&agentRunStore{}, tools.NewRegistry(capture), options)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/agent", strings.NewReader(`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"x"}]}`))
+	gatewayHeaders(req)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", res.Code, res.Body.String())
+	}
+	if capture.scope.ExternalThread != "t1" || capture.scope.ExternalRun != "r1" {
+		t.Fatalf("tool scope = thread %q/run %q, want t1/r1", capture.scope.ExternalThread, capture.scope.ExternalRun)
+	}
+	if capture.scope.TenantID != "tenant-1" || capture.scope.ActorUserID != "user-1" {
+		t.Fatalf("tool scope ownership = %q/%q, want tenant-1/user-1", capture.scope.TenantID, capture.scope.ActorUserID)
+	}
+}
+
+// TestDirectToolExecutionCarriesRunIdentity covers the explicit `tool` call
+// path (POST /api/ai/agent with a run body tool), which executes the resolved
+// tool without the model loop.
+func TestDirectToolExecutionCarriesRunIdentity(t *testing.T) {
+	capture := &scopeCapturingTool{}
+	router := NewRouterWithOptions(&fakeToolRunStore{}, tools.NewRegistry(capture), RouterOptions{})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/agent", strings.NewReader(`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"x"}],"tool":{"name":"test.read","arguments":{}}}`))
+	gatewayHeaders(req)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", res.Code, res.Body.String())
+	}
+	if capture.scope.ExternalThread != "t1" || capture.scope.ExternalRun != "r1" {
+		t.Fatalf("tool scope = thread %q/run %q, want t1/r1", capture.scope.ExternalThread, capture.scope.ExternalRun)
+	}
+}
+
+// failingToolStartStore fails the audit-row write so tests can lock the
+// audit-first contract: no recorded invocation, no execution.
+type failingToolStartStore struct {
+	fakeToolRunStore
+}
+
+func (s *failingToolStartStore) StartTool(context.Context, repository.RunContext, string, int, string, string, string) (string, error) {
+	return "", errors.New("audit store unavailable")
+}
+
+// TestAgentToolExecutionFailsClosedWhenAuditUnavailable locks the ordering fix:
+// StartTool runs BEFORE the tool, and a failure refuses the execution instead
+// of running an unaudited side effect.
+func TestAgentToolExecutionFailsClosedWhenAuditUnavailable(t *testing.T) {
+	server := newModelServer(t, [][]string{
+		{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"test.read","arguments":"{}"}}]}}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+		},
+		{
+			`{"choices":[{"delta":{"content":"done"}}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		},
+	})
+	defer server.Close()
+
+	capture := &scopeCapturingTool{}
+	options := RouterOptions{ModelProvider: model.NewClient(server.URL, "k", "m", server.Client()), AgentMaxSteps: 3}
+	router := NewRouterWithOptions(&failingToolStartStore{}, tools.NewRegistry(capture), options)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/agent", strings.NewReader(`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"x"}]}`))
+	gatewayHeaders(req)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	if capture.scope.TenantID != "" {
+		t.Fatalf("tool must not execute when its audit row cannot be written: %+v", capture.scope)
+	}
+	if !strings.Contains(res.Body.String(), "ai.tool_persistence_unavailable") {
+		t.Fatalf("expected ai.tool_persistence_unavailable in stream, got %s", res.Body.String())
+	}
 }

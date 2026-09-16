@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -16,6 +17,15 @@ import (
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
 	"github.com/arda-labs/arda/apps/iam-service/internal/mfa"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
+)
+
+// ErrMFALocked is returned while an account is temporarily locked after too
+// many failed verification attempts.
+var ErrMFALocked = errors.New("too many failed MFA attempts; try again later")
+
+const (
+	mfaMaxFailedAttempts = 5
+	mfaLockDuration      = 15 * time.Minute
 )
 
 // MFAConfig controls MFA enforcement.
@@ -225,21 +235,36 @@ func (s *MFAService) VerifyCode(ctx context.Context, userID, code string) error 
 	if settings == nil || !settings.IsEnrolled {
 		return fmt.Errorf("MFA not enrolled")
 	}
+	if mfaLocked(settings) {
+		return ErrMFALocked
+	}
 
 	ok, err := s.totp.Verify(settings.Secret, code)
 	if err != nil {
 		return err
 	}
 	if !ok {
+		s.recordFailedAttempt(ctx, userID)
 		return fmt.Errorf("invalid MFA code")
 	}
 
-	_ = settings
+	s.clearFailedAttempts(ctx, userID)
 	return nil
 }
 
 // VerifyBackupCode verifies and consumes a backup code.
 func (s *MFAService) VerifyBackupCode(ctx context.Context, userID, code string) error {
+	settings, err := s.mfaRepo.GetSettings(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if settings == nil || !settings.IsEnrolled {
+		return fmt.Errorf("MFA not enrolled")
+	}
+	if mfaLocked(settings) {
+		return ErrMFALocked
+	}
+
 	codes, err := s.mfaRepo.GetUnusedBackupCodes(ctx, userID)
 	if err != nil {
 		return err
@@ -251,10 +276,29 @@ func (s *MFAService) VerifyBackupCode(ctx context.Context, userID, code string) 
 			if err := s.mfaRepo.MarkBackupCodeUsed(ctx, c.ID); err != nil {
 				return err
 			}
+			s.clearFailedAttempts(ctx, userID)
 			return nil
 		}
 	}
+	s.recordFailedAttempt(ctx, userID)
 	return fmt.Errorf("invalid or already used backup code")
+}
+
+// mfaLocked reports whether the account is inside a failed-attempt lockout.
+func mfaLocked(settings *domain.MFASettings) bool {
+	return settings.LockedUntil != nil && settings.LockedUntil.After(time.Now().UTC())
+}
+
+func (s *MFAService) recordFailedAttempt(ctx context.Context, userID string) {
+	if err := s.mfaRepo.RegisterFailedAttempt(ctx, userID, mfaMaxFailedAttempts, mfaLockDuration); err != nil {
+		s.logger.Warn("record mfa failed attempt", "user_id", userID, "err", err)
+	}
+}
+
+func (s *MFAService) clearFailedAttempts(ctx context.Context, userID string) {
+	if err := s.mfaRepo.ResetFailedAttempts(ctx, userID); err != nil {
+		s.logger.Warn("reset mfa failed attempts", "user_id", userID, "err", err)
+	}
 }
 
 // ResetMFA removes MFA enrollment for a user (admin only).

@@ -4,10 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
 	"strings"
+	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
+
+// sendTimeout bounds one web push HTTP request. The library falls back to
+// &http.Client{} (no timeout) when Options.HTTPClient is nil, so a slow or
+// hostile endpoint could otherwise block the worker while it holds the claim.
+const sendTimeout = 10 * time.Second
+
+// pushHTTPClient is shared across sends; *http.Client is safe for concurrent use.
+var pushHTTPClient = &http.Client{Timeout: sendTimeout}
 
 type Subscription struct {
 	Endpoint string
@@ -60,6 +70,11 @@ func (s *Sender) Send(ctx context.Context, sub Subscription, payload Payload) er
 	if !s.Enabled() {
 		return nil
 	}
+	// Re-validate at dispatch time: subscriptions stored before validation was
+	// enforced (or edited directly in the database) must not reach the network.
+	if err := ValidateEndpoint(sub.Endpoint); err != nil {
+		return err
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -71,6 +86,7 @@ func (s *Sender) Send(ctx context.Context, sub Subscription, payload Payload) er
 			Auth:   sub.Auth,
 		},
 	}, &webpush.Options{
+		HTTPClient:      pushHTTPClient,
 		Subscriber:      s.subject,
 		VAPIDPublicKey:  s.vapidPublic,
 		VAPIDPrivateKey: s.vapidPrivate,

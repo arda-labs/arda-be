@@ -546,13 +546,7 @@ func (s *BatchDisbursementService) SettleBatchRegister(ctx context.Context, tena
 		return mapRepoError(err)
 	}
 	for _, row := range rows {
-		if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, row.ID, "", "", journalEntryID); err != nil {
-			return mapRepoError(err)
-		}
-		if err := s.repo.SetDisbursementStatus(ctx, tenantID, row.ID, domain.DisbursementPosted, actor); err != nil {
-			return mapRepoError(err)
-		}
-		if err := s.repo.SettleRegisterDisbursement(ctx, tenantID, row.AgreementCode, row.DisburseAmtMinor); err != nil {
+		if _, err := s.repo.SettleDisbursementRegister(ctx, tenantID, row.ID, row.AgreementCode, row.DisburseAmtMinor, journalEntryID, actor); err != nil {
 			return mapRepoError(err)
 		}
 	}
@@ -571,13 +565,7 @@ func (s *BatchDisbursementService) SettleBatchComplete(ctx context.Context, tena
 	}
 	closedContracts := []string{}
 	for _, row := range rows {
-		if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, row.ID, "", "", journalEntryID); err != nil {
-			return mapRepoError(err)
-		}
-		if err := s.repo.SetDisbursementStatus(ctx, tenantID, row.ID, domain.DisbursementPosted, actor); err != nil {
-			return mapRepoError(err)
-		}
-		if err := s.repo.SettleCompleteDisbursement(ctx, tenantID, row.ContractCode, row.AgreementCode, row.DisburseAmtMinor); err != nil {
+		if _, err := s.repo.SettleDisbursementComplete(ctx, tenantID, row.ID, row.ContractCode, row.AgreementCode, row.DisburseAmtMinor, journalEntryID, actor); err != nil {
 			return mapRepoError(err)
 		}
 		if row.IsClosed {

@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"strconv"
 	"strings"
 
+	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
+	"github.com/shopspring/decimal"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -134,7 +135,14 @@ func parsePostingSheet(r io.Reader) (*parsedSheet, error) {
 		if account == "" || direction == "" {
 			return nil, fmt.Errorf("row %d: account_code and direction are required", lineNo+1)
 		}
-		amountMinor, err := parseAmount(row, cols, hasAmountMinor, amountIdx)
+		lineCurrency := ""
+		if idx, ok := cols["currency_code"]; ok {
+			lineCurrency = cell(row, idx)
+		}
+		if lineCurrency == "" {
+			lineCurrency = "VND"
+		}
+		amountMinor, err := parseAmount(row, cols, hasAmountMinor, amountIdx, lineCurrency)
 		if err != nil {
 			return nil, fmt.Errorf("row %d: %w", lineNo+1, err)
 		}
@@ -174,7 +182,7 @@ func parsePostingSheet(r io.Reader) (*parsedSheet, error) {
 	return out, nil
 }
 
-func parseAmount(row []string, cols map[string]int, hasAmountMinor bool, amountIdx int) (int64, error) {
+func parseAmount(row []string, cols map[string]int, hasAmountMinor bool, amountIdx int, currency string) (int64, error) {
 	cell := func(idx int) string {
 		if idx < 0 || idx >= len(row) {
 			return ""
@@ -189,12 +197,21 @@ func parseAmount(row []string, cols map[string]int, hasAmountMinor bool, amountI
 		}
 		return v, nil
 	}
+	// The sheet carries major units; convert through the currency exponent so
+	// zero-decimal currencies (VND) are not scaled by 100.
 	raw := stripNumber(cell(amountIdx))
-	v, err := strconv.ParseFloat(raw, 64)
+	value, err := decimal.NewFromString(raw)
 	if err != nil {
 		return 0, fmt.Errorf("amount %q is not a number", cell(amountIdx))
 	}
-	return int64(math.Round(v * 100)), nil
+	if value.IsNegative() {
+		return 0, fmt.Errorf("amount %q must be positive", cell(amountIdx))
+	}
+	minor, err := ardamoney.ToMinor(value, currency)
+	if err != nil {
+		return 0, fmt.Errorf("amount %q: %w", cell(amountIdx), err)
+	}
+	return minor, nil
 }
 
 // stripNumber removes thousands separators accepted in hand-authored sheets.

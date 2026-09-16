@@ -1,6 +1,7 @@
 package ardahttp
 
 import (
+	"math"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -20,6 +21,9 @@ const (
 	DefaultPerPage = 20
 	MaxPerPage     = 100
 	MaxUnpaginated = 500
+
+	// MaxPage bounds the accepted page number so Offset can never overflow.
+	MaxPage = 100000
 )
 
 // ListQuery is the standard paginated list query parsed from HTTP params.
@@ -44,22 +48,47 @@ func ParseListQuery(values url.Values) ListQuery {
 		View:    strings.TrimSpace(values.Get(QueryView)),
 		All:     values.Get("all") == "1" || values.Get("all") == "true",
 	}
-	if q.All || q.View == "tree" || q.View == "options" {
+	if q.Page > MaxPage {
+		q.Page = MaxPage
+	}
+	// Only the explicit unpaged views skip pagination. An unknown view value
+	// must not lift the MaxPerPage cap; View is kept verbatim for callers.
+	if q.All || unpagedView(q.View) {
 		q.PerPage = MaxUnpaginated
 		q.Page = 1
-	}
-	if q.PerPage > MaxPerPage && !q.All && q.View == "" {
+	} else if q.PerPage > MaxPerPage {
 		q.PerPage = MaxPerPage
 	}
 	return q
 }
 
-// Offset returns SQL OFFSET for the current page.
+// unpagedView reports whether a view value asks for the complete result set.
+func unpagedView(view string) bool {
+	return view == "tree" || view == "options"
+}
+
+// Offset returns SQL OFFSET for the current page. Page and per_page are
+// clamped defensively so a hand-built ListQuery can never wrap the
+// multiplication into a negative offset.
 func (q ListQuery) Offset() int {
-	if q.Page < 1 {
+	page := q.Page
+	if page < 1 {
+		page = 1
+	}
+	if page > MaxPage {
+		page = MaxPage
+	}
+	perPage := q.PerPage
+	if perPage < 0 {
+		perPage = 0
+	}
+	if perPage == 0 {
 		return 0
 	}
-	return (q.Page - 1) * q.PerPage
+	if page-1 > math.MaxInt/perPage {
+		return math.MaxInt
+	}
+	return (page - 1) * perPage
 }
 
 // ListResponse is the standard paginated list JSON body.
@@ -133,33 +162,43 @@ func PickSortField(field string, allowed map[string]string, fallback string) str
 	return fallback
 }
 
+// PageResult is the typed result of PageSlice. A struct (instead of
+// positional returns) keeps page/per_page/total from being swapped at call
+// sites.
+type PageResult[T any] struct {
+	Items   []T
+	Total   int
+	Page    int
+	PerPage int
+}
+
 // PageSlice applies the parsed ListQuery framing to an in-memory slice and
 // reports the values required for a list envelope (paged items, total, page,
 // per_page). all=1 / tree / options views return the full slice with per_page
 // sized to the result, matching ParseListQuery semantics so every service's
 // in-memory list endpoint stays consistent without local reimplementation.
-func PageSlice[T any](items []T, q ListQuery) ([]T, int, int, int) {
+func PageSlice[T any](items []T, q ListQuery) PageResult[T] {
 	total := len(items)
-	if q.All || q.View != "" {
+	if q.All || unpagedView(q.View) {
 		perPage := total
 		if perPage == 0 {
 			perPage = 1
 		}
-		return items, total, 1, perPage
+		return PageResult[T]{Items: items, Total: total, Page: 1, PerPage: perPage}
 	}
 	page := q.Page
 	if page < 1 {
 		page = 1
 	}
 	start := q.Offset()
-	if total == 0 || start >= total {
-		return []T{}, total, page, q.PerPage
+	if total == 0 || start >= total || q.PerPage < 1 {
+		return PageResult[T]{Items: []T{}, Total: total, Page: page, PerPage: q.PerPage}
 	}
-	end := start + q.PerPage
-	if end > total {
-		end = total
+	end := total
+	if q.PerPage < total-start {
+		end = start + q.PerPage
 	}
-	return items[start:end], total, page, q.PerPage
+	return PageResult[T]{Items: items[start:end], Total: total, Page: page, PerPage: q.PerPage}
 }
 
 // WriteEnvelopeList writes a migrated success-envelope response whose result

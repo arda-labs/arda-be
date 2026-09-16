@@ -83,7 +83,7 @@ func (s *DisbursementService) Create(ctx context.Context, tenantID, createdBy st
 		if err != nil {
 			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "contract_code not found: "+in.ContractCode)
 		}
-		outstanding, err := s.repo.SumAgreementOutstanding(ctx, tenantID, contract.ContractCode)
+		outstanding, err := s.repo.SumContractRegisterExposure(ctx, tenantID, contract.ContractCode)
 		if err != nil {
 			return nil, mapRepoError(err)
 		}
@@ -280,36 +280,32 @@ func (s *DisbursementService) Settle(ctx context.Context, tenantID, id, journalE
 // SettleRegister marks the REGISTER leg POSTED and settles the agreement:
 // outstanding + pending (in-transit) both bump by the drawdown amount, and a
 // PENDING agreement goes ACTIVE. Contract status is deliberately left to the
-// COMPLETE settle (EPAS first-completion semantics).
+// COMPLETE settle (EPAS first-completion semantics). The status transition and
+// the agreement side effect run in one transaction, and a retry of an already
+// settled drawdown is a no-op.
 func (s *DisbursementService) SettleRegister(ctx context.Context, tenantID, id, journalEntryID, actor string) error {
 	item, err := s.repo.GetDisbursement(ctx, tenantID, id)
 	if err != nil {
 		return mapRepoError(err)
 	}
-	if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, item.ID, "", "", journalEntryID); err != nil {
+	if _, err := s.repo.SettleDisbursementRegister(ctx, tenantID, item.ID, item.AgreementCode, item.DisburseAmtMinor, journalEntryID, actor); err != nil {
 		return mapRepoError(err)
 	}
-	if err := s.repo.SetDisbursementStatus(ctx, tenantID, item.ID, domain.DisbursementPosted, actor); err != nil {
-		return mapRepoError(err)
-	}
-	return s.repo.SettleRegisterDisbursement(ctx, tenantID, item.AgreementCode, item.DisburseAmtMinor)
+	return nil
 }
 
 // SettleComplete marks the COMPLETE leg POSTED and unwinds the in-transit
 // pending on the agreement (guarded not below zero). The first completed
-// drawdown statuses the contract ACTIVE.
+// drawdown statuses the contract ACTIVE. Idempotent on retry.
 func (s *DisbursementService) SettleComplete(ctx context.Context, tenantID, id, journalEntryID, actor string) error {
 	item, err := s.repo.GetDisbursement(ctx, tenantID, id)
 	if err != nil {
 		return mapRepoError(err)
 	}
-	if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, item.ID, "", "", journalEntryID); err != nil {
+	if _, err := s.repo.SettleDisbursementComplete(ctx, tenantID, item.ID, item.ContractCode, item.AgreementCode, item.DisburseAmtMinor, journalEntryID, actor); err != nil {
 		return mapRepoError(err)
 	}
-	if err := s.repo.SetDisbursementStatus(ctx, tenantID, item.ID, domain.DisbursementPosted, actor); err != nil {
-		return mapRepoError(err)
-	}
-	return s.repo.SettleCompleteDisbursement(ctx, tenantID, item.ContractCode, item.AgreementCode, item.DisburseAmtMinor)
+	return nil
 }
 
 func isValidISODate(v string) bool {

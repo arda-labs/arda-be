@@ -98,21 +98,29 @@ routes:
       - superadmin
       - platform.manage
 
+  # /api/rag/query returns the same approved knowledge chunks as the
+  # knowledge.search tool, which requires ai.knowledge.read. The route must not
+  # be reachable with ai.assistant.use alone, or the standalone endpoint
+  # bypasses the knowledge permission.
   - id: rag-query
     path: /api/rag/query
     methods: [POST]
     auth: true
     risk: low
     permissions:
-      - ai.assistant.use
+      - ai.knowledge.read
+      - superadmin
 
+  # Feedback is bound to a knowledge retrieval run (ai_rag_runs) and is part of
+  # the same knowledge surface as rag-query.
   - id: rag-feedback
     path: /api/rag/feedback
     methods: [POST]
     auth: true
     risk: low
     permissions:
-      - ai.assistant.use
+      - ai.knowledge.read
+      - superadmin
 
   - id: ai-feedback
     path: /api/ai/feedback

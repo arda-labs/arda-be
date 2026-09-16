@@ -76,16 +76,45 @@ func validateAdminTargetTenant(w http.ResponseWriter, r *http.Request, tenantID 
 	return tenantID, true
 }
 
+// resolveAdminReadTenant resolves the tenant filter for read-only admin
+// endpoints. Unlike a path-targeted management operation, the filter may be
+// omitted: a tenant administrator then reads only the tenant in the verified
+// actor context, while a global administrator reads across the whole system.
+// A tenant administrator that explicitly asks for another tenant is rejected;
+// only the gateway-verified global capability widens the scope.
+func resolveAdminReadTenant(w http.ResponseWriter, r *http.Request) (string, bool) {
+	tenantID := strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId")))
+
+	if r.Header.Get("X-Auth-Checked") != "true" || strings.TrimSpace(r.Header.Get("X-User-Id")) == "" {
+		respondAdminRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeForbidden, "verified actor scope is required")
+		return "", false
+	}
+	if hasGlobalAdminCapability(r) {
+		// Empty target means "every tenant" for a global administrator.
+		return tenantID, true
+	}
+
+	actorTenant := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if actorTenant == "" {
+		respondAdminRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeForbidden, "verified actor tenant is required")
+		return "", false
+	}
+	if tenantID != "" && tenantID != actorTenant {
+		respondAdminRequestErrorCode(w, r, http.StatusForbidden, ardaerrors.CodeForbidden, "actor cannot read another tenant")
+		return "", false
+	}
+	return actorTenant, true
+}
+
 func hasGlobalAdminCapability(r *http.Request) bool {
 	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Global-Admin")), "true") {
 		return true
 	}
+	// Only the gateway-verified global claims count. X-Roles/X-Permissions
+	// carry tenant-scoped roles and must never imply global capability.
 	for _, value := range []string{
 		r.Header.Get("X-Global-Roles"),
 		r.Header.Get("X-Global-Permissions"),
-		// Keep these for direct internal-handler tests and trusted callers.
-		r.Header.Get("X-Roles"),
-		r.Header.Get("X-Permissions"),
 	} {
 		for _, item := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' }) {
 			if strings.EqualFold(strings.TrimSpace(item), "SUPER_ADMIN") || strings.EqualFold(strings.TrimSpace(item), "superadmin") {

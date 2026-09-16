@@ -65,6 +65,51 @@ func TestJWKSVerifierRejectsWrongAudience(t *testing.T) {
 	}
 }
 
+func TestJWKSVerifierRejectsTokenWithoutExpiration(t *testing.T) {
+	key, jwksURL := testJWKS(t)
+	verifier, err := New("jwks", "https://auth.local", "arda-api", "", jwksURL, "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.RegisteredClaims{
+		Subject:  "user-1",
+		Issuer:   "https://auth.local",
+		Audience: jwt.ClaimStrings{"arda-api"},
+	})
+	token.Header["kid"] = "test-key"
+	raw, err := token.SignedString(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := verifier.Verify(context.Background(), raw); err == nil {
+		t.Fatal("expected missing exp error")
+	}
+}
+
+func TestJWKSVerifierRejectsExpiredToken(t *testing.T) {
+	key, jwksURL := testJWKS(t)
+	verifier, err := New("jwks", "https://auth.local", "arda-api", "", jwksURL, "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.RegisteredClaims{
+		Subject:   "user-1",
+		Issuer:    "https://auth.local",
+		Audience:  jwt.ClaimStrings{"arda-api"},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(-5 * time.Minute)),
+	})
+	token.Header["kid"] = "test-key"
+	raw, err := token.SignedString(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := verifier.Verify(context.Background(), raw); err == nil {
+		t.Fatal("expected expired token error")
+	}
+}
+
 func testJWKS(t *testing.T) (*rsa.PrivateKey, string) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

@@ -109,8 +109,8 @@ func main() {
 	batchHandler := handler.NewBatchHandler(disbBatchSvc, colBatchSvc, financeClient)
 
 	srv := &http.Server{
-		Addr:        cfg.HTTPAddr,
-		Handler:     ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, specificProvHandler, internalAIHandler, loangrpc.Kinds))),
+		Addr:         cfg.HTTPAddr,
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, specificProvHandler, internalAIHandler, loangrpc.Kinds))),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -129,6 +129,7 @@ func main() {
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerRecovery(logger),
 			interceptors.UnaryServerServiceAuth(serviceSecret, "loan-service", map[string]struct{}{"workflow-service": {}, "finance-service": {}}),
 			interceptors.UnaryServerLogging(logger),
 		),

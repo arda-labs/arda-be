@@ -26,6 +26,7 @@ func NewMediaHandler(service *service.MediaService) *MediaHandler {
 func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	slog.Info("incoming upload request", "method", r.Method, "content_type", contentType)
+	r.Body = http.MaxBytesReader(w, r.Body, h.service.MaxUploadBytes())
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeError(w, r, http.StatusBadRequest, "media.upload.invalid_form", "Failed to parse multipart form")
 		return
@@ -79,6 +80,7 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 func (h *MediaHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 	var req domain.InitUploadRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "Request body is not valid JSON")
 		return
@@ -215,6 +217,7 @@ func (h *MediaHandler) Attach(w http.ResponseWriter, r *http.Request) {
 		OwnerType string   `json:"owner_type"`
 		OwnerID   string   `json:"owner_id"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, r, http.StatusBadRequest, ardaerrors.CodeInvalidJSON, "Request body is not valid JSON")
 		return
@@ -284,10 +287,11 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 		defer stream.Close()
 
 		w.Header().Set("Content-Type", file.ContentType)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", file.SizeBytes))
 		w.Header().Set("Cache-Control", "private, max-age=86400")
 
-		if download {
+		if download || !service.CanServeInline(file.ContentType) {
 			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", file.OriginalFilename))
 		}
 
@@ -337,10 +341,11 @@ func (h *MediaHandler) handlePublicRetrieve(w http.ResponseWriter, r *http.Reque
 		defer stream.Close()
 
 		w.Header().Set("Content-Type", file.ContentType)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", file.SizeBytes))
 		w.Header().Set("Cache-Control", "public, max-age=86400")
 
-		if download {
+		if download || !service.CanServeInline(file.ContentType) {
 			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", file.OriginalFilename))
 		}
 
@@ -366,18 +371,13 @@ func (h *MediaHandler) handlePublicRetrieve(w http.ResponseWriter, r *http.Reque
 }
 
 func applyRequestContext(r *http.Request, req *domain.InitUploadRequest) {
-	if req.TenantID == "" {
-		req.TenantID = firstHeader(r, "X-Tenant-Id", "X-Tenant-ID")
-	}
-	if req.OrgID == "" {
-		req.OrgID = firstHeader(r, "X-Org-Id", "X-Org-ID")
-	}
-	if req.CreatedBy == "" {
-		req.CreatedBy = firstHeader(r, "X-User-Id", "X-User-ID", "X-User-Subject")
-	}
-	if req.OwnerUserID == "" {
-		req.OwnerUserID = req.CreatedBy
-	}
+	// Identity is always taken from the gateway-verified headers. A body value
+	// must never move a file into another tenant/org or pin it on another user.
+	req.TenantID = firstHeader(r, "X-Tenant-Id", "X-Tenant-ID")
+	req.OrgID = firstHeader(r, "X-Org-Id", "X-Org-ID")
+	actor := firstHeader(r, "X-User-Id", "X-User-ID", "X-User-Subject")
+	req.CreatedBy = actor
+	req.OwnerUserID = actor
 }
 
 func mediaScope(r *http.Request) (domain.FileScope, bool) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/libs/go/arda-grpc/client/retry"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
@@ -49,6 +50,8 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 	conn, err := grpc.NewClient(
 		addr,
 		grpc.WithTransportCredentials(transportCreds),
+		// Only read-only RPCs are retried; ResolveParameter reads a setting.
+		retry.ReadOnly("arda.platform.v1.PlatformService", "ResolveParameter"),
 		grpc.WithChainUnaryInterceptor(
 			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
 			interceptors.UnaryClientServiceAuth(secret, sourceService, "platform-service"),

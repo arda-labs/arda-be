@@ -19,15 +19,42 @@ var (
 	ErrApprovalExpired          = errors.New("AI approval expired")
 	ErrApprovalState            = errors.New("AI approval is no longer pending")
 	ErrApprovalSelf             = errors.New("requester cannot approve their own AI proposal")
+	// ErrApprovalRunContextMissing distinguishes a caller bug — a proposal
+	// built without the owning run identity — from the legitimate
+	// ErrApprovalRunNotFound (a run id that matches no ai_runs row). Without
+	// it both collapse into ai.run_not_found and are hard to diagnose.
+	ErrApprovalRunContextMissing = errors.New("AI approval proposal is missing the run identity")
+	// ErrApprovalArgumentsInvalid rejects a proposal whose original arguments
+	// are missing, malformed, or oversized. Persistence and execution both
+	// fail closed: the service must never store a truncated payload and later
+	// execute it as if it were the approved action.
+	ErrApprovalArgumentsInvalid = errors.New("AI approval arguments are not executable JSON")
 )
 
+// maxApprovalArgumentsBytes bounds the original payload accepted for an
+// approval. The redacted display copy stays at 16 KiB; the executable copy may
+// be larger but is never truncated — an oversized proposal is rejected.
+const maxApprovalArgumentsBytes = 1 << 20
+
 type ApprovedExecution struct {
-	ExecutionID    string
-	Run            RunContext
-	ToolName       string
-	ToolVersion    int
+	ExecutionID string
+	Run         RunContext
+	ToolName    string
+	ToolVersion int
+	// Arguments is the exact JSON the approver reviewed. It is loaded from the
+	// encrypted original column and validated as JSON before the approval is
+	// claimed; it must not be a sanitized/truncated copy of the action.
 	Arguments      string
 	IdempotencyKey string
+	// PermissionVersion is the X-Auth-Version snapshot recorded at proposal
+	// time. The resume handler must match it against the caller's current auth
+	// version and fail closed on a mismatch.
+	PermissionVersion string
+	// ResourceVersion is the resource freshness token supplied with the
+	// proposal. No trusted comparison source exists at resume time yet (the
+	// owning domain service would have to expose one), so it is persisted for
+	// audit and currently not enforced.
+	ResourceVersion string
 }
 
 type ExecutionStore interface {
@@ -40,6 +67,9 @@ type ApprovalProposal struct {
 	ToolVersion       int
 	Risk              string
 	ArgumentsRedacted string
+	// Arguments is the original, executable JSON payload. It is encrypted at
+	// rest and used only by the resume/execute path — never for display.
+	Arguments         string
 	SummaryRedacted   string
 	ResourceVersion   string
 	PermissionVersion string
@@ -76,12 +106,45 @@ type ApprovalStore interface {
 	ListApprovals(ctx context.Context, tenantID, status string, limit, offset int) ([]ApprovalDetail, error)
 }
 
+// validateApprovalRunContext rejects proposals that cannot resolve their
+// owning ai_runs row. Every persistence path must carry the server-resolved
+// run identity; callers that omit ExternalRun would otherwise get the opaque
+// ErrApprovalRunNotFound from the SQL lookup.
+func validateApprovalRunContext(run RunContext) error {
+	if strings.TrimSpace(run.TenantID) == "" || strings.TrimSpace(run.ActorUserID) == "" || strings.TrimSpace(run.ExternalRun) == "" {
+		return fmt.Errorf("%w: tenant_id, actor_user_id and external_run_id are required", ErrApprovalRunContextMissing)
+	}
+	return nil
+}
+
 func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal ApprovalProposal) (ApprovalRecord, error) {
 	if s == nil || s.db == nil {
 		return ApprovalRecord{}, fmt.Errorf("AI approval store is not configured")
 	}
 	if strings.TrimSpace(proposal.IdempotencyKey) == "" {
 		return ApprovalRecord{}, fmt.Errorf("idempotency key is required")
+	}
+	if err := validateApprovalRunContext(proposal.Run); err != nil {
+		return ApprovalRecord{}, err
+	}
+	arguments, err := normalizeApprovalArguments(proposal.Arguments)
+	if err != nil {
+		return ApprovalRecord{}, err
+	}
+	// Encryption is best effort on the infrastructure side, but the write path
+	// still fails closed: an encrypted-at-rest deployment must never silently
+	// downgrade to plaintext if ardacrypto errors. Without a configured secret
+	// the same fallback as decryptSecret applies (local/dev plaintext).
+	storedArguments, err := s.encryptSecret(arguments)
+	if err != nil {
+		return ApprovalRecord{}, fmt.Errorf("encrypt AI approval arguments: %w", err)
+	}
+	redactedArguments := strings.TrimSpace(proposal.ArgumentsRedacted)
+	if redactedArguments == "" || !json.Valid([]byte(redactedArguments)) {
+		// The audit column is JSONB; a non-JSON redaction would reject the
+		// whole proposal. Degrading to an empty object is safe because the
+		// executable copy is validated separately above.
+		redactedArguments = `{}`
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -120,7 +183,7 @@ func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal Appro
 		&existing.ID, &existing.Status, &existing.ExpiresAt, &existingArguments,
 	)
 	if err == nil {
-		if !jsonEquivalent(existingArguments, proposal.ArgumentsRedacted) {
+		if !jsonEquivalent(existingArguments, redactedArguments) {
 			return ApprovalRecord{}, ErrApprovalIdempotencyMatch
 		}
 		existing.Replayed = true
@@ -137,13 +200,13 @@ func (s *SQLRunStore) CreateApprovalProposal(ctx context.Context, proposal Appro
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO public.ai_tool_executions
 			(run_id, tenant_id, actor_user_id, tool_name, tool_version, risk, status,
-			 arguments_redacted, policy_decision, idempotency_key, started_at)
+			 arguments_redacted, arguments_encrypted, policy_decision, idempotency_key, started_at)
 		VALUES ($1, $2, $3, $4, $5, $6, 'WAITING_APPROVAL', $7::jsonb,
-			'allow_requires_approval', $8, now())
+			$8, 'allow_requires_approval', $9, now())
 		RETURNING id::text
 	`, runID, proposal.Run.TenantID, proposal.Run.ActorUserID, proposal.ToolName,
-		fmt.Sprint(proposal.ToolVersion), proposal.Risk, proposal.ArgumentsRedacted,
-		proposal.IdempotencyKey).Scan(&executionID)
+		fmt.Sprint(proposal.ToolVersion), proposal.Risk, redactedArguments,
+		storedArguments, proposal.IdempotencyKey).Scan(&executionID)
 	if err != nil {
 		return ApprovalRecord{}, fmt.Errorf("persist AI approval tool execution: %w", err)
 	}
@@ -180,6 +243,47 @@ func jsonEquivalent(left, right string) bool {
 	leftJSON, leftErr := json.Marshal(leftValue)
 	rightJSON, rightErr := json.Marshal(rightValue)
 	return leftErr == nil && rightErr == nil && string(leftJSON) == string(rightJSON)
+}
+
+// normalizeApprovalArguments validates the original payload before it is
+// stored. It never truncates: a payload that is not valid JSON or that exceeds
+// the bounded size is rejected, so HITL cannot approve one action and execute a
+// silently cut-down version of it.
+func normalizeApprovalArguments(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "{}", nil
+	}
+	if len(raw) > maxApprovalArgumentsBytes {
+		return "", fmt.Errorf("%w: payload exceeds %d bytes", ErrApprovalArgumentsInvalid, maxApprovalArgumentsBytes)
+	}
+	if !json.Valid([]byte(raw)) {
+		return "", fmt.Errorf("%w: payload is not valid JSON", ErrApprovalArgumentsInvalid)
+	}
+	return raw, nil
+}
+
+// resolveExecutionArguments returns the exact approved payload for execution.
+// New rows carry it encrypted (decryptSecret also passes plaintext through);
+// legacy rows fall back to the redacted copy but only when it is still valid,
+// bounded JSON — a truncated legacy payload must fail closed rather than
+// execute a different action.
+func (s *SQLRunStore) resolveExecutionArguments(encrypted, redacted sql.NullString) (string, error) {
+	raw := ""
+	if encrypted.Valid && strings.TrimSpace(encrypted.String) != "" {
+		decrypted, err := s.decryptSecret(encrypted.String)
+		if err != nil {
+			return "", fmt.Errorf("decrypt approved AI arguments: %w", err)
+		}
+		raw = decrypted
+	} else if redacted.Valid {
+		raw = redacted.String
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len(raw) > maxApprovalArgumentsBytes || !json.Valid([]byte(raw)) {
+		return "", fmt.Errorf("%w: stored payload is missing, oversized, or not valid JSON", ErrApprovalArgumentsInvalid)
+	}
+	return raw, nil
 }
 
 func (s *SQLRunStore) DecideApproval(ctx context.Context, tenantID, approvalID, approverUserID, decision string) (ApprovalRecord, error) {
@@ -266,10 +370,13 @@ func (s *SQLRunStore) FetchApprovedExecution(ctx context.Context, tenantID, appr
 	var versionText string
 	var runStatus, approvalStatus, executionStatus string
 	var expiresAt time.Time
+	var encryptedArguments, redactedArguments sql.NullString
+	var permissionVersion, resourceVersion sql.NullString
 	err = tx.QueryRowContext(ctx, `
 		SELECT e.id::text, r.id::text,
 		       r.tenant_id, r.actor_user_id::text, r.external_thread_id, r.external_run_id,
-		       e.tool_name, e.tool_version, e.arguments_redacted::text, a.idempotency_key,
+		       e.tool_name, e.tool_version, e.arguments_encrypted, e.arguments_redacted::text,
+		       a.idempotency_key, a.permission_version, a.resource_version,
 		       a.status, e.status, r.status, a.expires_at
 		FROM public.ai_approvals a
 		JOIN public.ai_tool_executions e ON e.id = a.tool_execution_id
@@ -289,8 +396,11 @@ func (s *SQLRunStore) FetchApprovedExecution(ctx context.Context, tenantID, appr
 		&execution.Run.ExternalRun,
 		&execution.ToolName,
 		&versionText,
-		&execution.Arguments,
+		&encryptedArguments,
+		&redactedArguments,
 		&execution.IdempotencyKey,
+		&permissionVersion,
+		&resourceVersion,
 		&approvalStatus,
 		&executionStatus,
 		&runStatus,
@@ -327,6 +437,20 @@ func (s *SQLRunStore) FetchApprovedExecution(ctx context.Context, tenantID, appr
 	}
 	if approvalStatus != "APPROVED" || executionStatus != "WAITING_APPROVAL" || runStatus != "WAITING_APPROVAL" {
 		return ApprovedExecution{}, ErrApprovalNotFound
+	}
+	// Resolve the executable payload before claiming: an unreadable or legacy
+	// truncated payload must leave the approval unconsumed and fail closed
+	// instead of running a different action.
+	arguments, err := s.resolveExecutionArguments(encryptedArguments, redactedArguments)
+	if err != nil {
+		return ApprovedExecution{}, err
+	}
+	execution.Arguments = arguments
+	if permissionVersion.Valid {
+		execution.PermissionVersion = permissionVersion.String
+	}
+	if resourceVersion.Valid {
+		execution.ResourceVersion = resourceVersion.String
 	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE public.ai_approvals

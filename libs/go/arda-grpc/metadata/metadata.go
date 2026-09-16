@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"uuid"
 	"google.golang.org/grpc/metadata"
+	"uuid"
 )
 
 const (

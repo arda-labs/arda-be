@@ -40,7 +40,7 @@ func (h *OAuthClientHandler) Clients(w http.ResponseWriter, r *http.Request) {
 			writeHydraError(w, r, err)
 			return
 		}
-		ardahttp.WriteEnvelopeUnpaged(w, r, clients)
+		ardahttp.WriteEnvelopeUnpaged(w, r, redactClients(clients))
 	case http.MethodPost:
 		payload := decodeClientBody(w, r)
 		if payload == nil {
@@ -78,7 +78,7 @@ func (h *OAuthClientHandler) ClientByID(w http.ResponseWriter, r *http.Request) 
 			writeHydraError(w, r, err)
 			return
 		}
-		ardahttp.WriteSuccess(w, r, http.StatusOK, client)
+		ardahttp.WriteSuccess(w, r, http.StatusOK, redactClient(client))
 	case http.MethodPut:
 		payload := decodeClientBody(w, r)
 		if payload == nil {
@@ -90,7 +90,7 @@ func (h *OAuthClientHandler) ClientByID(w http.ResponseWriter, r *http.Request) 
 			writeHydraError(w, r, err)
 			return
 		}
-		ardahttp.WriteSuccess(w, r, http.StatusOK, updated)
+		ardahttp.WriteSuccess(w, r, http.StatusOK, redactClient(updated))
 	case http.MethodDelete:
 		if err := h.hydra.DeleteClient(r.Context(), id); err != nil {
 			writeHydraError(w, r, err)
@@ -121,6 +121,52 @@ func validateClient(payload map[string]any) string {
 		return "redirect_uris is required"
 	}
 	return ""
+}
+
+// redactedClientFields must never be echoed by read or update responses.
+// Hydra may include the plaintext client secret and dynamic-registration
+// credentials in its client representation; only the create response may
+// expose the secret, so the operator can copy it once.
+var redactedClientFields = map[string]struct{}{
+	"client_secret":             {},
+	"registration_access_token": {},
+}
+
+func redactClient(client map[string]any) map[string]any {
+	if client == nil {
+		return nil
+	}
+	out := make(map[string]any, len(client))
+	for key, value := range client {
+		if _, ok := redactedClientFields[key]; ok {
+			continue
+		}
+		if key == "registration_client_uri" && registrationURICarriesToken(value) {
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+func redactClients(clients []map[string]any) []map[string]any {
+	if clients == nil {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(clients))
+	for _, client := range clients {
+		out = append(out, redactClient(client))
+	}
+	return out
+}
+
+func registrationURICarriesToken(value any) bool {
+	uri, ok := value.(string)
+	if !ok {
+		return false
+	}
+	lower := strings.ToLower(uri)
+	return strings.Contains(lower, "token=") || strings.Contains(lower, "access_token")
 }
 
 func writeHydraError(w http.ResponseWriter, r *http.Request, err error) {

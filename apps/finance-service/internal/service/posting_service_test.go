@@ -2,6 +2,8 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
+	"reflect"
 	"testing"
 
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
@@ -52,5 +54,34 @@ func TestOutboxPayloadShape(t *testing.T) {
 	}
 	if parsed["entry_id"] != "entry-1" || parsed["debit_minor"] != float64(100) || parsed["credit_minor"] != float64(100) {
 		t.Fatalf("outbox payload wrong: %s", outboxPayload("entry-1", req))
+	}
+}
+
+func TestNormalizeJournalStatuses(t *testing.T) {
+	// Empty filter → the safe default: only readable statuses.
+	got, err := normalizeJournalStatuses(nil)
+	if err != nil {
+		t.Fatalf("default statuses error = %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"POSTED", "REVERSED"}) {
+		t.Fatalf("default statuses = %v, want [POSTED REVERSED]", got)
+	}
+	got, err = normalizeJournalStatuses([]string{"", "  "})
+	if err != nil || !reflect.DeepEqual(got, []string{"POSTED", "REVERSED"}) {
+		t.Fatalf("blank statuses = %v / %v, want default", got, err)
+	}
+
+	// Explicit values are case-insensitive, deduped and comma-tolerant.
+	got, err = normalizeJournalStatuses([]string{"pending, posted", "PENDING", "VOID"})
+	if err != nil {
+		t.Fatalf("explicit statuses error = %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"PENDING", "POSTED", "VOID"}) {
+		t.Fatalf("explicit statuses = %v", got)
+	}
+
+	// Unknown values are rejected with the sentinel the HTTP layer maps to 400.
+	if _, err := normalizeJournalStatuses([]string{"DELETED"}); !errors.Is(err, ErrInvalidJournalStatus) {
+		t.Fatalf("unknown status error = %v, want ErrInvalidJournalStatus", err)
 	}
 }

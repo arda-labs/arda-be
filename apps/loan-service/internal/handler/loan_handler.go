@@ -110,15 +110,8 @@ var productListSpec = ardahttp.ListSpec{
 // listEnvelope paginates the fetched slice per the parsed list request and
 // writes the canonical ListResponse envelope.
 func listEnvelope[T any](w http.ResponseWriter, r *http.Request, items []T, listReq ardahttp.ListRequest) {
-	paged, page, perPage, total := ardahttp.PageSlice(items, listReq.ListQuery)
-	perPageOut := perPage
-	if listReq.All {
-		perPageOut = len(items)
-		if perPageOut == 0 {
-			perPageOut = total
-		}
-	}
-	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPageOut, total, paged))
+	res := ardahttp.PageSlice(items, listReq.ListQuery)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, res.Items))
 }
 
 func (h *LoanHandler) ListContracts(w http.ResponseWriter, r *http.Request) {

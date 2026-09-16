@@ -19,8 +19,8 @@ type RetentionRule struct {
 
 // AuditServiceConfig controls audit behavior.
 type AuditServiceConfig struct {
-	RetentionRules []RetentionRule
-	CheckInterval  time.Duration
+	RetentionRules   []RetentionRule
+	CheckInterval    time.Duration
 	DefaultRetention time.Duration
 }
 
@@ -39,8 +39,8 @@ var DefaultAuditConfig = AuditServiceConfig{
 
 // AuditService handles audit log queries and retention.
 type AuditService struct {
-	repo *repository.AuditRepository
-	cfg  AuditServiceConfig
+	repo    *repository.AuditRepository
+	cfg     AuditServiceConfig
 	logger  *slog.Logger
 	stopCh  chan struct{}
 	stopped sync.Once
@@ -73,14 +73,14 @@ func (s *AuditService) StreamAudit(ctx context.Context, params repository.QueryP
 	return s.repo.StreamAudit(ctx, params)
 }
 
-// Stats returns audit statistics.
-func (s *AuditService) Stats(ctx context.Context, from, to time.Time) (*repository.AuditStats, error) {
-	return s.repo.Stats(ctx, from, to)
+// Stats returns audit statistics, optionally scoped to one tenant.
+func (s *AuditService) Stats(ctx context.Context, tenantID string, from, to time.Time) (*repository.AuditStats, error) {
+	return s.repo.Stats(ctx, tenantID, from, to)
 }
 
-// VerifyChain checks audit hash chain integrity.
-func (s *AuditService) VerifyChain(ctx context.Context, from, to time.Time) (*repository.ChainVerification, error) {
-	return s.repo.VerifyChain(ctx, from, to)
+// VerifyChain checks audit hash chain integrity, optionally scoped to one tenant.
+func (s *AuditService) VerifyChain(ctx context.Context, tenantID string, from, to time.Time) (*repository.ChainVerification, error) {
+	return s.repo.VerifyChain(ctx, tenantID, from, to)
 }
 
 // retentionLoop periodically purges expired logs.

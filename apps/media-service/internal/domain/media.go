@@ -96,3 +96,14 @@ type DownloadURLResponse struct {
 	URL       string    `json:"url"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
+
+// OutboxEvent is a claimed media_outbox_events row waiting to be published to
+// NATS. Payload is the raw JSON stored at insert time.
+type OutboxEvent struct {
+	ID        string
+	TenantID  string
+	EventType string
+	Payload   []byte
+	Attempts  int
+	CreatedAt time.Time
+}

@@ -14,6 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/arda-labs/arda/apps/media-service/internal/config"
+	"github.com/arda-labs/arda/apps/media-service/internal/events"
 	"github.com/arda-labs/arda/apps/media-service/internal/handler"
 	"github.com/arda-labs/arda/apps/media-service/internal/migration"
 	"github.com/arda-labs/arda/apps/media-service/internal/repository"
@@ -21,11 +22,13 @@ import (
 	"github.com/arda-labs/arda/apps/media-service/internal/storage"
 	grpcserver "github.com/arda-labs/arda/apps/media-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/media-service/internal/transport/http"
+	"github.com/arda-labs/arda/apps/media-service/internal/worker"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	mediav1 "github.com/arda-labs/arda/libs/go/arda-proto/media/v1"
+	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -74,6 +77,26 @@ func main() {
 	mediaSvc := service.NewMediaService(cfg, repo, provider)
 	mediaHandler := handler.NewMediaHandler(mediaSvc)
 
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	defer stopWorker()
+
+	// Publish the media outbox to NATS JetStream. Uploads keep working when
+	// NATS is down: rows stay pending and are retried on the next start.
+	if cfg.NATSURL == "" {
+		logger.Warn("media outbox relay disabled: NATS_URL is not configured; events stay pending")
+	} else if nc, err := nats.Connect(cfg.NATSURL, nats.Name(cfg.AppName), nats.Timeout(5*time.Second)); err != nil {
+		logger.Error("media outbox relay disabled: NATS connection failed", "err", err)
+	} else {
+		defer nc.Close()
+		publisher, publisherErr := events.NewNATSPublisher(nc)
+		if publisherErr != nil {
+			logger.Error("media outbox relay disabled: JetStream unavailable", "err", publisherErr)
+		} else {
+			go worker.NewOutboxWorker(repo, publisher).Run(workerCtx)
+			logger.Info("media outbox relay started", "nats_url", cfg.NATSURL)
+		}
+	}
+
 	serviceSecret, err := identity.SecretFromEnv()
 	if err != nil {
 		logger.Error("service identity is not configured", "err", err)
@@ -87,6 +110,7 @@ func main() {
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerRecovery(logger),
 			interceptors.UnaryServerServiceAuth(serviceSecret, "media-service", map[string]struct{}{
 				"iam-service":      {},
 				"platform-service": {},
@@ -155,6 +179,7 @@ func main() {
 	<-quit
 
 	logger.Info("shutting down", "name", cfg.AppName)
+	stopWorker()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

@@ -183,7 +183,7 @@ func (s *SpecificProvisionService) Resolve(ctx context.Context, tenantID, id, de
 		if s.finance == nil {
 			return ardaerrors.New(ardaerrors.CodeInternal, "finance client is not configured")
 		}
-		posted, err := s.finance.Post(ctx, s.postingRequest(row, preview))
+		posted, err := s.finance.Post(ctx, s.postingRequest(ctx, row, preview))
 		if err != nil {
 			return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "specific provision posting failed", err)
 		}
@@ -192,7 +192,7 @@ func (s *SpecificProvisionService) Resolve(ctx context.Context, tenantID, id, de
 	return mapRepoError(s.repo.SettleSpecificProvision(ctx, tenantID, id, preview.AmountMinor, journalEntryID, decidedBy))
 }
 
-func (s *SpecificProvisionService) postingRequest(row *repository.SpecificProvisionRow, preview SpecificProvisionPreview) *financev1.PostingRequest {
+func (s *SpecificProvisionService) postingRequest(ctx context.Context, row *repository.SpecificProvisionRow, preview SpecificProvisionPreview) *financev1.PostingRequest {
 	analytics := &financev1.Analytics{
 		ContractCode: row.ContractCode,
 		DebtGroupCode: row.DebtGroupCode,
@@ -213,7 +213,7 @@ func (s *SpecificProvisionService) postingRequest(row *repository.SpecificProvis
 			DocumentCode: row.AgreementCode,
 		},
 		Lines: financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(s.finance, specificProvisionDocumentType),
+			financeclient.FetchPostingRules(ctx, s.finance, specificProvisionDocumentType),
 			legs, "VND"),
 	}
 }

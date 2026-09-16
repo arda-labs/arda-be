@@ -36,6 +36,14 @@ func (h *RAGHandler) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// /api/rag/query returns the same approved knowledge chunks as the
+	// knowledge.search tool, so it must require the same permission. Without
+	// this check any ai.assistant.use user could bypass ai.knowledge.read by
+	// calling the standalone endpoint instead of the tool.
+	if !hasRequestPermission(r, knowledgeReadPermission) {
+		problem(w, http.StatusForbidden, "ai.knowledge_forbidden")
+		return
+	}
 
 	var req knowledge.QueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -64,6 +72,13 @@ func (h *RAGHandler) handleFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 	scope, ok := identityScope(w, r)
 	if !ok {
+		return
+	}
+	// Feedback is bound to a knowledge retrieval run (ai_rag_runs); it is part
+	// of the same knowledge surface as /api/rag/query and requires the same
+	// read permission.
+	if !hasRequestPermission(r, knowledgeReadPermission) {
+		problem(w, http.StatusForbidden, "ai.knowledge_forbidden")
 		return
 	}
 

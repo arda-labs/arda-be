@@ -82,6 +82,15 @@ func activeElementID(bc *repository.BusinessCase, jobs []service.ProcessJobSnaps
 }
 
 func (h *WorkflowHandler) retryJob(w http.ResponseWriter, r *http.Request, jobKey int64) {
+	bc, err := h.caseForJobKey(r.Context(), jobKey)
+	if err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Job not found in the verified tenant")
+		return
+	}
 	if h.zeebeSvc == nil {
 		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
@@ -106,19 +115,22 @@ func (h *WorkflowHandler) retryProcessServiceJobs(w http.ResponseWriter, r *http
 		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
 	}
-	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), processInstanceKey)
+	bc, err := h.caseForProcessInstanceKey(r.Context(), processInstanceKey)
 	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query case: "+err.Error())
+		writeCaseScopeError(w, r, err)
+		return
+	}
+	if bc == nil {
+		// The scan below retries every failed service job of the instance; it
+		// must never run for an instance the caller tenant does not own.
+		writeAPIError(w, r, http.StatusNotFound, "Process instance not found")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 
 	retried := []string{}
-	var timeline []repository.TimelineEvent
-	if bc != nil {
-		timeline, _ = h.caseRepo.ListTimeline(ctx, bc.ID)
-	}
+	timeline, _ := h.caseRepo.ListTimeline(ctx, bc.ID)
 	for _, incident := range incidentsFromTimeline(timeline) {
 		if !strings.HasPrefix(incident.JobType, "crm.") && !strings.HasPrefix(incident.JobType, "notification.") {
 			continue
@@ -134,12 +146,8 @@ func (h *WorkflowHandler) retryProcessServiceJobs(w http.ResponseWriter, r *http
 		retried = append(retried, incident.JobKey)
 	}
 	if len(retried) == 0 {
-		caseType := ""
-		currentStep := ""
-		if bc != nil {
-			caseType = bc.CaseType
-			currentStep = bc.CurrentStep
-		}
+		caseType := bc.CaseType
+		currentStep := bc.CurrentStep
 		jobs, err := h.zeebeSvc.FindProcessJobsForCase(ctx, processInstanceKey, caseType, currentStep)
 		if err != nil && len(jobs) == 0 {
 			writeAPIError(w, r, http.StatusNotFound, "No incidents to retry and job scan failed: "+err.Error())

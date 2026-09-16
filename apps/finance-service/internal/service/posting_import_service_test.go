@@ -43,11 +43,28 @@ func TestParsePostingSheetMajorAndMinorAmounts(t *testing.T) {
 	if parsed.Lines[0].Direction != "DEBIT" || parsed.Lines[0].AccountCode != "1011" {
 		t.Fatalf("line 1 = %+v", parsed.Lines[0])
 	}
-	if parsed.Lines[0].AmountMinor != 150_000_000 {
-		t.Fatalf("amount_minor = %d, want 150000000", parsed.Lines[0].AmountMinor)
+	if parsed.Lines[0].AmountMinor != 1_500_000 {
+		t.Fatalf("amount_minor = %d, want 1500000 (VND has exponent 0)", parsed.Lines[0].AmountMinor)
 	}
 	if parsed.CurrencyCode != "VND" {
 		t.Fatalf("currency = %q, want VND", parsed.CurrencyCode)
+	}
+}
+
+func TestParsePostingSheetMajorAmountUsesCurrencyExponent(t *testing.T) {
+	r := buildPostingSheet(t, [][]string{
+		{"direction", "account_code", "amount", "currency_code"},
+		{"DEBIT", "1011", "150.25", "USD"},
+	})
+	parsed, err := parsePostingSheet(r)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(parsed.Lines) != 1 {
+		t.Fatalf("lines = %d, want 1", len(parsed.Lines))
+	}
+	if parsed.Lines[0].AmountMinor != 15_025 {
+		t.Fatalf("amount_minor = %d, want 15025 (USD has exponent 2)", parsed.Lines[0].AmountMinor)
 	}
 }
 

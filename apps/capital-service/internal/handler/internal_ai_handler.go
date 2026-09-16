@@ -75,8 +75,8 @@ func (h *InternalAIHandler) InternalAIListFundTypes(w http.ResponseWriter, r *ht
 	filtered := aiFilterByQuery(items, aiQuery(r),
 		func(t repository.FundType) string { return t.Code },
 		func(t repository.FundType) string { return t.Name })
-	paged, total, page, perPage := ardahttp.PageSlice(filtered, listReq.ListQuery)
-	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, toAIFundTypes(paged)))
+	res := ardahttp.PageSlice(filtered, listReq.ListQuery)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, toAIFundTypes(res.Items)))
 }
 
 // InternalAIListProducts serves GET /internal/ai/products for ai-service.
@@ -95,8 +95,8 @@ func (h *InternalAIHandler) InternalAIListProducts(w http.ResponseWriter, r *htt
 	filtered := aiFilterByQuery(items, aiQuery(r),
 		func(p repository.CapitalProduct) string { return p.Code },
 		func(p repository.CapitalProduct) string { return p.Name })
-	paged, total, page, perPage := ardahttp.PageSlice(filtered, listReq.ListQuery)
-	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, perPage, total, toAICapitalProducts(paged)))
+	res := ardahttp.PageSlice(filtered, listReq.ListQuery)
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.Page, res.PerPage, res.Total, toAICapitalProducts(res.Items)))
 }
 
 // InternalAIListContracts serves GET /internal/ai/contracts for ai-service.

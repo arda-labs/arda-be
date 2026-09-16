@@ -98,6 +98,7 @@ func main() {
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerRecovery(logger),
 			interceptors.UnaryServerServiceAuth(serviceSecret, "platform-service", map[string]struct{}{"finance-service": {}}),
 			interceptors.UnaryServerLogging(logger),
 		),

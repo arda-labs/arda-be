@@ -336,7 +336,7 @@ SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,'')
   storage_provider, bucket, object_key, storage_class, version_id, visibility,
   COALESCE(created_by,''), created_at, uploaded_at, expires_at
 FROM media_files
-WHERE status = 'temp'
+WHERE status IN ('temp', 'pending_upload')
   AND expires_at < now()
   AND deleted_at IS NULL
 LIMIT $1`
@@ -376,6 +376,82 @@ INSERT INTO media_outbox_events (
 ) VALUES ($1,$2,$3,$4,$5,$6,'pending',$7)`
 	if _, err := tx.ExecContext(ctx, query, domain.NewID("evt"), tenantID, eventType, aggregateType, aggregateID, data, time.Now().UTC()); err != nil {
 		return fmt.Errorf("insert outbox event: %w", err)
+	}
+	return nil
+}
+
+// outboxMaxAttempts bounds publish retries before an event is parked as failed.
+const outboxMaxAttempts = 20
+
+// ClaimPendingOutbox atomically claims a batch of pending rows for publishing.
+// FOR UPDATE SKIP LOCKED keeps concurrent replicas from claiming the same row.
+// A row left in 'publishing' by a crashed worker is reclaimed once its
+// next_retry_at lease passes.
+func (r *MediaRepository) ClaimPendingOutbox(ctx context.Context, limit int) ([]domain.OutboxEvent, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	const query = `
+UPDATE media_outbox_events
+SET status = 'publishing',
+    attempts = attempts + 1,
+    next_retry_at = now() + interval '30 seconds'
+WHERE id IN (
+  SELECT id
+  FROM media_outbox_events
+  WHERE (status = 'pending' AND next_retry_at <= now())
+     OR (status = 'publishing' AND next_retry_at < now())
+  ORDER BY created_at
+  FOR UPDATE SKIP LOCKED
+  LIMIT $1
+)
+RETURNING id, tenant_id, event_type, payload, attempts, created_at`
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("claim media outbox events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []domain.OutboxEvent
+	for rows.Next() {
+		var event domain.OutboxEvent
+		if err := rows.Scan(&event.ID, &event.TenantID, &event.EventType, &event.Payload, &event.Attempts, &event.CreatedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
+// MarkOutboxPublished finalizes a successfully published event.
+func (r *MediaRepository) MarkOutboxPublished(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `
+UPDATE media_outbox_events
+SET status = 'published', published_at = now()
+WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("mark media outbox event published: %w", err)
+	}
+	return nil
+}
+
+// MarkOutboxFailed returns a claimed event to the queue with a bounded backoff,
+// or parks it as 'failed' when attempts are exhausted.
+func (r *MediaRepository) MarkOutboxFailed(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `
+UPDATE media_outbox_events
+SET status = CASE WHEN attempts >= $2 THEN 'failed' ELSE 'pending' END,
+    next_retry_at = CASE WHEN attempts >= $2
+      THEN next_retry_at
+      ELSE now() + interval '1 second' * LEAST(attempts * 30, 3600)
+    END
+WHERE id = $1`, id, outboxMaxAttempts)
+	if err != nil {
+		return fmt.Errorf("mark media outbox event failed: %w", err)
 	}
 	return nil
 }

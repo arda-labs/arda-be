@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -42,6 +43,13 @@ func (h *AuthHandler) Check(w http.ResponseWriter, r *http.Request) {
 	forwardedMethod := r.Header.Get("X-Forwarded-Method")
 	if forwardedURI == "" {
 		forwardedURI = r.URL.Path
+	} else if parsed, err := url.ParseRequestURI(forwardedURI); err != nil || !strings.HasPrefix(parsed.Path, "/") {
+		// A forwarded URI that is not a rooted path cannot be matched safely;
+		// fail closed instead of guessing what the caller meant.
+		h.respondDenied(w, r, "invalid forwarded uri")
+		return
+	} else {
+		forwardedURI = parsed.Path
 	}
 	if forwardedMethod == "" {
 		forwardedMethod = r.Method

@@ -26,7 +26,11 @@ type Verifier interface {
 func New(strategy, issuer, audience, secret, jwksURL, introspectionURL, introspectionClientID, introspectionClientSecret string) (Verifier, error) {
 	switch strategy {
 	case "jwt":
-		return jwtverifier.New(issuer, audience, secret), nil
+		verifier, err := jwtverifier.New(issuer, audience, secret)
+		if err != nil {
+			return nil, err
+		}
+		return verifier, nil
 	case "jwks":
 		if jwksURL == "" {
 			return nil, fmt.Errorf("jwks requires URL")
@@ -70,6 +74,10 @@ func (v *jwksVerifier) Verify(ctx context.Context, rawToken string) (*jwtverifie
 		jwt.WithValidMethods([]string{"RS256"}),
 		jwt.WithIssuer(v.issuer),
 		jwt.WithAudience(v.audience),
+		// Access tokens must always expire; a missing `exp` claim would make
+		// a stolen token valid forever. 30s leeway absorbs issuer clock skew.
+		jwt.WithExpirationRequired(),
+		jwt.WithLeeway(30*time.Second),
 	)
 	token, err := parser.Parse(rawToken, func(t *jwt.Token) (any, error) {
 		kid, _ := t.Header["kid"].(string)

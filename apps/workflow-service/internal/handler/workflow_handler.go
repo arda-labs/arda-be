@@ -16,8 +16,9 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/notificationclient"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
-	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	ardaexport "github.com/arda-labs/arda/libs/go/arda-export"
+	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 	"google.golang.org/grpc/codes"
@@ -44,6 +45,10 @@ type WorkflowHandler struct {
 	// (/internal/ai/*) — tests inject a fake; production leaves it nil so
 	// caseRepo is used.
 	aiStoreOverride AIWorkflowStore
+	// caseScopeOverride swaps the tenant-scoped registry behind Zeebe-key
+	// authorization (workflow_case_scope.go) — tests inject a fake; production
+	// leaves it nil so caseRepo is used.
+	caseScopeOverride workflowCaseScope
 }
 
 func NewWorkflowHandler(
@@ -211,6 +216,22 @@ func (h *WorkflowHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	instanceKey, err := strconv.ParseInt(instanceKeyStr, 10, 64)
 	if err != nil {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid instance key: "+instanceKeyStr)
+		return
+	}
+	if h.zeebeSvc == nil {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
+		return
+	}
+
+	// Cancelling a process instance mutates the shared Zeebe cluster; the
+	// instance must first resolve to a case owned by the caller tenant.
+	bc, err := h.caseForProcessInstanceKey(r.Context(), instanceKey)
+	if err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
+	if bc == nil {
+		writeAPIError(w, r, http.StatusNotFound, "Process instance not found")
 		return
 	}
 
@@ -559,7 +580,7 @@ func (h *WorkflowHandler) RoleCatalogByCode(w http.ResponseWriter, r *http.Reque
 func (h *WorkflowHandler) RoleMemberships(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := requiredWorkflowTargetTenant(r)
 	if err != nil {
-		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		writeAPIError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
 	switch r.Method {
@@ -582,7 +603,7 @@ func (h *WorkflowHandler) RoleMemberships(w http.ResponseWriter, r *http.Request
 func (h *WorkflowHandler) RoleMembershipByID(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := requiredWorkflowTargetTenant(r)
 	if err != nil {
-		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		writeAPIError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/workflow/role-memberships/"), "/")
@@ -643,7 +664,7 @@ func (h *WorkflowHandler) AssignmentRuleByID(w http.ResponseWriter, r *http.Requ
 func (h *WorkflowHandler) Delegations(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := requiredWorkflowTargetTenant(r)
 	if err != nil {
-		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		writeAPIError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
 	switch r.Method {
@@ -666,7 +687,7 @@ func (h *WorkflowHandler) Delegations(w http.ResponseWriter, r *http.Request) {
 func (h *WorkflowHandler) DelegationByID(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := requiredWorkflowTargetTenant(r)
 	if err != nil {
-		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		writeAPIError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/workflow/delegations/"), "/")
@@ -750,16 +771,15 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 	if actor == "" {
 		actor = strings.TrimSpace(r.Header.Get("X-User-Email"))
 	}
-	elementID := normalizeUserTaskElementID(req.ElementID)
-	decision := reviewDecisionFromVariables(req.Variables)
-	comment := reviewCommentFromVariables(req.Variables)
-	if elementID == "UT_CheckerReview" {
-		if err := requireReviewComment(decision, comment); err != nil {
-			writeAPIError(w, r, http.StatusBadRequest, err.Error())
-			return
-		}
+	if actor == "" {
+		writeAPIError(w, r, http.StatusUnauthorized, "verified actor is required")
+		return
 	}
-	if err := h.enforceMakerChecker(r, req.ProcessInstanceKey.Int64(), req.ElementID, actor); err != nil {
+	elementID := normalizeUserTaskElementID(req.ElementID)
+	// Resolve the authoritative task scope and authorize the actor before any
+	// state change. The caller-supplied processInstanceKey is never trusted.
+	processInstanceKey, err := h.authorizeUserTaskComplete(r, jobKey, req.ProcessInstanceKey.Int64(), elementID, actor)
+	if err != nil {
 		slog.Warn("workflow task complete forbidden",
 			"actor", actor,
 			"jobKey", jobKey,
@@ -770,19 +790,38 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
+	decision := reviewDecisionFromVariables(req.Variables)
+	comment := reviewCommentFromVariables(req.Variables)
+	if elementID == "UT_CheckerReview" {
+		if err := requireReviewComment(decision, comment); err != nil {
+			writeAPIError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if err := h.enforceMakerChecker(r, processInstanceKey, elementID, actor); err != nil {
+		slog.Warn("workflow task complete forbidden",
+			"actor", actor,
+			"jobKey", jobKey,
+			"processInstanceKey", processInstanceKey,
+			"elementId", elementID,
+			"err", err,
+		)
+		writeAPIError(w, r, http.StatusForbidden, err.Error())
+		return
+	}
 	slog.Info("workflow task complete requested",
 		"actor", actor,
 		"jobKey", jobKey,
-		"processInstanceKey", req.ProcessInstanceKey.Int64(),
-		"elementId", req.ElementID,
+		"processInstanceKey", processInstanceKey,
+		"elementId", elementID,
 	)
-	if h.shouldUseNativeUserTaskComplete(r.Context(), req.ElementID, req.ProcessInstanceKey.Int64()) {
-		if err := h.completeNativeUserTask(r.Context(), jobKey, req.ElementID, req.Variables, req.ProcessInstanceKey.Int64()); err != nil {
+	if h.shouldUseNativeUserTaskComplete(r.Context(), elementID, processInstanceKey) {
+		if err := h.completeNativeUserTask(r.Context(), jobKey, elementID, req.Variables, processInstanceKey); err != nil {
 			slog.Error("workflow native user task complete failed",
 				"actor", actor,
 				"jobKey", jobKey,
-				"processInstanceKey", req.ProcessInstanceKey.Int64(),
-				"elementId", req.ElementID,
+				"processInstanceKey", processInstanceKey,
+				"elementId", elementID,
 				"err", err,
 			)
 			writeAPIError(w, r, http.StatusBadGateway, "Failed to complete user task: "+err.Error())
@@ -792,14 +831,103 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 		slog.Error("workflow task complete failed in zeebe",
 			"actor", actor,
 			"jobKey", jobKey,
-			"processInstanceKey", req.ProcessInstanceKey.Int64(),
-			"elementId", req.ElementID,
+			"processInstanceKey", processInstanceKey,
+			"elementId", elementID,
 			"err", err,
 		)
 		writeAPIError(w, r, http.StatusBadGateway, "Failed to complete task: "+err.Error())
 		return
 	}
 	writeJSON(w, r, http.StatusOK, map[string]any{"status": "completed"})
+}
+
+// authorizeUserTaskComplete resolves the workflow registry entry for a job or
+// native user-task key and checks that the actor may complete it:
+// assigned user or member of the candidate role/group, or superadmin. It
+// returns the process instance key recorded by the registry so maker-checker
+// cannot be pointed at another case. Unknown/unprojected tasks are rejected
+// unless the task key provably belongs to the claimed process instance.
+func (h *WorkflowHandler) authorizeUserTaskComplete(r *http.Request, jobKey, claimedProcessKey int64, elementID, actor string) (int64, error) {
+	if h.caseRepo == nil {
+		return 0, errors.New("workflow registry is unavailable")
+	}
+	item, err := h.caseRepo.FindWorkItemByJobKey(r.Context(), jobKey)
+	if err != nil {
+		return 0, err
+	}
+	if item != nil {
+		if item.Status == repository.TaskStatusCompleted || item.Status == repository.TaskStatusCancelled {
+			return 0, fmt.Errorf("task is already %s", item.Status)
+		}
+		if service.IsNativeUserTaskElement(elementID) && strings.TrimSpace(item.StepCode) != "" &&
+			normalizeUserTaskElementID(item.StepCode) != elementID {
+			return 0, errors.New("task element does not match the job key")
+		}
+		if item.ProcessInstanceKey == nil || *item.ProcessInstanceKey <= 0 {
+			return 0, errors.New("task has no process instance scope")
+		}
+		if isSuperadminActor(r) {
+			return *item.ProcessInstanceKey, nil
+		}
+		if item.AssignedTo != "" {
+			if item.AssignedTo != actor {
+				return 0, errors.New("task is assigned to another user")
+			}
+			return *item.ProcessInstanceKey, nil
+		}
+		ok, err := h.canClaimCandidateRole(r.Context(), r, item.TenantID, item.CandidateRole)
+		if err != nil {
+			return 0, err
+		}
+		if !ok {
+			return 0, errors.New("user is not in the candidate role/group for this task")
+		}
+		return *item.ProcessInstanceKey, nil
+	}
+
+	// No local projection yet (native user task between projector sweeps). The
+	// task key must belong to the claimed process instance, which verifies the
+	// process scope even though the caller supplied it.
+	if claimedProcessKey <= 0 || h.zeebeRest == nil || !h.zeebeRest.Enabled() || !service.IsNativeUserTaskElement(elementID) {
+		return 0, errors.New("task scope could not be verified")
+	}
+	tasks, err := h.zeebeRest.SearchUserTasks(r.Context(), claimedProcessKey, "")
+	if err != nil {
+		return 0, fmt.Errorf("task scope could not be verified: %w", err)
+	}
+	for _, ut := range tasks {
+		if ut.UserTaskKey != jobKey {
+			continue
+		}
+		if normalizeUserTaskElementID(ut.ElementID) != elementID {
+			return 0, errors.New("task element does not match the job key")
+		}
+		if ut.State != "" && !strings.EqualFold(ut.State, "CREATED") {
+			return 0, fmt.Errorf("task is %s", ut.State)
+		}
+		bc, err := h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), ut.ProcessInstanceKey)
+		if err != nil || bc == nil {
+			return 0, errors.New("task scope could not be verified")
+		}
+		if isSuperadminActor(r) {
+			return ut.ProcessInstanceKey, nil
+		}
+		if ut.Assignee != "" {
+			if ut.Assignee != actor {
+				return 0, errors.New("task is assigned to another user")
+			}
+			return ut.ProcessInstanceKey, nil
+		}
+		ok, err := h.canClaimCandidateRole(r.Context(), r, bc.TenantID, firstCandidateGroup(ut.CandidateGroups))
+		if err != nil {
+			return 0, err
+		}
+		if !ok {
+			return 0, errors.New("user is not in the candidate role/group for this task")
+		}
+		return ut.ProcessInstanceKey, nil
+	}
+	return 0, errors.New("task scope could not be verified")
 }
 
 // ClaimTask claims a workflow task by context (process instance / case /
@@ -816,11 +944,11 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Role               string `json:"role"`
-		TaskType           string `json:"taskType"`
+		Role               string    `json:"role"`
+		TaskType           string    `json:"taskType"`
 		ProcessInstanceKey flexInt64 `json:"processInstanceKey"`
-		CaseID             string `json:"caseId"`
-		ElementID          string `json:"elementId"`
+		CaseID             string    `json:"caseId"`
+		ElementID          string    `json:"elementId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
@@ -842,8 +970,12 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 
 	claimCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	task, err := h.tryNativeUserTaskClaim(claimCtx, filter, filter.ElementID, actor)
+	task, err := h.tryNativeUserTaskClaim(claimCtx, r, filter, filter.ElementID, actor)
 	if err != nil {
+		if errors.Is(err, errTaskNotAuthorized) {
+			writeAPIError(w, r, http.StatusForbidden, err.Error())
+			return
+		}
 		slog.Warn("native user task claim failed", "err", err)
 		writeJSON(w, r, http.StatusBadGateway, map[string]any{
 			"error": nativeClaimUnavailableMessage(filter, err),
@@ -870,16 +1002,13 @@ func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work items: "+err.Error())
 		return
 	}
-	if err := h.applyWorkItemPermissions(r.Context(), r, items); err != nil {
+	// Incoming (or omitted direction) only: filter to items the user can claim
+	// or is assigned to. Search (ALL) and outgoing must not use this gate —
+	// otherwise search looks empty when the caller omitted/lost direction=ALL.
+	items, err = h.permissionFilteredWorkItems(r.Context(), r, items)
+	if err != nil {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve task permissions: "+err.Error())
 		return
-	}
-	// Incoming only: filter to items user can claim or is assigned to.
-	// Search (ALL) and outgoing must not use this gate — otherwise search
-	// looks empty when the caller omitted/lost direction=ALL.
-	dir := strings.ToUpper(r.URL.Query().Get("direction"))
-	if dir == "" || dir == "INCOMING" {
-		items = visibleIncomingWorkItems(items)
 	}
 	writeListAny(w, r, items)
 }
@@ -896,13 +1025,10 @@ func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work item summary: "+err.Error())
 		return
 	}
-	if err := h.applyWorkItemPermissions(r.Context(), r, items); err != nil {
+	items, err = h.permissionFilteredWorkItems(r.Context(), r, items)
+	if err != nil {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve task permissions: "+err.Error())
 		return
-	}
-	direction := strings.ToUpper(r.URL.Query().Get("direction"))
-	if direction == "" || direction == "INCOMING" {
-		items = visibleIncomingWorkItems(items)
 	}
 	writeJSON(w, r, http.StatusOK, map[string]any{"nodes": workItemSummary(items, currentUserID(r))})
 }
@@ -940,6 +1066,18 @@ func (h *WorkflowHandler) ExportWorkItems(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work items: "+err.Error())
 		return
+	}
+	// The export must never leak more than the list endpoint: reuse the exact
+	// same permission gate (including the default INCOMING direction).
+	before := len(items)
+	items, err = h.permissionFilteredWorkItems(r.Context(), r, items)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve task permissions: "+err.Error())
+		return
+	}
+	if hidden := before - len(items); hidden > 0 {
+		slog.Info("export work items: rows hidden by task permissions",
+			"hidden", hidden, "visible", len(items), "user", currentUserID(r))
 	}
 	index := 0
 	supplier := func() ([]any, error) {
@@ -1076,7 +1214,7 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 			claimCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 			var task *service.WorkflowTask
 			var err error
-			if native, nativeErr := h.tryNativeUserTaskClaim(claimCtx, filter, filter.ElementID, userID); nativeErr != nil {
+			if native, nativeErr := h.tryNativeUserTaskClaim(claimCtx, r, filter, filter.ElementID, userID); nativeErr != nil {
 				slog.Warn("work item claim native user task failed",
 					"workItemId", id,
 					"caseId", item.CaseID,
@@ -1241,6 +1379,22 @@ func visibleIncomingWorkItems(items []repository.WorkItem) []repository.WorkItem
 	return visible
 }
 
+// permissionFilteredWorkItems is the shared read gate for every work-item
+// surface (list, summary, export): per-item permissions are always resolved,
+// and the default/INCOMING direction is additionally filtered to rows the
+// caller may view. Keeping list and export on the same helper guarantees the
+// export can never return rows the list would hide.
+func (h *WorkflowHandler) permissionFilteredWorkItems(ctx context.Context, r *http.Request, items []repository.WorkItem) ([]repository.WorkItem, error) {
+	if err := h.applyWorkItemPermissions(ctx, r, items); err != nil {
+		return nil, err
+	}
+	dir := strings.ToUpper(r.URL.Query().Get("direction"))
+	if dir == "" || dir == "INCOMING" {
+		items = visibleIncomingWorkItems(items)
+	}
+	return items, nil
+}
+
 func workItemSummary(items []repository.WorkItem, userID string) []repository.WorkItemSummaryNode {
 	nodesByStep := map[string]*repository.WorkItemSummaryNode{}
 	root := repository.WorkItemSummaryNode{ID: "ALL", Label: "Tất cả việc được phép nhận"}
@@ -1339,6 +1493,12 @@ func (h *WorkflowHandler) processInstanceRuntime(w http.ResponseWriter, r *http.
 	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(runtimeCtx, processInstanceKey)
 	if err != nil {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query case: "+err.Error())
+		return
+	}
+	if bc == nil {
+		// The Zeebe job scan below is keyed by process instance only; without a
+		// caller-tenant case the instance (and its jobs) must not be exposed.
+		writeAPIError(w, r, http.StatusNotFound, "Process instance not found")
 		return
 	}
 
@@ -1468,6 +1628,16 @@ func (h *WorkflowHandler) createCase(w http.ResponseWriter, r *http.Request) {
 	if req.IdempotencyKey == "" {
 		req.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	}
+	// createdBy is the verified caller, never a client claim. A superadmin may
+	// still create on behalf of another actor explicitly; anyone else sending a
+	// different createdBy is rejected (fail-closed) so case ownership and maker
+	// tracking cannot be forged.
+	actor, err := authenticatedActorForCase(r, req.CreatedBy)
+	if err != nil {
+		writeCaseActorError(w, r, err)
+		return
+	}
+	req.CreatedBy = actor
 
 	bc, err := h.workflowCmd.CreateCase(r.Context(), req)
 	if err != nil {
@@ -1574,9 +1744,21 @@ func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id 
 	if req.IdempotencyKey == "" {
 		req.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	}
+	// The submit actor (used for the timeline and the authoritative
+	// actorUserId/createdBy process variables) is the verified caller, not a
+	// client claim; only a superadmin may submit on behalf of another actor.
+	actor, err := authenticatedActorForCase(r, req.Actor)
+	if err != nil {
+		writeCaseActorError(w, r, err)
+		return
+	}
+	if strings.TrimSpace(req.Actor) != "" && strings.TrimSpace(req.Actor) != actor {
+		slog.Warn("workflow case submit actor overridden by verified identity",
+			"caseId", id, "requestedActor", req.Actor, "actor", actor)
+	}
 
 	updated, err := h.workflowCmd.SubmitCase(r.Context(), id, service.SubmitCaseInput{
-		Actor:          req.Actor,
+		Actor:          actor,
 		Variables:      req.Variables,
 		IdempotencyKey: req.IdempotencyKey,
 	})
@@ -1602,7 +1784,19 @@ func (h *WorkflowHandler) claimCase(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 
-	bc, err := h.caseRepo.ClaimCase(r.Context(), id, req.Actor)
+	// assigned_to always comes from the verified caller. The legacy body actor
+	// is still accepted for wire compatibility but never trusted.
+	actor := currentUserID(r)
+	if actor == "" {
+		writeCaseActorError(w, r, errCaseActorRequired)
+		return
+	}
+	if requested := strings.TrimSpace(req.Actor); requested != "" && requested != actor {
+		slog.Warn("workflow case claim actor ignored in favor of verified identity",
+			"caseId", id, "requestedActor", requested, "actor", actor)
+	}
+
+	bc, err := h.caseRepo.ClaimCase(r.Context(), id, actor)
 	if err != nil {
 		writeAPIError(w, r, http.StatusBadRequest, err.Error())
 		return
@@ -1800,15 +1994,76 @@ func currentUserID(r *http.Request) string {
 	)
 }
 
+var (
+	errCaseActorRequired = errors.New("verified actor is required")
+	errCaseActorMismatch = errors.New("actor does not match the authenticated user")
+)
+
+// authenticatedActorForCase resolves the actor of a case command to the
+// verified X-User-Id. A body-supplied actor is honored only when it matches the
+// verified identity or when the caller is a superadmin (explicit, audited
+// impersonation); otherwise the command is rejected so created_by/assigned_to
+// cannot be forged.
+func authenticatedActorForCase(r *http.Request, bodyActor string) (string, error) {
+	actor := currentUserID(r)
+	if actor == "" {
+		return "", errCaseActorRequired
+	}
+	bodyActor = strings.TrimSpace(bodyActor)
+	if bodyActor == "" || bodyActor == actor {
+		return actor, nil
+	}
+	if isSuperadminActor(r) {
+		return bodyActor, nil
+	}
+	return "", errCaseActorMismatch
+}
+
+func writeCaseActorError(w http.ResponseWriter, r *http.Request, err error) {
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, errCaseActorRequired):
+		status = http.StatusUnauthorized
+	case errors.Is(err, errCaseActorMismatch):
+		status = http.StatusForbidden
+	}
+	writeAPIError(w, r, status, err.Error())
+}
+
+// errWorkflowTenantOutsideScope is returned when a workflow management command
+// targets a tenant other than the one verified by the BFF context.
+var errWorkflowTenantOutsideScope = errors.New("tenant is outside verified scope")
+
+// requiredWorkflowTargetTenant resolves the tenant a workflow management
+// command may act on. The verified tenant bound by ardametadata.HTTPMiddleware
+// (the same source the repository's verifiedTenant gate uses) is the only
+// authority: a tenant_id/tenantId query param may restate it, but a different
+// tenant is rejected unless the caller is a superadmin. Missing verified scope
+// is rejected as well — never fall back to the query param.
 func requiredWorkflowTargetTenant(r *http.Request) (string, error) {
-	if r == nil || r.URL == nil {
-		return "", errors.New("tenantId is required")
+	if r == nil {
+		return "", errWorkflowTenantOutsideScope
 	}
-	tenantID := firstString(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId"))
-	if strings.TrimSpace(tenantID) == "" {
-		return "", errors.New("tenantId is required for workflow tenant-scoped management")
+	verified := strings.TrimSpace(ardametadata.FromOutgoing(r.Context()).TenantID)
+	if verified == "" {
+		// gRPC-originated contexts carry the verified tenant as incoming
+		// metadata; HTTP requests always bind it as outgoing metadata.
+		verified = strings.TrimSpace(ardametadata.FromIncoming(r.Context()).TenantID)
 	}
-	return strings.TrimSpace(tenantID), nil
+	if verified == "" {
+		return "", errWorkflowTenantOutsideScope
+	}
+	requested := ""
+	if r.URL != nil {
+		requested = strings.TrimSpace(firstString(r.URL.Query().Get("tenant_id"), r.URL.Query().Get("tenantId")))
+	}
+	if requested == "" || requested == verified {
+		return verified, nil
+	}
+	if !isSuperadminActor(r) {
+		return "", errWorkflowTenantOutsideScope
+	}
+	return requested, nil
 }
 
 func currentUserGroups(r *http.Request) []string {
@@ -2008,23 +2263,35 @@ func taskLabelForType(taskType string) string {
 }
 
 var checkerTaskSteps = map[string]struct{}{
+	// v2 native user tasks (internal/bootstrap/*.bpmn). Maker steps
+	// (UT_MakerInput, UT_MakerRevise) are intentionally absent.
+	"UT_CheckerReview": {},
+	"UT_GDReview":      {},
+	"UT_PGDReview":     {},
+	"UT_BoardReview":   {},
+	"UT_TWRevalidate":  {},
+	// legacy parked v1 ids kept for in-flight processes
 	"Activity_CheckerReview": {},
 	"Activity_RiskReview":    {},
 }
 
 func (h *WorkflowHandler) enforceMakerChecker(r *http.Request, processInstanceKey int64, elementID, actor string) error {
-	if processInstanceKey == 0 || elementID == "" || actor == "" {
-		return nil
+	if processInstanceKey <= 0 || strings.TrimSpace(elementID) == "" || actor == "" {
+		return errors.New("task scope could not be verified")
 	}
-	if _, ok := checkerTaskSteps[elementID]; !ok {
+	if _, ok := checkerTaskSteps[strings.TrimSpace(elementID)]; !ok {
 		return nil
 	}
 	if isSuperadminActor(r) || makerCheckerSODRelaxed() {
 		return nil
 	}
+	if h.caseRepo == nil {
+		return errors.New("workflow registry is unavailable")
+	}
 	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), processInstanceKey)
 	if err != nil || bc == nil {
-		return nil
+		// Fail closed: an unresolvable case must not skip the segregation of duties.
+		return errors.New("hồ sơ không tồn tại hoặc không thuộc phạm vi của bạn")
 	}
 	if bc.CreatedBy != "" && bc.CreatedBy == actor {
 		return errors.New("maker cannot complete checker task — hồ sơ do chính bạn tạo/trình (tách nhiệm maker-checker). Đăng nhập user CUSTOMER_CHECKER khác, hoặc dev: WORKFLOW_RELAX_MAKER_CHECKER_SOD=true / superadmin")
