@@ -352,6 +352,30 @@ func (c *Client) RevokeSession(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// TouchSession records activity on a live session (best-effort; the admin
+// session list shows the resulting last_seen_at).
+func (c *Client) TouchSession(ctx context.Context, sessionID string) error {
+	url := c.baseURL + "/internal/iam/sessions/" + sessionID + "/activity"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return err
+	}
+	if err := c.authorizeInternal(req); err != nil {
+		return err
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("touch session request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("touch session returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func (c *Client) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/iam/me/mfa/status", nil)
 	if err != nil {

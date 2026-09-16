@@ -203,6 +203,7 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 	mux.Handle("/internal/iam/users/resolve-identity", internalService(method("POST", userHandler.ResolveOrLinkIdentity)))
 	mux.Handle("/internal/iam/sessions", internalService(method("POST", sessionHandler.InternalCreateSession)))
 	mux.Handle("/internal/iam/sessions/{id}", internalService(method("DELETE", sessionHandler.InternalRevokeSession)))
+	mux.Handle("/internal/iam/sessions/{id}/activity", internalService(method("POST", sessionHandler.InternalTouchSession)))
 
 	// Internal AI surface: ai-service calls here with a signed caller
 	// assertion and the delegated subject as headers. ListUsers re-validates

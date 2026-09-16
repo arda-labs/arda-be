@@ -88,6 +88,12 @@ func (s *SessionService) ForceRevokeSession(ctx context.Context, sessionID, reas
 	return s.sessionRepo.RevokeSession(ctx, sessionID, reason)
 }
 
+// TouchSession records activity on a live session (internal API), powering the
+// last_seen_at column in the admin session list.
+func (s *SessionService) TouchSession(ctx context.Context, sessionID string) error {
+	return s.sessionRepo.TouchSession(ctx, sessionID)
+}
+
 // CreateSession creates a new session, enforcing concurrent limits.
 func (s *SessionService) CreateSession(ctx context.Context, userID, deviceID, hydraID,
 	accessJTI, refreshJTI, ip, userAgent string) (*domain.Session, error) {

@@ -48,7 +48,15 @@ type BFFHandler struct {
 	resolveInflight  map[string]*sessionUserResolveCall
 	httpClient       *http.Client
 	streamHTTPClient *http.Client
+	// sessionTouchMu guards sessionTouches, the throttle that keeps
+	// IAM last_seen_at fresh without a write per request.
+	sessionTouchMu sync.Mutex
+	sessionTouches map[string]time.Time
 }
+
+// sessionTouchInterval bounds how often one session is reported to IAM as
+// active; the admin session list needs minutes, not per-request precision.
+const sessionTouchInterval = 5 * time.Minute
 
 type sessionUserResolveCall struct {
 	done   chan struct{}
@@ -1343,6 +1351,38 @@ func (h *BFFHandler) maybeRenewSession(w http.ResponseWriter, ctx context.Contex
 	}
 }
 
+// touchSessionActivity reports session activity to IAM at most once per
+// interval per session, in the background so the request path is not blocked.
+// It powers last_seen_at in the admin session list (2026-09-16 incident:
+// records only carried the creation time).
+func (h *BFFHandler) touchSessionActivity(ctx context.Context, sess *session.Session) {
+	if sess == nil || sess.IAMSessionID == "" || h.iamClient == nil {
+		return
+	}
+	now := time.Now()
+	h.sessionTouchMu.Lock()
+	if h.sessionTouches == nil || len(h.sessionTouches) > 1024 {
+		h.sessionTouches = make(map[string]time.Time)
+	}
+	last, seen := h.sessionTouches[sess.IAMSessionID]
+	if seen && now.Sub(last) < sessionTouchInterval {
+		h.sessionTouchMu.Unlock()
+		return
+	}
+	h.sessionTouches[sess.IAMSessionID] = now
+	h.sessionTouchMu.Unlock()
+
+	sessionID := sess.IAMSessionID
+	base := context.WithoutCancel(ctx)
+	go func() {
+		touchCtx, cancel := context.WithTimeout(base, 3*time.Second)
+		defer cancel()
+		if err := h.iamClient.TouchSession(touchCtx, sessionID); err != nil && h.logger != nil {
+			h.logger.Warn("touch iam session failed", "session_id", sessionID, "err", err)
+		}
+	}()
+}
+
 func (h *BFFHandler) updateSession(ctx context.Context, sess *session.Session) {
 	if sess == nil || sess.ID == "" {
 		return
@@ -1389,6 +1429,7 @@ func (h *BFFHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	ensureDuration := time.Since(ensureStart)
 	h.maybeRenewSession(w, r.Context(), sess)
+	h.touchSessionActivity(r.Context(), sess)
 	writeStart := time.Now()
 	ardahttp.WriteSuccess(w, r, http.StatusOK, sess.User)
 	writeDuration := time.Since(writeStart)
@@ -1749,6 +1790,7 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		} else {
 			ensureDuration = time.Since(ensureStart)
 			h.maybeRenewSession(w, r.Context(), sess)
+			h.touchSessionActivity(r.Context(), sess)
 			if match != nil && len(match.Route.Permissions) > 0 && !sess.User.IsGlobalAdmin && !permission.HasAny(sess.User.Permissions, match.Route.Permissions...) {
 				h.logProxyDenied(r, requestID, traceID, http.StatusForbidden, "insufficient_permissions", sess)
 				respondRequestError(w, r, http.StatusForbidden, "insufficient_permissions")

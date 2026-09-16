@@ -265,6 +265,22 @@ func (h *SessionHandler) InternalRevokeSession(w http.ResponseWriter, r *http.Re
 	respondJSON(w, r, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
+// InternalTouchSession is called by auth-gateway on session activity so the
+// admin session list shows a real last_seen_at.
+// POST /internal/iam/sessions/{id}/activity
+func (h *SessionHandler) InternalTouchSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		respondErrorCode(w, r, http.StatusBadRequest, ardaerrors.CodeRequired, "missing session id")
+		return
+	}
+	if err := h.svc.TouchSession(r.Context(), sessionID); err != nil {
+		respondError(w, r, http.StatusInternalServerError, "touch failed")
+		return
+	}
+	respondJSON(w, r, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // InternalListSessionByUser is called by auth-gateway to list sessions for user.
 // GET /internal/iam/sessions?user_id=xxx
 func (h *SessionHandler) InternalListSessionByUser(w http.ResponseWriter, r *http.Request) {
