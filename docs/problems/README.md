@@ -44,6 +44,10 @@ Rules enforced by `scripts/check-problem-catalog.mjs`:
 - Extra catalog pages are allowed (e.g. codes emitted dynamically by
   auth-gateway's message passthrough such as `tenant_context_unavailable`);
   the check reports them as informational orphans.
+- Legacy AI catalog pages for retired settings surfaces are deliberately kept
+  as compatibility documentation for previously returned problem URLs. Their
+  orphan messages are informational until those URLs are formally versioned
+  out; they do not make the check fail.
 - Problem pages are operational contracts, not API implementation notes.
   Error messages may be localized or improved without changing the `code`
   or `type`.
