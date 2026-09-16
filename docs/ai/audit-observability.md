@@ -42,14 +42,15 @@ tenant class, and provider—not by raw prompt:
 - retrieval latency, empty result, citation, ACL-denial, and stale-source rate;
 - context size, truncation, and redaction counters.
 
-**Implementation status (2026-09-17):** thirteen `arda_ai_*` families are
+**Implementation status (2026-09-17):** fifteen `arda_ai_*` families are
 implemented and rendered by `RenderAIMetrics`: runs, tool executions, LLM
 tokens, run duration, provider probes, model errors, the two citation-guard
-counters, and the A3 segment families — `arda_ai_model_ttft_seconds`,
+counters, the A3 segment families — `arda_ai_model_ttft_seconds`,
 `arda_ai_model_duration_seconds`, `arda_ai_retrieval_embed_seconds`,
-`arda_ai_retrieval_search_seconds`, and
-`arda_ai_event_publish_failures_total`. Contract:
-`contracts/observability/arda-observability-v1.json` (13 AI metrics).
+`arda_ai_retrieval_search_seconds`, `arda_ai_event_publish_failures_total` —
+and the A6 context families `arda_ai_prompt_bytes` and
+`arda_ai_context_truncated_total`. Contract:
+`contracts/observability/arda-observability-v1.json` (15 AI metrics).
 
 Still missing: a scraper/alerting stack in the cluster (no Prometheus or
 VictoriaMetrics is deployed today, so `/metrics` is not collected and the

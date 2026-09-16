@@ -105,6 +105,18 @@
       "type": "counter",
       "labels": ["subject"],
       "purpose": "events that could not reach the durable stream and fell back to the in-process buffer"
+    },
+    {
+      "name": "arda_ai_prompt_bytes",
+      "type": "histogram",
+      "labels": [],
+      "purpose": "approximate prompt size sent to the model per turn"
+    },
+    {
+      "name": "arda_ai_context_truncated_total",
+      "type": "counter",
+      "labels": ["kind"],
+      "purpose": "context items dropped or truncated to fit the prompt budget"
     }
   ],
   "slo_classes": [

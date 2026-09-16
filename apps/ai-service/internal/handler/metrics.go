@@ -199,6 +199,18 @@ var (
 		"NATS event publishes that failed and fell back to the in-process buffer.",
 		"subject",
 	)
+	// Context-budget families (audit-2026-09 A6): the measured prompt growth
+	// came from replayed history and tool results, not the SDK header.
+	aiPromptBytes = newAIHistogram(
+		"arda_ai_prompt_bytes",
+		"Approximate prompt size (message content bytes) sent to the model per turn.",
+		1024, 4096, 8192, 16384, 32768, 65536, 131072, 262144,
+	)
+	aiContextTruncatedTotal = newAICounterVec(
+		"arda_ai_context_truncated_total",
+		"Context items dropped or truncated to fit the prompt budget.",
+		"kind",
+	)
 )
 
 // RenderAIMetrics appends the arda_ai_* metric family to /metrics.
@@ -216,6 +228,8 @@ func RenderAIMetrics(w io.Writer) {
 	aiRetrievalEmbedDuration.render(w)
 	aiRetrievalSearchDuration.render(w)
 	aiEventPublishFailures.render(w)
+	aiPromptBytes.render(w)
+	aiContextTruncatedTotal.render(w)
 }
 
 // RecordProviderProbe records one readiness health probe without exposing
@@ -274,6 +288,15 @@ func recordCitationGuard(outcome string) {
 func recordInventedCitations(count int) {
 	if count > 0 {
 		aiInventedCitationsTotal.add(uint64(count), "bracket")
+	}
+}
+
+// recordRemovedSources counts source-section items removed because they did
+// not match any retrieved citation, or a whole section removed from a
+// no-evidence answer (audit-2026-09 A10 follow-up).
+func recordRemovedSources(kind string, count int) {
+	if count > 0 {
+		aiInventedCitationsTotal.add(uint64(count), kind)
 	}
 }
 
@@ -344,4 +367,25 @@ func RecordEventPublishFailure(subject string) {
 		subject = "unknown"
 	}
 	aiEventPublishFailures.add(1, subject)
+}
+
+// recordPromptSize observes the approximate prompt size of one model turn.
+func recordPromptSize(messages []model.Message) {
+	total := 0
+	for _, message := range messages {
+		total += len(message.Content) + len(message.Reasoning)
+		for _, call := range message.ToolCalls {
+			total += len(call.Arguments)
+		}
+	}
+	aiPromptBytes.observe(float64(total))
+}
+
+// recordContextTruncated counts dropped or truncated context items by kind
+// (history, tool_result) so the compaction rate is visible.
+func recordContextTruncated(kind string) {
+	if kind == "" {
+		kind = "unknown"
+	}
+	aiContextTruncatedTotal.add(1, kind)
 }

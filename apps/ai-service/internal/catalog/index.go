@@ -176,6 +176,46 @@ func FormatSignatures(entries []CatalogEntry) string {
 	return sb.String()
 }
 
+// FormatSignaturesBrief renders one line per entry (JSDoc summary + signature)
+// for cheap scanning. The SDK type declarations are already in the system
+// prompt; full JSDoc stays available with detail="full".
+func FormatSignaturesBrief(entries []CatalogEntry) string {
+	if len(entries) == 0 {
+		return "// No matching arda.* SDK methods found for this query."
+	}
+
+	var sb strings.Builder
+	for _, e := range entries {
+		if summary := jsDocSummary(e.JSDoc); summary != "" {
+			sb.WriteString("// ")
+			sb.WriteString(summary)
+			sb.WriteString("\n")
+		}
+		sb.WriteString(e.Signature)
+		if !strings.HasSuffix(e.Signature, ";") {
+			sb.WriteString(";")
+		}
+		sb.WriteString("\n")
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// jsDocSummary returns the first description line of a JSDoc block, without
+// the comment markers. Returns "" when nothing usable remains.
+func jsDocSummary(jsdoc string) string {
+	trimmed := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(jsdoc), "/**"))
+	trimmed = strings.TrimSuffix(trimmed, "*/")
+	for _, line := range strings.Split(trimmed, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimSpace(strings.TrimPrefix(line, "*"))
+		if line == "" || strings.HasPrefix(line, "@") {
+			continue
+		}
+		return line
+	}
+	return ""
+}
+
 func tokenize(text string) []string {
 	lower := strings.ToLower(text)
 	var tokens []string

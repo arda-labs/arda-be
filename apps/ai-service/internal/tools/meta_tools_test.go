@@ -9,7 +9,7 @@ import (
 )
 
 func TestSearchMetaTool_Execution(t *testing.T) {
-	searchTool := NewSearchMetaTool(func(query, domain string, scope Context) (string, int, error) {
+	searchTool := NewSearchMetaTool(func(query, domain, detail string, scope Context) (string, int, error) {
 		if query == "crm customer" {
 			return "arda.crm.getCustomer(args: { customerId: string }): Promise<CustomerSummary>;", 1, nil
 		}
@@ -96,8 +96,37 @@ func TestErrorCodeDefaultsToGenericToolCode(t *testing.T) {
 	}
 }
 
+func TestSearchMetaToolDetailArgument(t *testing.T) {
+	var seenDetail string
+	searchTool := NewSearchMetaTool(func(query, domain, detail string, scope Context) (string, int, error) {
+		seenDetail = detail
+		return "sig", 1, nil
+	})
+	ctx := context.Background()
+	scope := Context{TenantID: "t", ActorUserID: "u"}
+
+	// Default is full detail.
+	if _, err := searchTool.Execute(ctx, scope, json.RawMessage(`{"query":"leave"}`)); err != nil {
+		t.Fatalf("default detail: %v", err)
+	}
+	if seenDetail != "full" {
+		t.Fatalf("default detail = %q, want full", seenDetail)
+	}
+
+	if _, err := searchTool.Execute(ctx, scope, json.RawMessage(`{"query":"leave","detail":"brief"}`)); err != nil {
+		t.Fatalf("brief detail: %v", err)
+	}
+	if seenDetail != "brief" {
+		t.Fatalf("detail = %q, want brief", seenDetail)
+	}
+
+	if _, err := searchTool.Execute(ctx, scope, json.RawMessage(`{"query":"leave","detail":"verbose"}`)); err == nil {
+		t.Fatal("invalid detail must be rejected")
+	}
+}
+
 func TestRegistry_PermissionsAndExecutionOnly(t *testing.T) {
-	searchTool := NewSearchMetaTool(func(query, domain string, scope Context) (string, int, error) {
+	searchTool := NewSearchMetaTool(func(query, domain, detail string, scope Context) (string, int, error) {
 		return "sig", 1, nil
 	})
 	executeTool := NewExecuteMetaTool(func(ctx context.Context, scope Context, code string) (map[string]any, error) {

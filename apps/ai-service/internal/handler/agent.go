@@ -23,6 +23,14 @@ import (
 
 const modelResultContentLimit = 8 << 10
 
+// Context-budget bounds for replayed conversation history (audit-2026-09 A6:
+// measured production prompts ranged 2.9k–37.9k tokens and history plus tool
+// results were the growth driver, not the SDK header).
+const (
+	historyByteBudget        = 24 << 10
+	historyMessageByteBudget = 4 << 10
+)
+
 // maxParallelToolCalls bounds concurrent read-only tool execution within one
 // model turn so a burst of calls cannot exhaust downstream services.
 const maxParallelToolCalls = 3
@@ -356,6 +364,7 @@ func agentStepsLoop(
 		var turnReasoning strings.Builder
 		var collected []model.ToolCall
 		modelTimer := startModelStreamTimer()
+		recordPromptSize(messages)
 		finishReason, usage, err := modelProvider.StreamChat(ctx, messages, defs, model.StreamCallbacks{
 			OnTextDelta: func(delta string) {
 				modelTimer.firstDelta()
@@ -458,10 +467,17 @@ func agentStepsLoop(
 			}
 			reply, invented := sanitizeInventedCitations(reply, knowledgeCitations)
 			recordInventedCitations(invented)
+			sanitizedReply, removedSources := sanitizeAnswerSources(reply, knowledgeCitations)
+			reply = sanitizedReply
+			recordRemovedSources("source_section", removedSources)
 			if len(knowledgeCitations) > 0 {
-				if hasValidCitation(reply, knowledgeCitations) {
+				switch {
+				case statesNoEvidence(reply):
+					// A no-evidence answer must not advertise references.
+					recordCitationGuard("no_evidence")
+				case hasValidCitation(reply, knowledgeCitations):
 					recordCitationGuard("present")
-				} else {
+				default:
 					citationBlock := "\n\nNguồn tham khảo:\n- " + strings.Join(knowledgeCitations, "\n- ")
 					sse.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: citationBlock})
 					reply += citationBlock
@@ -701,17 +717,15 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 	if historyStore, ok := store.(repository.HistoryStore); ok {
 		items, err := historyStore.RecentMessages(ctx, scopeRun, 20)
 		if err == nil {
-			for _, item := range items {
-				if item.Content == "" {
-					continue
-				}
-				switch item.Role {
-				case "user", "assistant":
-					messages = append(messages, model.Message{Role: item.Role, Content: item.Content})
-				}
-				// Tool history is skipped on replay: HistoryMessage carries no
-				// tool_call_id, and providers reject unpaired tool messages.
+			replayed, dropped, truncated := boundedHistory(items, historyByteBudget, historyMessageByteBudget)
+			if truncated > 0 {
+				recordContextTruncated("history_message")
 			}
+			if dropped > 0 {
+				recordContextTruncated("history_dropped")
+				messages = append(messages, model.Message{Role: "system", Content: historyOmissionNote(dropped)})
+			}
+			messages = append(messages, replayed...)
 		}
 	}
 	// Replay a compact tool-activity log so multi-turn runs remember what was
@@ -730,6 +744,45 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 	}
 	messages = append(messages, model.Message{Role: "user", Content: latestUser})
 	return messages
+}
+
+// boundedHistory replays the most recent messages that fit the byte budget,
+// newest first. An oversized single message is truncated; once the budget is
+// exhausted the older remainder is dropped. Tool history is skipped entirely:
+// HistoryMessage carries no tool_call_id and providers reject unpaired tool
+// messages.
+func boundedHistory(items []repository.HistoryMessage, totalBudget, messageBudget int) ([]model.Message, int, int) {
+	replayed := make([]model.Message, 0, len(items))
+	used := 0
+	dropped := 0
+	truncated := 0
+	for i := len(items) - 1; i >= 0; i-- {
+		item := items[i]
+		if item.Content == "" || (item.Role != "user" && item.Role != "assistant") {
+			continue
+		}
+		content := item.Content
+		if len(content) > messageBudget {
+			content = truncateRunes(content, messageBudget) + "\n… [truncated to fit the context budget]"
+			truncated++
+		}
+		if used+len(content) > totalBudget {
+			dropped += i + 1
+			break
+		}
+		used += len(content)
+		replayed = append(replayed, model.Message{Role: item.Role, Content: content})
+	}
+	for i, j := 0, len(replayed)-1; i < j; i, j = i+1, j-1 {
+		replayed[i], replayed[j] = replayed[j], replayed[i]
+	}
+	return replayed, dropped, truncated
+}
+
+// historyOmissionNote tells the model that older turns were dropped, so it
+// asks for missing details instead of assuming the conversation started there.
+func historyOmissionNote(dropped int) string {
+	return fmt.Sprintf("Lưu ý ngữ cảnh: %d lượt hội thoại cũ hơn đã được lược bớt để vừa ngân sách ngữ cảnh. Hãy hỏi lại người dùng nếu cần thông tin từ các lượt đó.", dropped)
 }
 
 // sdkTypesFor returns the model-visible arda.* declarations, preferring the
@@ -803,6 +856,125 @@ func sanitizeInventedCitations(reply string, citations []string) (string, int) {
 		return ""
 	})
 	return sanitized, removed
+}
+
+// noEvidencePatterns match an answer that explicitly states the knowledge base
+// has no matching content; such answers must not carry a sources section.
+var noEvidencePatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)không (?:tìm thấy|có) (?:tài liệu|nội dung|thông tin|quy trình|kết quả)`),
+	regexp.MustCompile(`(?i)chưa có (?:nội dung|tài liệu|thông tin|quy trình)`),
+	regexp.MustCompile(`(?i)no (?:matching|relevant) (?:content|document|information|source|procedure)`),
+	regexp.MustCompile(`(?i)not (?:found|available) in the knowledge base`),
+}
+
+func statesNoEvidence(reply string) bool {
+	for _, pattern := range noEvidencePatterns {
+		if pattern.MatchString(reply) {
+			return true
+		}
+	}
+	return false
+}
+
+// sourcesHeadingPattern matches a sources heading line ("Nguồn tham khảo:",
+// "**Sources**", …).
+var sourcesHeadingPattern = regexp.MustCompile(`(?im)^[ \t>*#-]*\**\s*(nguồn tham khảo|tài liệu tham khảo|sources|references)\s*\**\s*:?[ \t]*$`)
+
+// sourceItemPattern matches a bullet or numbered list item.
+var sourceItemPattern = regexp.MustCompile(`^(?:[-*•]|\d+[.)])\s+`)
+
+// sanitizeAnswerSources reconciles a trailing free-text sources section with
+// the citations actually retrieved in this run (audit-2026-09 A10 follow-up):
+//   - a no-evidence answer loses the whole section;
+//   - list items that name none of the retrieved citations are removed;
+//   - a section whose items are all removed disappears.
+//
+// The returned count feeds arda_ai_invented_citations_total.
+func sanitizeAnswerSources(reply string, known []string) (string, int) {
+	if strings.TrimSpace(reply) == "" {
+		return reply, 0
+	}
+	matches := sourcesHeadingPattern.FindAllStringIndex(reply, -1)
+	if len(matches) == 0 {
+		return reply, 0
+	}
+	start := matches[len(matches)-1][0]
+	head := strings.TrimRight(reply[:start], " \t\r\n")
+	section := reply[start:]
+
+	items, others := splitSourceItems(section)
+	if statesNoEvidence(reply) {
+		if len(items) == 0 {
+			return head, 1
+		}
+		return head, len(items)
+	}
+	if len(items) == 0 {
+		return reply, 0
+	}
+
+	kept := make([]string, 0, len(items))
+	dropped := 0
+	for _, item := range items {
+		if itemMatchesKnownSource(item, known) {
+			kept = append(kept, item)
+		} else {
+			dropped++
+		}
+	}
+	if dropped == 0 {
+		return reply, 0
+	}
+	if len(kept) == 0 {
+		return head, dropped
+	}
+	heading := strings.TrimRight(strings.SplitN(section, "\n", 2)[0], " \t\r")
+	rebuilt := append([]string{heading}, kept...)
+	rebuilt = append(rebuilt, others...)
+	return head + "\n" + strings.Join(rebuilt, "\n"), dropped
+}
+
+// splitSourceItems separates list items from other lines in a sources section.
+func splitSourceItems(section string) (items []string, others []string) {
+	lines := strings.Split(section, "\n")
+	for i, line := range lines {
+		if i == 0 {
+			continue // heading
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if sourceItemPattern.MatchString(trimmed) {
+			items = append(items, trimmed)
+			continue
+		}
+		others = append(others, trimmed)
+	}
+	return items, others
+}
+
+// itemMatchesKnownSource reports whether a list item names one of the
+// citations returned by knowledge.search (case- and whitespace-insensitive).
+func itemMatchesKnownSource(item string, known []string) bool {
+	normalized := normalizeSourceText(sourceItemPattern.ReplaceAllString(strings.TrimSpace(item), ""))
+	if normalized == "" {
+		return false
+	}
+	for _, label := range known {
+		label = normalizeSourceText(label)
+		if label == "" {
+			continue
+		}
+		if strings.Contains(normalized, label) || strings.Contains(label, normalized) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeSourceText(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(value), " "))
 }
 
 // extractCitationLabels reads only the structured citation metadata returned

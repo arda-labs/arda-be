@@ -65,8 +65,11 @@ func TestCatalogEvalLLM(t *testing.T) {
 	typedefs := GenerateTypeDefinitions(reg.AllEntries())
 	scope := evalScope()
 	defs := []model.ToolDef{
-		llmToolDef(tools.NewSearchMetaTool(func(query, domain string, sc tools.Context) (string, int, error) {
+		llmToolDef(tools.NewSearchMetaTool(func(query, domain, detail string, sc tools.Context) (string, int, error) {
 			entries := idx.Search(query, domain, sc, 5)
+			if detail == "brief" {
+				return FormatSignaturesBrief(entries), len(entries), nil
+			}
 			return FormatSignatures(entries), len(entries), nil
 		}).Definition()),
 		// The model is only observed up to its first execute() call, so these

@@ -11,13 +11,16 @@ import (
 type searchArguments struct {
 	Query  string `json:"query"`
 	Domain string `json:"domain,omitempty"`
+	// Detail selects the output shape: "brief" (one summary line + signature
+	// per method, cheap to scan) or "full" (full JSDoc, default).
+	Detail string `json:"detail,omitempty"`
 }
 
 type SearchMetaTool struct {
-	searchFn func(query, domain string, scope Context) (signatures string, count int, err error)
+	searchFn func(query, domain, detail string, scope Context) (signatures string, count int, err error)
 }
 
-func NewSearchMetaTool(searchFn func(query, domain string, scope Context) (signatures string, count int, err error)) *SearchMetaTool {
+func NewSearchMetaTool(searchFn func(query, domain, detail string, scope Context) (signatures string, count int, err error)) *SearchMetaTool {
 	return &SearchMetaTool{searchFn: searchFn}
 }
 
@@ -40,6 +43,11 @@ func (t *SearchMetaTool) Definition() Definition {
 				"domain": {
 					"type": "string",
 					"description": "Optional domain filter (e.g. 'crm', 'knowledge', 'hrm', 'finance', 'workflow')"
+				},
+				"detail": {
+					"type": "string",
+					"enum": ["brief", "full"],
+					"description": "Output detail: 'brief' returns a summary line plus signature per method; 'full' (default) includes the full JSDoc"
 				}
 			},
 			"required": ["query"]
@@ -58,8 +66,15 @@ func (t *SearchMetaTool) Execute(ctx context.Context, scope Context, arguments j
 	if err := decoder.Decode(&input); err != nil || strings.TrimSpace(input.Query) == "" {
 		return Result{}, fmt.Errorf("%w: query is required", ErrInvalidArgument)
 	}
+	detail := strings.ToLower(strings.TrimSpace(input.Detail))
+	if detail == "" {
+		detail = "full"
+	}
+	if detail != "brief" && detail != "full" {
+		return Result{}, fmt.Errorf("%w: detail must be brief or full", ErrInvalidArgument)
+	}
 
-	signatures, count, err := t.searchFn(input.Query, input.Domain, scope)
+	signatures, count, err := t.searchFn(input.Query, input.Domain, detail, scope)
 	if err != nil {
 		return Result{}, err
 	}
@@ -68,6 +83,7 @@ func (t *SearchMetaTool) Execute(ctx context.Context, scope Context, arguments j
 		"signatures": signatures,
 		"count":      count,
 		"query":      input.Query,
+		"detail":     detail,
 	}
 
 	data, err := json.Marshal(resPayload)

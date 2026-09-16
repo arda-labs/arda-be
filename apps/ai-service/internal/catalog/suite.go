@@ -102,8 +102,11 @@ func NewCodeModeSuite(
 		UnwiredServices: unwired,
 	}
 
-	searchTool := tools.NewSearchMetaTool(func(query, domain string, scope tools.Context) (string, int, error) {
+	searchTool := tools.NewSearchMetaTool(func(query, domain, detail string, scope tools.Context) (string, int, error) {
 		entries := catalogIndex.Search(query, domain, scope, 5)
+		if detail == "brief" {
+			return FormatSignaturesBrief(entries), len(entries), nil
+		}
 		return FormatSignatures(entries), len(entries), nil
 	})
 
