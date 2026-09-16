@@ -1,21 +1,14 @@
 package svcclient
 
-import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"strings"
-	"time"
+import "time"
 
-	"github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
-)
+// Knowledge retrieval DTOs shared by the in-process RAG service
+// (knowledge.InProcessRAGAdapter) and the arda.knowledge.search tool contract.
+// The retired Python rag-service HTTP client that originally defined them is
+// gone — see docs/ai/audit-2026-09.md item A5.
 
 // RAGHit is one retrieved knowledge chunk. SourceID/SourceVersionID are the
-// ai_knowledge_sources / ai_knowledge_chunks row ids (ints in the service
-// contract, matching apps/rag-service/app/domain/models.py QueryHitOut).
+// ai_knowledge_sources / ai_knowledge_source_versions row ids.
 type RAGHit struct {
 	SourceID        int         `json:"source_id"`
 	SourceKey       string      `json:"source_key"`
@@ -41,7 +34,7 @@ type CitationRef struct {
 	Locator         string     `json:"locator"`
 }
 
-// RAGResponse is the full POST /api/rag/query response.
+// RAGResponse is the full knowledge query response.
 type RAGResponse struct {
 	RunID          string   `json:"run_id"`
 	Hits           []RAGHit `json:"hits"`
@@ -51,92 +44,11 @@ type RAGResponse struct {
 	RerankedCount  int      `json:"reranked_count"`
 }
 
-// RAGQueryRequest is the POST /api/rag/query body — identity fields never
-// travel here, only the query and top-k bound.
-type RAGQueryRequest struct {
-	Query string `json:"query"`
-	TopK  int    `json:"top_k"`
-}
-
-// FeedbackRequest is the POST /api/rag/feedback body. Comment is omitted when
-// empty so rag FeedbackCreate.comment defaults to None.
-type FeedbackRequest struct {
-	RunID   string `json:"run_id"`
-	Helpful bool   `json:"helpful"`
-	Comment string `json:"comment,omitempty"`
-}
-
-// FeedbackOut is the created rag-service feedback row echoed back.
+// FeedbackOut is a stored knowledge feedback row.
 type FeedbackOut struct {
 	ID        string `json:"id"`
 	RunID     string `json:"run_id"`
 	Helpful   bool   `json:"helpful"`
 	Comment   string `json:"comment,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
-}
-
-// RAGClient calls the rag-service knowledge retrieval surface
-// (/api/rag/query). POST is a mutation from the transport's point of view, so
-// it is never auto-retried.
-type RAGClient struct {
-	*Client
-}
-
-// NewRAGClient returns a typed client for the rag-service.
-func NewRAGClient(baseURL, source, secret string, hc *http.Client) *RAGClient {
-	return &RAGClient{Client: NewClient("rag-service", baseURL, source, secret, hc)}
-}
-
-// Search retrieves the top-k knowledge chunks for query in the delegated
-// tenant/org scope.
-func (c *RAGClient) Search(ctx context.Context, md metadata.Context, query string, topK int) (*RAGResponse, error) {
-	query = strings.TrimSpace(query)
-	if query == "" || len(query) > 512 {
-		return nil, fmt.Errorf("query is required (max 512 characters)")
-	}
-	req, err := c.NewRequest(ctx, http.MethodPost, "/api/rag/query", md)
-	if err != nil {
-		return nil, err
-	}
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(RAGQueryRequest{Query: query, TopK: topK}); err != nil {
-		return nil, fmt.Errorf("encode rag query: %w", err)
-	}
-	req.Body = io.NopCloser(&buf)
-	req.ContentLength = int64(buf.Len())
-	req.Header.Set("Content-Type", "application/json") // FastAPI requires it (422 without)
-
-	var result RAGResponse
-	if err := c.Do(ctx, req, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-// Feedback records the user's rating of a RAG run in the delegated tenant
-// scope. runID is passed through for rag-service's UUID validation (a
-// non-UUID run_id is impossible client-side) — 422 surfaces as a StatusError.
-func (c *RAGClient) Feedback(ctx context.Context, md metadata.Context, runID string, helpful bool, comment string) (*FeedbackOut, error) {
-	runID = strings.TrimSpace(runID)
-	if runID == "" || len(runID) > 64 {
-		return nil, fmt.Errorf("run_id is required (max 64 characters)")
-	}
-	req, err := c.NewRequest(ctx, http.MethodPost, "/api/rag/feedback", md)
-	if err != nil {
-		return nil, err
-	}
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(FeedbackRequest{RunID: runID, Helpful: helpful, Comment: comment}); err != nil {
-		return nil, fmt.Errorf("encode rag feedback: %w", err)
-	}
-	req.Body = io.NopCloser(&buf)
-	req.ContentLength = int64(buf.Len())
-	req.Header.Set("Content-Type", "application/json") // FastAPI requires it (422 without)
-
-	// POST is a mutation — Do never auto-retries it.
-	var result FeedbackOut
-	if err := c.Do(ctx, req, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
 }

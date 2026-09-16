@@ -89,11 +89,6 @@ func main() {
 		inProcessRAG = knowledge.NewInProcessRAGAdapter(knowledgeSvc)
 	}
 
-	var ragClient *svcclient.RAGClient
-	if cfg.RAGServiceURL != "" {
-		ragClient = svcclient.NewRAGClient(cfg.RAGServiceURL, "ai-service", cfg.ServiceAuthSecret, nil)
-	}
-
 	var eventPublisher events.Publisher
 	if cfg.NATSURL != "" {
 		natsPub, err := events.NewNATSPublisher(cfg.NATSURL, cfg.AppName, logger)
@@ -144,9 +139,9 @@ func main() {
 		return nil
 	}
 	if inProcessRAG != nil {
+		// Knowledge search and feedback are served in-process; the retired
+		// remote rag-service client was removed (audit-2026-09 A5).
 		routerOptions.RAGClient = inProcessRAG
-	} else {
-		routerOptions.RAGClient = ragClient
 	}
 
 	var resolver *tools.Registry
@@ -169,8 +164,6 @@ func main() {
 		var ragSearcher catalog.RAGSearcher
 		if inProcessRAG != nil {
 			ragSearcher = inProcessRAG
-		} else if ragClient != nil {
-			ragSearcher = ragClient
 		}
 		serviceClients := catalog.ClientSet(svcclient.NewServiceClients(cfg.ServiceURLs, "ai-service", cfg.ServiceAuthSecret, nil))
 		suite := catalog.NewCodeModeSuite(

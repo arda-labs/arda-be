@@ -15,8 +15,8 @@ var (
 	ErrTenantSettingsNotFound = errors.New("ai tenant settings not found")
 )
 
-// TenantSettings is the single active model configuration for a tenant. It is
-// owned by the tenant through the AI Settings UI; the deployment only supplies
+// TenantSettings is the active model configuration for a tenant. It is owned
+// by the tenant through the AI Settings UI; the deployment only supplies
 // shared security controls (gateway token, base-URL allowlist).
 type TenantSettings struct {
 	TenantID     string `json:"tenantId"`
@@ -26,9 +26,13 @@ type TenantSettings struct {
 	ModelID      string `json:"modelId"`
 }
 
+// TenantSettingsStore is the read surface the agent loop and the RAG query
+// rewrite consume. Model profiles (ai_model_profiles + ai_profile_models) are
+// the single source of truth: the legacy ai_tenant_settings fallback and its
+// upsert path were removed with audit-2026-09 item A5. The legacy table is
+// retained read-only until a later migration drops it.
 type TenantSettingsStore interface {
 	GetTenantSettings(ctx context.Context, tenantID string) (*TenantSettings, error)
-	UpsertTenantSettings(ctx context.Context, settings TenantSettings) error
 }
 
 func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*TenantSettings, error) {
@@ -38,7 +42,7 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 
 	var item TenantSettings
 	var rawAPIKey string
-	// Preferred source: the applied profile + applied model.
+	// Single source of truth: the applied profile + applied model.
 	err := s.db.QueryRowContext(ctx, `
 		SELECT p.tenant_id, p.base_url, p.provider_type, p.api_key, m.model_id
 		FROM public.ai_model_profiles p
@@ -46,30 +50,11 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 		WHERE p.tenant_id = $1 AND p.is_active = true AND m.is_active = true
 		LIMIT 1
 	`, tenantID).Scan(&item.TenantID, &item.BaseURL, &item.ProviderType, &rawAPIKey, &item.ModelID)
-	if err == nil {
-		apiKey, decryptErr := s.decryptSecret(rawAPIKey)
-		if decryptErr != nil {
-			slog.Error("decrypt tenant model api key failed", "tenant_id", tenantID, "err", decryptErr)
-			return nil, fmt.Errorf("decrypt tenant model api key: %w", decryptErr)
-		}
-		item.APIKey = apiKey
-		return &item, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("query active model profile: %w", err)
-	}
-
-	// Legacy fallback for tenants configured before profiles existed.
-	err = s.db.QueryRowContext(ctx, `
-		SELECT tenant_id, base_url, api_key, model_id
-		FROM public.ai_tenant_settings
-		WHERE tenant_id = $1 AND is_active = true
-	`, tenantID).Scan(&item.TenantID, &item.BaseURL, &rawAPIKey, &item.ModelID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrTenantSettingsNotFound
 		}
-		return nil, fmt.Errorf("query tenant settings: %w", err)
+		return nil, fmt.Errorf("query active model profile: %w", err)
 	}
 
 	apiKey, decryptErr := s.decryptSecret(rawAPIKey)
@@ -78,36 +63,7 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 		return nil, fmt.Errorf("decrypt tenant model api key: %w", decryptErr)
 	}
 	item.APIKey = apiKey
-	item.ProviderType = "openai-compatible"
 	return &item, nil
-}
-
-func (s *SQLRunStore) UpsertTenantSettings(ctx context.Context, settings TenantSettings) error {
-	if s == nil || s.db == nil {
-		return errors.New("database not available")
-	}
-
-	apiKeyToSave, err := s.encryptSecret(strings.TrimSpace(settings.APIKey))
-	if err != nil {
-		return fmt.Errorf("encrypt tenant api key: %w", err)
-	}
-
-	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO public.ai_tenant_settings (
-			tenant_id, base_url, api_key, model_id, is_active, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, true, now(), now())
-		ON CONFLICT (tenant_id) DO UPDATE SET
-			base_url = EXCLUDED.base_url,
-			api_key = EXCLUDED.api_key,
-			model_id = EXCLUDED.model_id,
-			is_active = true,
-			updated_at = now()
-	`, settings.TenantID, strings.TrimRight(strings.TrimSpace(settings.BaseURL), "/"),
-		apiKeyToSave, strings.TrimSpace(settings.ModelID))
-	if err != nil {
-		return fmt.Errorf("upsert tenant settings: %w", err)
-	}
-	return nil
 }
 
 // decryptSecret resolves a stored secret to plaintext. It fails closed: a

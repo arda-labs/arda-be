@@ -24,7 +24,6 @@ type Config struct {
 	// that service; generated catalog entries for it are reported, never
 	// silently ignored.
 	ServiceURLs         map[string]string
-	RAGServiceURL       string
 	ProblemDocsURL      string
 	EnableReadTools     bool
 	EnableHITLProposals bool
@@ -110,7 +109,6 @@ func Load() Config {
 		DatabaseDSN:         os.Getenv("DATABASE_DSN"),
 		ServiceAuthSecret:   os.Getenv("ARDA_SERVICE_AUTH_SECRET"),
 		ServiceURLs:         LoadServiceURLs(),
-		RAGServiceURL:       strings.TrimRight(strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), "/"),
 		ProblemDocsURL:      strings.TrimRight(strings.TrimSpace(envOr("PROBLEM_DOCS_URL", "https://docs.arda.io.vn")), "/"),
 		EnableReadTools:     enableReadTools,
 		EnableHITLProposals: envBoolOr("AI_ENABLE_HITL_PROPOSALS", false),
