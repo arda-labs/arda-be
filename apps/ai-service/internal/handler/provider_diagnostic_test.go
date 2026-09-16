@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arda-labs/arda-be/apps/ai-service/internal/model"
+	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 )
 
 func TestProviderDiagnosticBoundsAndRedacts(t *testing.T) {
-	long := strings.Repeat("x", 4096) + " Authorization: Bearer super-secret-token"
+	long := "Authorization: Bearer super-secret-token " + strings.Repeat("x", 4096)
 	err := &model.ProviderStatusError{StatusCode: 400, Body: long}
 
 	got := providerDiagnostic(err)

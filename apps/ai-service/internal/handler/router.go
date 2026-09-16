@@ -1148,7 +1148,7 @@ func latestUserMessage(messages []inputMessage) string {
 	return ""
 }
 
-var transcriptSecretPattern = regexp.MustCompile(`(?i)(bearer\s+[^\s,;]+|(?:authorization|arda_sid|arda_did)\s*[:=]\s*[^\s,;]+)`)
+var transcriptSecretPattern = regexp.MustCompile(`(?i)(bearer\s+[^\s,;]+|(?:authorization|arda_sid|arda_did)\s*[:=]\s*(?:bearer\s+)?[^\s,;]+)`)
 
 func sanitizeTranscript(value string) string {
 	value = strings.TrimSpace(value)
