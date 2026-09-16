@@ -55,12 +55,16 @@ func NewClientPool(httpClient *http.Client) *ClientPool {
 
 // GetProvider returns a pooled client wrapped in a circuit breaker whose
 // state follows the tenant/configuration key across requests.
-func (p *ClientPool) GetProvider(tenantID, baseURL, apiKey, modelID string) Provider {
-	if p == nil {
-		return NewCircuitBreakerProvider(NewClient(baseURL, apiKey, modelID, nil), 3, 30*time.Second)
+func (p *ClientPool) GetProvider(tenantID, providerType, baseURL, apiKey, modelID string) Provider {
+	kind, ok := NormalizeProviderType(providerType)
+	if !ok {
+		return nil
 	}
-	client := p.GetClient(tenantID, baseURL, apiKey, modelID)
-	key := tenantID + "\x00" + hashConfig(baseURL, apiKey, modelID)
+	if p == nil {
+		return NewCircuitBreakerProvider(NewProviderClient(kind, baseURL, apiKey, modelID, nil), 3, 30*time.Second)
+	}
+	client := p.GetClient(tenantID, string(kind), baseURL, apiKey, modelID)
+	key := tenantID + "\x00" + hashConfig(string(kind), baseURL, apiKey, modelID)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.evictExpiredGuardsLocked(time.Now())
@@ -83,12 +87,16 @@ func (p *ClientPool) SetGatewayToken(token string) {
 	p.gatewayToken = strings.TrimSpace(token)
 }
 
-func (p *ClientPool) GetClient(tenantID, baseURL, apiKey, modelID string) *Client {
+func (p *ClientPool) GetClient(tenantID, providerType, baseURL, apiKey, modelID string) *Client {
+	kind, ok := NormalizeProviderType(providerType)
+	if !ok {
+		return nil
+	}
 	if p == nil {
-		return NewClient(baseURL, apiKey, modelID, nil)
+		return NewProviderClient(kind, baseURL, apiKey, modelID, nil)
 	}
 
-	configHash := hashConfig(baseURL, apiKey, modelID)
+	configHash := hashConfig(string(kind), baseURL, apiKey, modelID)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -112,7 +120,7 @@ func (p *ClientPool) GetClient(tenantID, baseURL, apiKey, modelID string) *Clien
 		p.evictOldestLocked()
 	}
 
-	client := NewClient(baseURL, apiKey, modelID, p.httpClient)
+	client := NewProviderClient(kind, baseURL, apiKey, modelID, p.httpClient)
 	if p.gatewayToken != "" {
 		client.WithGatewayToken(p.gatewayToken)
 	}
@@ -178,8 +186,10 @@ func (p *ClientPool) evictExpiredGuardsLocked(now time.Time) {
 	}
 }
 
-func hashConfig(baseURL, apiKey, modelID string) string {
+func hashConfig(providerType, baseURL, apiKey, modelID string) string {
 	h := sha256.New()
+	h.Write([]byte(providerType))
+	h.Write([]byte("|"))
 	h.Write([]byte(baseURL))
 	h.Write([]byte("|"))
 	h.Write([]byte(apiKey))

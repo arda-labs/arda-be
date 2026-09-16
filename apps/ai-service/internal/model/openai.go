@@ -108,8 +108,16 @@ type Client struct {
 	baseURL      string
 	apiKey       string
 	model        string
+	providerType ProviderType
 	gatewayToken string
 	http         *http.Client
+}
+
+func (c *Client) ProviderType() ProviderType {
+	if c == nil {
+		return ProviderOpenAICompatible
+	}
+	return c.providerType
 }
 
 // ModelID and ProviderName expose only non-secret routing metadata for audit
@@ -155,12 +163,7 @@ func (c *Client) Probe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-	if c.gatewayToken != "" {
-		req.Header.Set("cf-aig-authorization", "Bearer "+c.gatewayToken)
-	}
+	c.applyHeaders(req)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
@@ -178,6 +181,21 @@ func (c *Client) Probe(ctx context.Context) error {
 func (c *Client) WithGatewayToken(token string) *Client {
 	c.gatewayToken = strings.TrimSpace(token)
 	return c
+}
+
+func (c *Client) applyHeaders(req *http.Request) {
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	if c.gatewayToken != "" {
+		req.Header.Set("cf-aig-authorization", "Bearer "+c.gatewayToken)
+	}
+	if c.providerType == ProviderOpenCodeGo {
+		req.Header.Set("User-Agent", "arda-ai-service/1.0")
+		if sessionID := sessionIDFromContext(req.Context()); sessionID != "" {
+			req.Header.Set("x-opencode-session", sessionID)
+		}
+	}
 }
 
 // ChatProbe verifies credentials and reachability with a minimal
@@ -206,12 +224,7 @@ func (c *Client) ChatProbe(ctx context.Context) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-	if c.gatewayToken != "" {
-		req.Header.Set("cf-aig-authorization", "Bearer "+c.gatewayToken)
-	}
+	c.applyHeaders(req)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
@@ -225,14 +238,19 @@ func (c *Client) ChatProbe(ctx context.Context) error {
 }
 
 func NewClient(baseURL, apiKey, model string, httpClient *http.Client) *Client {
+	return NewProviderClient(ProviderOpenAICompatible, baseURL, apiKey, model, httpClient)
+}
+
+func NewProviderClient(providerType ProviderType, baseURL, apiKey, model string, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: defaultTimeout}
 	}
 	return &Client{
-		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		apiKey:  apiKey,
-		model:   model,
-		http:    httpClient,
+		baseURL:      strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		apiKey:       apiKey,
+		model:        model,
+		providerType: providerType,
+		http:         httpClient,
 	}
 }
 
@@ -372,12 +390,7 @@ func (c *Client) doWithRetry(ctx context.Context, payload []byte) (*http.Respons
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "text/event-stream")
-		if c.apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+c.apiKey)
-		}
-		if c.gatewayToken != "" {
-			req.Header.Set("cf-aig-authorization", "Bearer "+c.gatewayToken)
-		}
+		c.applyHeaders(req)
 		response, err := c.http.Do(req)
 		if err != nil {
 			if ctx.Err() != nil {

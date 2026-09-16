@@ -65,6 +65,9 @@ type RouterOptions struct {
 	// ModelGatewayToken is the shared AI Gateway credential (platform secret)
 	// applied to tenant model clients and connection tests.
 	ModelGatewayToken string
+	// ModelSessionSecret derives opaque upstream session identifiers. It must
+	// never be sent upstream itself.
+	ModelSessionSecret string
 	// AllowLocalModelURLs is intended for local development only. Production
 	// must keep private and loopback provider addresses blocked to prevent SSRF.
 	AllowLocalModelURLs bool

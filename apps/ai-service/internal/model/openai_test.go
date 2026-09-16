@@ -108,6 +108,32 @@ func TestStreamChatSendsGatewayTokenHeader(t *testing.T) {
 	}
 }
 
+func TestOpenCodeGoSendsStableSessionAndAgentHeader(t *testing.T) {
+	var session, agent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session = r.Header.Get("x-opencode-session")
+		agent = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	ctx := WithSessionID(context.Background(), StableSessionID("test-secret", "tenant-1", "thread-1"))
+	client := NewProviderClient(ProviderOpenCodeGo, server.URL, "provider-key", "glm-5.3", server.Client())
+	if _, _, err := client.StreamChat(ctx, []Message{{Role: "user", Content: "hi"}}, nil, StreamCallbacks{}); err != nil {
+		t.Fatalf("stream failed: %v", err)
+	}
+	if session == "" || !strings.HasPrefix(session, "arda-") {
+		t.Fatalf("missing opaque OpenCode session header: %q", session)
+	}
+	if session == "thread-1" || strings.Contains(session, "tenant-1") {
+		t.Fatalf("session leaked Arda identifiers: %q", session)
+	}
+	if agent != "arda-ai-service/1.0" {
+		t.Fatalf("unexpected user agent: %q", agent)
+	}
+}
+
 func TestStreamChatRetriesTransientProviderStatus(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

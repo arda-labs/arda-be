@@ -50,12 +50,16 @@ up to two additional Vietnamese search queries and fuses the result sets with
 RRF; it is enabled by default and can be disabled with
 `AI_RAG_QUERY_REWRITE=false`.
 
-The provider must speak the OpenAI-compatible chat-completions SSE protocol
-(cloud providers, vLLM, Ollama, and similar local runtimes all work). The
-handler depends only on the `model.Provider` interface, so additional sources
-can be added later without touching tool or handler code. Model configuration
-is tenant-owned (AI Settings UI): each tenant stores one active base URL, API
-key and model id in `ai_tenant_settings`; the deployment only supplies the
+The provider must speak the OpenAI-compatible chat-completions SSE protocol.
+AI Settings stores a server-owned provider preset alongside each profile:
+`openai`, `openai-compatible`, `opencode-go`, `ollama`, or `vllm`. Presets do
+not allow arbitrary custom headers. In particular, `opencode-go` uses
+`https://opencode.ai/zen/go/v1` for chat-completions models and the service
+adds an opaque, stable `x-opencode-session` plus its own User-Agent for every
+conversation. Anthropic Messages and OpenAI Responses models need their own
+wire adapters and are intentionally not selectable as chat-completions
+profiles yet. Model configuration is tenant-owned (AI Settings UI): each
+tenant stores one applied profile/model, while the deployment supplies the
 shared AI Gateway token and an optional base-URL allowlist. Repeated upstream
 failures are circuit-broken. The agent loop
 streams `TEXT_MESSAGE_*` deltas incrementally, executes only registry tools

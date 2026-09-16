@@ -22,20 +22,22 @@ type profileModelDTO struct {
 }
 
 type profileDTO struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	BaseURL   string            `json:"baseUrl"`
-	APIKey    string            `json:"apiKey"`
-	HasAPIKey bool              `json:"hasApiKey"`
-	IsActive  bool              `json:"isActive"`
-	Models    []profileModelDTO `json:"models"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	BaseURL      string            `json:"baseUrl"`
+	ProviderType string            `json:"providerType"`
+	APIKey       string            `json:"apiKey"`
+	HasAPIKey    bool              `json:"hasApiKey"`
+	IsActive     bool              `json:"isActive"`
+	Models       []profileModelDTO `json:"models"`
 }
 
 type profileUpsertRequest struct {
-	Name    string   `json:"name"`
-	BaseURL string   `json:"baseUrl"`
-	APIKey  string   `json:"apiKey"`
-	Models  []string `json:"models"`
+	Name         string   `json:"name"`
+	BaseURL      string   `json:"baseUrl"`
+	ProviderType string   `json:"providerType"`
+	APIKey       string   `json:"apiKey"`
+	Models       []string `json:"models"`
 }
 
 type profileModelsRequest struct {
@@ -48,13 +50,14 @@ type applyModelRequest struct {
 
 func toProfileDTO(p repository.AIModelProfile) profileDTO {
 	dto := profileDTO{
-		ID:        p.ID,
-		Name:      p.Name,
-		BaseURL:   p.BaseURL,
-		APIKey:    maskAPIKey(p.APIKey),
-		HasAPIKey: strings.TrimSpace(p.APIKey) != "",
-		IsActive:  p.IsActive,
-		Models:    []profileModelDTO{},
+		ID:           p.ID,
+		Name:         p.Name,
+		BaseURL:      p.BaseURL,
+		ProviderType: p.ProviderType,
+		APIKey:       maskAPIKey(p.APIKey),
+		HasAPIKey:    strings.TrimSpace(p.APIKey) != "",
+		IsActive:     p.IsActive,
+		Models:       []profileModelDTO{},
 	}
 	for _, m := range p.Models {
 		dto.Models = append(dto.Models, profileModelDTO{
@@ -109,6 +112,11 @@ func handleProfiles(w http.ResponseWriter, r *http.Request, store runStore, opti
 		req.Name = strings.TrimSpace(req.Name)
 		req.BaseURL = strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
 		req.APIKey = strings.TrimSpace(req.APIKey)
+		providerType, ok := model.NormalizeProviderType(req.ProviderType)
+		if !ok {
+			problem(w, http.StatusBadRequest, "ai.unsupported_provider_type")
+			return
+		}
 		if req.Name == "" || strings.TrimSpace(req.APIKey) == "" {
 			problem(w, http.StatusBadRequest, "ai.missing_required_fields")
 			return
@@ -116,7 +124,7 @@ func handleProfiles(w http.ResponseWriter, r *http.Request, store runStore, opti
 		if !validateProfileURL(w, req.BaseURL, options) {
 			return
 		}
-		profile, err := profilesStore.CreateProfile(r.Context(), scope.TenantID, req.Name, req.BaseURL, req.APIKey, req.Models)
+		profile, err := profilesStore.CreateProfile(r.Context(), scope.TenantID, req.Name, string(providerType), req.BaseURL, req.APIKey, req.Models)
 		if err != nil {
 			writeProfileError(w, err)
 			return
@@ -204,13 +212,26 @@ func handleProfileByID(w http.ResponseWriter, r *http.Request, store runStore, o
 		}
 		req.Name = strings.TrimSpace(req.Name)
 		req.BaseURL = strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
+		providerType := model.ProviderType("")
+		if req.ProviderType != "" {
+			var ok bool
+			providerType, ok = model.NormalizeProviderType(req.ProviderType)
+			if !ok {
+				problem(w, http.StatusBadRequest, "ai.unsupported_provider_type")
+				return
+			}
+		}
+		if req.ProviderType != "" && providerType == "" {
+			problem(w, http.StatusBadRequest, "ai.unsupported_provider_type")
+			return
+		}
 		if req.BaseURL != "" && !validateProfileURL(w, req.BaseURL, options) {
 			return
 		}
 		if isMaskedSecret(req.APIKey) {
 			req.APIKey = ""
 		}
-		profile, err := profilesStore.UpdateProfile(r.Context(), scope.TenantID, profileID, req.Name, req.BaseURL, req.APIKey)
+		profile, err := profilesStore.UpdateProfile(r.Context(), scope.TenantID, profileID, req.Name, string(providerType), req.BaseURL, req.APIKey)
 		if err != nil {
 			writeProfileError(w, err)
 			return
@@ -276,12 +297,17 @@ func handleProfileTest(w http.ResponseWriter, r *http.Request, store repository.
 		return
 	}
 
-	client := model.NewClient(profile.BaseURL, profile.APIKey, modelID, nil)
+	kind, ok := model.NormalizeProviderType(profile.ProviderType)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "result": testConnectionResponse{Success: false, Error: "Provider type không được hỗ trợ"}})
+		return
+	}
+	client := model.NewProviderClient(kind, profile.BaseURL, profile.APIKey, modelID, nil)
 	if options.ModelGatewayToken != "" {
 		client.WithGatewayToken(options.ModelGatewayToken)
 	}
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(model.WithSessionID(r.Context(), model.StableSessionID(options.ModelSessionSecret, scope.TenantID, "profile-test:"+profile.ID+":"+modelID)), 10*time.Second)
 	defer cancel()
 	if err := client.ChatProbe(ctx); err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "result": testConnectionResponse{Success: false, LatencyMs: time.Since(start).Milliseconds(), Error: err.Error()}})

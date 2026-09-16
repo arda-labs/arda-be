@@ -28,8 +28,8 @@ func (s *fakeProfileStore) ListProfiles(_ context.Context, tenantID string) ([]r
 	return s.bucket(tenantID), nil
 }
 
-func (s *fakeProfileStore) CreateProfile(_ context.Context, tenantID, name, baseURL, apiKey string, models []string) (*repository.AIModelProfile, error) {
-	profile := repository.AIModelProfile{ID: "p1", TenantID: tenantID, Name: name, BaseURL: baseURL, APIKey: apiKey}
+func (s *fakeProfileStore) CreateProfile(_ context.Context, tenantID, name, providerType, baseURL, apiKey string, models []string) (*repository.AIModelProfile, error) {
+	profile := repository.AIModelProfile{ID: "p1", TenantID: tenantID, Name: name, ProviderType: providerType, BaseURL: baseURL, APIKey: apiKey}
 	for i, m := range models {
 		profile.Models = append(profile.Models, repository.AIModelProfileModel{ID: fmt.Sprintf("m%d", i), ModelID: m})
 	}
@@ -37,7 +37,7 @@ func (s *fakeProfileStore) CreateProfile(_ context.Context, tenantID, name, base
 	return &profile, nil
 }
 
-func (s *fakeProfileStore) UpdateProfile(ctx context.Context, tenantID, profileID, name, baseURL, apiKey string) (*repository.AIModelProfile, error) {
+func (s *fakeProfileStore) UpdateProfile(ctx context.Context, tenantID, profileID, name, providerType, baseURL, apiKey string) (*repository.AIModelProfile, error) {
 	items := s.bucket(tenantID)
 	for i := range items {
 		if items[i].ID != profileID {
@@ -48,6 +48,9 @@ func (s *fakeProfileStore) UpdateProfile(ctx context.Context, tenantID, profileI
 		}
 		if baseURL != "" {
 			items[i].BaseURL = baseURL
+		}
+		if providerType != "" {
+			items[i].ProviderType = providerType
 		}
 		if apiKey != "" {
 			items[i].APIKey = apiKey

@@ -44,7 +44,8 @@ func runAgentStream(
 ) {
 	r, cancelRun := requestWithRunTimeout(r, options)
 	defer cancelRun()
-	ctx := r.Context()
+	ctx := model.WithSessionID(r.Context(), model.StableSessionID(options.ModelSessionSecret, scope.TenantID, input.ThreadID))
+	r = r.WithContext(ctx)
 	// Refresh the tool-governance snapshot before anything model-visible is
 	// built (SDK types, sandbox surface). A store error keeps the previous
 	// snapshot (ADR-003).
@@ -208,9 +209,13 @@ func selectModelProvider(ctx context.Context, store runStore, scope tools.Contex
 		return nil
 	}
 	if options.ModelPool != nil {
-		return options.ModelPool.GetProvider(scope.TenantID, settings.BaseURL, settings.APIKey, settings.ModelID)
+		return options.ModelPool.GetProvider(scope.TenantID, settings.ProviderType, settings.BaseURL, settings.APIKey, settings.ModelID)
 	}
-	return model.NewCircuitBreakerProvider(model.NewClient(settings.BaseURL, settings.APIKey, settings.ModelID, nil), 3, 30*time.Second)
+	kind, ok := model.NormalizeProviderType(settings.ProviderType)
+	if !ok {
+		return nil
+	}
+	return model.NewCircuitBreakerProvider(model.NewProviderClient(kind, settings.BaseURL, settings.APIKey, settings.ModelID, nil), 3, 30*time.Second)
 }
 
 // modelErrorCode maps a model stream failure to a stable, actionable code so

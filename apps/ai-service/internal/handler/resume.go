@@ -373,6 +373,8 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 		return
 	}
 	run := executed[0].exec.Run
+	ctx = model.WithSessionID(ctx, model.StableSessionID(options.ModelSessionSecret, run.TenantID, run.ExternalThread))
+	r = r.WithContext(ctx)
 	if err := resumeStore.ResumeRun(ctx, run); err != nil {
 		if failureStore, ok := store.(repository.RunFailureSetter); ok {
 			_ = failureStore.FailRun(ctx, run, "ai.resume_conflict")

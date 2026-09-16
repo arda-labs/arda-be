@@ -25,15 +25,16 @@ var (
 // tenant. Each profile holds many model IDs; exactly one profile and one of
 // its models are applied (is_active) and used by the runtime.
 type AIModelProfile struct {
-	ID        string                `json:"id"`
-	TenantID  string                `json:"tenantId"`
-	Name      string                `json:"name"`
-	BaseURL   string                `json:"baseUrl"`
-	APIKey    string                `json:"apiKey"`
-	IsActive  bool                  `json:"isActive"`
-	Models    []AIModelProfileModel `json:"models"`
-	CreatedAt time.Time             `json:"createdAt"`
-	UpdatedAt time.Time             `json:"updatedAt"`
+	ID           string                `json:"id"`
+	TenantID     string                `json:"tenantId"`
+	Name         string                `json:"name"`
+	BaseURL      string                `json:"baseUrl"`
+	ProviderType string                `json:"providerType"`
+	APIKey       string                `json:"apiKey"`
+	IsActive     bool                  `json:"isActive"`
+	Models       []AIModelProfileModel `json:"models"`
+	CreatedAt    time.Time             `json:"createdAt"`
+	UpdatedAt    time.Time             `json:"updatedAt"`
 }
 
 type AIModelProfileModel struct {
@@ -49,8 +50,8 @@ type AIModelProfileModel struct {
 // profile + active model.
 type ModelProfileStore interface {
 	ListProfiles(ctx context.Context, tenantID string) ([]AIModelProfile, error)
-	CreateProfile(ctx context.Context, tenantID, name, baseURL, apiKey string, models []string) (*AIModelProfile, error)
-	UpdateProfile(ctx context.Context, tenantID, profileID, name, baseURL, apiKey string) (*AIModelProfile, error)
+	CreateProfile(ctx context.Context, tenantID, name, providerType, baseURL, apiKey string, models []string) (*AIModelProfile, error)
+	UpdateProfile(ctx context.Context, tenantID, profileID, name, providerType, baseURL, apiKey string) (*AIModelProfile, error)
 	DeleteProfile(ctx context.Context, tenantID, profileID string) error
 	AddProfileModels(ctx context.Context, tenantID, profileID string, models []string) (*AIModelProfile, error)
 	DeleteProfileModel(ctx context.Context, tenantID, profileID, modelID string) error
@@ -83,10 +84,10 @@ func (s *SQLRunStore) profileByID(ctx context.Context, tenantID, profileID strin
 	var p AIModelProfile
 	var rawAPIKey string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, name, base_url, api_key, is_active, created_at, updated_at
+		SELECT id, tenant_id, name, provider_type, base_url, api_key, is_active, created_at, updated_at
 		FROM public.ai_model_profiles
 		WHERE id = $1 AND tenant_id = $2
-	`, profileID, tenantID).Scan(&p.ID, &p.TenantID, &p.Name, &p.BaseURL, &rawAPIKey, &p.IsActive, &p.CreatedAt, &p.UpdatedAt)
+	`, profileID, tenantID).Scan(&p.ID, &p.TenantID, &p.Name, &p.ProviderType, &p.BaseURL, &rawAPIKey, &p.IsActive, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrModelProfileNotFound
@@ -135,7 +136,7 @@ func (s *SQLRunStore) ListProfiles(ctx context.Context, tenantID string) ([]AIMo
 		return nil, errors.New("database not available")
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, tenant_id, name, base_url, api_key, is_active, created_at, updated_at
+		SELECT id, tenant_id, name, provider_type, base_url, api_key, is_active, created_at, updated_at
 		FROM public.ai_model_profiles
 		WHERE tenant_id = $1
 		ORDER BY is_active DESC, name
@@ -149,7 +150,7 @@ func (s *SQLRunStore) ListProfiles(ctx context.Context, tenantID string) ([]AIMo
 	for rows.Next() {
 		var p AIModelProfile
 		var rawAPIKey string
-		if err := rows.Scan(&p.ID, &p.TenantID, &p.Name, &p.BaseURL, &rawAPIKey, &p.IsActive, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.Name, &p.ProviderType, &p.BaseURL, &rawAPIKey, &p.IsActive, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		apiKey, decryptErr := s.decryptSecret(rawAPIKey)
@@ -173,7 +174,7 @@ func (s *SQLRunStore) ListProfiles(ctx context.Context, tenantID string) ([]AIMo
 	return profiles, nil
 }
 
-func (s *SQLRunStore) CreateProfile(ctx context.Context, tenantID, name, baseURL, apiKey string, models []string) (*AIModelProfile, error) {
+func (s *SQLRunStore) CreateProfile(ctx context.Context, tenantID, name, providerType, baseURL, apiKey string, models []string) (*AIModelProfile, error) {
 	if s == nil || s.db == nil {
 		return nil, errors.New("database not available")
 	}
@@ -197,9 +198,9 @@ func (s *SQLRunStore) CreateProfile(ctx context.Context, tenantID, name, baseURL
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO public.ai_model_profiles (id, tenant_id, name, base_url, api_key, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, false, now(), now())
-	`, id, tenantID, name, baseURL, encrypted); err != nil {
+		INSERT INTO public.ai_model_profiles (id, tenant_id, name, provider_type, base_url, api_key, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, false, now(), now())
+	`, id, tenantID, name, providerType, baseURL, encrypted); err != nil {
 		if isUniqueViolation(err) {
 			return nil, ErrModelProfileNameTaken
 		}
@@ -215,7 +216,7 @@ func (s *SQLRunStore) CreateProfile(ctx context.Context, tenantID, name, baseURL
 	return s.profileByID(ctx, tenantID, id)
 }
 
-func (s *SQLRunStore) UpdateProfile(ctx context.Context, tenantID, profileID, name, baseURL, apiKey string) (*AIModelProfile, error) {
+func (s *SQLRunStore) UpdateProfile(ctx context.Context, tenantID, profileID, name, providerType, baseURL, apiKey string) (*AIModelProfile, error) {
 	if s == nil || s.db == nil {
 		return nil, errors.New("database not available")
 	}
@@ -232,6 +233,10 @@ func (s *SQLRunStore) UpdateProfile(ctx context.Context, tenantID, profileID, na
 	if baseURL == "" {
 		baseURL = existing.BaseURL
 	}
+	providerType = strings.TrimSpace(providerType)
+	if providerType == "" {
+		providerType = existing.ProviderType
+	}
 	encrypted, err := s.encryptSecret(apiKey)
 	if err != nil {
 		return nil, err
@@ -245,9 +250,9 @@ func (s *SQLRunStore) UpdateProfile(ctx context.Context, tenantID, profileID, na
 
 	if _, err := s.db.ExecContext(ctx, `
 		UPDATE public.ai_model_profiles
-		SET name = $3, base_url = $4, api_key = $5, updated_at = now()
+		SET name = $3, provider_type = $4, base_url = $5, api_key = $6, updated_at = now()
 		WHERE id = $1 AND tenant_id = $2
-	`, profileID, tenantID, name, baseURL, encrypted); err != nil {
+	`, profileID, tenantID, name, providerType, baseURL, encrypted); err != nil {
 		if isUniqueViolation(err) {
 			return nil, ErrModelProfileNameTaken
 		}

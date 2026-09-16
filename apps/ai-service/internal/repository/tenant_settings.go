@@ -19,10 +19,11 @@ var (
 // owned by the tenant through the AI Settings UI; the deployment only supplies
 // shared security controls (gateway token, base-URL allowlist).
 type TenantSettings struct {
-	TenantID string `json:"tenantId"`
-	BaseURL  string `json:"baseUrl"`
-	APIKey   string `json:"apiKey"`
-	ModelID  string `json:"modelId"`
+	TenantID     string `json:"tenantId"`
+	BaseURL      string `json:"baseUrl"`
+	ProviderType string `json:"providerType"`
+	APIKey       string `json:"apiKey"`
+	ModelID      string `json:"modelId"`
 }
 
 type TenantSettingsStore interface {
@@ -39,12 +40,12 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 	var rawAPIKey string
 	// Preferred source: the applied profile + applied model.
 	err := s.db.QueryRowContext(ctx, `
-		SELECT p.tenant_id, p.base_url, p.api_key, m.model_id
+		SELECT p.tenant_id, p.base_url, p.provider_type, p.api_key, m.model_id
 		FROM public.ai_model_profiles p
 		JOIN public.ai_profile_models m ON m.profile_id = p.id
 		WHERE p.tenant_id = $1 AND p.is_active = true AND m.is_active = true
 		LIMIT 1
-	`, tenantID).Scan(&item.TenantID, &item.BaseURL, &rawAPIKey, &item.ModelID)
+	`, tenantID).Scan(&item.TenantID, &item.BaseURL, &item.ProviderType, &rawAPIKey, &item.ModelID)
 	if err == nil {
 		apiKey, decryptErr := s.decryptSecret(rawAPIKey)
 		if decryptErr != nil {
@@ -77,6 +78,7 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 		return nil, fmt.Errorf("decrypt tenant model api key: %w", decryptErr)
 	}
 	item.APIKey = apiKey
+	item.ProviderType = "openai-compatible"
 	return &item, nil
 }
 

@@ -17,12 +17,17 @@ const systemPrompt = `Bạn viết lại câu hỏi tra cứu tài liệu thành
 
 // Service rewrites queries with the tenant's active model configuration.
 type Service struct {
-	settings repository.TenantSettingsStore
-	pool     *model.ClientPool
+	settings      repository.TenantSettingsStore
+	pool          *model.ClientPool
+	sessionSecret string
 }
 
-func New(settings repository.TenantSettingsStore, pool *model.ClientPool) *Service {
-	return &Service{settings: settings, pool: pool}
+func New(settings repository.TenantSettingsStore, pool *model.ClientPool, sessionSecret ...string) *Service {
+	secret := ""
+	if len(sessionSecret) > 0 {
+		secret = sessionSecret[0]
+	}
+	return &Service{settings: settings, pool: pool, sessionSecret: secret}
 }
 
 // Rewrite returns alternative queries for the given question.
@@ -35,7 +40,13 @@ func (s *Service) Rewrite(ctx context.Context, tenantID, query string) ([]string
 		return nil, err
 	}
 
-	provider := s.pool.GetProvider(tenantID, settings.BaseURL, settings.APIKey, settings.ModelID)
+	provider := s.pool.GetProvider(tenantID, settings.ProviderType, settings.BaseURL, settings.APIKey, settings.ModelID)
+	if provider == nil {
+		return nil, nil
+	}
+	// An agent request already carries its conversation session. Direct RAG
+	// queries do not, so give the provider a stable opaque rewrite session.
+	ctx = model.WithSessionID(ctx, model.StableSessionID(s.sessionSecret, tenantID, "rewrite:"+query))
 	var out strings.Builder
 	_, _, err = provider.StreamChat(ctx, []model.Message{
 		{Role: "system", Content: systemPrompt},

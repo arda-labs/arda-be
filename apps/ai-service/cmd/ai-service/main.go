@@ -114,7 +114,7 @@ func main() {
 	modelPool := model.NewClientPool(nil)
 	modelPool.SetGatewayToken(cfg.ModelGatewayToken)
 	if knowledgeSvc != nil && cfg.RAGQueryRewrite {
-		knowledgeSvc.SetQueryRewriter(rewrite.New(store, modelPool))
+		knowledgeSvc.SetQueryRewriter(rewrite.New(store, modelPool, cfg.ServiceAuthSecret))
 	}
 
 	routerOptions := handler.RouterOptions{
@@ -124,6 +124,7 @@ func main() {
 		ModelSystemPrompt:     cfg.ModelSystemPrompt,
 		ModelBaseURLAllowlist: cfg.ModelBaseURLAllowlist,
 		ModelGatewayToken:     cfg.ModelGatewayToken,
+		ModelSessionSecret:    cfg.ServiceAuthSecret,
 		AllowLocalModelURLs:   cfg.Mode != "production",
 		AgentRunTimeout:       cfg.AgentRunTimeout,
 		RAGService:            knowledgeSvc,

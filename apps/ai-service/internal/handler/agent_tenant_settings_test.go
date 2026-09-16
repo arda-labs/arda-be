@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
+	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
@@ -79,5 +80,34 @@ func TestAgentLoopDevelopmentModeUsesEnvProvider(t *testing.T) {
 	}
 	if text != "Xin chào!" {
 		t.Fatalf("development mode should stream via env provider, got %q (events %v)", text, eventTypes(events))
+	}
+}
+
+func TestAgentLoopOpenCodeGoUsesOpaqueStableThreadSession(t *testing.T) {
+	var sessions []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sessions = append(sessions, r.Header.Get("x-opencode-session"))
+		if got := r.Header.Get("User-Agent"); got != "arda-ai-service/1.0" {
+			t.Errorf("User-Agent = %q", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	store := &fakeSettingsStore{settings: map[string]*repository.TenantSettings{
+		"tenant-1": {TenantID: "tenant-1", ProviderType: "opencode-go", BaseURL: server.URL, APIKey: "key", ModelID: "glm-5.3"},
+	}}
+	router := NewRouterWithOptions(store, tools.NewRegistry(handlerTestTool{}), RouterOptions{ModelSessionSecret: "test-secret"})
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/agent", strings.NewReader(`{"threadId":"thread-1","runId":"run-1","messages":[{"role":"user","content":"hello"}]}`))
+	gatewayHeaders(req)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK || len(sessions) != 1 || sessions[0] == "" {
+		t.Fatalf("expected OpenCode request with session, code=%d sessions=%q", res.Code, sessions)
+	}
+	if sessions[0] != model.StableSessionID("test-secret", "tenant-1", "thread-1") {
+		t.Fatalf("unexpected session: %q", sessions[0])
 	}
 }
