@@ -43,16 +43,18 @@ machine-readable code reached the model but not the audit trail.
 
 ### 1. One deadline tree
 
-The sandbox wall clock (`DefaultExecutionTimeout`, currently 3 000 ms) is the
-**authoritative ceiling** for any interactive SDK call. Every other timeout is
-either below it or a non-binding backstop:
+The **caller's deadline** is the authoritative ceiling for any interactive SDK
+call: the handler wraps each tool execution with that tool's timeout, and the
+sandbox inherits it (`executionBudget`). `DefaultExecutionTimeout` (3 000 ms)
+applies only to deadline-less callers; `MaxExecutionTimeout` (30 000 ms) caps
+the rest. Every other timeout is either below the ceiling or a non-binding
+backstop:
 
 ```text
 agent run (AI_AGENT_RUN_TIMEOUT_SECONDS, 300 s)
 └── SSE request
-    └── meta-tool execution (`execute` 4 000 ms ≥ sandbox ceiling + overhead,
-        so the sandbox reports its own timeout before the handler does)
-        └── sandbox wall clock 3 000 ms
+    └── meta-tool execution (`execute`, currently 10 000 ms — the caller)
+        └── sandbox wall clock = caller deadline (default 3 000 ms, cap 30 000 ms)
             ├── SDK method ctx = min(catalog entry timeout, remaining wall clock)
             │   ├── mandatory stage  — fail-closed, may use the full remaining ctx
             │   └── optional stage   — own cap, must never block mandatory work
@@ -61,9 +63,11 @@ agent run (AI_AGENT_RUN_TIMEOUT_SECONDS, 300 s)
 
 Normative rules:
 
-1. **R1.** No catalog entry may declare a timeout greater than the sandbox
-   ceiling. `docs.problemLookup` (was 5 000 ms) was lowered to 2 000 ms in this
-   pass; the checker enforces the rule for every entry.
+1. **R1.** No catalog entry may declare a timeout greater than the caller
+   ceiling (`execute`). `docs.problemLookup` (was 5 000 ms) was lowered to
+   2 000 ms, and `knowledge.search` (was 3 000 ms) was raised to 8 000 ms after
+   production measured embedding round-trips above 3 s; the checker enforces
+   the rule for every entry.
 2. **R2.** A pipeline with optional stages must run them **concurrently** with
    the mandatory stage, under a constant cap strictly smaller than the ceiling
    (`knowledge.search`: `rewriteBudget` = 1 500 ms), and must **skip** optional
@@ -172,6 +176,7 @@ Invariants to keep green:
 |---|---|---|
 | P0 (done, `e037b220`…`bd1f575f`) | Bounded rewrite; sandbox error codes; audit status/code; NATS publish fix | `go test ./...`; production `ai_rag_runs` rows appear |
 | P1 (done, 2026-09-16) | Both check scripts + `ai-invariants.yml`; `docs.problemLookup` timeout; taxonomy table; doc drift sweep; retired rag-service client and legacy tenant-settings path removed; 25 orphan problem pages removed | `check-ai-budgets`/`check-ai-errors` green and red on a seeded violation; `go test ./...`; `bun run typecheck` (MFE) |
+| P1b (done, 2026-09-17) | Sandbox wall clock follows the caller deadline (`executionBudget`, cap 30 s); `execute` 10 s; `knowledge.search` 8 s after measured embedding spikes; RAG-run `hit_ids` encoding fixed; `matchScore` reports cosine again | `check-ai-budgets`; new `executionBudget` unit test; `go test ./...` |
 | P2 (follow-up) | Segment latency fields/spans per `audit-observability.md`; alert on publish failures | Grafana/dashboards show model TTFT vs retrieval vs domain latency |
 | P3 (async) | Long-running tool pattern (R5): job + notification, sandbox only starts it | First real export/report tool uses the pattern |
 

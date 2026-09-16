@@ -53,8 +53,10 @@ RRF; it is enabled by default and can be disabled with
 with the primary query under a bounded budget (1.5s): a slow model degrades
 recall instead of failing the call, and rewrite variants are skipped when the
 request deadline no longer leaves room for an embedding round-trip plus a
-search. Inside the Code Mode sandbox the enclosing 3s tool deadline is what
-bounds the whole retrieval, so the budget is never exceeded on purpose.
+search. Inside the Code Mode sandbox the caller deadline bounds the whole
+retrieval: `knowledge.search` declares 8 s (external embedding spikes above 3 s
+are measured) under the 10 s `execute` ceiling, while the sandbox default for
+deadline-less callers stays 3 s.
 
 The provider must speak the OpenAI-compatible chat-completions SSE protocol.
 AI Settings stores a server-owned provider preset alongside each profile:

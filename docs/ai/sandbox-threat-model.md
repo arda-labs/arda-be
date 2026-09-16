@@ -90,8 +90,13 @@ recurse(0);
 **Impact:** CPU starvation, blocking the goroutine serving the run.
 
 **Mitigation:**
-- Hard timeout of **3 000 ms** enforced via `vm.Interrupt()` in a separate
-  goroutine. The interrupt fires regardless of script state.
+- Wall-clock timeout enforced via `vm.Interrupt()` in a separate goroutine. The
+  interrupt fires regardless of script state. The budget **follows the caller's
+  deadline** (the `execute` meta-tool definition, currently 10 000 ms) instead
+  of a fixed 3 000 ms, because a script must not outlive the HTTP request
+  waiting on it; deadline-less callers fall back to
+  `DefaultExecutionTimeout` (3 000 ms) and `MaxExecutionTimeout` (30 000 ms)
+  caps any longer caller.
 - Maximum concurrent sandbox VMs per pod: **8**, plus a per-tenant cap of **3**
   (`MaxConcurrentSandboxesPerTenant`). Excess requests fail fast with
   `ai.sandbox_busy` instead of queueing, so one tenant cannot occupy every slot.
@@ -99,7 +104,7 @@ recurse(0);
   fires within tens of milliseconds in practice.
 
 **Residual risk:** Medium. A tight loop between two opcode checks could delay
-interrupt by ~1 ms, but the 3-second ceiling is hard.
+interrupt by ~1 ms, but the caller-deadline ceiling is hard.
 
 ---
 
@@ -119,8 +124,8 @@ while (true) { arr.push(new Array(1_000_000).fill("x")); }
 - Script size capped at **16 KiB** and result output capped at **64 KiB**; the
   output is rejected (`ai.sandbox_output_too_large`) rather than truncated.
 - Console log buffer capped at **4 KiB** per invocation.
-- API budgets (50 calls total, 20 per method) plus the 3-second interrupt bound
-  how much work a script can do.
+- API budgets (50 calls total, 20 per method) plus the caller-deadline interrupt
+  bound how much work a script can do.
 - **No in-process memory cap exists.** Goja does not expose allocation limits,
   so a single large allocation can still pressure the pod. The Kubernetes pod
   memory limit is the hard backstop.
@@ -212,7 +217,8 @@ ai-service connection pool.
   and terminates the sandbox.
 - Per-method **per-run rate limit**: each unique `arda.*` method may be called
   at most **20 times** per invocation.
-- The 3-second timeout acts as the final backstop.
+- The caller-deadline wall clock (≤ `MaxExecutionTimeout`, 30 s) acts as the
+  final backstop.
 
 **Residual risk:** Low. 50 calls × 100 ms average domain latency = 5 seconds,
 which the timeout handles before the budget is exhausted.

@@ -177,13 +177,17 @@ POC but should be benchmarked.
 
 ### 4.3 Domain API Latency Budget inside Sandbox
 
-Each SDK method call inside the sandbox counts against the **3-second total
-sandbox timeout**. Individual domain API calls have their own timeouts (per
-`CatalogEntry.TimeoutMs`), but the sandbox interrupt fires regardless.
+Each SDK method call inside the sandbox counts against the **caller deadline the
+sandbox inherits** (the `execute` meta-tool definition, currently 10 000 ms; the
+3 000 ms `DefaultExecutionTimeout` applies only to deadline-less callers, and
+`MaxExecutionTimeout` caps at 30 000 ms). Individual domain API calls have their
+own timeouts (per `CatalogEntry.TimeoutMs`), but the sandbox interrupt fires
+regardless.
 
-Recommendation: set domain API timeouts to **1 500 ms** inside the sandbox
-(vs. 3 000 ms for direct tool calls) so that two sequential domain calls still
-fit within the 3-second budget.
+Recommendation: set domain API timeouts to **1 500 ms** for quick internal
+calls, and declare a larger, explicit timeout only for methods that must make
+external network calls (`knowledge.search`: 8 000 ms after production measured
+embedding gateway spikes above 3 s).
 
 Multi-stage tools that fan out internally (e.g. `arda.knowledge.search`:
 optional LLM query rewrite → embedding round-trip → hybrid search) must bound
@@ -192,8 +196,7 @@ by their own generous client timeouts. `knowledge.search` runs its rewrite
 concurrently under a 1.5 s cap and skips rewrite variants once the remaining
 budget no longer covers an embedding round-trip plus a search; the primary
 query stays fail-closed. Without that rule an inner 10 s LLM call silently
-consumes the whole 3 s sandbox budget and every call fails with
-`ai.sandbox_timeout`.
+consumes the caller budget and every call fails with `ai.sandbox_timeout`.
 
 ---
 
