@@ -227,7 +227,7 @@ func (s *SQLRunStore) StartTool(ctx context.Context, run RunContext, toolName st
 		FROM public.ai_runs
 		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_run_id = $3
 		RETURNING id::text
-	`, run.TenantID, run.ActorUserID, run.ExternalRun, toolName, toolVersion, risk, jsonObject(argumentsRedacted), policyDecision).Scan(&executionID)
+	`, run.TenantID, run.ActorUserID, run.ExternalRun, toolName, fmt.Sprint(toolVersion), risk, jsonObject(argumentsRedacted), policyDecision).Scan(&executionID)
 	if err != nil {
 		return "", fmt.Errorf("persist AI tool execution: %w", err)
 	}

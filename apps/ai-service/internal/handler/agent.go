@@ -948,7 +948,7 @@ func executeModelToolCall(
 	var executionID string
 	if hasToolStore {
 		var startErr error
-		executionID, startErr = toolStore.StartTool(ctx, scopeRun, definition.Name, definition.Version, definition.Risk, "allow_model", sanitizeTranscript(call.Arguments))
+		executionID, startErr = toolStore.StartTool(ctx, scopeRun, definition.Name, definition.Version, definition.Risk, "allow_model", redactArgumentsJSON(call.Arguments))
 		if startErr != nil {
 			slog.Error("start AI tool execution failed; refusing to run tool",
 				"err", startErr,
