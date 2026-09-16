@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -357,11 +358,19 @@ func (r *Repository) SaveRun(ctx context.Context, tenantID, query string, retrie
 	if tenantID != "" {
 		tID = &tenantID
 	}
+	// ai_rag_runs.hit_ids is text[]; pgx cannot encode a []int64 into it
+	// (every insert failed with "cannot find encode plan" until this
+	// conversion existed), which silently left runId empty and the feedback
+	// surface unusable.
+	hitIDText := make([]string, 0, len(hitIDs))
+	for _, id := range hitIDs {
+		hitIDText = append(hitIDText, strconv.FormatInt(id, 10))
+	}
 	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO public.ai_rag_runs (tenant_id, query, retrieved_count, reranked_count, hit_ids, latency_ms, model_used)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id::text
-	`, tID, query, retrievedCount, rerankedCount, ardapg.Driver.NotNil(hitIDs), latencyMs, modelUsed).Scan(&runID)
+	`, tID, query, retrievedCount, rerankedCount, ardapg.Driver.NotNil(hitIDText), latencyMs, modelUsed).Scan(&runID)
 	return runID, err
 }
 
@@ -394,6 +403,9 @@ type candidateHit struct {
 	EffectiveFrom   *time.Time
 	EffectiveTo     *time.Time
 	URL             *string
+	// Similarity is the cosine similarity of this chunk to the query (0 when
+	// the search ran without a query vector).
+	Similarity float64
 }
 
 // rankedID is one leg's ranked chunk: chunkID plus its 1-based rank.
@@ -467,7 +479,8 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 		vecStr := floatVectorToString(queryVector)
 		vecQuery := `
 			SELECT c.chunk_id, c.source_version_id, s.id AS source_id, s.id::text AS source_key, v.version, s.title, COALESCE(c.heading, ''), c.content,
-			       s.effective_from, s.effective_to, v.content_url
+			       s.effective_from, s.effective_to, v.content_url,
+			       1 - (c.embedding <=> $2::vector) AS similarity
 			  FROM public.ai_knowledge_chunks c
 			  JOIN public.ai_knowledge_source_versions v ON v.id = c.source_version_id
 			  JOIN public.ai_knowledge_sources s ON s.id = v.source_id
@@ -491,7 +504,7 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 		rank := 1
 		for rows.Next() {
 			var c candidateHit
-			if err := rows.Scan(&c.ChunkID, &c.SourceVersionID, &c.SourceID, &c.SourceKey, &c.Version, &c.Title, &c.Heading, &c.Content, &c.EffectiveFrom, &c.EffectiveTo, &c.URL); err != nil {
+			if err := rows.Scan(&c.ChunkID, &c.SourceVersionID, &c.SourceID, &c.SourceKey, &c.Version, &c.Title, &c.Heading, &c.Content, &c.EffectiveFrom, &c.EffectiveTo, &c.URL, &c.Similarity); err != nil {
 				return nil, fmt.Errorf("scan vector knowledge result: %w", err)
 			}
 			vectorRanks = append(vectorRanks, rankedID{chunkID: c.ChunkID, rank: rank})
@@ -507,9 +520,20 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 	// count if they also clear the cosine floor, so lexical token overlap
 	// alone cannot produce filler hits.
 	var ftsRanks []rankedID
+	ftsSimilarity := `0::float8 AS similarity`
+	ftsFloor := ""
+	ftsArgs := []any{tID, queryText, topK * 2}
+	if len(queryVector) > 0 {
+		// Same cosine expression as the vector leg, so both legs report the
+		// same similarity for the same chunk.
+		ftsSimilarity = `1 - (c.embedding <=> $5::vector) AS similarity`
+		ftsFloor = ` AND ($4::float8 <= 0 OR 1 - (c.embedding <=> $5::vector) >= $4::float8)`
+		ftsArgs = append(ftsArgs, minSimilarity, floatVectorToString(queryVector))
+	}
 	ftsQuery := `
 		SELECT c.chunk_id, c.source_version_id, s.id AS source_id, s.id::text AS source_key, v.version, s.title, COALESCE(c.heading, ''), c.content,
-		       s.effective_from, s.effective_to, v.content_url
+		       s.effective_from, s.effective_to, v.content_url,
+		       ` + ftsSimilarity + `
 		  FROM public.ai_knowledge_chunks c
 		  JOIN public.ai_knowledge_source_versions v ON v.id = c.source_version_id
 		  JOIN public.ai_knowledge_sources s ON s.id = v.source_id
@@ -521,14 +545,8 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 		   AND v.status = 'PUBLISHED'
 		   AND (s.effective_from IS NULL OR s.effective_from <= now())
 		   AND (s.effective_to IS NULL OR s.effective_to > now())
-		   AND s.deleted_at IS NULL
-	`
-	ftsArgs := []any{tID, queryText, topK * 2}
-	if len(queryVector) > 0 {
-		ftsQuery += ` AND ($4::float8 <= 0 OR 1 - (c.embedding <=> $5::vector) >= $4::float8)`
-		ftsArgs = append(ftsArgs, minSimilarity, floatVectorToString(queryVector))
-	}
-	ftsQuery += ` LIMIT $3`
+		   AND s.deleted_at IS NULL` + ftsFloor + `
+		 LIMIT $3`
 	rows, err := r.db.QueryContext(ctx, ftsQuery, ftsArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("full-text knowledge search: %w", err)
@@ -537,7 +555,7 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 	rank := 1
 	for rows.Next() {
 		var c candidateHit
-		if err := rows.Scan(&c.ChunkID, &c.SourceVersionID, &c.SourceID, &c.SourceKey, &c.Version, &c.Title, &c.Heading, &c.Content, &c.EffectiveFrom, &c.EffectiveTo, &c.URL); err != nil {
+		if err := rows.Scan(&c.ChunkID, &c.SourceVersionID, &c.SourceID, &c.SourceKey, &c.Version, &c.Title, &c.Heading, &c.Content, &c.EffectiveFrom, &c.EffectiveTo, &c.URL, &c.Similarity); err != nil {
 			return nil, fmt.Errorf("scan full-text knowledge result: %w", err)
 		}
 		ftsRanks = append(ftsRanks, rankedID{chunkID: c.ChunkID, rank: rank})
@@ -566,7 +584,7 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 			Title:           c.Title,
 			Heading:         c.Heading,
 			Content:         c.Content,
-			Score:           s.score,
+			Score:           c.Similarity,
 			Citation:        citation,
 			CitationRef: CitationRef{
 				SourceID: c.SourceID, SourceVersionID: c.SourceVersionID,

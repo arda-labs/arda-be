@@ -44,8 +44,12 @@ func RegisterKnowledgeCatalog(reg *DispatcherRegistry, rag ragSearcher) {
 			Kind:                "read",
 			RequiredPermissions: []string{"ai.knowledge.read"},
 			Risk:                "low",
-			Timeout:             3 * time.Second,
-			Enabled:             true,
+			// Mandatory embedding round-trip to an external provider; spikes
+			// above 3s were observed in production (2026-09-16) and made the
+			// tool fail with ai.sandbox_timeout. Bounded by the execute
+			// meta-tool deadline (sandbox wall clock follows the caller).
+			Timeout: 8 * time.Second,
+			Enabled: true,
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
 			query, _ := args["query"].(string)

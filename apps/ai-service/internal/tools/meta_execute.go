@@ -32,7 +32,11 @@ func (t *ExecuteMetaTool) Definition() Definition {
 		Kind:        "read",
 		Description: "Execute sandboxed JavaScript code against the arda.* SDK to query, aggregate, filter, or propose actions across Arda domain services.",
 		Risk:        "low",
-		Timeout:     4 * time.Second,
+		// The sandbox wall clock follows this deadline (sandbox.Execute). It is
+		// deliberately above the slowest catalog method (knowledge.search, 8s)
+		// because that call has to survive external-provider latency spikes;
+		// every other method keeps its own, tighter timeout.
+		Timeout: 10 * time.Second,
 		Parameters: json.RawMessage(`{
 			"type": "object",
 			"properties": {

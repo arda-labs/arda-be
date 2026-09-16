@@ -169,6 +169,35 @@ func TestEngine_EnforcesTimeout(t *testing.T) {
 	}
 }
 
+// The sandbox wall clock follows the caller's deadline (the handler wraps
+// each tool with its timeout) instead of a fixed 3s, which is what let an
+// external embedding call outlive a hard-coded sandbox budget.
+func TestExecutionBudgetFollowsCallerDeadline(t *testing.T) {
+	if got := executionBudget(context.Background()); got != DefaultExecutionTimeout {
+		t.Fatalf("deadline-less caller: got %v, want %v", got, DefaultExecutionTimeout)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got := executionBudget(ctx)
+	if got < 4900*time.Millisecond || got > 5*time.Second {
+		t.Fatalf("5s caller deadline: got %v, want ~5s", got)
+	}
+
+	longCtx, longCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer longCancel()
+	if got := executionBudget(longCtx); got != MaxExecutionTimeout {
+		t.Fatalf("long caller deadline: got %v, want the %v cap", got, MaxExecutionTimeout)
+	}
+
+	expiredCtx, expiredCancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer expiredCancel()
+	time.Sleep(time.Millisecond)
+	if got := executionBudget(expiredCtx); got != DefaultExecutionTimeout {
+		t.Fatalf("expired caller deadline: got %v, want %v", got, DefaultExecutionTimeout)
+	}
+}
+
 func TestEngine_EnforcesCallBudget(t *testing.T) {
 	engine, _ := setupTestEngine()
 	ctx := context.Background()

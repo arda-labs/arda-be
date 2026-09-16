@@ -17,7 +17,11 @@ import (
 
 const (
 	DefaultExecutionTimeout = 3000 * time.Millisecond
-	MaxSDKMethodCalls       = 50
+	// MaxExecutionTimeout caps a caller whose deadline is longer: a sandbox
+	// script must never hold a slot indefinitely. The effective wall clock is
+	// the caller's remaining deadline when it is shorter (see Execute).
+	MaxExecutionTimeout = 30 * time.Second
+	MaxSDKMethodCalls   = 50
 	// MaxMethodCallsPerRun bounds repeated calls to the same SDK method so one
 	// script cannot amplify a single endpoint.
 	MaxMethodCallsPerRun   = 20
@@ -96,6 +100,23 @@ func (e *Engine) tenantSemaphore(tenantID string) chan struct{} {
 	sem := make(chan struct{}, MaxConcurrentSandboxesPerTenant)
 	e.tenants[tenantID] = sem
 	return sem
+}
+
+// executionBudget returns the wall clock for one script execution. The
+// caller's remaining deadline wins when present (the handler wraps every tool
+// with that tool's timeout), the fallback default applies to deadline-less
+// callers (tests, internal use), and MaxExecutionTimeout caps it.
+func executionBudget(ctx context.Context) time.Duration {
+	budget := DefaultExecutionTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 {
+			budget = remaining
+		}
+	}
+	if budget > MaxExecutionTimeout {
+		budget = MaxExecutionTimeout
+	}
+	return budget
 }
 
 // Execute runs the provided JavaScript in an isolated Goja VM with arda.* bindings.
@@ -299,8 +320,12 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 
 	_ = vm.Set("arda", ardaObj)
 
-	// 5. Setup Interrupt Timeout
-	timer := time.AfterFunc(DefaultExecutionTimeout, func() {
+	// 5. Setup Interrupt Timeout. The wall clock follows the caller's deadline
+	// when one is set: the handler wraps every tool execution with that tool's
+	// timeout, and a script must not outlive the caller waiting on it. Without
+	// a deadline the default applies, and MaxExecutionTimeout caps a caller
+	// that would otherwise allow minutes.
+	timer := time.AfterFunc(executionBudget(ctx), func() {
 		vm.Interrupt(ErrSandboxTimeout.Error())
 	})
 	defer timer.Stop()

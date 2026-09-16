@@ -1,21 +1,24 @@
-import { readFileSync, readdirSync, statSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 /**
  * AI deadline-budget gate (ADR-004).
  *
- * The Code Mode sandbox wall clock is the authoritative ceiling for any
- * interactive SDK call. Historically five independent timeout layers existed
- * and nothing connected them; arda.knowledge.search died for weeks with
- * ai.sandbox_timeout because an inner 10s LLM call could not fit a 3s sandbox.
+ * The Code Mode sandbox wall clock follows the caller's deadline (the
+ * `execute` meta-tool definition), with DefaultExecutionTimeout as the
+ * no-deadline fallback and MaxExecutionTimeout as the hard cap. Historically
+ * the layers were unrelated: a 3s sandbox, a 4s meta-tool, and a 10s inner LLM
+ * call, which made arda.knowledge.search fail with ai.sandbox_timeout for
+ * weeks because an external embedding round-trip cannot fit 3s.
  *
  * This check parses the actual Go constants and fails when:
- *   R1. a catalog entry (or in-catalog client) timeout exceeds the ceiling;
- *   R2. the optional-stage budget of a multi-stage tool does not fit the
+ *   R1. a catalog entry (or an in-catalog client) timeout exceeds the caller
+ *       ceiling — the `execute` meta-tool timeout that the sandbox inherits;
+ *   R2. the optional-stage budget of a multi-stage tool does not fit that
  *       ceiling together with the minimum continuation budget;
- *   R4. the `execute` meta-tool timeout is below the ceiling (the sandbox must
- *       report its own timeout before the handler does).
+ *   R4. the fallback default or the hard cap is inconsistent with the caller
+ *       ceiling (default ≤ execute ≤ max).
  *
  * Run with --report to print violations without failing.
  */
@@ -52,18 +55,56 @@ function collect(content, regex, rel) {
   return out
 }
 
-// --- Sandbox ceiling -------------------------------------------------------
+const timeoutRe = /Timeout:\s+(\d+)\s*\*\s*time\.(Second|Millisecond)/g
+
+// --- Sandbox fallback + hard cap -------------------------------------------
 
 const engineRel = "apps/ai-service/internal/sandbox/engine.go"
 const engine = read(engineRel)
-const ceilingMatch = engine.match(
+const defaultMatch = engine.match(
   /DefaultExecutionTimeout\s*=\s*(\d+)\s*\*\s*time\.(Second|Millisecond)/
 )
-if (!ceilingMatch) {
-  console.error(`${engineRel}: DefaultExecutionTimeout not found`)
+const maxMatch = engine.match(
+  /MaxExecutionTimeout\s*=\s*(\d+)\s*\*\s*time\.(Second|Millisecond)/
+)
+if (!defaultMatch || !maxMatch) {
+  console.error(`${engineRel}: Default/MaxExecutionTimeout not found`)
   process.exit(1)
 }
-const ceilingMs = durationToMs(ceilingMatch[1], ceilingMatch[2])
+const defaultMs = durationToMs(defaultMatch[1], defaultMatch[2])
+const maxMs = durationToMs(maxMatch[1], maxMatch[2])
+
+// --- Caller ceiling: the execute meta-tool deadline -------------------------
+
+const toolsDir = join(aiRoot, "internal", "tools")
+const metaFiles = readdirSync(toolsDir)
+  .filter((name) => name.startsWith("meta_") && name.endsWith(".go") && !name.endsWith("_test.go"))
+  .sort()
+
+let executeMs = 0
+for (const name of metaFiles) {
+  const rel = relative(root, join(toolsDir, name)).replaceAll("\\", "/")
+  const content = readFileSync(join(toolsDir, name), "utf8")
+  for (const item of collect(content, timeoutRe, rel)) {
+    if (rel.endsWith("meta_execute.go")) {
+      executeMs = Math.max(executeMs, item.ms)
+    }
+  }
+}
+if (executeMs <= 0) {
+  console.error(`${toolsDir}/meta_execute.go: execute timeout not found`)
+  process.exit(1)
+}
+if (defaultMs > executeMs) {
+  violations.push(
+    `${engineRel} — DefaultExecutionTimeout ${defaultMs}ms exceeds the execute ceiling ${executeMs}ms; the sandbox would outlive its caller (ADR-004 R4)`
+  )
+}
+if (maxMs < executeMs) {
+  violations.push(
+    `${engineRel} — MaxExecutionTimeout ${maxMs}ms is below the execute ceiling ${executeMs}ms; the hard cap would cut legitimate calls (ADR-004 R4)`
+  )
+}
 
 // --- R1: catalog entries and in-catalog clients ----------------------------
 
@@ -72,35 +113,15 @@ const catalogFiles = readdirSync(catalogDir)
   .filter((name) => name.endsWith(".go") && !name.endsWith("_test.go"))
   .sort()
 
-const timeoutRe = /Timeout:\s+(\d+)\s*\*\s*time\.(Second|Millisecond)/g
 const entries = []
 for (const name of catalogFiles) {
   const rel = relative(root, join(catalogDir, name)).replaceAll("\\", "/")
   const content = readFileSync(join(catalogDir, name), "utf8")
   for (const item of collect(content, timeoutRe, rel)) {
     entries.push(item)
-    if (item.ms > ceilingMs) {
+    if (item.ms > executeMs) {
       violations.push(
-        `${item.file}:${item.line} — timeout ${item.ms}ms exceeds the sandbox ceiling ${ceilingMs}ms (ADR-004 R1)`
-      )
-    }
-  }
-}
-
-// --- R4: meta-tool timeouts ------------------------------------------------
-
-const toolsDir = join(aiRoot, "internal", "tools")
-const metaFiles = readdirSync(toolsDir)
-  .filter((name) => name.startsWith("meta_") && name.endsWith(".go") && !name.endsWith("_test.go"))
-  .sort()
-
-for (const name of metaFiles) {
-  const rel = relative(root, join(toolsDir, name)).replaceAll("\\", "/")
-  const content = readFileSync(join(toolsDir, name), "utf8")
-  for (const item of collect(content, timeoutRe, rel)) {
-    if (rel.endsWith("meta_execute.go") && item.ms < ceilingMs) {
-      violations.push(
-        `${item.file}:${item.line} — execute timeout ${item.ms}ms is below the sandbox ceiling ${ceilingMs}ms; the handler would win the race and mask the sandbox error (ADR-004 R4)`
+        `${item.file}:${item.line} — timeout ${item.ms}ms exceeds the execute ceiling ${executeMs}ms (ADR-004 R1)`
       )
     }
   }
@@ -122,21 +143,22 @@ for (const name of ["rewriteBudget", "variantMinBudget"]) {
   }
 }
 const { rewriteBudget, variantMinBudget } = budgets
-if (rewriteBudget >= ceilingMs) {
+if (rewriteBudget >= executeMs) {
   violations.push(
-    `${serviceRel} — rewriteBudget ${rewriteBudget}ms must be strictly inside the ${ceilingMs}ms ceiling (ADR-004 R2)`
+    `${serviceRel} — rewriteBudget ${rewriteBudget}ms must be strictly inside the ${executeMs}ms execute ceiling (ADR-004 R2)`
   )
 }
-if (rewriteBudget + variantMinBudget > ceilingMs) {
+if (rewriteBudget + variantMinBudget > executeMs) {
   violations.push(
-    `${serviceRel} — rewriteBudget ${rewriteBudget}ms + variantMinBudget ${variantMinBudget}ms exceeds the ${ceilingMs}ms ceiling; a variant could not start after the rewrite (ADR-004 R2)`
+    `${serviceRel} — rewriteBudget ${rewriteBudget}ms + variantMinBudget ${variantMinBudget}ms exceeds the ${executeMs}ms ceiling; a variant could not start after the rewrite (ADR-004 R2)`
   )
 }
 
 // --- Report ----------------------------------------------------------------
 
 const worstEntry = entries.reduce((max, item) => Math.max(max, item.ms), 0)
-notes.push(`sandbox ceiling ${ceilingMs}ms`)
+notes.push(`sandbox default ${defaultMs}ms, hard cap ${maxMs}ms`)
+notes.push(`caller ceiling (execute) ${executeMs}ms`)
 notes.push(`catalog timeouts ${entries.length} (max ${worstEntry}ms)`)
 notes.push(`rewrite budget ${rewriteBudget}ms, variant floor ${variantMinBudget}ms`)
 
@@ -144,7 +166,7 @@ if (violations.length > 0) {
   const message = [
     ...violations,
     "",
-    "Interactive SDK calls must fit the sandbox wall clock (docs/ai/adr-004-budget-and-error-contract.md).",
+    "Interactive SDK calls must fit the caller deadline the sandbox inherits (docs/ai/adr-004-budget-and-error-contract.md).",
     isReport
       ? "(report mode — fix the budget or file an ADR exception)"
       : "Fix the budget split or file an ADR exception before merging.",
