@@ -73,7 +73,9 @@ Normative rules:
    (`knowledge.search`: `rewriteBudget` = 3 000 ms), and must **skip** optional
    work once the remaining deadline cannot cover the mandatory continuation
    plus a margin (`variantMinBudget` ≥ the measured primary-stage cost, floor
-   1 000 ms).
+   1 000 ms). Deadline-bound callers give the optional stage a short grace
+   period (`interactiveVariantWait` = 300 ms) before answering with the primary
+   results; deadline-less callers wait for the full optional cap.
 3. **R3.** Mandatory stages stay fail-closed: an embedding failure for the
    primary query is a retrieval failure, never a silent FTS-only result
    (production `AI_RAG_REQUIRE_EMBEDDING` behaviour is preserved).

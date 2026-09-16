@@ -105,7 +105,7 @@ func TestCollectVariantsFiltersAndCaps(t *testing.T) {
 	ch := make(chan []string, 1)
 	ch <- []string{" v1 ", "query", "v1", "", "v2", "v3", strings.Repeat("x", 2001)}
 
-	got := collectVariants(context.Background(), "query", ch)
+	got := collectVariants(context.Background(), "query", ch, time.Second)
 	want := []string{"v1", "v2"}
 	if len(got) != len(want) {
 		t.Fatalf("expected %v, got %v", want, got)
@@ -121,8 +121,31 @@ func TestCollectVariantsStopsOnCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if got := collectVariants(ctx, "query", make(chan []string)); got != nil {
+	if got := collectVariants(ctx, "query", make(chan []string), time.Second); got != nil {
 		t.Fatalf("expected nil variants on cancelled context, got %v", got)
+	}
+}
+
+// Interactive callers do not wait for a slow rewrite: they answer with the
+// primary results instead of adding seconds to every search.
+func TestCollectVariantsSkipsSlowRewriteForInteractiveCallers(t *testing.T) {
+	start := time.Now()
+	got := collectVariants(context.Background(), "query", make(chan []string), 20*time.Millisecond)
+	if got != nil {
+		t.Fatalf("expected no variants, got %v", got)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("interactive wait must be bounded, took %v", elapsed)
+	}
+
+	// A deadline-bound context gets the short interactive grace period.
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if wait := variantWaitBudget(ctx); wait != interactiveVariantWait {
+		t.Fatalf("deadline-bound wait = %v, want %v", wait, interactiveVariantWait)
+	}
+	if wait := variantWaitBudget(context.Background()); wait != rewriteBudget {
+		t.Fatalf("deadline-less wait = %v, want %v", wait, rewriteBudget)
 	}
 }
 

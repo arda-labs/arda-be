@@ -32,6 +32,13 @@ const (
 	// provider raises the bar instead of crossing the deadline. A request
 	// without a deadline (e.g. the standalone RAG endpoint) always has room.
 	variantMinBudget = 1 * time.Second
+	// interactiveVariantWait bounds how long a deadline-bound request (the
+	// Code Mode tool) waits for the optional rewrite before answering with the
+	// primary results only. The tenant chat model needs ~3s for a rewrite, so
+	// waiting for the full budget would add seconds to every interactive
+	// search; deadline-less callers (the standalone RAG endpoint and evals)
+	// wait for the whole rewrite instead.
+	interactiveVariantWait = 300 * time.Millisecond
 )
 
 type Service struct {
@@ -221,19 +228,34 @@ func (s *Service) startQueryRewrite(ctx context.Context, tenantID, queryText str
 	return out
 }
 
-// collectVariants waits for the background rewrite, then keeps at most two
-// usable variants: non-empty, distinct from the original query, and
+// collectVariants waits up to `wait` for the background rewrite, then keeps at
+// most two usable variants: non-empty, distinct from the original query, and
 // de-duplicated. The wait is bounded by the rewrite's own deadline (see
-// startQueryRewrite) and by the request deadline.
-func collectVariants(ctx context.Context, queryText string, variants <-chan []string) []string {
+// startQueryRewrite), by the request deadline, and by the caller's patience
+// (see variantWaitBudget).
+func collectVariants(ctx context.Context, queryText string, variants <-chan []string, wait time.Duration) []string {
 	if variants == nil {
 		return nil
 	}
 	var raw []string
-	select {
-	case raw = <-variants:
-	case <-ctx.Done():
-		return nil
+	if wait <= 0 {
+		select {
+		case raw = <-variants:
+		case <-ctx.Done():
+			return nil
+		default:
+			return nil
+		}
+	} else {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case raw = <-variants:
+		case <-ctx.Done():
+			return nil
+		case <-timer.C:
+			return nil
+		}
 	}
 	var out []string
 	for _, variant := range raw {
@@ -257,6 +279,17 @@ func collectVariants(ctx context.Context, queryText string, variants <-chan []st
 		}
 	}
 	return out
+}
+
+// variantWaitBudget decides how long this request may wait for the optional
+// rewrite: deadline-bound callers (the Code Mode tool) value latency and give
+// it a short grace period, while deadline-less callers (the standalone RAG
+// endpoint, evals) wait for the whole rewrite budget to maximise recall.
+func variantWaitBudget(ctx context.Context) time.Duration {
+	if _, ok := ctx.Deadline(); ok {
+		return interactiveVariantWait
+	}
+	return rewriteBudget
 }
 
 // hasRetrievalBudget reports whether the request deadline still leaves room
@@ -329,7 +362,7 @@ func (s *Service) multiQuerySearch(ctx context.Context, queryText string, varian
 	}
 
 	variantsUsed := 0
-	for _, variant := range collectVariants(ctx, queryText, variants) {
+	for _, variant := range collectVariants(ctx, queryText, variants, variantWaitBudget(ctx)) {
 		if !hasRetrievalBudget(ctx, variantNeeds) {
 			// The caller (the Code Mode sandbox for tool calls) enforces a
 			// hard deadline; starting another search would fail it and turn

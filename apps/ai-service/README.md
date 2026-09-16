@@ -58,7 +58,9 @@ with the primary query under a bounded budget (3s, raised from 1.5s after
 production rewrites never completed in time): a slow model degrades
 recall instead of failing the call, and rewrite variants are skipped when the
 request deadline no longer leaves room for an embedding round-trip plus a
-search. Inside the Code Mode sandbox the caller deadline bounds the whole
+search. Deadline-bound callers (the Code Mode tool) wait only 300 ms for the
+rewrite before answering with the primary hits; the standalone RAG endpoint and
+eval runs wait for the whole rewrite budget to maximise recall. Inside the Code Mode sandbox the caller deadline bounds the whole
 retrieval: `knowledge.search` declares 8 s (external embedding spikes above 3 s
 are measured) under the 10 s `execute` ceiling, while the sandbox default for
 deadline-less callers stays 3 s.
