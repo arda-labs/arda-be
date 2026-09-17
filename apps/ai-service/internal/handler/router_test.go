@@ -269,6 +269,12 @@ func TestListToolsEndpoint(t *testing.T) {
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "crm.getCustomer") {
 		t.Fatalf("list tools failed: code = %d, body = %s", res.Code, res.Body.String())
 	}
+	// A nil []string from the catalog would marshal to null and crash the AI
+	// tools UI (Cannot read properties of null); the contract is an array.
+	if !strings.Contains(res.Body.String(), `"requiredPermissions":[]`) ||
+		strings.Contains(res.Body.String(), `"requiredPermissions":null`) {
+		t.Fatalf("requiredPermissions must serialize as []: %s", res.Body.String())
+	}
 
 	filterReq := httptest.NewRequest(http.MethodGet, "/api/ai/tools?domain=crm", nil)
 	filterRes := httptest.NewRecorder()

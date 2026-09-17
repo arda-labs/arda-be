@@ -764,6 +764,12 @@ func describeTools(ctx context.Context, options RouterOptions) []CatalogToolDTO 
 		overrides = options.ToolGovernance.Snapshot()
 	}
 	for i := range out {
+		// A nil []string marshals to JSON null; the catalog contract declares
+		// requiredPermissions as an array (entries such as docs.problemLookup
+		// carry no permission requirement), and a null breaks the tools UI.
+		if out[i].RequiredPermissions == nil {
+			out[i].RequiredPermissions = []string{}
+		}
 		override, ok := overrides[out[i].MethodName]
 		out[i].Enabled = out[i].ContractEnabled && (!ok || override)
 		if ok {
