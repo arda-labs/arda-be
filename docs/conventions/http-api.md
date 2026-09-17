@@ -96,6 +96,8 @@ Giữ **object phẳng** (đang dùng rộng rãi):
 
 Create/update: trả object vừa lưu, HTTP `201` (create) / `200` (update). Field naming: **snake_case** trong JSON mới (platform, IAM admin phase 4); camelCase legacy cho `UserContext` / BFF session — không trộn trong resource mới.
 
+`scripts/check-json-tags.mjs` (chạy trong `verify.yml`) chặn camelCase tag mới ngoài allowlist protocol (`PROTOCOL_ALLOWLIST`: AG-UI events, `/api/auth/me` + BFF session). Các struct legacy còn camel nằm trong `LEGACY_BASELINE` kèm mốc Q2-2027 — xem `node scripts/check-json-tags.mjs --report` để biết danh sách, `--baseline` để refresh sau mỗi wave migration.
+
 ### 3.3. Action / void
 
 ```json
