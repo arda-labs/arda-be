@@ -61,13 +61,7 @@ func main() {
 	}
 	logger.Info("migrations applied")
 
-	provider, err := storage.NewS3Provider(ctx, storage.S3Config{
-		Endpoint:       cfg.StorageEndpoint,
-		Region:         cfg.StorageRegion,
-		AccessKey:      cfg.StorageAccessKey,
-		SecretKey:      cfg.StorageSecretKey,
-		ForcePathStyle: cfg.StorageForcePathStyle,
-	})
+	provider, err := storage.NewS3Provider(ctx, storageConfigFrom(cfg))
 	if err != nil {
 		logger.Error("init storage provider", "err", err)
 		os.Exit(1)
@@ -198,5 +192,18 @@ func parseLogLevel(level string) slog.Level {
 		return slog.LevelError
 	default:
 		return slog.LevelInfo
+	}
+}
+
+// storageConfigFrom maps service config onto the storage client. Kept separate
+// so the public endpoint wiring stays covered by a unit test.
+func storageConfigFrom(cfg config.Config) storage.S3Config {
+	return storage.S3Config{
+		Endpoint:       cfg.StorageEndpoint,
+		PublicEndpoint: cfg.StoragePublicEndpoint,
+		Region:         cfg.StorageRegion,
+		AccessKey:      cfg.StorageAccessKey,
+		SecretKey:      cfg.StorageSecretKey,
+		ForcePathStyle: cfg.StorageForcePathStyle,
 	}
 }
