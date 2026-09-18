@@ -28,7 +28,6 @@ Use any node IP for NodePort services.
 NATS is currently ClusterIP only. For local development, use:
 
 ```powershell
-$env:KUBECONFIG="C:\Users\hoanv\AppData\Roaming\Freelens\kubeconfigs\7f516115-48bd-40a0-b655-4245be8c022a"
 kubectl -n platform port-forward svc/nats 4222:4222
 ```
 

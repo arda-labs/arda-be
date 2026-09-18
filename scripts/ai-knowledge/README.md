@@ -34,7 +34,7 @@ go run ./cmd/knowledge-indexer --manifest scripts/ai-knowledge/manifest.yaml --d
 $env:ARDA_SERVICE_AUTH_SECRET = "<secret 32+ chars>"
 go run ./cmd/knowledge-indexer --manifest scripts/ai-knowledge/manifest.yaml --base-url http://127.0.0.1:8098
 
-# 3) Cluster (từ máy có KUBECONFIG): port-forward rồi chạy như trên
+# 3) Cluster (kubectl dùng kubeconfig mặc định): port-forward rồi chạy như trên
 kubectl -n arda-app port-forward svc/ai-service 8098:8080
 go run ./cmd/knowledge-indexer --manifest scripts/ai-knowledge/manifest.yaml --base-url http://127.0.0.1:8098 --tenant <tenant-id>
 

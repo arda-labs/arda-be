@@ -80,6 +80,9 @@ tokens against the unreachable Ory Hydra.
 * No `&&` chaining; use `cmd1; if ($?) { cmd2 }`. Avoid `-Encoding UTF8` on
   `Set-Content` for non-ASCII files (adds BOM/mojibake) - edit locale JSON via
   a small `node -e fs` script instead.
-* Cluster access from this machine works directly via
-  `KUBECONFIG=C:\Users\hoanv\AppData\Roaming\Freelens\kubeconfigs\<id>`;
-  no SSH hop needed.
+* Cluster access from this machine works directly with the default kubeconfig
+  (`~/.kube/config`, context `default` -> `https://192.168.10.201:6443`):
+  `kubectl get nodes` just works - no `KUBECONFIG=` override, no Freelens
+  kubeconfig path, no SSH hop. Node-level SSH is not configured on this
+  workstation; use `kubectl exec` for pod work. Read-only cluster/DB recipes:
+  `.agents/skills/k3s-ops/SKILL.md`.
