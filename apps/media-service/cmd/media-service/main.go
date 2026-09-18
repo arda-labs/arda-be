@@ -154,10 +154,15 @@ func main() {
 	}()
 
 	srv := &http.Server{
-		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(mediaHandler)),
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		Addr:    cfg.HTTPAddr,
+		Handler: ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(mediaHandler)),
+		// Headers are small and fast; bodies are bounded by MaxBytesReader
+		// (upload_max_size_mb), so only the header read is time-boxed.
+		ReadHeaderTimeout: 10 * time.Second,
+		// Preview conversion runs synchronously through Gotenberg
+		// (--api-timeout=120s) and downloads stream to slow clients, so the
+		// write deadline must cover a full conversion plus transfer.
+		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  60 * time.Second,
 	}
 
