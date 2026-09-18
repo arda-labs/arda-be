@@ -69,13 +69,21 @@ type sessionUserResolveResult struct {
 	revoked bool
 }
 
+// passUpstreamRedirect keeps upstream redirects visible to the browser. Media
+// retrieval answers with a 302 to a short-lived presigned URL; following it
+// here would force every object byte through the gateway and cap the transfer
+// at the client timeout. Let the browser fetch storage directly.
+func passUpstreamRedirect(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
 func NewBFFHandler(cfg config.Config, store session.Store, iamClient *iamclient.Client, pol *policy.Policy) *BFFHandler {
 	return &BFFHandler{
 		cfg: cfg, store: store, iamClient: iamClient, policy: pol, logger: slog.Default(),
 		cache:            newUserContextCache(time.Duration(cfg.IAMContextCacheTTL) * time.Second),
 		resolveInflight:  make(map[string]*sessionUserResolveCall),
-		httpClient:       &http.Client{Timeout: 30 * time.Second},
-		streamHTTPClient: &http.Client{},
+		httpClient:       &http.Client{Timeout: 30 * time.Second, CheckRedirect: passUpstreamRedirect},
+		streamHTTPClient: &http.Client{CheckRedirect: passUpstreamRedirect},
 	}
 }
 
@@ -1724,14 +1732,15 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
 	}
-	readStart := time.Now()
-	body, _ := io.ReadAll(r.Body)
-	r.Body.Close()
-	readDuration := time.Since(readStart)
-	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
+	// Stream the request body to the upstream instead of buffering it: uploads
+	// accept up to 100MB and io.ReadAll would hold that in gateway memory.
+	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, target, r.Body)
 	if err != nil {
 		respondRequestError(w, r, http.StatusBadGateway, "proxy_request_invalid")
 		return
+	}
+	if r.ContentLength >= 0 {
+		proxyReq.ContentLength = r.ContentLength
 	}
 	for k, vs := range r.Header {
 		for _, v := range vs {
@@ -1910,7 +1919,6 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 			"path", r.URL.Path,
 			"status", resp.StatusCode,
 			"upstream", baseURL,
-			"read_body_ms", readDuration.Milliseconds(),
 			"session_ms", sessionDuration.Milliseconds(),
 			"ensure_user_ms", ensureDuration.Milliseconds(),
 			"upstream_ms", upstreamDuration.Milliseconds(),
