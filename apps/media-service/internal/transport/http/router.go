@@ -89,6 +89,8 @@ func NewRouter(mediaHandler *handler.MediaHandler) http.Handler {
 			mediaHandler.View(w, r, publicID)
 		case action == "download" && r.Method == http.MethodGet:
 			mediaHandler.Download(w, r, publicID)
+		case action == "preview" && r.Method == http.MethodGet:
+			mediaHandler.Preview(w, r, publicID)
 		case action == "" && r.Method == http.MethodDelete:
 			mediaHandler.Delete(w, r, publicID)
 		default:

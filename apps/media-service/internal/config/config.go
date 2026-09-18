@@ -27,6 +27,8 @@ type Config struct {
 	StorageForcePathStyle  bool          `yaml:"storage_force_path_style"`
 	UploadMaxSizeMB        int64         `yaml:"upload_max_size_mb"`
 	StreamMaxSizeMB        int64         `yaml:"stream_max_size_mb"`
+	PreviewMaxSizeMB       int64         `yaml:"preview_max_size_mb"`
+	GotenbergURL           string        `yaml:"gotenberg_url"`
 	PresignUploadTTL       time.Duration `yaml:"presign_upload_ttl"`
 	PresignDownloadTTL     time.Duration `yaml:"presign_download_ttl"`
 	RequireScanBeforeReady bool          `yaml:"require_scan_before_ready"`
@@ -49,6 +51,7 @@ func Load() Config {
 		StorageForcePathStyle: true,
 		UploadMaxSizeMB:       100,
 		StreamMaxSizeMB:       2,
+		PreviewMaxSizeMB:      25,
 		PresignUploadTTL:      15 * time.Minute,
 		PresignDownloadTTL:    5 * time.Minute,
 		TempFileTTL:           24 * time.Hour,
@@ -100,6 +103,10 @@ func Load() Config {
 	envInt64("MEDIA_UPLOAD_MAX_SIZE_MB", &cfg.UploadMaxSizeMB)
 	envInt64("STREAM_MAX_SIZE_MB", &cfg.StreamMaxSizeMB)
 	envInt64("MEDIA_STREAM_MAX_SIZE_MB", &cfg.StreamMaxSizeMB)
+	envInt64("PREVIEW_MAX_SIZE_MB", &cfg.PreviewMaxSizeMB)
+	envInt64("MEDIA_PREVIEW_MAX_SIZE_MB", &cfg.PreviewMaxSizeMB)
+	envStr("GOTENBERG_URL", &cfg.GotenbergURL)
+	envStr("MEDIA_GOTENBERG_URL", &cfg.GotenbergURL)
 	envDuration("PRESIGN_UPLOAD_TTL", &cfg.PresignUploadTTL)
 	envDuration("MEDIA_PRESIGN_UPLOAD_TTL", &cfg.PresignUploadTTL)
 	envDuration("PRESIGN_DOWNLOAD_TTL", &cfg.PresignDownloadTTL)
@@ -136,6 +143,8 @@ func (c *Config) loadYAML(path string) bool {
 		StorageForcePathStyle  *bool    `yaml:"storage_force_path_style"`
 		UploadMaxSizeMB        int64    `yaml:"upload_max_size_mb"`
 		StreamMaxSizeMB        int64    `yaml:"stream_max_size_mb"`
+		PreviewMaxSizeMB       int64    `yaml:"preview_max_size_mb"`
+		GotenbergURL           string   `yaml:"gotenberg_url"`
 		PresignUploadTTL       string   `yaml:"presign_upload_ttl"`
 		PresignDownloadTTL     string   `yaml:"presign_download_ttl"`
 		TempFileTTL            string   `yaml:"temp_file_ttl"`
@@ -169,6 +178,10 @@ func (c *Config) loadYAML(path string) bool {
 	if raw.StreamMaxSizeMB > 0 {
 		c.StreamMaxSizeMB = raw.StreamMaxSizeMB
 	}
+	if raw.PreviewMaxSizeMB > 0 {
+		c.PreviewMaxSizeMB = raw.PreviewMaxSizeMB
+	}
+	setStr(raw.GotenbergURL, &c.GotenbergURL)
 	if raw.PresignUploadTTL != "" {
 		if d, err := time.ParseDuration(raw.PresignUploadTTL); err == nil {
 			c.PresignUploadTTL = d

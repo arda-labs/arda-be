@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -288,17 +289,77 @@ func (h *MediaHandler) Attach(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, map[string]any{"attached": len(req.PublicIDs)})
 }
 
-func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, publicID string, download bool) {
-	slog.Info("incoming retrieve request", "public_id", publicID, "download", download)
-	ctx := r.Context()
+// resolveScopedFile loads the file inside the caller's tenant/org scope and
+// verifies it is retrievable. It writes the problem response and returns false
+// when the request must abort.
+func (h *MediaHandler) resolveScopedFile(w http.ResponseWriter, r *http.Request, publicID string) (domain.File, domain.FileScope, bool) {
 	scope, ok := mediaScope(r)
 	if !ok {
 		writeError(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
-		return
+		return domain.File{}, domain.FileScope{}, false
 	}
-	file, err := h.service.GetFileByPublicIDScoped(ctx, scope, publicID)
+	file, err := h.service.GetFileByPublicIDScoped(r.Context(), scope, publicID)
 	if err != nil {
 		writeServiceError(w, r, err)
+		return domain.File{}, domain.FileScope{}, false
+	}
+	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded && file.Status != domain.StatusTemp && file.Status != domain.StatusAttached {
+		writeError(w, r, http.StatusConflict, "media.file.not_ready", "File is not ready")
+		return domain.File{}, domain.FileScope{}, false
+	}
+	return file, scope, true
+}
+
+// Preview serves GET /api/media/{public_id}/preview with a PDF rendering of the
+// document: PDFs pass through, Word/Excel/PPT convert through Gotenberg. The
+// converted PDF is cached in storage, so repeat views skip the conversion.
+func (h *MediaHandler) Preview(w http.ResponseWriter, r *http.Request, publicID string) {
+	slog.Info("incoming preview request", "public_id", publicID)
+	file, _, ok := h.resolveScopedFile(w, r, publicID)
+	if !ok {
+		return
+	}
+	pdf, err := h.service.PreviewPDF(r.Context(), file)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrPreviewUnsupported):
+			writeError(w, r, http.StatusUnsupportedMediaType, "media.preview.unsupported", "preview is not supported for this file type")
+		case errors.Is(err, service.ErrPreviewUnavailable):
+			writeError(w, r, http.StatusServiceUnavailable, "media.preview.unavailable", "document conversion is not configured")
+		case errors.Is(err, service.ErrPreviewTooLarge):
+			writeError(w, r, http.StatusRequestEntityTooLarge, "media.preview.too_large", "file is too large to convert for preview")
+		default:
+			writeServiceError(w, r, err)
+		}
+		return
+	}
+
+	userID := firstHeader(r, "X-Actor-User-Id", "X-User-Id", "X-User-Subject")
+	fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s media_id=%s action=preview ip=%s ua=%s result=success\n",
+		userID, firstHeader(r, "X-Tenant-Id"), firstHeader(r, "X-Org-Id"), file.ID, r.RemoteAddr, r.UserAgent())
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Length", strconv.Itoa(len(pdf)))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", previewPDFFilename(file.OriginalFilename)))
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pdf)
+}
+
+func previewPDFFilename(name string) string {
+	base := strings.TrimSpace(strings.TrimSuffix(name, filepath.Ext(name)))
+	if base == "" {
+		base = "document"
+	}
+	return base + ".pdf"
+}
+
+func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, publicID string, download bool) {
+	slog.Info("incoming retrieve request", "public_id", publicID, "download", download)
+	ctx := r.Context()
+	file, scope, ok := h.resolveScopedFile(w, r, publicID)
+	if !ok {
 		return
 	}
 
@@ -314,11 +375,6 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 	}
 	fmt.Printf("AUDIT: user_id=%s tenant_id=%s org_id=%s media_id=%s action=%s ip=%s ua=%s result=success\n",
 		userID, tenantID, orgID, file.ID, action, ip, userAgent)
-
-	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded && file.Status != domain.StatusTemp && file.Status != domain.StatusAttached {
-		writeError(w, r, http.StatusConflict, "media.file.not_ready", "File is not ready")
-		return
-	}
 
 	// Objects below the streaming threshold are streamed through the service;
 	// larger ones redirect to the public storage endpoint when configured.

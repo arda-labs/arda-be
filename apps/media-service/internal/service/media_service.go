@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,17 +23,42 @@ var (
 	ErrInvalidInput = errors.New("invalid input")
 	ErrNotFound     = errors.New("media file not found")
 	ErrNotReady     = errors.New("media file is not ready")
+
+	ErrPreviewUnsupported = errors.New("preview is not supported for this file type")
+	ErrPreviewUnavailable = errors.New("document conversion is not configured")
+	ErrPreviewTooLarge    = errors.New("file is too large to convert for preview")
 )
+
+// DocumentConverter renders an Office document to PDF. Implemented by the
+// Gotenberg client; kept as an interface so tests can stub conversion.
+type DocumentConverter interface {
+	OfficeToPDF(ctx context.Context, filename string, content []byte) ([]byte, error)
+}
 
 type MediaService struct {
 	cfg          config.Config
 	repo         *repository.MediaRepository
 	storage      storage.Provider
 	uploadPolicy UploadPolicy
+	converter    DocumentConverter
 }
 
-func NewMediaService(cfg config.Config, repo *repository.MediaRepository, provider storage.Provider) *MediaService {
-	return &MediaService{cfg: cfg, repo: repo, storage: provider, uploadPolicy: NewUploadPolicy(cfg.AllowedUploadMIME)}
+// Option customises optional MediaService collaborators.
+type Option func(*MediaService)
+
+// WithDocumentConverter enables /preview conversion for office documents.
+func WithDocumentConverter(converter DocumentConverter) Option {
+	return func(s *MediaService) { s.converter = converter }
+}
+
+func NewMediaService(cfg config.Config, repo *repository.MediaRepository, provider storage.Provider, opts ...Option) *MediaService {
+	svc := &MediaService{cfg: cfg, repo: repo, storage: provider, uploadPolicy: NewUploadPolicy(cfg.AllowedUploadMIME)}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(svc)
+		}
+	}
+	return svc
 }
 
 // MaxUploadBytes returns the hard request-body cap for uploads: the configured
@@ -61,6 +88,90 @@ func (s *MediaService) MaxStreamBytes() int64 {
 		limitMB = 2
 	}
 	return limitMB * 1024 * 1024
+}
+
+// PreviewPDF returns a PDF rendering of the file: PDFs pass straight through,
+// office documents convert through Gotenberg and cache the result under a
+// derived storage key so repeat views skip the conversion.
+func (s *MediaService) PreviewPDF(ctx context.Context, file domain.File) ([]byte, error) {
+	if isPDFContentType(file.ContentType) {
+		return s.readObject(ctx, file.Bucket, file.ObjectKey)
+	}
+	if !isOfficeConvertible(file.ContentType, file.OriginalFilename) {
+		return nil, ErrPreviewUnsupported
+	}
+	if s.converter == nil {
+		return nil, ErrPreviewUnavailable
+	}
+	if limit := s.previewLimitBytes(); limit > 0 && file.SizeBytes > limit {
+		return nil, ErrPreviewTooLarge
+	}
+	cacheKey := previewObjectKey(file)
+	if cached, err := s.readObject(ctx, file.Bucket, cacheKey); err == nil {
+		return cached, nil
+	}
+	source, err := s.readObject(ctx, file.Bucket, file.ObjectKey)
+	if err != nil {
+		return nil, err
+	}
+	pdf, err := s.converter.OfficeToPDF(ctx, file.OriginalFilename, source)
+	if err != nil {
+		return nil, fmt.Errorf("convert office document: %w", err)
+	}
+	// Best-effort cache: a failed store must not block the preview response.
+	if storeErr := s.storage.PutObject(ctx, file.Bucket, cacheKey, bytes.NewReader(pdf), int64(len(pdf)), "application/pdf"); storeErr != nil {
+		slog.Warn("store derived preview", "public_id", file.PublicID, "err", storeErr)
+	}
+	return pdf, nil
+}
+
+func (s *MediaService) previewLimitBytes() int64 {
+	limitMB := s.cfg.PreviewMaxSizeMB
+	if limitMB <= 0 {
+		limitMB = 25
+	}
+	return limitMB * 1024 * 1024
+}
+
+func (s *MediaService) readObject(ctx context.Context, bucket, key string) ([]byte, error) {
+	reader, err := s.storage.GetObject(ctx, bucket, key)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
+}
+
+// previewObjectKey is the stable derived-object key for a converted PDF. The
+// source file is immutable, so the cache never needs invalidation.
+func previewObjectKey(file domain.File) string {
+	return fmt.Sprintf("derived/%s/%s/v1.pdf", file.TenantID, file.PublicID)
+}
+
+func isPDFContentType(contentType string) bool {
+	return strings.EqualFold(strings.TrimSpace(contentType), "application/pdf")
+}
+
+func isOfficeConvertible(contentType, filename string) bool {
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	switch {
+	case strings.HasPrefix(ct, "application/vnd.openxmlformats-officedocument"):
+		return true
+	case strings.HasPrefix(ct, "application/vnd.ms-"):
+		return true
+	case ct == "application/msword":
+		return true
+	case strings.HasPrefix(ct, "application/vnd.oasis.opendocument"):
+		return true
+	}
+	// Browsers sometimes upload office files as octet-stream; fall back to the
+	// extension so preview still works.
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *MediaService) InitUpload(ctx context.Context, req domain.InitUploadRequest) (domain.InitUploadResponse, error) {

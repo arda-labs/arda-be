@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	grpcserver "github.com/arda-labs/arda/apps/media-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/media-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/media-service/internal/worker"
+	ardadoc "github.com/arda-labs/arda/libs/go/arda-doc"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -68,7 +70,19 @@ func main() {
 	}
 
 	repo := repository.NewMediaRepository(db)
-	mediaSvc := service.NewMediaService(cfg, repo, provider)
+	serviceOpts := make([]service.Option, 0, 1)
+	if gotenbergURL := strings.TrimSpace(cfg.GotenbergURL); gotenbergURL != "" {
+		converter, err := ardadoc.NewGotenbergClient(gotenbergURL)
+		if err != nil {
+			logger.Error("init gotenberg client", "err", err)
+			os.Exit(1)
+		}
+		serviceOpts = append(serviceOpts, service.WithDocumentConverter(converter))
+		logger.Info("office preview conversion enabled", "gotenberg_url", gotenbergURL)
+	} else {
+		logger.Warn("office preview conversion disabled: GOTENBERG_URL is not configured")
+	}
+	mediaSvc := service.NewMediaService(cfg, repo, provider, serviceOpts...)
 	mediaHandler := handler.NewMediaHandler(mediaSvc)
 
 	workerCtx, stopWorker := context.WithCancel(context.Background())

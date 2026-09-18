@@ -21,6 +21,10 @@ upload_max_size_mb: 100
 # redirected to the public storage endpoint (storage_public_endpoint) when
 # configured, otherwise they are streamed too.
 stream_max_size_mb: 2
+# Office → PDF preview conversion through Gotenberg (in-cluster ClusterIP).
+# Empty disables the /preview endpoint for Word/Excel/PPT files.
+gotenberg_url: ""
+preview_max_size_mb: 25
 presign_upload_ttl: 15m
 presign_download_ttl: 5m
 require_scan_before_ready: false
