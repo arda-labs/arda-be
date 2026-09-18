@@ -19,6 +19,10 @@ type MediaHandler struct {
 	service *service.MediaService
 }
 
+// maxMetadataIDs bounds the batch metadata lookup so a single request cannot
+// fan out into an unbounded IN list.
+const maxMetadataIDs = 100
+
 func NewMediaHandler(service *service.MediaService) *MediaHandler {
 	return &MediaHandler{service: service}
 }
@@ -203,6 +207,46 @@ func (h *MediaHandler) ListByEntity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, r, http.StatusOK, map[string]any{"files": items, "count": len(items)})
 }
 
+// ListMetadata serves GET /api/media/files/metadata?public_ids=a,b,c with
+// scoped metadata only (no bytes). Catalogs store media URLs and use this to
+// render real file names/sizes and gate large previews before fetching.
+func (h *MediaHandler) ListMetadata(w http.ResponseWriter, r *http.Request) {
+	scope, ok := mediaScope(r)
+	if !ok {
+		writeError(w, r, http.StatusForbidden, ardaerrors.CodeTenantScopeRequired, "tenant and organization are required")
+		return
+	}
+	ids := make([]string, 0, 16)
+	seen := make(map[string]struct{})
+	for _, item := range strings.Split(r.URL.Query().Get("public_ids"), ",") {
+		id := strings.TrimSpace(item)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 || len(ids) > maxMetadataIDs {
+		writeError(w, r, http.StatusBadRequest, "validation.invalid_input", "public_ids must contain between 1 and 100 ids")
+		return
+	}
+
+	files, err := h.service.ListFileMetadata(r.Context(), scope, ids)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+
+	items := make([]map[string]any, 0, len(files))
+	for _, file := range files {
+		items = append(items, publicFileJSON(file))
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"files": items, "count": len(items)})
+}
+
 // Attach serves POST /api/media/files/attach — moves uploaded temp files into
 // status 'attached' linked to the given owner entity. Files keep their entity
 // link across cleanup because AttachFiles clears the temp expiry.
@@ -276,10 +320,10 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 		return
 	}
 
-	const MaxStreamSize = 2 * 1024 * 1024 // 2MB
-	// Without a public storage endpoint a redirect would send the browser to an
-	// unreachable cluster host, so stream the object instead.
-	if file.SizeBytes < MaxStreamSize || !h.service.SupportsBrowserPresign() {
+	// Objects below the streaming threshold are streamed through the service;
+	// larger ones redirect to the public storage endpoint when configured.
+	maxStreamSize := h.service.MaxStreamBytes()
+	if file.SizeBytes < maxStreamSize || !h.service.SupportsBrowserPresign() {
 		stream, err := h.service.GetObjectStream(ctx, file)
 		if err != nil {
 			slog.Error("failed to get stream", "err", err)
@@ -332,10 +376,10 @@ func (h *MediaHandler) handlePublicRetrieve(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	const MaxStreamSize = 2 * 1024 * 1024 // 2MB
-	// Without a public storage endpoint a redirect would send the browser to an
-	// unreachable cluster host, so stream the object instead.
-	if file.SizeBytes < MaxStreamSize || !h.service.SupportsBrowserPresign() {
+	// Objects below the streaming threshold are streamed through the service;
+	// larger ones redirect to the public storage endpoint when configured.
+	maxStreamSize := h.service.MaxStreamBytes()
+	if file.SizeBytes < maxStreamSize || !h.service.SupportsBrowserPresign() {
 		stream, err := h.service.GetObjectStream(ctx, file)
 		if err != nil {
 			slog.Error("failed to get stream", "err", err)

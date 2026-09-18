@@ -192,6 +192,49 @@ WHERE public_id = $1 AND visibility = 'public' AND deleted_at IS NULL`
 	return r.scanFile(ctx, query, publicID)
 }
 
+// ListMetadataByPublicIDs returns scoped metadata for a bounded set of public
+// ids. Order is not guaranteed; callers index the result by public_id.
+func (r *MediaRepository) ListMetadataByPublicIDs(ctx context.Context, scope domain.FileScope, publicIDs []string) ([]domain.File, error) {
+	if strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.OrgID) == "" {
+		return nil, errors.New("tenant and organization scope are required")
+	}
+	if len(publicIDs) == 0 {
+		return []domain.File{}, nil
+	}
+	const query = `
+SELECT id, public_id, tenant_id, COALESCE(org_id,''), COALESCE(owner_user_id,''), module,
+  COALESCE(entity_type,''), COALESCE(entity_id,''), original_filename, content_type,
+  COALESCE(extension,''), size_bytes, COALESCE(checksum_sha256,''), status, scan_status,
+  storage_provider, bucket, object_key, storage_class, version_id, visibility,
+  COALESCE(created_by,''), created_at, uploaded_at, expires_at
+FROM media_files
+WHERE tenant_id = $1
+  AND COALESCE(org_id, '') = $2
+  AND public_id = ANY(string_to_array($3, ','))
+  AND deleted_at IS NULL`
+	rows, err := r.db.QueryContext(ctx, query, scope.TenantID, scope.OrgID, strings.Join(publicIDs, ","))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	files := make([]domain.File, 0, len(publicIDs))
+	for rows.Next() {
+		var file domain.File
+		if err := rows.Scan(
+			&file.ID, &file.PublicID, &file.TenantID, &file.OrgID, &file.OwnerUserID, &file.Module,
+			&file.EntityType, &file.EntityID, &file.OriginalFilename, &file.ContentType,
+			&file.Extension, &file.SizeBytes, &file.ChecksumSHA256, &file.Status, &file.ScanStatus,
+			&file.StorageProvider, &file.Bucket, &file.ObjectKey, &file.StorageClass, &file.VersionID, &file.Visibility,
+			&file.CreatedBy, &file.CreatedAt, &file.UploadedAt, &file.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		files = append(files, file)
+	}
+	return files, rows.Err()
+}
+
 func (r *MediaRepository) DeleteFileScoped(ctx context.Context, scope domain.FileScope, id string) error {
 	if strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.OrgID) == "" {
 		return errors.New("tenant and organization scope are required")

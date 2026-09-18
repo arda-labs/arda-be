@@ -52,6 +52,17 @@ func (s *MediaService) SupportsBrowserPresign() bool {
 	return ok && provider.BrowserPresignAvailable()
 }
 
+// MaxStreamBytes returns the size below which objects are streamed through the
+// service. Larger objects redirect to the public storage endpoint when one is
+// configured. Defaults to 2MB, the historical threshold.
+func (s *MediaService) MaxStreamBytes() int64 {
+	limitMB := s.cfg.StreamMaxSizeMB
+	if limitMB <= 0 {
+		limitMB = 2
+	}
+	return limitMB * 1024 * 1024
+}
+
 func (s *MediaService) InitUpload(ctx context.Context, req domain.InitUploadRequest) (domain.InitUploadResponse, error) {
 	req.TenantID = strings.TrimSpace(req.TenantID)
 	if req.TenantID == "" {
@@ -259,6 +270,13 @@ func (s *MediaService) GetFileByPublicIDScoped(ctx context.Context, scope domain
 		return domain.File{}, err
 	}
 	return file, nil
+}
+
+// ListFileMetadata returns metadata (name, size, content type, status) for the
+// given public ids inside the caller's tenant/org scope. Used by catalogs that
+// store media URLs but need to render file names and gate large previews.
+func (s *MediaService) ListFileMetadata(ctx context.Context, scope domain.FileScope, publicIDs []string) ([]domain.File, error) {
+	return s.repo.ListMetadataByPublicIDs(ctx, scope, publicIDs)
 }
 
 func (s *MediaService) GetPublicFileByPublicID(ctx context.Context, publicID string) (domain.File, error) {

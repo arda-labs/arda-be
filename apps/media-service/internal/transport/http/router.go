@@ -30,6 +30,13 @@ func NewRouter(mediaHandler *handler.MediaHandler) http.Handler {
 			methodNotAllowed(w, r)
 		}
 	})
+	mux.HandleFunc("/api/media/files/metadata", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			mediaHandler.ListMetadata(w, r)
+			return
+		}
+		methodNotAllowed(w, r)
+	})
 	mux.HandleFunc("/api/media/files/attach", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			mediaHandler.Attach(w, r)

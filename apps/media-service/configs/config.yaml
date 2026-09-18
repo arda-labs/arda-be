@@ -17,6 +17,10 @@ storage_secret_key: ""
 storage_force_path_style: true
 
 upload_max_size_mb: 100
+# Files smaller than this are streamed through media-service; larger files are
+# redirected to the public storage endpoint (storage_public_endpoint) when
+# configured, otherwise they are streamed too.
+stream_max_size_mb: 2
 presign_upload_ttl: 15m
 presign_download_ttl: 5m
 require_scan_before_ready: false

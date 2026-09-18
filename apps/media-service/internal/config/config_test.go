@@ -17,3 +17,11 @@ func TestLoadStoragePublicEndpointGenericAliasWinsLast(t *testing.T) {
 		t.Fatalf("StoragePublicEndpoint = %q, want https://storage.example.test", cfg.StoragePublicEndpoint)
 	}
 }
+
+func TestLoadStreamMaxSizeMBEnv(t *testing.T) {
+	t.Setenv("MEDIA_STREAM_MAX_SIZE_MB", "64")
+	cfg := Load()
+	if cfg.StreamMaxSizeMB != 64 {
+		t.Fatalf("StreamMaxSizeMB = %d, want 64", cfg.StreamMaxSizeMB)
+	}
+}
