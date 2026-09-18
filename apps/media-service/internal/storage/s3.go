@@ -34,7 +34,6 @@ type S3Provider struct {
 	presign        *s3.PresignClient
 	publicPresign  *s3.PresignClient
 	endpoint       string
-	publicEndpoint string
 	region         string
 	accessKey      string
 	secretKey      string
@@ -91,7 +90,6 @@ func NewS3Provider(ctx context.Context, cfg S3Config) (*S3Provider, error) {
 			o.ResponseChecksumValidation = 0
 		})
 		provider.publicPresign = s3.NewPresignClient(publicClient)
-		provider.publicEndpoint = publicEndpoint
 	}
 
 	return provider, nil
