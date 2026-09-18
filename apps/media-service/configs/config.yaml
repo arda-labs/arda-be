@@ -7,6 +7,9 @@ nats_url: "nats://192.168.10.201:30222,nats://192.168.10.202:30222,nats://192.16
 
 storage_provider: garage-main
 storage_endpoint: "https://s3.arda.io.vn"
+# Browser-facing endpoint used to presign GET redirects (large files). Leave
+# empty to always stream through media-service instead of redirecting.
+storage_public_endpoint: ""
 storage_region: garage
 storage_bucket: media
 storage_access_key: ""

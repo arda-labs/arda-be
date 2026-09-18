@@ -18,6 +18,10 @@ type PresignGetInput struct {
 	Key                        string
 	ExpiresIn                  time.Duration
 	ResponseContentDisposition string
+	// BrowserFacing signs the URL for the public storage hostname so the
+	// browser (not the service) can fetch it. Falls back to the service
+	// endpoint when no public endpoint is configured.
+	BrowserFacing bool
 }
 
 type PresignedURL struct {

@@ -277,7 +277,9 @@ func (h *MediaHandler) handleRetrieve(w http.ResponseWriter, r *http.Request, pu
 	}
 
 	const MaxStreamSize = 2 * 1024 * 1024 // 2MB
-	if file.SizeBytes < MaxStreamSize {
+	// Without a public storage endpoint a redirect would send the browser to an
+	// unreachable cluster host, so stream the object instead.
+	if file.SizeBytes < MaxStreamSize || !h.service.SupportsBrowserPresign() {
 		stream, err := h.service.GetObjectStream(ctx, file)
 		if err != nil {
 			slog.Error("failed to get stream", "err", err)
@@ -331,7 +333,9 @@ func (h *MediaHandler) handlePublicRetrieve(w http.ResponseWriter, r *http.Reque
 	}
 
 	const MaxStreamSize = 2 * 1024 * 1024 // 2MB
-	if file.SizeBytes < MaxStreamSize {
+	// Without a public storage endpoint a redirect would send the browser to an
+	// unreachable cluster host, so stream the object instead.
+	if file.SizeBytes < MaxStreamSize || !h.service.SupportsBrowserPresign() {
 		stream, err := h.service.GetObjectStream(ctx, file)
 		if err != nil {
 			slog.Error("failed to get stream", "err", err)

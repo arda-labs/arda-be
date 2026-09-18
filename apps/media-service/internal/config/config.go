@@ -19,6 +19,7 @@ type Config struct {
 	NATSURL                string        `yaml:"nats_url"`
 	StorageProvider        string        `yaml:"storage_provider"`
 	StorageEndpoint        string        `yaml:"storage_endpoint"`
+	StoragePublicEndpoint  string        `yaml:"storage_public_endpoint"`
 	StorageRegion          string        `yaml:"storage_region"`
 	StorageBucket          string        `yaml:"storage_bucket"`
 	StorageAccessKey       string        `yaml:"storage_access_key"`
@@ -75,6 +76,9 @@ func Load() Config {
 	envStr("STORAGE_ENDPOINT", &cfg.StorageEndpoint)
 	envStr("MEDIA_STORAGE_ENDPOINT", &cfg.StorageEndpoint)
 	envStr("GARAGE_ENDPOINT", &cfg.StorageEndpoint)
+	envStr("STORAGE_PUBLIC_ENDPOINT", &cfg.StoragePublicEndpoint)
+	envStr("MEDIA_STORAGE_PUBLIC_ENDPOINT", &cfg.StoragePublicEndpoint)
+	envStr("GARAGE_PUBLIC_ENDPOINT", &cfg.StoragePublicEndpoint)
 	envStr("STORAGE_REGION", &cfg.StorageRegion)
 	envStr("MEDIA_STORAGE_REGION", &cfg.StorageRegion)
 	envStr("GARAGE_REGION", &cfg.StorageRegion)
@@ -120,6 +124,7 @@ func (c *Config) loadYAML(path string) bool {
 		NATSURL                string   `yaml:"nats_url"`
 		StorageProvider        string   `yaml:"storage_provider"`
 		StorageEndpoint        string   `yaml:"storage_endpoint"`
+		StoragePublicEndpoint  string   `yaml:"storage_public_endpoint"`
 		StorageRegion          string   `yaml:"storage_region"`
 		StorageBucket          string   `yaml:"storage_bucket"`
 		StorageAccessKey       string   `yaml:"storage_access_key"`
@@ -145,6 +150,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr(raw.NATSURL, &c.NATSURL)
 	setStr(raw.StorageProvider, &c.StorageProvider)
 	setStr(raw.StorageEndpoint, &c.StorageEndpoint)
+	setStr(raw.StoragePublicEndpoint, &c.StoragePublicEndpoint)
 	setStr(raw.StorageRegion, &c.StorageRegion)
 	setStr(raw.StorageBucket, &c.StorageBucket)
 	setStr(raw.StorageAccessKey, &c.StorageAccessKey)

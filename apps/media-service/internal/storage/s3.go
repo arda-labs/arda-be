@@ -22,6 +22,7 @@ import (
 
 type S3Config struct {
 	Endpoint       string
+	PublicEndpoint string
 	Region         string
 	AccessKey      string
 	SecretKey      string
@@ -31,7 +32,9 @@ type S3Config struct {
 type S3Provider struct {
 	client         *s3.Client
 	presign        *s3.PresignClient
+	publicPresign  *s3.PresignClient
 	endpoint       string
+	publicEndpoint string
 	region         string
 	accessKey      string
 	secretKey      string
@@ -66,7 +69,7 @@ func NewS3Provider(ctx context.Context, cfg S3Config) (*S3Provider, error) {
 		o.ResponseChecksumValidation = 0
 	})
 
-	return &S3Provider{
+	provider := &S3Provider{
 		client:         client,
 		presign:        s3.NewPresignClient(client),
 		endpoint:       strings.TrimRight(cfg.Endpoint, "/"),
@@ -75,7 +78,29 @@ func NewS3Provider(ctx context.Context, cfg S3Config) (*S3Provider, error) {
 		secretKey:      cfg.SecretKey,
 		forcePathStyle: cfg.ForcePathStyle,
 		httpClient:     &http.Client{Timeout: 30 * time.Second},
-	}, nil
+	}
+
+	// Browser-facing presigns must be signed against the public hostname: the
+	// signature covers the request host, so the internal service endpoint
+	// cannot be rewritten afterwards. The internal client stays the data path.
+	if publicEndpoint := strings.TrimRight(strings.TrimSpace(cfg.PublicEndpoint), "/"); publicEndpoint != "" && publicEndpoint != provider.endpoint {
+		publicClient := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(publicEndpoint)
+			o.UsePathStyle = cfg.ForcePathStyle
+			o.RequestChecksumCalculation = 0
+			o.ResponseChecksumValidation = 0
+		})
+		provider.publicPresign = s3.NewPresignClient(publicClient)
+		provider.publicEndpoint = publicEndpoint
+	}
+
+	return provider, nil
+}
+
+// BrowserPresignAvailable reports whether GET redirects can be signed for a
+// public storage host. When false, callers must stream the object themselves.
+func (p *S3Provider) BrowserPresignAvailable() bool {
+	return p != nil && p.publicPresign != nil
 }
 
 func (p *S3Provider) PresignPutObject(ctx context.Context, input PresignPutInput) (PresignedURL, error) {
@@ -106,7 +131,11 @@ func (p *S3Provider) PresignGetObject(ctx context.Context, input PresignGetInput
 	if input.ResponseContentDisposition != "" {
 		getObjectInput.ResponseContentDisposition = aws.String(input.ResponseContentDisposition)
 	}
-	out, err := p.presign.PresignGetObject(ctx, getObjectInput, func(opts *s3.PresignOptions) {
+	presigner := p.presign
+	if input.BrowserFacing && p.publicPresign != nil {
+		presigner = p.publicPresign
+	}
+	out, err := presigner.PresignGetObject(ctx, getObjectInput, func(opts *s3.PresignOptions) {
 		opts.Expires = input.ExpiresIn
 	})
 	if err != nil {

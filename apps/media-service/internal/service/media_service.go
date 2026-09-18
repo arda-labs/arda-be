@@ -44,6 +44,14 @@ func (s *MediaService) MaxUploadBytes() int64 {
 	return limitMB*1024*1024 + (1 << 20)
 }
 
+// SupportsBrowserPresign reports whether large GETs can be redirected to a
+// public storage URL. Without a public endpoint the handler must stream the
+// object instead of redirecting the browser to an unreachable internal host.
+func (s *MediaService) SupportsBrowserPresign() bool {
+	provider, ok := s.storage.(interface{ BrowserPresignAvailable() bool })
+	return ok && provider.BrowserPresignAvailable()
+}
+
 func (s *MediaService) InitUpload(ctx context.Context, req domain.InitUploadRequest) (domain.InitUploadResponse, error) {
 	req.TenantID = strings.TrimSpace(req.TenantID)
 	if req.TenantID == "" {
@@ -289,7 +297,7 @@ func (s *MediaService) GetContentRedirectURLByPublicIDScoped(ctx context.Context
 	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded && file.Status != domain.StatusTemp && file.Status != domain.StatusAttached {
 		return "", ErrNotReady
 	}
-	input := storage.PresignGetInput{Bucket: file.Bucket, Key: file.ObjectKey, ExpiresIn: s.cfg.PresignDownloadTTL}
+	input := storage.PresignGetInput{Bucket: file.Bucket, Key: file.ObjectKey, ExpiresIn: s.cfg.PresignDownloadTTL, BrowserFacing: true}
 	if download || !CanServeInline(file.ContentType) {
 		input.ResponseContentDisposition = fmt.Sprintf("attachment; filename=%q", file.OriginalFilename)
 	}
@@ -311,7 +319,7 @@ func (s *MediaService) GetPublicContentRedirectURLByPublicID(ctx context.Context
 	if file.Status != domain.StatusReady && file.Status != domain.StatusUploaded && file.Status != domain.StatusTemp && file.Status != domain.StatusAttached {
 		return "", ErrNotReady
 	}
-	input := storage.PresignGetInput{Bucket: file.Bucket, Key: file.ObjectKey, ExpiresIn: s.cfg.PresignDownloadTTL}
+	input := storage.PresignGetInput{Bucket: file.Bucket, Key: file.ObjectKey, ExpiresIn: s.cfg.PresignDownloadTTL, BrowserFacing: true}
 	if download || !CanServeInline(file.ContentType) {
 		input.ResponseContentDisposition = fmt.Sprintf("attachment; filename=%q", file.OriginalFilename)
 	}
