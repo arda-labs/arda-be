@@ -220,3 +220,27 @@ func TestSupportsBrowserPresignWithoutProvider(t *testing.T) {
 		t.Fatal("SupportsBrowserPresign() = true, want false without a provider")
 	}
 }
+
+func TestCanWarmPreview(t *testing.T) {
+	office := officeFile()
+	converter := &stubConverter{pdf: []byte("%PDF")}
+
+	cases := []struct {
+		name      string
+		converter DocumentConverter
+		file      domain.File
+		cfg       config.Config
+		want      bool
+	}{
+		{"office with converter", converter, office, config.Config{}, true},
+		{"without converter", nil, office, config.Config{}, false},
+		{"non office", converter, domain.File{ContentType: "image/png", OriginalFilename: "a.png", SizeBytes: 10}, config.Config{}, false},
+		{"oversized", converter, domain.File{ContentType: office.ContentType, OriginalFilename: office.OriginalFilename, SizeBytes: 2 * 1024 * 1024}, config.Config{PreviewMaxSizeMB: 1}, false},
+	}
+	for _, tc := range cases {
+		svc := NewMediaService(tc.cfg, nil, nil, WithDocumentConverter(tc.converter))
+		if got := svc.canWarmPreview(tc.file); got != tc.want {
+			t.Errorf("%s: canWarmPreview() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

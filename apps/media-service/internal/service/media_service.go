@@ -41,6 +41,7 @@ type MediaService struct {
 	storage      storage.Provider
 	uploadPolicy UploadPolicy
 	converter    DocumentConverter
+	previewWarm  PreviewWarmFunc
 }
 
 // Option customises optional MediaService collaborators.
@@ -49,6 +50,15 @@ type Option func(*MediaService)
 // WithDocumentConverter enables /preview conversion for office documents.
 func WithDocumentConverter(converter DocumentConverter) Option {
 	return func(s *MediaService) { s.converter = converter }
+}
+
+// PreviewWarmFunc schedules best-effort background conversion for attached
+// office files so the first viewer usually finds a cached PDF.
+type PreviewWarmFunc func(tenantID, orgID string, publicIDs []string)
+
+// WithPreviewWarm installs the scheduler used by AttachFiles.
+func WithPreviewWarm(fn PreviewWarmFunc) Option {
+	return func(s *MediaService) { s.previewWarm = fn }
 }
 
 func NewMediaService(cfg config.Config, repo *repository.MediaRepository, provider storage.Provider, opts ...Option) *MediaService {
@@ -140,6 +150,42 @@ func (s *MediaService) readObject(ctx context.Context, bucket, key string) ([]by
 	}
 	defer reader.Close()
 	return io.ReadAll(reader)
+}
+
+// WarmPreview converts and caches the PDF preview for an office document.
+// Non-office files, oversized files and instances without a converter are
+// skipped silently. PreviewPDF serves from cache when a conversion already
+// exists, so repeated enqueues are cheap.
+func (s *MediaService) WarmPreview(ctx context.Context, scope domain.FileScope, publicID string) error {
+	if s.converter == nil {
+		return nil
+	}
+	file, err := s.repo.GetFileByPublicIDScoped(ctx, scope, publicID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if !s.canWarmPreview(file) {
+		return nil
+	}
+	_, err = s.PreviewPDF(ctx, file)
+	return err
+}
+
+// canWarmPreview reports whether a file is worth converting in the background.
+func (s *MediaService) canWarmPreview(file domain.File) bool {
+	if s.converter == nil {
+		return false
+	}
+	if !isOfficeConvertible(file.ContentType, file.OriginalFilename) {
+		return false
+	}
+	if limit := s.previewLimitBytes(); limit > 0 && file.SizeBytes > limit {
+		return false
+	}
+	return true
 }
 
 // previewObjectKey is the stable derived-object key for a converted PDF. The
@@ -609,7 +655,16 @@ func (s *MediaService) AttachFiles(ctx context.Context, publicIDs []string, tena
 		}
 	}
 
-	return s.repo.AttachFiles(ctx, publicIDs, tenantID, orgID, userID, ownerType, ownerID, payloads)
+	err := s.repo.AttachFiles(ctx, publicIDs, tenantID, orgID, userID, ownerType, ownerID, payloads)
+	if err != nil {
+		return err
+	}
+	// Attached office files are converted in the background so the first
+	// viewer usually hits the derived-PDF cache instead of waiting.
+	if s.previewWarm != nil {
+		s.previewWarm(tenantID, orgID, publicIDs)
+	}
+	return nil
 }
 
 func (s *MediaService) CleanupExpiredTempFiles(ctx context.Context) (int, error) {

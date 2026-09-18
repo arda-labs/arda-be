@@ -82,11 +82,26 @@ func main() {
 	} else {
 		logger.Warn("office preview conversion disabled: GOTENBERG_URL is not configured")
 	}
+	// The warmer needs the service and the service needs a scheduler that
+	// forwards to the warmer, so wire the queue through a late-bound closure.
+	var previewWarmer *worker.PreviewWarmer
+	serviceOpts = append(serviceOpts, service.WithPreviewWarm(func(tenantID, orgID string, publicIDs []string) {
+		if previewWarmer == nil {
+			return
+		}
+		previewWarmer.Enqueue(tenantID, orgID, publicIDs)
+	}))
 	mediaSvc := service.NewMediaService(cfg, repo, provider, serviceOpts...)
 	mediaHandler := handler.NewMediaHandler(mediaSvc)
 
 	workerCtx, stopWorker := context.WithCancel(context.Background())
 	defer stopWorker()
+
+	if cfg.GotenbergURL != "" {
+		previewWarmer = worker.NewPreviewWarmer(mediaSvc, 256)
+		go previewWarmer.Run(workerCtx)
+		logger.Info("office preview warmup started")
+	}
 
 	// Publish the media outbox to NATS JetStream. Uploads keep working when
 	// NATS is down: rows stay pending and are retried on the next start.
