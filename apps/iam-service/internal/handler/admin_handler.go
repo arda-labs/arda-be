@@ -67,7 +67,11 @@ func (h *AdminHandler) requireActiveTenant(r *http.Request, tenantID string) err
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	listQuery := parseAdminListQuery(r)
 	status := r.URL.Query().Get("status")
-	tenantID, ok := requiredAdminTargetTenant(w, r)
+	// Read-only directory: a verified global administrator reads across
+	// tenants (tenant membership picker), while a tenant administrator stays
+	// inside the verifier-provided actor tenant. An explicit tenant_id is
+	// still validated before it narrows the result.
+	tenantID, ok := resolveAdminReadTenant(w, r)
 	if !ok {
 		return
 	}

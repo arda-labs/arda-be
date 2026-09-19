@@ -207,7 +207,9 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 
 	// Internal AI surface: ai-service calls here with a signed caller
 	// assertion and the delegated subject as headers. ListUsers re-validates
-	// the delegated actor/tenant scope before serving (requiredAdminTargetTenant).
+	// the delegated actor/tenant scope before serving (resolveAdminReadTenant):
+	// the delegated tenant is enforced unless the caller carries a verified
+	// global capability.
 	mux.Handle("/internal/ai/users", internalAIService(method("GET", adminHandler.ListUsers)))
 
 	// ── Session API ──
