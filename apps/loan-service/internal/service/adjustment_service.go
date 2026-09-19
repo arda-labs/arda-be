@@ -29,6 +29,10 @@ func mapRepoError(err error) error {
 		return nil
 	}
 	switch {
+	case errors.Is(err, repository.ErrStaleVersion):
+		// The checker approved a version that has since changed; the domain
+		// refused to apply it (fail-loud, not a silent no-op).
+		return ardaerrors.Wrap(ardaerrors.CodeConflict, "dossier changed while in review", err)
 	case errors.Is(err, repository.ErrAdjustmentNotPending):
 		// The guarded transition refused the decision: the row is not
 		// PENDING (already resolved to another status, or never submitted).
@@ -42,6 +46,19 @@ func mapRepoError(err error) error {
 	default:
 		return ardaerrors.Wrap(ardaerrors.CodeInternal, "loan operation failed", err)
 	}
+}
+
+// IsStaleVersion reports whether err is the stale-dossier conflict raised by a
+// guarded decision transition (the checker approved a version that changed
+// while the case was in review). The gRPC boundary maps it to codes.Aborted so
+// the worker stops with an incident instead of retrying.
+func IsStaleVersion(err error) bool {
+	if errors.Is(err, repository.ErrStaleVersion) {
+		return true
+	}
+	// ardaerrors.Wrap may not expose the sentinel through Unwrap in every path;
+	// the wrapped message is the stable marker.
+	return err != nil && strings.Contains(err.Error(), "dossier changed while in review")
 }
 
 // ── Adjustment flows (uniform) ──

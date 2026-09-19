@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/arda-labs/arda/apps/statistical-service/internal/reports"
@@ -151,7 +152,7 @@ func (s *StatisticalService) CheckSubmission(ctx context.Context, tenantID, id s
 
 // ResolveSubmission applies the checker decision (APPROVE→APPROVED,
 // REJECT→REJECTED); idempotent when the same decision arrives twice.
-func (s *StatisticalService) ResolveSubmission(ctx context.Context, tenantID, id, decision, actor string) error {
+func (s *StatisticalService) ResolveSubmission(ctx context.Context, tenantID, id, decision, actor string, dataVersion int64) error {
 	status := ""
 	switch decision {
 	case "APPROVE":
@@ -161,7 +162,7 @@ func (s *StatisticalService) ResolveSubmission(ctx context.Context, tenantID, id
 	default:
 		return ardaerrors.New(ardaerrors.CodeInvalidInput, "decision must be APPROVE or REJECT")
 	}
-	applied, err := s.repo.ResolveSubmission(ctx, tenantID, id, status, actor)
+	applied, err := s.repo.ResolveSubmission(ctx, tenantID, id, status, actor, dataVersion)
 	if err != nil {
 		return err
 	}
@@ -196,6 +197,13 @@ func (s *StatisticalService) findSubmission(ctx context.Context, tenantID, id st
 // GetSubmission returns one submission by id (workbench form host read API).
 func (s *StatisticalService) GetSubmission(ctx context.Context, tenantID, id string) (*repository.ReportSubmission, error) {
 	return s.findSubmission(ctx, tenantID, id)
+}
+
+// IsStaleVersion reports whether err is the stale-dossier conflict raised by a
+// guarded decision (the checker approved a version that changed while the
+// submission was in review). The gRPC boundary maps it to codes.Aborted.
+func IsStaleVersion(err error) bool {
+	return errors.Is(err, repository.ErrStaleVersion)
 }
 
 // ListSubmissions passthrough for the read API.

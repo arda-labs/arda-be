@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 )
 
 // GeneralProvisionRow is one LNM.307 per-org provision period (the approved
@@ -110,31 +112,47 @@ func (r *LoanRepository) SetGeneralProvisionCase(ctx context.Context, tenantID, 
 
 // SettleGeneralProvision marks the period POSTED with its recomputed figures.
 func (r *LoanRepository) SettleGeneralProvision(ctx context.Context, tenantID, id string, total, accum, required, alloc, reverse int64, journalEntryID, actor string) error {
+	expected := domain.DataVersionFromContext(ctx)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_general_provisions
 		SET total_outstanding_minor = $3, accum_provision_minor = $4,
 		    required_provision_minor = $5, alloc_minor = $6, reverse_minor = $7,
 		    status = 'POSTED', journal_entry_id = NULLIF($8,'')::uuid,
-		    updated_by = $9, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2 AND status = 'SUBMITTED'`,
-		tenantID, id, total, accum, required, alloc, reverse, journalEntryID, actor)
+		    updated_by = $9, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'SUBMITTED'
+		  AND ($10 = 0 OR version = $10)`,
+		tenantID, id, total, accum, required, alloc, reverse, journalEntryID, actor, expected)
 	if err != nil {
 		return err
 	}
-	return expectOneRow(res, "general provision")
+	if err := expectOneRow(res, "general provision"); err != nil {
+		if staleVersion(ctx, r.db, "lnm_general_provisions", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return err
+	}
+	return nil
 }
 
 // ResolveGeneralProvision closes the period without posting (REJECT/CANCEL).
 func (r *LoanRepository) ResolveGeneralProvision(ctx context.Context, tenantID, id, status, actor string) error {
+	expected := domain.DataVersionFromContext(ctx)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_general_provisions
-		SET status = $3, updated_by = $4, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2 AND status = 'SUBMITTED'`,
-		tenantID, id, status, actor)
+		SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'SUBMITTED'
+		  AND ($5 = 0 OR version = $5)`,
+		tenantID, id, status, actor, expected)
 	if err != nil {
 		return err
 	}
-	return expectOneRow(res, "general provision")
+	if err := expectOneRow(res, "general provision"); err != nil {
+		if staleVersion(ctx, r.db, "lnm_general_provisions", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return err
+	}
+	return nil
 }
 
 // GeneralProvisionRate returns the effective rate for an org ('%' fallback).

@@ -969,8 +969,10 @@ type SettleDisbursementRequest struct {
 	DisbursementId string                 `protobuf:"bytes,1,opt,name=disbursement_id,json=disbursementId,proto3" json:"disbursement_id,omitempty"`
 	JournalEntryId string                 `protobuf:"bytes,2,opt,name=journal_entry_id,json=journalEntryId,proto3" json:"journal_entry_id,omitempty"`
 	Actor          string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Row version the checker saw; 0 disables the guard (legacy callers).
+	DataVersion   int64 `protobuf:"varint,4,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SettleDisbursementRequest) Reset() {
@@ -1024,6 +1026,13 @@ func (x *SettleDisbursementRequest) GetActor() string {
 	return ""
 }
 
+func (x *SettleDisbursementRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
+}
+
 type SettleDisbursementResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
@@ -1074,6 +1083,7 @@ type ResolveDisbursementRequest struct {
 	Decision       string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
 	DecidedBy      string                 `protobuf:"bytes,3,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
 	Note           string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	DataVersion    int64                  `protobuf:"varint,5,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1134,6 +1144,13 @@ func (x *ResolveDisbursementRequest) GetNote() string {
 		return x.Note
 	}
 	return ""
+}
+
+func (x *ResolveDisbursementRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
 }
 
 type ResolveDisbursementResponse struct {
@@ -1449,6 +1466,7 @@ type SettleCollectionRequest struct {
 	CollectionId   string                 `protobuf:"bytes,1,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
 	JournalEntryId string                 `protobuf:"bytes,2,opt,name=journal_entry_id,json=journalEntryId,proto3" json:"journal_entry_id,omitempty"`
 	Actor          string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	DataVersion    int64                  `protobuf:"varint,4,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1504,6 +1522,13 @@ func (x *SettleCollectionRequest) GetActor() string {
 	return ""
 }
 
+func (x *SettleCollectionRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
+}
+
 type SettleCollectionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
@@ -1554,6 +1579,7 @@ type ResolveCollectionRequest struct {
 	Decision      string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"`
 	DecidedBy     string                 `protobuf:"bytes,3,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
 	Note          string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	DataVersion   int64                  `protobuf:"varint,5,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1614,6 +1640,13 @@ func (x *ResolveCollectionRequest) GetNote() string {
 		return x.Note
 	}
 	return ""
+}
+
+func (x *ResolveCollectionRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
 }
 
 type ResolveCollectionResponse struct {
@@ -2122,6 +2155,7 @@ type SettleBatchRequest struct {
 	BatchType      string                 `protobuf:"bytes,2,opt,name=batch_type,json=batchType,proto3" json:"batch_type,omitempty"` // dispatches the loan-service settle loop
 	JournalEntryId string                 `protobuf:"bytes,3,opt,name=journal_entry_id,json=journalEntryId,proto3" json:"journal_entry_id,omitempty"`
 	Actor          string                 `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	DataVersion    int64                  `protobuf:"varint,5,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2184,6 +2218,13 @@ func (x *SettleBatchRequest) GetActor() string {
 	return ""
 }
 
+func (x *SettleBatchRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
+}
+
 type SettleBatchResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
@@ -2235,6 +2276,7 @@ type ResolveBatchRequest struct {
 	Decision      string                 `protobuf:"bytes,3,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
 	DecidedBy     string                 `protobuf:"bytes,4,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
 	Note          string                 `protobuf:"bytes,5,opt,name=note,proto3" json:"note,omitempty"`
+	DataVersion   int64                  `protobuf:"varint,6,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2302,6 +2344,13 @@ func (x *ResolveBatchRequest) GetNote() string {
 		return x.Note
 	}
 	return ""
+}
+
+func (x *ResolveBatchRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
 }
 
 type ResolveBatchResponse struct {
@@ -2450,6 +2499,7 @@ type ResolveGeneralProvisionRequest struct {
 	Decision           string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
 	DecidedBy          string                 `protobuf:"bytes,3,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
 	Note               string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	DataVersion        int64                  `protobuf:"varint,5,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -2510,6 +2560,13 @@ func (x *ResolveGeneralProvisionRequest) GetNote() string {
 		return x.Note
 	}
 	return ""
+}
+
+func (x *ResolveGeneralProvisionRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
 }
 
 type ResolveGeneralProvisionResponse struct {
@@ -2658,6 +2715,7 @@ type ResolveSpecificProvisionRequest struct {
 	Decision            string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
 	DecidedBy           string                 `protobuf:"bytes,3,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
 	Note                string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	DataVersion         int64                  `protobuf:"varint,5,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -2718,6 +2776,13 @@ func (x *ResolveSpecificProvisionRequest) GetNote() string {
 		return x.Note
 	}
 	return ""
+}
+
+func (x *ResolveSpecificProvisionRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
 }
 
 type ResolveSpecificProvisionResponse struct {
@@ -2835,19 +2900,21 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	" \x01(\tR\fcustomerCode\x12(\n" +
 	"\x10fund_source_code\x18\v \x01(\tR\x0efundSourceCode\x12(\n" +
 	"\x10workflow_case_id\x18\f \x01(\tR\x0eworkflowCaseId\x12\x1b\n" +
-	"\tflow_type\x18\r \x01(\tR\bflowType\"\x84\x01\n" +
+	"\tflow_type\x18\r \x01(\tR\bflowType\"\xa7\x01\n" +
 	"\x19SettleDisbursementRequest\x12'\n" +
 	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\x12(\n" +
 	"\x10journal_entry_id\x18\x02 \x01(\tR\x0ejournalEntryId\x12\x14\n" +
-	"\x05actor\x18\x03 \x01(\tR\x05actor\",\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\x12!\n" +
+	"\fdata_version\x18\x04 \x01(\x03R\vdataVersion\",\n" +
 	"\x1aSettleDisbursementResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x94\x01\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\xb7\x01\n" +
 	"\x1aResolveDisbursementRequest\x12'\n" +
 	"\x0fdisbursement_id\x18\x01 \x01(\tR\x0edisbursementId\x12\x1a\n" +
 	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x1d\n" +
 	"\n" +
 	"decided_by\x18\x03 \x01(\tR\tdecidedBy\x12\x12\n" +
-	"\x04note\x18\x04 \x01(\tR\x04note\"-\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\x12!\n" +
+	"\fdata_version\x18\x05 \x01(\x03R\vdataVersion\"-\n" +
 	"\x1bResolveDisbursementResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"=\n" +
 	"\x16CheckCollectionRequest\x12#\n" +
@@ -2869,19 +2936,21 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"\rorg_unit_code\x18\t \x01(\tR\vorgUnitCode\x12#\n" +
 	"\rcustomer_code\x18\n" +
 	" \x01(\tR\fcustomerCode\x12(\n" +
-	"\x10workflow_case_id\x18\v \x01(\tR\x0eworkflowCaseId\"~\n" +
+	"\x10workflow_case_id\x18\v \x01(\tR\x0eworkflowCaseId\"\xa1\x01\n" +
 	"\x17SettleCollectionRequest\x12#\n" +
 	"\rcollection_id\x18\x01 \x01(\tR\fcollectionId\x12(\n" +
 	"\x10journal_entry_id\x18\x02 \x01(\tR\x0ejournalEntryId\x12\x14\n" +
-	"\x05actor\x18\x03 \x01(\tR\x05actor\"*\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\x12!\n" +
+	"\fdata_version\x18\x04 \x01(\x03R\vdataVersion\"*\n" +
 	"\x18SettleCollectionResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x8e\x01\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\xb1\x01\n" +
 	"\x18ResolveCollectionRequest\x12#\n" +
 	"\rcollection_id\x18\x01 \x01(\tR\fcollectionId\x12\x1a\n" +
 	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x1d\n" +
 	"\n" +
 	"decided_by\x18\x03 \x01(\tR\tdecidedBy\x12\x12\n" +
-	"\x04note\x18\x04 \x01(\tR\x04note\"+\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\x12!\n" +
+	"\fdata_version\x18\x05 \x01(\x03R\vdataVersion\"+\n" +
 	"\x19ResolveCollectionResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"h\n" +
 	"\x0fGetBatchRequest\x12\x1b\n" +
@@ -2931,15 +3000,16 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"batch_type\x18\x02 \x01(\tR\tbatchType\">\n" +
 	"\x12CheckBatchResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x8e\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xb1\x01\n" +
 	"\x12SettleBatchRequest\x12\x19\n" +
 	"\bbatch_id\x18\x01 \x01(\tR\abatchId\x12\x1d\n" +
 	"\n" +
 	"batch_type\x18\x02 \x01(\tR\tbatchType\x12(\n" +
 	"\x10journal_entry_id\x18\x03 \x01(\tR\x0ejournalEntryId\x12\x14\n" +
-	"\x05actor\x18\x04 \x01(\tR\x05actor\"%\n" +
+	"\x05actor\x18\x04 \x01(\tR\x05actor\x12!\n" +
+	"\fdata_version\x18\x05 \x01(\x03R\vdataVersion\"%\n" +
 	"\x13SettleBatchResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x9e\x01\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"\xc1\x01\n" +
 	"\x13ResolveBatchRequest\x12\x19\n" +
 	"\bbatch_id\x18\x01 \x01(\tR\abatchId\x12\x1d\n" +
 	"\n" +
@@ -2947,33 +3017,36 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"\bdecision\x18\x03 \x01(\tR\bdecision\x12\x1d\n" +
 	"\n" +
 	"decided_by\x18\x04 \x01(\tR\tdecidedBy\x12\x12\n" +
-	"\x04note\x18\x05 \x01(\tR\x04note\"&\n" +
+	"\x04note\x18\x05 \x01(\tR\x04note\x12!\n" +
+	"\fdata_version\x18\x06 \x01(\x03R\vdataVersion\"&\n" +
 	"\x14ResolveBatchResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"P\n" +
 	"\x1cCheckGeneralProvisionRequest\x120\n" +
 	"\x14general_provision_id\x18\x01 \x01(\tR\x12generalProvisionId\"I\n" +
 	"\x1dCheckGeneralProvisionResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\xa1\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xc4\x01\n" +
 	"\x1eResolveGeneralProvisionRequest\x120\n" +
 	"\x14general_provision_id\x18\x01 \x01(\tR\x12generalProvisionId\x12\x1a\n" +
 	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x1d\n" +
 	"\n" +
 	"decided_by\x18\x03 \x01(\tR\tdecidedBy\x12\x12\n" +
-	"\x04note\x18\x04 \x01(\tR\x04note\"1\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\x12!\n" +
+	"\fdata_version\x18\x05 \x01(\x03R\vdataVersion\"1\n" +
 	"\x1fResolveGeneralProvisionResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"S\n" +
 	"\x1dCheckSpecificProvisionRequest\x122\n" +
 	"\x15specific_provision_id\x18\x01 \x01(\tR\x13specificProvisionId\"J\n" +
 	"\x1eCheckSpecificProvisionResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\xa4\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xc7\x01\n" +
 	"\x1fResolveSpecificProvisionRequest\x122\n" +
 	"\x15specific_provision_id\x18\x01 \x01(\tR\x13specificProvisionId\x12\x1a\n" +
 	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x1d\n" +
 	"\n" +
 	"decided_by\x18\x03 \x01(\tR\tdecidedBy\x12\x12\n" +
-	"\x04note\x18\x04 \x01(\tR\x04note\"2\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\x12!\n" +
+	"\fdata_version\x18\x05 \x01(\x03R\vdataVersion\"2\n" +
 	" ResolveSpecificProvisionResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok2\xe6\x11\n" +
 	"\x12LoanCommandService\x12m\n" +

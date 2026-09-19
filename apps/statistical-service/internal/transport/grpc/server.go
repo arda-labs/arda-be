@@ -46,7 +46,10 @@ func (s *StatisticalServer) ResolveSubmission(ctx context.Context, req *statisti
 	if err != nil {
 		return nil, err
 	}
-	if err := s.svc.ResolveSubmission(ctx, tenantID, req.GetSubmissionId(), req.GetDecision(), req.GetActor()); err != nil {
+	if err := s.svc.ResolveSubmission(ctx, tenantID, req.GetSubmissionId(), req.GetDecision(), req.GetActor(), req.GetDataVersion()); err != nil {
+		if service.IsStaleVersion(err) {
+			return nil, status.Error(codes.Aborted, "statistical: "+err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &statisticalv1.ResolveSubmissionResponse{Ok: true}, nil

@@ -125,6 +125,7 @@ type ResolveSubmissionRequest struct {
 	Decision      string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"`
 	Actor         string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
 	Note          string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	DataVersion   int64                  `protobuf:"varint,5,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -187,6 +188,13 @@ func (x *ResolveSubmissionRequest) GetNote() string {
 	return ""
 }
 
+func (x *ResolveSubmissionRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
+}
+
 type ResolveSubmissionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
@@ -240,12 +248,13 @@ const file_arda_statistical_v1_statistical_proto_rawDesc = "" +
 	"\rsubmission_id\x18\x01 \x01(\tR\fsubmissionId\"C\n" +
 	"\x17CheckSubmissionResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x85\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xa8\x01\n" +
 	"\x18ResolveSubmissionRequest\x12#\n" +
 	"\rsubmission_id\x18\x01 \x01(\tR\fsubmissionId\x12\x1a\n" +
 	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x14\n" +
 	"\x05actor\x18\x03 \x01(\tR\x05actor\x12\x12\n" +
-	"\x04note\x18\x04 \x01(\tR\x04note\"+\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\x12!\n" +
+	"\fdata_version\x18\x05 \x01(\x03R\vdataVersion\"+\n" +
 	"\x19ResolveSubmissionResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok2\xfd\x01\n" +
 	"\x19StatisticalCommandService\x12l\n" +

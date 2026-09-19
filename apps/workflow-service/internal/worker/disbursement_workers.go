@@ -12,6 +12,8 @@ import (
 	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // DisbursementFlow describes one leg of the two-phase EPAS LNM.300.02
@@ -264,7 +266,12 @@ func (w *DisbursementWorkers) execute() worker.JobHandler {
 			w.failJob(client, job, "Posting Error: "+err.Error())
 			return
 		}
-		if err := w.loanClient.SettleDisbursement(crmJobContext(job), id, posted.GetJournalEntryId(), actor); err != nil {
+		if err := w.loanClient.SettleDisbursement(crmJobContext(job), id, posted.GetJournalEntryId(), actor, dataVersionFromVars(vars)); err != nil {
+			if status.Code(err) == codes.Aborted {
+				// Stale approval: retrying cannot fix it — stop with an incident.
+				w.failJobTerminal(client, job, "Loan Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Loan Error: "+err.Error())
 			return
 		}
@@ -307,7 +314,11 @@ func (w *DisbursementWorkers) cancel() worker.JobHandler {
 				return
 			}
 		}
-		if err := w.loanClient.ResolveDisbursement(crmJobContext(job), id, "REJECT", decidedBy, note); err != nil {
+		if err := w.loanClient.ResolveDisbursement(crmJobContext(job), id, "REJECT", decidedBy, note, dataVersionFromVars(vars)); err != nil {
+			if status.Code(err) == codes.Aborted {
+				w.failJobTerminal(client, job, "Loan Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Loan Error: "+err.Error())
 			return
 		}
@@ -332,6 +343,13 @@ func (w *DisbursementWorkers) complete(ctx context.Context, client worker.JobCli
 	}
 	_, err := cmd.Send(ctx)
 	return err
+}
+
+// failJobTerminal stops the job with no retries — used for a stale-dossier
+// conflict where retrying cannot succeed; the incident is the signal.
+func (w *DisbursementWorkers) failJobTerminal(client worker.JobClient, job entities.Job, reason string) {
+	slog.Warn("workflow disbursement job terminal", "flow", w.flow.Flow, "jobType", job.GetType(), "reason", reason)
+	_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).ErrorMessage(reason).Send(context.Background())
 }
 
 func (w *DisbursementWorkers) failJob(client worker.JobClient, job entities.Job, reason string) {

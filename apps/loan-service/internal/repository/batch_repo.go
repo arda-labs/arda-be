@@ -369,13 +369,18 @@ func (r *LoanRepository) SetDisbursementBatchCase(ctx context.Context, tenantID,
 
 // SetDisbursementBatchStatus transitions the batch status.
 func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantID, id, status string) error {
+	expected := domain.DataVersionFromContext(ctx)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_disbursement_batches SET status = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status)
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($4 = 0 OR version = $4)`, tenantID, id, status, expected)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
+		if staleVersion(ctx, r.db, "lnm_disbursement_batches", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
 		return fmt.Errorf("%w", ErrNotFound)
 	}
 	return nil
@@ -401,13 +406,18 @@ func (r *LoanRepository) SetCollectionBatchCase(ctx context.Context, tenantID, i
 
 // SetCollectionBatchStatus transitions the collection batch status.
 func (r *LoanRepository) SetCollectionBatchStatus(ctx context.Context, tenantID, id, status string) error {
+	expected := domain.DataVersionFromContext(ctx)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_collection_batches SET status = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status)
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($4 = 0 OR version = $4)`, tenantID, id, status, expected)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
+		if staleVersion(ctx, r.db, "lnm_collection_batches", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
 		return fmt.Errorf("%w", ErrNotFound)
 	}
 	return nil

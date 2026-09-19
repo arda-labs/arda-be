@@ -156,6 +156,16 @@ func (s *LoanServer) GetDisbursementPostingDetail(ctx context.Context, req *loan
 	return detail, nil
 }
 
+// resolveError maps a decision failure to a gRPC status. A stale dossier is
+// Aborted (retrying cannot fix it — the worker stops with an incident);
+// everything else is FailedPrecondition so the worker can retry.
+func resolveError(err error) error {
+	if service.IsStaleVersion(err) {
+		return status.Error(codes.Aborted, "loan: "+err.Error())
+	}
+	return status.Error(codes.FailedPrecondition, "loan: "+err.Error())
+}
+
 func (s *LoanServer) SettleDisbursement(ctx context.Context, req *loanv1.SettleDisbursementRequest) (*loanv1.SettleDisbursementResponse, error) {
 	tenantID, err := tenantFromContext(ctx)
 	if err != nil {
@@ -163,7 +173,7 @@ func (s *LoanServer) SettleDisbursement(ctx context.Context, req *loanv1.SettleD
 	}
 	if err := s.disbursements.Settle(ctx, tenantID, req.GetDisbursementId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
 		slog.Warn("loan grpc: settle failed", "id", req.GetDisbursementId(), "err", err)
-		return &loanv1.SettleDisbursementResponse{Ok: false}, nil
+		return nil, status.Error(codes.FailedPrecondition, "loan: "+err.Error())
 	}
 	return &loanv1.SettleDisbursementResponse{Ok: true}, nil
 }
@@ -173,9 +183,10 @@ func (s *LoanServer) ResolveDisbursement(ctx context.Context, req *loanv1.Resolv
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
+	ctx = domain.WithDataVersion(ctx, req.GetDataVersion())
 	if err := s.disbursements.Resolve(ctx, tenantID, req.GetDisbursementId(), req.GetDecision(), req.GetDecidedBy(), req.GetNote()); err != nil {
 		slog.Warn("loan grpc: resolve disbursement failed", "id", req.GetDisbursementId(), "err", err)
-		return &loanv1.ResolveDisbursementResponse{Ok: false}, nil
+		return nil, resolveError(err)
 	}
 	return &loanv1.ResolveDisbursementResponse{Ok: true}, nil
 }
@@ -214,7 +225,7 @@ func (s *LoanServer) SettleCollection(ctx context.Context, req *loanv1.SettleCol
 	}
 	if err := s.collections.Settle(ctx, tenantID, req.GetCollectionId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
 		slog.Warn("loan grpc: settle collection failed", "id", req.GetCollectionId(), "err", err)
-		return &loanv1.SettleCollectionResponse{Ok: false}, nil
+		return nil, status.Error(codes.FailedPrecondition, "loan: "+err.Error())
 	}
 	return &loanv1.SettleCollectionResponse{Ok: true}, nil
 }
@@ -224,9 +235,10 @@ func (s *LoanServer) ResolveCollection(ctx context.Context, req *loanv1.ResolveC
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
+	ctx = domain.WithDataVersion(ctx, req.GetDataVersion())
 	if err := s.collections.Resolve(ctx, tenantID, req.GetCollectionId(), req.GetDecision(), req.GetDecidedBy(), req.GetNote()); err != nil {
 		slog.Warn("loan grpc: resolve collection failed", "id", req.GetCollectionId(), "err", err)
-		return &loanv1.ResolveCollectionResponse{Ok: false}, nil
+		return nil, resolveError(err)
 	}
 	return &loanv1.ResolveCollectionResponse{Ok: true}, nil
 }
@@ -300,13 +312,13 @@ func (s *LoanServer) SettleBatch(ctx context.Context, req *loanv1.SettleBatchReq
 	if isCollectionBatchType(req.GetBatchType()) {
 		if err := s.batchColSvc().SettleBatchCollection(ctx, tenantID, req.GetBatchId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
 			slog.Warn("loan grpc: settle collection batch failed", "id", req.GetBatchId(), "err", err)
-			return &loanv1.SettleBatchResponse{Ok: false}, nil
+			return nil, status.Error(codes.FailedPrecondition, "loan: "+err.Error())
 		}
 		return &loanv1.SettleBatchResponse{Ok: true}, nil
 	}
 	if err := s.batchDisbSvc().SettleBatch(ctx, tenantID, req.GetBatchId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
 		slog.Warn("loan grpc: settle disbursement batch failed", "id", req.GetBatchId(), "err", err)
-		return &loanv1.SettleBatchResponse{Ok: false}, nil
+		return nil, status.Error(codes.FailedPrecondition, "loan: "+err.Error())
 	}
 	return &loanv1.SettleBatchResponse{Ok: true}, nil
 }
@@ -319,16 +331,17 @@ func (s *LoanServer) ResolveBatch(ctx context.Context, req *loanv1.ResolveBatchR
 	if req.GetBatchId() == "" || req.GetDecision() == "" {
 		return nil, status.Error(codes.InvalidArgument, "batch_id and decision are required")
 	}
+	ctx = domain.WithDataVersion(ctx, req.GetDataVersion())
 	if isCollectionBatchType(req.GetBatchType()) {
 		if err := s.batchColSvc().Resolve(ctx, tenantID, req.GetBatchId(), req.GetDecision()); err != nil {
 			slog.Warn("loan grpc: resolve collection batch failed", "id", req.GetBatchId(), "err", err)
-			return &loanv1.ResolveBatchResponse{Ok: false}, nil
+			return nil, resolveError(err)
 		}
 		return &loanv1.ResolveBatchResponse{Ok: true}, nil
 	}
 	if err := s.batchDisbSvc().Resolve(ctx, tenantID, req.GetBatchId(), req.GetDecision()); err != nil {
 		slog.Warn("loan grpc: resolve disbursement batch failed", "id", req.GetBatchId(), "err", err)
-		return &loanv1.ResolveBatchResponse{Ok: false}, nil
+		return nil, resolveError(err)
 	}
 	return &loanv1.ResolveBatchResponse{Ok: true}, nil
 }
@@ -358,10 +371,11 @@ func (s *LoanServer) ResolveGeneralProvision(ctx context.Context, req *loanv1.Re
 	if req.GetGeneralProvisionId() == "" || req.GetDecision() == "" {
 		return nil, status.Error(codes.InvalidArgument, "general_provision_id and decision are required")
 	}
+	ctx = domain.WithDataVersion(ctx, req.GetDataVersion())
 	if err := s.generalProv.Resolve(ctx, tenantID, req.GetGeneralProvisionId(),
 		req.GetDecision(), req.GetDecidedBy(), req.GetNote()); err != nil {
 		slog.Warn("loan grpc: resolve general provision failed", "id", req.GetGeneralProvisionId(), "err", err)
-		return &loanv1.ResolveGeneralProvisionResponse{Ok: false}, nil
+		return nil, resolveError(err)
 	}
 	return &loanv1.ResolveGeneralProvisionResponse{Ok: true}, nil
 }
@@ -389,10 +403,11 @@ func (s *LoanServer) ResolveSpecificProvision(ctx context.Context, req *loanv1.R
 	if req.GetSpecificProvisionId() == "" || req.GetDecision() == "" {
 		return nil, status.Error(codes.InvalidArgument, "specific_provision_id and decision are required")
 	}
+	ctx = domain.WithDataVersion(ctx, req.GetDataVersion())
 	if err := s.specificProv.Resolve(ctx, tenantID, req.GetSpecificProvisionId(),
 		req.GetDecision(), req.GetDecidedBy(), req.GetNote()); err != nil {
 		slog.Warn("loan grpc: resolve specific provision failed", "id", req.GetSpecificProvisionId(), "err", err)
-		return &loanv1.ResolveSpecificProvisionResponse{Ok: false}, nil
+		return nil, resolveError(err)
 	}
 	return &loanv1.ResolveSpecificProvisionResponse{Ok: true}, nil
 }

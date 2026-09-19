@@ -30,6 +30,10 @@ var (
 	// reached — the repository reports that as an idempotent no-op instead)
 	// or still in a pre-submit state.
 	ErrAdjustmentNotPending = errors.New("lnm: adjustment is not pending")
+	// ErrStaleVersion marks a guarded decision transition whose row version no
+	// longer matches the one the checker saw: the dossier changed while it was
+	// in review, so the decision must not be applied.
+	ErrStaleVersion = errors.New("lnm: dossier changed while in review")
 )
 
 // NewID generates a prefixed random-hex identifier.
@@ -47,6 +51,22 @@ type LoanRepository struct {
 
 func NewLoanRepository(db *sql.DB) *LoanRepository {
 	return &LoanRepository{db: db}
+}
+
+// staleVersion reports whether a zero-row guarded transition was caused by a
+// version mismatch (the dossier changed since the checker saw it) rather than
+// by the row being absent or already terminal. The caller runs it only after
+// its UPDATE (which carries the atomic `version = expected` predicate) missed.
+// table is an internal constant, never user input.
+func staleVersion(ctx context.Context, q repoTX, table, tenantID, id string, expected int64) bool {
+	if expected <= 0 {
+		return false
+	}
+	var current int64
+	if err := q.QueryRowContext(ctx, `SELECT version FROM `+table+` WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&current); err != nil {
+		return false
+	}
+	return current != expected
 }
 
 // repoTX is the query surface shared by *sql.DB and *sql.Tx. Repository
@@ -1434,10 +1454,21 @@ func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id strin
 }
 
 func (r *LoanRepository) SetDisbursementStatus(ctx context.Context, tenantID, id, status, updatedBy string) error {
-	_, err := r.db.ExecContext(ctx, `
+	expected := domain.DataVersionFromContext(ctx)
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_disbursements SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status, updatedBy)
-	return err
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($5 = 0 OR version = $5)`, tenantID, id, status, updatedBy, expected)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if staleVersion(ctx, r.db, "lnm_disbursements", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return fmt.Errorf("%w", ErrNotFound)
+	}
+	return nil
 }
 
 func (r *LoanRepository) SetDisbursementCaseAndJournal(ctx context.Context, tenantID, id, caseID, caseCode, journalEntryID string) error {
@@ -1765,10 +1796,21 @@ func (r *LoanRepository) GetCollection(ctx context.Context, tenantID, id string)
 }
 
 func (r *LoanRepository) SetCollectionStatus(ctx context.Context, tenantID, id, status, updatedBy string) error {
-	_, err := r.db.ExecContext(ctx, `
+	expected := domain.DataVersionFromContext(ctx)
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_collections SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status, updatedBy)
-	return err
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($5 = 0 OR version = $5)`, tenantID, id, status, updatedBy, expected)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if staleVersion(ctx, r.db, "lnm_collections", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return fmt.Errorf("%w", ErrNotFound)
+	}
+	return nil
 }
 
 func (r *LoanRepository) SetCollectionCaseAndJournal(ctx context.Context, tenantID, id, caseID, caseCode, journalEntryID string) error {

@@ -220,34 +220,49 @@ func (c *Client) GetDisbursementPostingDetail(ctx context.Context, disbursementI
 }
 
 // SettleDisbursement marks the disbursement POSTED with its journal entry.
-func (c *Client) SettleDisbursement(ctx context.Context, disbursementID, journalEntryID, actor string) error {
+// dataVersion is the row version the checker saw (0 disables the guard).
+func (c *Client) SettleDisbursement(ctx context.Context, disbursementID, journalEntryID, actor string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("loan client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.SettleDisbursement(callCtx, &loanv1.SettleDisbursementRequest{
+	resp, err := c.api.SettleDisbursement(callCtx, &loanv1.SettleDisbursementRequest{
 		DisbursementId: disbursementID,
 		JournalEntryId: journalEntryID,
 		Actor:          actor,
+		DataVersion:    dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("loan: settle disbursement was not applied")
+	}
+	return nil
 }
 
 // ResolveDisbursement applies APPROVE/REJECT without posting.
-func (c *Client) ResolveDisbursement(ctx context.Context, disbursementID, decision, decidedBy, note string) error {
+func (c *Client) ResolveDisbursement(ctx context.Context, disbursementID, decision, decidedBy, note string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("loan client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveDisbursement(callCtx, &loanv1.ResolveDisbursementRequest{
+	resp, err := c.api.ResolveDisbursement(callCtx, &loanv1.ResolveDisbursementRequest{
 		DisbursementId: disbursementID,
 		Decision:       decision,
 		DecidedBy:      decidedBy,
 		Note:           note,
+		DataVersion:    dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("loan: resolve disbursement was not applied")
+	}
+	return nil
 }
 
 // CheckCollection validates the collection is actionable (BPMN validate).
@@ -279,34 +294,48 @@ func (c *Client) GetCollectionPostingDetail(ctx context.Context, collectionID st
 }
 
 // SettleCollection marks the collection POSTED with its journal entry.
-func (c *Client) SettleCollection(ctx context.Context, collectionID, journalEntryID, actor string) error {
+func (c *Client) SettleCollection(ctx context.Context, collectionID, journalEntryID, actor string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("loan client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.SettleCollection(callCtx, &loanv1.SettleCollectionRequest{
+	resp, err := c.api.SettleCollection(callCtx, &loanv1.SettleCollectionRequest{
 		CollectionId:   collectionID,
 		JournalEntryId: journalEntryID,
 		Actor:          actor,
+		DataVersion:    dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("loan: settle collection was not applied")
+	}
+	return nil
 }
 
 // ResolveCollection applies APPROVE/REJECT without posting.
-func (c *Client) ResolveCollection(ctx context.Context, collectionID, decision, decidedBy, note string) error {
+func (c *Client) ResolveCollection(ctx context.Context, collectionID, decision, decidedBy, note string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("loan client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveCollection(callCtx, &loanv1.ResolveCollectionRequest{
+	resp, err := c.api.ResolveCollection(callCtx, &loanv1.ResolveCollectionRequest{
 		CollectionId: collectionID,
 		Decision:     decision,
 		DecidedBy:    decidedBy,
 		Note:         note,
+		DataVersion:  dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("loan: resolve collection was not applied")
+	}
+	return nil
 }
 
 // ── Batch flows (iteration 13, 1 hồ sơ — N hợp đồng) ──
@@ -344,36 +373,50 @@ func (c *Client) CheckBatch(ctx context.Context, batchID, batchType string) (boo
 
 // SettleBatch marks the batch POSTED and applies the per-row side effects
 // (loan-service loops its existing per-row settle semantics).
-func (c *Client) SettleBatch(ctx context.Context, batchID, batchType, journalEntryID, actor string) error {
+func (c *Client) SettleBatch(ctx context.Context, batchID, batchType, journalEntryID, actor string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("loan client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.SettleBatch(callCtx, &loanv1.SettleBatchRequest{
+	resp, err := c.api.SettleBatch(callCtx, &loanv1.SettleBatchRequest{
 		BatchId:        batchID,
 		BatchType:      batchType,
 		JournalEntryId: journalEntryID,
 		Actor:          actor,
+		DataVersion:    dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("loan: settle batch was not applied")
+	}
+	return nil
 }
 
 // ResolveBatch applies APPROVE/REJECT on the batch header without posting.
-func (c *Client) ResolveBatch(ctx context.Context, batchID, batchType, decision, decidedBy, note string) error {
+func (c *Client) ResolveBatch(ctx context.Context, batchID, batchType, decision, decidedBy, note string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("loan client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveBatch(callCtx, &loanv1.ResolveBatchRequest{
-		BatchId:   batchID,
-		BatchType: batchType,
-		Decision:  decision,
-		DecidedBy: decidedBy,
-		Note:      note,
+	resp, err := c.api.ResolveBatch(callCtx, &loanv1.ResolveBatchRequest{
+		BatchId:     batchID,
+		BatchType:   batchType,
+		Decision:    decision,
+		DecidedBy:   decidedBy,
+		Note:        note,
+		DataVersion: dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("loan: resolve batch was not applied")
+	}
+	return nil
 }
 
 // CheckGeneralProvision validates the period is actionable (BPMN validate).
@@ -394,25 +437,32 @@ func (c *Client) CheckGeneralProvision(ctx context.Context, id string) (bool, st
 
 // ResolveGeneralProvision APPROVE recomputes + posts the provision delta and
 // marks the period POSTED; REJECT just closes it.
-func (c *Client) ResolveGeneralProvision(ctx context.Context, id, decision, decidedBy, note string) error {
+func (c *Client) ResolveGeneralProvision(ctx context.Context, id, decision, decidedBy, note string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("loan client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveGeneralProvision(callCtx, &loanv1.ResolveGeneralProvisionRequest{
+	resp, err := c.api.ResolveGeneralProvision(callCtx, &loanv1.ResolveGeneralProvisionRequest{
 		GeneralProvisionId: id,
 		Decision:           decision,
 		DecidedBy:          decidedBy,
 		Note:               note,
+		DataVersion:        dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("loan: resolve general provision was not applied")
+	}
+	return nil
 }
 
 // SpecificProvisioner is the narrow surface the workflow LNM.306 workers need.
 type SpecificProvisioner interface {
 	CheckSpecificProvision(ctx context.Context, id string) (bool, string, error)
-	ResolveSpecificProvision(ctx context.Context, id, decision, decidedBy, note string) error
+	ResolveSpecificProvision(ctx context.Context, id, decision, decidedBy, note string, dataVersion int64) error
 }
 
 // CheckSpecificProvision validates the request is actionable (BPMN validate).
@@ -433,17 +483,24 @@ func (c *Client) CheckSpecificProvision(ctx context.Context, id string) (bool, s
 
 // ResolveSpecificProvision APPROVE recomputes + posts the LNM_PROVISION_306
 // card; REJECT closes the request.
-func (c *Client) ResolveSpecificProvision(ctx context.Context, id, decision, decidedBy, note string) error {
+func (c *Client) ResolveSpecificProvision(ctx context.Context, id, decision, decidedBy, note string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("loan client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveSpecificProvision(callCtx, &loanv1.ResolveSpecificProvisionRequest{
+	resp, err := c.api.ResolveSpecificProvision(callCtx, &loanv1.ResolveSpecificProvisionRequest{
 		SpecificProvisionId: id,
 		Decision:            decision,
 		DecidedBy:           decidedBy,
 		Note:                note,
+		DataVersion:         dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("loan: resolve specific provision was not applied")
+	}
+	return nil
 }

@@ -28,6 +28,7 @@ message ResolveSubmissionRequest {
   string decision = 2;
   string actor = 3;
   string note = 4;
+  int64 data_version = 5;
 }
 
 message ResolveSubmissionResponse {

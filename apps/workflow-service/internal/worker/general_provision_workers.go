@@ -9,6 +9,8 @@ import (
 	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // GeneralProvisionWorkers dispatch the lnm-general-provision-v2 jobs
@@ -77,7 +79,11 @@ func (w *GeneralProvisionWorkers) execute() worker.JobHandler {
 		vars, _ := job.GetVariablesAsMap()
 		decidedBy := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
 		note, _ := vars["decisionNote"].(string)
-		if err := w.loanClient.ResolveGeneralProvision(crmJobContext(job), id, "APPROVE", decidedBy, note); err != nil {
+		if err := w.loanClient.ResolveGeneralProvision(crmJobContext(job), id, "APPROVE", decidedBy, note, dataVersionFromVars(vars)); err != nil {
+			if status.Code(err) == codes.Aborted {
+				w.failJobTerminal(client, job, "Loan Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Loan Error: "+err.Error())
 			return
 		}
@@ -102,7 +108,11 @@ func (w *GeneralProvisionWorkers) cancel() worker.JobHandler {
 		if note == "" {
 			note = "Rejected by checker"
 		}
-		if err := w.loanClient.ResolveGeneralProvision(crmJobContext(job), id, "REJECT", decidedBy, note); err != nil {
+		if err := w.loanClient.ResolveGeneralProvision(crmJobContext(job), id, "REJECT", decidedBy, note, dataVersionFromVars(vars)); err != nil {
+			if status.Code(err) == codes.Aborted {
+				w.failJobTerminal(client, job, "Loan Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Loan Error: "+err.Error())
 			return
 		}
@@ -125,6 +135,11 @@ func (w *GeneralProvisionWorkers) completeJob(client worker.JobClient, job entit
 	}
 	_, err := cmd.Send(context.Background())
 	return err
+}
+
+func (w *GeneralProvisionWorkers) failJobTerminal(client worker.JobClient, job entities.Job, reason string) {
+	slog.Warn("workflow general provision job terminal", "jobType", job.GetType(), "reason", reason)
+	_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).ErrorMessage(reason).Send(context.Background())
 }
 
 func (w *GeneralProvisionWorkers) failJob(client worker.JobClient, job entities.Job, reason string) {

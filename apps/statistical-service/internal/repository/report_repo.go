@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -276,17 +277,34 @@ func (r *StatisticalRepository) MarkSubmissionSubmitted(ctx context.Context, ten
 
 // ResolveSubmission moves SUBMITTED→APPROVED|REJECTED. Only the first decision
 // wins, so a retried callback is a no-op rather than an overwrite.
-func (r *StatisticalRepository) ResolveSubmission(ctx context.Context, tenantID, id, status, actor string) (bool, error) {
+// ErrStaleVersion marks a guarded decision whose row version no longer matches
+// the one the checker saw (the submission changed while in review).
+var ErrStaleVersion = errors.New("rpt: dossier changed while in review")
+
+func (r *StatisticalRepository) ResolveSubmission(ctx context.Context, tenantID, id, status, actor string, dataVersion int64) (bool, error) {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE rpt_report_submissions
 		SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2::uuid AND status = 'SUBMITTED'`,
-		tenantID, id, status, actor)
+		WHERE tenant_id = $1 AND id = $2::uuid AND status = 'SUBMITTED'
+		  AND ($5 = 0 OR version = $5)`,
+		tenantID, id, status, actor, dataVersion)
 	if err != nil {
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n > 0, err
+	if err != nil {
+		return false, err
+	}
+	if n > 0 {
+		return true, nil
+	}
+	if dataVersion > 0 {
+		var current int64
+		if e := r.db.QueryRowContext(ctx, `SELECT version FROM rpt_report_submissions WHERE tenant_id = $1 AND id = $2::uuid`, tenantID, id).Scan(&current); e == nil && current != dataVersion {
+			return false, ErrStaleVersion
+		}
+	}
+	return false, nil
 }
 
 // GetReportDefinitionByCode loads one active definition by code.

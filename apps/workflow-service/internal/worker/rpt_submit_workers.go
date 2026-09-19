@@ -7,6 +7,8 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // RPTSubmitWorkers handle the rpt-submit-v2 flow. The submission lifecycle
@@ -21,7 +23,7 @@ type RPTSubmitWorkers struct {
 // (libs/go/arda-grpc/client/statistical).
 type StatisticalSubmissionResolver interface {
 	CheckSubmission(ctx context.Context, submissionID string) (bool, string, error)
-	ResolveSubmission(ctx context.Context, submissionID, decision, actor, note string) error
+	ResolveSubmission(ctx context.Context, submissionID, decision, actor, note string, dataVersion int64) error
 }
 
 func NewRPTSubmitWorkers(statistical StatisticalSubmissionResolver, caseRepo *repository.CaseRepository) *RPTSubmitWorkers {
@@ -82,7 +84,11 @@ func (w *RPTSubmitWorkers) execute() worker.JobHandler {
 		vars, _ := job.GetVariablesAsMap()
 		actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
 		note, _ := vars["decisionNote"].(string)
-		if err := w.statistical.ResolveSubmission(crmJobContext(job), id, "APPROVE", actor, note); err != nil {
+		if err := w.statistical.ResolveSubmission(crmJobContext(job), id, "APPROVE", actor, note, dataVersionFromVars(vars)); err != nil {
+			if status.Code(err) == codes.Aborted {
+				w.failJobTerminal(client, job, "Statistical Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Statistical Error: "+err.Error())
 			return
 		}
@@ -106,7 +112,11 @@ func (w *RPTSubmitWorkers) cancel() worker.JobHandler {
 		if note == "" {
 			note = "Rejected by checker"
 		}
-		if err := w.statistical.ResolveSubmission(crmJobContext(job), id, "REJECT", actor, note); err != nil {
+		if err := w.statistical.ResolveSubmission(crmJobContext(job), id, "REJECT", actor, note, dataVersionFromVars(vars)); err != nil {
+			if status.Code(err) == codes.Aborted {
+				w.failJobTerminal(client, job, "Statistical Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Statistical Error: "+err.Error())
 			return
 		}
@@ -129,6 +139,11 @@ func (w *RPTSubmitWorkers) completeJob(client worker.JobClient, job entities.Job
 	}
 	_, err := cmd.Send(context.Background())
 	return err
+}
+
+func (w *RPTSubmitWorkers) failJobTerminal(client worker.JobClient, job entities.Job, reason string) {
+	slog.Warn("workflow rpt submit job terminal", "jobType", job.GetType(), "reason", reason)
+	_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).ErrorMessage(reason).Send(context.Background())
 }
 
 func (w *RPTSubmitWorkers) failJob(client worker.JobClient, job entities.Job, reason string) {

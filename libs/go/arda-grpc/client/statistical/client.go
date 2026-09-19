@@ -84,17 +84,24 @@ func (c *Client) CheckSubmission(ctx context.Context, submissionID string) (bool
 	return resp.GetOk(), resp.GetMessage(), nil
 }
 
-func (c *Client) ResolveSubmission(ctx context.Context, submissionID, decision, actor, note string) error {
+func (c *Client) ResolveSubmission(ctx context.Context, submissionID, decision, actor, note string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("statistical client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveSubmission(callCtx, &statisticalv1.ResolveSubmissionRequest{
+	resp, err := c.api.ResolveSubmission(callCtx, &statisticalv1.ResolveSubmissionRequest{
 		SubmissionId: submissionID,
 		Decision:     decision,
 		Actor:        actor,
 		Note:         note,
+		DataVersion:  dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("statistical: resolve submission was not applied")
+	}
+	return nil
 }

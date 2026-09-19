@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
@@ -32,6 +33,28 @@ func stringVariable(vars map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// dataVersionFromVars reads the row version the checker approved from the case
+// variables. The FE submits it as a string; legacy cases carry nothing (0 =
+// unguarded).
+func dataVersionFromVars(vars map[string]any) int64 {
+	switch v := vars["dataVersion"].(type) {
+	case string:
+		n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		if err != nil {
+			return 0
+		}
+		return n
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	default:
+		return 0
+	}
 }
 
 // traderStampKeys are the fixed metadata keys the finance journal entry

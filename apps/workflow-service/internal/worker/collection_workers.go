@@ -12,6 +12,8 @@ import (
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // CollectionWorkers run the LNM_COLLECTION_V2 flow jobs (lnm-collection-v2.bpmn),
@@ -237,7 +239,11 @@ func (w *CollectionWorkers) execute() worker.JobHandler {
 			w.failJob(client, job, "Posting Error: "+err.Error())
 			return
 		}
-		if err := w.loanClient.SettleCollection(crmJobContext(job), id, posted.GetJournalEntryId(), actor); err != nil {
+		if err := w.loanClient.SettleCollection(crmJobContext(job), id, posted.GetJournalEntryId(), actor, dataVersionFromVars(mustJobVars(job))); err != nil {
+			if status.Code(err) == codes.Aborted {
+				w.failJobTerminal(client, job, "Loan Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Loan Error: "+err.Error())
 			return
 		}
@@ -280,7 +286,11 @@ func (w *CollectionWorkers) cancel() worker.JobHandler {
 				return
 			}
 		}
-		if err := w.loanClient.ResolveCollection(crmJobContext(job), id, "REJECT", decidedBy, note); err != nil {
+		if err := w.loanClient.ResolveCollection(crmJobContext(job), id, "REJECT", decidedBy, note, dataVersionFromVars(vars)); err != nil {
+			if status.Code(err) == codes.Aborted {
+				w.failJobTerminal(client, job, "Loan Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Loan Error: "+err.Error())
 			return
 		}
@@ -305,6 +315,11 @@ func (w *CollectionWorkers) complete(ctx context.Context, client worker.JobClien
 	}
 	_, err := cmd.Send(ctx)
 	return err
+}
+
+func (w *CollectionWorkers) failJobTerminal(client worker.JobClient, job entities.Job, reason string) {
+	slog.Warn("workflow collection job terminal", "jobType", job.GetType(), "reason", reason)
+	_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).ErrorMessage(reason).Send(context.Background())
 }
 
 func (w *CollectionWorkers) failJob(client worker.JobClient, job entities.Job, reason string) {

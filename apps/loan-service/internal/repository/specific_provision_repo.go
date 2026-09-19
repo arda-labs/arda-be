@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 )
 
 // SpecificProvisionRow is one LNM.306 per-agreement provision request (W7).
@@ -108,28 +110,44 @@ func (r *LoanRepository) SetSpecificProvisionCase(ctx context.Context, tenantID,
 
 // SettleSpecificProvision marks the request POSTED.
 func (r *LoanRepository) SettleSpecificProvision(ctx context.Context, tenantID, id string, amount int64, journalEntryID, actor string) error {
+	expected := domain.DataVersionFromContext(ctx)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_specific_provisions
 		SET amount_minor = $3, status = 'POSTED', journal_entry_id = NULLIF($4,'')::uuid,
-		    updated_by = $5, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2 AND status = 'SUBMITTED'`,
-		tenantID, id, amount, journalEntryID, actor)
+		    updated_by = $5, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'SUBMITTED'
+		  AND ($6 = 0 OR version = $6)`,
+		tenantID, id, amount, journalEntryID, actor, expected)
 	if err != nil {
 		return err
 	}
-	return expectOneRow(res, "specific provision")
+	if err := expectOneRow(res, "specific provision"); err != nil {
+		if staleVersion(ctx, r.db, "lnm_specific_provisions", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return err
+	}
+	return nil
 }
 
 // ResolveSpecificProvision closes the request without posting.
 func (r *LoanRepository) ResolveSpecificProvision(ctx context.Context, tenantID, id, status, actor string) error {
+	expected := domain.DataVersionFromContext(ctx)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_specific_provisions
-		SET status = $3, updated_by = $4, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2 AND status = 'SUBMITTED'`, tenantID, id, status, actor)
+		SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'SUBMITTED'
+		  AND ($5 = 0 OR version = $5)`, tenantID, id, status, actor, expected)
 	if err != nil {
 		return err
 	}
-	return expectOneRow(res, "specific provision")
+	if err := expectOneRow(res, "specific provision"); err != nil {
+		if staleVersion(ctx, r.db, "lnm_specific_provisions", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return err
+	}
+	return nil
 }
 
 // AgreementProvisionBase returns (outstanding, debt_group, contract_code).
