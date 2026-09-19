@@ -179,7 +179,7 @@ func (r *TenantRepository) ListForUser(ctx context.Context, userID string) ([]do
 	}
 	defer rows.Close()
 
-	var memberships []domain.TenantMembership
+	var memberships = []domain.TenantMembership{}
 	for rows.Next() {
 		var membership domain.TenantMembership
 		if err := rows.Scan(&membership.TenantID, &membership.TenantCode, &membership.TenantName, &membership.TenantStatus, &membership.Status, &membership.IsDefault); err != nil {
@@ -203,7 +203,9 @@ func (r *TenantRepository) ListMembers(ctx context.Context, tenantID string) ([]
 	}
 	defer rows.Close()
 
-	var members []domain.TenantMember
+	// Non-nil empty slice: a tenant without active members must serialize as
+	// `[]` (not `null`) in the canonical envelope.
+	var members = []domain.TenantMember{}
 	for rows.Next() {
 		var member domain.TenantMember
 		if err := rows.Scan(&member.UserID, &member.Username, &member.Email, &member.DisplayName, &member.Status, &member.IsDefault); err != nil {
