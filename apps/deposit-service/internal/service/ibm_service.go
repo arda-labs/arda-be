@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
@@ -287,24 +288,29 @@ func (s *IBMService) CheckIBMRequest(ctx context.Context, tenantID, kind, refID 
 }
 
 // ResolveIBMRequest applies the checker decision for the staged object.
-func (s *IBMService) ResolveIBMRequest(ctx context.Context, tenantID, kind, refID, decision, actor string) error {
+func (s *IBMService) ResolveIBMRequest(ctx context.Context, tenantID, kind, refID, decision, actor, dataVersion string) error {
 	switch strings.ToUpper(kind) {
 	case IBMKindPlace:
-		return s.resolvePlace(ctx, tenantID, refID, decision, actor)
+		return s.resolvePlace(ctx, tenantID, refID, decision, actor, dataVersion)
 	case IBMKindTopUp, IBMKindInterest, IBMKindExpected, IBMKindWithdraw:
-		return s.resolveMovement(ctx, tenantID, refID, strings.ToUpper(kind), decision, actor)
+		return s.resolveMovement(ctx, tenantID, refID, strings.ToUpper(kind), decision, actor, dataVersion)
 	default:
 		return ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown kind "+kind)
 	}
 }
 
-func (s *IBMService) resolvePlace(ctx context.Context, tenantID, id, decision, actor string) error {
+func (s *IBMService) resolvePlace(ctx context.Context, tenantID, id, decision, actor, dataVersion string) error {
 	deposit, err := s.repo.GetInterbankDepositByID(ctx, tenantID, id)
 	if err != nil {
 		return err
 	}
 	if deposit == nil {
 		return ardaerrors.New(ardaerrors.CodeNotFound, "interbank deposit not found")
+	}
+	if decision == "APPROVE" && dataVersion != "" &&
+		strconv.FormatInt(deposit.DataVersion, 10) != dataVersion {
+		return ardaerrors.New(ardaerrors.CodeConflict,
+			fmt.Sprintf("dossier changed: interbank deposit %s is at version %d", deposit.DepositCode, deposit.DataVersion))
 	}
 	switch decision {
 	case "APPROVE":
@@ -331,7 +337,7 @@ func (s *IBMService) resolvePlace(ctx context.Context, tenantID, id, decision, a
 	}
 }
 
-func (s *IBMService) resolveMovement(ctx context.Context, tenantID, id, kind, decision, actor string) error {
+func (s *IBMService) resolveMovement(ctx context.Context, tenantID, id, kind, decision, actor, dataVersion string) error {
 	movement, err := s.repo.GetIBMMovementByID(ctx, tenantID, id)
 	if err != nil {
 		return err
@@ -353,6 +359,10 @@ func (s *IBMService) resolveMovement(ctx context.Context, tenantID, id, kind, de
 		}
 		if deposit == nil {
 			return ardaerrors.New(ardaerrors.CodeNotFound, "interbank deposit not found")
+		}
+		if dataVersion != "" && strconv.FormatInt(deposit.DataVersion, 10) != dataVersion {
+			return ardaerrors.New(ardaerrors.CodeConflict,
+				fmt.Sprintf("dossier changed: interbank deposit %s is at version %d", deposit.DepositCode, deposit.DataVersion))
 		}
 		if err := s.postIBM(ctx, deposit, movement, ibmCard(kind)); err != nil {
 			return err

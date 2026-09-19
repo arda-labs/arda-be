@@ -113,6 +113,9 @@ message ResolveIBMRequestRequest {
   string ref_id = 2;
   string decision = 3; // APPROVE | REJECT
   string actor = 4;
+  // Contract row version the checker approved (ibm_deposits.version as a
+  // string). When set, approve refuses to apply if the contract moved on.
+  string data_version = 5;
 }
 
 message ResolveIBMRequestResponse {

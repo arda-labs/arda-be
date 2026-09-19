@@ -8,6 +8,8 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // IBMWorkers run the ibm-place-v1 and ibm-movement-v1 flows (IBM.200/300/301/
@@ -22,7 +24,7 @@ type IBMWorkers struct {
 // DepositIBMRequester is the narrow callback surface (deposit gRPC client).
 type DepositIBMRequester interface {
 	CheckIBMRequest(ctx context.Context, kind, refID string) (bool, string, error)
-	ResolveIBMRequest(ctx context.Context, kind, refID, decision, actor string) error
+	ResolveIBMRequest(ctx context.Context, kind, refID, decision, actor, dataVersion string) error
 }
 
 func NewIBMWorkers(deposit DepositIBMRequester, caseRepo *repository.CaseRepository, kind string) *IBMWorkers {
@@ -90,7 +92,14 @@ func (w *IBMWorkers) execute() worker.JobHandler {
 		}
 		vars, _ := job.GetVariablesAsMap()
 		actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
-		if err := w.deposit.ResolveIBMRequest(crmJobContext(job), kind, refID, "APPROVE", actor); err != nil {
+		// dataVersion is the contract row version the checker approved.
+		dataVersion, _ := vars["dataVersion"].(string)
+		if err := w.deposit.ResolveIBMRequest(crmJobContext(job), kind, refID, "APPROVE", actor, dataVersion); err != nil {
+			if status.Code(err) == codes.Aborted {
+				// Stale approval: retrying cannot fix it — stop with an incident.
+				w.failJobTerminal(client, job, "Deposit Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Deposit Error: "+err.Error())
 			return
 		}
@@ -110,7 +119,7 @@ func (w *IBMWorkers) cancel() worker.JobHandler {
 		}
 		vars, _ := job.GetVariablesAsMap()
 		actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
-		if err := w.deposit.ResolveIBMRequest(crmJobContext(job), kind, refID, "REJECT", actor); err != nil {
+		if err := w.deposit.ResolveIBMRequest(crmJobContext(job), kind, refID, "REJECT", actor, ""); err != nil {
 			w.failJob(client, job, "Deposit Error: "+err.Error())
 			return
 		}
@@ -144,5 +153,15 @@ func (w *IBMWorkers) failJob(client worker.JobClient, job entities.Job, reason s
 	_, err := client.NewFailJobCommand().JobKey(job.GetKey()).Retries(retries).ErrorMessage(reason).Send(context.Background())
 	if err != nil {
 		slog.Error("ibm fail-job send", "err", err)
+	}
+}
+
+// failJobTerminal stops the job without retries — used when retrying cannot
+// change the outcome (stale data version / status conflict).
+func (w *IBMWorkers) failJobTerminal(client worker.JobClient, job entities.Job, reason string) {
+	slog.Warn("workflow ibm job stopped", "jobType", job.GetType(), "reason", reason)
+	_, err := client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).ErrorMessage(reason).Send(context.Background())
+	if err != nil {
+		slog.Error("ibm terminal fail-job send", "err", err)
 	}
 }

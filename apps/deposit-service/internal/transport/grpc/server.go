@@ -141,8 +141,8 @@ func (s *DepositServer) ResolveIBMRequest(ctx context.Context, req *depositv1.Re
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
-	if err := s.ibm.ResolveIBMRequest(ctx, tenantID, req.GetKind(), req.GetRefId(), req.GetDecision(), req.GetActor()); err != nil {
-		return &depositv1.ResolveIBMRequestResponse{Ok: false}, nil
+	if err := s.ibm.ResolveIBMRequest(ctx, tenantID, req.GetKind(), req.GetRefId(), req.GetDecision(), req.GetActor(), req.GetDataVersion()); err != nil {
+		return nil, settleError(err)
 	}
 	return &depositv1.ResolveIBMRequestResponse{Ok: true}, nil
 }

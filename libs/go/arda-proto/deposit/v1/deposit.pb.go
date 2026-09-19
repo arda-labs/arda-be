@@ -780,11 +780,14 @@ func (x *CheckIBMRequestResponse) GetMessage() string {
 }
 
 type ResolveIBMRequestRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	RefId         string                 `protobuf:"bytes,2,opt,name=ref_id,json=refId,proto3" json:"ref_id,omitempty"`
-	Decision      string                 `protobuf:"bytes,3,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
-	Actor         string                 `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Kind     string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	RefId    string                 `protobuf:"bytes,2,opt,name=ref_id,json=refId,proto3" json:"ref_id,omitempty"`
+	Decision string                 `protobuf:"bytes,3,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
+	Actor    string                 `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	// Contract row version the checker approved (ibm_deposits.version as a
+	// string). When set, approve refuses to apply if the contract moved on.
+	DataVersion   string `protobuf:"bytes,5,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -843,6 +846,13 @@ func (x *ResolveIBMRequestRequest) GetDecision() string {
 func (x *ResolveIBMRequestRequest) GetActor() string {
 	if x != nil {
 		return x.Actor
+	}
+	return ""
+}
+
+func (x *ResolveIBMRequestRequest) GetDataVersion() string {
+	if x != nil {
+		return x.DataVersion
 	}
 	return ""
 }
@@ -1351,12 +1361,13 @@ const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
 	"\x06ref_id\x18\x02 \x01(\tR\x05refId\"C\n" +
 	"\x17CheckIBMRequestResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"w\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x9a\x01\n" +
 	"\x18ResolveIBMRequestRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x15\n" +
 	"\x06ref_id\x18\x02 \x01(\tR\x05refId\x12\x1a\n" +
 	"\bdecision\x18\x03 \x01(\tR\bdecision\x12\x14\n" +
-	"\x05actor\x18\x04 \x01(\tR\x05actor\"+\n" +
+	"\x05actor\x18\x04 \x01(\tR\x05actor\x12!\n" +
+	"\fdata_version\x18\x05 \x01(\tR\vdataVersion\"+\n" +
 	"\x19ResolveIBMRequestResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"8\n" +
 	"\x17CheckRateRequestRequest\x12\x1d\n" +

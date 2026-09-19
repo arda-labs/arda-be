@@ -192,7 +192,7 @@ func (c *Client) ResolveProductRequest(ctx context.Context, requestID, decision,
 // (IBM.200/300/301/302/304).
 type IBMRequester interface {
 	CheckIBMRequest(ctx context.Context, kind, refID string) (bool, string, error)
-	ResolveIBMRequest(ctx context.Context, kind, refID, decision, actor string) error
+	ResolveIBMRequest(ctx context.Context, kind, refID, decision, actor, dataVersion string) error
 }
 
 func (c *Client) CheckIBMRequest(ctx context.Context, kind, refID string) (bool, string, error) {
@@ -208,19 +208,26 @@ func (c *Client) CheckIBMRequest(ctx context.Context, kind, refID string) (bool,
 	return resp.GetOk(), resp.GetMessage(), nil
 }
 
-func (c *Client) ResolveIBMRequest(ctx context.Context, kind, refID, decision, actor string) error {
+func (c *Client) ResolveIBMRequest(ctx context.Context, kind, refID, decision, actor, dataVersion string) error {
 	if c == nil {
 		return errors.New("deposit client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveIBMRequest(callCtx, &depositv1.ResolveIBMRequestRequest{
-		Kind:     kind,
-		RefId:    refID,
-		Decision: decision,
-		Actor:    actor,
+	resp, err := c.api.ResolveIBMRequest(callCtx, &depositv1.ResolveIBMRequestRequest{
+		Kind:        kind,
+		RefId:       refID,
+		Decision:    decision,
+		Actor:       actor,
+		DataVersion: dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("interbank request resolve was not confirmed")
+	}
+	return nil
 }
 
 // RateRequester is the narrow surface the workflow rate workers need
