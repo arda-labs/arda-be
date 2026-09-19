@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 
+	"github.com/arda-labs/arda/apps/capital-service/internal/domain"
 	"github.com/arda-labs/arda/apps/capital-service/internal/service"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	capitalv1 "github.com/arda-labs/arda/libs/go/arda-proto/capital/v1"
@@ -46,7 +47,11 @@ func (s *CapitalServer) ResolveRequest(ctx context.Context, req *capitalv1.Resol
 	if err != nil {
 		return nil, err
 	}
+	ctx = domain.WithDataVersion(ctx, req.GetDataVersion())
 	if err := s.svc.ResolveRequest(ctx, tenantID, req.GetKind(), req.GetRefId(), req.GetDecision(), req.GetActor()); err != nil {
+		if service.IsStaleVersion(err) {
+			return nil, status.Error(codes.Aborted, "capital: "+err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &capitalv1.ResolveRequestResponse{Ok: true}, nil

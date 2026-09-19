@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/capital-service/internal/domain"
 	"github.com/arda-labs/arda/apps/capital-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
@@ -14,6 +16,13 @@ import (
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
 )
+
+// IsStaleVersion reports whether err is the stale-dossier conflict raised by a
+// guarded decision (the checker approved a version that changed while the case
+// was in review). The gRPC boundary maps it to codes.Aborted.
+func IsStaleVersion(err error) bool {
+	return errors.Is(err, repository.ErrStaleVersion)
+}
 
 // CapitalSubmitter is the workflow submit surface (same shape as other domains).
 type CapitalSubmitter interface {
@@ -480,7 +489,7 @@ func (s *CapitalService) resolveAmendment(ctx context.Context, tenantID, id, dec
 				return ardaerrors.New(ardaerrors.CodeInvalidInput, "invalid amendment payload")
 			}
 		}
-		if err := s.repo.ApplyContractAmendment(ctx, tenantID, amendment.ContractID, repository.AmendmentFields{
+		if err := s.repo.ApplyContractAmendment(domain.WithDataVersion(ctx, 0), tenantID, amendment.ContractID, repository.AmendmentFields{
 			AmountMinor:  payload.AmountMinor,
 			InterestRate: payload.InterestRate,
 			ContractDate: payload.ContractDate,
@@ -537,7 +546,9 @@ func (s *CapitalService) resolveMovement(ctx context.Context, tenantID, id, deci
 			return err
 		}
 		if movement.MovementType == "SETTLEMENT" {
-			return s.repo.UpdateContractStatus(ctx, tenantID, contract.ID, "CLOSED", actor)
+			// The guard belongs to the movement row; the contract close is a
+			// different row, so clear the version for it.
+			return s.repo.UpdateContractStatus(domain.WithDataVersion(ctx, 0), tenantID, contract.ID, "CLOSED", actor)
 		}
 		return nil
 	case "REJECT":

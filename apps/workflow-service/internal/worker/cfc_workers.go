@@ -7,6 +7,8 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // CFC request kinds (mirror capital-service Kind* constants).
@@ -29,7 +31,7 @@ type CFCWorkers struct {
 // CapitalRequester is the narrow callback surface (capital gRPC client).
 type CapitalRequester interface {
 	CheckRequest(ctx context.Context, kind, refID string) (bool, string, error)
-	ResolveRequest(ctx context.Context, kind, refID, decision, actor string) error
+	ResolveRequest(ctx context.Context, kind, refID, decision, actor string, dataVersion int64) error
 }
 
 func NewCFCWorkers(capital CapitalRequester, caseRepo *repository.CaseRepository, kind string) *CFCWorkers {
@@ -87,7 +89,11 @@ func (w *CFCWorkers) execute() worker.JobHandler {
 		}
 		vars, _ := job.GetVariablesAsMap()
 		actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
-		if err := w.capital.ResolveRequest(crmJobContext(job), w.kind, id, "APPROVE", actor); err != nil {
+		if err := w.capital.ResolveRequest(crmJobContext(job), w.kind, id, "APPROVE", actor, dataVersionFromVars(vars)); err != nil {
+			if status.Code(err) == codes.Aborted {
+				w.failJobTerminal(client, job, "Capital Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Capital Error: "+err.Error())
 			return
 		}
@@ -107,7 +113,11 @@ func (w *CFCWorkers) cancel() worker.JobHandler {
 		}
 		vars, _ := job.GetVariablesAsMap()
 		actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
-		if err := w.capital.ResolveRequest(crmJobContext(job), w.kind, id, "REJECT", actor); err != nil {
+		if err := w.capital.ResolveRequest(crmJobContext(job), w.kind, id, "REJECT", actor, dataVersionFromVars(vars)); err != nil {
+			if status.Code(err) == codes.Aborted {
+				w.failJobTerminal(client, job, "Capital Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Capital Error: "+err.Error())
 			return
 		}
@@ -130,6 +140,11 @@ func (w *CFCWorkers) completeJob(client worker.JobClient, job entities.Job, resu
 	}
 	_, err := cmd.Send(context.Background())
 	return err
+}
+
+func (w *CFCWorkers) failJobTerminal(client worker.JobClient, job entities.Job, reason string) {
+	slog.Warn("workflow cfc job terminal", "kind", w.kind, "jobType", job.GetType(), "reason", reason)
+	_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).ErrorMessage(reason).Send(context.Background())
 }
 
 func (w *CFCWorkers) failJob(client worker.JobClient, job entities.Job, reason string) {

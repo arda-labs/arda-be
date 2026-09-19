@@ -84,17 +84,24 @@ func (c *Client) CheckRequest(ctx context.Context, kind, refID string) (bool, st
 	return resp.GetOk(), resp.GetMessage(), nil
 }
 
-func (c *Client) ResolveRequest(ctx context.Context, kind, refID, decision, actor string) error {
+func (c *Client) ResolveRequest(ctx context.Context, kind, refID, decision, actor string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("capital client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveRequest(callCtx, &capitalv1.ResolveRequestRequest{
-		Kind:     kind,
-		RefId:    refID,
-		Decision: decision,
-		Actor:    actor,
+	resp, err := c.api.ResolveRequest(callCtx, &capitalv1.ResolveRequestRequest{
+		Kind:        kind,
+		RefId:       refID,
+		Decision:    decision,
+		Actor:       actor,
+		DataVersion: dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("capital: resolve request was not applied")
+	}
+	return nil
 }

@@ -6,10 +6,31 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/arda-labs/arda/apps/capital-service/internal/domain"
 )
+
+// ErrStaleVersion marks a guarded decision transition whose row version no
+// longer matches the one the checker saw.
+var ErrStaleVersion = errors.New("cfc: dossier changed while in review")
+
+// staleVersion reports whether a zero-row guarded transition was caused by a
+// version mismatch (the dossier changed since the checker saw it) rather than
+// by the row being absent. table is an internal constant, never user input.
+func (r *CapitalRepository) staleVersion(ctx context.Context, table, tenantID, id string, expected int64) bool {
+	if expected <= 0 {
+		return false
+	}
+	var current int64
+	if err := r.db.QueryRowContext(ctx, `SELECT version FROM `+table+` WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&current); err != nil {
+		return false
+	}
+	return current != expected
+}
 
 // FundType is one capital fund classification.
 type FundType struct {
@@ -433,10 +454,21 @@ func (r *CapitalRepository) SetContractCase(ctx context.Context, tenantID, id, c
 
 // UpdateContractStatus moves a contract between lifecycle states.
 func (r *CapitalRepository) UpdateContractStatus(ctx context.Context, tenantID, id, status, actor string) error {
-	_, err := r.db.ExecContext(ctx, `
+	expected := domain.DataVersionFromContext(ctx)
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE cfc_contracts SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status, actor)
-	return err
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($5 = 0 OR version = $5)`, tenantID, id, status, actor, expected)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if r.staleVersion(ctx, "cfc_contracts", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return fmt.Errorf("cfc: contract not found")
+	}
+	return nil
 }
 
 // AmendmentFields carries the whitelisted contract fields an amendment may change.
@@ -547,10 +579,21 @@ func (r *CapitalRepository) SetAmendmentCase(ctx context.Context, tenantID, id, 
 
 // SetAmendmentStatus moves the amendment between lifecycle states.
 func (r *CapitalRepository) SetAmendmentStatus(ctx context.Context, tenantID, id, status, actor string) error {
-	_, err := r.db.ExecContext(ctx, `
+	expected := domain.DataVersionFromContext(ctx)
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE cfc_contract_amendments SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status, actor)
-	return err
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($5 = 0 OR version = $5)`, tenantID, id, status, actor, expected)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if r.staleVersion(ctx, "cfc_contract_amendments", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return fmt.Errorf("cfc: amendment not found")
+	}
+	return nil
 }
 
 // ── Movements ──
@@ -642,19 +685,41 @@ func (r *CapitalRepository) SetMovementCase(ctx context.Context, tenantID, id, c
 
 // SetMovementJournal stamps the posting result.
 func (r *CapitalRepository) SetMovementJournal(ctx context.Context, tenantID, id, status, journalEntryID, actor string) error {
-	_, err := r.db.ExecContext(ctx, `
+	expected := domain.DataVersionFromContext(ctx)
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE cfc_movements SET status = $3, journal_entry_id = NULLIF($4,'')::uuid,
 			updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status, journalEntryID)
-	return err
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($5 = 0 OR version = $5)`, tenantID, id, status, journalEntryID, expected)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if r.staleVersion(ctx, "cfc_movements", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return fmt.Errorf("cfc: movement not found")
+	}
+	return nil
 }
 
 // SetMovementStatus moves the movement between lifecycle states.
 func (r *CapitalRepository) SetMovementStatus(ctx context.Context, tenantID, id, status, actor string) error {
-	_, err := r.db.ExecContext(ctx, `
+	expected := domain.DataVersionFromContext(ctx)
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE cfc_movements SET status = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status)
-	return err
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($4 = 0 OR version = $4)`, tenantID, id, status, expected)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if r.staleVersion(ctx, "cfc_movements", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return fmt.Errorf("cfc: movement not found")
+	}
+	return nil
 }
 
 // PostedMovementTotals returns Σ POSTED receipts and Σ POSTED outflows for one

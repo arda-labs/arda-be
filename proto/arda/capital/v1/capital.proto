@@ -29,6 +29,7 @@ message ResolveRequestRequest {
   string ref_id = 2;
   string decision = 3;
   string actor = 4;
+  int64 data_version = 5;
 }
 
 message ResolveRequestResponse {

@@ -133,6 +133,7 @@ type ResolveRequestRequest struct {
 	RefId         string                 `protobuf:"bytes,2,opt,name=ref_id,json=refId,proto3" json:"ref_id,omitempty"`
 	Decision      string                 `protobuf:"bytes,3,opt,name=decision,proto3" json:"decision,omitempty"`
 	Actor         string                 `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	DataVersion   int64                  `protobuf:"varint,5,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -195,6 +196,13 @@ func (x *ResolveRequestRequest) GetActor() string {
 	return ""
 }
 
+func (x *ResolveRequestRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
+}
+
 type ResolveRequestResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
@@ -249,12 +257,13 @@ const file_arda_capital_v1_capital_proto_rawDesc = "" +
 	"\x06ref_id\x18\x02 \x01(\tR\x05refId\"@\n" +
 	"\x14CheckRequestResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"t\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x97\x01\n" +
 	"\x15ResolveRequestRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x15\n" +
 	"\x06ref_id\x18\x02 \x01(\tR\x05refId\x12\x1a\n" +
 	"\bdecision\x18\x03 \x01(\tR\bdecision\x12\x14\n" +
-	"\x05actor\x18\x04 \x01(\tR\x05actor\"(\n" +
+	"\x05actor\x18\x04 \x01(\tR\x05actor\x12!\n" +
+	"\fdata_version\x18\x05 \x01(\x03R\vdataVersion\"(\n" +
 	"\x16ResolveRequestResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok2\xd7\x01\n" +
 	"\x15CapitalCommandService\x12[\n" +
