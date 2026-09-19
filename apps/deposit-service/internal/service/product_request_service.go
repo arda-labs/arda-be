@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 
@@ -136,7 +137,7 @@ func (s *ProductRequestService) Check(ctx context.Context, tenantID, id string) 
 
 // Resolve applies the checker decision: APPROVE upserts dpm_products and
 // marks the request APPLIED; anything else marks it REJECTED.
-func (s *ProductRequestService) Resolve(ctx context.Context, tenantID, id, decision, actor string) error {
+func (s *ProductRequestService) Resolve(ctx context.Context, tenantID, id, decision, actor string, dataVersion int64) error {
 	request, err := s.repo.GetProductRequest(ctx, tenantID, id)
 	if err != nil {
 		return ardaerrors.New(ardaerrors.CodeNotFound, "product request not found: "+id)
@@ -145,8 +146,8 @@ func (s *ProductRequestService) Resolve(ctx context.Context, tenantID, id, decis
 		return ardaerrors.New(ardaerrors.CodeInvalidInput, "product request is not awaiting approval")
 	}
 	if decision != "APPROVE" {
-		if err := s.repo.MarkProductRequestResolved(ctx, tenantID, id, "REJECTED"); err != nil {
-			return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+		if err := s.repo.MarkProductRequestResolved(ctx, tenantID, id, "REJECTED", dataVersion); err != nil {
+			return mapProductResolveErr(err)
 		}
 		return nil
 	}
@@ -161,10 +162,19 @@ func (s *ProductRequestService) Resolve(ctx context.Context, tenantID, id, decis
 	}); err != nil {
 		return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
-	if err := s.repo.MarkProductRequestResolved(ctx, tenantID, id, "APPLIED"); err != nil {
-		return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	if err := s.repo.MarkProductRequestResolved(ctx, tenantID, id, "APPLIED", dataVersion); err != nil {
+		return mapProductResolveErr(err)
 	}
 	return nil
+}
+
+// mapProductResolveErr surfaces a stale-dossier conflict (Aborted at the gRPC
+// boundary) instead of collapsing it into a generic internal error.
+func mapProductResolveErr(err error) error {
+	if errors.Is(err, repository.ErrDossierChanged) {
+		return ardaerrors.Wrap(ardaerrors.CodeConflict, "dossier changed while in review", err)
+	}
+	return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 }
 
 // List returns staged requests (optional status filter).

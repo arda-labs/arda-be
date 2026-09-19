@@ -107,15 +107,25 @@ func (r *DepositRepository) SetProductRequestCase(ctx context.Context, tenantID,
 }
 
 // MarkProductRequestResolved closes a SUBMITTED request (APPLIED | REJECTED).
-func (r *DepositRepository) MarkProductRequestResolved(ctx context.Context, tenantID, id, status string) error {
+func (r *DepositRepository) MarkProductRequestResolved(ctx context.Context, tenantID, id, status string, dataVersion int64) error {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE dpm_product_requests
 		SET status = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2 AND status = 'SUBMITTED'`, tenantID, id, status)
+		WHERE tenant_id = $1 AND id = $2 AND status = 'SUBMITTED'
+		  AND ($4 = 0 OR version = $4)`, tenantID, id, status, dataVersion)
 	if err != nil {
 		return err
 	}
-	return productRequestAffected(res)
+	if err := productRequestAffected(res); err != nil {
+		if dataVersion > 0 {
+			var current int64
+			if e := r.db.QueryRowContext(ctx, `SELECT version FROM dpm_product_requests WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&current); e == nil && current != dataVersion {
+				return ErrDossierChanged
+			}
+		}
+		return err
+	}
+	return nil
 }
 
 func productRequestAffected(res sql.Result) error {

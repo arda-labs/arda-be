@@ -161,7 +161,7 @@ func (s *InterestService) GetInterestOpsByCase(ctx context.Context, tenantID, ca
 }
 
 // ResolveRateRequest applies the checker decision (APPROVE upserts the tier).
-func (s *InterestService) ResolveRateRequest(ctx context.Context, tenantID, id, decision, actor string) error {
+func (s *InterestService) ResolveRateRequest(ctx context.Context, tenantID, id, decision, actor string, dataVersion int64) error {
 	request, err := s.repo.GetRateRequestByID(ctx, tenantID, id)
 	if err != nil {
 		return err
@@ -193,7 +193,10 @@ func (s *InterestService) ResolveRateRequest(ctx context.Context, tenantID, id, 
 		}); err != nil {
 			return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
-		return s.repo.SetRateRequestStatus(ctx, tenantID, id, "APPLIED")
+		if err := s.repo.SetRateRequestStatus(ctx, tenantID, id, "APPLIED", dataVersion); err != nil {
+			return mapRateResolveErr(err)
+		}
+		return nil
 	case "REJECT":
 		if request.Status == "REJECTED" {
 			return nil
@@ -201,10 +204,22 @@ func (s *InterestService) ResolveRateRequest(ctx context.Context, tenantID, id, 
 		if request.Status != "SUBMITTED" {
 			return ardaerrors.New(ardaerrors.CodeInvalidInput, "rate request is not SUBMITTED")
 		}
-		return s.repo.SetRateRequestStatus(ctx, tenantID, id, "REJECTED")
+		if err := s.repo.SetRateRequestStatus(ctx, tenantID, id, "REJECTED", dataVersion); err != nil {
+			return mapRateResolveErr(err)
+		}
+		return nil
 	default:
 		return ardaerrors.New(ardaerrors.CodeInvalidInput, "decision must be APPROVE or REJECT")
 	}
+}
+
+// mapRateResolveErr surfaces a stale-dossier conflict (Aborted at the gRPC
+// boundary) instead of collapsing it into a generic internal error.
+func mapRateResolveErr(err error) error {
+	if errors.Is(err, repository.ErrDossierChanged) {
+		return ardaerrors.Wrap(ardaerrors.CodeConflict, "dossier changed while in review", err)
+	}
+	return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 }
 
 // ── Accrual (DPM.305, EOD) ──

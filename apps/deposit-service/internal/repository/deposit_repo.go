@@ -29,6 +29,10 @@ var ErrAccruedInsufficient = errors.New("accrued interest is insufficient")
 // (status moved on, balance too low, or the approved row version changed).
 var ErrIBMNotActionable = errors.New("interbank deposit is not actionable")
 
+// ErrDossierChanged reports that a guarded decision matched no row because the
+// row version changed since the checker saw it.
+var ErrDossierChanged = errors.New("dossier changed while in review")
+
 // SavingsProduct is a deposit product catalog row (P2.1).
 type SavingsProduct struct {
 	ID           string    `json:"id"`
@@ -1014,11 +1018,21 @@ func (r *DepositRepository) SetRateRequestCase(ctx context.Context, tenantID, id
 }
 
 // SetRateRequestStatus moves the request between lifecycle states.
-func (r *DepositRepository) SetRateRequestStatus(ctx context.Context, tenantID, id, status string) error {
-	_, err := r.db.ExecContext(ctx, `
+func (r *DepositRepository) SetRateRequestStatus(ctx context.Context, tenantID, id, status string, dataVersion int64) error {
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE dpm_rate_requests SET status = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2::uuid`, tenantID, id, status)
-	return err
+		WHERE tenant_id = $1 AND id = $2::uuid
+		  AND ($4 = 0 OR version = $4)`, tenantID, id, status, dataVersion)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 && dataVersion > 0 {
+		var current int64
+		if e := r.db.QueryRowContext(ctx, `SELECT version FROM dpm_rate_requests WHERE tenant_id = $1 AND id = $2::uuid`, tenantID, id).Scan(&current); e == nil && current != dataVersion {
+			return ErrDossierChanged
+		}
+	}
+	return nil
 }
 
 // accrualColumns keeps the accrual scan order in one place.

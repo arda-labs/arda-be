@@ -89,6 +89,7 @@ message ResolveProductRequestRequest {
   string decision = 2; // APPROVE | REJECT
   string actor = 3;
   string note = 4;
+  int64 data_version = 5;
 }
 
 message ResolveProductRequestResponse {
@@ -136,6 +137,7 @@ message ResolveRateRequestRequest {
   string request_id = 1;
   string decision = 2; // APPROVE | REJECT
   string actor = 3;
+  int64 data_version = 4;
 }
 
 message ResolveRateRequestResponse {

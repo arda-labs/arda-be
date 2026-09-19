@@ -173,19 +173,26 @@ func (c *Client) CheckProductRequest(ctx context.Context, requestID string) (boo
 	return resp.GetOk(), resp.GetMessage(), nil
 }
 
-func (c *Client) ResolveProductRequest(ctx context.Context, requestID, decision, actor, note string) error {
+func (c *Client) ResolveProductRequest(ctx context.Context, requestID, decision, actor, note string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("deposit client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveProductRequest(callCtx, &depositv1.ResolveProductRequestRequest{
+	resp, err := c.api.ResolveProductRequest(callCtx, &depositv1.ResolveProductRequestRequest{
 		ProductRequestId: requestID,
 		Decision:         decision,
 		Actor:            actor,
 		Note:             note,
+		DataVersion:      dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("deposit: resolve product request was not applied")
+	}
+	return nil
 }
 
 // IBMRequester is the narrow surface the workflow IBM workers need
@@ -250,18 +257,25 @@ func (c *Client) CheckRateRequest(ctx context.Context, requestID string) (bool, 
 	return resp.GetOk(), resp.GetMessage(), nil
 }
 
-func (c *Client) ResolveRateRequest(ctx context.Context, requestID, decision, actor string) error {
+func (c *Client) ResolveRateRequest(ctx context.Context, requestID, decision, actor string, dataVersion int64) error {
 	if c == nil {
 		return errors.New("deposit client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveRateRequest(callCtx, &depositv1.ResolveRateRequestRequest{
-		RequestId: requestID,
-		Decision:  decision,
-		Actor:     actor,
+	resp, err := c.api.ResolveRateRequest(callCtx, &depositv1.ResolveRateRequestRequest{
+		RequestId:   requestID,
+		Decision:    decision,
+		Actor:       actor,
+		DataVersion: dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("deposit: resolve rate request was not applied")
+	}
+	return nil
 }
 
 // InterestOperator is the narrow surface the workflow interest workers need

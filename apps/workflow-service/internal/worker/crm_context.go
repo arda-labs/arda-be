@@ -57,6 +57,16 @@ func dataVersionFromVars(vars map[string]any) int64 {
 	}
 }
 
+// parseDataVersion converts a case-variable version string to int64 (0 when
+// absent or malformed).
+func parseDataVersion(v string) int64 {
+	n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // traderStampKeys are the fixed metadata keys the finance journal entry
 // carries for the trader stamp (iteration 12 — hạch toán ai giao dịch, mirror
 // of the trader block the FE sends on cancellation/manual-posting cases).

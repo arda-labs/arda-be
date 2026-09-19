@@ -29,7 +29,7 @@ type DPMInterestWorkers struct {
 // DepositInterestRequester is the narrow callback surface (deposit gRPC client).
 type DepositInterestRequester interface {
 	CheckRateRequest(ctx context.Context, requestID string) (bool, string, error)
-	ResolveRateRequest(ctx context.Context, requestID, decision, actor string) error
+	ResolveRateRequest(ctx context.Context, requestID, decision, actor string, dataVersion int64) error
 	CheckInterestOp(ctx context.Context, opID string) (bool, string, error)
 	ResolveInterestOp(ctx context.Context, opID, decision, actor, dataVersion string) error
 }
@@ -94,7 +94,7 @@ func (w *DPMInterestWorkers) validateOne(ctx context.Context, id string) (bool, 
 
 func (w *DPMInterestWorkers) resolveOne(ctx context.Context, id, decision, actor, dataVersion string) error {
 	if w.mode == DPMInterestModeRate {
-		return w.deposit.ResolveRateRequest(ctx, id, decision, actor)
+		return w.deposit.ResolveRateRequest(ctx, id, decision, actor, parseDataVersion(dataVersion))
 	}
 	return w.deposit.ResolveInterestOp(ctx, id, decision, actor, dataVersion)
 }
@@ -164,6 +164,10 @@ func (w *DPMInterestWorkers) cancel() worker.JobHandler {
 		actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
 		for _, id := range ids {
 			if err := w.resolveOne(crmJobContext(job), id, "REJECT", actor, ""); err != nil {
+				if status.Code(err) == codes.Aborted {
+					w.failJobTerminal(client, job, "Deposit Conflict: "+status.Convert(err).Message())
+					return
+				}
 				w.failJob(client, job, "Deposit Error: "+err.Error())
 				return
 			}

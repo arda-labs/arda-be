@@ -566,6 +566,7 @@ type ResolveProductRequestRequest struct {
 	Decision         string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
 	Actor            string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
 	Note             string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	DataVersion      int64                  `protobuf:"varint,5,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -626,6 +627,13 @@ func (x *ResolveProductRequestRequest) GetNote() string {
 		return x.Note
 	}
 	return ""
+}
+
+func (x *ResolveProductRequestRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
 }
 
 type ResolveProductRequestResponse struct {
@@ -1003,6 +1011,7 @@ type ResolveRateRequestRequest struct {
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	Decision      string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
 	Actor         string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	DataVersion   int64                  `protobuf:"varint,4,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1056,6 +1065,13 @@ func (x *ResolveRateRequestRequest) GetActor() string {
 		return x.Actor
 	}
 	return ""
+}
+
+func (x *ResolveRateRequestRequest) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
 }
 
 type ResolveRateRequestResponse struct {
@@ -1348,12 +1364,13 @@ const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
 	"\x12product_request_id\x18\x01 \x01(\tR\x10productRequestId\"G\n" +
 	"\x1bCheckProductRequestResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x92\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xb5\x01\n" +
 	"\x1cResolveProductRequestRequest\x12,\n" +
 	"\x12product_request_id\x18\x01 \x01(\tR\x10productRequestId\x12\x1a\n" +
 	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x14\n" +
 	"\x05actor\x18\x03 \x01(\tR\x05actor\x12\x12\n" +
-	"\x04note\x18\x04 \x01(\tR\x04note\"/\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\x12!\n" +
+	"\fdata_version\x18\x05 \x01(\x03R\vdataVersion\"/\n" +
 	"\x1dResolveProductRequestResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"C\n" +
 	"\x16CheckIBMRequestRequest\x12\x12\n" +
@@ -1375,12 +1392,13 @@ const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"D\n" +
 	"\x18CheckRateRequestResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"l\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x8f\x01\n" +
 	"\x19ResolveRateRequestRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1a\n" +
 	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x14\n" +
-	"\x05actor\x18\x03 \x01(\tR\x05actor\",\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\x12!\n" +
+	"\fdata_version\x18\x04 \x01(\x03R\vdataVersion\",\n" +
 	"\x1aResolveRateRequestResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"-\n" +
 	"\x16CheckInterestOpRequest\x12\x13\n" +

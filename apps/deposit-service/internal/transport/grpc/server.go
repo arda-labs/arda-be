@@ -118,8 +118,8 @@ func (s *DepositServer) ResolveProductRequest(ctx context.Context, req *depositv
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
-	if err := s.products.Resolve(ctx, tenantID, req.GetProductRequestId(), req.GetDecision(), req.GetActor()); err != nil {
-		return &depositv1.ResolveProductRequestResponse{Ok: false}, nil
+	if err := s.products.Resolve(ctx, tenantID, req.GetProductRequestId(), req.GetDecision(), req.GetActor(), req.GetDataVersion()); err != nil {
+		return nil, settleError(err)
 	}
 	return &depositv1.ResolveProductRequestResponse{Ok: true}, nil
 }
@@ -164,8 +164,8 @@ func (s *DepositServer) ResolveRateRequest(ctx context.Context, req *depositv1.R
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
-	if err := s.interest.ResolveRateRequest(ctx, tenantID, req.GetRequestId(), req.GetDecision(), req.GetActor()); err != nil {
-		return &depositv1.ResolveRateRequestResponse{Ok: false}, nil
+	if err := s.interest.ResolveRateRequest(ctx, tenantID, req.GetRequestId(), req.GetDecision(), req.GetActor(), req.GetDataVersion()); err != nil {
+		return nil, settleError(err)
 	}
 	return &depositv1.ResolveRateRequestResponse{Ok: true}, nil
 }
