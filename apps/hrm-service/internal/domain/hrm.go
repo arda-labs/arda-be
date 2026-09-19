@@ -65,6 +65,8 @@ type EmployeeRegistration struct {
 	CreatedBy        *string   `json:"created_by,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+	// DataVersion is the row version the checker saw (hrm_employee_registrations.version).
+	DataVersion int64 `json:"data_version"`
 }
 
 // EmployeeStatus is the working-status catalog (EPAS HrmCfgStatus parity).

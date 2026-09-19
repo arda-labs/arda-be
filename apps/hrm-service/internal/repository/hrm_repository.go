@@ -577,7 +577,7 @@ func (r *HRMRepository) ListEmployeeRegistrations(ctx context.Context, status st
 	}
 	status = normalizeStatusFilter(status)
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at
+		SELECT id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at, version
 		FROM hrm_employee_registrations
 		WHERE tenant_id = $1 AND ($2 = '' OR status = $2)
 		ORDER BY updated_at DESC`, tenant, status)
@@ -588,7 +588,7 @@ func (r *HRMRepository) ListEmployeeRegistrations(ctx context.Context, status st
 	items := make([]domain.EmployeeRegistration, 0)
 	for rows.Next() {
 		var item domain.EmployeeRegistration
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.DataVersion); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -634,10 +634,10 @@ func (r *HRMRepository) GetEmployeeRegistration(ctx context.Context, id string) 
 	}
 	var item domain.EmployeeRegistration
 	err = r.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at
+		SELECT id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at, version
 		FROM hrm_employee_registrations
 		WHERE tenant_id = $1 AND id = $2`, tenant, id,
-	).Scan(&item.ID, &item.TenantID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt)
+	).Scan(&item.ID, &item.TenantID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.DataVersion)
 	return item, err
 }
 
@@ -652,11 +652,11 @@ func (r *HRMRepository) UpdateEmployeeRegistration(ctx context.Context, id, payl
 	var item domain.EmployeeRegistration
 	err = r.db.QueryRowContext(ctx, `
 		UPDATE hrm_employee_registrations
-		SET payload = $3::jsonb, updated_at = now()
+		SET payload = $3::jsonb, updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT'
-		RETURNING id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at`,
+		RETURNING id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at, version`,
 		tenant, id, payload,
-	).Scan(&item.ID, &item.TenantID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt)
+	).Scan(&item.ID, &item.TenantID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.DataVersion)
 	return item, err
 }
 
@@ -672,11 +672,11 @@ func (r *HRMRepository) SubmitEmployeeRegistration(ctx context.Context, id, work
 	var item domain.EmployeeRegistration
 	err = r.db.QueryRowContext(ctx, `
 		UPDATE hrm_employee_registrations
-		SET status = 'SUBMITTED', workflow_case_id = COALESCE($3, workflow_case_id), updated_at = now()
+		SET status = 'SUBMITTED', workflow_case_id = COALESCE($3, workflow_case_id), updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2
-		RETURNING id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at`,
+		RETURNING id, tenant_id, registration_code, payload::text, workflow_case_id, status, created_by, created_at, updated_at, version`,
 		tenant, id, caseID,
-	).Scan(&item.ID, &item.TenantID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt)
+	).Scan(&item.ID, &item.TenantID, &item.RegistrationCode, &item.Payload, &item.WorkflowCaseID, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.DataVersion)
 	return item, err
 }
 
