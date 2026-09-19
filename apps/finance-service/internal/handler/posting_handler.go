@@ -161,6 +161,26 @@ func (h *PostingHandler) GetJournalEntry(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, r, http.StatusOK, journalDetailJSON(detail))
 }
 
+// GetJournalEntryByCase handles GET /api/finance/journal-entries/by-case/{case_id}.
+// Returns the latest posting staged for a workflow case (PENDING included) —
+// the narrow read the fund checker form uses.
+func (h *PostingHandler) GetJournalEntryByCase(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	detail, err := h.svc.GetCasePosting(r.Context(), tenantID, r.PathValue("case_id"))
+	if err != nil {
+		if errors.Is(err, service.ErrJournalEntryNotFound) {
+			respondError(w, r, http.StatusNotFound, "posting not found for case")
+			return
+		}
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, r, http.StatusOK, journalDetailJSON(detail))
+}
+
 // journalDetailJSON maps the proto detail onto the documented snake_case wire
 // shape (entry + lines + total_amount_minor + caller-stamped metadata).
 func journalDetailJSON(d *financev1.JournalEntryDetail) map[string]any {
@@ -197,6 +217,7 @@ func journalDetailJSON(d *financev1.JournalEntryDetail) map[string]any {
 		"created_by":           d.GetCreatedBy(),
 		"created_at":           d.GetCreatedAt(),
 		"metadata":             metadata,
+		"data_version":         d.GetDataVersion(),
 		"lines":                lines,
 	}
 }

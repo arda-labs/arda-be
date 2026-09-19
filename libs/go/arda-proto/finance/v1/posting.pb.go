@@ -1221,7 +1221,9 @@ type JournalEntryDetail struct {
 	Lines             []*JournalEntryDetailLine `protobuf:"bytes,15,rep,name=lines,proto3" json:"lines,omitempty"`
 	// Caller-stamped metadata (actor + trader_* keys, iteration 12); empty for
 	// entries posted before the metadata column existed.
-	Metadata      map[string]string `protobuf:"bytes,16,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Metadata map[string]string `protobuf:"bytes,16,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Row version the checker saw (fin_journal_entries.version); 0 when unread.
+	DataVersion   int64 `protobuf:"varint,17,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1368,6 +1370,13 @@ func (x *JournalEntryDetail) GetMetadata() map[string]string {
 	return nil
 }
 
+func (x *JournalEntryDetail) GetDataVersion() int64 {
+	if x != nil {
+		return x.DataVersion
+	}
+	return 0
+}
+
 var File_arda_finance_v1_posting_proto protoreflect.FileDescriptor
 
 const file_arda_finance_v1_posting_proto_rawDesc = "" +
@@ -1487,7 +1496,7 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\faccount_name\x18\x04 \x01(\tR\vaccountName\x12!\n" +
 	"\famount_minor\x18\x05 \x01(\x03R\vamountMinor\x12#\n" +
 	"\rcurrency_code\x18\x06 \x01(\tR\fcurrencyCode\x12 \n" +
-	"\vdescription\x18\a \x01(\tR\vdescription\"\xdf\x05\n" +
+	"\vdescription\x18\a \x01(\tR\vdescription\"\x82\x06\n" +
 	"\x12JournalEntryDetail\x12(\n" +
 	"\x10journal_entry_id\x18\x01 \x01(\tR\x0ejournalEntryId\x12\x19\n" +
 	"\bentry_no\x18\x02 \x01(\x03R\aentryNo\x12'\n" +
@@ -1507,7 +1516,8 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x0e \x01(\tR\tcreatedAt\x12=\n" +
 	"\x05lines\x18\x0f \x03(\v2'.arda.finance.v1.JournalEntryDetailLineR\x05lines\x12M\n" +
-	"\bmetadata\x18\x10 \x03(\v21.arda.finance.v1.JournalEntryDetail.MetadataEntryR\bmetadata\x1a;\n" +
+	"\bmetadata\x18\x10 \x03(\v21.arda.finance.v1.JournalEntryDetail.MetadataEntryR\bmetadata\x12!\n" +
+	"\fdata_version\x18\x11 \x01(\x03R\vdataVersion\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\x8a\x05\n" +

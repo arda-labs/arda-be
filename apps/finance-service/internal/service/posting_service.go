@@ -986,7 +986,7 @@ const journalEntryDetailSelect = `
 	       created_at::text,
 	       (SELECT COALESCE(SUM(amount_minor),0) FROM fin_journal_lines l
 	          WHERE l.tenant_id = e.tenant_id AND l.entry_id = e.id AND l.direction = 'DEBIT'),
-	       COALESCE(metadata, '{}'::jsonb)
+	       COALESCE(metadata, '{}'::jsonb), e.version
 	FROM fin_journal_entries e`
 
 // FindEntryRefByNo resolves a human journal number to the minimal entry ref
@@ -1066,7 +1066,7 @@ func (s *PostingService) getJournalEntryBy(ctx context.Context, tenantID, column
 		&out.JournalEntryId, &out.EntryNo, &out.AccountingDate, &out.CurrencyCode, &out.Status,
 		&out.Description, &out.BusinessDomain, &out.BusinessDocType,
 		&out.BusinessDocId, &out.CaseId,
-		&reversedBy, &createdBy, &out.CreatedAt, &out.TotalAmountMinor, &metadata)
+		&reversedBy, &createdBy, &out.CreatedAt, &out.TotalAmountMinor, &metadata, &out.DataVersion)
 	if err == sql.ErrNoRows {
 		return nil, ErrJournalEntryNotFound
 	}
@@ -1081,26 +1081,73 @@ func (s *PostingService) getJournalEntryBy(ctx context.Context, tenantID, column
 	out.CreatedBy = createdBy
 	out.Metadata = decodeMetadataJSONB(metadata)
 
+	lines, err := s.loadEntryLines(ctx, tenantID, out.JournalEntryId)
+	if err != nil {
+		return nil, err
+	}
+	out.Lines = lines
+	return &out, nil
+}
+
+// loadEntryLines returns the lines of one entry in line_no order.
+func (s *PostingService) loadEntryLines(ctx context.Context, tenantID, entryID string) ([]*financev1.JournalEntryDetailLine, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT line_no, direction, account_code, account_name, amount_minor, currency_code, COALESCE(description,'')
 		FROM fin_journal_lines
 		WHERE tenant_id = $1 AND entry_id = $2
-		ORDER BY line_no`, tenantID, out.JournalEntryId)
+		ORDER BY line_no`, tenantID, entryID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	lines := []*financev1.JournalEntryDetailLine{}
 	for rows.Next() {
 		l := &financev1.JournalEntryDetailLine{}
 		if err := rows.Scan(&l.LineNo, &l.Direction, &l.AccountCode, &l.AccountName,
 			&l.AmountMinor, &l.CurrencyCode, &l.Description); err != nil {
 			return nil, err
 		}
-		out.Lines = append(out.Lines, l)
+		lines = append(lines, l)
 	}
-	if err := rows.Err(); err != nil {
+	return lines, rows.Err()
+}
+
+// GetCasePosting returns the latest posting staged for one workflow case,
+// PENDING included. This is the narrow read the fund checker form uses: it is
+// scoped to a case the caller already owns, so it does not open the general
+// journal read surface (which keeps hiding PENDING/VOID entries).
+func (s *PostingService) GetCasePosting(ctx context.Context, tenantID, caseID string) (*financev1.JournalEntryDetail, error) {
+	if strings.TrimSpace(caseID) == "" {
+		return nil, fmt.Errorf("case_id is required")
+	}
+	var (
+		out        financev1.JournalEntryDetail
+		reversedBy string
+		createdBy  string
+		metadata   []byte
+	)
+	err := s.db.QueryRowContext(ctx, journalEntryDetailSelect+`
+		WHERE e.tenant_id = $1 AND e.case_id = $2::uuid
+		ORDER BY e.created_at DESC
+		LIMIT 1`, tenantID, caseID).Scan(
+		&out.JournalEntryId, &out.EntryNo, &out.AccountingDate, &out.CurrencyCode, &out.Status,
+		&out.Description, &out.BusinessDomain, &out.BusinessDocType,
+		&out.BusinessDocId, &out.CaseId,
+		&reversedBy, &createdBy, &out.CreatedAt, &out.TotalAmountMinor, &metadata, &out.DataVersion)
+	if err == sql.ErrNoRows {
+		return nil, ErrJournalEntryNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fetch case posting: %w", err)
+	}
+	out.ReversedByEntryId = reversedBy
+	out.CreatedBy = createdBy
+	out.Metadata = decodeMetadataJSONB(metadata)
+	lines, err := s.loadEntryLines(ctx, tenantID, out.JournalEntryId)
+	if err != nil {
 		return nil, err
 	}
+	out.Lines = lines
 	return &out, nil
 }
 

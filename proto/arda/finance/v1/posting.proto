@@ -205,4 +205,6 @@ message JournalEntryDetail {
   // Caller-stamped metadata (actor + trader_* keys, iteration 12); empty for
   // entries posted before the metadata column existed.
   map<string, string> metadata = 16;
+  // Row version the checker saw (fin_journal_entries.version); 0 when unread.
+  int64 data_version = 17;
 }
