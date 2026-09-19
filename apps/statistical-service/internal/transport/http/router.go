@@ -50,6 +50,7 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 			writeMethodNotAllowed(w, r)
 		}
 	})
+	mux.HandleFunc("/api/statistical/submissions/{id}", method("GET", h.GetSubmission))
 	mux.HandleFunc("/api/statistical/submissions/{id}/submit", method("POST", h.SubmitSubmission))
 	mux.HandleFunc("GET /api/statistical/reports/{code}/run", h.RunReport)
 	mux.HandleFunc("GET /api/statistical/reports/{code}/export", h.ExportReport)

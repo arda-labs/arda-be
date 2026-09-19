@@ -151,6 +151,21 @@ func (h *StatisticalHandler) CreateSubmission(w http.ResponseWriter, r *http.Req
 	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
 }
 
+// GetSubmission handles GET /api/statistical/submissions/{id}.
+func (h *StatisticalHandler) GetSubmission(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbiddenStat(w, r)
+		return
+	}
+	item, err := h.svc.GetSubmission(r.Context(), tenantID, r.PathValue("id"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, item)
+}
+
 // SubmitSubmission handles POST /api/statistical/submissions/{id}/submit.
 func (h *StatisticalHandler) SubmitSubmission(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.Header.Get("X-Tenant-Id")

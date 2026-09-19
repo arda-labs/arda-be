@@ -193,6 +193,11 @@ func (s *StatisticalService) findSubmission(ctx context.Context, tenantID, id st
 	return sub, nil
 }
 
+// GetSubmission returns one submission by id (workbench form host read API).
+func (s *StatisticalService) GetSubmission(ctx context.Context, tenantID, id string) (*repository.ReportSubmission, error) {
+	return s.findSubmission(ctx, tenantID, id)
+}
+
 // ListSubmissions passthrough for the read API.
 func (s *StatisticalService) ListSubmissions(ctx context.Context, params repository.ListSubmissionsParams) ([]repository.ReportSubmission, int, error) {
 	return s.repo.ListSubmissions(ctx, params)

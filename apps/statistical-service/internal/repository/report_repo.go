@@ -58,6 +58,8 @@ type ReportSubmission struct {
 	CreatedBy      string          `json:"created_by"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
+	// DataVersion is the row version the checker saw (rpt_report_submissions.version).
+	DataVersion int64 `json:"data_version"`
 }
 
 // StatisticalRepository persists report definitions + indicators + submissions.
@@ -435,13 +437,15 @@ func (r *StatisticalRepository) ListSubmissions(ctx context.Context, params List
 func (r *StatisticalRepository) GetSubmissionByID(ctx context.Context, tenantID, id string) (*ReportSubmission, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, report_code, period_code, status, payload,
-		       workflow_case_id::text, COALESCE(submitted_by,''), submitted_at, COALESCE(created_by,''), created_at, updated_at
+		       workflow_case_id::text, COALESCE(submitted_by,''), submitted_at, COALESCE(created_by,''), created_at, updated_at,
+		       version
 		FROM rpt_report_submissions WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	var sub ReportSubmission
 	var caseID sql.NullString
 	var submittedAt sql.NullTime
 	err := row.Scan(&sub.ID, &sub.TenantID, &sub.ReportCode, &sub.PeriodCode, &sub.Status,
-		&sub.Payload, &caseID, &sub.SubmittedBy, &submittedAt, &sub.CreatedBy, &sub.CreatedAt, &sub.UpdatedAt)
+		&sub.Payload, &caseID, &sub.SubmittedBy, &submittedAt, &sub.CreatedBy, &sub.CreatedAt, &sub.UpdatedAt,
+		&sub.DataVersion)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
