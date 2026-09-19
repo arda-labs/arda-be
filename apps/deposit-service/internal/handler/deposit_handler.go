@@ -48,6 +48,7 @@ type InterestService interface {
 	ListInterestRates(ctx context.Context, tenantID, productCode string) ([]repository.InterestRate, error)
 	SubmitRate(ctx context.Context, tenantID, actor, requestType string, payload json.RawMessage) (*repository.RateRequest, error)
 	GetRateRequest(ctx context.Context, tenantID, id string) (*repository.RateRequest, error)
+	GetInterestOpsByCase(ctx context.Context, tenantID, caseID string) ([]repository.InterestOp, error)
 	SubmitInterest(ctx context.Context, tenantID, actor, savingsCode, opType string, amountMinor int64) (*repository.InterestOp, []repository.InterestOp, error)
 	GetSavingsDetail(ctx context.Context, tenantID, code string) (*service.SavingsDetail, error)
 	RunDaily(ctx context.Context, tenantID, businessDate string) (int, error)
@@ -454,6 +455,27 @@ func (h *DepositHandler) GetRateRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusOK, item)
+}
+
+// GetInterestOpsByCase handles GET /api/deposit/interest-ops?case_id= — the
+// checker dossier read for DPM.302/303/304 (single op or whole batch).
+func (h *DepositHandler) GetInterestOpsByCase(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	caseID := strings.TrimSpace(r.URL.Query().Get("case_id"))
+	if caseID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidInput, "case_id is required"))
+		return
+	}
+	items, err := h.interest.GetInterestOpsByCase(r.Context(), tenantID, caseID)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteEnvelopeUnpaged(w, r, items)
 }
 
 // SubmitRateRequest handles POST /api/deposit/rates — stages a DPM.100/101 case.

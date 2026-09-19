@@ -150,6 +150,16 @@ func (s *InterestService) GetRateRequest(ctx context.Context, tenantID, id strin
 	return request, nil
 }
 
+// GetInterestOpsByCase returns the staged ops of one workflow case — the
+// checker dossier read for DPM.302/303/304 (single op or whole batch).
+func (s *InterestService) GetInterestOpsByCase(ctx context.Context, tenantID, caseID string) ([]repository.InterestOp, error) {
+	ops, err := s.repo.ListInterestOpsByCase(ctx, tenantID, caseID)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	return ops, nil
+}
+
 // ResolveRateRequest applies the checker decision (APPROVE upserts the tier).
 func (s *InterestService) ResolveRateRequest(ctx context.Context, tenantID, id, decision, actor string) error {
 	request, err := s.repo.GetRateRequestByID(ctx, tenantID, id)

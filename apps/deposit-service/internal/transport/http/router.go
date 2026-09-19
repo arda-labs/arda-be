@@ -65,6 +65,7 @@ func NewRouter(h *handler.DepositHandler, ai *handler.InternalAIHandler) http.Ha
 		}
 	})
 	mux.HandleFunc("GET /api/deposit/rates/{id}", h.GetRateRequest)
+	mux.HandleFunc("GET /api/deposit/interest-ops", h.GetInterestOpsByCase)
 	mux.HandleFunc("/api/deposit/batch-interest", method("POST", h.SubmitBatchInterest))
 	mux.HandleFunc("GET /api/deposit/reports/deposit-statement", h.GetDepositStatement)
 	mux.HandleFunc("GET /api/deposit/reports/deposit-transactions", h.GetDepositTransactions)

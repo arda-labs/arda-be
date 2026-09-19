@@ -1340,6 +1340,26 @@ func (r *DepositRepository) ListInterestOpsByBatch(ctx context.Context, tenantID
 		return nil, err
 	}
 	defer rows.Close()
+	return scanInterestOps(rows)
+}
+
+// ListInterestOpsByCase returns the ops stamped with one workflow case — the
+// checker dossier read for DPM.302/303/304 (single op or whole batch).
+func (r *DepositRepository) ListInterestOpsByCase(ctx context.Context, tenantID, caseID string) ([]InterestOp, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id::text, tenant_id, savings_id, savings_code, op_type, amount_minor, days, rate,
+		       COALESCE(period_from::text,''), COALESCE(period_to::text,''), batch_id::text,
+		       status, workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at
+		FROM dpm_interest_ops WHERE tenant_id = $1 AND workflow_case_id = $2::uuid ORDER BY savings_code`,
+		tenantID, caseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanInterestOps(rows)
+}
+
+func scanInterestOps(rows *sql.Rows) ([]InterestOp, error) {
 	out := []InterestOp{}
 	for rows.Next() {
 		var x InterestOp

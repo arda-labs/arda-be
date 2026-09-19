@@ -109,6 +109,10 @@ func (f *fakeInterest) GetRateRequest(context.Context, string, string) (*reposit
 	return &repository.RateRequest{ID: "rate-1", Status: "SUBMITTED"}, nil
 }
 
+func (f *fakeInterest) GetInterestOpsByCase(context.Context, string, string) ([]repository.InterestOp, error) {
+	return nil, nil
+}
+
 func (f *fakeInterest) SubmitInterest(context.Context, string, string, string, string, int64) (*repository.InterestOp, []repository.InterestOp, error) {
 	return &repository.InterestOp{ID: "op-1"}, nil, nil
 }
