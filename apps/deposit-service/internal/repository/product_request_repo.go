@@ -24,17 +24,20 @@ type ProductRequest struct {
 	WorkflowCaseCode string  `json:"workflow_case_code,omitempty"`
 	CreatedBy        string  `json:"created_by"`
 	CreatedAt        string  `json:"created_at"`
+	// DataVersion is the row version the checker saw — the optimistic
+	// concurrency token for approve decisions (maps to dpm_product_requests.version).
+	DataVersion int64 `json:"data_version"`
 }
 
 const productRequestColumns = `id, tenant_id, request_type, product_code, name, term_months,
 	interest_rate::float8, currency_code, status,
-	COALESCE(workflow_case_id,''), COALESCE(workflow_case_code,''), created_by, created_at::text`
+	COALESCE(workflow_case_id,''), COALESCE(workflow_case_code,''), created_by, created_at::text, version`
 
 func scanProductRequest(scan func(...any) error) (*ProductRequest, error) {
 	var p ProductRequest
 	if err := scan(&p.ID, &p.TenantID, &p.RequestType, &p.ProductCode, &p.Name, &p.TermMonths,
 		&p.InterestRate, &p.CurrencyCode, &p.Status, &p.WorkflowCaseID, &p.WorkflowCaseCode,
-		&p.CreatedBy, &p.CreatedAt); err != nil {
+		&p.CreatedBy, &p.CreatedAt, &p.DataVersion); err != nil {
 		return nil, err
 	}
 	return &p, nil

@@ -130,7 +130,7 @@ func (w *FormationWorkers) cancel() worker.JobHandler {
 		}); err != nil {
 			return
 		}
-		w.projection.FinishCase(ctx, job.GetProcessInstanceKey(), repository.CaseStatusCompleted)
+		w.projection.FinishCase(ctx, job.GetProcessInstanceKey(), repository.CaseStatusRejected)
 		slog.Info("loan formation cancelled", "id", id, "status", "REJECTED")
 	}
 }

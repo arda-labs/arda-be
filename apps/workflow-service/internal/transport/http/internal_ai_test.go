@@ -73,7 +73,7 @@ func (f *fakeAIStore) ListTimeline(ctx context.Context, caseID string) ([]reposi
 func newAIRouter(t *testing.T, store *fakeAIStore) http.Handler {
 	t.Helper()
 	t.Setenv("ARDA_SERVICE_AUTH_SECRET", aiTestSecret)
-	h := handler.NewWorkflowHandler(nil, nil, nil, nil, nil, nil)
+	h := handler.NewWorkflowHandler(nil, nil, nil, nil, nil)
 	h.SetAIStore(store)
 	return NewRouter(h)
 }

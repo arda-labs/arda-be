@@ -113,7 +113,7 @@ func (w *LoanWorkers) cancelHandler(kind string) worker.JobHandler {
 		}); err != nil {
 			return
 		}
-		w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), repository.CaseStatusCompleted)
+		w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), repository.CaseStatusRejected)
 	}
 }
 

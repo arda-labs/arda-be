@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -137,6 +138,16 @@ func (s *InterestService) CheckRateRequest(ctx context.Context, tenantID, id str
 		return false, "status " + request.Status + " is not actionable", nil
 	}
 	return true, "", nil
+}
+
+// GetRateRequest returns one staged rate request (checker dossier read;
+// includes data_version).
+func (s *InterestService) GetRateRequest(ctx context.Context, tenantID, id string) (*repository.RateRequest, error) {
+	request, err := s.repo.GetRateRequestByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	return request, nil
 }
 
 // ResolveRateRequest applies the checker decision (APPROVE upserts the tier).
@@ -558,7 +569,7 @@ func resolveOpMode(status string) opMode {
 // same deterministic key (dpm-interest-<op id>), so finance de-duplicates and
 // the balance is never decremented twice. The state machine therefore cannot be
 // "paid in GL but still carrying accrued interest".
-func (s *InterestService) ResolveInterestOp(ctx context.Context, tenantID, id, decision, actor string) error {
+func (s *InterestService) ResolveInterestOp(ctx context.Context, tenantID, id, decision, actor, dataVersion string) error {
 	op, err := s.repo.GetInterestOpByID(ctx, tenantID, id)
 	if err != nil {
 		return err
@@ -579,6 +590,10 @@ func (s *InterestService) ResolveInterestOp(ctx context.Context, tenantID, id, d
 		if err != nil || savings == nil {
 			return ardaerrors.New(ardaerrors.CodeNotFound, "savings not found")
 		}
+		if dataVersion != "" && strconv.FormatInt(savings.DataVersion, 10) != dataVersion {
+			return ardaerrors.New(ardaerrors.CodeConflict,
+				fmt.Sprintf("dossier changed: savings %s is at version %d", op.SavingsCode, savings.DataVersion))
+		}
 		card := "DPM_INTEREST_PAY"
 		debit, credit := "DPM_INTEREST_PAYABLE", "CASH_SETTLEMENT_ACCOUNT"
 		description := "Trả lãi tiền gửi"
@@ -590,9 +605,17 @@ func (s *InterestService) ResolveInterestOp(ctx context.Context, tenantID, id, d
 			capitalize = true
 		}
 		if mode == opModeFresh {
-			if err := s.repo.BeginInterestOpPosting(ctx, tenantID, op.ID, savings.ID, op.AmountMinor, capitalize); err != nil {
+			if err := s.repo.BeginInterestOpPosting(ctx, tenantID, op.ID, savings.ID, op.AmountMinor, capitalize, dataVersion); err != nil {
 				switch {
 				case errors.Is(err, repository.ErrAccruedInsufficient):
+					if dataVersion != "" {
+						if current, gErr := s.repo.GetSavingsByCode(ctx, tenantID, op.SavingsCode); gErr == nil && current != nil &&
+							current.Status == "ACTIVE" &&
+							strconv.FormatInt(current.DataVersion, 10) != dataVersion {
+							return ardaerrors.New(ardaerrors.CodeConflict,
+								fmt.Sprintf("dossier changed: savings %s is at version %d", op.SavingsCode, current.DataVersion))
+						}
+					}
 					return ardaerrors.New(ardaerrors.CodeConflict, "amount exceeds the accrued interest or the savings account is no longer ACTIVE")
 				case errors.Is(err, repository.ErrInterestOpState):
 					// A concurrent worker advanced the op between our read and

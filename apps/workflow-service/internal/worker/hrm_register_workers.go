@@ -120,7 +120,7 @@ func (w *HRMRegisterWorkers) cancel() worker.JobHandler {
 		}); err != nil {
 			return
 		}
-		w.projection.FinishCase(ctx, job.GetProcessInstanceKey(), repository.CaseStatusCompleted)
+		w.projection.FinishCase(ctx, job.GetProcessInstanceKey(), repository.CaseStatusRejected)
 	}
 }
 

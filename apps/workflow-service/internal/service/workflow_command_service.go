@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -12,6 +13,11 @@ import (
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 )
+
+// ErrCaseTypeUnavailable is returned when a case type has no ACTIVE registry
+// steps, so starting a workflow would leave a case with no inbox row. HTTP
+// callers map it to the workflow.case_type.unavailable problem.
+var ErrCaseTypeUnavailable = errors.New("case type is not available")
 
 type WorkflowCommandService struct {
 	caseRepo *repository.CaseRepository
@@ -72,6 +78,21 @@ func (s *WorkflowCommandService) submitCaseLocked(ctx context.Context, id string
 	if s.zeebeSvc == nil {
 		return nil, fmt.Errorf("zeebe service is not configured")
 	}
+	// Capability gate (no fallback): a case type without ACTIVE registry steps
+	// cannot be discovered by the projector, so refuse to start a workflow
+	// that would hang with no inbox row. The check runs before the engine call.
+	registryVersion, err := s.caseRepo.CaseRegistryVersion(ctx, bc.ID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve case registry version: %w", err)
+	}
+	hasRegistry, err := s.caseRepo.CaseTypeHasRegistry(ctx, bc.CaseType, registryVersion)
+	if err != nil {
+		return nil, fmt.Errorf("check case type registry: %w", err)
+	}
+	if !hasRegistry {
+		return nil, fmt.Errorf("%w: %s has no active registry steps (version %d)",
+			ErrCaseTypeUnavailable, bc.CaseType, registryVersion)
+	}
 	variables := buildCaseVariables(bc, in.Actor, in.Variables)
 	processKey, err := s.zeebeSvc.StartWorkflow(ctx, *bc.BpmnProcessID, variables)
 	if err != nil {
@@ -81,10 +102,37 @@ func (s *WorkflowCommandService) submitCaseLocked(ctx context.Context, id string
 	if err != nil {
 		return nil, fmt.Errorf("workflow started but case submit failed: %w", err)
 	}
-	if task, ok := InitialUserTaskForCaseType(updated.CaseType); ok {
-		SeedEagerUserTask(ctx, s.caseRepo, updated, task)
+	// Eager seed: only the first human step, as a non-actionable ROUTING
+	// placeholder ("processing"). The projector binds the engine user task and
+	// every later activation; we never guess the next step from the BPMN.
+	if step, err := s.caseRepo.FirstHumanStep(ctx, updated.CaseType, registryVersion); err == nil && step != nil {
+		SeedEagerUserTask(ctx, s.caseRepo, updated, EagerUserTask{
+			StepCode:      step.ElementID,
+			CandidateRole: eagerCandidateRole(updated, step),
+			Title:         eagerStepTitle(step.StepKind),
+		})
 	}
 	return updated, nil
+}
+
+// eagerCandidateRole only prefills the maker role for maker steps; reviewer
+// roles come from the assignment resolver when the engine task is projected.
+func eagerCandidateRole(bc *repository.BusinessCase, step *repository.CaseTypeStep) string {
+	if bc.CandidateRole != nil && (step.StepKind == "INPUT" || step.StepKind == "REVISE") {
+		return *bc.CandidateRole
+	}
+	return ""
+}
+
+func eagerStepTitle(kind string) string {
+	switch kind {
+	case "INPUT":
+		return "Nhập liệu"
+	case "REVISE":
+		return "Chỉnh sửa hồ sơ"
+	default:
+		return "Phê duyệt"
+	}
 }
 
 func submitRequestHash(caseID, actor, idempotencyKey string, variables map[string]any) string {

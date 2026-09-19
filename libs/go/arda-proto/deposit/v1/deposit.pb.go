@@ -118,9 +118,13 @@ func (x *CheckSettleResponse) GetMessage() string {
 }
 
 type SettleRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SavingsCode   string                 `protobuf:"bytes,1,opt,name=savings_code,json=savingsCode,proto3" json:"savings_code,omitempty"`
-	Actor         string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	SavingsCode string                 `protobuf:"bytes,1,opt,name=savings_code,json=savingsCode,proto3" json:"savings_code,omitempty"`
+	Actor       string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	// Row version the checker approved (dpm_savings.version as a string). When
+	// set, settle refuses to close the account if the savings moved on — stale
+	// approvals must be re-reviewed, never silently applied.
+	DataVersion   string `protobuf:"bytes,3,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -165,6 +169,13 @@ func (x *SettleRequest) GetSavingsCode() string {
 func (x *SettleRequest) GetActor() string {
 	if x != nil {
 		return x.Actor
+	}
+	return ""
+}
+
+func (x *SettleRequest) GetDataVersion() string {
+	if x != nil {
+		return x.DataVersion
 	}
 	return ""
 }
@@ -327,8 +338,12 @@ type SettleAdditionalRequest struct {
 	TxnDate        string                 `protobuf:"bytes,3,opt,name=txn_date,json=txnDate,proto3" json:"txn_date,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	Actor          string                 `protobuf:"bytes,5,opt,name=actor,proto3" json:"actor,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Row version the checker approved (dpm_savings.version as a string). When
+	// set, settle refuses to bump the principal if the savings moved on —
+	// stale approvals must be re-reviewed, never silently applied.
+	DataVersion   string `protobuf:"bytes,6,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SettleAdditionalRequest) Reset() {
@@ -392,6 +407,13 @@ func (x *SettleAdditionalRequest) GetIdempotencyKey() string {
 func (x *SettleAdditionalRequest) GetActor() string {
 	if x != nil {
 		return x.Actor
+	}
+	return ""
+}
+
+func (x *SettleAdditionalRequest) GetDataVersion() string {
+	if x != nil {
+		return x.DataVersion
 	}
 	return ""
 }
@@ -1168,10 +1190,13 @@ func (x *CheckInterestOpResponse) GetMessage() string {
 }
 
 type ResolveInterestOpRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OpId          string                 `protobuf:"bytes,1,opt,name=op_id,json=opId,proto3" json:"op_id,omitempty"`
-	Decision      string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
-	Actor         string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	OpId     string                 `protobuf:"bytes,1,opt,name=op_id,json=opId,proto3" json:"op_id,omitempty"`
+	Decision string                 `protobuf:"bytes,2,opt,name=decision,proto3" json:"decision,omitempty"` // APPROVE | REJECT
+	Actor    string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	// Savings row version the checker approved. When set, approve refuses to
+	// post if the savings moved on — stale approvals are re-reviewed.
+	DataVersion   string `protobuf:"bytes,4,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1223,6 +1248,13 @@ func (x *ResolveInterestOpRequest) GetDecision() string {
 func (x *ResolveInterestOpRequest) GetActor() string {
 	if x != nil {
 		return x.Actor
+	}
+	return ""
+}
+
+func (x *ResolveInterestOpRequest) GetDataVersion() string {
+	if x != nil {
+		return x.DataVersion
 	}
 	return ""
 }
@@ -1280,10 +1312,11 @@ const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
 	"\fsavings_code\x18\x01 \x01(\tR\vsavingsCode\"?\n" +
 	"\x13CheckSettleResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"H\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"k\n" +
 	"\rSettleRequest\x12!\n" +
 	"\fsavings_code\x18\x01 \x01(\tR\vsavingsCode\x12\x14\n" +
-	"\x05actor\x18\x02 \x01(\tR\x05actor\" \n" +
+	"\x05actor\x18\x02 \x01(\tR\x05actor\x12!\n" +
+	"\fdata_version\x18\x03 \x01(\tR\vdataVersion\" \n" +
 	"\x0eSettleResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"^\n" +
 	"\x16CheckAdditionalRequest\x12!\n" +
@@ -1291,13 +1324,14 @@ const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
 	"\famount_minor\x18\x02 \x01(\x03R\vamountMinor\"C\n" +
 	"\x17CheckAdditionalResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\xb9\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xdc\x01\n" +
 	"\x17SettleAdditionalRequest\x12!\n" +
 	"\fsavings_code\x18\x01 \x01(\tR\vsavingsCode\x12!\n" +
 	"\famount_minor\x18\x02 \x01(\x03R\vamountMinor\x12\x19\n" +
 	"\btxn_date\x18\x03 \x01(\tR\atxnDate\x12'\n" +
 	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12\x14\n" +
-	"\x05actor\x18\x05 \x01(\tR\x05actor\"*\n" +
+	"\x05actor\x18\x05 \x01(\tR\x05actor\x12!\n" +
+	"\fdata_version\x18\x06 \x01(\tR\vdataVersion\"*\n" +
 	"\x18SettleAdditionalResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"J\n" +
 	"\x1aCheckProductRequestRequest\x12,\n" +
@@ -1342,11 +1376,12 @@ const file_arda_deposit_v1_deposit_proto_rawDesc = "" +
 	"\x05op_id\x18\x01 \x01(\tR\x04opId\"C\n" +
 	"\x17CheckInterestOpResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"a\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x84\x01\n" +
 	"\x18ResolveInterestOpRequest\x12\x13\n" +
 	"\x05op_id\x18\x01 \x01(\tR\x04opId\x12\x1a\n" +
 	"\bdecision\x18\x02 \x01(\tR\bdecision\x12\x14\n" +
-	"\x05actor\x18\x03 \x01(\tR\x05actor\"+\n" +
+	"\x05actor\x18\x03 \x01(\tR\x05actor\x12!\n" +
+	"\fdata_version\x18\x04 \x01(\tR\vdataVersion\"+\n" +
 	"\x19ResolveInterestOpResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok2\xf1\t\n" +
 	"\x15DepositCommandService\x12X\n" +

@@ -85,21 +85,31 @@ func (c *Client) CheckSettle(ctx context.Context, savingsCode string) (bool, str
 	return resp.GetOk(), resp.GetMessage(), nil
 }
 
-func (c *Client) Settle(ctx context.Context, savingsCode, actor string) error {
+func (c *Client) Settle(ctx context.Context, savingsCode, actor, dataVersion string) error {
 	if c == nil {
 		return errors.New("deposit client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.Settle(callCtx, &depositv1.SettleRequest{SavingsCode: savingsCode, Actor: actor})
-	return err
+	resp, err := c.api.Settle(callCtx, &depositv1.SettleRequest{
+		SavingsCode: savingsCode,
+		Actor:       actor,
+		DataVersion: dataVersion,
+	})
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("deposit settle was not confirmed")
+	}
+	return nil
 }
 
 // Additionaler is the narrow surface the workflow additional-deposit workers
 // need (DPM.301).
 type Additionaler interface {
 	CheckAdditional(ctx context.Context, savingsCode string, amountMinor int64) (bool, string, error)
-	SettleAdditional(ctx context.Context, savingsCode string, amountMinor int64, txnDate, idempotencyKey, actor string) error
+	SettleAdditional(ctx context.Context, savingsCode string, amountMinor int64, txnDate, idempotencyKey, actor, dataVersion string) error
 }
 
 func (c *Client) CheckAdditional(ctx context.Context, savingsCode string, amountMinor int64) (bool, string, error) {
@@ -118,20 +128,27 @@ func (c *Client) CheckAdditional(ctx context.Context, savingsCode string, amount
 	return resp.GetOk(), resp.GetMessage(), nil
 }
 
-func (c *Client) SettleAdditional(ctx context.Context, savingsCode string, amountMinor int64, txnDate, idempotencyKey, actor string) error {
+func (c *Client) SettleAdditional(ctx context.Context, savingsCode string, amountMinor int64, txnDate, idempotencyKey, actor, dataVersion string) error {
 	if c == nil {
 		return errors.New("deposit client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.SettleAdditional(callCtx, &depositv1.SettleAdditionalRequest{
+	resp, err := c.api.SettleAdditional(callCtx, &depositv1.SettleAdditionalRequest{
 		SavingsCode:    savingsCode,
 		AmountMinor:    amountMinor,
 		TxnDate:        txnDate,
 		IdempotencyKey: idempotencyKey,
 		Actor:          actor,
+		DataVersion:    dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("additional deposit settle was not confirmed")
+	}
+	return nil
 }
 
 // ProductRequester is the narrow surface the workflow product-request workers
@@ -244,7 +261,7 @@ func (c *Client) ResolveRateRequest(ctx context.Context, requestID, decision, ac
 // (DPM.302/303/304).
 type InterestOperator interface {
 	CheckInterestOp(ctx context.Context, opID string) (bool, string, error)
-	ResolveInterestOp(ctx context.Context, opID, decision, actor string) error
+	ResolveInterestOp(ctx context.Context, opID, decision, actor, dataVersion string) error
 }
 
 func (c *Client) CheckInterestOp(ctx context.Context, opID string) (bool, string, error) {
@@ -260,16 +277,23 @@ func (c *Client) CheckInterestOp(ctx context.Context, opID string) (bool, string
 	return resp.GetOk(), resp.GetMessage(), nil
 }
 
-func (c *Client) ResolveInterestOp(ctx context.Context, opID, decision, actor string) error {
+func (c *Client) ResolveInterestOp(ctx context.Context, opID, decision, actor, dataVersion string) error {
 	if c == nil {
 		return errors.New("deposit client is nil")
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	_, err := c.api.ResolveInterestOp(callCtx, &depositv1.ResolveInterestOpRequest{
-		OpId:     opID,
-		Decision: decision,
-		Actor:    actor,
+	resp, err := c.api.ResolveInterestOp(callCtx, &depositv1.ResolveInterestOpRequest{
+		OpId:        opID,
+		Decision:    decision,
+		Actor:       actor,
+		DataVersion: dataVersion,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if !resp.GetOk() {
+		return errors.New("interest op resolve was not confirmed")
+	}
+	return nil
 }

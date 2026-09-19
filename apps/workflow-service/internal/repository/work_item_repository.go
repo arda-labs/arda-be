@@ -62,8 +62,16 @@ type WorkItem struct {
 	CanReassign              bool       `json:"canReassign"`
 	CanView                  bool       `json:"-"`
 	ClaimBlockedReason       string     `json:"claimBlockedReason,omitempty"`
-	CreatedAt                time.Time  `json:"createdAt"`
-	UpdatedAt                time.Time  `json:"updatedAt"`
+	// Registry v2 step metadata (decorated by the HTTP layer from
+	// workflow_case_type_steps): the shared task UI renders actions/forms from
+	// these fields instead of hardcoded case-type maps.
+	StepKind          string   `json:"stepKind,omitempty"`
+	FormKey           string   `json:"formKey,omitempty"`
+	AllowedActions    []string `json:"allowedActions,omitempty"`
+	RequiredCommentOn []string `json:"requiredCommentOn,omitempty"`
+	RegistryVersion   int      `json:"registryVersion,omitempty"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 func (item WorkItem) MarshalJSON() ([]byte, error) {
@@ -102,6 +110,11 @@ func (item WorkItem) MarshalJSON() ([]byte, error) {
 		"canOpen":                  item.CanOpen,
 		"canReassign":              item.CanReassign,
 		"claimBlockedReason":       item.ClaimBlockedReason,
+		"stepKind":                 item.StepKind,
+		"formKey":                  item.FormKey,
+		"allowedActions":           item.AllowedActions,
+		"requiredCommentOn":        item.RequiredCommentOn,
+		"registryVersion":          item.RegistryVersion,
 		"createdAt":                item.CreatedAt,
 		"updatedAt":                item.UpdatedAt,
 	}
@@ -159,6 +172,10 @@ func workItemSeedStatus(seed WorkItemSeed) string {
 	return TaskStatusReady
 }
 
+// UpsertWorkItem writes one task activation. The eager ROUTING row created at
+// submit is bound in place when the projector supplies the engine job key;
+// every later activation of the same step (return loops, retries) inserts a
+// new row and cancels the previous open one, so task history is preserved.
 func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) (*WorkItem, error) {
 	if seed.CaseID == "" || seed.TaskType == "" || seed.StepCode == "" {
 		return nil, errors.New("caseId, taskType and stepCode are required")
@@ -170,66 +187,122 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 		}
 		seed.SLADueAt = dueAt
 	}
-	id, err := newID()
+
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO workflow_tasks (
-			id, case_id, process_instance_key, job_key, task_type, step_code,
-			title, description, status, candidate_role, candidate_users, candidate_group_id,
-			candidate_org_unit_id, sla_due_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		ON CONFLICT (case_id, task_type, step_code) DO UPDATE SET
-			process_instance_key = COALESCE(EXCLUDED.process_instance_key, workflow_tasks.process_instance_key),
-			job_key = COALESCE(EXCLUDED.job_key, workflow_tasks.job_key),
-			title = COALESCE(NULLIF(EXCLUDED.title, ''), workflow_tasks.title),
-			description = COALESCE(NULLIF(EXCLUDED.description, ''), workflow_tasks.description),
-			candidate_role = COALESCE(NULLIF(EXCLUDED.candidate_role, ''), workflow_tasks.candidate_role),
-			candidate_users = CASE
-				WHEN cardinality(EXCLUDED.candidate_users) > 0 THEN EXCLUDED.candidate_users
-				ELSE workflow_tasks.candidate_users
-			END,
-			candidate_group_id = COALESCE(NULLIF(EXCLUDED.candidate_group_id, ''), workflow_tasks.candidate_group_id),
-			candidate_org_unit_id = COALESCE(NULLIF(EXCLUDED.candidate_org_unit_id, ''), workflow_tasks.candidate_org_unit_id),
-			status = CASE
-				WHEN workflow_tasks.status = 'CLAIMED' THEN workflow_tasks.status
-				WHEN workflow_tasks.status = 'ROUTING' AND EXCLUDED.job_key IS NOT NULL THEN 'READY'
-				WHEN workflow_tasks.status IN ('COMPLETED', 'CANCELLED')
-					AND EXCLUDED.job_key IS NOT NULL
-					AND workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN 'READY'
-				ELSE workflow_tasks.status
-			END,
-			assigned_to = CASE
-				WHEN workflow_tasks.status = 'CLAIMED' THEN workflow_tasks.assigned_to
-				WHEN EXCLUDED.job_key IS NOT NULL
-					AND workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN ''
-				ELSE workflow_tasks.assigned_to
-			END,
-			assigned_at = CASE
-				WHEN workflow_tasks.status = 'CLAIMED' THEN workflow_tasks.assigned_at
-				WHEN EXCLUDED.job_key IS NOT NULL
-					AND workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN NULL
-				ELSE workflow_tasks.assigned_at
-			END,
-			claim_expires_at = CASE
-				WHEN workflow_tasks.status = 'CLAIMED' THEN workflow_tasks.claim_expires_at
-				WHEN EXCLUDED.job_key IS NOT NULL
-					AND workflow_tasks.job_key IS DISTINCT FROM EXCLUDED.job_key THEN NULL
-				ELSE workflow_tasks.claim_expires_at
-			END,
-			sla_due_at = COALESCE(EXCLUDED.sla_due_at, workflow_tasks.sla_due_at),
-			updated_at = CURRENT_TIMESTAMP
-		RETURNING id
-	`, id, seed.CaseID, seed.ProcessInstanceKey, seed.JobKey, seed.TaskType, seed.StepCode,
-		seed.Title, seed.Description, workItemSeedStatus(seed), seed.CandidateRole, ardapg.Driver.NotNil(seed.CandidateUsers), seed.CandidateGroupID,
-		seed.CandidateOrgUnitID, seed.SLADueAt)
-	var workItemID string
-	if err := row.Scan(&workItemID); err != nil {
+	defer func() { _ = tx.Rollback() }()
+
+	var (
+		existingID     string
+		existingStatus string
+		existingJobKey sql.NullInt64
+		activationNo   int
+	)
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, status, job_key, activation_no
+		FROM workflow_tasks
+		WHERE case_id = $1 AND step_code = $2
+		ORDER BY activation_no DESC
+		LIMIT 1
+		FOR UPDATE
+	`, seed.CaseID, seed.StepCode).Scan(&existingID, &existingStatus, &existingJobKey, &activationNo)
+
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		id, err := newID()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO workflow_tasks (
+				id, case_id, process_instance_key, job_key, task_type, step_code,
+				title, description, status, candidate_role, candidate_users, candidate_group_id,
+				candidate_org_unit_id, sla_due_at, activation_no
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1)
+		`, id, seed.CaseID, seed.ProcessInstanceKey, seed.JobKey, seed.TaskType, seed.StepCode,
+			seed.Title, seed.Description, workItemSeedStatus(seed), seed.CandidateRole,
+			ardapg.Driver.NotNil(seed.CandidateUsers), seed.CandidateGroupID,
+			seed.CandidateOrgUnitID, seed.SLADueAt); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return r.GetWorkItem(ctx, id, "")
+	case err != nil:
 		return nil, err
 	}
-	return r.GetWorkItem(ctx, workItemID, "")
+
+	sameJobKey := seed.JobKey != nil && existingJobKey.Valid && *seed.JobKey == existingJobKey.Int64
+	bindPlaceholder := seed.JobKey != nil && !existingJobKey.Valid && existingStatus == TaskStatusRouting
+
+	if seed.JobKey != nil && !sameJobKey && !bindPlaceholder {
+		// New engine activation for this step: close the previous open rows
+		// and insert a fresh READY row so every activation keeps its history.
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE workflow_tasks
+			SET status = $3, updated_at = CURRENT_TIMESTAMP
+			WHERE case_id = $1 AND step_code = $2 AND status IN ($4, $5, $6)
+		`, seed.CaseID, seed.StepCode, TaskStatusCancelled,
+			TaskStatusRouting, TaskStatusReady, TaskStatusClaimed); err != nil {
+			return nil, err
+		}
+		id, err := newID()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO workflow_tasks (
+				id, case_id, process_instance_key, job_key, task_type, step_code,
+				title, description, status, candidate_role, candidate_users, candidate_group_id,
+				candidate_org_unit_id, sla_due_at, activation_no
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		`, id, seed.CaseID, seed.ProcessInstanceKey, seed.JobKey, seed.TaskType, seed.StepCode,
+			seed.Title, seed.Description, TaskStatusReady, seed.CandidateRole,
+			ardapg.Driver.NotNil(seed.CandidateUsers), seed.CandidateGroupID,
+			seed.CandidateOrgUnitID, seed.SLADueAt, activationNo+1); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return r.GetWorkItem(ctx, id, "")
+	}
+
+	newStatus := existingStatus
+	if seed.JobKey != nil && existingStatus != TaskStatusClaimed {
+		newStatus = TaskStatusReady
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE workflow_tasks SET
+			process_instance_key = COALESCE($3, process_instance_key),
+			job_key = COALESCE($4, job_key),
+			title = COALESCE(NULLIF($5, ''), title),
+			description = COALESCE(NULLIF($6, ''), description),
+			candidate_role = COALESCE(NULLIF($7, ''), candidate_role),
+			candidate_users = CASE
+				WHEN cardinality($8) > 0 THEN $8
+				ELSE candidate_users
+			END,
+			candidate_group_id = COALESCE(NULLIF($9, ''), candidate_group_id),
+			candidate_org_unit_id = COALESCE(NULLIF($10, ''), candidate_org_unit_id),
+			status = $11,
+			engine_state = CASE WHEN $4 IS NOT NULL THEN 'CREATED' ELSE engine_state END,
+			engine_checked_at = CASE WHEN $4 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE engine_checked_at END,
+			sla_due_at = COALESCE($12, sla_due_at),
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND case_id = $2
+	`, existingID, seed.CaseID, seed.ProcessInstanceKey, seed.JobKey, seed.Title, seed.Description,
+		seed.CandidateRole, ardapg.Driver.NotNil(seed.CandidateUsers), seed.CandidateGroupID,
+		seed.CandidateOrgUnitID, newStatus, seed.SLADueAt); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return r.GetWorkItem(ctx, existingID, "")
 }
 
 func (r *CaseRepository) workItemSLADueAt(ctx context.Context, caseID string, stepCode string) (*time.Time, error) {
@@ -652,10 +725,52 @@ func (r *CaseRepository) CompleteWorkItemByJob(ctx context.Context, jobKey int64
 	}
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE workflow_tasks
-		SET status = $2, updated_at = CURRENT_TIMESTAMP
-		WHERE job_key = $1
+		SET status = $2, engine_state = 'COMPLETED', engine_checked_at = CURRENT_TIMESTAMP,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE job_key = $1 AND status <> $2
 	`, jobKey, TaskStatusCompleted)
 	return err
+}
+
+// CancelOpenWorkItemsByProcessKey closes every open task of a case that just
+// reached a terminal status.
+func (r *CaseRepository) CancelOpenWorkItemsByProcessKey(ctx context.Context, processInstanceKey int64) error {
+	if processInstanceKey == 0 {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE workflow_tasks
+		SET status = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE process_instance_key = $1 AND status IN ($3, $4, $5)
+	`, processInstanceKey, TaskStatusCancelled, TaskStatusRouting, TaskStatusReady, TaskStatusClaimed)
+	return err
+}
+
+// ReleaseExpiredClaims returns stale claims to the candidate pool and reports
+// the engine job keys so the sweeper can unassign them on the engine side.
+func (r *CaseRepository) ReleaseExpiredClaims(ctx context.Context) ([]int64, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		UPDATE workflow_tasks
+		SET status = $1, assigned_to = '', assigned_at = NULL, claim_expires_at = NULL,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE status = $2 AND claim_expires_at IS NOT NULL AND claim_expires_at < CURRENT_TIMESTAMP
+		RETURNING job_key
+	`, TaskStatusReady, TaskStatusClaimed)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]int64, 0)
+	for rows.Next() {
+		var key sql.NullInt64
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		if key.Valid {
+			out = append(out, key.Int64)
+		}
+	}
+	return out, rows.Err()
 }
 
 func (r *CaseRepository) UserCanClaimRole(ctx context.Context, tenantID, userID string, groupIDs []string, roleCode string) (bool, error) {

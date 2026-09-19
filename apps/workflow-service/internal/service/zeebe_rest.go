@@ -132,6 +132,29 @@ func (c *ZeebeRestClient) AssignUserTask(ctx context.Context, userTaskKey int64,
 	return nil
 }
 
+// UnassignUserTask clears the engine-side assignee (used by the claim sweeper
+// when a claim expires).
+func (c *ZeebeRestClient) UnassignUserTask(ctx context.Context, userTaskKey int64) error {
+	if !c.Enabled() {
+		return fmt.Errorf("zeebe REST client is not configured")
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		fmt.Sprintf("%s/v1/user-tasks/%d/assignee", c.baseURL, userTaskKey), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("unassign user task: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unassign user task HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
 // ResolveIncident marks an incident resolved through the Zeebe gateway
 // (POST /v2/incidents/{key}/resolution) once the underlying job/element is fixed.
 func (c *ZeebeRestClient) ResolveIncident(ctx context.Context, incidentKey int64) error {

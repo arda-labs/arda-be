@@ -93,7 +93,11 @@ func (w *CRMWorkers) updateStatus(client worker.JobClient, job entities.Job, sta
 	}
 	slog.Info("workflow CRM job updated customer status", "customerId", customerID, "status", status)
 	if finishCase {
-		w.finishCase(context.Background(), job)
+		finalStatus := repository.CaseStatusCompleted
+		if status == "REJECTED" {
+			finalStatus = repository.CaseStatusRejected
+		}
+		w.finishCase(context.Background(), job, finalStatus)
 	}
 	if err := w.completeJob(client, job, result); err != nil {
 		return
@@ -103,7 +107,7 @@ func (w *CRMWorkers) updateStatus(client worker.JobClient, job entities.Job, sta
 	}
 }
 
-func (w *CRMWorkers) finishCase(ctx context.Context, job entities.Job) {
+func (w *CRMWorkers) finishCase(ctx context.Context, job entities.Job, finalStatus string) {
 	if w.caseRepo == nil {
 		return
 	}
@@ -111,7 +115,7 @@ func (w *CRMWorkers) finishCase(ctx context.Context, job entities.Job) {
 	if key == 0 {
 		return
 	}
-	if err := w.caseRepo.FinishCase(ctx, key, repository.CaseStatusCompleted); err != nil {
+	if err := w.caseRepo.FinishCase(ctx, key, finalStatus); err != nil {
 		slog.Error("failed to finish business case", "processInstanceKey", key, "err", err)
 	}
 }

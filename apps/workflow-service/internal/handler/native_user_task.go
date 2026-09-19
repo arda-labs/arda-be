@@ -96,44 +96,49 @@ func (h *WorkflowHandler) completeNativeUserTask(ctx context.Context, userTaskKe
 		return service.ErrZeebeRestUnavailable
 	}
 	elementID = normalizeUserTaskElementID(elementID)
-	if err := h.applyNativeUserTaskSideEffects(ctx, elementID, variables, processInstanceKey); err != nil {
-		return err
-	}
-	return h.zeebeRest.CompleteUserTask(ctx, userTaskKey, variables)
+	return h.zeebeRest.CompleteUserTask(ctx, userTaskKey, withNormalizedDecision(variables))
 }
 
-func (h *WorkflowHandler) applyNativeUserTaskSideEffects(ctx context.Context, elementID string, variables map[string]any, processInstanceKey int64) error {
-	if h.crmClient == nil || processInstanceKey == 0 {
+// withNormalizedDecision makes the BPMN gateway variable (`decision`) the
+// single routing input: clients may send reviewDecision/approvalResult, but
+// the engine only evaluates `decision`.
+func withNormalizedDecision(variables map[string]any) map[string]any {
+	if variables == nil {
 		return nil
 	}
-	decision, _ := variables["reviewDecision"].(string)
-	if decision == "" {
-		decision, _ = variables["approvalResult"].(string)
+	if decision, _ := variables["decision"].(string); strings.TrimSpace(decision) != "" {
+		return variables
 	}
-	if decision == "" {
-		decision, _ = variables["decision"].(string)
-	}
-	if elementID != "UT_CheckerReview" && elementID != "UT_MakerRevise" {
-		return nil
-	}
-	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(ctx, processInstanceKey)
-	if err != nil || bc == nil {
-		return err
-	}
-	customerID := bc.PrimaryObjectID
-	if customerID == "" {
-		return nil
-	}
-	if elementID == "UT_MakerRevise" {
-		if bc.CaseType == "CUSTOMER_ADJUSTMENT" {
-			return nil
+	for _, key := range []string{"reviewDecision", "approvalResult"} {
+		if value, _ := variables[key].(string); strings.TrimSpace(value) != "" {
+			variables["decision"] = value
+			return variables
 		}
-		return h.crmClient.UpdateCustomerStatus(ctx, customerID, "SUBMITTED")
 	}
-	if decision == "REQUEST_CHANGES" {
-		return h.crmClient.UpdateCustomerStatus(ctx, customerID, "NEEDS_CHANGES")
+	return variables
+}
+
+// recordedDecision returns the decision value stored in the decision log.
+// Maker steps complete with a submit action and have no decision variable.
+func recordedDecision(elementID string, variables map[string]any) string {
+	for _, key := range []string{"decision", "reviewDecision", "approvalResult"} {
+		if value, _ := variables[key].(string); strings.TrimSpace(value) != "" {
+			return strings.ToUpper(strings.TrimSpace(value))
+		}
 	}
-	return nil
+	if isMakerElement(elementID) {
+		return "SUBMIT"
+	}
+	return "COMPLETE"
+}
+
+func isMakerElement(elementID string) bool {
+	normalized := normalizeUserTaskElementID(elementID)
+	switch normalized {
+	case "UT_MakerRevise", "UT_MakerInput", "maker_input", "maker_revise":
+		return true
+	}
+	return strings.HasSuffix(strings.ToLower(normalized), "_maker")
 }
 
 func (h *WorkflowHandler) shouldUseNativeUserTaskComplete(ctx context.Context, elementID string, processInstanceKey int64) bool {

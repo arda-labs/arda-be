@@ -17,7 +17,6 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 	ardaexport "github.com/arda-labs/arda/libs/go/arda-export"
-	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
@@ -28,7 +27,6 @@ import (
 type WorkflowHandler struct {
 	zeebeSvc           *service.ZeebeService
 	zeebeRest          *service.ZeebeRestClient
-	crmClient          *crmclient.Client
 	notificationClient *notificationclient.Client
 	workflowCmd        *service.WorkflowCommandService
 	mappingRepo        *repository.MappingRepository
@@ -54,7 +52,6 @@ type WorkflowHandler struct {
 func NewWorkflowHandler(
 	zeebeSvc *service.ZeebeService,
 	zeebeRest *service.ZeebeRestClient,
-	crmClient *crmclient.Client,
 	mappingRepo *repository.MappingRepository,
 	caseRepo *repository.CaseRepository,
 	processDefinition *repository.ProcessDefinitionRepository,
@@ -62,7 +59,6 @@ func NewWorkflowHandler(
 	return &WorkflowHandler{
 		zeebeSvc:          zeebeSvc,
 		zeebeRest:         zeebeRest,
-		crmClient:         crmClient,
 		workflowCmd:       service.NewWorkflowCommandService(caseRepo, zeebeSvc),
 		mappingRepo:       mappingRepo,
 		caseRepo:          caseRepo,
@@ -305,6 +301,10 @@ func (h *WorkflowHandler) CaseTypeByID(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusNotFound, "route not found")
 		return
 	}
+	if r.Method == http.MethodGet && action == "steps" {
+		h.caseTypeSteps(w, r, caseType)
+		return
+	}
 	if r.Method != http.MethodPut || (action != "" && action != "process-config") {
 		writeAPIError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
@@ -336,6 +336,35 @@ func (h *WorkflowHandler) CaseTypeByID(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := h.caseRepo.UpdateCaseType(r.Context(), caseType, req)
 	writeUpdateOrError(w, r, item, err, "Case type not found")
+}
+
+// caseTypeSteps exposes the registry step metadata (allowed actions, form key,
+// comment requirements) that the shared task UI renders from.
+func (h *WorkflowHandler) caseTypeSteps(w http.ResponseWriter, r *http.Request, caseType string) {
+	version := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("version")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			version = parsed
+		}
+	}
+	if version == 0 {
+		v, err := h.caseRepo.CaseTypeRegistryVersion(r.Context(), caseType)
+		if err != nil {
+			writeAPIError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+		version = v
+	}
+	steps, err := h.caseRepo.ListCaseTypeSteps(r.Context(), caseType, version)
+	if err != nil {
+		writeAPIError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{
+		"caseType":        caseType,
+		"registryVersion": version,
+		"steps":           steps,
+	})
 }
 
 func (h *WorkflowHandler) SLAPolicies(w http.ResponseWriter, r *http.Request) {
@@ -790,8 +819,9 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
-	decision := reviewDecisionFromVariables(req.Variables)
-	comment := reviewCommentFromVariables(req.Variables)
+	variables := withNormalizedDecision(req.Variables)
+	decision := reviewDecisionFromVariables(variables)
+	comment := reviewCommentFromVariables(variables)
 	if elementID == "UT_CheckerReview" {
 		if err := requireReviewComment(decision, comment); err != nil {
 			writeAPIError(w, r, http.StatusBadRequest, err.Error())
@@ -809,6 +839,19 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
+	// Record the decision durably before any engine/domain side effect so the
+	// command can be reconciled if the engine call fails midway.
+	if err := h.recordTaskDecision(r, jobKey, processInstanceKey, elementID, actor, comment, variables); err != nil {
+		slog.Error("workflow task decision record failed",
+			"actor", actor,
+			"jobKey", jobKey,
+			"processInstanceKey", processInstanceKey,
+			"elementId", elementID,
+			"err", err,
+		)
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to record task decision: "+err.Error())
+		return
+	}
 	slog.Info("workflow task complete requested",
 		"actor", actor,
 		"jobKey", jobKey,
@@ -816,7 +859,7 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 		"elementId", elementID,
 	)
 	if h.shouldUseNativeUserTaskComplete(r.Context(), elementID, processInstanceKey) {
-		if err := h.completeNativeUserTask(r.Context(), jobKey, elementID, req.Variables, processInstanceKey); err != nil {
+		if err := h.completeNativeUserTask(r.Context(), jobKey, elementID, variables, processInstanceKey); err != nil {
 			slog.Error("workflow native user task complete failed",
 				"actor", actor,
 				"jobKey", jobKey,
@@ -827,7 +870,7 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 			writeAPIError(w, r, http.StatusBadGateway, "Failed to complete user task: "+err.Error())
 			return
 		}
-	} else if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, req.Variables); err != nil {
+	} else if err := h.zeebeSvc.CompleteTask(r.Context(), jobKey, variables); err != nil {
 		slog.Error("workflow task complete failed in zeebe",
 			"actor", actor,
 			"jobKey", jobKey,
@@ -838,7 +881,64 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, r, http.StatusBadGateway, "Failed to complete task: "+err.Error())
 		return
 	}
+	if err := h.caseRepo.CompleteWorkItemByJob(r.Context(), jobKey); err != nil {
+		slog.Warn("workflow task work item completion failed",
+			"jobKey", jobKey, "processInstanceKey", processInstanceKey, "err", err)
+	}
+	// Timeline + notification: checker decisions get their semantic event
+	// types; maker submits and other completions get a generic TASK_COMPLETED.
+	if bc, err := h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), processInstanceKey); err == nil && bc != nil {
+		if eventType := checkerTimelineEventType(decision); eventType != "" {
+			h.recordCheckerDecisionTimeline(r.Context(), bc.ID, decision, comment, actor)
+			h.notifyCheckerDecision(r.Context(), bc, jobKey, decision, comment)
+		} else {
+			note := elementID
+			if decision != "" {
+				note = elementID + " — " + decision
+			}
+			if err := h.caseRepo.AddTimelineEvent(r.Context(), bc.ID, "TASK_COMPLETED", note); err != nil {
+				slog.Warn("failed to record task completion timeline", "caseId", bc.ID, "err", err)
+			}
+		}
+	}
 	writeJSON(w, r, http.StatusOK, map[string]any{"status": "completed"})
+}
+
+// recordTaskDecision stores the human decision before the engine/domain side
+// effects. Unknown/unprojected tasks (no local work item yet) are skipped with
+// a warning: the claim path persists the work item, and legacy job tasks have
+// no activation row to attach the decision to.
+func (h *WorkflowHandler) recordTaskDecision(r *http.Request, jobKey, processInstanceKey int64, elementID, actor, comment string, variables map[string]any) error {
+	if h.caseRepo == nil || jobKey == 0 {
+		return nil
+	}
+	item, err := h.caseRepo.FindWorkItemByJobKey(r.Context(), jobKey)
+	if err != nil {
+		return err
+	}
+	if item == nil {
+		slog.Warn("workflow task decision not recorded: work item not found",
+			"jobKey", jobKey, "processInstanceKey", processInstanceKey, "elementId", elementID)
+		return nil
+	}
+	decision := recordedDecision(elementID, variables)
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if key == "" {
+		key = fmt.Sprintf("task-%d-%s", jobKey, decision)
+	}
+	dataVersion, _ := variables["dataVersion"].(string)
+	_, err = h.caseRepo.InsertTaskDecision(r.Context(), repository.TaskDecision{
+		TaskID:             item.ID,
+		CaseID:             item.CaseID,
+		ProcessInstanceKey: processInstanceKey,
+		ElementID:          elementID,
+		Decision:           decision,
+		Comment:            comment,
+		Actor:              actor,
+		DataVersion:        strings.TrimSpace(dataVersion),
+		IdempotencyKey:     key,
+	})
+	return err
 }
 
 // authorizeUserTaskComplete resolves the workflow registry entry for a job or
@@ -1010,7 +1110,62 @@ func (h *WorkflowHandler) WorkItems(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve task permissions: "+err.Error())
 		return
 	}
+	h.decorateWorkItemsWithRegistry(r.Context(), items)
 	writeListAny(w, r, items)
+}
+
+// decorateWorkItemsWithRegistry attaches the registry step metadata (step
+// kind, form key, allowed actions, comment requirements) so the shared task UI
+// renders from server metadata instead of hardcoded case-type maps.
+func (h *WorkflowHandler) decorateWorkItemsWithRegistry(ctx context.Context, items []repository.WorkItem) {
+	if h.caseRepo == nil || len(items) == 0 {
+		return
+	}
+	caseIDs := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if _, ok := seen[item.CaseID]; ok {
+			continue
+		}
+		seen[item.CaseID] = struct{}{}
+		caseIDs = append(caseIDs, item.CaseID)
+	}
+	versions, err := h.caseRepo.CaseRegistryVersions(ctx, caseIDs)
+	if err != nil {
+		slog.Warn("work item registry decoration skipped", "err", err)
+		return
+	}
+	stepCache := make(map[string]map[string]repository.CaseTypeStep)
+	for i := range items {
+		version := versions[items[i].CaseID]
+		if version <= 0 {
+			version = 1
+		}
+		cacheKey := items[i].CaseType + ":" + strconv.Itoa(version)
+		steps, ok := stepCache[cacheKey]
+		if !ok {
+			list, err := h.caseRepo.ListCaseTypeSteps(ctx, items[i].CaseType, version)
+			if err != nil {
+				slog.Warn("work item registry decoration failed",
+					"caseType", items[i].CaseType, "registryVersion", version, "err", err)
+				continue
+			}
+			steps = make(map[string]repository.CaseTypeStep, len(list))
+			for _, step := range list {
+				steps[step.ElementID] = step
+			}
+			stepCache[cacheKey] = steps
+		}
+		step, ok := steps[items[i].StepCode]
+		if !ok {
+			continue
+		}
+		items[i].StepKind = step.StepKind
+		items[i].FormKey = step.FormKey
+		items[i].AllowedActions = step.AllowedActions
+		items[i].RequiredCommentOn = step.RequiredCommentOn
+		items[i].RegistryVersion = version
+	}
 }
 
 func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request) {
@@ -1030,6 +1185,7 @@ func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, r, http.StatusInternalServerError, "Failed to resolve task permissions: "+err.Error())
 		return
 	}
+	h.decorateWorkItemsWithRegistry(r.Context(), items)
 	writeJSON(w, r, http.StatusOK, map[string]any{"nodes": workItemSummary(items, currentUserID(r))})
 }
 
@@ -1132,7 +1288,9 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, r, http.StatusNotFound, "Work item not found")
 			return
 		}
-		writeJSON(w, r, http.StatusOK, item)
+		items := []repository.WorkItem{*item}
+		h.decorateWorkItemsWithRegistry(r.Context(), items)
+		writeJSON(w, r, http.StatusOK, items[0])
 		return
 	}
 	if action != "claim" {
@@ -1268,7 +1426,12 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusNotFound, "Work item not found")
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"workItem": claimed, "claimedBy": userID, "claimedAt": time.Now()})
+	// The claim response must carry the same registry step metadata as the list
+	// and by-id reads: the workbench form host resolves the task form by
+	// `formKey` immediately after claiming (no second round-trip).
+	claimedItems := []repository.WorkItem{*claimed}
+	h.decorateWorkItemsWithRegistry(r.Context(), claimedItems)
+	writeJSON(w, r, http.StatusOK, map[string]any{"workItem": claimedItems[0], "claimedBy": userID, "claimedAt": time.Now()})
 }
 
 func workItemToWorkflowTask(item repository.WorkItem) service.WorkflowTask {
@@ -1769,6 +1932,10 @@ func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id 
 		}
 		if errors.Is(err, repository.ErrIdempotencyConflict) {
 			writeAPIError(w, r, http.StatusConflict, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrCaseTypeUnavailable) {
+			writeCaseTypeUnavailable(w, r, err)
 			return
 		}
 		writeAPIError(w, r, http.StatusBadRequest, err.Error())

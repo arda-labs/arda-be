@@ -109,8 +109,31 @@ go test ./...
 - Service jobs: `crm.customer.register.validate|execute|cancel`
 - Human steps: native `bpmn:userTask` — claim/complete via **Zeebe gateway REST** (`ZEEBE_REST_ADDR`)
 - User task discovery: **Zeebe Elasticsearch exporter** (`ZEEBE_ES_URL`) — required on Camunda 8.5 without Tasklist
-- Inbox projection: `UserTaskProjector` only (`task_type=zeebe.userTask`); legacy `seedWorkItems` is skipped for `-v2` processes
+- Inbox projection: `UserTaskProjector` only (`task_type=zeebe.userTask`); legacy `seedWorkItems` is skipped
 - v1 service-task user flows are not deployed. New CRM cases use native `bpmn:userTask`; HRM/Finance must add v2 BPMN before enabling BPM submit.
+
+### Step registry v2 (2026-09-19)
+
+- `workflow_case_type_steps` is the single source of truth for discovery, allowed
+  actions and form keys. It is derived from the embedded BPMN corpus at startup
+  (`bootstrap.SeedRegistry`, `RegistryVersion=1`); startup fails when an ACTIVE
+  case type cannot be derived.
+- Cases pin `registry_version` at submit; metadata edits create a new version and
+  never rewrite an in-flight dossier.
+- `UserTaskProjector` discovers by registry membership (no `-v2` name filter), so
+  every ACTIVE case type with native user tasks reaches the inbox.
+- Eager seed is the first human step only, as a non-actionable ROUTING placeholder
+  ("processing"); the next step is never guessed from the BPMN.
+- Every complete records `workflow_task_decisions` (RECORDED) before the engine
+  call; return/submit decisions without a BPMN service task are applied by
+  `DecisionDispatcher` (idempotent domain adapter) and only then marked APPLIED.
+  Approve/reject are confirmed by the terminal workers via `FinishCase`.
+- Task rows are per activation (`activation_no`), preserve history across return
+  loops, and are closed when the case reaches a terminal status. A 30s sweeper
+  releases expired claims and unassigns them on the engine.
+- `GET /api/workflow/case-types/{caseType}/steps` exposes the step metadata for
+  the shared task UI; work items embed `stepKind`, `formKey`, `allowedActions`,
+  `requiredCommentOn`, `registryVersion`.
 
 From the backend workspace root, run service-specific tests instead of `go test ./...`; the root uses `go.work` and is not itself a Go module.
 

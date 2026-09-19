@@ -17,6 +17,13 @@ func writeAPIError(w http.ResponseWriter, r *http.Request, status int, message s
 	ardahttp.WriteProblem(w, r, status, ardaerrors.New(ardahttp.DeriveErrorCode(status, message), message))
 }
 
+// writeCaseTypeUnavailable renders the fail-closed capability gate problem
+// (no active registry steps / workers for the case type).
+func writeCaseTypeUnavailable(w http.ResponseWriter, r *http.Request, err error) {
+	ardahttp.WriteProblem(w, r, http.StatusUnprocessableEntity,
+		ardaerrors.New(ardaerrors.CodeCaseTypeUnavailable, err.Error()))
+}
+
 func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
 }

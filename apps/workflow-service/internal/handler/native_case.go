@@ -16,15 +16,29 @@ func CaseUsesNativeInbox(bc *repository.BusinessCase) bool {
 	return strings.Contains(*bc.BpmnProcessID, "-v2")
 }
 
+// usesNativeUserTaskRuntime reports whether a task completes through the
+// native Zeebe user-task REST path. Registry v2 is the source of truth: a case
+// type with ACTIVE registry steps at the case's pinned version runs native
+// user tasks (all embedded BPMN processes do; the legacy service-task runtime
+// was removed). Cases outside the registry keep the old element-prefix
+// behavior so in-flight work is not dropped.
 func (h *WorkflowHandler) usesNativeUserTaskRuntime(ctx context.Context, filter service.TaskClaimFilter) bool {
-	if service.IsNativeUserTaskElement(strings.TrimSpace(filter.ElementID)) {
-		return true
-	}
-	bc := h.caseForFilter(ctx, filter)
-	if bc == nil || bc.BpmnProcessID == nil {
+	if !service.IsNativeUserTaskElement(strings.TrimSpace(filter.ElementID)) {
 		return false
 	}
-	return strings.Contains(*bc.BpmnProcessID, "-v2")
+	bc := h.caseForFilter(ctx, filter)
+	if bc == nil || h.caseRepo == nil {
+		return true
+	}
+	version, err := h.caseRepo.CaseRegistryVersion(ctx, bc.ID)
+	if err != nil {
+		return true
+	}
+	ok, err := h.caseRepo.CaseTypeHasRegistry(ctx, bc.CaseType, version)
+	if err != nil {
+		return true
+	}
+	return ok
 }
 
 func (h *WorkflowHandler) caseForFilter(ctx context.Context, filter service.TaskClaimFilter) *repository.BusinessCase {

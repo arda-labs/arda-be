@@ -62,8 +62,27 @@ func (p *UserTaskProjector) projectOnce(ctx context.Context) {
 		if bc.ProcessInstanceKey == nil || *bc.ProcessInstanceKey == 0 {
 			continue
 		}
-		if bc.BpmnProcessID == nil || !strings.Contains(*bc.BpmnProcessID, "-v2") {
+		// Registry v2 discovery: the case's pinned step registry decides what
+		// is a human task, not a name substring. Case types without registry
+		// rows are not projected (fail-closed, logged below).
+		version := 1
+		if pinned, err := p.caseRepo.CaseRegistryVersion(ctx, bc.ID); err == nil && pinned > 0 {
+			version = pinned
+		}
+		steps, err := p.caseRepo.ListCaseTypeSteps(ctx, bc.CaseType, version)
+		if err != nil {
+			slog.Warn("user task projector: registry lookup failed",
+				"caseId", bc.ID, "caseType", bc.CaseType, "registryVersion", version, "err", err)
 			continue
+		}
+		if len(steps) == 0 {
+			slog.Debug("user task projector: case type has no registry steps",
+				"caseId", bc.ID, "caseType", bc.CaseType, "registryVersion", version)
+			continue
+		}
+		stepByElement := make(map[string]repository.CaseTypeStep, len(steps))
+		for _, step := range steps {
+			stepByElement[step.ElementID] = step
 		}
 		tasks, err := p.rest.SearchUserTasks(ctx, *bc.ProcessInstanceKey, "CREATED")
 		if err != nil {
@@ -76,6 +95,9 @@ func (p *UserTaskProjector) projectOnce(ctx context.Context) {
 		}
 		for _, ut := range tasks {
 			if !service.IsNativeUserTaskElement(ut.ElementID) {
+				continue
+			}
+			if _, known := stepByElement[ut.ElementID]; !known {
 				continue
 			}
 			// Assignment rules (case_type + step_code → role/memberships)

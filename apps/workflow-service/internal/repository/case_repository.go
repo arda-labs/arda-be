@@ -20,6 +20,8 @@ const (
 	CaseStatusSubmitted = "SUBMITTED"
 	CaseStatusInReview  = "IN_REVIEW"
 	CaseStatusCompleted = "COMPLETED"
+	CaseStatusRejected  = "REJECTED"
+	CaseStatusCancelled = "CANCELLED"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -571,6 +573,10 @@ func (r *CaseRepository) SubmitCase(ctx context.Context, id string, actor string
 	row := tx.QueryRowContext(ctx, `
 		UPDATE business_cases
 		SET status = $3, current_step = 'submitted', process_instance_key = $4,
+		    registry_version = COALESCE(registry_version, (
+		        SELECT ot.registry_version FROM business_operation_types ot
+		        WHERE ot.case_type = business_cases.case_type
+		    )),
 		    submit_idempotency_key = NULLIF($5, ''),
 		    submit_request_hash = NULLIF($6, ''),
 		    updated_at = CURRENT_TIMESTAMP
@@ -670,18 +676,79 @@ func (r *CaseRepository) FinishCase(ctx context.Context, processInstanceKey int6
 	if finalStatus == "" {
 		finalStatus = CaseStatusCompleted
 	}
-	_, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE business_cases
 		SET status = $2, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 		WHERE process_instance_key = $1 AND completed_at IS NULL
-	`, processInstanceKey, finalStatus)
-	return err
+	`, processInstanceKey, finalStatus); err != nil {
+		return err
+	}
+	// A finished case has no live human task left.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE workflow_tasks
+		SET status = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE process_instance_key = $1 AND status IN ($3, $4, $5)
+	`, processInstanceKey, TaskStatusCancelled, TaskStatusRouting, TaskStatusReady, TaskStatusClaimed); err != nil {
+		return err
+	}
+	// Approve/reject decisions are executed by the terminal workers; reaching
+	// the case terminal state is their business confirmation.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE workflow_task_decisions
+		SET status = 'APPLIED', applied_at = CURRENT_TIMESTAMP, last_error = NULL
+		WHERE process_instance_key = $1 AND status = 'RECORDED' AND decision IN ('APPROVE', 'REJECT')
+	`, processInstanceKey); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetCaseStatusByProcessKey updates the case projected from a Zeebe process
 // instance. The update is tenant-scoped and reports ErrNotFound when no row
 // matched, so callers cannot mutate (or silently no-op) another tenant's case
 // even if they can guess the process instance key.
+// CaseRegistryVersion returns the registry version a case is pinned to. Cases
+// created before the registry existed fall back to version 1 (the bootstrap
+// seeds version 1 for the whole embedded BPMN corpus).
+func (r *CaseRepository) CaseRegistryVersion(ctx context.Context, caseID string) (int, error) {
+	if strings.TrimSpace(caseID) == "" {
+		return 1, nil
+	}
+	var version sql.NullInt64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT registry_version FROM business_cases WHERE id = $1
+	`, caseID).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 1, nil
+	}
+	if err != nil {
+		return 1, err
+	}
+	if !version.Valid || version.Int64 <= 0 {
+		return 1, nil
+	}
+	return int(version.Int64), nil
+}
+
+// SetCaseRegistryVersion pins a case to a registry version (bootstrap and
+// in-flight conversion use this; submit pins it automatically).
+func (r *CaseRepository) SetCaseRegistryVersion(ctx context.Context, caseID string, version int) error {
+	if strings.TrimSpace(caseID) == "" || version <= 0 {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE business_cases SET registry_version = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND registry_version IS NULL
+	`, caseID, version)
+	return err
+}
+
 func (r *CaseRepository) SetCaseStatusByProcessKey(ctx context.Context, processInstanceKey int64, status string) error {
 	if processInstanceKey == 0 {
 		return nil

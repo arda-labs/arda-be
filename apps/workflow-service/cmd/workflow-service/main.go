@@ -101,6 +101,16 @@ func main() {
 		logger.Info("Built-in workflow deployed", "resource", process.ResourceName, "processDefinitionKey", key)
 	}
 
+	// Step registry v2: derive and persist the human-step metadata for every
+	// ACTIVE case type from the embedded BPMN corpus. Startup fails when an
+	// active case type cannot be derived — submit is blocked for case types
+	// without registry rows (capability gate), so silence would strand cases.
+	if err := bootstrap.SeedRegistry(context.Background(), caseRepo, bootstrap.BuiltInProcesses()); err != nil {
+		logger.Error("Failed to seed workflow step registry", "err", err)
+		os.Exit(1)
+	}
+	logger.Info("workflow step registry seeded", "version", bootstrap.RegistryVersion)
+
 	crmClient, err := crmclient.Dial(context.Background(), cfg.CRMGRPCAddr, cfg.AppName, logger)
 	if err != nil {
 		logger.Error("crm grpc unavailable", "addr", cfg.CRMGRPCAddr, "err", err)
@@ -181,6 +191,15 @@ func main() {
 	assignmentResolver := service.NewAssignmentResolver(caseRepo)
 	if projector := worker.NewUserTaskProjector(zeebeRest, caseRepo, assignmentResolver); projector != nil {
 		go projector.Run(syncCtx)
+	}
+	if sweeper := worker.NewClaimSweeper(caseRepo, zeebeRest); sweeper != nil {
+		go sweeper.Run(syncCtx)
+	}
+	// Decisions on return/submit branches have no BPMN service task; the
+	// dispatcher applies them to the domain idempotently and only then marks
+	// them APPLIED. Approve/reject are confirmed by the terminal workers.
+	if dispatcher := service.NewDecisionDispatcher(caseRepo, &crmDecisionAdapter{client: crmClient}); dispatcher != nil {
+		go dispatcher.Run(syncCtx)
 	}
 
 	notificationWorkers := worker.NewNotificationWorkers()
@@ -574,7 +593,7 @@ func main() {
 		}
 	}()
 
-	wfHandler := handler.NewWorkflowHandler(zeebeSvc, zeebeRest, crmClient, mappingRepo, caseRepo, processDefinitionRepo)
+	wfHandler := handler.NewWorkflowHandler(zeebeSvc, zeebeRest, mappingRepo, caseRepo, processDefinitionRepo)
 	wfHandler.AssignmentResolver = assignmentResolver
 	wfHandler.IncidentIndex = service.NewZeebeIncidentIndex(esURL)
 	wfHandler.MonitoringIndex = service.NewZeebeMonitoringIndex(esURL)
@@ -620,6 +639,47 @@ func main() {
 
 type iamAdapter struct {
 	client *iamclient.Client
+}
+
+// crmDecisionAdapter applies return/submit decisions to CRM. It replaces the
+// old handler side effect (removed in the decision pipeline refactor) and is
+// idempotent: UpdateCustomerStatus sets an absolute status.
+type crmDecisionAdapter struct {
+	client *crmclient.Client
+}
+
+func (a *crmDecisionAdapter) Supports(decision repository.TaskDecision) bool {
+	if a.client == nil || decision.PrimaryObjectType != "CUSTOMER" {
+		return false
+	}
+	switch decision.CaseType {
+	case "CUSTOMER_REGISTRATION", "CUSTOMER_ADJUSTMENT":
+	default:
+		return false
+	}
+	switch decision.Decision {
+	case "REQUEST_CHANGES", "SUBMIT":
+		return true
+	}
+	return false
+}
+
+func (a *crmDecisionAdapter) Apply(ctx context.Context, decision repository.TaskDecision) error {
+	// Adjustment's maker revise does not touch the customer status (same
+	// semantics the removed handler side effect had).
+	if decision.Decision == "SUBMIT" && decision.CaseType == "CUSTOMER_ADJUSTMENT" {
+		return nil
+	}
+	status := ""
+	switch decision.Decision {
+	case "REQUEST_CHANGES":
+		status = "NEEDS_CHANGES"
+	case "SUBMIT":
+		status = "SUBMITTED"
+	default:
+		return nil
+	}
+	return a.client.UpdateCustomerStatus(ctx, decision.PrimaryObjectID, status)
 }
 
 func (a *iamAdapter) GetUserBatch(ctx context.Context, userIDs []string) (map[string]repository.UserLookupInfo, error) {

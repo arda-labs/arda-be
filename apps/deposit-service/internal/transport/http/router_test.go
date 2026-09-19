@@ -63,6 +63,10 @@ func (f *fakeProducts) List(context.Context, string, string) ([]repository.Produ
 	return nil, nil
 }
 
+func (f *fakeProducts) Get(context.Context, string, string) (*repository.ProductRequest, error) {
+	return &repository.ProductRequest{ID: "dpmprq-1", Status: "SUBMITTED"}, nil
+}
+
 type fakeIBM struct {
 	depositID string
 	kind      string
@@ -99,6 +103,10 @@ func (f *fakeInterest) ListInterestRates(context.Context, string, string) ([]rep
 
 func (f *fakeInterest) SubmitRate(context.Context, string, string, string, json.RawMessage) (*repository.RateRequest, error) {
 	return &repository.RateRequest{ID: "rate-1"}, nil
+}
+
+func (f *fakeInterest) GetRateRequest(context.Context, string, string) (*repository.RateRequest, error) {
+	return &repository.RateRequest{ID: "rate-1", Status: "SUBMITTED"}, nil
 }
 
 func (f *fakeInterest) SubmitInterest(context.Context, string, string, string, string, int64) (*repository.InterestOp, []repository.InterestOp, error) {

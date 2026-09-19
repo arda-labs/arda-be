@@ -59,6 +59,9 @@ type Savings struct {
 	CreatedBy      string    `json:"created_by"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	// DataVersion is the row version the checker saw — the optimistic
+	// concurrency token for approve decisions (maps to dpm_savings.version).
+	DataVersion int64 `json:"data_version"`
 }
 
 // DepositTxn is one movement on a savings account.
@@ -250,7 +253,7 @@ func (r *DepositRepository) ListSavings(ctx context.Context, tenantID string, or
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, savings_code, customer_code, product_code, open_date::text, maturity_date::text,
 		       principal_minor, accrued_minor, currency_code, COALESCE(org_code,''), status,
-		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at
+		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at, version
 		FROM dpm_savings
 		WHERE %s
 		ORDER BY open_date DESC LIMIT 200`, strings.Join(where, " AND ")), args...)
@@ -264,7 +267,8 @@ func (r *DepositRepository) ListSavings(ctx context.Context, tenantID string, or
 		var caseID, entryID sql.NullString
 		if err := rows.Scan(&s.ID, &s.TenantID, &s.SavingsCode, &s.CustomerCode, &s.ProductCode,
 			&s.OpenDate, &s.MaturityDate, &s.PrincipalMinor, &s.AccruedMinor, &s.CurrencyCode,
-			&s.OrgCode, &s.Status, &caseID, &entryID, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			&s.OrgCode, &s.Status, &caseID, &entryID, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt,
+			&s.DataVersion); err != nil {
 			return nil, err
 		}
 		if caseID.Valid {
@@ -283,13 +287,14 @@ func (r *DepositRepository) GetSavingsByCode(ctx context.Context, tenantID, code
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, savings_code, customer_code, product_code, open_date::text, maturity_date::text,
 		       principal_minor, accrued_minor, currency_code, COALESCE(org_code,''), status,
-		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at
+		       workflow_case_id::text, journal_entry_id::text, created_by, created_at, updated_at, version
 		FROM dpm_savings WHERE tenant_id = $1 AND savings_code = $2`, tenantID, code)
 	var s Savings
 	var caseID, entryID sql.NullString
 	err := row.Scan(&s.ID, &s.TenantID, &s.SavingsCode, &s.CustomerCode, &s.ProductCode,
 		&s.OpenDate, &s.MaturityDate, &s.PrincipalMinor, &s.AccruedMinor, &s.CurrencyCode,
-		&s.OrgCode, &s.Status, &caseID, &entryID, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt)
+		&s.OrgCode, &s.Status, &caseID, &entryID, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt,
+		&s.DataVersion)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("savings %s not found", code)
 	}
@@ -405,11 +410,14 @@ func (r *DepositRepository) GetProductByCode(ctx context.Context, tenantID, code
 
 // CloseSavings marks the account CLOSED after full settlement. It reports
 // ErrSavingsNotActive when no ACTIVE row matched, so a concurrent second
-// settlement cannot silently report success.
-func (r *DepositRepository) CloseSavings(ctx context.Context, tenantID, savingsID, journalEntryID, actor string) error {
+// settlement cannot silently report success. dataVersion (when set) is the
+// row version the checker approved: the update is guarded so a stale approval
+// cannot close an account that changed after review.
+func (r *DepositRepository) CloseSavings(ctx context.Context, tenantID, savingsID, journalEntryID, actor, dataVersion string) error {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE dpm_savings SET status = 'CLOSED', journal_entry_id = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'`, tenantID, savingsID, journalEntryID, actor)
+		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'
+		  AND ($5 = '' OR version::text = $5)`, tenantID, savingsID, journalEntryID, actor, dataVersion)
 	if err != nil {
 		return err
 	}
@@ -805,6 +813,8 @@ type RateRequest struct {
 	CreatedBy      string          `json:"created_by"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
+	// DataVersion is the row version the checker saw (maps to dpm_rate_requests.version).
+	DataVersion int64 `json:"data_version"`
 }
 
 // Accrual is one posted daily-prorated accrual row.
@@ -945,12 +955,12 @@ func (r *DepositRepository) CreateRateRequest(ctx context.Context, in *RateReque
 func (r *DepositRepository) GetRateRequestByID(ctx context.Context, tenantID, id string) (*RateRequest, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id::text, tenant_id, request_type, payload, status, workflow_case_id::text,
-		       COALESCE(created_by,''), created_at, updated_at
+		       COALESCE(created_by,''), created_at, updated_at, version
 		FROM dpm_rate_requests WHERE tenant_id = $1 AND id = $2::uuid`, tenantID, id)
 	var x RateRequest
 	var caseID sql.NullString
 	err := row.Scan(&x.ID, &x.TenantID, &x.RequestType, &x.Payload, &x.Status, &caseID,
-		&x.CreatedBy, &x.CreatedAt, &x.UpdatedAt)
+		&x.CreatedBy, &x.CreatedAt, &x.UpdatedAt, &x.DataVersion)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -1126,7 +1136,7 @@ func (r *DepositRepository) ListActiveSavingsForAccrual(ctx context.Context, ten
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, savings_code, customer_code, product_code, open_date::text, maturity_date::text,
 		       principal_minor, accrued_minor, currency_code, COALESCE(org_code,''), status,
-		       workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at
+		       workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at, version
 		FROM dpm_savings WHERE tenant_id = $1 AND status = 'ACTIVE' ORDER BY savings_code`, tenantID)
 	if err != nil {
 		return nil, err
@@ -1138,7 +1148,8 @@ func (r *DepositRepository) ListActiveSavingsForAccrual(ctx context.Context, ten
 		var caseID, entryID sql.NullString
 		if err := rows.Scan(&s.ID, &s.TenantID, &s.SavingsCode, &s.CustomerCode, &s.ProductCode,
 			&s.OpenDate, &s.MaturityDate, &s.PrincipalMinor, &s.AccruedMinor, &s.CurrencyCode,
-			&s.OrgCode, &s.Status, &caseID, &entryID, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			&s.OrgCode, &s.Status, &caseID, &entryID, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt,
+			&s.DataVersion); err != nil {
 			return nil, err
 		}
 		if caseID.Valid {
@@ -1162,7 +1173,7 @@ func (r *DepositRepository) ListActiveSavingsForAccrual(ctx context.Context, ten
 // masking) means two concurrent payouts cannot both pass the check — the loser
 // matches zero rows, the transaction rolls back and it gets
 // ErrAccruedInsufficient before any GL posting.
-func (r *DepositRepository) BeginInterestOpPosting(ctx context.Context, tenantID, opID, savingsID string, amountMinor int64, capitalize bool) error {
+func (r *DepositRepository) BeginInterestOpPosting(ctx context.Context, tenantID, opID, savingsID string, amountMinor int64, capitalize bool, dataVersion string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -1186,8 +1197,9 @@ func (r *DepositRepository) BeginInterestOpPosting(ctx context.Context, tenantID
 	tag, err = tx.ExecContext(ctx, `
 		UPDATE dpm_savings SET accrued_minor = accrued_minor - $3`+capitalizeSQL+`,
 			updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE' AND accrued_minor >= $3`,
-		tenantID, savingsID, amountMinor)
+		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE' AND accrued_minor >= $3
+		  AND ($4 = '' OR version::text = $4)`,
+		tenantID, savingsID, amountMinor, dataVersion)
 	if err != nil {
 		return err
 	}

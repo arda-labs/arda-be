@@ -109,7 +109,7 @@ func (w *SpecificProvisionWorkers) cancel() worker.JobHandler {
 		if err := w.completeJob(client, job, map[string]any{"approvalStatus": "REJECTED"}); err != nil {
 			return
 		}
-		w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), repository.CaseStatusCompleted)
+		w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), repository.CaseStatusRejected)
 	}
 }
 

@@ -173,6 +173,15 @@ func (s *ProductRequestService) List(ctx context.Context, tenantID, status strin
 	return items, mapErr(err)
 }
 
+// Get returns one staged request (checker dossier read; includes data_version).
+func (s *ProductRequestService) Get(ctx context.Context, tenantID, id string) (*repository.ProductRequest, error) {
+	item, err := s.repo.GetProductRequest(ctx, tenantID, id)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeNotFound, "product request not found: "+id)
+	}
+	return item, nil
+}
+
 func (s *ProductRequestService) productExists(ctx context.Context, tenantID, code string) (bool, error) {
 	products, err := s.repo.ListProducts(ctx, repository.ListProductsParams{TenantID: tenantID})
 	if err != nil {

@@ -8,6 +8,8 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // DepositWorkers run the DPM_SETTLE_V2 flow jobs: validate and settle
@@ -21,7 +23,7 @@ type DepositWorkers struct {
 // interface so the worker package stays decoupled from the deposit proto.
 type DepositSettler interface {
 	CheckSettle(ctx context.Context, savingsCode string) (bool, string, error)
-	Settle(ctx context.Context, savingsCode, actor string) error
+	Settle(ctx context.Context, savingsCode, actor, dataVersion string) error
 }
 
 func NewDepositWorkers(depositClient DepositSettler, caseRepo *repository.CaseRepository) *DepositWorkers {
@@ -80,7 +82,16 @@ func (w *DepositWorkers) execute() worker.JobHandler {
 			code, _ = vars["primaryObjectId"].(string)
 		}
 		actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
-		if err := w.depositClient.Settle(crmJobContext(job), code, actor); err != nil {
+		// dataVersion is the savings row version the checker approved (sent by
+		// the task form); empty for legacy decisions.
+		dataVersion, _ := vars["dataVersion"].(string)
+		if err := w.depositClient.Settle(crmJobContext(job), code, actor, dataVersion); err != nil {
+			if status.Code(err) == codes.Aborted {
+				// Stale approval: retrying cannot fix it — stop with an
+				// incident instead of closing an account the checker never saw.
+				w.failJobTerminal(client, job, "Deposit Conflict: "+status.Convert(err).Message())
+				return
+			}
 			w.failJob(client, job, "Deposit Error: "+err.Error())
 			return
 		}
@@ -106,7 +117,7 @@ func (w *DepositWorkers) cancel() worker.JobHandler {
 		}); err != nil {
 			return
 		}
-		w.projection.FinishCase(ctx, job.GetProcessInstanceKey(), repository.CaseStatusCompleted)
+		w.projection.FinishCase(ctx, job.GetProcessInstanceKey(), repository.CaseStatusRejected)
 	}
 }
 
@@ -133,5 +144,15 @@ func (w *DepositWorkers) failJob(client worker.JobClient, job entities.Job, reas
 	_, err := client.NewFailJobCommand().JobKey(job.GetKey()).Retries(retries).ErrorMessage(reason).Send(context.Background())
 	if err != nil {
 		slog.Error("deposit fail-job send", "err", err)
+	}
+}
+
+// failJobTerminal stops the job without retries — used when retrying cannot
+// change the outcome (stale data version / status conflict).
+func (w *DepositWorkers) failJobTerminal(client worker.JobClient, job entities.Job, reason string) {
+	slog.Warn("workflow deposit job stopped", "jobType", job.GetType(), "reason", reason)
+	_, err := client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).ErrorMessage(reason).Send(context.Background())
+	if err != nil {
+		slog.Error("deposit terminal fail-job send", "err", err)
 	}
 }

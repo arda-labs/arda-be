@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
@@ -171,13 +172,21 @@ func (s *SettlementService) SubmitSettle(ctx context.Context, tenantID, actor, s
 // Settle closes a savings account: payout principal + accrued interest
 // (DR customer deposit liability / CR cash). Runs in the workflow execute
 // step through the gRPC callback.
-func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, actor string) (*repository.Savings, error) {
+//
+// dataVersion is the savings row version the checker approved; when set, a
+// version that moved on refuses the close (stale approvals are re-reviewed,
+// never silently applied).
+func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, actor, dataVersion string) (*repository.Savings, error) {
 	savings, err := s.repo.GetSavingsByCode(ctx, tenantID, savingsCode)
 	if err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeNotFound, err.Error())
 	}
 	if savings.Status != "ACTIVE" {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "only ACTIVE savings can be settled")
+	}
+	if dataVersion != "" && strconv.FormatInt(savings.DataVersion, 10) != dataVersion {
+		return nil, ardaerrors.New(ardaerrors.CodeConflict,
+			fmt.Sprintf("dossier changed: savings %s is at version %d", savingsCode, savings.DataVersion))
 	}
 	payoutMinor := savings.PrincipalMinor + savings.AccruedMinor
 	var entryID string
@@ -194,8 +203,15 @@ func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, a
 			return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "settlement posting failed", err)
 		}
 	}
-	if err := s.repo.CloseSavings(ctx, tenantID, savings.ID, entryID, actor); err != nil {
+	if err := s.repo.CloseSavings(ctx, tenantID, savings.ID, entryID, actor, dataVersion); err != nil {
 		if errors.Is(err, repository.ErrSavingsNotActive) {
+			if dataVersion != "" {
+				if current, getErr := s.repo.GetSavingsByCode(ctx, tenantID, savingsCode); getErr == nil &&
+					current.Status == "ACTIVE" {
+					return nil, ardaerrors.New(ardaerrors.CodeConflict,
+						fmt.Sprintf("dossier changed: savings %s is at version %d", savingsCode, current.DataVersion))
+				}
+			}
 			return nil, ardaerrors.New(ardaerrors.CodeConflict, "savings is no longer ACTIVE — settlement already applied")
 		}
 		return nil, mapErr(err)

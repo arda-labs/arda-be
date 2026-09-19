@@ -90,7 +90,7 @@ func (w *CRMRegisterWorkers) CancelHandler(client worker.JobClient, job entities
 		return
 	}
 	w.projection.AfterServiceTaskCompleted(context.Background(), job.GetProcessInstanceKey(), "ST_Cancel", "")
-	w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), repository.CaseStatusCompleted)
+	w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), repository.CaseStatusRejected)
 }
 
 func (w *CRMRegisterWorkers) throwValidationError(client worker.JobClient, job entities.Job, message string) {

@@ -2,11 +2,13 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/service"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	depositv1 "github.com/arda-labs/arda/libs/go/arda-proto/deposit/v1"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -55,9 +57,9 @@ func (s *DepositServer) Settle(ctx context.Context, req *depositv1.SettleRequest
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
-	_, err = s.settlement.Settle(ctx, tenantID, req.GetSavingsCode(), req.GetActor())
+	_, err = s.settlement.Settle(ctx, tenantID, req.GetSavingsCode(), req.GetActor(), req.GetDataVersion())
 	if err != nil {
-		return &depositv1.SettleResponse{Ok: false}, nil
+		return nil, settleError(err)
 	}
 	return &depositv1.SettleResponse{Ok: true}, nil
 }
@@ -80,10 +82,23 @@ func (s *DepositServer) SettleAdditional(ctx context.Context, req *depositv1.Set
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
 	if err := s.additional.Settle(ctx, tenantID, req.GetActor(), req.GetSavingsCode(),
-		req.GetAmountMinor(), req.GetTxnDate(), req.GetIdempotencyKey()); err != nil {
-		return &depositv1.SettleAdditionalResponse{Ok: false}, nil
+		req.GetAmountMinor(), req.GetTxnDate(), req.GetIdempotencyKey(),
+		req.GetDataVersion()); err != nil {
+		return nil, settleError(err)
 	}
 	return &depositv1.SettleAdditionalResponse{Ok: true}, nil
+}
+
+// settleError maps domain failures to gRPC status codes: a conflict (stale
+// data version or status change) is Aborted so workers stop retrying, anything
+// else is Internal. Failures are never swallowed — an Ok:false response with a
+// nil error made workers report success on a settle that never happened.
+func settleError(err error) error {
+	var appErr *ardaerrors.Error
+	if errors.As(err, &appErr) && appErr.Code == ardaerrors.CodeConflict {
+		return status.Error(codes.Aborted, appErr.Message)
+	}
+	return status.Error(codes.Internal, err.Error())
 }
 
 func (s *DepositServer) CheckProductRequest(ctx context.Context, req *depositv1.CheckProductRequestRequest) (*depositv1.CheckProductRequestResponse, error) {
@@ -172,8 +187,8 @@ func (s *DepositServer) ResolveInterestOp(ctx context.Context, req *depositv1.Re
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
-	if err := s.interest.ResolveInterestOp(ctx, tenantID, req.GetOpId(), req.GetDecision(), req.GetActor()); err != nil {
-		return &depositv1.ResolveInterestOpResponse{Ok: false}, nil
+	if err := s.interest.ResolveInterestOp(ctx, tenantID, req.GetOpId(), req.GetDecision(), req.GetActor(), req.GetDataVersion()); err != nil {
+		return nil, settleError(err)
 	}
 	return &depositv1.ResolveInterestOpResponse{Ok: true}, nil
 }

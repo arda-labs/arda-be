@@ -31,6 +31,7 @@ type AdditionalDepositService interface {
 type ProductRequestService interface {
 	Submit(ctx context.Context, tenantID, actor string, in service.ProductRequestInput) (*service.Submission, error)
 	List(ctx context.Context, tenantID, status string) ([]repository.ProductRequest, error)
+	Get(ctx context.Context, tenantID, id string) (*repository.ProductRequest, error)
 }
 
 // IBM surface used by the HTTP handler.
@@ -46,6 +47,7 @@ type IBMService interface {
 type InterestService interface {
 	ListInterestRates(ctx context.Context, tenantID, productCode string) ([]repository.InterestRate, error)
 	SubmitRate(ctx context.Context, tenantID, actor, requestType string, payload json.RawMessage) (*repository.RateRequest, error)
+	GetRateRequest(ctx context.Context, tenantID, id string) (*repository.RateRequest, error)
 	SubmitInterest(ctx context.Context, tenantID, actor, savingsCode, opType string, amountMinor int64) (*repository.InterestOp, []repository.InterestOp, error)
 	GetSavingsDetail(ctx context.Context, tenantID, code string) (*service.SavingsDetail, error)
 	RunDaily(ctx context.Context, tenantID, businessDate string) (int, error)
@@ -263,6 +265,22 @@ func (h *DepositHandler) ListProductRequests(w http.ResponseWriter, r *http.Requ
 	ardahttp.WriteEnvelopeUnpaged(w, r, items)
 }
 
+// GetProductRequest handles GET /api/deposit/product-requests/{id} — the
+// checker dossier read (staged payload + data_version) before approving.
+func (h *DepositHandler) GetProductRequest(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	item, err := h.products.Get(r.Context(), tenantID, r.PathValue("id"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, item)
+}
+
 // ListSavings handles GET /api/deposit/savings.
 func (h *DepositHandler) ListSavings(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.Header.Get("X-Tenant-Id")
@@ -416,6 +434,26 @@ func (h *DepositHandler) ListInterestRates(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// GetRateRequest handles GET /api/deposit/rates/{id} — the checker dossier
+// read (staged rate payload + data_version) before approving.
+func (h *DepositHandler) GetRateRequest(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	item, err := h.interest.GetRateRequest(r.Context(), tenantID, r.PathValue("id"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	if item == nil {
+		ardahttp.WriteProblem(w, r, http.StatusNotFound, ardaerrors.New(ardaerrors.CodeNotFound, "rate request not found"))
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, item)
 }
 
 // SubmitRateRequest handles POST /api/deposit/rates — stages a DPM.100/101 case.

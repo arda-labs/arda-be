@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
@@ -88,7 +90,11 @@ func (s *AdditionalDepositService) Check(ctx context.Context, tenantID, savingsC
 // Settle posts the movement, bumps the principal and records the POSTED
 // transaction. Idempotent per idempotency_key (finance replay) and safe on
 // retry: the principal bump + txn insert run in one DB transaction.
-func (s *AdditionalDepositService) Settle(ctx context.Context, tenantID, actor, savingsCode string, amountMinor int64, txnDate, idemKey string) error {
+//
+// dataVersion is the savings row version the checker approved (as a string,
+// from the domain read API). When set, a version that moved on refuses the
+// bump — a stale approval must be re-reviewed, never silently applied.
+func (s *AdditionalDepositService) Settle(ctx context.Context, tenantID, actor, savingsCode string, amountMinor int64, txnDate, idemKey, dataVersion string) error {
 	ok, message, err := s.Check(ctx, tenantID, savingsCode, amountMinor)
 	if err != nil {
 		return err
@@ -99,6 +105,10 @@ func (s *AdditionalDepositService) Settle(ctx context.Context, tenantID, actor, 
 	savings, err := s.repo.GetSavingsByCode(ctx, tenantID, savingsCode)
 	if err != nil {
 		return ardaerrors.New(ardaerrors.CodeNotFound, "savings not found: "+savingsCode)
+	}
+	if dataVersion != "" && strconv.FormatInt(savings.DataVersion, 10) != dataVersion {
+		return ardaerrors.New(ardaerrors.CodeConflict,
+			fmt.Sprintf("dossier changed: savings %s is at version %d", savingsCode, savings.DataVersion))
 	}
 	if txnDate == "" {
 		txnDate = todayDep(ctx)
@@ -118,22 +128,43 @@ func (s *AdditionalDepositService) Settle(ctx context.Context, tenantID, actor, 
 		return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Insert the movement first, guarded by the idempotency key: a retry after
+	// a committed attempt conflicts here and skips the principal bump instead
+	// of crediting the savings twice.
+	var txnID string
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO dpm_transactions
+			(id, tenant_id, savings_id, txn_type, amount_minor, currency_code, txn_date, status, journal_entry_id, created_by, idempotency_key)
+		VALUES ($1,$2,$3,'TOP_UP_POSTED',$4,$5,$6,'POSTED',$7,$8,$9)
+		ON CONFLICT (tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+		RETURNING id`,
+		repository.NewDepositID("dpmtx"), tenantID, savings.ID, amountMinor,
+		savings.CurrencyCode, txnDate, entryID, actor, idemKey).Scan(&txnID)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Replay of an already-applied movement: nothing left to do.
+		return nil
+	}
+	if err != nil {
+		return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
 	res, err := tx.ExecContext(ctx, `
 		UPDATE dpm_savings SET principal_minor = principal_minor + $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'`, tenantID, savings.ID, amountMinor)
+		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'
+		  AND ($4 = '' OR version::text = $4)`, tenantID, savings.ID, amountMinor, dataVersion)
 	if err != nil {
 		return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
+		// Distinguish a status change from a concurrent write so the operator
+		// sees why the approval was refused.
+		if dataVersion != "" {
+			if current, getErr := s.repo.GetSavingsByCode(ctx, tenantID, savingsCode); getErr == nil &&
+				current.Status == "ACTIVE" {
+				return ardaerrors.New(ardaerrors.CodeConflict,
+					fmt.Sprintf("dossier changed: savings %s is at version %d", savingsCode, current.DataVersion))
+			}
+		}
 		return ardaerrors.New(ardaerrors.CodeConflict, "savings is no longer ACTIVE")
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO dpm_transactions
-			(id, tenant_id, savings_id, txn_type, amount_minor, currency_code, txn_date, status, journal_entry_id, created_by)
-		VALUES ($1,$2,$3,'TOP_UP_POSTED',$4,$5,$6,'POSTED',$7,$8)`,
-		repository.NewDepositID("dpmtx"), tenantID, savings.ID, amountMinor,
-		savings.CurrencyCode, txnDate, entryID, actor); err != nil {
-		return ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
 	if err := tx.Commit(); err != nil {
 		return ardaerrors.New(ardaerrors.CodeInternal, err.Error())

@@ -34,6 +34,10 @@ message CheckSettleResponse {
 message SettleRequest {
   string savings_code = 1;
   string actor = 2;
+  // Row version the checker approved (dpm_savings.version as a string). When
+  // set, settle refuses to close the account if the savings moved on — stale
+  // approvals must be re-reviewed, never silently applied.
+  string data_version = 3;
 }
 
 message SettleResponse {
@@ -59,6 +63,10 @@ message SettleAdditionalRequest {
   string txn_date = 3;
   string idempotency_key = 4;
   string actor = 5;
+  // Row version the checker approved (dpm_savings.version as a string). When
+  // set, settle refuses to bump the principal if the savings moved on —
+  // stale approvals must be re-reviewed, never silently applied.
+  string data_version = 6;
 }
 
 message SettleAdditionalResponse {
@@ -145,6 +153,9 @@ message ResolveInterestOpRequest {
   string op_id = 1;
   string decision = 2; // APPROVE | REJECT
   string actor = 3;
+  // Savings row version the checker approved. When set, approve refuses to
+  // post if the savings moved on — stale approvals are re-reviewed.
+  string data_version = 4;
 }
 
 message ResolveInterestOpResponse {

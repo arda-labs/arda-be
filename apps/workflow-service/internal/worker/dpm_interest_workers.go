@@ -7,6 +7,8 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // DPM interest/rate worker modes.
@@ -29,7 +31,7 @@ type DepositInterestRequester interface {
 	CheckRateRequest(ctx context.Context, requestID string) (bool, string, error)
 	ResolveRateRequest(ctx context.Context, requestID, decision, actor string) error
 	CheckInterestOp(ctx context.Context, opID string) (bool, string, error)
-	ResolveInterestOp(ctx context.Context, opID, decision, actor string) error
+	ResolveInterestOp(ctx context.Context, opID, decision, actor, dataVersion string) error
 }
 
 func NewDPMInterestWorkers(deposit DepositInterestRequester, caseRepo *repository.CaseRepository, mode string) *DPMInterestWorkers {
@@ -90,11 +92,11 @@ func (w *DPMInterestWorkers) validateOne(ctx context.Context, id string) (bool, 
 	return w.deposit.CheckInterestOp(ctx, id)
 }
 
-func (w *DPMInterestWorkers) resolveOne(ctx context.Context, id, decision, actor string) error {
+func (w *DPMInterestWorkers) resolveOne(ctx context.Context, id, decision, actor, dataVersion string) error {
 	if w.mode == DPMInterestModeRate {
 		return w.deposit.ResolveRateRequest(ctx, id, decision, actor)
 	}
-	return w.deposit.ResolveInterestOp(ctx, id, decision, actor)
+	return w.deposit.ResolveInterestOp(ctx, id, decision, actor, dataVersion)
 }
 
 func (w *DPMInterestWorkers) validate() worker.JobHandler {
@@ -130,8 +132,16 @@ func (w *DPMInterestWorkers) execute() worker.JobHandler {
 		}
 		vars, _ := job.GetVariablesAsMap()
 		actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
+		// dataVersion is the savings row version the checker approved (task form).
+		dataVersion, _ := vars["dataVersion"].(string)
 		for _, id := range ids {
-			if err := w.resolveOne(crmJobContext(job), id, "APPROVE", actor); err != nil {
+			if err := w.resolveOne(crmJobContext(job), id, "APPROVE", actor, dataVersion); err != nil {
+				if status.Code(err) == codes.Aborted {
+					// Stale approval: retrying cannot fix it — stop with an
+					// incident instead of posting on data the checker never saw.
+					w.failJobTerminal(client, job, "Deposit Conflict: "+status.Convert(err).Message())
+					return
+				}
 				w.failJob(client, job, "Deposit Error: "+err.Error())
 				return
 			}
@@ -153,7 +163,7 @@ func (w *DPMInterestWorkers) cancel() worker.JobHandler {
 		vars, _ := job.GetVariablesAsMap()
 		actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
 		for _, id := range ids {
-			if err := w.resolveOne(crmJobContext(job), id, "REJECT", actor); err != nil {
+			if err := w.resolveOne(crmJobContext(job), id, "REJECT", actor, ""); err != nil {
 				w.failJob(client, job, "Deposit Error: "+err.Error())
 				return
 			}
@@ -161,7 +171,7 @@ func (w *DPMInterestWorkers) cancel() worker.JobHandler {
 		if err := w.completeJob(client, job, map[string]any{"approvalStatus": "REJECTED"}); err != nil {
 			return
 		}
-		w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), repository.CaseStatusCompleted)
+		w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), repository.CaseStatusRejected)
 	}
 }
 
@@ -188,5 +198,15 @@ func (w *DPMInterestWorkers) failJob(client worker.JobClient, job entities.Job, 
 	_, err := client.NewFailJobCommand().JobKey(job.GetKey()).Retries(retries).ErrorMessage(reason).Send(context.Background())
 	if err != nil {
 		slog.Error("dpm interest fail-job send", "err", err)
+	}
+}
+
+// failJobTerminal stops the job without retries — used when retrying cannot
+// change the outcome (stale data version / status conflict).
+func (w *DPMInterestWorkers) failJobTerminal(client worker.JobClient, job entities.Job, reason string) {
+	slog.Warn("workflow dpm interest job stopped", "jobType", job.GetType(), "reason", reason)
+	_, err := client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).ErrorMessage(reason).Send(context.Background())
+	if err != nil {
+		slog.Error("dpm interest terminal fail-job send", "err", err)
 	}
 }

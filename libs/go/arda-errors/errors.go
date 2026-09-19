@@ -29,6 +29,10 @@ const (
 	CodeSuperAdminRoleProtected       = "iam.superadmin.role_protected"
 	CodeSuperAdminPermissionProtected = "iam.superadmin.permission_protected"
 	CodeSessionLimitReached           = "iam.session.limit_reached"
+
+	// CodeCaseTypeUnavailable is the fail-closed capability gate for workflow
+	// case types without active registry steps (or missing workers).
+	CodeCaseTypeUnavailable = "workflow.case_type.unavailable"
 )
 
 type Error struct {
