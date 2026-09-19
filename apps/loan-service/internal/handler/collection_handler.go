@@ -48,6 +48,17 @@ func (h *CollectionHandler) ListCollections(w http.ResponseWriter, r *http.Reque
 	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listReq.Page, listReq.PerPage, total, items))
 }
 
+// GetCollection handles GET /api/loan/collections/{id}. Used by the workbench
+// form host to load the receipt dossier + row version.
+func (h *CollectionHandler) GetCollection(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.Get(r.Context(), tenantID, r.PathValue("id"))
+	writeResult(w, r, item, err)
+}
+
 // CreateCollection handles POST /api/loan/collections.
 func (h *CollectionHandler) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)

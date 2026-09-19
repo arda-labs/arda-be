@@ -61,6 +61,7 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 			methodNotAllowed(w, r)
 		}
 	})
+	mux.HandleFunc("/api/loan/disbursements/{id}", method("GET", d.GetDisbursement))
 	mux.HandleFunc("/api/loan/disbursements/{id}/submit", method("POST", d.SubmitDisbursement))
 
 	// Accruals (P1b.4b): EOD job trigger + read API
@@ -69,6 +70,7 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 	mux.HandleFunc("/api/loan/accruals", method("GET", a.ListAccruals))
 
 	// General provision (LNM.307.01): preview, submit, list.
+	mux.HandleFunc("/api/loan/general-provisions/{id}", method("GET", gp.GetGeneralProvision))
 	mux.HandleFunc("/api/loan/general-provisions/calculate", method("POST", gp.CalculateGeneralProvision))
 	mux.HandleFunc("/api/loan/general-provisions", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -82,6 +84,7 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 	})
 
 	// Specific provision (LNM.306): preview, submit, list.
+	mux.HandleFunc("/api/loan/specific-provisions/{id}", method("GET", sp.GetSpecificProvision))
 	mux.HandleFunc("/api/loan/specific-provisions/calculate", method("POST", sp.CalculateSpecificProvision))
 	mux.HandleFunc("/api/loan/specific-provisions", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -105,6 +108,7 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 			methodNotAllowed(w, r)
 		}
 	})
+	mux.HandleFunc("/api/loan/collections/{id}", method("GET", c.GetCollection))
 	mux.HandleFunc("/api/loan/collections/{id}/submit", method("POST", c.SubmitCollection))
 
 	// Batch flows (iteration 13: 1 hồ sơ — N hợp đồng). The literal

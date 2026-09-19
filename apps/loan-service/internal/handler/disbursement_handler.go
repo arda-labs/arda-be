@@ -58,6 +58,17 @@ func (h *DisbursementHandler) ListDisbursements(w http.ResponseWriter, r *http.R
 	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(listReq.Page, listReq.PerPage, total, items))
 }
 
+// GetDisbursement handles GET /api/loan/disbursements/{id}. Used by the
+// workbench form host to load the drawdown dossier + row version.
+func (h *DisbursementHandler) GetDisbursement(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.Get(r.Context(), tenantID, r.PathValue("id"))
+	writeResult(w, r, item, err)
+}
+
 // CreateDisbursement handles POST /api/loan/disbursements. The JSON body
 // carries the disbursement shape; flow_type (REGISTER|COMPLETE, REGISTER
 // default) and source_register_id (COMPLETE only) select the two-phase flow.

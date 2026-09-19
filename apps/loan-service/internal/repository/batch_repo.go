@@ -14,7 +14,7 @@ import (
 const disbursementBatchColumns = `id::text, tenant_id, COALESCE(org_code,''), flow_type, COALESCE(source_batch_id::text,''),
 	txn_date::text, COALESCE(payment_method,''), COALESCE(account_code,''), COALESCE(currency_code,''), total_amt_minor,
 	COALESCE(description,''), trader, status, workflow_case_id::text, COALESCE(workflow_case_code,''),
-	journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at`
+	journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at, version`
 
 func scanDisbursementBatch(s interface{ Scan(...any) error }) (domain.DisbursementBatch, error) {
 	var b domain.DisbursementBatch
@@ -23,7 +23,7 @@ func scanDisbursementBatch(s interface{ Scan(...any) error }) (domain.Disburseme
 	err := s.Scan(&b.ID, &b.TenantID, &b.OrgCode, &b.FlowType, &b.SourceBatchID,
 		&b.TxnDate, &b.PaymentMethod, &b.AccountCode, &b.CurrencyCode, &b.TotalAmtMinor,
 		&b.Description, &trader, &b.Status, &caseID, &b.WorkflowCaseCode,
-		&entryID, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt)
+		&entryID, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt, &b.DataVersion)
 	if err != nil {
 		return b, err
 	}
@@ -44,7 +44,7 @@ const collectionBatchColumns = `id::text, tenant_id, COALESCE(org_code,''), txn_
 	COALESCE(payment_method,''), COALESCE(account_code,''), COALESCE(currency_code,''),
 	total_principal_minor, total_interest_minor, COALESCE(description,''), trader, status,
 	workflow_case_id::text, COALESCE(workflow_case_code,''), journal_entry_id::text,
-	COALESCE(created_by,''), created_at, updated_at`
+	COALESCE(created_by,''), created_at, updated_at, version`
 
 func scanCollectionBatch(s interface{ Scan(...any) error }) (domain.CollectionBatch, error) {
 	var b domain.CollectionBatch
@@ -53,7 +53,7 @@ func scanCollectionBatch(s interface{ Scan(...any) error }) (domain.CollectionBa
 	err := s.Scan(&b.ID, &b.TenantID, &b.OrgCode, &b.TxnDate,
 		&b.PaymentMethod, &b.AccountCode, &b.CurrencyCode,
 		&b.TotalPrincipalMinor, &b.TotalInterestMinor, &b.Description, &trader, &b.Status,
-		&caseID, &b.WorkflowCaseCode, &entryID, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt)
+		&caseID, &b.WorkflowCaseCode, &entryID, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt, &b.DataVersion)
 	if err != nil {
 		return b, err
 	}
@@ -200,7 +200,7 @@ func scanDisbursementBatchTotal(s interface{ Scan(...any) error }) (domain.Disbu
 	err := s.Scan(&b.ID, &b.TenantID, &b.OrgCode, &b.FlowType, &b.SourceBatchID,
 		&b.TxnDate, &b.PaymentMethod, &b.AccountCode, &b.CurrencyCode, &b.TotalAmtMinor,
 		&b.Description, &trader, &b.Status, &caseID, &b.WorkflowCaseCode,
-		&entryID, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt, &total)
+		&entryID, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt, &b.DataVersion, &total)
 	if err != nil {
 		return b, 0, err
 	}
@@ -239,7 +239,7 @@ func (r *LoanRepository) ListCollectionBatches(ctx context.Context, tenantID, st
 		if err := rows.Scan(&b.ID, &b.TenantID, &b.OrgCode, &b.TxnDate,
 			&b.PaymentMethod, &b.AccountCode, &b.CurrencyCode,
 			&b.TotalPrincipalMinor, &b.TotalInterestMinor, &b.Description, &trader, &b.Status,
-			&caseID, &b.WorkflowCaseCode, &entryID, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt, &total); err != nil {
+			&caseID, &b.WorkflowCaseCode, &entryID, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt, &b.DataVersion, &total); err != nil {
 			return nil, 0, err
 		}
 		b.Trader = map[string]string{}

@@ -42,4 +42,6 @@ type Collection struct {
 	CreatedBy        string          `json:"created_by"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
+	// DataVersion is the row version the checker saw (lnm_collections.version).
+	DataVersion int64 `json:"data_version"`
 }

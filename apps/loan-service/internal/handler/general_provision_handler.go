@@ -36,6 +36,16 @@ func (h *GeneralProvisionHandler) ListGeneralProvisions(w http.ResponseWriter, r
 	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(1, len(items), len(items), items))
 }
 
+// GetGeneralProvision handles GET /api/loan/general-provisions/{id}.
+func (h *GeneralProvisionHandler) GetGeneralProvision(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.Get(r.Context(), tenantID, r.PathValue("id"))
+	writeResult(w, r, item, err)
+}
+
 // CalculateGeneralProvision handles POST /api/loan/general-provisions/calculate
 // — pure preview, no persistence.
 func (h *GeneralProvisionHandler) CalculateGeneralProvision(w http.ResponseWriter, r *http.Request) {

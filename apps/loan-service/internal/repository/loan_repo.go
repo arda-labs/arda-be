@@ -1405,12 +1405,13 @@ func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id strin
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
 		       currency_code, COALESCE(fund_source_code,''), flow_type, source_register_id::text, status, payload,
-		       workflow_case_id::text, COALESCE(workflow_case_code,''), journal_entry_id::text, created_by, created_at, updated_at
+		       workflow_case_id::text, COALESCE(workflow_case_code,''), journal_entry_id::text, created_by, created_at, updated_at,
+		       version
 		FROM lnm_disbursements WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	var payload []byte
 	err := row.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
 		&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.FlowType, &sourceID, &d.Status, &payload,
-		&caseID, &d.WorkflowCaseCode, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
+		&caseID, &d.WorkflowCaseCode, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.DataVersion)
 	if err == sql.ErrNoRows {
 		return nil, err
 	}
@@ -1655,7 +1656,8 @@ func (r *LoanRepository) GetContractByCode(ctx context.Context, tenantID, code s
 
 const collectionColumns = `id, tenant_id, contract_code, agreement_code, collection_date::text,
 	principal_minor, interest_minor, currency_code, status, payload,
-	workflow_case_id::text, COALESCE(workflow_case_code,''), journal_entry_id::text, created_by, created_at, updated_at`
+	workflow_case_id::text, COALESCE(workflow_case_code,''), journal_entry_id::text, created_by, created_at, updated_at,
+	version`
 
 // collectionSortCol maps the public sort key (whitelisted in the handler
 // ListSpec) to a SQL column; unknown keys fall back to created_at.
@@ -1700,7 +1702,7 @@ func (r *LoanRepository) ListCollections(ctx context.Context, tenantID string, o
 		var payload []byte
 		if err := rows.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.AgreementCode, &c.CollectionDate,
 			&c.PrincipalMinor, &c.InterestMinor, &c.CurrencyCode, &c.Status, &payload,
-			&caseID, &c.WorkflowCaseCode, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &total); err != nil {
+			&caseID, &c.WorkflowCaseCode, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.DataVersion, &total); err != nil {
 			return nil, 0, err
 		}
 		if len(payload) > 0 && string(payload) != "null" {
@@ -1743,7 +1745,7 @@ func (r *LoanRepository) GetCollection(ctx context.Context, tenantID, id string)
 	var payload []byte
 	err := row.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.AgreementCode, &c.CollectionDate,
 		&c.PrincipalMinor, &c.InterestMinor, &c.CurrencyCode, &c.Status, &payload,
-		&caseID, &c.WorkflowCaseCode, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt)
+		&caseID, &c.WorkflowCaseCode, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.DataVersion)
 	if err == sql.ErrNoRows {
 		return nil, err
 	}

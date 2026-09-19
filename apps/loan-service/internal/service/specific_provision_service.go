@@ -145,6 +145,11 @@ func (s *SpecificProvisionService) Submit(ctx context.Context, tenantID, actor, 
 }
 
 // List returns the request list.
+// Get returns one specific provision request by id.
+func (s *SpecificProvisionService) Get(ctx context.Context, tenantID, id string) (*repository.SpecificProvisionRow, error) {
+	return s.repo.GetSpecificProvision(ctx, tenantID, id)
+}
+
 func (s *SpecificProvisionService) List(ctx context.Context, tenantID, status string) ([]repository.SpecificProvisionRow, error) {
 	items, err := s.repo.ListSpecificProvisions(ctx, tenantID, strings.TrimSpace(status))
 	return items, mapRepoError(err)

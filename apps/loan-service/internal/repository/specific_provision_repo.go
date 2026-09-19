@@ -26,6 +26,8 @@ type SpecificProvisionRow struct {
 	JournalEntryID   string  `json:"journal_entry_id,omitempty"`
 	CreatedBy        string  `json:"created_by"`
 	CreatedAt        string  `json:"created_at"`
+	// DataVersion is the row version the checker saw (lnm_specific_provisions.version).
+	DataVersion int64 `json:"data_version"`
 }
 
 const specificProvisionColumns = `
@@ -33,14 +35,14 @@ const specificProvisionColumns = `
 	outstanding_minor, debt_group_code, rate_percent::float8, deduction_minor,
 	base_minor, amount_minor, status, COALESCE(workflow_case_id::text,''),
 	COALESCE(workflow_case_code,''), COALESCE(journal_entry_id::text,''),
-	created_by, created_at::text`
+	created_by, created_at::text, version`
 
 func scanSpecificProvision(scan func(...any) error) (*SpecificProvisionRow, error) {
 	var row SpecificProvisionRow
 	if err := scan(&row.ID, &row.TenantID, &row.ContractCode, &row.AgreementCode, &row.ProvisionDate,
 		&row.OutstandingMinor, &row.DebtGroupCode, &row.RatePercent, &row.DeductionMinor,
 		&row.BaseMinor, &row.AmountMinor, &row.Status, &row.WorkflowCaseID,
-		&row.WorkflowCaseCode, &row.JournalEntryID, &row.CreatedBy, &row.CreatedAt); err != nil {
+		&row.WorkflowCaseCode, &row.JournalEntryID, &row.CreatedBy, &row.CreatedAt, &row.DataVersion); err != nil {
 		return nil, err
 	}
 	return &row, nil

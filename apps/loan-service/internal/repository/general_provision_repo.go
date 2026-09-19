@@ -26,6 +26,8 @@ type GeneralProvisionRow struct {
 	JournalEntryID   string  `json:"journal_entry_id,omitempty"`
 	CreatedBy        string  `json:"created_by"`
 	CreatedAt        string  `json:"created_at"`
+	// DataVersion is the row version the checker saw (lnm_general_provisions.version).
+	DataVersion int64 `json:"data_version"`
 }
 
 const generalProvisionColumns = `
@@ -33,14 +35,14 @@ const generalProvisionColumns = `
 	total_outstanding_minor, accum_provision_minor, required_provision_minor,
 	alloc_minor, reverse_minor, status,
 	COALESCE(workflow_case_id,''), COALESCE(workflow_case_code,''),
-	COALESCE(journal_entry_id::text,''), created_by, created_at::text`
+	COALESCE(journal_entry_id::text,''), created_by, created_at::text, version`
 
 func scanGeneralProvision(scan func(...any) error) (*GeneralProvisionRow, error) {
 	var row GeneralProvisionRow
 	if err := scan(&row.ID, &row.TenantID, &row.OrgCode, &row.ProvisionDate, &row.RatePercent,
 		&row.TotalOutstanding, &row.Accum, &row.Required, &row.Alloc, &row.Reverse,
 		&row.Status, &row.WorkflowCaseID, &row.WorkflowCaseCode, &row.JournalEntryID,
-		&row.CreatedBy, &row.CreatedAt); err != nil {
+		&row.CreatedBy, &row.CreatedAt, &row.DataVersion); err != nil {
 		return nil, err
 	}
 	return &row, nil

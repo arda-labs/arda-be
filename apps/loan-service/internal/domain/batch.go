@@ -47,7 +47,9 @@ type DisbursementBatch struct {
 	CreatedBy        string            `json:"created_by,omitempty"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
-	Rows             []Disbursement    `json:"rows,omitempty"`
+	// DataVersion is the row version the checker saw (lnm_disbursement_batches.version).
+	DataVersion int64          `json:"data_version"`
+	Rows        []Disbursement `json:"rows,omitempty"`
 }
 
 // CollectionBatch is one batch receipt dossier (1 hồ sơ thu nợ — N hợp đồng,
@@ -72,5 +74,7 @@ type CollectionBatch struct {
 	CreatedBy          string            `json:"created_by,omitempty"`
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
-	Rows               []Collection      `json:"rows,omitempty"`
+	// DataVersion is the row version the checker saw (lnm_collection_batches.version).
+	DataVersion int64        `json:"data_version"`
+	Rows        []Collection `json:"rows,omitempty"`
 }

@@ -36,6 +36,16 @@ func (h *SpecificProvisionHandler) ListSpecificProvisions(w http.ResponseWriter,
 	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(1, len(items), len(items), items))
 }
 
+// GetSpecificProvision handles GET /api/loan/specific-provisions/{id}.
+func (h *SpecificProvisionHandler) GetSpecificProvision(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.svc.Get(r.Context(), tenantID, r.PathValue("id"))
+	writeResult(w, r, item, err)
+}
+
 // CalculateSpecificProvision handles POST /api/loan/specific-provisions/calculate.
 func (h *SpecificProvisionHandler) CalculateSpecificProvision(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)

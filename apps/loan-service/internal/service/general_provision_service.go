@@ -143,6 +143,11 @@ func (s *GeneralProvisionService) Submit(ctx context.Context, tenantID, actor, o
 	return s.repo.GetGeneralProvision(ctx, tenantID, row.ID)
 }
 
+// Get returns one provision period by id.
+func (s *GeneralProvisionService) Get(ctx context.Context, tenantID, id string) (*repository.GeneralProvisionRow, error) {
+	return s.repo.GetGeneralProvision(ctx, tenantID, id)
+}
+
 func (s *GeneralProvisionService) List(ctx context.Context, tenantID, orgCode string) ([]repository.GeneralProvisionRow, error) {
 	items, err := s.repo.ListGeneralProvisions(ctx, tenantID, strings.TrimSpace(orgCode))
 	return items, mapRepoError(err)
