@@ -545,8 +545,12 @@ func (s *BatchDisbursementService) SettleBatchRegister(ctx context.Context, tena
 	if err != nil {
 		return mapRepoError(err)
 	}
+	// The guard belongs to the batch header, not its rows: settle each row
+	// unguarded (row-level idempotency is the status guard) and guard the
+	// header transition below.
+	rowCtx := domain.WithDataVersion(ctx, 0)
 	for _, row := range rows {
-		if _, err := s.repo.SettleDisbursementRegister(ctx, tenantID, row.ID, row.AgreementCode, row.DisburseAmtMinor, journalEntryID, actor); err != nil {
+		if _, err := s.repo.SettleDisbursementRegister(rowCtx, tenantID, row.ID, row.AgreementCode, row.DisburseAmtMinor, journalEntryID, actor); err != nil {
 			return mapRepoError(err)
 		}
 	}
@@ -564,8 +568,9 @@ func (s *BatchDisbursementService) SettleBatchComplete(ctx context.Context, tena
 		return mapRepoError(err)
 	}
 	closedContracts := []string{}
+	rowCtx := domain.WithDataVersion(ctx, 0)
 	for _, row := range rows {
-		if _, err := s.repo.SettleDisbursementComplete(ctx, tenantID, row.ID, row.ContractCode, row.AgreementCode, row.DisburseAmtMinor, journalEntryID, actor); err != nil {
+		if _, err := s.repo.SettleDisbursementComplete(rowCtx, tenantID, row.ID, row.ContractCode, row.AgreementCode, row.DisburseAmtMinor, journalEntryID, actor); err != nil {
 			return mapRepoError(err)
 		}
 		if row.IsClosed {

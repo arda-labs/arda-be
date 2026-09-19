@@ -1528,16 +1528,21 @@ func (r *LoanRepository) SettleDisbursementRegister(ctx context.Context, tenantI
 	}
 	defer tx.Rollback()
 
+	expected := domain.DataVersionFromContext(ctx)
 	res, err := tx.ExecContext(ctx, `
 		UPDATE lnm_disbursements
 		SET status = 'POSTED', journal_entry_id = $3, updated_by = $4, updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2
-		  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')`,
-		tenantID, id, nullText(journalEntryID), updatedBy)
+		  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')
+		  AND ($5 = 0 OR version = $5)`,
+		tenantID, id, nullText(journalEntryID), updatedBy, expected)
 	if err != nil {
 		return false, err
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
+		if staleVersion(ctx, tx, "lnm_disbursements", tenantID, id, expected) {
+			return false, ErrStaleVersion
+		}
 		return false, nil
 	}
 
@@ -1572,16 +1577,21 @@ func (r *LoanRepository) SettleDisbursementComplete(ctx context.Context, tenantI
 	}
 	defer tx.Rollback()
 
+	expected := domain.DataVersionFromContext(ctx)
 	res, err := tx.ExecContext(ctx, `
 		UPDATE lnm_disbursements
 		SET status = 'POSTED', journal_entry_id = $3, updated_by = $4, updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2
-		  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')`,
-		tenantID, id, nullText(journalEntryID), updatedBy)
+		  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')
+		  AND ($5 = 0 OR version = $5)`,
+		tenantID, id, nullText(journalEntryID), updatedBy, expected)
 	if err != nil {
 		return false, err
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
+		if staleVersion(ctx, tx, "lnm_disbursements", tenantID, id, expected) {
+			return false, ErrStaleVersion
+		}
 		return false, nil
 	}
 

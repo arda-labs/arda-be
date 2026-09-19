@@ -351,14 +351,15 @@ func (s *BatchCollectionService) SettleBatchCollection(ctx context.Context, tena
 	if err != nil {
 		return mapRepoError(err)
 	}
+	rowCtx := domain.WithDataVersion(ctx, 0)
 	for _, row := range rows {
-		if err := s.repo.SetCollectionCaseAndJournal(ctx, tenantID, row.ID, "", "", journalEntryID); err != nil {
+		if err := s.repo.SetCollectionCaseAndJournal(rowCtx, tenantID, row.ID, "", "", journalEntryID); err != nil {
 			return mapRepoError(err)
 		}
-		if err := s.repo.SetCollectionStatus(ctx, tenantID, row.ID, domain.CollectionPosted, actor); err != nil {
+		if err := s.repo.SetCollectionStatus(rowCtx, tenantID, row.ID, domain.CollectionPosted, actor); err != nil {
 			return mapRepoError(err)
 		}
-		if err := s.repo.ApplyCollection(ctx, tenantID, row.AgreementCode, row.PrincipalMinor, row.InterestMinor+row.OverdueInterestMinor); err != nil {
+		if err := s.repo.ApplyCollection(rowCtx, tenantID, row.AgreementCode, row.PrincipalMinor, row.InterestMinor+row.OverdueInterestMinor); err != nil {
 			return mapRepoError(err)
 		}
 	}

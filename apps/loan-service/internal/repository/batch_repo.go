@@ -388,11 +388,22 @@ func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantI
 
 // SetDisbursementBatchPosted marks the batch POSTED with its journal entry.
 func (r *LoanRepository) SetDisbursementBatchPosted(ctx context.Context, tenantID, id, journalEntryID string) error {
-	_, err := r.db.ExecContext(ctx, `
+	expected := domain.DataVersionFromContext(ctx)
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_disbursement_batches
 		SET status = 'POSTED', journal_entry_id = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullText(journalEntryID))
-	return err
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($4 = 0 OR version = $4)`, tenantID, id, nullText(journalEntryID), expected)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if staleVersion(ctx, r.db, "lnm_disbursement_batches", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return fmt.Errorf("%w", ErrNotFound)
+	}
+	return nil
 }
 
 // SetCollectionBatchCase records the workflow case on the collection batch.
@@ -425,11 +436,22 @@ func (r *LoanRepository) SetCollectionBatchStatus(ctx context.Context, tenantID,
 
 // SetCollectionBatchPosted marks the collection batch POSTED with its journal entry.
 func (r *LoanRepository) SetCollectionBatchPosted(ctx context.Context, tenantID, id, journalEntryID string) error {
-	_, err := r.db.ExecContext(ctx, `
+	expected := domain.DataVersionFromContext(ctx)
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_collection_batches
 		SET status = 'POSTED', journal_entry_id = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullText(journalEntryID))
-	return err
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($4 = 0 OR version = $4)`, tenantID, id, nullText(journalEntryID), expected)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if staleVersion(ctx, r.db, "lnm_collection_batches", tenantID, id, expected) {
+			return ErrStaleVersion
+		}
+		return fmt.Errorf("%w", ErrNotFound)
+	}
+	return nil
 }
 
 // SumOutstandingAndPendingByContract totals one contract's settled

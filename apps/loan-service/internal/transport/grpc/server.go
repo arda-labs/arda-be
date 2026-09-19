@@ -171,6 +171,7 @@ func (s *LoanServer) SettleDisbursement(ctx context.Context, req *loanv1.SettleD
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
+	ctx = domain.WithDataVersion(ctx, req.GetDataVersion())
 	if err := s.disbursements.Settle(ctx, tenantID, req.GetDisbursementId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
 		slog.Warn("loan grpc: settle failed", "id", req.GetDisbursementId(), "err", err)
 		return nil, status.Error(codes.FailedPrecondition, "loan: "+err.Error())
@@ -223,6 +224,7 @@ func (s *LoanServer) SettleCollection(ctx context.Context, req *loanv1.SettleCol
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, err.Error())
 	}
+	ctx = domain.WithDataVersion(ctx, req.GetDataVersion())
 	if err := s.collections.Settle(ctx, tenantID, req.GetCollectionId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
 		slog.Warn("loan grpc: settle collection failed", "id", req.GetCollectionId(), "err", err)
 		return nil, status.Error(codes.FailedPrecondition, "loan: "+err.Error())
@@ -309,6 +311,7 @@ func (s *LoanServer) SettleBatch(ctx context.Context, req *loanv1.SettleBatchReq
 	if req.GetBatchId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "batch_id is required")
 	}
+	ctx = domain.WithDataVersion(ctx, req.GetDataVersion())
 	if isCollectionBatchType(req.GetBatchType()) {
 		if err := s.batchColSvc().SettleBatchCollection(ctx, tenantID, req.GetBatchId(), req.GetJournalEntryId(), req.GetActor()); err != nil {
 			slog.Warn("loan grpc: settle collection batch failed", "id", req.GetBatchId(), "err", err)
