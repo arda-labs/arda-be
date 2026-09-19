@@ -59,6 +59,8 @@ type CapitalContract struct {
 	CreatedBy        string    `json:"created_by"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+	// DataVersion is the row version the checker saw (maps to cfc_contracts.version).
+	DataVersion int64 `json:"data_version"`
 }
 
 // ContractAmendment is one staged amendment request for a fund contract.
@@ -304,7 +306,8 @@ func listCapOrder(order string) string {
 const contractColumns = `id, tenant_id, contract_code, fund_type_code, COALESCE(product_code,''),
 	       counterparty_code, contract_date::text, COALESCE(maturity_date::text,''),
 	       amount_minor, interest_rate, currency_code, status, COALESCE(org_code,''),
-	       workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at`
+	       workflow_case_id::text, journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at,
+	       version`
 
 func scanContract(row interface {
 	Scan(dest ...any) error
@@ -313,7 +316,8 @@ func scanContract(row interface {
 	var caseID, entryID sql.NullString
 	if err := row.Scan(&c.ID, &c.TenantID, &c.ContractCode, &c.FundTypeCode, &c.ProductCode,
 		&c.CounterpartyCode, &c.ContractDate, &c.MaturityDate, &c.AmountMinor, &c.InterestRate,
-		&c.CurrencyCode, &c.Status, &c.OrgCode, &caseID, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		&c.CurrencyCode, &c.Status, &c.OrgCode, &caseID, &entryID, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
+		&c.DataVersion); err != nil {
 		return nil, err
 	}
 	if caseID.Valid {
