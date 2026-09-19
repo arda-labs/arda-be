@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -323,7 +324,10 @@ func (s *IBMService) resolvePlace(ctx context.Context, tenantID, id, decision, a
 		if err := s.postIBM(ctx, deposit, nil, "IBM_PLACE"); err != nil {
 			return err
 		}
-		return s.repo.UpdateInterbankDepositStatus(ctx, tenantID, id, "ACTIVE", actor)
+		if err := s.repo.UpdateInterbankDepositStatus(ctx, tenantID, id, "ACTIVE", actor, dataVersion); err != nil {
+			return s.ibmApplyError(ctx, tenantID, deposit.ID, dataVersion, err)
+		}
+		return nil
 	case "REJECT":
 		if deposit.Status == "REJECTED" {
 			return nil
@@ -331,7 +335,7 @@ func (s *IBMService) resolvePlace(ctx context.Context, tenantID, id, decision, a
 		if deposit.Status != "PENDING_APPROVAL" {
 			return ardaerrors.New(ardaerrors.CodeInvalidInput, "contract is not PENDING_APPROVAL")
 		}
-		return s.repo.UpdateInterbankDepositStatus(ctx, tenantID, id, "REJECTED", actor)
+		return s.repo.UpdateInterbankDepositStatus(ctx, tenantID, id, "REJECTED", actor, "")
 	default:
 		return ardaerrors.New(ardaerrors.CodeInvalidInput, "decision must be APPROVE or REJECT")
 	}
@@ -369,20 +373,20 @@ func (s *IBMService) resolveMovement(ctx context.Context, tenantID, id, kind, de
 		}
 		switch kind {
 		case IBMKindTopUp:
-			if err := s.repo.ApplyIBMTopUp(ctx, tenantID, deposit.ID, movement.AmountMinor); err != nil {
-				return err
+			if err := s.repo.ApplyIBMTopUp(ctx, tenantID, deposit.ID, movement.AmountMinor, dataVersion); err != nil {
+				return s.ibmApplyError(ctx, tenantID, deposit.ID, dataVersion, err)
 			}
 		case IBMKindInterest:
-			if err := s.repo.ApplyIBMAccrual(ctx, tenantID, deposit.ID, 0, movement.MovementDate); err != nil {
-				return err
+			if err := s.repo.ApplyIBMAccrual(ctx, tenantID, deposit.ID, 0, movement.MovementDate, dataVersion); err != nil {
+				return s.ibmApplyError(ctx, tenantID, deposit.ID, dataVersion, err)
 			}
 		case IBMKindExpected:
-			if err := s.repo.ApplyIBMAccrual(ctx, tenantID, deposit.ID, movement.AmountMinor, movement.MovementDate); err != nil {
-				return err
+			if err := s.repo.ApplyIBMAccrual(ctx, tenantID, deposit.ID, movement.AmountMinor, movement.MovementDate, dataVersion); err != nil {
+				return s.ibmApplyError(ctx, tenantID, deposit.ID, dataVersion, err)
 			}
 		case IBMKindWithdraw:
-			if err := s.repo.ApplyIBMWithdraw(ctx, tenantID, deposit.ID, movement.AmountMinor); err != nil {
-				return err
+			if err := s.repo.ApplyIBMWithdraw(ctx, tenantID, deposit.ID, movement.AmountMinor, dataVersion); err != nil {
+				return s.ibmApplyError(ctx, tenantID, deposit.ID, dataVersion, err)
 			}
 		}
 		return nil
@@ -498,4 +502,21 @@ func (s *IBMService) postIBM(ctx context.Context, deposit *repository.InterbankD
 		return s.repo.SetIBMMovementJournal(ctx, deposit.TenantID, movement.ID, "POSTED", posted.GetJournalEntryId())
 	}
 	return s.repo.SetInterbankDepositJournal(ctx, deposit.TenantID, deposit.ID, posted.GetJournalEntryId())
+}
+
+// ibmApplyError turns a guarded-mutation miss into a conflict. When a
+// dataVersion was supplied and the contract moved on, the operator sees the
+// current version so the approval can be re-reviewed.
+func (s *IBMService) ibmApplyError(ctx context.Context, tenantID, depositID, dataVersion string, err error) error {
+	if errors.Is(err, repository.ErrIBMNotActionable) {
+		if dataVersion != "" {
+			if current, gErr := s.repo.GetInterbankDepositByID(ctx, tenantID, depositID); gErr == nil && current != nil &&
+				strconv.FormatInt(current.DataVersion, 10) != dataVersion {
+				return ardaerrors.New(ardaerrors.CodeConflict,
+					fmt.Sprintf("dossier changed: interbank deposit %s is at version %d", current.DepositCode, current.DataVersion))
+			}
+		}
+		return ardaerrors.New(ardaerrors.CodeConflict, "interbank deposit is not actionable")
+	}
+	return err
 }

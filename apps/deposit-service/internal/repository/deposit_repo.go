@@ -25,6 +25,10 @@ var ErrInterestOpState = errors.New("interest op is not in the expected state")
 // savings account is no longer ACTIVE.
 var ErrAccruedInsufficient = errors.New("accrued interest is insufficient")
 
+// ErrIBMNotActionable reports that a guarded interbank mutation matched no row
+// (status moved on, balance too low, or the approved row version changed).
+var ErrIBMNotActionable = errors.New("interbank deposit is not actionable")
+
 // SavingsProduct is a deposit product catalog row (P2.1).
 type SavingsProduct struct {
 	ID           string    `json:"id"`
@@ -560,11 +564,20 @@ func (r *DepositRepository) SetInterbankDepositCase(ctx context.Context, tenantI
 }
 
 // UpdateInterbankDepositStatus moves the contract between lifecycle states.
-func (r *DepositRepository) UpdateInterbankDepositStatus(ctx context.Context, tenantID, id, status, actor string) error {
-	_, err := r.db.ExecContext(ctx, `
+// dataVersion (when set) is the row version the checker approved: the update
+// is guarded so a stale approval cannot move a contract that changed.
+func (r *DepositRepository) UpdateInterbankDepositStatus(ctx context.Context, tenantID, id, status, actor, dataVersion string) error {
+	tag, err := r.db.ExecContext(ctx, `
 		UPDATE ibm_deposits SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status, actor)
-	return err
+		WHERE tenant_id = $1 AND id = $2
+		  AND ($5 = '' OR version::text = $5)`, tenantID, id, status, actor, dataVersion)
+	if err != nil {
+		return err
+	}
+	if n, _ := tag.RowsAffected(); n == 0 {
+		return ErrIBMNotActionable
+	}
+	return nil
 }
 
 // SetInterbankDepositJournal stamps the placement posting result.
@@ -575,38 +588,54 @@ func (r *DepositRepository) SetInterbankDepositJournal(ctx context.Context, tena
 	return err
 }
 
-// ApplyIBMTopUp increases the deposit principal (TOP_UP).
-func (r *DepositRepository) ApplyIBMTopUp(ctx context.Context, tenantID, id string, amountMinor int64) error {
-	_, err := r.db.ExecContext(ctx, `
+// ApplyIBMTopUp increases the deposit principal (TOP_UP). dataVersion guards
+// against applying an approval to a contract that changed since review.
+func (r *DepositRepository) ApplyIBMTopUp(ctx context.Context, tenantID, id string, amountMinor int64, dataVersion string) error {
+	tag, err := r.db.ExecContext(ctx, `
 		UPDATE ibm_deposits SET principal_minor = principal_minor + $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'`, tenantID, id, amountMinor)
-	return err
+		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'
+		  AND ($4 = '' OR version::text = $4)`, tenantID, id, amountMinor, dataVersion)
+	if err != nil {
+		return err
+	}
+	if n, _ := tag.RowsAffected(); n == 0 {
+		return ErrIBMNotActionable
+	}
+	return nil
 }
 
 // ApplyIBMAccrual increases the accrued interest (EXPECTED / thu lãi).
-func (r *DepositRepository) ApplyIBMAccrual(ctx context.Context, tenantID, id string, amountMinor int64, interestDate string) error {
-	_, err := r.db.ExecContext(ctx, `
+func (r *DepositRepository) ApplyIBMAccrual(ctx context.Context, tenantID, id string, amountMinor int64, interestDate, dataVersion string) error {
+	tag, err := r.db.ExecContext(ctx, `
 		UPDATE ibm_deposits SET accrued_minor = accrued_minor + $3,
 			last_interest_date = COALESCE(NULLIF($4,'')::date, last_interest_date),
 			updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'`, tenantID, id, amountMinor, interestDate)
-	return err
+		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'
+		  AND ($5 = '' OR version::text = $5)`, tenantID, id, amountMinor, interestDate, dataVersion)
+	if err != nil {
+		return err
+	}
+	if n, _ := tag.RowsAffected(); n == 0 {
+		return ErrIBMNotActionable
+	}
+	return nil
 }
 
 // ApplyIBMWithdraw reduces principal first, then accrued (rút lãi gốc).
-func (r *DepositRepository) ApplyIBMWithdraw(ctx context.Context, tenantID, id string, amountMinor int64) error {
+func (r *DepositRepository) ApplyIBMWithdraw(ctx context.Context, tenantID, id string, amountMinor int64, dataVersion string) error {
 	tag, err := r.db.ExecContext(ctx, `
 		UPDATE ibm_deposits SET
 			principal_minor = GREATEST(principal_minor - $3, 0),
 			accrued_minor = GREATEST(accrued_minor - GREATEST($3 - principal_minor, 0), 0),
 			updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE' AND principal_minor + accrued_minor >= $3`,
-		tenantID, id, amountMinor)
+		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE' AND principal_minor + accrued_minor >= $3
+		  AND ($4 = '' OR version::text = $4)`,
+		tenantID, id, amountMinor, dataVersion)
 	if err != nil {
 		return err
 	}
 	if n, _ := tag.RowsAffected(); n == 0 {
-		return fmt.Errorf("insufficient deposit balance or contract not active")
+		return ErrIBMNotActionable
 	}
 	return nil
 }
