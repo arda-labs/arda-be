@@ -102,6 +102,8 @@ type InterbankDeposit struct {
 	CreatedBy        string    `json:"created_by"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+	// DataVersion is the row version the checker saw (maps to ibm_deposits.version).
+	DataVersion int64 `json:"data_version"`
 }
 
 // IBMProduct is one interbank deposit product catalog row.
@@ -466,7 +468,7 @@ func (r *DepositRepository) ListInterbankDeposits(ctx context.Context, tenantID 
 		       COALESCE(counterparty_name,''), deposit_date::text, maturity_date::text,
 		       principal_minor, interest_rate, accrued_minor, COALESCE(last_interest_date::text,''),
 		       currency_code, COALESCE(org_code,''), status, workflow_case_id::text,
-		       journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at
+		       journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at, version
 		FROM ibm_deposits
 		WHERE %s
 		ORDER BY deposit_date DESC LIMIT 200`, strings.Join(where, " AND ")), args...)
@@ -481,7 +483,7 @@ func (r *DepositRepository) ListInterbankDeposits(ctx context.Context, tenantID 
 		if err := rows.Scan(&d.ID, &d.TenantID, &d.DepositCode, &d.ProductCode, &d.CounterpartyCode,
 			&d.CounterpartyName, &d.DepositDate, &d.MaturityDate, &d.PrincipalMinor, &d.InterestRate,
 			&d.AccruedMinor, &d.LastInterestDate, &d.CurrencyCode, &d.OrgCode, &d.Status,
-			&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.DataVersion); err != nil {
 			return nil, err
 		}
 		if caseID.Valid {
@@ -502,14 +504,14 @@ func (r *DepositRepository) GetInterbankDepositByID(ctx context.Context, tenantI
 		       COALESCE(counterparty_name,''), deposit_date::text, maturity_date::text,
 		       principal_minor, interest_rate, accrued_minor, COALESCE(last_interest_date::text,''),
 		       currency_code, COALESCE(org_code,''), status, workflow_case_id::text,
-		       journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at
+		       journal_entry_id::text, COALESCE(created_by,''), created_at, updated_at, version
 		FROM ibm_deposits WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	var d InterbankDeposit
 	var caseID, entryID sql.NullString
 	err := row.Scan(&d.ID, &d.TenantID, &d.DepositCode, &d.ProductCode, &d.CounterpartyCode,
 		&d.CounterpartyName, &d.DepositDate, &d.MaturityDate, &d.PrincipalMinor, &d.InterestRate,
 		&d.AccruedMinor, &d.LastInterestDate, &d.CurrencyCode, &d.OrgCode, &d.Status,
-		&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
+		&caseID, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.DataVersion)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
