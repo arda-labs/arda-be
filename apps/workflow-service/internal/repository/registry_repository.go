@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -124,7 +125,8 @@ func (r *CaseRepository) ListCaseTypeSteps(ctx context.Context, caseType string,
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, case_type, registry_version, element_id, step_code, step_kind,
-		       form_key, allowed_actions, required_comment_on, COALESCE(data_contract, ''),
+		       form_key, COALESCE(to_json(allowed_actions)::text, '[]'),
+		       COALESCE(to_json(required_comment_on)::text, '[]'), COALESCE(data_contract, ''),
 		       sort_order, status
 		FROM workflow_case_type_steps
 		WHERE case_type = $1 AND registry_version = $2 AND status = 'ACTIVE'
@@ -137,10 +139,19 @@ func (r *CaseRepository) ListCaseTypeSteps(ctx context.Context, caseType string,
 	out := make([]CaseTypeStep, 0)
 	for rows.Next() {
 		var step CaseTypeStep
+		var allowedJSON, requiredJSON string
 		if err := rows.Scan(&step.ID, &step.CaseType, &step.RegistryVersion, &step.ElementID,
-			&step.StepCode, &step.StepKind, &step.FormKey, &step.AllowedActions,
-			&step.RequiredCommentOn, &step.DataContract, &step.SortOrder, &step.Status); err != nil {
+			&step.StepCode, &step.StepKind, &step.FormKey, &allowedJSON,
+			&requiredJSON, &step.DataContract, &step.SortOrder, &step.Status); err != nil {
 			return nil, err
+		}
+		// The pgx stdlib returns a text[] column as a raw string; decode the
+		// JSON projection instead of scanning straight into []string.
+		if err := json.Unmarshal([]byte(allowedJSON), &step.AllowedActions); err != nil {
+			return nil, fmt.Errorf("decode allowed_actions for %s: %w", step.ElementID, err)
+		}
+		if err := json.Unmarshal([]byte(requiredJSON), &step.RequiredCommentOn); err != nil {
+			return nil, fmt.Errorf("decode required_comment_on for %s: %w", step.ElementID, err)
 		}
 		out = append(out, step)
 	}
