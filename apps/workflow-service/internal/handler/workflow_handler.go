@@ -927,6 +927,16 @@ func (h *WorkflowHandler) recordTaskDecision(r *http.Request, jobKey, processIns
 		key = fmt.Sprintf("task-%d-%s", jobKey, decision)
 	}
 	dataVersion, _ := variables["dataVersion"].(string)
+	// The dispatcher has no job context, so the tenant/org scope the completing
+	// request carried is recorded here and rebuilt as outgoing metadata later.
+	scope := ardametadata.FromHTTPHeaders(r.Header)
+	if scope.TenantID == "" {
+		scope.TenantID = strings.TrimSpace(ardametadata.FromIncoming(r.Context()).TenantID)
+	}
+	orgID := scope.OrgID
+	if orgID == "" && len(scope.OrgIDs) > 0 {
+		orgID = scope.OrgIDs[0]
+	}
 	_, err = h.caseRepo.InsertTaskDecision(r.Context(), repository.TaskDecision{
 		TaskID:             item.ID,
 		CaseID:             item.CaseID,
@@ -936,6 +946,8 @@ func (h *WorkflowHandler) recordTaskDecision(r *http.Request, jobKey, processIns
 		Comment:            comment,
 		Actor:              actor,
 		DataVersion:        strings.TrimSpace(dataVersion),
+		TenantID:           strings.TrimSpace(scope.TenantID),
+		OrgID:              strings.TrimSpace(orgID),
 		IdempotencyKey:     key,
 	})
 	return err

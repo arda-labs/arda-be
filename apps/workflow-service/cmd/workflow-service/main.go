@@ -33,6 +33,7 @@ import (
 	statisticalclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/statistical"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
@@ -679,7 +680,24 @@ func (a *crmDecisionAdapter) Apply(ctx context.Context, decision repository.Task
 	default:
 		return nil
 	}
-	return a.client.UpdateCustomerStatus(ctx, decision.PrimaryObjectID, status)
+	// The dispatcher runs off a background ticker with no request scope:
+	// rebuild the tenant/org metadata the completing request carried, or the
+	// CRM boundary rejects the call with PermissionDenied.
+	applyCtx := ardametadata.AppendToOutgoing(ctx, ardametadata.Context{
+		TenantID:       decision.TenantID,
+		OrgID:          decision.OrgID,
+		OrgIDs:         nonEmptyOrg(decision.OrgID),
+		ServiceAccount: "workflow-service",
+	})
+	return a.client.UpdateCustomerStatus(applyCtx, decision.PrimaryObjectID, status)
+}
+
+// nonEmptyOrg wraps one org code as the metadata OrgIDs slice (nil when empty).
+func nonEmptyOrg(value string) []string {
+	if value == "" {
+		return nil
+	}
+	return []string{value}
 }
 
 func (a *iamAdapter) GetUserBatch(ctx context.Context, userIDs []string) (map[string]repository.UserLookupInfo, error) {

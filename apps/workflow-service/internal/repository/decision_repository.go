@@ -33,8 +33,13 @@ type TaskDecision struct {
 	Comment            string
 	Actor              string
 	DataVersion        string
-	Status             string
-	IdempotencyKey     string
+	// TenantID/OrgID are the scope the completing request carried. The
+	// dispatcher rebuilds the outgoing gRPC metadata from them (the CRM
+	// boundary rejects an unscoped call).
+	TenantID       string
+	OrgID          string
+	Status         string
+	IdempotencyKey string
 	RecordedAt         time.Time
 	DispatchedAt       *time.Time
 	AppliedAt          *time.Time
@@ -62,17 +67,20 @@ func (r *CaseRepository) InsertTaskDecision(ctx context.Context, in TaskDecision
 	err = r.db.QueryRowContext(ctx, `
 		INSERT INTO workflow_task_decisions (
 			id, task_id, case_id, process_instance_key, element_id, decision, comment,
-			actor, data_version, status, idempotency_key
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,''),$10,$11)
+			actor, data_version, status, idempotency_key, tenant_id, org_id
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,''),$10,$11,NULLIF($12,''),NULLIF($13,''))
 		ON CONFLICT (idempotency_key) DO NOTHING
 		RETURNING id, task_id, case_id, process_instance_key, element_id, decision, comment,
 		          actor, COALESCE(data_version, ''), status, idempotency_key,
+		          COALESCE(tenant_id, ''), COALESCE(org_id, ''),
 		          recorded_at, dispatched_at, applied_at, COALESCE(last_error, '')
 	`, id, in.TaskID, in.CaseID, in.ProcessInstanceKey, in.ElementID, in.Decision,
-		in.Comment, in.Actor, in.DataVersion, DecisionStatusRecorded, in.IdempotencyKey).
+		in.Comment, in.Actor, in.DataVersion, DecisionStatusRecorded, in.IdempotencyKey,
+		in.TenantID, in.OrgID).
 		Scan(&recorded.ID, &recorded.TaskID, &recorded.CaseID, &recorded.ProcessInstanceKey,
 			&recorded.ElementID, &recorded.Decision, &recorded.Comment, &recorded.Actor,
 			&recorded.DataVersion, &recorded.Status, &recorded.IdempotencyKey,
+			&recorded.TenantID, &recorded.OrgID,
 			&recorded.RecordedAt, &dispatchedAt, &appliedAt, &lastError)
 	if errors.Is(err, sql.ErrNoRows) {
 		existing, err := r.findDecisionByKey(ctx, in.IdempotencyKey)
@@ -97,6 +105,7 @@ func (r *CaseRepository) findDecisionByKey(ctx context.Context, key string) (*Ta
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, task_id, case_id, process_instance_key, element_id, decision, comment,
 		       actor, COALESCE(data_version, ''), status, idempotency_key,
+		       COALESCE(tenant_id, ''), COALESCE(org_id, ''),
 		       recorded_at, dispatched_at, applied_at, COALESCE(last_error, '')
 		FROM workflow_task_decisions
 		WHERE idempotency_key = $1
@@ -114,6 +123,7 @@ func (r *CaseRepository) ListDispatchCandidates(ctx context.Context, limit int) 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT d.id, d.task_id, d.case_id, d.process_instance_key, d.element_id, d.decision,
 		       d.comment, d.actor, COALESCE(d.data_version, ''), d.status, d.idempotency_key,
+		       COALESCE(d.tenant_id, bc.tenant_id), COALESCE(d.org_id, ''),
 		       d.recorded_at, d.dispatched_at, d.applied_at, COALESCE(d.last_error, ''),
 		       bc.case_type, bc.primary_object_type, bc.primary_object_id
 		FROM workflow_task_decisions d
@@ -135,6 +145,7 @@ func (r *CaseRepository) ListDispatchCandidates(ctx context.Context, limit int) 
 		var lastError sql.NullString
 		if err := rows.Scan(&d.ID, &d.TaskID, &d.CaseID, &d.ProcessInstanceKey, &d.ElementID,
 			&d.Decision, &d.Comment, &d.Actor, &d.DataVersion, &d.Status, &d.IdempotencyKey,
+			&d.TenantID, &d.OrgID,
 			&d.RecordedAt, &dispatchedAt, &appliedAt, &lastError,
 			&d.CaseType, &d.PrimaryObjectType, &d.PrimaryObjectID); err != nil {
 			return nil, err
@@ -172,6 +183,7 @@ func scanTaskDecision(s scanner) (*TaskDecision, error) {
 	var lastError sql.NullString
 	err := s.Scan(&d.ID, &d.TaskID, &d.CaseID, &d.ProcessInstanceKey, &d.ElementID,
 		&d.Decision, &d.Comment, &d.Actor, &d.DataVersion, &d.Status, &d.IdempotencyKey,
+		&d.TenantID, &d.OrgID,
 		&d.RecordedAt, &dispatchedAt, &appliedAt, &lastError)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
