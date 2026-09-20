@@ -660,9 +660,12 @@ func (a *crmDecisionAdapter) Supports(decision repository.TaskDecision) bool {
 	}
 	switch decision.Decision {
 	case "REQUEST_CHANGES", "SUBMIT":
-		return true
+	default:
+		return false
 	}
-	return false
+	// Without the org scope the CRM boundary rejects the call; skip instead of
+	// retrying forever (legacy rows recorded before the scope migration).
+	return decision.OrgID != ""
 }
 
 func (a *crmDecisionAdapter) Apply(ctx context.Context, decision repository.TaskDecision) error {
