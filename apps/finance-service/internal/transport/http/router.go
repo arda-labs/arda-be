@@ -39,7 +39,16 @@ func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHa
 			writeMethodNotAllowed(w, r)
 		}
 	})
-	mux.HandleFunc("/api/finance/accounts/{id}", method("GET", financeHandler.GetAccount))
+	mux.HandleFunc("/api/finance/accounts/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			financeHandler.GetAccount(w, r)
+		case http.MethodPut, http.MethodPatch:
+			financeHandler.UpdateAccount(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
 	mux.HandleFunc("/api/finance/accounts/", func(w http.ResponseWriter, r *http.Request) {
 		financeHandler.GetAccount(w, r)
 	})

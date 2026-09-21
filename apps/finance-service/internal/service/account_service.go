@@ -63,3 +63,14 @@ func (s *AccountService) CreateAccount(ctx context.Context, acct *domain.Account
 	}
 	return s.repo.Create(ctx, acct)
 }
+
+// UpdateAccount edits the descriptive fields of an existing account.
+func (s *AccountService) UpdateAccount(ctx context.Context, acct *domain.Account) (*domain.Account, error) {
+	if acct == nil || strings.TrimSpace(acct.ID) == "" {
+		return nil, fmt.Errorf("account id is required")
+	}
+	if strings.TrimSpace(acct.Name) == "" || acct.Type == "" || acct.NormalBalance == "" {
+		return nil, fmt.Errorf("name, type and normalBalance are required")
+	}
+	return s.repo.Update(ctx, acct)
+}

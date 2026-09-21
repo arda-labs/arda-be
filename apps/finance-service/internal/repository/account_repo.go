@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -39,6 +40,32 @@ func (r *AccountRepository) Create(ctx context.Context, a *domain.Account) (*dom
 	}
 
 
+	return a, nil
+}
+
+// Update edits an existing account in place. Code and id are immutable (the
+// code is the reference used by journal rules), so only the descriptive fields
+// change.
+func (r *AccountRepository) Update(ctx context.Context, a *domain.Account) (*domain.Account, error) {
+	meta := "null"
+	if a.Metadata != nil {
+		b, _ := json.Marshal(a.Metadata)
+		meta = string(b)
+	}
+	row := r.db.QueryRowContext(ctx, `
+		UPDATE fin_accounts
+		SET name = $3, type = $4, normal_balance = $5, currency = $6,
+		    is_active = $7, parent_id = $8, metadata = $9, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2
+		RETURNING created_at, updated_at
+	`, a.TenantID, a.ID, a.Name, string(a.Type), string(a.NormalBalance),
+		a.Currency, a.IsActive, nullUUID(a.ParentID), meta)
+	if err := row.Scan(&a.CreatedAt, &a.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, fmt.Errorf("update account: %w", err)
+	}
 	return a, nil
 }
 

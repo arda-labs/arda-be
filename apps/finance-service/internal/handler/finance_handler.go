@@ -145,6 +145,61 @@ func (h *FinanceHandler) GetAccount(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, r, http.StatusOK, acct)
 }
 
+// UpdateAccount edits an account (PUT/PATCH /api/finance/accounts/{id}). The
+// code is immutable; only the fields present in the body change.
+func (h *FinanceHandler) UpdateAccount(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondError(w, r, http.StatusBadRequest, "missing id")
+		return
+	}
+	var req struct {
+		Name          *string `json:"name"`
+		Type          *string `json:"type"`
+		NormalBalance *string `json:"normalBalance"`
+		Currency      *string `json:"currency"`
+		IsActive      *bool   `json:"isActive"`
+		ParentID      *string `json:"parentId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, r, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	existing, err := h.accounts.GetAccount(r.Context(), tenantID, id)
+	if err != nil || existing == nil {
+		respondError(w, r, http.StatusNotFound, "account not found")
+		return
+	}
+	if req.Name != nil {
+		existing.Name = *req.Name
+	}
+	if req.Type != nil {
+		existing.Type = domain.AccountType(*req.Type)
+	}
+	if req.NormalBalance != nil {
+		existing.NormalBalance = domain.NormalBalance(*req.NormalBalance)
+	}
+	if req.Currency != nil {
+		existing.Currency = *req.Currency
+	}
+	if req.IsActive != nil {
+		existing.IsActive = *req.IsActive
+	}
+	if req.ParentID != nil {
+		existing.ParentID = *req.ParentID
+	}
+	updated, err := h.accounts.UpdateAccount(r.Context(), existing)
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondJSON(w, r, http.StatusOK, updated)
+}
+
 // ── Trial Balance (journal-aggregated; P1a.6) ──
 
 func (h *FinanceHandler) TrialBalance(w http.ResponseWriter, r *http.Request) {
