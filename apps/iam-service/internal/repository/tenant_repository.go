@@ -302,3 +302,34 @@ func (r *TenantRepository) Create(ctx context.Context, tenant *domain.Tenant, ow
 	}
 	return nil
 }
+
+// GetByID loads one tenant, or nil when it does not exist.
+func (r *TenantRepository) GetByID(ctx context.Context, id string) (*domain.Tenant, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, code, name, status, created_at, updated_at
+		FROM iam_tenants WHERE id = $1
+	`, id)
+	var tenant domain.Tenant
+	if err := row.Scan(&tenant.ID, &tenant.Code, &tenant.Name, &tenant.Status,
+		&tenant.CreatedAt, &tenant.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &tenant, nil
+}
+
+// Update edits the tenant name/status. Code and id are immutable.
+func (r *TenantRepository) Update(ctx context.Context, tenant *domain.Tenant) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE iam_tenants SET name = $2, status = $3, updated_at = now() WHERE id = $1
+	`, tenant.ID, tenant.Name, tenant.Status)
+	if err != nil {
+		return fmt.Errorf("update tenant: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("tenant not found")
+	}
+	return nil
+}

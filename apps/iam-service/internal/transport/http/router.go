@@ -168,7 +168,16 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 			writeMethodNotAllowed(w, r)
 		}
 	})
-	mux.HandleFunc("/api/admin/permissions/{id}", method("DELETE", adminHandler.DeletePermission))
+	mux.HandleFunc("/api/admin/permissions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut, http.MethodPatch:
+			adminHandler.UpdatePermission(w, r)
+		case http.MethodDelete:
+			adminHandler.DeletePermission(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
 
 	// ── User API ──
 	mux.HandleFunc("/api/iam/me", method("GET", userHandler.Me))
@@ -252,6 +261,16 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 				tenantHandler.ListAdmin(w, r)
 			case http.MethodPost:
 				tenantHandler.Create(w, r)
+			default:
+				writeMethodNotAllowed(w, r)
+			}
+		})
+		mux.HandleFunc("/api/admin/tenants/{tenant_id}", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				tenantHandler.Get(w, r)
+			case http.MethodPut, http.MethodPatch:
+				tenantHandler.Update(w, r)
 			default:
 				writeMethodNotAllowed(w, r)
 			}

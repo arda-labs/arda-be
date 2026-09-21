@@ -170,6 +170,17 @@ func (r *RoleRepository) CreatePermission(ctx context.Context, p *domain.Permiss
 	return row.Scan(&p.ID, &p.CreatedAt)
 }
 
+// UpdatePermission edits name/module/resource/operation of an existing
+// permission. The code is immutable (it is referenced by policy.yaml).
+func (r *RoleRepository) UpdatePermission(ctx context.Context, p *domain.Permission) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE iam_permissions
+		SET name = $2, module_code = $3, resource_code = $4, operation_code = $5, updated_at = now()
+		WHERE id = $1
+	`, p.ID, p.Name, p.Module, p.Resource, p.Operation)
+	return err
+}
+
 func (r *RoleRepository) GetPermissionByID(ctx context.Context, id string) (*domain.Permission, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, code, name, module_code, resource_code, operation_code, created_at

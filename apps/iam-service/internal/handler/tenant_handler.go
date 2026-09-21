@@ -73,6 +73,57 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 	respondAdminJSON(w, r, http.StatusCreated, tenant)
 }
 
+// Get returns one tenant (GET /api/admin/tenants/{tenant_id}).
+func (h *TenantHandler) Get(w http.ResponseWriter, r *http.Request) {
+	if !hasGlobalAdminCapability(r) {
+		respondAdminRequestErrorCode(w, r, http.StatusForbidden, "common.error.forbidden", "global tenant administration is required")
+		return
+	}
+	tenant, err := h.svc.Get(r.Context(), r.PathValue("tenant_id"))
+	if err != nil {
+		respondAdminError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if tenant == nil {
+		respondAdminError(w, r, http.StatusNotFound, "tenant not found")
+		return
+	}
+	respondAdminJSON(w, r, http.StatusOK, tenant)
+}
+
+// Update edits the tenant name/status (PUT/PATCH /api/admin/tenants/{tenant_id}).
+func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
+	if !hasGlobalAdminCapability(r) {
+		respondAdminRequestErrorCode(w, r, http.StatusForbidden, "common.error.forbidden", "global tenant administration is required")
+		return
+	}
+	var req struct {
+		Name   *string `json:"name"`
+		Status *string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondAdminError(w, r, http.StatusBadRequest, "invalid json")
+		return
+	}
+	name, status := "", ""
+	if req.Name != nil {
+		name = *req.Name
+	}
+	if req.Status != nil {
+		status = *req.Status
+	}
+	tenant, err := h.svc.Update(r.Context(), r.PathValue("tenant_id"), name, status)
+	if err != nil {
+		respondAdminError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	if tenant == nil {
+		respondAdminError(w, r, http.StatusNotFound, "tenant not found")
+		return
+	}
+	respondAdminJSON(w, r, http.StatusOK, tenant)
+}
+
 func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	if !hasGlobalAdminCapability(r) {
 		respondAdminRequestErrorCode(w, r, http.StatusForbidden, "common.error.forbidden", "global tenant administration is required")

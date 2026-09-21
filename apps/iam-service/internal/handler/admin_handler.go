@@ -1381,6 +1381,48 @@ func (h *AdminHandler) ExportPermissions(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// UpdatePermission edits a permission in place (PUT/PATCH /api/admin/permissions/{id}).
+// The code is immutable; only provided fields change.
+func (h *AdminHandler) UpdatePermission(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		respondAdminError(w, r, http.StatusBadRequest, "missing permission id")
+		return
+	}
+	var req struct {
+		Name      *string `json:"name"`
+		Module    *string `json:"module"`
+		Resource  *string `json:"resource"`
+		Operation *string `json:"operation"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondAdminError(w, r, http.StatusBadRequest, "invalid body")
+		return
+	}
+	existing, err := h.roleRepo.GetPermissionByID(r.Context(), id)
+	if err != nil || existing == nil {
+		respondAdminError(w, r, http.StatusNotFound, "permission not found")
+		return
+	}
+	if req.Name != nil {
+		existing.Name = *req.Name
+	}
+	if req.Module != nil {
+		existing.Module = *req.Module
+	}
+	if req.Resource != nil {
+		existing.Resource = *req.Resource
+	}
+	if req.Operation != nil {
+		existing.Operation = *req.Operation
+	}
+	if err := h.roleRepo.UpdatePermission(r.Context(), existing); err != nil {
+		respondAdminError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondAdminJSON(w, r, http.StatusOK, existing)
+}
+
 func (h *AdminHandler) CreatePermission(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code      string `json:"code"`

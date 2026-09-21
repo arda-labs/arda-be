@@ -71,3 +71,31 @@ func (s *TenantService) Create(ctx context.Context, code, name, ownerUserID stri
 	}
 	return tenant, nil
 }
+
+func (s *TenantService) Get(ctx context.Context, id string) (*domain.Tenant, error) {
+	return s.repo.GetByID(ctx, id)
+}
+
+// Update edits the tenant name/status. Empty arguments are left unchanged.
+func (s *TenantService) Update(ctx context.Context, id, name, status string) (*domain.Tenant, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, fmt.Errorf("tenant id is required")
+	}
+	tenant, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if tenant == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(name) != "" {
+		tenant.Name = strings.TrimSpace(name)
+	}
+	if strings.TrimSpace(status) != "" {
+		tenant.Status = strings.TrimSpace(status)
+	}
+	if err := s.repo.Update(ctx, tenant); err != nil {
+		return nil, err
+	}
+	return tenant, nil
+}
