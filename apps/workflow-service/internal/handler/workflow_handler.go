@@ -839,6 +839,21 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
+	// Registry v2 is the source of truth for which actions a step accepts:
+	// reject an action the pinned step does not allow (and enforce required
+	// comments) before recording or touching the engine.
+	if err := h.enforceStepActions(r.Context(), processInstanceKey, elementID, decision, comment); err != nil {
+		slog.Warn("workflow task action not allowed",
+			"actor", actor,
+			"jobKey", jobKey,
+			"processInstanceKey", processInstanceKey,
+			"elementId", elementID,
+			"decision", decision,
+			"err", err,
+		)
+		writeAPIError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
 	// Record the decision durably before any engine/domain side effect so the
 	// command can be reconciled if the engine call fails midway.
 	if err := h.recordTaskDecision(r, jobKey, processInstanceKey, elementID, actor, comment, variables); err != nil {
@@ -2480,6 +2495,70 @@ func (h *WorkflowHandler) enforceMakerChecker(r *http.Request, processInstanceKe
 
 func makerCheckerSODRelaxed() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("WORKFLOW_RELAX_MAKER_CHECKER_SOD")), "true")
+}
+
+// enforceStepActions verifies the submitted decision is one the case's pinned
+// registry step allows (workflow registry v2) and that a comment is present
+// when the step requires one. Steps without a registry row (legacy in-flight
+// tasks) are allowed through so running processes keep completing; set
+// WORKFLOW_RELAX_STEP_ACTIONS=true to bypass entirely.
+func (h *WorkflowHandler) enforceStepActions(ctx context.Context, processInstanceKey int64, elementID, decision, comment string) error {
+	if stepActionsRelaxed() {
+		return nil
+	}
+	if processInstanceKey <= 0 || strings.TrimSpace(elementID) == "" || h.caseRepo == nil {
+		return nil
+	}
+	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(ctx, processInstanceKey)
+	if err != nil || bc == nil {
+		return nil
+	}
+	version, err := h.caseRepo.CaseRegistryVersion(ctx, bc.ID)
+	if err != nil {
+		return nil
+	}
+	steps, err := h.caseRepo.ListCaseTypeSteps(ctx, bc.CaseType, version)
+	if err != nil || len(steps) == 0 {
+		return nil
+	}
+	normalized := normalizeUserTaskElementID(elementID)
+	for _, step := range steps {
+		if !strings.EqualFold(step.ElementID, normalized) && !strings.EqualFold(step.StepCode, normalized) {
+			continue
+		}
+		return stepActionError(step, decision, comment)
+	}
+	return nil
+}
+
+// stepActionError validates one decision against a registry step. It is pure so
+// the allowed-action policy is unit-testable without a database.
+func stepActionError(step repository.CaseTypeStep, decision, comment string) error {
+	action := strings.ToUpper(strings.TrimSpace(decision))
+	if action == "" && isMakerElement(step.ElementID) {
+		action = "SUBMIT"
+	}
+	if len(step.AllowedActions) > 0 && !containsFold(step.AllowedActions, action) {
+		return fmt.Errorf("action %q is not allowed for step %s (allowed: %s)",
+			action, step.StepCode, strings.Join(step.AllowedActions, ", "))
+	}
+	if containsFold(step.RequiredCommentOn, action) && strings.TrimSpace(comment) == "" {
+		return fmt.Errorf("comment is required for action %s on step %s", action, step.StepCode)
+	}
+	return nil
+}
+
+func stepActionsRelaxed() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("WORKFLOW_RELAX_STEP_ACTIONS")), "true")
+}
+
+func containsFold(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), target) {
+			return true
+		}
+	}
+	return false
 }
 
 func writeListOrError(w http.ResponseWriter, r *http.Request, items any, err error) {
