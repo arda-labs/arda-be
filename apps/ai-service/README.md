@@ -84,6 +84,29 @@ and ends the run in `WAITING_APPROVAL`.
 
 ## Endpoints
 
+### Identity answers
+
+`arda.iam.me()` keeps the gateway identity fields and adds display labels:
+`user.name`, `tenant.name/code`, `organizationDetails` (id/name/code), and
+`displayResolution` (`resolved`, `partial`, or `unavailable`). The original
+`organizations` array remains an array of IDs. Tenant/user labels come from
+`iam.getMyDisplayContext`, whose signed internal IAM endpoint verifies the
+actor's active tenant membership and only exposes that tenant's labels.
+Organization labels use `platform.listOrganizations`, require `platform.read`,
+and match the actor's organization IDs exactly. Both nested reads honor catalog
+governance. Organization lookup stops after three pages of 20; the whole
+enrichment has a 4.5-second budget. Lookup failures preserve identity and report
+unresolved labels; they never manufacture names or broaden tenant scope.
+
+The default prompts prefer names and business codes, summarize roles, and
+avoid dumping permission codes unless requested. `AI_MODEL_SYSTEM_PROMPT`
+still replaces the default prompt when explicitly configured. Both IAM and AI
+service changes must be deployed to enable tenant labels; older IAM deployments
+leave these labels unavailable. No public gateway route or MFE API is added.
+Answer-level acceptance scenarios: [identity answer evaluation](../../docs/ai/identity-answer-evaluation.md).
+
+### HTTP routes
+
 - `POST /api/ai/agent` — AG-UI SSE run.
 - `GET /api/ai/conversations` — owner-scoped thread list (`limit` ≤ 100).
 - `GET /api/ai/conversations/{threadId}/messages` — owner-scoped transcript (`limit` ≤ 500).

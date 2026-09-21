@@ -364,6 +364,32 @@ func GeneratedCatalog() []GeneratedEntry {
 			Enabled:        true,
 		},
 		{
+			SDKPath:   "arda.iam.getMyDisplayContext",
+			Domain:    "iam",
+			Signature: "arda.iam.getMyDisplayContext(args: {}): Promise<MyDisplayContext>;",
+			JSDoc: `/**
+ * Read display names for the current actor and active tenant.
+ *
+ * Self-service labels only. Actor and tenant come from the verified delegated headers; IAM verifies active membership. No other tenant memberships or personal profile fields are returned.
+ * @returns MyDisplayContext { user: { id, name }, tenant: { id, code, name } }
+ * @requires ai.assistant.use
+ * @domain iam
+ */`,
+			Keywords:            []string{"iam", "me", "profile", "tenant", "name", "tên", "thông tin của tôi", "tenant hiện tại"},
+			Kind:                "read",
+			RequiredPermissions: []string{"ai.assistant.use"},
+			Risk:                "low",
+			Timeout:             2000 * time.Millisecond,
+			Service:             "iam-service",
+			Method:              "GET",
+			Path:                "/internal/ai/me/display",
+			Envelope:            "result",
+			Args:                []GeneratedArg{},
+			ScopeQuery:          []GeneratedScopeQuery{},
+			ResponseSchema:      `{"type":"object","properties":{"tenant":{"type":"object","properties":{"code":{"type":"string"},"id":{"type":"string"},"name":{"type":"string"}}},"user":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}}}}}`,
+			Enabled:             true,
+		},
+		{
 			SDKPath:   "arda.iam.listUsers",
 			Domain:    "iam",
 			Signature: "arda.iam.listUsers(args: {search?: string; status?: string; limit?: number; cursor?: number}): Promise<UserListPage>;",

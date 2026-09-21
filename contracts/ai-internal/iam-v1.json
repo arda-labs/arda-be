@@ -138,6 +138,81 @@
           }
         }
       }
+    },
+    "/internal/ai/me/display": {
+      "get": {
+        "operationId": "aiGetMyDisplayContext",
+        "summary": "Read display names for the current actor and active tenant.",
+        "description": "Self-service labels only. Actor and tenant come from the verified delegated headers; IAM verifies active membership. No other tenant memberships or personal profile fields are returned.",
+        "x-ai-tool": {
+          "sdkPath": "arda.iam.getMyDisplayContext",
+          "domain": "iam",
+          "kind": "read",
+          "risk": "low",
+          "timeoutMs": 2000,
+          "keywords": [
+            "iam",
+            "me",
+            "profile",
+            "tenant",
+            "name",
+            "tên",
+            "thông tin của tôi",
+            "tenant hiện tại"
+          ],
+          "requiredPerms": [
+            "ai.assistant.use"
+          ],
+          "service": "iam-service",
+          "envelope": "result",
+          "returns": "MyDisplayContext { user: { id, name }, tenant: { id, code, name } }"
+        },
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Display labels for the delegated actor and active tenant only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "tenant": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

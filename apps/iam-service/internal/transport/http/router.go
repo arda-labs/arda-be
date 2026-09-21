@@ -211,6 +211,7 @@ func NewRouter(userHandler *handler.UserHandler, policyHandler *handler.PolicyHa
 	// the delegated tenant is enforced unless the caller carries a verified
 	// global capability.
 	mux.Handle("/internal/ai/users", internalAIService(method("GET", adminHandler.ListUsers)))
+	mux.Handle("/internal/ai/me/display", internalAIService(method("GET", userHandler.AISelfDisplay)))
 
 	// ── Session API ──
 	mux.HandleFunc("/api/iam/me/sessions", func(w http.ResponseWriter, r *http.Request) {

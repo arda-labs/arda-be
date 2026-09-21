@@ -10,7 +10,8 @@ import (
 )
 
 // RegisterIAMCatalog registers IAM self-service SDK methods (arda.iam.*)
-// answered from the gateway-injected identity context. The admin directory
+// grounded in the gateway-injected identity context with optional display
+// labels from authorized catalog reads. The admin directory
 // read (iam.listUsers) is generated from contracts/ai-internal/iam-v1.json —
 // see RegisterGeneratedCatalog.
 func RegisterIAMCatalog(reg *DispatcherRegistry) {
@@ -21,21 +22,24 @@ func RegisterIAMCatalog(reg *DispatcherRegistry) {
 			Domain:     "iam",
 			Signature:  "arda.iam.me(): Promise<Me>;",
 			JSDoc: `/**
- * Return the current actor's identity: user, tenant, organizations, roles,
+ * Return the current actor's identity with tenant name/code and organizationDetails when authorized.
+ * Includes user, tenant, organizations (original IDs), roles,
  * permissions, and global admin flag. Reads from the gateway-injected
- * identity context; no IAM service call is made.
- * @returns Me { user, tenant, organizations, roles, permissions, globalRoles, isGlobalAdmin }
+ * identity context. Display labels use bounded, permission-checked reads.
+ * Prefer tenant.name/code and organizationDetails for user-facing answers.
+ * displayResolution reports unavailable or partial labels; never invent missing names.
+ * @returns Me { user, tenant, organizations, organizationDetails, displayResolution, roles, permissions, globalRoles, isGlobalAdmin }
  * @domain iam
  */`,
 			Keywords:            []string{"iam", "me", "whoami", "identity", "profile", "user", "roles", "permissions", "tenant", "account", "quyền", "quyền hạn", "tôi là ai", "thông tin tài khoản", "vai trò", "danh tính"},
 			Kind:                "read",
 			RequiredPermissions: []string{"ai.assistant.use"},
 			Risk:                "low",
-			Timeout:             500 * time.Millisecond,
+			Timeout:             5 * time.Second,
 			Enabled:             true,
 		},
 		func(ctx context.Context, scope tools.Context, args map[string]any) (any, error) {
-			return map[string]any{
+			me := map[string]any{
 				"user": map[string]any{
 					"id":       scope.ActorUserID,
 					"username": scope.Username,
@@ -47,7 +51,9 @@ func RegisterIAMCatalog(reg *DispatcherRegistry) {
 				"permissions":   sortedKeys(scope.Permissions),
 				"globalRoles":   scope.GlobalRoles,
 				"isGlobalAdmin": scope.GlobalAdmin,
-			}, nil
+			}
+			enrichIdentityDisplay(ctx, reg, scope, me)
+			return me, nil
 		},
 	)
 
