@@ -8,14 +8,6 @@ import (
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
 )
 
-// CaseUsesNativeInbox reports whether inbox rows for this case come from the v2 user task projector.
-func CaseUsesNativeInbox(bc *repository.BusinessCase) bool {
-	if bc == nil || bc.BpmnProcessID == nil {
-		return false
-	}
-	return strings.Contains(*bc.BpmnProcessID, "-v2")
-}
-
 // usesNativeUserTaskRuntime reports whether a task completes through the
 // native Zeebe user-task REST path. Registry v2 is the source of truth: a case
 // type with ACTIVE registry steps at the case's pinned version runs native
