@@ -329,7 +329,8 @@ func (s *SQLRunStore) DeleteProfileModel(ctx context.Context, tenantID, profileI
 
 // ApplyProfileModel atomically makes profileID + modelID the applied config:
 // the profile becomes the tenant's only active profile and modelID the
-// profile's only active model.
+// tenant's only active model (leftover applied-model flags on the tenant's
+// other profiles are cleared, so "applied model" never leaks across profiles).
 func (s *SQLRunStore) ApplyProfileModel(ctx context.Context, tenantID, profileID, modelID string) (*AIModelProfile, error) {
 	if s == nil || s.db == nil {
 		return nil, errors.New("database not available")
@@ -370,8 +371,11 @@ func (s *SQLRunStore) ApplyProfileModel(ctx context.Context, tenantID, profileID
 		return nil, fmt.Errorf("set active profile: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE public.ai_profile_models SET is_active = false WHERE profile_id = $1 AND is_active = true
-	`, profileID); err != nil {
+		UPDATE public.ai_profile_models m
+		SET is_active = false
+		FROM public.ai_model_profiles p
+		WHERE m.profile_id = p.id AND p.tenant_id = $1 AND m.is_active = true
+	`, tenantID); err != nil {
 		return nil, fmt.Errorf("clear active model: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
