@@ -59,14 +59,48 @@ func (c *ZeebeUserTaskIndex) Enabled() bool {
 }
 
 func (c *ZeebeUserTaskIndex) SearchUserTasks(ctx context.Context, processInstanceKey int64, state string) ([]ZeebeUserTask, error) {
+	if state == "" {
+		state = "CREATED"
+	}
+	raw, err := c.searchUserTaskRecords(ctx, processInstanceKey)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := activeUserTasksFromES(raw, state)
+	if err != nil {
+		return nil, err
+	}
+	if len(tasks) == 0 {
+		return nil, fmt.Errorf("no user tasks in elasticsearch for process instance %d", processInstanceKey)
+	}
+	return tasks, nil
+}
+
+// UserTaskStates returns the folded state of every user task record for a
+// process instance (CREATED / COMPLETED / CANCELED / …). The reconciler uses it
+// to close DB rows whose engine task has already reached a terminal state.
+func (c *ZeebeUserTaskIndex) UserTaskStates(ctx context.Context, processInstanceKey int64) (map[int64]string, error) {
+	raw, err := c.searchUserTaskRecords(ctx, processInstanceKey)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := userTasksFromES(raw)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]string, len(tasks))
+	for _, task := range tasks {
+		out[task.UserTaskKey] = task.State
+	}
+	return out, nil
+}
+
+func (c *ZeebeUserTaskIndex) searchUserTaskRecords(ctx context.Context, processInstanceKey int64) ([]byte, error) {
 	if !c.Enabled() {
 		return nil, fmt.Errorf("zeebe elasticsearch index is not configured")
 	}
 	if processInstanceKey <= 0 {
 		return nil, fmt.Errorf("processInstanceKey is required")
-	}
-	if state == "" {
-		state = "CREATED"
 	}
 
 	body, err := json.Marshal(map[string]any{
@@ -101,15 +135,7 @@ func (c *ZeebeUserTaskIndex) SearchUserTasks(ctx context.Context, processInstanc
 	if resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("elasticsearch user task search HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
-
-	tasks, err := activeUserTasksFromES(raw, state)
-	if err != nil {
-		return nil, err
-	}
-	if len(tasks) == 0 {
-		return nil, fmt.Errorf("no user tasks in elasticsearch for process instance %d", processInstanceKey)
-	}
-	return tasks, nil
+	return raw, nil
 }
 
 type esSearchResponse struct {

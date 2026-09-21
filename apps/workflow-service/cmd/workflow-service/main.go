@@ -196,6 +196,11 @@ func main() {
 	if sweeper := worker.NewClaimSweeper(caseRepo, zeebeRest); sweeper != nil {
 		go sweeper.Run(syncCtx)
 	}
+	// Reconcile engine user task state against the DB: close rows the engine
+	// already finished but the completion write missed.
+	if reconciler := worker.NewWorkflowReconciler(caseRepo, zeebeRest); reconciler != nil {
+		go reconciler.Run(syncCtx)
+	}
 	// Decisions on return/submit branches have no BPMN service task; the
 	// dispatcher applies them to the domain idempotently and only then marks
 	// them APPLIED. Approve/reject are confirmed by the terminal workers.

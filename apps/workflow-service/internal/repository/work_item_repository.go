@@ -777,6 +777,88 @@ func (r *CaseRepository) ReleaseExpiredClaims(ctx context.Context) ([]int64, err
 	return out, rows.Err()
 }
 
+// ReconcileCandidate is one open, engine-bound task of an active case that the
+// workflow reconciler re-checks against Zeebe's folded user task state.
+type ReconcileCandidate struct {
+	ID                 string
+	CaseID             string
+	ProcessInstanceKey int64
+	JobKey             int64
+	Status             string
+}
+
+// ListReconcileCandidates returns open READY/CLAIMED tasks of non-terminal
+// cases that have not changed for at least graceSeconds, so the Elasticsearch
+// exporter has caught up before the reconciler judges them.
+func (r *CaseRepository) ListReconcileCandidates(ctx context.Context, graceSeconds, limit int) ([]ReconcileCandidate, error) {
+	if graceSeconds < 0 {
+		graceSeconds = 0
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT wt.id, wt.case_id, bc.process_instance_key, wt.job_key, wt.status
+		FROM workflow_tasks wt
+		JOIN business_cases bc ON bc.id = wt.case_id
+		WHERE wt.status IN ($3, $4)
+		  AND wt.job_key IS NOT NULL
+		  AND bc.process_instance_key IS NOT NULL
+		  AND bc.status NOT IN ('DRAFT', 'COMPLETED', 'CANCELLED', 'REJECTED')
+		  AND wt.updated_at < CURRENT_TIMESTAMP - ($1 * INTERVAL '1 second')
+		ORDER BY wt.updated_at
+		LIMIT $2
+	`, graceSeconds, limit, TaskStatusReady, TaskStatusClaimed)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]ReconcileCandidate, 0)
+	for rows.Next() {
+		var c ReconcileCandidate
+		var pik, jobKey sql.NullInt64
+		if err := rows.Scan(&c.ID, &c.CaseID, &pik, &jobKey, &c.Status); err != nil {
+			return nil, err
+		}
+		if !pik.Valid || !jobKey.Valid {
+			continue
+		}
+		c.ProcessInstanceKey = pik.Int64
+		c.JobKey = jobKey.Int64
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// ReconcileWorkItem closes a stale open task once its engine task reached a
+// terminal state. It records COMPLETED when an APPLIED decision exists for the
+// activation, otherwise CANCELLED, and returns the resulting status.
+func (r *CaseRepository) ReconcileWorkItem(ctx context.Context, id string) (string, error) {
+	var status string
+	err := r.db.QueryRowContext(ctx, `
+		UPDATE workflow_tasks wt
+		SET status = CASE WHEN EXISTS (
+				SELECT 1 FROM workflow_task_decisions d
+				WHERE d.task_id = wt.id AND d.status = 'APPLIED'
+			) THEN 'COMPLETED' ELSE 'CANCELLED' END,
+		    engine_state = 'RECONCILED',
+		    engine_checked_at = CURRENT_TIMESTAMP,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE wt.id = $1
+		RETURNING wt.status
+	`, id).Scan(&status)
+	return status, err
+}
+
+// TouchWorkItemChecked records that the engine task was still active for a row
+// the reconciler inspected but did not close.
+func (r *CaseRepository) TouchWorkItemChecked(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE workflow_tasks SET engine_checked_at = CURRENT_TIMESTAMP WHERE id = $1
+	`, id)
+	return err
+}
+
 func (r *CaseRepository) UserCanClaimRole(ctx context.Context, tenantID, userID string, groupIDs []string, roleCode string) (bool, error) {
 	if strings.TrimSpace(tenantID) == "" || userID == "" || roleCode == "" {
 		return false, nil

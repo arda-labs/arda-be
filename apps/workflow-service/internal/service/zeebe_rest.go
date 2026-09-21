@@ -108,6 +108,21 @@ func (c *ZeebeRestClient) SearchUserTasks(ctx context.Context, processInstanceKe
 	)
 }
 
+// UserTaskStates returns the folded engine state of every user task of a
+// process instance, keyed by user task key. It is the reconciler's read path.
+func (c *ZeebeRestClient) UserTaskStates(ctx context.Context, processInstanceKey int64) (map[int64]string, error) {
+	if !c.Enabled() {
+		return nil, fmt.Errorf("zeebe REST client is not configured")
+	}
+	if processInstanceKey <= 0 {
+		return nil, fmt.Errorf("processInstanceKey is required")
+	}
+	if c.esIndex != nil && c.esIndex.Enabled() {
+		return c.esIndex.UserTaskStates(ctx, processInstanceKey)
+	}
+	return nil, fmt.Errorf("zeebe user task states require ZEEBE_ES_URL (Elasticsearch exporter)")
+}
+
 func (c *ZeebeRestClient) AssignUserTask(ctx context.Context, userTaskKey int64, assignee string) error {
 	if !c.Enabled() {
 		return fmt.Errorf("zeebe REST client is not configured")
