@@ -47,6 +47,7 @@ func (w *CRMRegisterWorkers) ValidateHandler(client worker.JobClient, job entiti
 			w.failJob(client, job, "CRM Error: "+err.Error())
 			return
 		}
+		w.recordValidationFailure(job, "Trùng định danh khách hàng")
 		w.throwValidationError(client, job, "Trùng định danh khách hàng")
 		return
 	}
@@ -186,6 +187,23 @@ func logRegisterJob(handler string, job entities.Job) {
 		"caseId", caseID,
 		"customerId", customerID,
 	)
+}
+
+// recordValidationFailure writes the business reason to the case timeline so
+// the maker sees why the case looped back to "Chỉnh sửa hồ sơ" instead of only
+// finding it in service logs.
+func (w *CRMRegisterWorkers) recordValidationFailure(job entities.Job, reason string) {
+	if w.projection == nil || w.projection.caseRepo == nil {
+		return
+	}
+	variables, _ := job.GetVariablesAsMap()
+	caseID, _ := variables["caseId"].(string)
+	if caseID == "" {
+		return
+	}
+	if err := w.projection.caseRepo.AddTimelineEventInternal(context.Background(), caseID, "VALIDATION_FAILED", reason); err != nil {
+		slog.Error("failed to record validation failure timeline", "caseId", caseID, "err", err)
+	}
 }
 
 func (w *CRMRegisterWorkers) recordJobFailure(job entities.Job, reason string, retriesLeft int) {

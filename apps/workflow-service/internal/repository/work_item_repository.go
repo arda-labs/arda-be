@@ -486,6 +486,10 @@ func (r *CaseRepository) ListWorkItems(ctx context.Context, f WorkItemFilter) ([
 func (r *CaseRepository) listIncomingWorkItems(ctx context.Context, f WorkItemFilter) ([]WorkItem, error) {
 	where := []string{
 		"bc.status NOT IN ('DRAFT', 'COMPLETED', 'CANCELLED', 'REJECTED')",
+		// Only the case's live step is actionable inbox work. Rows left open by an
+		// earlier activation (or an eager next-step placeholder) must not linger in
+		// "Giao dịch đến" after the case has moved on.
+		"(bc.current_step = '' OR wt.step_code = bc.current_step)",
 	}
 	where = append(where, incomingWorkItemWhere()...)
 	return r.queryWorkItems(ctx, f, where, "INCOMING", false)
