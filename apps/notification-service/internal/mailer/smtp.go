@@ -4,7 +4,9 @@ package mailer
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"mime"
@@ -38,11 +40,13 @@ type Config struct {
 	UseTLS      bool
 }
 
-// Message is one outbound email.
+// Message is one outbound email. HTML is optional: when set the message is sent
+// as multipart/alternative with Body as the text/plain part.
 type Message struct {
 	To      string
 	Subject string
 	Body    string
+	HTML    string
 }
 
 // Mailer sends one message with the given config.
@@ -115,8 +119,35 @@ func composeMessage(cfg Config, msg Message) (data []byte, fromAddress, toAddres
 	header.WriteString("From: " + fromHeader.String() + "\r\n")
 	header.WriteString("To: " + toMailbox.String() + "\r\n")
 	header.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", subject) + "\r\n")
-	header.WriteString("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n")
-	return []byte(header.String() + msg.Body), fromMailbox.Address, toMailbox.Address, nil
+	header.WriteString("MIME-Version: 1.0\r\n")
+
+	if strings.TrimSpace(msg.HTML) == "" {
+		header.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+		return []byte(header.String() + msg.Body), fromMailbox.Address, toMailbox.Address, nil
+	}
+
+	boundary, err := newBoundary()
+	if err != nil {
+		return nil, "", "", err
+	}
+	var body strings.Builder
+	body.WriteString(header.String())
+	body.WriteString("Content-Type: multipart/alternative; boundary=\"" + boundary + "\"\r\n\r\n")
+	body.WriteString("--" + boundary + "\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n")
+	body.WriteString(msg.Body)
+	body.WriteString("\r\n--" + boundary + "\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n")
+	body.WriteString(msg.HTML)
+	body.WriteString("\r\n--" + boundary + "--\r\n")
+	return []byte(body.String()), fromMailbox.Address, toMailbox.Address, nil
+}
+
+// newBoundary returns a random MIME boundary for multipart messages.
+func newBoundary() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return "arda-" + hex.EncodeToString(buf), nil
 }
 
 // parseMailbox accepts one RFC 5322 address and returns its parsed form. CR/LF

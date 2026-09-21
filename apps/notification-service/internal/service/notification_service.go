@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
@@ -192,6 +193,17 @@ func resolvesEmail(channels []string) bool {
 		}
 	}
 	return false
+}
+
+var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
+
+// plainTextFromHTML derives a rough text/plain alternative from an HTML body so
+// multipart mail always has both parts. Not a full HTML parser.
+func plainTextFromHTML(htmlBody string) string {
+	text := htmlTagRe.ReplaceAllString(htmlBody, " ")
+	replacer := strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`)
+	text = replacer.Replace(text)
+	return strings.Join(strings.Fields(text), " ")
 }
 
 // emailRecipientIDs returns the deduplicated user IDs that still need an email
@@ -490,8 +502,12 @@ func (s *NotificationService) UpsertTemplate(ctx context.Context, tenantID, acto
 	if tenantID == "" {
 		return nil, ErrTenantScopeRequired
 	}
-	if in.EventCode == "" || in.Body == "" || in.Channel == "" {
-		return nil, errors.New("event_code, channel and body are required")
+	if in.EventCode == "" || in.Channel == "" || (in.Body == "" && in.BodyHTML == "") {
+		return nil, errors.New("event_code, channel and body (or body_html) are required")
+	}
+	// Keep a plain-text alternative when only HTML was provided (multipart mail).
+	if in.Body == "" && in.BodyHTML != "" {
+		in.Body = plainTextFromHTML(in.BodyHTML)
 	}
 	in.TenantID = tenantID
 	if in.Locale == "" {

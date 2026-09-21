@@ -169,7 +169,7 @@ func (w *DeliveryWorker) sendEmail(ctx context.Context, delivery domain.Delivery
 	if to == "" {
 		return errors.New("delivery destination has no email address")
 	}
-	subject, body, err := w.render(ctx, mailCtx)
+	subject, text, htmlBody, err := w.render(ctx, mailCtx)
 	if err != nil {
 		return err
 	}
@@ -181,27 +181,30 @@ func (w *DeliveryWorker) sendEmail(ctx context.Context, delivery domain.Delivery
 		FromAddress: sender.FromAddress,
 		FromName:    sender.FromName,
 		UseTLS:      sender.UseTLS,
-	}, mailer.Message{To: to, Subject: subject, Body: body})
+	}, mailer.Message{To: to, Subject: subject, Body: text, HTML: htmlBody})
 }
 
-func (w *DeliveryWorker) render(ctx context.Context, mailCtx *repository.DeliveryMailContext) (string, string, error) {
+func (w *DeliveryWorker) render(ctx context.Context, mailCtx *repository.DeliveryMailContext) (subject, text, htmlBody string, err error) {
 	payload := map[string]any{}
 	if len(mailCtx.Payload) > 0 {
 		_ = json.Unmarshal(mailCtx.Payload, &payload)
 	}
 	template, err := w.repo.FindTemplate(ctx, mailCtx.TenantID, mailCtx.EventType, domain.ChannelEmail, "vi-VN")
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if template != nil {
-		return renderPlaceholders(template.Subject, payload), renderPlaceholders(template.Body, payload), nil
+		return renderPlaceholders(template.Subject, payload),
+			renderPlaceholders(template.Body, payload),
+			renderPlaceholders(template.BodyHTML, payload),
+			nil
 	}
-	subject := mailCtx.EventType
-	if subject == "" {
-		subject = "Arda notification"
+	fallbackSubject := mailCtx.EventType
+	if fallbackSubject == "" {
+		fallbackSubject = "Arda notification"
 	}
 	body, _ := json.Marshal(payload)
-	return subject, string(body), nil
+	return fallbackSubject, string(body), "", nil
 }
 
 // renderPlaceholders substitutes {{key}} with payload values. Values are used
