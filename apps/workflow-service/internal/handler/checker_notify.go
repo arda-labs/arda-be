@@ -114,15 +114,24 @@ func (h *WorkflowHandler) notifyCheckerDecision(ctx context.Context, bc *reposit
 		slog.Warn("skip checker decision notification: missing tenant", "caseId", bc.ID, "decision", decision)
 		return
 	}
+	// EPAS CRM.200.01 / CRM.201.01 only email on the reject branch; approve and
+	// request-changes stay in-app. The email template is looked up by event_type,
+	// so email deliveries carry the EPAS mail event code.
+	channels := []string{"in_app"}
+	eventType := "workflow.checker.decision"
+	if decision == "REJECT" {
+		channels = append(channels, "email")
+		eventType = checkerMailEventCode(bc.CaseType)
+	}
 	idempotencyKey := fmt.Sprintf("workflow:%s:%d:%s", bc.ID, jobKey, decision)
 	err := h.notificationClient.Accept(ctx, notificationclient.AcceptRequest{
 		TenantID:       tenantID,
 		IdempotencyKey: idempotencyKey,
 		SourceService:  "workflow-service",
 		SourceEventID:  strconv.FormatInt(jobKey, 10),
-		EventType:      "workflow.checker.decision",
+		EventType:      eventType,
 		TemplateKey:    templateKey,
-		Channels:       []string{"in_app"},
+		Channels:       channels,
 		Recipients: []notificationclient.Recipient{{
 			Type:   "user",
 			UserID: makerID,
@@ -171,5 +180,18 @@ func checkerNotificationKeys(decision string) (templateKey, kind, titleKey, body
 			"crm.customer.approved.body"
 	default:
 		return "", "", "", ""
+	}
+}
+
+// checkerMailEventCode maps a case type to the EPAS reject-mail event code
+// seeded in noti_templates; unknown case types use a generic code.
+func checkerMailEventCode(caseType string) string {
+	switch caseType {
+	case "CUSTOMER_REGISTRATION":
+		return "CRM.200.01.001"
+	case "CUSTOMER_ADJUSTMENT":
+		return "CRM.201.01.001"
+	default:
+		return "workflow.checker.rejected"
 	}
 }

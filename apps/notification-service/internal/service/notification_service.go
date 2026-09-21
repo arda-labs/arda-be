@@ -16,9 +16,16 @@ import (
 	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
 )
 
+// EmailResolver maps user IDs to email addresses for non-in-app channels. It
+// is optional: without it, email deliveries need an explicit recipient address.
+type EmailResolver interface {
+	ResolveEmails(ctx context.Context, userIDs []string) (map[string]string, error)
+}
+
 type NotificationService struct {
-	repo       *repository.NotificationRepository
-	pushSender *push.Sender
+	repo          *repository.NotificationRepository
+	pushSender    *push.Sender
+	emailResolver EmailResolver
 }
 
 var (
@@ -28,8 +35,12 @@ var (
 	ErrPushEndpointOwned       = errors.New("push endpoint is already registered to another account")
 )
 
-func NewNotificationService(repo *repository.NotificationRepository, pushSender *push.Sender) *NotificationService {
-	return &NotificationService{repo: repo, pushSender: pushSender}
+func NewNotificationService(repo *repository.NotificationRepository, pushSender *push.Sender, resolvers ...EmailResolver) *NotificationService {
+	svc := &NotificationService{repo: repo, pushSender: pushSender}
+	if len(resolvers) > 0 {
+		svc.emailResolver = resolvers[0]
+	}
+	return svc
 }
 
 type AcceptInput struct {
@@ -107,6 +118,20 @@ func (s *NotificationService) Accept(ctx context.Context, in AcceptInput) (*doma
 	if err != nil {
 		return nil, err
 	}
+	// Resolve user → email once for every email recipient without an explicit
+	// address, so the delivery row carries a usable destination.
+	resolvedEmails := map[string]string{}
+	if resolvesEmail(in.Channels) {
+		ids := emailRecipientIDs(in.Channels, in.Recipients)
+		if len(ids) > 0 && s.emailResolver != nil {
+			if m, err := s.emailResolver.ResolveEmails(ctx, ids); err != nil {
+				slog.Warn("email recipient resolution failed", "err", err)
+			} else {
+				resolvedEmails = m
+			}
+		}
+	}
+
 	for _, ch := range in.Channels {
 		ch = strings.TrimSpace(ch)
 		for _, r := range in.Recipients {
@@ -126,7 +151,17 @@ func (s *NotificationService) Accept(ctx context.Context, in AcceptInput) (*doma
 				})
 				continue
 			}
-			destination, err := json.Marshal(r)
+			dest := r
+			if strings.EqualFold(ch, domain.ChannelEmail) {
+				if strings.TrimSpace(dest.Address) == "" && strings.TrimSpace(dest.UserID) != "" {
+					dest.Address = resolvedEmails[strings.TrimSpace(dest.UserID)]
+				}
+				if strings.TrimSpace(dest.Address) == "" {
+					slog.Warn("skip email delivery: recipient has no address", "userId", dest.UserID)
+					continue
+				}
+			}
+			destination, err := json.Marshal(dest)
 			if err != nil {
 				return nil, err
 			}
@@ -148,6 +183,40 @@ func (s *NotificationService) Accept(ctx context.Context, in AcceptInput) (*doma
 	go s.dispatchWebPush(context.WithoutCancel(ctx), in, inboxItems)
 
 	return created, nil
+}
+
+func resolvesEmail(channels []string) bool {
+	for _, ch := range channels {
+		if strings.EqualFold(strings.TrimSpace(ch), domain.ChannelEmail) {
+			return true
+		}
+	}
+	return false
+}
+
+// emailRecipientIDs returns the deduplicated user IDs that still need an email
+// address (email channel requested, no explicit address on the recipient).
+func emailRecipientIDs(channels []string, recipients []domain.Recipient) []string {
+	if !resolvesEmail(channels) {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(recipients))
+	for _, r := range recipients {
+		if strings.TrimSpace(r.Address) != "" {
+			continue
+		}
+		id := strings.TrimSpace(r.UserID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 func (s *NotificationService) dispatchWebPush(ctx context.Context, in AcceptInput, inboxItems []domain.InboxItem) {

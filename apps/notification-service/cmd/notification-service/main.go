@@ -29,6 +29,7 @@ import (
 	notificationgrpc "github.com/arda-labs/arda/apps/notification-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/notification-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/notification-service/internal/worker"
+	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -75,7 +76,22 @@ func main() {
 	} else {
 		logger.Warn("web push disabled — set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY")
 	}
-	notificationService := service.NewNotificationService(notificationRepo, pushSender)
+	// Resolve recipient emails for the email channel through iam. Optional: when
+	// unset, email deliveries require an explicit recipient address.
+	var emailResolver service.EmailResolver
+	if addr := strings.TrimSpace(cfg.IAMGRPCAddr); addr != "" {
+		iamClient, dialErr := iamclient.Dial(context.Background(), addr, "notification-service")
+		if dialErr != nil {
+			logger.Error("iam grpc dial failed", "addr", addr, "err", dialErr)
+			os.Exit(1)
+		}
+		defer iamClient.Close()
+		emailResolver = &iamEmailResolver{client: iamClient}
+		logger.Info("iam email resolver configured", "addr", addr)
+	} else {
+		logger.Warn("IAM_GRPC_ADDR not set — email deliveries need an explicit recipient address")
+	}
+	notificationService := service.NewNotificationService(notificationRepo, pushSender, emailResolver)
 	serviceSecret, err := identity.SecretFromEnv()
 	if err != nil {
 		logger.Error("service identity unavailable", "err", err)
@@ -212,4 +228,23 @@ func parseLogLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// iamEmailResolver resolves recipient user IDs to email addresses via iam.
+type iamEmailResolver struct {
+	client *iamclient.Client
+}
+
+func (r *iamEmailResolver) ResolveEmails(ctx context.Context, userIDs []string) (map[string]string, error) {
+	users, err := r.client.GetUserBatch(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(users))
+	for id, user := range users {
+		if strings.TrimSpace(user.Email) != "" {
+			out[id] = user.Email
+		}
+	}
+	return out, nil
 }

@@ -14,6 +14,7 @@ type Config struct {
 	LogLevel        string `yaml:"log_level"`
 	DatabaseDSN     string `yaml:"database_dsn"`
 	NATSURL         string `yaml:"nats_url"`
+	IAMGRPCAddr     string `yaml:"iam_grpc_addr"`
 	VAPIDPublicKey  string `yaml:"vapid_public_key"`
 	VAPIDPrivateKey string `yaml:"vapid_private_key"`
 	VAPIDSubject    string `yaml:"vapid_subject"`
@@ -47,6 +48,7 @@ func Load() Config {
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("NATS_URL", &cfg.NATSURL)
 	envStr("NOTIFICATION_NATS_URL", &cfg.NATSURL)
+	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
 	envStr("VAPID_PUBLIC_KEY", &cfg.VAPIDPublicKey)
 	envStr("VAPID_PRIVATE_KEY", &cfg.VAPIDPrivateKey)
 	envStr("VAPID_SUBJECT", &cfg.VAPIDSubject)
@@ -75,6 +77,7 @@ func (c *Config) loadYAML(path string) bool {
 	set("log_level", &c.LogLevel)
 	set("database_dsn", &c.DatabaseDSN)
 	set("nats_url", &c.NATSURL)
+	set("iam_grpc_addr", &c.IAMGRPCAddr)
 	set("vapid_public_key", &c.VAPIDPublicKey)
 	set("vapid_private_key", &c.VAPIDPrivateKey)
 	set("vapid_subject", &c.VAPIDSubject)
