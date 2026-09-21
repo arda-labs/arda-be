@@ -230,6 +230,9 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 			methodNotAllowed(w, r)
 		}
 	})
+	mux.HandleFunc("/api/loan/vfu/parties/{id}", method("PUT", h.UpdateVfuParty))
+	mux.HandleFunc("/api/loan/vfu/mandates/{id}", method("PUT", h.UpdateVfuMandate))
+	mux.HandleFunc("/api/loan/vfu/plans/{id}", method("PUT", h.UpdateVfuPlan))
 
 	// Adjustment flows — uniform per kind
 	for _, kind := range kinds {

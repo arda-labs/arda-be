@@ -394,6 +394,45 @@ func (s *LoanService) CreateVfuPlan(ctx context.Context, tenantID, createdBy str
 	return s.repo.CreateVfuPlan(ctx, in)
 }
 
+// UpdateVfuParty edits a trust party (code immutable).
+func (s *LoanService) UpdateVfuParty(ctx context.Context, tenantID string, in *domain.VfuParty) (*domain.VfuParty, error) {
+	if strings.TrimSpace(in.ID) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "id is required")
+	}
+	if strings.TrimSpace(in.PartyName) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "party_name is required")
+	}
+	in.TenantID = tenantID
+	out, err := s.repo.UpdateVfuParty(ctx, in)
+	return out, mapRepoError(err)
+}
+
+// UpdateVfuMandate edits a trust mandate (code immutable).
+func (s *LoanService) UpdateVfuMandate(ctx context.Context, tenantID string, in *domain.VfuMandate) (*domain.VfuMandate, error) {
+	if strings.TrimSpace(in.ID) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "id is required")
+	}
+	if strings.TrimSpace(in.PartyCode) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "party_code is required")
+	}
+	in.TenantID = tenantID
+	out, err := s.repo.UpdateVfuMandate(ctx, in)
+	return out, mapRepoError(err)
+}
+
+// UpdateVfuPlan edits a funding plan (code immutable).
+func (s *LoanService) UpdateVfuPlan(ctx context.Context, tenantID string, in *domain.VfuPlan) (*domain.VfuPlan, error) {
+	if strings.TrimSpace(in.ID) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "id is required")
+	}
+	if strings.TrimSpace(in.MandateCode) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "mandate_code is required")
+	}
+	in.TenantID = tenantID
+	out, err := s.repo.UpdateVfuPlan(ctx, in)
+	return out, mapRepoError(err)
+}
+
 // Dossier builds the composite view for one contract.
 func (s *LoanService) Dossier(ctx context.Context, tenantID, contractID string) (*repository.Dossier, error) {
 	contract, err := s.repo.GetContract(ctx, tenantID, contractID)

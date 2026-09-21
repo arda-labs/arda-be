@@ -447,6 +447,20 @@ func (h *LoanHandler) CreateVfuParty(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, r, item, err)
 }
 
+func (h *LoanHandler) UpdateVfuParty(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.VfuParty
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	req.ID = r.PathValue("id")
+	item, err := h.svc.UpdateVfuParty(r.Context(), tenantID, &req)
+	writeResult(w, r, item, err)
+}
+
 func (h *LoanHandler) ListVfuMandates(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
@@ -478,6 +492,20 @@ func (h *LoanHandler) CreateVfuMandate(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, r, item, err)
 }
 
+func (h *LoanHandler) UpdateVfuMandate(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.VfuMandate
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	req.ID = r.PathValue("id")
+	item, err := h.svc.UpdateVfuMandate(r.Context(), tenantID, &req)
+	writeResult(w, r, item, err)
+}
+
 func (h *LoanHandler) ListVfuPlans(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
@@ -506,6 +534,20 @@ func (h *LoanHandler) CreateVfuPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := h.svc.CreateVfuPlan(r.Context(), tenantID, actorOf(r), &req)
+	writeResult(w, r, item, err)
+}
+
+func (h *LoanHandler) UpdateVfuPlan(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req domain.VfuPlan
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	req.ID = r.PathValue("id")
+	item, err := h.svc.UpdateVfuPlan(r.Context(), tenantID, &req)
 	writeResult(w, r, item, err)
 }
 
