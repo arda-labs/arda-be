@@ -46,6 +46,10 @@ func (f *fakeCapitalService) UpsertProduct(context.Context, string, string, *rep
 	return &repository.CapitalProduct{}, nil
 }
 
+func (f *fakeCapitalService) DeactivateProduct(context.Context, string, string) error {
+	return nil
+}
+
 func (f *fakeCapitalService) ListContracts(context.Context, repository.ListContractsParams) ([]repository.CapitalContract, int, error) {
 	return nil, 0, nil
 }

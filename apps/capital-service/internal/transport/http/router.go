@@ -42,6 +42,7 @@ func NewRouter(h *handler.CapitalHandler, internalAIHandler *handler.InternalAIH
 			writeMethodNotAllowed(w, r)
 		}
 	})
+	mux.HandleFunc("DELETE /api/capital/products/{id}", h.DeactivateProduct)
 	mux.HandleFunc("/api/capital/contracts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

@@ -111,6 +111,14 @@ func (s *CapitalService) DeactivateFundType(ctx context.Context, tenantID, id st
 	return nil
 }
 
+// DeactivateProduct soft-deletes one fund product.
+func (s *CapitalService) DeactivateProduct(ctx context.Context, tenantID, id string) error {
+	if err := s.repo.SetProductActive(ctx, tenantID, id, false); err != nil {
+		return ardaerrors.New(ardaerrors.CodeNotFound, err.Error())
+	}
+	return nil
+}
+
 // ListProducts returns fund products.
 func (s *CapitalService) ListProducts(ctx context.Context, tenantID string, includeInactive bool) ([]repository.CapitalProduct, error) {
 	return s.repo.ListProducts(ctx, tenantID, includeInactive)

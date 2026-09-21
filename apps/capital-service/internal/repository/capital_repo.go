@@ -289,6 +289,24 @@ func (r *CapitalRepository) UpsertProduct(ctx context.Context, p *CapitalProduct
 	return p, nil
 }
 
+// SetProductActive toggles the fund product soft-delete flag.
+func (r *CapitalRepository) SetProductActive(ctx context.Context, tenantID, id string, active bool) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE cfc_products SET is_active = $3, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, active)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("product not found")
+	}
+	return nil
+}
+
 // ── Contracts ──
 
 // ListContractsParams carries the parsed list query for fund contracts.

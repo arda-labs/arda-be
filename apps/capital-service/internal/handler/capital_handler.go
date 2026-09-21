@@ -67,6 +67,7 @@ type CapitalService interface {
 	DeactivateFundType(ctx context.Context, tenantID, id string) error
 	ListProducts(ctx context.Context, tenantID string, includeInactive bool) ([]repository.CapitalProduct, error)
 	UpsertProduct(ctx context.Context, tenantID, actor string, in *repository.CapitalProduct) (*repository.CapitalProduct, error)
+	DeactivateProduct(ctx context.Context, tenantID, id string) error
 	ListContracts(ctx context.Context, params repository.ListContractsParams) ([]repository.CapitalContract, int, error)
 	GetContractDetail(ctx context.Context, tenantID, id string) (*service.ContractDetail, error)
 	CreateContract(ctx context.Context, tenantID, actor string, in *repository.CapitalContract) (*repository.CapitalContract, error)
@@ -194,6 +195,20 @@ func (h *CapitalHandler) UpsertProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
+}
+
+// DeactivateProduct handles DELETE /api/capital/products/{id}.
+func (h *CapitalHandler) DeactivateProduct(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Tenant-Id")
+	if tenantID == "" {
+		writeForbidden(w, r)
+		return
+	}
+	if err := h.svc.DeactivateProduct(r.Context(), tenantID, r.PathValue("id")); err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // ── Contracts ──
