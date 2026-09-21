@@ -27,8 +27,9 @@ type AcceptRequest struct {
 }
 
 type Recipient struct {
-	Type   string `json:"type"`
-	UserID string `json:"user_id,omitempty"`
+	Type    string `json:"type"`
+	UserID  string `json:"user_id,omitempty"`
+	Address string `json:"address,omitempty"`
 }
 
 func New(addr string) (*Client, error) {
@@ -51,7 +52,7 @@ func (c *Client) Enabled() bool { return c != nil && c.grpc != nil }
 func (c *Client) Accept(ctx context.Context, in AcceptRequest) error {
 	recipients := make([]grpcnotification.Recipient, 0, len(in.Recipients))
 	for _, recipient := range in.Recipients {
-		recipients = append(recipients, grpcnotification.Recipient{Type: recipient.Type, UserID: recipient.UserID})
+		recipients = append(recipients, grpcnotification.Recipient{Type: recipient.Type, UserID: recipient.UserID, Address: recipient.Address})
 	}
 	_, _, err := c.grpc.Accept(ctx, grpcnotification.AcceptRequest{
 		TenantID: in.TenantID, IdempotencyKey: in.IdempotencyKey, SourceService: in.SourceService,
