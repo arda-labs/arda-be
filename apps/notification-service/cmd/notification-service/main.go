@@ -98,6 +98,7 @@ func main() {
 		os.Exit(1)
 	}
 	notificationHandler := handler.NewNotificationHandler(notificationService, serviceSecret)
+	notificationHandler.SetMailTester(service.NewMailTester(notificationRepo, mailer.NewSMTP(), serviceSecret))
 	serverCreds, err := identity.ServerTransportCredentials()
 	if err != nil {
 		logger.Error("grpc tls unavailable", "err", err)

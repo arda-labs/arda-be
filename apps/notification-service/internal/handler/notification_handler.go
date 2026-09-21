@@ -17,12 +17,43 @@ import (
 )
 
 type NotificationHandler struct {
-	svc    *service.NotificationService
-	secret string
+	svc        *service.NotificationService
+	secret     string
+	mailTester *service.MailTester
 }
 
 func NewNotificationHandler(svc *service.NotificationService, secret string) *NotificationHandler {
 	return &NotificationHandler{svc: svc, secret: secret}
+}
+
+// SetMailTester enables POST /api/notifications/test-send.
+func (h *NotificationHandler) SetMailTester(t *service.MailTester) {
+	h.mailTester = t
+}
+
+// SendTest handles POST /api/notifications/test-send — sends one email through
+// the tenant's active sender to verify config + template (X2).
+func (h *NotificationHandler) SendTest(w http.ResponseWriter, r *http.Request) {
+	if h.mailTester == nil {
+		writeError(w, r, http.StatusServiceUnavailable, "mail tester is not configured")
+		return
+	}
+	tenantID, _ := requestUser(r)
+	var in struct {
+		EventCode string         `json:"event_code"`
+		Recipient string         `json:"recipient"`
+		Locale    string         `json:"locale"`
+		Params    map[string]any `json:"params"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := h.mailTester.SendTest(r.Context(), tenantID, in.EventCode, in.Locale, in.Recipient, in.Params); err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *NotificationHandler) ListInbox(w http.ResponseWriter, r *http.Request) {

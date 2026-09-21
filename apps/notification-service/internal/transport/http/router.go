@@ -36,6 +36,7 @@ func NewRouter(notificationHandler *handler.NotificationHandler) http.Handler {
 	mux.HandleFunc("DELETE /api/notifications/templates/{id}", notificationHandler.DeleteTemplate)
 	mux.HandleFunc("GET /api/notifications/senders", notificationHandler.ListSenders)
 	mux.HandleFunc("POST /api/notifications/senders", notificationHandler.UpsertSender)
+	mux.HandleFunc("POST /api/notifications/test-send", notificationHandler.SendTest)
 	mux.HandleFunc("GET /api/notifications/events", notificationHandler.ListEvents)
 	mux.HandleFunc("GET /api/notifications/dlq", notificationHandler.ListDLQ)
 	mux.HandleFunc("POST /api/notifications/dlq/{id}/retry", notificationHandler.RetryDLQ)
