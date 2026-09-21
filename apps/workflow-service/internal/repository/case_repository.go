@@ -356,6 +356,19 @@ func (r *CaseRepository) CreateCase(ctx context.Context, in CaseCreate) (*Busine
 	}
 	defer tx.Rollback()
 
+	// EPAS configures SLA per ORG_CODE; prefer an org-scoped ACTIVE policy for
+	// this case type, else keep the case type default (global policy).
+	fallbackSLA := ""
+	if ct.DefaultSLAPolicyID != nil {
+		fallbackSLA = *ct.DefaultSLAPolicyID
+	}
+	slaPolicyID := ct.DefaultSLAPolicyID
+	if orgID := strings.TrimSpace(ardametadata.FromIncoming(ctx).OrgID); orgID != "" {
+		if resolved := r.ResolveSLAPolicyID(ctx, in.TenantID, orgID, in.CaseType, fallbackSLA); resolved != "" {
+			slaPolicyID = &resolved
+		}
+	}
+
 	row := tx.QueryRowContext(ctx, `
 		INSERT INTO business_cases (
 			id, tenant_id, case_type, case_code, title, primary_object_type, primary_object_id,
@@ -369,7 +382,7 @@ func (r *CaseRepository) CreateCase(ctx context.Context, in CaseCreate) (*Busine
 		          bpmn_process_id, bpmn_version, created_at, updated_at, completed_at,
 			      submit_idempotency_key, idempotency_request_hash, submit_request_hash
 	`, id, in.TenantID, in.CaseType, in.CaseCode, in.Title, in.PrimaryObjectType, in.PrimaryObjectID,
-		in.DomainService, CaseStatusDraft, in.Priority, in.CreatedBy, ct.MakerRole, ct.DefaultSLAPolicyID,
+		in.DomainService, CaseStatusDraft, in.Priority, in.CreatedBy, ct.MakerRole, slaPolicyID,
 		ct.BpmnProcessID, ct.BpmnVersion, in.IdempotencyKey, requestHash)
 
 	bc, err := scanBusinessCase(row)
@@ -383,6 +396,31 @@ func (r *CaseRepository) CreateCase(ctx context.Context, in CaseCreate) (*Busine
 		return nil, err
 	}
 	return &bc, nil
+}
+
+// ResolveSLAPolicyID returns the ACTIVE SLA policy for (tenant, org, case type)
+// when one exists, else the provided fallback (global/case-type default). EPAS
+// configures SLA per ORG_CODE, so org-specific rows win over the global policy.
+func (r *CaseRepository) ResolveSLAPolicyID(ctx context.Context, tenantID, orgID, caseType, fallback string) string {
+	tenantID = strings.TrimSpace(tenantID)
+	orgID = strings.TrimSpace(orgID)
+	caseType = strings.TrimSpace(caseType)
+	if tenantID == "" || orgID == "" || caseType == "" {
+		return fallback
+	}
+	var id string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id FROM business_sla_policies
+		WHERE tenant_id = $1 AND org_id = $2 AND case_type = $3 AND status = 'ACTIVE'
+		  AND effective_from <= CURRENT_TIMESTAMP
+		  AND (effective_to IS NULL OR effective_to > CURRENT_TIMESTAMP)
+		ORDER BY effective_from DESC
+		LIMIT 1
+	`, tenantID, orgID, caseType).Scan(&id)
+	if err != nil || strings.TrimSpace(id) == "" {
+		return fallback
+	}
+	return id
 }
 
 func (r *CaseRepository) CaseByIdempotencyKey(ctx context.Context, tenantID, key string) (*BusinessCase, error) {
