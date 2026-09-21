@@ -73,12 +73,24 @@ func (t *MailTester) SendTest(ctx context.Context, tenantID, eventCode, locale, 
 		return err
 	}
 	if template != nil {
-		subject = renderTemplate(template.Subject, params)
+		subject = template.Subject
+		htmlBody = template.BodyHTML
+		if strings.TrimSpace(template.DesignCode) != "" {
+			if design, derr := t.repo.FindEmailDesign(ctx, tenantID, template.DesignCode); derr == nil && design != nil {
+				if strings.TrimSpace(htmlBody) == "" {
+					htmlBody = design.BodyHTML
+				}
+				if strings.TrimSpace(subject) == "" {
+					subject = design.Subject
+				}
+			}
+		}
+		subject = renderTemplate(subject, params)
 		if subject == "" {
 			subject = eventCode
 		}
 		text = renderTemplate(template.Body, params)
-		htmlBody = renderTemplate(template.BodyHTML, params)
+		htmlBody = renderTemplate(htmlBody, params)
 	}
 
 	return t.mailer.Send(ctx, mailer.Config{

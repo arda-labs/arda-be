@@ -64,6 +64,10 @@ func (f *fakeDeliveryRepo) FindTemplate(context.Context, string, string, string,
 	return nil, nil
 }
 
+func (f *fakeDeliveryRepo) FindEmailDesign(context.Context, string, string) (*repository.EmailDesign, error) {
+	return nil, nil
+}
+
 func (f *fakeDeliveryRepo) RetryDelivery(_ context.Context, id, code, _ string, delay time.Duration) error {
 	f.retries = append(f.retries, retryCall{id: id, code: code, delay: delay})
 	return nil

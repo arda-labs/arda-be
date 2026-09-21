@@ -316,6 +316,43 @@ func (h *NotificationHandler) DeleteTemplate(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// ListEmailDesigns handles GET /api/notifications/designs.
+func (h *NotificationHandler) ListEmailDesigns(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := requestUser(r)
+	items, err := h.svc.ListEmailDesigns(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+// UpsertEmailDesign handles POST /api/notifications/designs.
+func (h *NotificationHandler) UpsertEmailDesign(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID := requestUser(r)
+	var in repository.EmailDesign
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid json")
+		return
+	}
+	created, err := h.svc.UpsertEmailDesign(r.Context(), tenantID, userID, &in)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, created)
+}
+
+// DeleteEmailDesign handles DELETE /api/notifications/designs/{id}.
+func (h *NotificationHandler) DeleteEmailDesign(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := requestUser(r)
+	if err := h.svc.DeleteEmailDesign(r.Context(), tenantID, r.PathValue("id")); err != nil {
+		writeError(w, r, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // ListSenders handles GET /api/notifications/senders (X2).
 func (h *NotificationHandler) ListSenders(w http.ResponseWriter, r *http.Request) {
 	tenantID, _ := requestUser(r)

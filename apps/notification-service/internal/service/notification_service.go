@@ -532,6 +532,42 @@ func (s *NotificationService) DeleteTemplate(ctx context.Context, tenantID, id s
 	return nil
 }
 
+// ListEmailDesigns returns the reusable email designs of a tenant.
+func (s *NotificationService) ListEmailDesigns(ctx context.Context, tenantID string) ([]repository.EmailDesign, error) {
+	if tenantID == "" {
+		return nil, ErrTenantScopeRequired
+	}
+	return s.repo.ListEmailDesigns(ctx, tenantID)
+}
+
+// UpsertEmailDesign creates or updates a reusable email design.
+func (s *NotificationService) UpsertEmailDesign(ctx context.Context, tenantID, actor string, in *repository.EmailDesign) (*repository.EmailDesign, error) {
+	if tenantID == "" {
+		return nil, ErrTenantScopeRequired
+	}
+	if strings.TrimSpace(in.Code) == "" || strings.TrimSpace(in.BodyHTML) == "" {
+		return nil, errors.New("code and body_html are required")
+	}
+	in.TenantID = tenantID
+	in.CreatedBy = actor
+	created, err := s.repo.UpsertEmailDesign(ctx, in)
+	if err != nil {
+		return nil, errors.New("could not save the email design")
+	}
+	return created, nil
+}
+
+// DeleteEmailDesign removes one email design.
+func (s *NotificationService) DeleteEmailDesign(ctx context.Context, tenantID, id string) error {
+	if tenantID == "" {
+		return ErrTenantScopeRequired
+	}
+	if err := s.repo.DeleteEmailDesign(ctx, tenantID, id); err != nil {
+		return errors.New("email design not found")
+	}
+	return nil
+}
+
 // ListSenders returns the sender configs (password masked).
 func (s *NotificationService) ListSenders(ctx context.Context, tenantID string) ([]repository.SenderConfig, error) {
 	if tenantID == "" {

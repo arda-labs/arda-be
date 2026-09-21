@@ -26,6 +26,7 @@ type deliveryRepository interface {
 	GetDeliveryMailContext(ctx context.Context, deliveryID string) (*repository.DeliveryMailContext, error)
 	ActiveSender(ctx context.Context, tenantID, channel string) (*repository.SenderConfig, string, error)
 	FindTemplate(ctx context.Context, tenantID, eventCode, channel, locale string) (*repository.NotificationTemplate, error)
+	FindEmailDesign(ctx context.Context, tenantID, code string) (*repository.EmailDesign, error)
 	RetryDelivery(ctx context.Context, id, code, message string, delay time.Duration) error
 	MarkDeliveryFailed(ctx context.Context, id, code, message string) error
 	MarkDeliverySent(ctx context.Context, id string) error
@@ -194,9 +195,21 @@ func (w *DeliveryWorker) render(ctx context.Context, mailCtx *repository.Deliver
 		return "", "", "", err
 	}
 	if template != nil {
-		return renderPlaceholders(template.Subject, payload),
+		subject := template.Subject
+		htmlBody := template.BodyHTML
+		if strings.TrimSpace(template.DesignCode) != "" {
+			if design, derr := w.repo.FindEmailDesign(ctx, mailCtx.TenantID, template.DesignCode); derr == nil && design != nil {
+				if strings.TrimSpace(htmlBody) == "" {
+					htmlBody = design.BodyHTML
+				}
+				if strings.TrimSpace(subject) == "" {
+					subject = design.Subject
+				}
+			}
+		}
+		return renderPlaceholders(subject, payload),
 			renderPlaceholders(template.Body, payload),
-			renderPlaceholders(template.BodyHTML, payload),
+			renderPlaceholders(htmlBody, payload),
 			nil
 	}
 	fallbackSubject := mailCtx.EventType

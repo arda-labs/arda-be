@@ -17,7 +17,10 @@ type NotificationTemplate struct {
 	Subject   string    `json:"subject"`
 	Body      string    `json:"body"`
 	BodyHTML  string    `json:"body_html"`
-	IsActive  bool      `json:"is_active"`
+	// DesignCode references a reusable noti_email_designs row; its body_html is
+	// used when this template's BodyHTML is empty.
+	DesignCode string    `json:"design_code"`
+	IsActive   bool      `json:"is_active"`
 	CreatedBy string    `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -45,7 +48,7 @@ type SenderConfig struct {
 // ListTemplates returns the notification template catalog.
 func (r *NotificationRepository) ListTemplates(ctx context.Context, tenantID string) ([]NotificationTemplate, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id::text, tenant_id, event_code, channel, locale, subject, body, body_html, is_active,
+		SELECT id::text, tenant_id, event_code, channel, locale, subject, body, body_html, design_code, is_active,
 		       COALESCE(created_by,''), created_at, updated_at
 		FROM noti_templates WHERE tenant_id = $1 ORDER BY event_code, channel, locale`, tenantID)
 	if err != nil {
@@ -56,7 +59,7 @@ func (r *NotificationRepository) ListTemplates(ctx context.Context, tenantID str
 	for rows.Next() {
 		var tpl NotificationTemplate
 		if err := rows.Scan(&tpl.ID, &tpl.TenantID, &tpl.EventCode, &tpl.Channel, &tpl.Locale,
-			&tpl.Subject, &tpl.Body, &tpl.BodyHTML, &tpl.IsActive, &tpl.CreatedBy, &tpl.CreatedAt, &tpl.UpdatedAt); err != nil {
+			&tpl.Subject, &tpl.Body, &tpl.BodyHTML, &tpl.DesignCode, &tpl.IsActive, &tpl.CreatedBy, &tpl.CreatedAt, &tpl.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, tpl)
@@ -67,14 +70,15 @@ func (r *NotificationRepository) ListTemplates(ctx context.Context, tenantID str
 // UpsertTemplate creates or updates one template.
 func (r *NotificationRepository) UpsertTemplate(ctx context.Context, in *NotificationTemplate) (*NotificationTemplate, error) {
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO noti_templates (tenant_id, event_code, channel, locale, subject, body, body_html, is_active, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,true),$9)
+		INSERT INTO noti_templates (tenant_id, event_code, channel, locale, subject, body, body_html, design_code, is_active, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9,true),$10)
 		ON CONFLICT (tenant_id, event_code, channel, locale) DO UPDATE SET
 			subject = EXCLUDED.subject, body = EXCLUDED.body, body_html = EXCLUDED.body_html,
+			design_code = EXCLUDED.design_code,
 			is_active = EXCLUDED.is_active,
 			updated_at = now(), version = noti_templates.version + 1
 		RETURNING id::text, created_at, updated_at`,
-		in.TenantID, in.EventCode, in.Channel, in.Locale, in.Subject, in.Body, in.BodyHTML, in.IsActive, in.CreatedBy)
+		in.TenantID, in.EventCode, in.Channel, in.Locale, in.Subject, in.Body, in.BodyHTML, in.DesignCode, in.IsActive, in.CreatedBy)
 	if err := row.Scan(&in.ID, &in.CreatedAt, &in.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -84,14 +88,14 @@ func (r *NotificationRepository) UpsertTemplate(ctx context.Context, in *Notific
 // FindTemplate returns the active template for event+channel+locale.
 func (r *NotificationRepository) FindTemplate(ctx context.Context, tenantID, eventCode, channel, locale string) (*NotificationTemplate, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id::text, tenant_id, event_code, channel, locale, subject, body, body_html, is_active,
+		SELECT id::text, tenant_id, event_code, channel, locale, subject, body, body_html, design_code, is_active,
 		       COALESCE(created_by,''), created_at, updated_at
 		FROM noti_templates
 		WHERE tenant_id = $1 AND event_code = $2 AND channel = $3 AND locale = $4 AND is_active
 		LIMIT 1`, tenantID, eventCode, channel, locale)
 	var tpl NotificationTemplate
 	err := row.Scan(&tpl.ID, &tpl.TenantID, &tpl.EventCode, &tpl.Channel, &tpl.Locale,
-		&tpl.Subject, &tpl.Body, &tpl.BodyHTML, &tpl.IsActive, &tpl.CreatedBy, &tpl.CreatedAt, &tpl.UpdatedAt)
+		&tpl.Subject, &tpl.Body, &tpl.BodyHTML, &tpl.DesignCode, &tpl.IsActive, &tpl.CreatedBy, &tpl.CreatedAt, &tpl.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
