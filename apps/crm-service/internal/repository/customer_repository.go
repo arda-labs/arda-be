@@ -176,7 +176,7 @@ func (r *CustomerRepository) ListCustomers(ctx context.Context, f CustomerListFi
 	var total int
 	if err := r.db.QueryRowContext(
 		ctx,
-		"SELECT COUNT(*) FROM crm_customers WHERE "+whereSQL,
+		"SELECT COUNT(*) FROM customers WHERE "+whereSQL,
 		args...,
 	).Scan(&total); err != nil {
 		return nil, 0, err
@@ -448,6 +448,7 @@ func (r *CustomerRepository) HasDuplicateIdentityScoped(ctx context.Context, sco
 			WHERE id <> $1
 			  AND tenant_id = $2
 			  AND ($3 = '' OR org_id = $3)
+			  AND status NOT IN ('DRAFT', 'NEEDS_CHANGES', 'REJECTED', 'CANCELLED')
 			  AND (
 			    ($4 <> '' AND identity_no = $4)
 			    OR ($5 <> '' AND email = $5)
