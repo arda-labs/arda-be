@@ -49,9 +49,9 @@ type StepResult struct {
 // SeedJobs upserts the default COB sequence (loan accrual -> provision).
 func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
 	jobs := []JobDefinition{
-		{Code: "LNM_ACCRUAL_DAILY", Name: "Tính lãi cho vay (EOD)", Sequence: 10, Endpoint: "http://loan-service:8097/internal/jobs/accrual-daily", IsEnabled: true},
+		{Code: "LNM_ACCRUAL_DAILY", Name: "Tính lãi cho vay (EOD)", Sequence: 10, Endpoint: "http://loan-service:8080/internal/jobs/accrual-daily", IsEnabled: true},
 		{Code: "DPM_ACCRUAL_DAILY", Name: "Dự chi lãi tiền gửi (EOD)", Sequence: 15, Endpoint: "http://deposit-service:8080/internal/jobs/deposit-accrual-daily", IsEnabled: true},
-		{Code: "LNM_PROVISION_DAILY", Name: "Trích lập dự phòng (EOD)", Sequence: 20, Endpoint: "http://loan-service:8097/internal/jobs/provision-daily", IsEnabled: true},
+		{Code: "LNM_PROVISION_DAILY", Name: "Trích lập dự phòng (EOD)", Sequence: 20, Endpoint: "http://loan-service:8080/internal/jobs/provision-daily", IsEnabled: true},
 		// P3a reporting foundation: rebuild fin_trial_balance_daily after
 		// the loan steps so statements see the day's accrual/provision posts.
 		{Code: "FIN_TRIAL_BALANCE_DAILY", Name: "Tổng hợp số dư hằng ngày (EOD)", Sequence: 30, Endpoint: "http://finance-service:8080/internal/jobs/trial-balance-daily", IsEnabled: true},
