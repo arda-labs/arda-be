@@ -39,7 +39,6 @@ func (r *AccountRepository) Create(ctx context.Context, a *domain.Account) (*dom
 		return nil, fmt.Errorf("create account: %w", err)
 	}
 
-
 	return a, nil
 }
 
@@ -194,7 +193,6 @@ func (r *AccountRepository) ListPaged(ctx context.Context, params ListAccountsPa
 	}
 	return accounts, total, rows.Err()
 }
-
 
 func scanAccount(row *sql.Row) (*domain.Account, error) {
 	var a domain.Account

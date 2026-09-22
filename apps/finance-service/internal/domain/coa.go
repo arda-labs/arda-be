@@ -54,16 +54,16 @@ type AccClassCoaMap struct {
 }
 
 type AccStructure struct {
-	ID        string                 `json:"id"`
-	TenantID  string                 `json:"tenantId"`
-	Code      string                 `json:"code"`
-	Name      string                 `json:"name"`
-	AccType   string                 `json:"accType"`
-	TotalLength int                  `json:"totalLength"`
-	IsActive  bool                   `json:"isActive"`
-	Segments  []AccStructureSegment  `json:"segments,omitempty"`
-	CreatedAt time.Time              `json:"createdAt"`
-	UpdatedAt time.Time              `json:"updatedAt"`
+	ID          string                `json:"id"`
+	TenantID    string                `json:"tenantId"`
+	Code        string                `json:"code"`
+	Name        string                `json:"name"`
+	AccType     string                `json:"accType"`
+	TotalLength int                   `json:"totalLength"`
+	IsActive    bool                  `json:"isActive"`
+	Segments    []AccStructureSegment `json:"segments,omitempty"`
+	CreatedAt   time.Time             `json:"createdAt"`
+	UpdatedAt   time.Time             `json:"updatedAt"`
 }
 
 type AccStructureSegment struct {

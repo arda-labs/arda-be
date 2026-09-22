@@ -71,6 +71,11 @@ func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHa
 	mux.HandleFunc("/api/finance/reports/financial-summary", method("GET", reportingHandler.GetFinancialSummary))
 	mux.HandleFunc("/api/finance/reports/risk-exceptions", method("GET", reportingHandler.GetRiskExceptions))
 
+	// Internal reporting surface: statistical-service's ETL reads the full
+	// tenant trial-balance slice here (signed caller; tenant re-checked inside
+	// the handler). Never exposed to browsers.
+	mux.Handle("GET /internal/reporting/trial-balance", internalReportingService(http.HandlerFunc(reportingHandler.InternalReportingTrialBalance)))
+
 	// VCM cash treasury (P2.4b)
 	mux.HandleFunc("/api/finance/cash", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -199,4 +204,16 @@ func internalAIService(next http.Handler) http.Handler {
 		})
 	}
 	return identity.RequireServiceAuth(secret, "finance-service", identity.AllowedSources("ai-service"))(next)
+}
+
+// internalReportingService authenticates the statistical-service caller on the
+// reporting ETL surface (same signed-assertion contract, distinct source).
+func internalReportingService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
+		})
+	}
+	return identity.RequireServiceAuth(secret, "finance-service", identity.AllowedSources("statistical-service"))(next)
 }

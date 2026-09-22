@@ -32,11 +32,12 @@ type Service struct {
 	depositURL string
 	capitalURL string
 	crmURL     string
+	financeURL string
 	client     *http.Client
 	logger     *slog.Logger
 }
 
-func NewService(db *sql.DB, secret, loanURL, depositURL, capitalURL, crmURL string, logger *slog.Logger) *Service {
+func NewService(db *sql.DB, secret, loanURL, depositURL, capitalURL, crmURL, financeURL string, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -48,6 +49,7 @@ func NewService(db *sql.DB, secret, loanURL, depositURL, capitalURL, crmURL stri
 		depositURL: trim(depositURL),
 		capitalURL: trim(capitalURL),
 		crmURL:     trim(crmURL),
+		financeURL: trim(financeURL),
 		client:     &http.Client{Timeout: extractTimeout},
 		logger:     logger,
 	}
@@ -65,6 +67,7 @@ type ExtractResult struct {
 	Members          int      `json:"members"`
 	MemberRequests   int      `json:"member_requests"`
 	IBMDeposits      int      `json:"ibm_deposits"`
+	TrialBalance     int      `json:"trial_balance_rows"`
 	SkippedSources   []string `json:"skipped_sources,omitempty"`
 }
 
@@ -92,6 +95,7 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		members     []member
 		memberReqs  []memberRequest
 		ibmDeposits []ibmDeposit
+		trialBal    []trialBalanceRow
 	)
 	if s.loanURL == "" {
 		result.SkippedSources = append(result.SkippedSources, "loan-service")
@@ -140,9 +144,17 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 			return result, fmt.Errorf("member request extract: %w", err)
 		}
 	}
+	if s.financeURL == "" {
+		result.SkippedSources = append(result.SkippedSources, "finance-service")
+	} else {
+		var err error
+		if trialBal, err = s.fetchTrialBalance(ctx, tenantID, businessDate); err != nil {
+			return result, fmt.Errorf("trial balance extract: %w", err)
+		}
+	}
 
 	// Nothing wired: report the skip without opening a transaction.
-	if s.loanURL == "" && s.depositURL == "" && s.capitalURL == "" && s.crmURL == "" {
+	if s.loanURL == "" && s.depositURL == "" && s.capitalURL == "" && s.crmURL == "" && s.financeURL == "" {
 		s.logger.Warn("report extract skipped: no sources configured", "tenant", tenantID, "business_date", businessDate)
 		return result, nil
 	}
@@ -294,6 +306,25 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		result.MemberRequests = len(memberReqs)
 	}
 
+	if s.financeURL != "" {
+		if err := replaceFacts(ctx, tx, "rpt_fact_trial_balance_daily", tenantID, businessDate, len(trialBal), func() error {
+			for _, item := range trialBal {
+				if _, err := tx.ExecContext(ctx, insertTrialBalanceFact,
+					tenantID, businessDate, item.OrgCode, item.CoaVersion, item.AccountCode,
+					item.AccountName, item.CurrencyCode,
+					item.OpenDebitMinor, item.OpenCreditMinor,
+					item.IncrDebitMinor, item.IncrCreditMinor,
+					item.CloseDebitMinor, item.CloseCreditMinor); err != nil {
+					return fmt.Errorf("insert trial balance fact %s: %w", item.AccountCode, err)
+				}
+			}
+			return nil
+		}); err != nil {
+			return result, err
+		}
+		result.TrialBalance = len(trialBal)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return result, fmt.Errorf("commit extract: %w", err)
 	}
@@ -303,7 +334,7 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		"deposit_savings", result.DepositSavings, "capital_contracts", result.CapitalContracts,
 		"capital_movements", result.CapitalMovements, "customers", result.Customers,
 		"members", result.Members, "member_requests", result.MemberRequests,
-		"ibm_deposits", result.IBMDeposits,
+		"ibm_deposits", result.IBMDeposits, "trial_balance_rows", result.TrialBalance,
 		"skipped", result.SkippedSources)
 	return result, nil
 }
@@ -365,6 +396,12 @@ const insertIBMDepositFact = `INSERT INTO rpt_fact_ibm_deposit_daily
 	 term_months, deposit_date, maturity_date, status, currency_code,
 	 principal_minor, accrued_minor, interest_rate)
 	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8::date, $9::date, $10, $11, $12, $13, $14)`
+
+const insertTrialBalanceFact = `INSERT INTO rpt_fact_trial_balance_daily
+	(tenant_id, business_date, org_code, coa_version, account_code, account_name, currency_code,
+	 open_debit_minor, open_credit_minor, incr_debit_minor, incr_credit_minor,
+	 close_debit_minor, close_credit_minor)
+	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 
 // memberRequestKey is the stable per-request identity inside a daily fact. Use
 // the source request id: (member, type, date) is NOT unique — a member may make
@@ -453,6 +490,14 @@ func (s *Service) fetchMemberRequests(ctx context.Context, tenantID, businessDat
 func (s *Service) fetchIBMDeposits(ctx context.Context, tenantID, businessDate string) ([]ibmDeposit, error) {
 	var env envelope[ibmDepositResult]
 	if err := s.fetch(ctx, s.depositURL, "deposit-service", "/internal/reporting/ibm-deposits", tenantID, businessDate, &env); err != nil {
+		return nil, err
+	}
+	return env.Result.Items, nil
+}
+
+func (s *Service) fetchTrialBalance(ctx context.Context, tenantID, businessDate string) ([]trialBalanceRow, error) {
+	var env envelope[trialBalanceResult]
+	if err := s.fetch(ctx, s.financeURL, "finance-service", "/internal/reporting/trial-balance", tenantID, businessDate, &env); err != nil {
 		return nil, err
 	}
 	return env.Result.Items, nil
@@ -654,4 +699,24 @@ type ibmDeposit struct {
 	CurrencyCode     string  `json:"currency_code"`
 	OrgCode          string  `json:"org_code"`
 	Status           string  `json:"status"`
+}
+
+type trialBalanceResult struct {
+	AsOf  string            `json:"as_of"`
+	Items []trialBalanceRow `json:"items"`
+}
+
+// trialBalanceRow is one account's daily balance (PCF "Tài chính kế toán").
+type trialBalanceRow struct {
+	OrgCode          string `json:"org_code"`
+	CoaVersion       string `json:"coa_version"`
+	AccountCode      string `json:"account_code"`
+	AccountName      string `json:"account_name"`
+	CurrencyCode     string `json:"currency_code"`
+	OpenDebitMinor   int64  `json:"open_debit_minor"`
+	OpenCreditMinor  int64  `json:"open_credit_minor"`
+	IncrDebitMinor   int64  `json:"incr_debit_minor"`
+	IncrCreditMinor  int64  `json:"incr_credit_minor"`
+	CloseDebitMinor  int64  `json:"close_debit_minor"`
+	CloseCreditMinor int64  `json:"close_credit_minor"`
 }

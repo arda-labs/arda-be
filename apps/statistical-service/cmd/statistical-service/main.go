@@ -94,7 +94,7 @@ func main() {
 
 	// Reporting ETL: materialises the fact read model from the domain services
 	// over the signed /internal/reporting/* surface (no cross-DB reads).
-	reportingSvc := reporting.NewService(db, serviceSecret, cfg.LoanServiceURL, cfg.DepositServiceURL, cfg.CapitalServiceURL, cfg.CRMServiceURL, logger)
+	reportingSvc := reporting.NewService(db, serviceSecret, cfg.LoanServiceURL, cfg.DepositServiceURL, cfg.CapitalServiceURL, cfg.CRMServiceURL, cfg.FinanceServiceURL, logger)
 	reportingJobHandler := handler.NewReportingJobHandler(reportingSvc)
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(transportCreds),
@@ -162,6 +162,7 @@ type config struct {
 	DepositServiceURL string
 	CapitalServiceURL string
 	CRMServiceURL     string
+	FinanceServiceURL string
 	GotenbergURL      string
 }
 
@@ -192,6 +193,7 @@ func loadConfig() config {
 		DepositServiceURL: base.DepositServiceURL,
 		CapitalServiceURL: base.CapitalServiceURL,
 		CRMServiceURL:     base.CRMServiceURL,
+		FinanceServiceURL: base.FinanceServiceURL,
 		GotenbergURL:      base.GotenbergURL,
 	}
 }

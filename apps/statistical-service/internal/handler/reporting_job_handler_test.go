@@ -11,7 +11,7 @@ import (
 // TestRunReportExtractDaily_Guards locks the job contract before any ETL work:
 // POST only, tenant required, to_date required.
 func TestRunReportExtractDaily_Guards(t *testing.T) {
-	h := NewReportingJobHandler(reporting.NewService(nil, "secret", "", "", "", "", nil))
+	h := NewReportingJobHandler(reporting.NewService(nil, "secret", "", "", "", "", "", nil))
 
 	tests := []struct {
 		name   string

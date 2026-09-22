@@ -174,7 +174,7 @@ func TestPostingSmoke(t *testing.T) {
 		TenantId:       tenantID,
 		JournalEntryId: resp.GetJournalEntryId(),
 		Reason:         "smoke",
-		IdempotencyKey:  runKey + "-rev",
+		IdempotencyKey: runKey + "-rev",
 		Actor:          "smoke",
 		AccountingDate: "2026-09-07",
 	})
@@ -197,10 +197,10 @@ func TestPostingSmoke(t *testing.T) {
 // cloneRequest deep-copies what the smoke mutates.
 func cloneRequest(req *financev1.PostingRequest) (*financev1.PostingRequest, error) {
 	clone := &financev1.PostingRequest{
-		IdempotencyKey:  req.GetIdempotencyKey(),
-		AccountingDate:  req.GetAccountingDate(),
-		CurrencyCode:    req.GetCurrencyCode(),
-		Description:     req.GetDescription(),
+		IdempotencyKey:    req.GetIdempotencyKey(),
+		AccountingDate:    req.GetAccountingDate(),
+		CurrencyCode:      req.GetCurrencyCode(),
+		Description:       req.GetDescription(),
 		BusinessReference: req.GetBusinessReference(),
 	}
 	for _, l := range req.GetLines() {

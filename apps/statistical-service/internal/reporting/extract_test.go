@@ -8,7 +8,7 @@ import (
 // TestExtractDailyValidatesInput locks the input contract: tenant and a
 // YYYY-MM-DD business date are required before any source is contacted.
 func TestExtractDailyValidatesInput(t *testing.T) {
-	svc := NewService(nil, "secret", "", "", "", "", nil)
+	svc := NewService(nil, "secret", "", "", "", "", "", nil)
 
 	if _, err := svc.ExtractDaily(context.Background(), "", "2026-09-22"); err == nil {
 		t.Fatal("missing tenant must fail")
@@ -21,7 +21,7 @@ func TestExtractDailyValidatesInput(t *testing.T) {
 // TestExtractDailySkipsUnconfiguredSources proves an environment with no
 // reporting source wired reports the skip instead of touching the database.
 func TestExtractDailySkipsUnconfiguredSources(t *testing.T) {
-	svc := NewService(nil, "secret", "", "", "", "", nil)
+	svc := NewService(nil, "secret", "", "", "", "", "", nil)
 
 	result, err := svc.ExtractDaily(context.Background(), "tenant-1", "2026-09-22")
 	if err != nil {
@@ -30,7 +30,7 @@ func TestExtractDailySkipsUnconfiguredSources(t *testing.T) {
 	if result.BusinessDate != "2026-09-22" {
 		t.Errorf("business_date = %q", result.BusinessDate)
 	}
-	if len(result.SkippedSources) != 4 {
-		t.Fatalf("skipped = %v, want all four sources", result.SkippedSources)
+	if len(result.SkippedSources) != 5 {
+		t.Fatalf("skipped = %v, want all five sources", result.SkippedSources)
 	}
 }

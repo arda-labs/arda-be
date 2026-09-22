@@ -24,8 +24,7 @@ func NewReportingHandler(daily *service.TrialBalanceDailyService, stmts *service
 	return &ReportingHandler{daily: daily, stmts: stmts}
 }
 
-// RunTrialBalanceDailyJob handles POST /internal/jobs/trial-balance-daily?to_date=YYYY-MM-DD.
-// Tenant comes from X-Tenant-Id forwarded by the EOD engine; actor is the
+// RunTrialBalanceDailyJob handles POST /internal/jobs/trial-balance-daily?to_date=YYYY-MM-DD.// Tenant comes from X-Tenant-Id forwarded by the EOD engine; actor is the
 // job identity. Rebuild is idempotent per (tenant, date) — re-running a
 // failed COB date or backfilling is always safe.
 func (h *ReportingHandler) RunTrialBalanceDailyJob(w http.ResponseWriter, r *http.Request) {
@@ -157,4 +156,33 @@ func (h *ReportingHandler) ExportStatement(w http.ResponseWriter, r *http.Reques
 		strings.ToLower(code), result.AsOf))
 	w.Header().Set("Content-Length", strconv.Itoa(len(xlsx)))
 	_, _ = w.Write(xlsx)
+}
+
+// reportingTrialBalanceResponse is the ETL envelope: the whole tenant slice for
+// one business date, with org_code (the dimension key) preserved.
+type reportingTrialBalanceResponse struct {
+	AsOf  string                      `json:"as_of"`
+	Items []service.DailyBalanceEntry `json:"items"`
+}
+
+// InternalReportingTrialBalance serves GET /internal/reporting/trial-balance for
+// statistical-service, which materialises the account balances into its own
+// fact table (PCF "Tài chính kế toán" indicators read account codes).
+func (h *ReportingHandler) InternalReportingTrialBalance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
+		return
+	}
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+		return
+	}
+	asOf := strings.TrimSpace(r.URL.Query().Get("as_of"))
+	items, err := h.daily.ListDaily(r.Context(), tenantID, asOf)
+	if err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error()))
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, reportingTrialBalanceResponse{AsOf: asOf, Items: items})
 }
