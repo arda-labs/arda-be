@@ -118,7 +118,7 @@ func aiTestSource() *stubCapitalAISource {
 }
 
 func aiCapitalRouter(source *stubCapitalAISource) http.Handler {
-	return NewRouter(handler.NewCapitalHandler(&fakeCapitalService{}), handler.NewInternalAIHandler(source))
+	return NewRouter(handler.NewCapitalHandler(&fakeCapitalService{}), handler.NewInternalAIHandler(source), nil)
 }
 
 type aiListEnvelope struct {

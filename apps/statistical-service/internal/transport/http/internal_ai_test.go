@@ -119,7 +119,7 @@ func aiTestSource() *stubStatisticalAISource {
 }
 
 func aiStatisticalRouter(source *stubStatisticalAISource) http.Handler {
-	return NewRouter(handler.NewStatisticalHandler(nil), handler.NewInternalAIHandler(source))
+	return NewRouter(handler.NewStatisticalHandler(nil), handler.NewInternalAIHandler(source), nil, nil)
 }
 
 type aiListEnvelope struct {

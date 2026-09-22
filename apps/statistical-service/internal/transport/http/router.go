@@ -8,7 +8,7 @@ import (
 )
 
 // NewRouter wires the statistical-service HTTP surface.
-func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.InternalAIHandler) http.Handler {
+func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.InternalAIHandler, reportingJob *handler.ReportingJobHandler, indicatorResults *handler.IndicatorResultHandler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -71,6 +71,17 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 	mux.HandleFunc("GET /api/statistical/form-templates/{code}/export", h.ExportFormTemplate)
 	mux.HandleFunc("POST /api/statistical/form-templates/import", h.ImportFormTemplate)
 	mux.HandleFunc("GET /api/statistical/dashboard", h.Dashboard)
+	mux.HandleFunc("/api/statistical/indicator-results", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			indicatorResults.ListIndicatorResults(w, r)
+		case http.MethodPost, http.MethodPut:
+			indicatorResults.UpsertIndicatorResult(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("POST /api/statistical/indicators/compute", indicatorResults.ComputeIndicators)
 	mux.HandleFunc("/api/statistical/score-results", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			h.ListScoreResults(w, r)
@@ -98,6 +109,11 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 	mux.Handle("GET /internal/ai/report-definitions", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListReportDefinitions)))
 	mux.Handle("GET /internal/ai/indicators", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListIndicators)))
 	mux.Handle("GET /internal/ai/submissions", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListSubmissions)))
+
+	// Internal reporting ETL job: platform EOD calls this (no gateway policy;
+	// network-policy protected like the other /internal/jobs/* steps). Tenant
+	// travels in X-Tenant-Id, the business date in ?to_date=.
+	mux.HandleFunc("/internal/jobs/report-extract-daily", method("POST", reportingJob.RunReportExtractDaily))
 
 	return mux
 }

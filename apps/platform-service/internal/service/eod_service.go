@@ -55,6 +55,10 @@ func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
 		// P3a reporting foundation: rebuild fin_trial_balance_daily after
 		// the loan steps so statements see the day's accrual/provision posts.
 		{Code: "FIN_TRIAL_BALANCE_DAILY", Name: "Tổng hợp số dư hằng ngày (EOD)", Sequence: 30, Endpoint: "http://finance-service:8080/internal/jobs/trial-balance-daily", IsEnabled: true},
+		// Reporting data layer: materialise the fact read model from the
+		// domain services after the day's posts so period reports see the
+		// as-of snapshot (arda-be/docs/reporting-data-layer.md).
+		{Code: "RPT_EXTRACT_DAILY", Name: "Trích xuất dữ liệu báo cáo (EOD)", Sequence: 35, Endpoint: "http://statistical-service:8080/internal/jobs/report-extract-daily", IsEnabled: true},
 	}
 	for _, j := range jobs {
 		if _, err := s.db.ExecContext(ctx, `

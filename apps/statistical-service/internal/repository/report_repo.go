@@ -31,7 +31,11 @@ type ReportDefinition struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
-// Indicator is one statistical indicator catalog row.
+// Indicator is one statistical indicator catalog row. The first six fields are
+// the original catalog shape; the rest are the QCMS KPI model added by
+// 20260922120000_rpt_indicator_model.sql (see arda-be/docs/reporting-data-layer.md
+// §5.3). `Formula` is declarative JSON (members reference indicators/facts and
+// columns) — never SQL text.
 type Indicator struct {
 	ID        string    `json:"id"`
 	TenantID  string    `json:"tenant_id"`
@@ -43,6 +47,37 @@ type Indicator struct {
 	CreatedBy string    `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// QCMS KPI model.
+	KpiType        string          `json:"kpi_type"`    // P | C
+	Periodicity    string          `json:"periodicity"` // D|W|M|Q|Y
+	IsRatio        bool            `json:"is_ratio"`
+	RootCode       string          `json:"root_code,omitempty"`
+	RootName       string          `json:"root_name,omitempty"`
+	Meaning        string          `json:"meaning,omitempty"`
+	Sources        json.RawMessage `json:"sources"`
+	Formula        json.RawMessage `json:"formula"`
+	Dimensions     json.RawMessage `json:"dimensions"`
+	DisplayFormat  string          `json:"display_format,omitempty"`
+	RoundingDigits int             `json:"rounding_digits"`
+	ScoreGroup     string          `json:"score_group,omitempty"`
+	Weight         *float64        `json:"weight,omitempty"`
+}
+
+// IndicatorResult is one computed/manual value for an indicator in a period.
+type IndicatorResult struct {
+	ID            string    `json:"id"`
+	TenantID      string    `json:"tenant_id"`
+	IndicatorCode string    `json:"indicator_code"`
+	PeriodCode    string    `json:"period_code"`
+	DimensionKey  string    `json:"dimension_key"`
+	BusinessDate  string    `json:"business_date,omitempty"`
+	Value         *float64  `json:"value,omitempty"`
+	Revision      int       `json:"revision"`
+	Source        string    `json:"source"`
+	CreatedBy     string    `json:"created_by"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // ReportSubmission is one submitted report period (maker-checker qua case).
@@ -206,7 +241,10 @@ func (r *StatisticalRepository) ListIndicators(ctx context.Context, params ListI
 	}
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, code, name, COALESCE(unit,''), COALESCE(group_code,''), is_active,
-		       COALESCE(created_by,''), created_at, updated_at
+		       COALESCE(created_by,''), created_at, updated_at,
+		       kpi_type, periodicity, is_ratio, root_code, root_name,
+		       COALESCE(meaning,''), sources, formula, dimensions,
+		       COALESCE(display_format,''), rounding_digits, COALESCE(score_group,''), weight
 		FROM rpt_indicators WHERE %s ORDER BY %s %s`,
 		where, indicatorSortCol(params.Sort), listStatOrder(params.Order)), args...)
 	if err != nil {
@@ -217,7 +255,10 @@ func (r *StatisticalRepository) ListIndicators(ctx context.Context, params ListI
 	for rows.Next() {
 		var i Indicator
 		if err := rows.Scan(&i.ID, &i.TenantID, &i.Code, &i.Name, &i.Unit, &i.GroupCode,
-			&i.IsActive, &i.CreatedBy, &i.CreatedAt, &i.UpdatedAt); err != nil {
+			&i.IsActive, &i.CreatedBy, &i.CreatedAt, &i.UpdatedAt,
+			&i.KpiType, &i.Periodicity, &i.IsRatio, &i.RootCode, &i.RootName,
+			&i.Meaning, &i.Sources, &i.Formula, &i.Dimensions,
+			&i.DisplayFormat, &i.RoundingDigits, &i.ScoreGroup, &i.Weight); err != nil {
 			return nil, err
 		}
 		out = append(out, i)
@@ -225,18 +266,83 @@ func (r *StatisticalRepository) ListIndicators(ctx context.Context, params ListI
 	return out, rows.Err()
 }
 
+// GetIndicatorByCode loads one active indicator by business code (compute
+// engine entry point).
+func (r *StatisticalRepository) GetIndicatorByCode(ctx context.Context, tenantID, code string) (*Indicator, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, code, name, COALESCE(unit,''), COALESCE(group_code,''), is_active,
+		       COALESCE(created_by,''), created_at, updated_at,
+		       kpi_type, periodicity, is_ratio, root_code, root_name,
+		       COALESCE(meaning,''), sources, formula, dimensions,
+		       COALESCE(display_format,''), rounding_digits, COALESCE(score_group,''), weight
+		FROM rpt_indicators WHERE tenant_id = $1 AND code = $2 AND is_active`, tenantID, code)
+	var i Indicator
+	if err := row.Scan(&i.ID, &i.TenantID, &i.Code, &i.Name, &i.Unit, &i.GroupCode,
+		&i.IsActive, &i.CreatedBy, &i.CreatedAt, &i.UpdatedAt,
+		&i.KpiType, &i.Periodicity, &i.IsRatio, &i.RootCode, &i.RootName,
+		&i.Meaning, &i.Sources, &i.Formula, &i.Dimensions,
+		&i.DisplayFormat, &i.RoundingDigits, &i.ScoreGroup, &i.Weight); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &i, nil
+}
+
+// ScalarQuery runs a builder-generated scalar aggregate (one row, one numeric
+// column) and returns the value. The SQL comes from the formula engine's own
+// builders — never from stored text or caller input.
+func (r *StatisticalRepository) ScalarQuery(ctx context.Context, query string, args []any) (float64, error) {
+	var value sql.NullFloat64
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&value); err != nil {
+		return 0, err
+	}
+	if !value.Valid {
+		return 0, nil
+	}
+	return value.Float64, nil
+}
+
 // UpsertIndicator creates or updates one indicator.
 func (r *StatisticalRepository) UpsertIndicator(ctx context.Context, i *Indicator) (*Indicator, error) {
 	if i.ID == "" {
 		i.ID = NewStatisticalID("ind")
 	}
+	if i.KpiType == "" {
+		i.KpiType = "P"
+	}
+	if i.Periodicity == "" {
+		i.Periodicity = "D"
+	}
+	if i.Sources == nil {
+		i.Sources = []byte("[]")
+	}
+	if i.Formula == nil {
+		i.Formula = []byte("{}")
+	}
+	if i.Dimensions == nil {
+		i.Dimensions = []byte("[]")
+	}
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO rpt_indicators (id, tenant_id, code, name, unit, group_code, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
+		INSERT INTO rpt_indicators (id, tenant_id, code, name, unit, group_code, created_by,
+			kpi_type, periodicity, is_ratio, root_code, root_name, meaning,
+			sources, formula, dimensions, display_format, rounding_digits, score_group, weight)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
-			group_code = EXCLUDED.group_code, updated_at = now(), version = rpt_indicators.version + 1
+			group_code = EXCLUDED.group_code, kpi_type = EXCLUDED.kpi_type,
+			periodicity = EXCLUDED.periodicity, is_ratio = EXCLUDED.is_ratio,
+			root_code = EXCLUDED.root_code, root_name = EXCLUDED.root_name,
+			meaning = EXCLUDED.meaning, sources = EXCLUDED.sources, formula = EXCLUDED.formula,
+			dimensions = EXCLUDED.dimensions, display_format = EXCLUDED.display_format,
+			rounding_digits = EXCLUDED.rounding_digits, score_group = EXCLUDED.score_group,
+			weight = EXCLUDED.weight,
+			updated_at = now(), version = rpt_indicators.version + 1
 		RETURNING created_at, updated_at`,
-		i.ID, i.TenantID, i.Code, i.Name, nullStringStat(i.Unit), nullStringStat(i.GroupCode), i.CreatedBy)
+		i.ID, i.TenantID, i.Code, i.Name, nullStringStat(i.Unit), nullStringStat(i.GroupCode), i.CreatedBy,
+		i.KpiType, i.Periodicity, i.IsRatio, i.RootCode, i.RootName, i.Meaning,
+		i.Sources, i.Formula, i.Dimensions, i.DisplayFormat, i.RoundingDigits,
+		nullStringStat(i.ScoreGroup), i.Weight)
 	if err := row.Scan(&i.CreatedAt, &i.UpdatedAt); err != nil {
 		return nil, err
 	}

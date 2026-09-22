@@ -115,26 +115,25 @@ func KnownQueryIDs() []string {
 	return ids
 }
 
-// buildLoanPortfolioSummary: outstanding theo debt group (from loan DB —
-// the query runs on the loan database via the loan-service read API or the
-// statistical job runner against the loan DSN; the SQL itself is fixed).
-//
-// The report is a dư nợ snapshot, not a disbursement flow: include ACTIVE
-// agreements disbursed on or before the period end and sum their outstanding
-// balance. Assumption (no balance history in lnm_agreements — it stores only
-// the current outstanding_amt_minor, so an exact as-of-period-end balance is
-// not reconstructable): agreements repaid before the run are excluded via
-// status != 'ACTIVE' even when they were still open at the period end.
+// buildLoanPortfolioSummary: outstanding theo debt group, read from the
+// reporting fact snapshot (rpt_fact_loan_agreement_daily) as of the period
+// end. The RPT_EXTRACT_DAILY ETL materialises the domain slice, so
+// statistical-service never reads the loan database directly; the fact row
+// with the greatest business_date on or before period end is the as-of
+// snapshot (a missing exact date degrades to the latest available day).
 func buildLoanPortfolioSummary(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT debt_group_code,
        COUNT(*) AS agreement_count,
        SUM(outstanding_amt_minor) AS outstanding_minor
-FROM lnm_agreements
+FROM rpt_fact_loan_agreement_daily
 WHERE tenant_id = $1
   AND status = 'ACTIVE'
-  AND disburse_date IS NOT NULL
-  AND disburse_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')
+  AND business_date = (
+      SELECT max(business_date) FROM rpt_fact_loan_agreement_daily
+      WHERE tenant_id = $1
+        AND business_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')::date
+  )
 GROUP BY debt_group_code
 ORDER BY debt_group_code`
 	return &ReportQuery{
@@ -145,39 +144,51 @@ ORDER BY debt_group_code`
 	}, nil
 }
 
-// buildDepositPortfolio: savings portfolio theo product.
+// buildDepositPortfolio: savings portfolio theo product, read from the
+// reporting fact snapshot (rpt_fact_deposit_contract_daily) as of period end.
 func buildDepositPortfolio(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT product_code,
        COUNT(*) AS savings_count,
        SUM(principal_minor) AS principal_minor,
        SUM(accrued_minor) AS accrued_minor
-FROM dpm_savings
+FROM rpt_fact_deposit_contract_daily
 WHERE tenant_id = $1
   AND status = 'ACTIVE'
+  AND business_date = (
+      SELECT max(business_date) FROM rpt_fact_deposit_contract_daily
+      WHERE tenant_id = $1
+        AND business_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')::date
+  )
 GROUP BY product_code
 ORDER BY product_code`
 	return &ReportQuery{
 		QueryID: QueryDepositPortfolio,
 		SQL:     sqlText,
-		Args:    []any{p.TenantID},
+		Args:    []any{p.TenantID, p.PeriodCode + "-01"},
 		Columns: []string{"product_code", "savings_count", "principal_minor", "accrued_minor"},
 	}, nil
 }
 
 // buildLoanAppraisalSummary (rpt-loan-appraisal): số hồ sơ đã thẩm định/giải
-// ngân trong kỳ, dư nợ và lãi suất bình quân — tổng hợp theo tháng.
+// ngân trong kỳ, dư nợ và lãi suất bình quân — read from the reporting fact
+// snapshot (rpt_fact_loan_agreement_daily).
 func buildLoanAppraisalSummary(p Params) (*ReportQuery, error) {
 	sqlText := `
-SELECT to_char(date_trunc('month', disburse_date), 'YYYY-MM') AS period_code,
+SELECT to_char(disburse_date, 'YYYY-MM') AS period_code,
        COUNT(*) AS agreement_count,
        SUM(disburse_amt_minor) AS disburse_minor,
        ROUND(AVG(interest_rate)::numeric, 4) AS avg_interest_rate,
        SUM(outstanding_amt_minor) AS outstanding_minor
-FROM lnm_agreements
+FROM rpt_fact_loan_agreement_daily
 WHERE tenant_id = $1
   AND disburse_date IS NOT NULL
   AND date_trunc('month', disburse_date) = date_trunc('month', $2::date)
+  AND business_date = (
+      SELECT max(business_date) FROM rpt_fact_loan_agreement_daily
+      WHERE tenant_id = $1
+        AND business_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')::date
+  )
 GROUP BY 1
 ORDER BY 1`
 	return &ReportQuery{
@@ -189,19 +200,9 @@ ORDER BY 1`
 }
 
 // buildLoanDebtClassification (rpt-loan-classification): phân loại nợ theo
-// nhóm, kèm dư nợ, dự phòng và số khoản quá hạn thực tế tại thời điểm chạy
-// báo cáo.
-//
-// Assumption: lnm_agreements has no overdue_amt_minor / DPD column (checked
-// all loan-service migrations; the only overdue amount lives on collections),
-// so an agreement counts as overdue once maturity_date has passed:
-// maturity_date < CURRENT_DATE. The previous condition compared against the
-// end of the reporting month, which counted loans whose maturity was still in
-// the future. A true as-of-period-end NPL needs repayment-plan aging
-// (lnm_repay_plans.to_date vs collected amounts) or a DPD snapshot; that view
-// is not exposed to the statistical DB yet. Because the balance/provision
-// columns are also current values, the period_code parameter is intentionally
-// not used by this builder.
+// nhóm, kèm dư nợ, dự phòng và số khoản quá hạn — read from the reporting fact
+// snapshot. overdue is counted as maturity_date < CURRENT_DATE at run time (no
+// DPD snapshot yet; see reporting-data-layer.md §9).
 func buildLoanDebtClassification(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT debt_group_code,
@@ -209,9 +210,13 @@ SELECT debt_group_code,
        SUM(outstanding_amt_minor) AS outstanding_minor,
        SUM(provision_amt_minor) AS provision_minor,
        SUM(CASE WHEN maturity_date IS NOT NULL AND maturity_date < CURRENT_DATE THEN 1 ELSE 0 END) AS overdue_count
-FROM lnm_agreements
+FROM rpt_fact_loan_agreement_daily
 WHERE tenant_id = $1
   AND status = 'ACTIVE'
+  AND business_date = (
+      SELECT max(business_date) FROM rpt_fact_loan_agreement_daily
+      WHERE tenant_id = $1
+  )
 GROUP BY debt_group_code
 ORDER BY debt_group_code`
 	return &ReportQuery{
@@ -222,20 +227,26 @@ ORDER BY debt_group_code`
 	}, nil
 }
 
-// buildCustomerSummary (rpt-customer): khách hàng theo phân khúc + trạng thái.
+// buildCustomerSummary (rpt-customer): khách hàng theo phân khúc + trạng thái,
+// read from the reporting fact snapshot (rpt_fact_customer_daily).
 func buildCustomerSummary(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT COALESCE(NULLIF(segment, ''), 'UNSEGMENTED') AS segment,
        status,
        COUNT(*) AS customer_count
-FROM customers
+FROM rpt_fact_customer_daily
 WHERE tenant_id = $1
+  AND business_date = (
+      SELECT max(business_date) FROM rpt_fact_customer_daily
+      WHERE tenant_id = $1
+        AND business_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')::date
+  )
 GROUP BY 1, 2
 ORDER BY 1, 2`
 	return &ReportQuery{
 		QueryID: QueryCustomerSummary,
 		SQL:     sqlText,
-		Args:    []any{p.TenantID},
+		Args:    []any{p.TenantID, p.PeriodCode + "-01"},
 		Columns: []string{"segment", "status", "customer_count"},
 	}, nil
 }
@@ -261,71 +272,90 @@ ORDER BY report_code, status`
 	}, nil
 }
 
-// buildDepositMaturityLadder: huy động đang hoạt động theo tháng đáo hạn.
+// buildDepositMaturityLadder: huy động đang hoạt động theo tháng đáo hạn,
+// read from the reporting fact snapshot (rpt_fact_deposit_contract_daily).
 func buildDepositMaturityLadder(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT to_char(date_trunc('month', maturity_date), 'YYYY-MM') AS maturity_month,
        COUNT(*) AS savings_count,
        SUM(principal_minor) AS principal_minor,
        SUM(accrued_minor) AS accrued_minor
-FROM dpm_savings
+FROM rpt_fact_deposit_contract_daily
 WHERE tenant_id = $1 AND status = 'ACTIVE'
+  AND business_date = (
+      SELECT max(business_date) FROM rpt_fact_deposit_contract_daily
+      WHERE tenant_id = $1
+        AND business_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')::date
+  )
 GROUP BY 1
 ORDER BY 1`
 	return &ReportQuery{
 		QueryID: QueryDepositMaturityLadder,
 		SQL:     sqlText,
-		Args:    []any{p.TenantID},
+		Args:    []any{p.TenantID, p.PeriodCode + "-01"},
 		Columns: []string{"maturity_month", "savings_count", "principal_minor", "accrued_minor"},
 	}, nil
 }
 
-// buildDepositAccruedByProduct: lãi dự chi theo sản phẩm huy động.
+// buildDepositAccruedByProduct: lãi dự chi theo sản phẩm huy động, read from
+// the reporting fact snapshot (rpt_fact_deposit_contract_daily).
 func buildDepositAccruedByProduct(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT product_code,
        COUNT(*) AS savings_count,
        SUM(principal_minor) AS principal_minor,
        SUM(accrued_minor) AS accrued_minor
-FROM dpm_savings
+FROM rpt_fact_deposit_contract_daily
 WHERE tenant_id = $1 AND status = 'ACTIVE'
+  AND business_date = (
+      SELECT max(business_date) FROM rpt_fact_deposit_contract_daily
+      WHERE tenant_id = $1
+        AND business_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')::date
+  )
 GROUP BY product_code
 ORDER BY product_code`
 	return &ReportQuery{
 		QueryID: QueryDepositAccruedByProduct,
 		SQL:     sqlText,
-		Args:    []any{p.TenantID},
+		Args:    []any{p.TenantID, p.PeriodCode + "-01"},
 		Columns: []string{"product_code", "savings_count", "principal_minor", "accrued_minor"},
 	}, nil
 }
 
-// buildCapitalByFundType: nguồn vốn theo loại quỹ.
+// buildCapitalByFundType: nguồn vốn theo loại quỹ, read from the reporting
+// fact snapshot (rpt_fact_capital_contract_daily).
 func buildCapitalByFundType(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT fund_type_code,
        COUNT(*) AS contract_count,
        SUM(amount_minor) AS amount_minor,
        ROUND(AVG(interest_rate)::numeric, 4) AS avg_interest_rate
-FROM cfc_contracts
+FROM rpt_fact_capital_contract_daily
 WHERE tenant_id = $1 AND status = 'ACTIVE'
+  AND business_date = (
+      SELECT max(business_date) FROM rpt_fact_capital_contract_daily
+      WHERE tenant_id = $1
+        AND business_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')::date
+  )
 GROUP BY fund_type_code
 ORDER BY fund_type_code`
 	return &ReportQuery{
 		QueryID: QueryCapitalByFundType,
 		SQL:     sqlText,
-		Args:    []any{p.TenantID},
+		Args:    []any{p.TenantID, p.PeriodCode + "-01"},
 		Columns: []string{"fund_type_code", "contract_count", "amount_minor", "avg_interest_rate"},
 	}, nil
 }
 
-// buildCapitalMovements: biến động nguồn vốn theo loại trong kỳ.
+// buildCapitalMovements: biến động nguồn vốn theo loại trong kỳ, read from the
+// reporting fact snapshot (rpt_fact_capital_movement_daily).
 func buildCapitalMovements(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT movement_type,
        to_char(date_trunc('month', movement_date), 'YYYY-MM') AS period_code,
        COUNT(*) AS movement_count,
        SUM(amount_minor) AS amount_minor
-FROM cfc_movements
+FROM rpt_fact_capital_movement_daily
 WHERE tenant_id = $1
   AND movement_date >= $2::date
   AND movement_date < ($2::date + INTERVAL '1 month')
@@ -339,21 +369,27 @@ ORDER BY 2, movement_type`
 	}, nil
 }
 
-// buildCollateralByType: tài sản bảo đảm theo loại.
+// buildCollateralByType: tài sản bảo đảm theo loại, read from the reporting
+// fact snapshot (rpt_fact_loan_collateral_daily).
 func buildCollateralByType(p Params) (*ReportQuery, error) {
 	sqlText := `
 SELECT COALESCE(NULLIF(coll_type_code, ''), 'UNCLASSIFIED') AS coll_type_code,
        COUNT(*) AS collateral_count,
        SUM(coll_value_minor) AS coll_value_minor,
        SUM(coll_use_value_minor) AS coll_use_value_minor
-FROM lnm_collaterals
+FROM rpt_fact_loan_collateral_daily
 WHERE tenant_id = $1
+  AND business_date = (
+      SELECT max(business_date) FROM rpt_fact_loan_collateral_daily
+      WHERE tenant_id = $1
+        AND business_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')::date
+  )
 GROUP BY 1
 ORDER BY 1`
 	return &ReportQuery{
 		QueryID: QueryCollateralByType,
 		SQL:     sqlText,
-		Args:    []any{p.TenantID},
+		Args:    []any{p.TenantID, p.PeriodCode + "-01"},
 		Columns: []string{"coll_type_code", "collateral_count", "coll_value_minor", "coll_use_value_minor"},
 	}, nil
 }

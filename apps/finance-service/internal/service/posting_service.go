@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
+	metadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 )
 
@@ -102,6 +103,7 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 
 	var entryID string
 	var entryNo, createdAt string
+	actor, metaJSONB := entryMetadata(ctx, req, ref.GetDocumentCode())
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO fin_journal_entries
 			(tenant_id, accounting_date, currency_code, status, description,
@@ -113,7 +115,7 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 		ref.GetDomain(), ref.GetDocumentType(),
 		nullUUIDText(ref.GetDocumentId()), ref.GetDocumentCode(),
 		nullUUIDText(ref.GetCaseId()), nullText(req.GetIdempotencyKey()),
-		metadataActor(req, ref.GetDocumentCode()), metadataJSONB(req.GetMetadata()),
+		actor, metaJSONB,
 	).Scan(&entryID, &entryNo, &createdAt); err != nil {
 		return nil, fmt.Errorf("insert entry: %w", err)
 	}
@@ -202,6 +204,7 @@ func (s *PostingService) ReservePosting(ctx context.Context, tenantID string, re
 
 	var entryID string
 	var entryNo, createdAt string
+	actor, metaJSONB := entryMetadata(ctx, req, ref.GetDocumentCode())
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO fin_journal_entries
 			(tenant_id, accounting_date, currency_code, status, description,
@@ -213,7 +216,7 @@ func (s *PostingService) ReservePosting(ctx context.Context, tenantID string, re
 		ref.GetDomain(), ref.GetDocumentType(),
 		nullUUIDText(ref.GetDocumentId()), ref.GetDocumentCode(),
 		nullUUIDText(ref.GetCaseId()), nullText(req.GetIdempotencyKey()),
-		metadataActor(req, ref.GetDocumentCode()), metadataJSONB(req.GetMetadata()),
+		actor, metaJSONB,
 	).Scan(&entryID, &entryNo, &createdAt); err != nil {
 		return nil, fmt.Errorf("insert pending entry: %w", err)
 	}
@@ -600,13 +603,6 @@ func pendingLinesMatch(stored []repository.JournalLineRow, resolved []*financev1
 	return true
 }
 
-func metadataActor(req *financev1.PostingRequest, fallback string) string {
-	if actor := req.GetMetadata()["actor"]; actor != "" {
-		return actor
-	}
-	return fallback
-}
-
 // metadataJSONB encodes a request metadata map for the fin_journal_entries
 // metadata column: nil when the map is empty (column stays NULL — legacy
 // entries and callers without a trader stamp keep their old shape).
@@ -619,6 +615,57 @@ func metadataJSONB(metadata map[string]string) []byte {
 		return nil
 	}
 	return b
+}
+
+// entryMetadata merges the request metadata with the org unit from the request
+// context, and returns the actor stamped on fin_journal_entries.created_by.
+//
+// org_code is the reporting dimension the trial-balance rebuild needs (EPAS
+// fac_inf_trial_balance carried org_code + acc_scope + period_acct); Arda
+// posts journal entries through services whose caller context already carries
+// the verified org (x-org-id / x-user-org-ids), so the reporting read model
+// can slice the general ledger by branch. Absent org stays absent — never a
+// synthetic default.
+func entryMetadata(ctx context.Context, req *financev1.PostingRequest, fallback string) (actor string, metadata []byte) {
+	actor, metadata = mergeEntryMetadata(ctx, req.GetMetadata(), fallback)
+	return actor, metadata
+}
+
+// reversalEntryMetadata is entryMetadata for the reversal request shape.
+func reversalEntryMetadata(ctx context.Context, req *financev1.ReverseRequest) (actor string, metadata []byte) {
+	return mergeEntryMetadata(ctx, req.GetMetadata(), req.GetActor())
+}
+
+// mergeEntryMetadata is the shared body of entryMetadata/reversalEntryMetadata.
+func mergeEntryMetadata(ctx context.Context, requestMeta map[string]string, fallbackActor string) (string, []byte) {
+	meta := make(map[string]string, len(requestMeta)+1)
+	for k, v := range requestMeta {
+		if strings.TrimSpace(v) != "" {
+			meta[k] = v
+		}
+	}
+	if meta["org_code"] == "" {
+		if org := postingOrgCode(ctx); org != "" {
+			meta["org_code"] = org
+		}
+	}
+	if meta["actor"] != "" {
+		return meta["actor"], metadataJSONB(meta)
+	}
+	return fallbackActor, metadataJSONB(meta)
+}
+
+// postingOrgCode resolves the posting org unit from the verified request
+// context: the active org (x-org-id), then the caller's org scope.
+func postingOrgCode(ctx context.Context) string {
+	md := metadata.FromIncoming(ctx)
+	if org := strings.TrimSpace(md.OrgID); org != "" {
+		return org
+	}
+	if orgs := md.OrgIDs; len(orgs) > 0 {
+		return strings.TrimSpace(orgs[0])
+	}
+	return ""
 }
 
 // decodeMetadataJSONB reads the stored metadata column back into a map
@@ -719,6 +766,7 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 	}
 
 	var entryID, entryNo, createdAt string
+	reversalActor, reversalMeta := reversalEntryMetadata(ctx, req)
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO fin_journal_entries
 			(tenant_id, accounting_date, currency_code, status, description,
@@ -727,8 +775,8 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 		RETURNING id, entry_no, created_at`,
 		tenantID, reversalDate, original.Currency,
 		"REVERSAL: "+req.GetReason(), original.Domain, docType,
-		nullUUIDText(original.DocID), nullText(req.GetIdempotencyKey()), req.GetActor(),
-		metadataJSONB(req.GetMetadata())).Scan(&entryID, &entryNo, &createdAt); err != nil {
+		nullUUIDText(original.DocID), nullText(req.GetIdempotencyKey()), reversalActor,
+		reversalMeta).Scan(&entryID, &entryNo, &createdAt); err != nil {
 		return nil, fmt.Errorf("insert reversal: %w", err)
 	}
 

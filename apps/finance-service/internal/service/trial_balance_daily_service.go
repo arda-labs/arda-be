@@ -109,7 +109,7 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO fin_trial_balance_daily
-		    (tenant_id, business_date, coa_version, account_code, currency_code,
+		    (tenant_id, business_date, org_code, coa_version, account_code, currency_code,
 		     open_debit_minor, open_credit_minor, incr_debit_minor, incr_credit_minor,
 		     close_debit_minor, close_credit_minor, created_by)
 		WITH prev_max AS (
@@ -118,36 +118,37 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 		),
 		move AS (
 			SELECT l.coa_version, l.account_code, l.currency_code,
+			       COALESCE(NULLIF(e.metadata->>'org_code', ''), '') AS org_code,
 			       COALESCE(SUM(l.amount_minor) FILTER (WHERE l.direction = 'DEBIT'), 0)  AS d,
 			       COALESCE(SUM(l.amount_minor) FILTER (WHERE l.direction = 'CREDIT'), 0) AS c
 			FROM fin_journal_lines l
 			JOIN fin_journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id
 			WHERE l.tenant_id = $1 AND e.accounting_date = $2::date AND e.status IN ('POSTED', 'REVERSED')
-			GROUP BY 1, 2, 3
+			GROUP BY 1, 2, 3, 4
 		),
 		openings AS (
-			SELECT tenant_id, coa_version, account_code, currency_code,
+			SELECT tenant_id, ''::varchar AS org_code, coa_version, account_code, currency_code,
 			       SUM(CASE WHEN direction = 'DEBIT' THEN amount_minor ELSE -amount_minor END) AS signed_minor
 			FROM fin_opening_balances
 			WHERE tenant_id = $1
 			  AND accounting_date <= $2::date
 			  AND accounting_date > COALESCE((SELECT d FROM prev_max), '-infinity'::date)
-			GROUP BY 1, 2, 3, 4
+			GROUP BY 1, 2, 3, 4, 5
 		),
 		prev AS (
-			SELECT DISTINCT ON (coa_version, account_code, currency_code)
-			       coa_version, account_code, currency_code,
+			SELECT DISTINCT ON (org_code, coa_version, account_code, currency_code)
+			       org_code, coa_version, account_code, currency_code,
 			       close_debit_minor, close_credit_minor
 			FROM fin_trial_balance_daily
 			WHERE tenant_id = $1 AND business_date <= (SELECT d FROM prev_max)
-			ORDER BY coa_version, account_code, currency_code, business_date DESC
+			ORDER BY org_code, coa_version, account_code, currency_code, business_date DESC
 		),
 		keys AS (
-			SELECT coa_version, account_code, currency_code FROM move
-			UNION SELECT coa_version, account_code, currency_code FROM openings
-			UNION SELECT coa_version, account_code, currency_code FROM prev
+			SELECT org_code, coa_version, account_code, currency_code FROM move
+			UNION SELECT org_code, coa_version, account_code, currency_code FROM openings
+			UNION SELECT org_code, coa_version, account_code, currency_code FROM prev
 		)
-		SELECT $1, $2::date, k.coa_version, k.account_code, k.currency_code,
+		SELECT $1, $2::date, k.org_code, k.coa_version, k.account_code, k.currency_code,
 		       -- opening: latest prior close + opening-balance rows not yet
 		       -- covered by the rebuilt chain; debit-positive split into the
 		       -- two signed sides so close = open ± incr stays additive.
@@ -162,13 +163,16 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 		       COALESCE(p.close_credit_minor, 0) + GREATEST(-COALESCE(o.signed_minor, 0), 0) + COALESCE(m.c, 0),
 		       $3
 		FROM keys k
-		LEFT JOIN move m ON m.coa_version = k.coa_version
+		LEFT JOIN move m ON m.org_code = k.org_code
+		                AND m.coa_version = k.coa_version
 		                AND m.account_code = k.account_code
 		                AND m.currency_code = k.currency_code
-		LEFT JOIN openings o ON o.coa_version = k.coa_version
+		LEFT JOIN openings o ON o.org_code = k.org_code
+		                    AND o.coa_version = k.coa_version
 		                    AND o.account_code = k.account_code
 		                    AND o.currency_code = k.currency_code
-		LEFT JOIN prev p ON p.coa_version = k.coa_version
+		LEFT JOIN prev p ON p.org_code = k.org_code
+		                AND p.coa_version = k.coa_version
 		                AND p.account_code = k.account_code
 		                AND p.currency_code = k.currency_code
 		WHERE m.d IS NOT NULL OR m.c IS NOT NULL
@@ -188,6 +192,7 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 
 // DailyBalanceEntry is one row of the daily trial balance read API.
 type DailyBalanceEntry struct {
+	OrgCode          string `json:"org_code"`
 	CoaVersion       string `json:"coa_version"`
 	AccountCode      string `json:"account_code"`
 	AccountName      string `json:"account_name"`
@@ -206,14 +211,14 @@ func (s *TrialBalanceDailyService) ListDaily(ctx context.Context, tenantID, asOf
 		asOf = ardatime.TodayCtx(ctx)
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT tbd.coa_version, tbd.account_code, COALESCE(a.name, ''), tbd.currency_code,
+		SELECT tbd.org_code, tbd.coa_version, tbd.account_code, COALESCE(a.name, ''), tbd.currency_code,
 		       tbd.open_debit_minor, tbd.open_credit_minor,
 		       tbd.incr_debit_minor, tbd.incr_credit_minor,
 		       tbd.close_debit_minor, tbd.close_credit_minor
 		FROM fin_trial_balance_daily tbd
 		LEFT JOIN fin_accounts a ON a.tenant_id = tbd.tenant_id AND a.code = tbd.account_code
 		WHERE tbd.tenant_id = $1 AND tbd.business_date = $2::date
-		ORDER BY tbd.account_code, tbd.currency_code`, tenantID, asOf)
+		ORDER BY tbd.account_code, tbd.currency_code, tbd.org_code`, tenantID, asOf)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +227,7 @@ func (s *TrialBalanceDailyService) ListDaily(ctx context.Context, tenantID, asOf
 	entries := []DailyBalanceEntry{}
 	for rows.Next() {
 		var e DailyBalanceEntry
-		if err := rows.Scan(&e.CoaVersion, &e.AccountCode, &e.AccountName, &e.CurrencyCode,
+		if err := rows.Scan(&e.OrgCode, &e.CoaVersion, &e.AccountCode, &e.AccountName, &e.CurrencyCode,
 			&e.OpenDebitMinor, &e.OpenCreditMinor,
 			&e.IncrDebitMinor, &e.IncrCreditMinor,
 			&e.CloseDebitMinor, &e.CloseCreditMinor); err != nil {

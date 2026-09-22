@@ -39,13 +39,13 @@ func TestBuildRPTSet(t *testing.T) {
 	}{
 		{QueryLoanAppraisalSummary, 2, 5},
 		{QueryLoanDebtClassification, 1, 5},
-		{QueryCustomerSummary, 1, 3},
+		{QueryCustomerSummary, 2, 3},
 		{QueryOperationControl, 2, 4},
-		{QueryDepositMaturityLadder, 1, 4},
-		{QueryDepositAccruedByProduct, 1, 4},
-		{QueryCapitalByFundType, 1, 4},
+		{QueryDepositMaturityLadder, 2, 4},
+		{QueryDepositAccruedByProduct, 2, 4},
+		{QueryCapitalByFundType, 2, 4},
 		{QueryCapitalMovements, 2, 4},
-		{QueryCollateralByType, 1, 4},
+		{QueryCollateralByType, 2, 4},
 	}
 	for _, tc := range cases {
 		q, err := Build(tc.id, Params{TenantID: "t1", PeriodCode: "2026-09"})
@@ -97,30 +97,55 @@ func TestValidPeriod(t *testing.T) {
 	}
 }
 
-// The dư nợ report must be a period-end snapshot, not a previous-month
-// disbursement flow.
-func TestBuildLoanPortfolioSummaryUsesPeriodEnd(t *testing.T) {
+// The dư nợ report must read the reporting fact snapshot, not the loan
+// database directly, and be an as-of-period-end snapshot rather than a
+// previous-month disbursement flow.
+func TestBuildLoanPortfolioSummaryUsesFactSnapshot(t *testing.T) {
 	q, err := Build(QueryLoanPortfolioSummary, Params{TenantID: "t1", PeriodCode: "2026-09"})
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	if !strings.Contains(q.SQL, "disburse_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')") {
-		t.Fatalf("portfolio summary must cap disbursement at period end:\n%s", q.SQL)
+	if !strings.Contains(q.SQL, "FROM rpt_fact_loan_agreement_daily") {
+		t.Fatalf("portfolio summary must read the reporting fact table:\n%s", q.SQL)
 	}
-	if strings.Contains(q.SQL, "date_trunc('month', disburse_date)") {
-		t.Fatalf("portfolio summary still filters a single disbursement month:\n%s", q.SQL)
+	if !strings.Contains(q.SQL, "business_date = (") {
+		t.Fatalf("portfolio summary must be an as-of snapshot:\n%s", q.SQL)
+	}
+	if strings.Contains(q.SQL, "FROM lnm_agreements") {
+		t.Fatalf("portfolio summary must not read the loan database directly:\n%s", q.SQL)
 	}
 	if len(q.Args) != 2 {
 		t.Fatalf("args = %v, want tenant + period start", q.Args)
 	}
 }
 
+// The deposit portfolio must read the reporting fact snapshot too.
+func TestBuildDepositPortfolioUsesFactSnapshot(t *testing.T) {
+	q, err := Build(QueryDepositPortfolio, Params{TenantID: "t1", PeriodCode: "2026-09"})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if !strings.Contains(q.SQL, "FROM rpt_fact_deposit_contract_daily") {
+		t.Fatalf("deposit portfolio must read the reporting fact table:\n%s", q.SQL)
+	}
+	if strings.Contains(q.SQL, "FROM dpm_savings") {
+		t.Fatalf("deposit portfolio must not read the deposit database directly:\n%s", q.SQL)
+	}
+	if len(q.Args) != 2 || q.Args[0] != "t1" {
+		t.Fatalf("args = %v, want [t1 2026-09-01]", q.Args)
+	}
+}
+
 // Overdue count must reflect loans past maturity at run time, not loans that
-// will merely mature during the reporting period.
+// will merely mature during the reporting period, and the read must come from
+// the reporting fact snapshot.
 func TestBuildLoanDebtClassificationOverdueIsActual(t *testing.T) {
 	q, err := Build(QueryLoanDebtClassification, Params{TenantID: "t1", PeriodCode: "2026-09"})
 	if err != nil {
 		t.Fatalf("build: %v", err)
+	}
+	if !strings.Contains(q.SQL, "FROM rpt_fact_loan_agreement_daily") {
+		t.Fatalf("debt classification must read the reporting fact table:\n%s", q.SQL)
 	}
 	if !strings.Contains(q.SQL, "maturity_date < CURRENT_DATE") {
 		t.Fatalf("overdue must compare maturity_date to CURRENT_DATE:\n%s", q.SQL)
@@ -130,6 +155,36 @@ func TestBuildLoanDebtClassificationOverdueIsActual(t *testing.T) {
 	}
 	if len(q.Args) != 1 || q.Args[0] != "t1" {
 		t.Fatalf("args = %v, want [t1] (period is not used by this builder)", q.Args)
+	}
+}
+
+// The capital/collateral/customer builders must read the reporting fact
+// snapshots, never the domain database.
+func TestBuildReadModelBuildersUseFactTables(t *testing.T) {
+	cases := []struct {
+		id    string
+		table string
+		old   string
+	}{
+		{QueryLoanAppraisalSummary, "rpt_fact_loan_agreement_daily", "FROM lnm_agreements"},
+		{QueryCustomerSummary, "rpt_fact_customer_daily", "FROM customers"},
+		{QueryCapitalByFundType, "rpt_fact_capital_contract_daily", "FROM cfc_contracts"},
+		{QueryCapitalMovements, "rpt_fact_capital_movement_daily", "FROM cfc_movements"},
+		{QueryCollateralByType, "rpt_fact_loan_collateral_daily", "FROM lnm_collaterals"},
+		{QueryDepositMaturityLadder, "rpt_fact_deposit_contract_daily", "FROM dpm_savings"},
+		{QueryDepositAccruedByProduct, "rpt_fact_deposit_contract_daily", "FROM dpm_savings"},
+	}
+	for _, tc := range cases {
+		q, err := Build(tc.id, Params{TenantID: "t1", PeriodCode: "2026-09"})
+		if err != nil {
+			t.Fatalf("build %s: %v", tc.id, err)
+		}
+		if !strings.Contains(q.SQL, "FROM "+tc.table) {
+			t.Fatalf("%s must read %s:\n%s", tc.id, tc.table, q.SQL)
+		}
+		if strings.Contains(q.SQL, tc.old) {
+			t.Fatalf("%s must not read the domain table (%s):\n%s", tc.id, tc.old, q.SQL)
+		}
 	}
 }
 

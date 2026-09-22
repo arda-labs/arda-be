@@ -8,7 +8,7 @@ import (
 )
 
 // NewRouter wires the deposit-service HTTP surface.
-func NewRouter(h *handler.DepositHandler, ai *handler.InternalAIHandler) http.Handler {
+func NewRouter(h *handler.DepositHandler, ai *handler.InternalAIHandler, rep *handler.InternalReportingHandler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -102,6 +102,11 @@ func NewRouter(h *handler.DepositHandler, ai *handler.InternalAIHandler) http.Ha
 	mux.Handle("GET /internal/ai/savings/{code}", internalAIService(http.HandlerFunc(ai.InternalAIGetSavingsDetail)))
 	mux.Handle("GET /internal/ai/interest-rates", internalAIService(http.HandlerFunc(ai.InternalAIListInterestRates)))
 
+	// Internal reporting surface: statistical-service's reporting ETL reads
+	// the full tenant slice here (signed caller; tenant re-checked inside the
+	// handler). Never exposed to browsers.
+	mux.Handle("GET /internal/reporting/deposit-savings", internalReportingService(http.HandlerFunc(rep.InternalReportingSavings)))
+
 	return mux
 }
 
@@ -117,6 +122,18 @@ func internalAIService(next http.Handler) http.Handler {
 		})
 	}
 	return identity.RequireServiceAuth(secret, "deposit-service", identity.AllowedSources("ai-service"))(next)
+}
+
+// internalReportingService authenticates the statistical-service caller on the
+// reporting ETL surface (same signed-assertion contract, distinct source).
+func internalReportingService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
+		})
+	}
+	return identity.RequireServiceAuth(secret, "deposit-service", identity.AllowedSources("statistical-service"))(next)
 }
 
 func method(verb string, fn http.HandlerFunc) http.HandlerFunc {

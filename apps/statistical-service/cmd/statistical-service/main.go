@@ -16,6 +16,7 @@ import (
 	appconfig "github.com/arda-labs/arda/apps/statistical-service/internal/config"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/handler"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/migration"
+	"github.com/arda-labs/arda/apps/statistical-service/internal/reporting"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/repository"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/service"
 	grpcserver "github.com/arda-labs/arda/apps/statistical-service/internal/transport/grpc"
@@ -67,6 +68,7 @@ func main() {
 	statisticalSvc := service.NewStatisticalService(repo, workflow)
 	statisticalHandler := handler.NewStatisticalHandler(statisticalSvc)
 	internalAIHandler := handler.NewInternalAIHandler(statisticalSvc)
+	indicatorResultHandler := handler.NewIndicatorResultHandler(statisticalSvc)
 
 	// ── gRPC server (StatisticalCommandService) ──
 	serviceSecret, err := identity.SecretFromEnv()
@@ -79,6 +81,11 @@ func main() {
 		logger.Error("grpc transport credentials", "err", err)
 		os.Exit(1)
 	}
+
+	// Reporting ETL: materialises the fact read model from the domain services
+	// over the signed /internal/reporting/* surface (no cross-DB reads).
+	reportingSvc := reporting.NewService(db, serviceSecret, cfg.LoanServiceURL, cfg.DepositServiceURL, cfg.CapitalServiceURL, cfg.CRMServiceURL, logger)
+	reportingJobHandler := handler.NewReportingJobHandler(reportingSvc)
 	grpcSrv := grpc.NewServer(
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
@@ -107,9 +114,9 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(statisticalHandler, internalAIHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(statisticalHandler, internalAIHandler, reportingJobHandler, indicatorResultHandler)),
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		WriteTimeout: 120 * time.Second, // the reporting ETL job fans out to domain services
 		IdleTimeout:  60 * time.Second,
 	}
 
@@ -135,12 +142,16 @@ func main() {
 }
 
 type config struct {
-	AppName          string
-	HTTPAddr         string
-	GRPCAddr         string
-	LogLevel         string
-	DatabaseDSN      string
-	WorkflowGRPCAddr string
+	AppName           string
+	HTTPAddr          string
+	GRPCAddr          string
+	LogLevel          string
+	DatabaseDSN       string
+	WorkflowGRPCAddr  string
+	LoanServiceURL    string
+	DepositServiceURL string
+	CapitalServiceURL string
+	CRMServiceURL     string
 }
 
 // StatisticalSubmitterAdapter adapts the workflow client to the service
@@ -160,12 +171,16 @@ func (a StatisticalSubmitterAdapter) SubmitCase(ctx context.Context, caseID, act
 func loadConfig() config {
 	base := appconfig.Load()
 	return config{
-		AppName:          base.AppName,
-		HTTPAddr:         base.HTTPAddr,
-		GRPCAddr:         envOr("GRPC_ADDR", "0.0.0.0:9090"),
-		LogLevel:         base.LogLevel,
-		DatabaseDSN:      base.DatabaseDSN,
-		WorkflowGRPCAddr: base.WorkflowGRPCAddr,
+		AppName:           base.AppName,
+		HTTPAddr:          base.HTTPAddr,
+		GRPCAddr:          envOr("GRPC_ADDR", "0.0.0.0:9090"),
+		LogLevel:          base.LogLevel,
+		DatabaseDSN:       base.DatabaseDSN,
+		WorkflowGRPCAddr:  base.WorkflowGRPCAddr,
+		LoanServiceURL:    base.LoanServiceURL,
+		DepositServiceURL: base.DepositServiceURL,
+		CapitalServiceURL: base.CapitalServiceURL,
+		CRMServiceURL:     base.CRMServiceURL,
 	}
 }
 

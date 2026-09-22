@@ -8,7 +8,7 @@ import (
 )
 
 // NewRouter wires the capital-service HTTP surface.
-func NewRouter(h *handler.CapitalHandler, internalAIHandler *handler.InternalAIHandler) http.Handler {
+func NewRouter(h *handler.CapitalHandler, internalAIHandler *handler.InternalAIHandler, rep *handler.InternalReportingHandler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -67,6 +67,10 @@ func NewRouter(h *handler.CapitalHandler, internalAIHandler *handler.InternalAIH
 	mux.Handle("GET /internal/ai/products", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListProducts)))
 	mux.Handle("GET /internal/ai/contracts", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListContracts)))
 
+	// Internal reporting surface: statistical-service's ETL (signed caller).
+	mux.Handle("GET /internal/reporting/capital-contracts", internalReportingService(http.HandlerFunc(rep.InternalReportingContracts)))
+	mux.Handle("GET /internal/reporting/capital-movements", internalReportingService(http.HandlerFunc(rep.InternalReportingMovements)))
+
 	return mux
 }
 
@@ -82,6 +86,18 @@ func internalAIService(next http.Handler) http.Handler {
 		})
 	}
 	return identity.RequireServiceAuth(secret, "capital-service", identity.AllowedSources("ai-service"))(next)
+}
+
+// internalReportingService authenticates the statistical-service caller on the
+// reporting ETL surface (same signed-assertion contract, distinct source).
+func internalReportingService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
+		})
+	}
+	return identity.RequireServiceAuth(secret, "capital-service", identity.AllowedSources("statistical-service"))(next)
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {

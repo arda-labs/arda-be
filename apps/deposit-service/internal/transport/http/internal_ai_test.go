@@ -123,7 +123,7 @@ func aiTestRouter() http.Handler {
 		IsActive:      true,
 		CreatedBy:     "user-secret",
 	}}}
-	return NewRouter(nil, handler.NewInternalAIHandler(savings, savings, rates))
+	return NewRouter(nil, handler.NewInternalAIHandler(savings, savings, rates), nil)
 }
 
 func aiSignedRequest(t *testing.T, router http.Handler, path, tenantID, token string) *httptest.ResponseRecorder {
@@ -250,7 +250,7 @@ func TestInternalAI_ListSavings_RedactsInternalFields(t *testing.T) {
 func TestInternalAI_GetSavingsDetail_RedactsAndCapsTransactions(t *testing.T) {
 	t.Setenv("ARDA_SERVICE_AUTH_SECRET", aiTestSecret)
 	savings := &stubAISavingsSource{savings: []repository.Savings{aiTestSavings()}, detail: aiTestDetail(25)}
-	router := NewRouter(nil, handler.NewInternalAIHandler(savings, savings, &stubAIRateSource{}))
+	router := NewRouter(nil, handler.NewInternalAIHandler(savings, savings, &stubAIRateSource{}), nil)
 
 	res := aiSignedRequest(t, router, "/internal/ai/savings/SAV-2026-001", "tenant-1", aiValidToken(t))
 	if res.Code != http.StatusOK {

@@ -113,7 +113,7 @@ func aiTestRouter() http.Handler {
 			IsActive:         true,
 		}},
 	}
-	return NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, handler.NewInternalAIHandler(source), nil)
+	return NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, handler.NewInternalAIHandler(source), nil, nil)
 }
 
 func aiSignedRequest(t *testing.T, router http.Handler, path, tenantID, token string) *httptest.ResponseRecorder {
@@ -244,7 +244,7 @@ func TestInternalAI_ListContracts_ReturnsRedactedPage(t *testing.T) {
 func TestInternalAI_GetContract_RedactsInternalFields(t *testing.T) {
 	t.Setenv("ARDA_SERVICE_AUTH_SECRET", aiTestSecret)
 	source := &stubAILoanSource{contracts: []domain.Contract{aiTestContract()}}
-	router := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, handler.NewInternalAIHandler(source), nil)
+	router := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, handler.NewInternalAIHandler(source), nil, nil)
 
 	res := aiSignedRequest(t, router, "/internal/ai/contracts/ctrt_1", "tenant-1", aiValidToken(t))
 	if res.Code != http.StatusOK {

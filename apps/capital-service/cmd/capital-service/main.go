@@ -77,6 +77,7 @@ func main() {
 	capitalSvc := service.NewCapitalService(repo, db, financeClient, workflowClient)
 	capitalHandler := handler.NewCapitalHandler(capitalSvc)
 	internalAIHandler := handler.NewInternalAIHandler(capitalSvc)
+	internalReportingHandler := handler.NewInternalReportingHandler(capitalSvc)
 
 	// ── gRPC server (CapitalCommandService, port 9090) ──
 	serviceSecret, err := identity.SecretFromEnv()
@@ -117,7 +118,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(capitalHandler, internalAIHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(capitalHandler, internalAIHandler, internalReportingHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

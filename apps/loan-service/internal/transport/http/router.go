@@ -11,7 +11,7 @@ import (
 
 // NewRouter wires the loan-service HTTP surface. Adjustment routes are
 // generated from the shared kind list so adding a flow never touches here.
-func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, rp *handler.ReportHandler, pl *handler.PlanHandler, sp *handler.SpecificProvisionHandler, ai *handler.InternalAIHandler, kinds []string) http.Handler {
+func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, rp *handler.ReportHandler, pl *handler.PlanHandler, sp *handler.SpecificProvisionHandler, ai *handler.InternalAIHandler, rep *handler.InternalReportingHandler, kinds []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -259,6 +259,12 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 	mux.Handle("GET /internal/ai/contracts/{id}", internalAIService(http.HandlerFunc(ai.InternalAIGetContract)))
 	mux.Handle("GET /internal/ai/repay-plans", internalAIService(http.HandlerFunc(ai.InternalAIListRepayPlans)))
 
+	// Internal reporting surface: statistical-service's reporting ETL reads
+	// the full tenant slice here (signed caller; tenant re-checked inside the
+	// handler). Never exposed to browsers.
+	mux.Handle("GET /internal/reporting/loan-agreements", internalReportingService(http.HandlerFunc(rep.InternalReportingAgreements)))
+	mux.Handle("GET /internal/reporting/loan-collaterals", internalReportingService(http.HandlerFunc(rep.InternalReportingCollaterals)))
+
 	return mux
 }
 
@@ -274,6 +280,19 @@ func internalAIService(next http.Handler) http.Handler {
 		})
 	}
 	return identity.RequireServiceAuth(secret, "loan-service", identity.AllowedSources("ai-service"))(next)
+}
+
+// internalReportingService authenticates the statistical-service caller on the
+// reporting ETL surface. Same signed-assertion contract as the AI surface, but
+// a distinct allowed source (the reporting ETL is not the assistant).
+func internalReportingService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
+		})
+	}
+	return identity.RequireServiceAuth(secret, "loan-service", identity.AllowedSources("statistical-service"))(next)
 }
 
 func method(verb string, fn http.HandlerFunc) http.HandlerFunc {

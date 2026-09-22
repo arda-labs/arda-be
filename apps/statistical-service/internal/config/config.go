@@ -14,6 +14,12 @@ type Config struct {
 	LogLevel         string `yaml:"log_level"`
 	DatabaseDSN      string `yaml:"database_dsn"`
 	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr"`
+	// Reporting ETL sources (signed /internal/reporting/*). Empty disables
+	// that source (reported as skipped, not failed).
+	LoanServiceURL    string `yaml:"loan_service_url"`
+	DepositServiceURL string `yaml:"deposit_service_url"`
+	CapitalServiceURL string `yaml:"capital_service_url"`
+	CRMServiceURL     string `yaml:"crm_service_url"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -41,6 +47,10 @@ func Load() Config {
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("WORKFLOW_GRPC_ADDR", &cfg.WorkflowGRPCAddr)
+	envStr("LOAN_SERVICE_URL", &cfg.LoanServiceURL)
+	envStr("DEPOSIT_SERVICE_URL", &cfg.DepositServiceURL)
+	envStr("CAPITAL_SERVICE_URL", &cfg.CapitalServiceURL)
+	envStr("CRM_SERVICE_URL", &cfg.CRMServiceURL)
 
 	return cfg
 }
@@ -65,6 +75,10 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("log_level", &c.LogLevel)
 	setStr("database_dsn", &c.DatabaseDSN)
 	setStr("workflow_grpc_addr", &c.WorkflowGRPCAddr)
+	setStr("loan_service_url", &c.LoanServiceURL)
+	setStr("deposit_service_url", &c.DepositServiceURL)
+	setStr("capital_service_url", &c.CapitalServiceURL)
+	setStr("crm_service_url", &c.CRMServiceURL)
 	return true
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/arda-labs/arda/apps/statistical-service/internal/indicator"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/reports"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
@@ -25,10 +26,13 @@ type StatisticalSubmitter interface {
 type StatisticalService struct {
 	repo     *repository.StatisticalRepository
 	workflow StatisticalSubmitter
+	engine   *indicator.Engine
 }
 
+// NewStatisticalService wires the service. The indicator engine is optional so
+// submission-only deployments (and tests) keep working without it.
 func NewStatisticalService(repo *repository.StatisticalRepository, workflow StatisticalSubmitter) *StatisticalService {
-	return &StatisticalService{repo: repo, workflow: workflow}
+	return &StatisticalService{repo: repo, workflow: workflow, engine: indicator.NewEngine(repo)}
 }
 
 // CaseType is the report submission case type.
@@ -278,6 +282,135 @@ func isCatalogKind(kind string) bool {
 		}
 	}
 	return false
+}
+
+// UpsertIndicatorResult stores one computed/manual indicator value and audits
+// the change. Values arrive from the compute engine or an operator; the SQL
+// that produced them never reaches this layer.
+func (s *StatisticalService) UpsertIndicatorResult(ctx context.Context, tenantID, actor string, in *repository.IndicatorResult) (*repository.IndicatorResult, error) {
+	if in.IndicatorCode == "" || in.PeriodCode == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "indicator_code and period_code are required")
+	}
+	in.TenantID = tenantID
+	in.CreatedBy = actor
+	return s.repo.UpsertIndicatorResult(ctx, in)
+}
+
+// ListIndicatorResults returns stored values for a period.
+func (s *StatisticalService) ListIndicatorResults(ctx context.Context, params repository.ListIndicatorResultsParams) ([]repository.IndicatorResult, error) {
+	return s.repo.ListIndicatorResults(ctx, params)
+}
+
+// ComputeIndicator evaluates one indicator for one period (optionally sliced by
+// dimension) and stores the result. Series formulas (growth / trailing_average)
+// resolve their base values from previously stored results.
+func (s *StatisticalService) ComputeIndicator(ctx context.Context, tenantID, actor, code string, params map[string]string) (*repository.IndicatorResult, error) {
+	if s.engine == nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, "indicator engine is not configured")
+	}
+	period := params["period_code"]
+	if period == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "period_code is required")
+	}
+	dims := map[string]string{}
+	for _, name := range indicator.DimensionNames {
+		if v := params["dim_"+name]; v != "" {
+			dims[name] = v
+		}
+	}
+	dimKey := indicator.DimensionKey(dims)
+	resolver := func(ctx context.Context, indicatorCode, periodCode string) (*float64, error) {
+		results, err := s.repo.ListIndicatorResults(ctx, repository.ListIndicatorResultsParams{
+			TenantID:      tenantID,
+			IndicatorCode: indicatorCode,
+			PeriodCode:    periodCode,
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Prefer the row matching this dimension key; fall back to the total.
+		for _, r := range results {
+			if r.DimensionKey == dimKey && r.Value != nil {
+				return r.Value, nil
+			}
+		}
+		for _, r := range results {
+			if r.DimensionKey == "" && r.Value != nil {
+				return r.Value, nil
+			}
+		}
+		return nil, nil
+	}
+	value, err := s.engine.ComputeSeries(ctx, tenantID, code, period, dims, resolver, 0)
+	if err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
+	}
+	result := &repository.IndicatorResult{
+		IndicatorCode: code,
+		PeriodCode:    period,
+		DimensionKey:  dimKey,
+		Value:         &value,
+		Source:        "COMPUTED",
+	}
+	return s.UpsertIndicatorResult(ctx, tenantID, actor, result)
+}
+
+// ComputeAllIndicators evaluates every active indicator whose kpi_type is P or
+// C for a period and stores the results. Indicators whose formula cannot be
+// evaluated (e.g. growth without a comparison period) are reported, not
+// silently skipped.
+func (s *StatisticalService) ComputeAllIndicators(ctx context.Context, tenantID, actor string, params map[string]string) (map[string]any, error) {
+	period := params["period_code"]
+	if period == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "period_code is required")
+	}
+	indicators, err := s.repo.ListIndicators(ctx, repository.ListIndicatorsParams{TenantID: tenantID})
+	if err != nil {
+		return nil, err
+	}
+	// Two passes: primaries and ratios first, so growth/trailing-average
+	// indicators find their base values already stored.
+	computed, failed := []map[string]any{}, []map[string]any{}
+	for _, ind := range indicators {
+		var f struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal(ind.Formula, &f)
+		if f.Type == "growth" || f.Type == "trailing_average" {
+			continue
+		}
+		value, err := s.engine.Compute(ctx, tenantID, ind.Code, period, map[string]string{})
+		if err != nil {
+			failed = append(failed, map[string]any{"code": ind.Code, "error": err.Error()})
+			continue
+		}
+		if _, err := s.UpsertIndicatorResult(ctx, tenantID, actor, &repository.IndicatorResult{
+			IndicatorCode: ind.Code, PeriodCode: period, Value: &value, Source: "COMPUTED",
+		}); err != nil {
+			failed = append(failed, map[string]any{"code": ind.Code, "error": err.Error()})
+			continue
+		}
+		computed = append(computed, map[string]any{"code": ind.Code, "value": value})
+	}
+	for _, ind := range indicators {
+		var f struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal(ind.Formula, &f)
+		if f.Type != "growth" && f.Type != "trailing_average" {
+			continue
+		}
+		// Second pass through ComputeIndicator so the resolver sees pass 1.
+		if _, err := s.ComputeIndicator(ctx, tenantID, actor, ind.Code, map[string]string{"period_code": period}); err != nil {
+			failed = append(failed, map[string]any{"code": ind.Code, "error": err.Error()})
+			continue
+		}
+		computed = append(computed, map[string]any{"code": ind.Code, "value": nil})
+	}
+	return map[string]any{
+		"period_code": period, "computed": computed, "failed": failed,
+		"computed_count": len(computed), "failed_count": len(failed),
+	}, nil
 }
 
 // ListCatalogItems returns rows of one kind.

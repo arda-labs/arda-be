@@ -76,6 +76,10 @@ func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handl
 	// still applies inside the handler (see InternalAIGetCustomer).
 	mux.Handle("/internal/ai/customers/{id}", internalAIService(http.HandlerFunc(customerHandler.InternalAIGetCustomer)))
 
+	// Internal reporting surface: statistical-service's reporting ETL reads the
+	// tenant customer slice (signed caller; tenant re-checked in the handler).
+	mux.Handle("GET /internal/reporting/customers", internalReportingService(http.HandlerFunc(customerHandler.InternalReportingCustomers)))
+
 	return ardametadata.HTTPMiddleware(mux)
 }
 
@@ -99,6 +103,18 @@ func internalAIService(next http.Handler) http.Handler {
 		})
 	}
 	return identity.RequireServiceAuth(secret, "crm-service", identity.AllowedSources("ai-service"))(next)
+}
+
+// internalReportingService authenticates the statistical-service caller on the
+// reporting ETL surface (same signed-assertion contract, distinct source).
+func internalReportingService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
+		})
+	}
+	return identity.RequireServiceAuth(secret, "crm-service", identity.AllowedSources("statistical-service"))(next)
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {

@@ -83,6 +83,7 @@ func main() {
 	reportSvc := service.NewReportService(repo)
 	depositHandler := handler.NewDepositHandler(settlementSvc, additionalSvc, productRequestSvc, ibmSvc, interestSvc, reportSvc)
 	internalAIHandler := handler.NewInternalAIHandler(settlementSvc, interestSvc, interestSvc)
+	internalReportingHandler := handler.NewInternalReportingHandler(settlementSvc)
 
 	// ── gRPC server (DepositCommandService, port 9090) ──
 	serviceSecret, errSec := identity.SecretFromEnv()
@@ -123,7 +124,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(depositHandler, internalAIHandler))),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(depositHandler, internalAIHandler, internalReportingHandler))),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
