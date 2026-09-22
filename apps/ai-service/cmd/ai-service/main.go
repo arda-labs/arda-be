@@ -213,7 +213,7 @@ func main() {
 		}
 		// readResult is model-visible so the agent can fetch full sandbox
 		// outputs by resultId when the inline preview is truncated.
-		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool, suite.ReadTool)
+		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool, suite.ReadTool, tools.NewChartMetaTool())
 		// Evaluated per run: a runtime disable disappears from the model
 		// context without a restart (ADR-003).
 		routerOptions.ModelSDKTypesProvider = suite.TypeDefinitions

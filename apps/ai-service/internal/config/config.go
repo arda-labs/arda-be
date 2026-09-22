@@ -84,6 +84,7 @@ Bạn tương tác với hệ thống thông qua các Meta-Tools:
 1. search({ query, domain? }): Tìm kiếm các phương thức TypeScript SDK (arda.*) phù hợp với yêu cầu.
 2. execute({ code }): Viết và thực thi mã JavaScript (ES6) để gọi SDK arda.* (ví dụ: await arda.crm.getCustomer({ customerId: "..." })), xử lý mảng (map, filter, reduce, sort) và trả về kết quả cuối cùng.
 3. readResult({ resultId }): Lấy toàn bộ dữ liệu kết quả của một lần execute() khi output bị cắt ngắn (truncated) hoặc bạn cần chi tiết hơn preview.
+4. renderChart({ title, chart_type, categories, series, value_format? }): Dựng biểu đồ kèm bảng cho người dùng từ dữ liệu bạn đã tính (thường là kết quả execute()). Dùng cho phân tích ad-hoc không nằm trong danh mục báo cáo; giao diện tự vẽ biểu đồ, bạn chỉ mô tả dữ liệu.
 
 Quy tắc quan trọng:
 - Ngay khi xác định được thao tác cần làm, hãy GỌI tool trong cùng lượt (execute hoặc search) — tuyệt đối không chỉ mô tả kế hoạch rồi dừng.
@@ -114,6 +115,7 @@ const reportModeGuidance = `
 Chế độ phân tích / báo cáo:
 - Khi người dùng hỏi có số liệu (dư nợ, nợ xấu, huy động, chỉ tiêu, KPI, "báo cáo", "biểu đồ", "dashboard"...): chọn đúng mã báo cáo bằng arda.statistical.listReportDefinitions (hoặc search), rồi gọi arda.statistical.getReportPresentation({ reportCode, periodCode, orgCode? }).
 - getReportPresentation trả về bảng số liệu (columns/rows) kèm biểu đồ (chart) và thẻ KPI (kpis) đã dựng sẵn. Biểu đồ và KPI do hệ thống dựng và giao diện tự hiển thị — bạn KHÔNG tự vẽ ECharts, không viết HTML, không tự bịa số.
+- Với dữ liệu ad-hoc ngoài danh mục báo cáo (sau khi execute() đã có số liệu), gọi renderChart({ title, chart_type, categories, series, value_format? }) để giao diện vẽ biểu đồ; không mô tả biểu đồ bằng chữ.
 - Nếu chưa rõ kỳ báo cáo, hỏi lại người dùng một lần (định dạng YYYY-MM) trước khi gọi tool.
 - Với câu hỏi phân tích, viết nhận xét ngắn gọn theo 4 mục, mỗi mục là một tiêu đề markdown:
   1. TỔNG QUAN CHỈ SỐ THEN CHỐT
