@@ -4,6 +4,10 @@
 -- book. Separate from CRM_CUSTOMER_* so member-duty owners are distinct from
 -- customer-registration owners (the workflow registers CRM_MAKER/CRM_CHECKER
 -- for CRM_MEMBER_V1; these IAM roles carry the API permissions).
+--
+-- iam_roles.tenant_id has a CHECK forbidding '' and 'default', so the pilot
+-- tenant id is used (same as the CRM_CUSTOMER_* seed rows); the older seed
+-- files that still write 'default' only ran before that constraint existed.
 
 INSERT INTO iam_permissions (id, code, name, module_code, resource_code, operation_code)
 VALUES
@@ -13,8 +17,8 @@ ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO iam_roles (id, code, name, status, tenant_id)
 VALUES
-    (uuidv7(), 'CRM_MEMBER_MAKER',   'CRM member maker',   'ACTIVE', 'default'),
-    (uuidv7(), 'CRM_MEMBER_CHECKER', 'CRM member checker', 'ACTIVE', 'default')
+    (uuidv7(), 'CRM_MEMBER_MAKER',   'CRM member maker',   'ACTIVE', '00000000-0000-0000-0000-000000000010'),
+    (uuidv7(), 'CRM_MEMBER_CHECKER', 'CRM member checker', 'ACTIVE', '00000000-0000-0000-0000-000000000010')
 ON CONFLICT (tenant_id, code) DO NOTHING;
 
 INSERT INTO iam_role_permissions (role_id, permission_id)
