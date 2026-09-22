@@ -347,6 +347,37 @@ bộ** fact trong cùng transaction.
     `10022.01` (vốn góp > 0) fail. So text cũng **sai số học** (`"9" > "10"`).
     Sửa: whitelist cột số (`numericFactColumns`) → cast `col::numeric op
     ALL($n::numeric[])`.
+16. **Seed chỉ tiêu series sai dạng**: `growth`/`trailing_average` phải trỏ
+    **mã chỉ tiêu cơ sở** (`indicator`) vì `ComputeSeries` đọc **giá trị đã lưu**
+    qua các kỳ, không đọc fact. Seed dùng `fact`+`column` → `growth` fail rõ,
+    còn `trailing_average` **im lặng trả `null`** (lỗi tệ hơn vì không ai biết).
+    Sửa seed gốc + migration vá môi trường đã chạy.
+17. **Dimension/filter bằng trên cột số**: `term_months = $n::text` sinh
+    `integer = text`. Sửa: helper `eqExpr` cast cột số sang text cho predicate
+    **bằng** (an toàn — equality không đổi ngữ nghĩa), giữ `::numeric` cho so
+    sánh thứ tự.
+
+## 9e. Bước 6b-1 (tiền gửi TCTD) — ĐÓNG, verified trên cluster
+
+Fact `rpt_fact_ibm_deposit_daily` + surface `/internal/reporting/ibm-deposits`
+(deposit-service) + ETL + **11 chỉ tiêu** PCF "Tiền gửi TCTD".
+
+Bằng chứng:
+- Fact ghi đúng: `IBM-T-0001` term 3 (từ product), 200tr, 4.5%; `IBM-T-0002`
+  term 0, 100tr, 0.5%.
+- Compute `2026-09` → **35/35 computed, 0 failed**.
+- Số khớp fact: 60000.01 = 300tr · 60002.02 = 200tr · 60002.03 = 100tr ·
+  60002.04 = 3,5tr · 60004.01 = 2 · 60004.37 = 2.5.
+- Series thật: base 2026-08 = 200tr → 60000.01.01 = **250tr** (TB 3 tháng),
+  60000.01.02 = **0.5** (+50%).
+
+**Cố ý chưa làm**: chia NHHT / NHNN / TCTD khác — cần registry
+`platform.plt_credit_institutions` (đang rỗng). Hardcode mã "NHHT" sẽ đặt **số
+sai lên báo cáo quy định**. Fact giữ `counterparty_code` + dimension
+`counterparty` nên chỉ cần thêm filter khi registry có dữ liệu.
+
+Còn lại của Bước 6: **tiền vay TCTD (26 chỉ tiêu)** — chưa có domain trong Arda
+(cần bảng `ibm_borrows` + workflow); kho quỹ/chuyển tiền/TSCĐ. Sau đó Bước 7.
 
 ## 9d. Bước 6 (member) — ĐÓNG, verified trên cluster (2026-09-22)
 
