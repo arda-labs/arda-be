@@ -294,6 +294,29 @@ minh nó *từng* hợp lệ; schema đã tiến hoá sau đó.
 Quy tắc rút ra: trước khi thêm migration/khởi động, kiểm tra **constraint,
 unique index và thứ tự phụ thuộc hiện hành**, không suy ra từ file cũ.
 
+## 9c. Bài học verify HTTP write path (2026-09-22)
+
+Hai bug nữa chỉ lộ khi **gọi thẳng endpoint như FE gọi** (unit test dựng struct
+trong Go nên không chạm đường decode/serialize):
+
+10. **Request struct thiếu `json:` tag** (`RegisterMemberInput`,
+    `SubmitCapitalRequestInput`). `encoding/json` không bind được payload
+    snake_case của FE → handler decode ra struct rỗng → mọi register/request
+    fail `"customer_code is required"` **trước khi tới service**. Unit test và
+    gRPC callback đều dựng struct bằng Go nên xanh.
+    - `check-json-tags.mjs` cũ chỉ chặn camelCase, **không** đòi có tag. Đã
+      thêm invariant: struct là đích của `json.NewDecoder(r.Body).Decode(&x)`
+      phải có ≥1 json tag (resolve `x` về `var x T` gần nhất; tên type không
+      unique — `iam`/`platform` cùng có `Organization`, chỉ 1 có tag — nên chỉ
+      fail khi **mọi** struct cùng tên đều 0 tag).
+11. **`$8 + $9` với tham số untyped** trong INSERT `crm_members` →
+    `SQLSTATE 42725 "operator is not unique: unknown + unknown"`. Mọi register
+    fail ở INSERT dù body đã decode đúng. Sửa: `$8::bigint + $9::bigint`.
+
+Quy tắc rút ra: contract HTTP phải verify bằng **payload thật của FE**
+(snake_case), không bằng struct Go; và expression SQL phải cast kiểu tường minh
+khi cộng tham số.
+
 ## 10. Non-goals
 
 - Không SQL-as-config (`EXPRESSION_SQL`), không free-form text-to-SQL.
