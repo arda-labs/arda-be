@@ -304,6 +304,26 @@ func (r *StatisticalRepository) ScalarQuery(ctx context.Context, query string, a
 	return value.Float64, nil
 }
 
+// TrialBalanceTotals returns the end-of-day debit and credit totals for the
+// latest trial-balance snapshot on or before the period end. They must be
+// equal in a double-entry book; the reconciliation uses the pair as the
+// baseline check on the fact and ETL.
+func (r *StatisticalRepository) TrialBalanceTotals(ctx context.Context, tenantID, periodCode string) (int64, int64, error) {
+	var debit, credit sql.NullInt64
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(close_debit_minor),0), COALESCE(SUM(close_credit_minor),0)
+		FROM rpt_fact_trial_balance_daily
+		WHERE tenant_id = $1
+		  AND business_date = (
+		    SELECT max(business_date) FROM rpt_fact_trial_balance_daily
+		    WHERE tenant_id = $1
+		      AND business_date <= ($2::date + INTERVAL '1 month' - INTERVAL '1 day')::date)`,
+		tenantID, periodCode+"-01").Scan(&debit, &credit); err != nil {
+		return 0, 0, err
+	}
+	return debit.Int64, credit.Int64, nil
+}
+
 // UpsertIndicator creates or updates one indicator.
 func (r *StatisticalRepository) UpsertIndicator(ctx context.Context, i *Indicator) (*Indicator, error) {
 	if i.ID == "" {
