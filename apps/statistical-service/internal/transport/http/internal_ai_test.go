@@ -48,6 +48,14 @@ func (s *stubStatisticalAISource) ListIndicatorResults(_ context.Context, params
 	return s.indicatorResults, nil
 }
 
+func (s *stubStatisticalAISource) ListAlerts(_ context.Context, tenantID, _, _ string) ([]repository.IndicatorAlert, error) {
+	if tenantID == "" {
+		return nil, errAIMissingTenant
+	}
+	s.lastTenantID = tenantID
+	return []repository.IndicatorAlert{}, nil
+}
+
 func (s *stubStatisticalAISource) RunReport(_ context.Context, tenantID, code string, params map[string]string) (*repository.ReportDefinition, *reports.ReportQuery, [][]any, error) {
 	if tenantID == "" {
 		return nil, nil, nil, errAIMissingTenant

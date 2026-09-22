@@ -502,6 +502,73 @@
           }
         }
       }
+    },
+    "/internal/ai/indicator-alerts": {
+      "get": {
+        "operationId": "aiListIndicatorAlerts",
+        "summary": "List open indicator threshold alerts for a period.",
+        "description": "List the threshold alerts the proactive reporting loop raised for the tenant: which indicator breached which rule, the value, the threshold and the severity. Only the alert record is exposed — rule definitions and their configuration stay behind this boundary. Use this to answer 'có cảnh báo gì' / 'chỉ tiêu nào vượt ngưỡng'.",
+        "x-ai-tool": {
+          "sdkPath": "arda.statistical.listIndicatorAlerts",
+          "domain": "statistical",
+          "kind": "read",
+          "risk": "low",
+          "timeoutMs": 3000,
+          "keywords": [
+            "statistical", "alert", "alerts", "warning", "threshold", "breach", "risk", "severity",
+            "cảnh báo", "cảnh báo chỉ tiêu", "vượt ngưỡng", "ngưỡng", "rủi ro", "cảnh báo rủi ro"
+          ],
+          "requiredPerms": ["statistical.read"],
+          "service": "statistical-service",
+          "envelope": "result",
+          "returns": "IndicatorAlertListPage { items: [{ rule_code, indicator_code, period_code, dimension_key, value, threshold, operator, severity, status, message }], page, per_page, total }"
+        },
+        "parameters": [
+          {
+            "name": "period_code", "in": "query", "x-ai-arg": "periodCode",
+            "schema": { "type": "string", "maxLength": 7 },
+            "description": "Reporting period as YYYY-MM (all periods when omitted)"
+          },
+          {
+            "name": "status", "in": "query", "x-ai-arg": "status",
+            "schema": { "type": "string", "maxLength": 16 },
+            "description": "Optional status filter: OPEN or ACKED"
+          },
+          {
+            "name": "per_page", "in": "query", "x-ai-arg": "limit",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 20, "default": 10 },
+            "description": "Page size, 1-20"
+          },
+          {
+            "name": "tenant_id", "in": "query", "x-ai-scope": "tenant", "required": true,
+            "schema": { "type": "string" },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Indicator threshold alerts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "items": { "type": "array", "items": { "$ref": "#/components/schemas/AiIndicatorAlert" } },
+                        "page": { "type": "integer" },
+                        "per_page": { "type": "integer" },
+                        "total": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -577,6 +644,22 @@
           "dimension_key": { "type": "string" },
           "value": { "type": "number" },
           "source": { "type": "string", "enum": ["COMPUTED", "MANUAL", "IMPORTED"] }
+        }
+      },
+      "AiIndicatorAlert": {
+        "type": "object",
+        "description": "Assistant-facing indicator threshold alert. Rule configuration (threshold owner, activity flag, timestamps) is dropped by the handler and again by this response allowlist; the value/threshold/severity the assistant needs to describe the breach are kept.",
+        "properties": {
+          "rule_code": { "type": "string" },
+          "indicator_code": { "type": "string" },
+          "period_code": { "type": "string" },
+          "dimension_key": { "type": "string" },
+          "value": { "type": "number" },
+          "threshold": { "type": "number" },
+          "operator": { "type": "string", "enum": [">", ">=", "<", "<=", "=", "<>"] },
+          "severity": { "type": "string", "enum": ["INFO", "WARN", "CRITICAL"] },
+          "status": { "type": "string", "enum": ["OPEN", "ACKED"] },
+          "message": { "type": "string" }
         }
       },
       "AiSubmission": {

@@ -38,6 +38,7 @@ type aiStatisticalSource interface {
 	ListIndicators(ctx context.Context, params repository.ListIndicatorsParams) ([]repository.Indicator, error)
 	ListSubmissions(ctx context.Context, params repository.ListSubmissionsParams) ([]repository.ReportSubmission, int, error)
 	ListIndicatorResults(ctx context.Context, params repository.ListIndicatorResultsParams) ([]repository.IndicatorResult, error)
+	ListAlerts(ctx context.Context, tenantID, status, periodCode string) ([]repository.IndicatorAlert, error)
 	RunReport(ctx context.Context, tenantID, code string, params map[string]string) (*repository.ReportDefinition, *reports.ReportQuery, [][]any, error)
 }
 
@@ -185,6 +186,60 @@ func (h *InternalAIHandler) InternalAIListIndicatorResults(w http.ResponseWriter
 	}
 	res := aiPageSlice(results, aiResultLimit(r))
 	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.page, res.perPage, res.total, toAIIndicatorResults(res.items, indicators)))
+}
+
+// InternalAIListIndicatorAlerts serves GET /internal/ai/indicator-alerts for
+// ai-service: the threshold alerts the proactive loop raised. Rule
+// configuration and its owner stay behind this boundary — the assistant only
+// needs what breached, by how much and how severe.
+func (h *InternalAIHandler) InternalAIListIndicatorAlerts(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := aiGetTenant(w, r)
+	if !ok {
+		return
+	}
+	alerts, err := h.source.ListAlerts(r.Context(), tenantID,
+		strings.ToUpper(strings.TrimSpace(aiQueryParam(r, "status"))),
+		aiQueryParam(r, "period_code"))
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	res := aiPageSlice(alerts, aiResultLimit(r))
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.page, res.perPage, res.total, toAIIndicatorAlerts(res.items)))
+}
+
+// aiIndicatorAlert is the assistant-facing alert row. The rule's owner,
+// activity flag and timestamps are dropped.
+type aiIndicatorAlert struct {
+	RuleCode      string   `json:"rule_code"`
+	IndicatorCode string   `json:"indicator_code"`
+	PeriodCode    string   `json:"period_code"`
+	DimensionKey  string   `json:"dimension_key,omitempty"`
+	Value         *float64 `json:"value,omitempty"`
+	Threshold     float64  `json:"threshold"`
+	Operator      string   `json:"operator"`
+	Severity      string   `json:"severity"`
+	Status        string   `json:"status"`
+	Message       string   `json:"message,omitempty"`
+}
+
+func toAIIndicatorAlerts(items []repository.IndicatorAlert) []aiIndicatorAlert {
+	out := make([]aiIndicatorAlert, 0, len(items))
+	for _, a := range items {
+		out = append(out, aiIndicatorAlert{
+			RuleCode:      a.RuleCode,
+			IndicatorCode: a.IndicatorCode,
+			PeriodCode:    a.PeriodCode,
+			DimensionKey:  a.DimensionKey,
+			Value:         a.Value,
+			Threshold:     a.Threshold,
+			Operator:      a.Operator,
+			Severity:      a.Severity,
+			Status:        a.Status,
+			Message:       a.Message,
+		})
+	}
+	return out
 }
 
 // aiGetTenant reads the delegated tenant for non-list AI reads.

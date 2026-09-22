@@ -824,6 +824,41 @@ func GeneratedCatalog() []GeneratedEntry {
 			Enabled:        true,
 		},
 		{
+			SDKPath:   "arda.statistical.listIndicatorAlerts",
+			Domain:    "statistical",
+			Signature: "arda.statistical.listIndicatorAlerts(args: {periodCode?: string; status?: string; limit?: number}): Promise<IndicatorAlertListPage>;",
+			JSDoc: `/**
+ * List open indicator threshold alerts for a period.
+ *
+ * List the threshold alerts the proactive reporting loop raised for the tenant: which indicator breached which rule, the value, the threshold and the severity. Only the alert record is exposed — rule definitions and their configuration stay behind this boundary. Use this to answer 'có cảnh báo gì' / 'chỉ tiêu nào vượt ngưỡng'.
+ * @param args.periodCode Reporting period as YYYY-MM (all periods when omitted) [maxLength 7]
+ * @param args.status Optional status filter: OPEN or ACKED [maxLength 16]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
+ * @returns IndicatorAlertListPage { items: [{ rule_code, indicator_code, period_code, dimension_key, value, threshold, operator, severity, status, message }], page, per_page, total }
+ * @requires statistical.read
+ * @domain statistical
+ */`,
+			Keywords:            []string{"statistical", "alert", "alerts", "warning", "threshold", "breach", "risk", "severity", "cảnh báo", "cảnh báo chỉ tiêu", "vượt ngưỡng", "ngưỡng", "rủi ro", "cảnh báo rủi ro"},
+			Kind:                "read",
+			RequiredPermissions: []string{"statistical.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "statistical-service",
+			Method:              "GET",
+			Path:                "/internal/ai/indicator-alerts",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "periodCode", Param: "period_code", In: "query", Required: false, Type: "string", MaxLength: 7, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "status", Param: "status", In: "query", Required: false, Type: "string", MaxLength: 16, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"dimension_key":{"type":"string"},"indicator_code":{"type":"string"},"message":{"type":"string"},"operator":{"type":"string"},"period_code":{"type":"string"},"rule_code":{"type":"string"},"severity":{"type":"string"},"status":{"type":"string"},"threshold":{"type":"number"},"value":{"type":"number"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
+		},
+		{
 			SDKPath:   "arda.statistical.listIndicatorResults",
 			Domain:    "statistical",
 			Signature: "arda.statistical.listIndicatorResults(args: {periodCode?: string; indicatorCode?: string; limit?: number}): Promise<IndicatorResultListPage>;",
