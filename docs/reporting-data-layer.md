@@ -484,6 +484,31 @@ số sai lên báo cáo.
 Đồng thời sửa `60000.01.02`: seed trước thiếu `percent:true` nên lưu tỷ lệ thô
 (0.5) trong khi đơn vị là `%` — nay lưu đúng 50.
 
+## 9h. Chia theo kỳ hạn (Tín dụng) — verified
+
+Catalog chia ~90 chỉ tiêu Tín dụng theo **kỳ hạn**, ~66 theo **ngành**, ~23 theo
+**phương thức** — nhưng fact khoản vay chỉ có agreement/customer/product/org.
+Các thuộc tính đó nằm ở **contract**, nên projection reporting nay join
+agreement → contract và fact thêm:
+
+| Cột | Ý nghĩa |
+|---|---|
+| `loan_term_months` | kỳ hạn chuẩn hoá về tháng (DAY/30, YEAR*12) |
+| `term_bucket` | `DEMAND` (0) · `SHORT` (≤12) · `MEDIUM_LONG` (>12) |
+| `loan_method_code`, `industry_code`, `purpose_code` | phương thức / ngành / mục đích |
+
+`term_bucket` tính trong SQL để ranh giới bucket là so sánh số đơn giản.
+
+Seed nhóm kỳ hạn: 30002.01 (ngắn hạn), 30002.02 (trung dài hạn), 30002.03 (không
+kỳ hạn) + tăng trưởng + TB 3 tháng. **Verified**: SHORT 600tr + MEDIUM_LONG
+200tr + DEMAND 0 = **800tr** = tổng dư nợ; hai contract 12 và 24 tháng cho đúng
+bucket.
+
+**Cố ý chưa seed** nhóm **ngành** và **phương thức**: fact đã có `industry_code`
+/`loan_method_code` và dimension đã khai báo, nhưng **chưa chốt taxonomy giá trị**
+(mã nào là "nông nghiệp", mã nào là "từng lần") — đoán sẽ phân loại sai dư nợ
+trên báo cáo. Chỉ cần thêm filter khi có taxonomy.
+
 ## 9d. Bước 6 (member) — ĐÓNG, verified trên cluster (2026-09-22)
 
 Luồng đầy đủ chạy thật: **đăng ký thành viên → yêu cầu góp vốn → maker SUBMIT
