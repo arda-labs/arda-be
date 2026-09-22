@@ -399,6 +399,40 @@ bản (prefix là khoá map) và giữ cả `close_debit_minor`/`close_credit_mi
 Chưa seed chỉ tiêu: cần **parser** đọc công thức + **cơ chế đối soát** để không
 đặt số sai lên báo cáo tài chính.
 
+### Parser — đã có, phủ 155/184 công thức thật
+
+`ParseAccountFormula` (statistical-service `internal/indicator`) dịch công thức
+PCF thành aggregate `account_balance` gồm các **số hạng có dấu**:
+
+```json
+{"type":"account_balance","accounts":{"fact":"rpt_fact_trial_balance_daily",
+ "terms":[{"side":"debit","prefixes":["30"]},
+          {"side":"credit","prefixes":["305"],"sign":-1}]}}
+```
+
+`side` = `debit` (DCN/Dư nợ) · `credit` (DCC/Dư có) · `net` (DN−DC). Số hạng có
+`sign` (-1 khi bị trừ), `exclude` (`36 (trừ 366)`), và `clamp` (`nếu …>0`).
+
+An toàn:
+- Prefix tài khoản phải khớp `^[0-9]{1,6}$` và **bind tham số**, không nối SQL.
+- Whitelist đóng: fact/column phải có trong `factColumns`/`numericFactColumns`.
+- Công thức mô tả (`Tự tính = …`, `Trùng công thức …`, `=0`, `PSN TK …`) **bị từ
+  chối** — không đoán số cho báo cáo quy định.
+- Điều kiện `nếu …` chỉ nhận khi biểu thức là **một nhóm duy nhất**; dạng
+  `A + B nếu X>0` mơ hồ nên từ chối.
+- Range `TK 313004 đến 313011` chỉ mở tối đa 100 prefix.
+
+Fixture `testdata/account_formulas.json` (184 công thức P thật) + test coverage
+giữ sàn 100; hiện **155/184 parse được, 29 từ chối**. Trong 29 đó: ~10 là mô tả,
+~10 là chỉ tiêu **tỷ lệ** (cần `type: ratio` tham chiếu chỉ tiêu khác, không phải
+`account_balance`), phần còn lại là biểu thức điều kiện nhiều nhánh.
+
+### Còn lại của 6c
+
+1. Cơ chế **đối soát** (mỗi chỉ tiêu khớp trial balance ở mức nhóm).
+2. Seed 155 chỉ tiêu parse được + verify compute.
+3. Parser cho ~10 chỉ tiêu tỷ lệ (dùng `ratio`).
+
 ## 9d. Bước 6 (member) — ĐÓNG, verified trên cluster (2026-09-22)
 
 Luồng đầy đủ chạy thật: **đăng ký thành viên → yêu cầu góp vốn → maker SUBMIT

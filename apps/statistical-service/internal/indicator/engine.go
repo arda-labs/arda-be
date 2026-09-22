@@ -46,6 +46,10 @@ type Formula struct {
 	// Growth member (references another indicator code).
 	Indicator string `json:"indicator,omitempty"`
 	Compare   string `json:"compare,omitempty"`
+
+	// Account balance (trial-balance indicators): a linear combination of
+	// account-code prefixes.
+	Accounts *accountBalance `json:"accounts,omitempty"`
 }
 
 // fact columns: the closed whitelist the engine may aggregate. A new fact table
@@ -91,6 +95,13 @@ var factColumns = map[string]map[string]bool{
 		"org_code": true, "principal_minor": true, "accrued_minor": true,
 		"interest_rate": true,
 	},
+	"rpt_fact_trial_balance_daily": {
+		"org_code": true, "coa_version": true, "account_code": true,
+		"account_name": true, "currency_code": true,
+		"open_debit_minor": true, "open_credit_minor": true,
+		"incr_debit_minor": true, "incr_credit_minor": true,
+		"close_debit_minor": true, "close_credit_minor": true,
+	},
 }
 
 // numericFactColumns marks which whitelisted fact columns hold numbers, so a
@@ -123,6 +134,11 @@ var numericFactColumns = map[string]map[string]bool{
 	"rpt_fact_ibm_deposit_daily": {
 		"term_months": true, "principal_minor": true, "accrued_minor": true,
 		"interest_rate": true,
+	},
+	"rpt_fact_trial_balance_daily": {
+		"open_debit_minor": true, "open_credit_minor": true,
+		"incr_debit_minor": true, "incr_credit_minor": true,
+		"close_debit_minor": true, "close_credit_minor": true,
 	},
 }
 
@@ -372,6 +388,11 @@ func (e *Engine) eval(ctx context.Context, tenantID, periodCode string, f *Formu
 	switch f.Type {
 	case "sum", "count", "count_distinct", "average":
 		return e.leaf(ctx, tenantID, periodCode, f, dims)
+	case "account_balance":
+		if f.Accounts == nil {
+			return 0, fmt.Errorf("account_balance requires the accounts block")
+		}
+		return e.evalAccountBalance(ctx, tenantID, periodCode, f.Accounts, dims)
 	case "ratio":
 		if f.Numerator == nil || f.Denominator == nil {
 			return 0, fmt.Errorf("ratio requires numerator and denominator")

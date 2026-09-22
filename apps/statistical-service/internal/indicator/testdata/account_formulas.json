@@ -1,0 +1,922 @@
+[
+  {
+    "code": "40000.01",
+    "name": "Tài sản",
+    "formula": "Tổng DCN các TK (10, 11, 13, 20, 211, 212, 213, 251, 252, 253, 281, 282, 283, 284, 285, 291, 292, 293, 344, 301, 302, 303, 32, 351, 352, 353, 3592, 361, 369, 31, 381, 387, 388, 389, 39, 453) - Tổng DCC các TK (139, 209, 219, 259, 289, 299, 349, 305, 3599, 386, 4892, 4899) + (DCN TK 5 - DCC TK 5) nếu DCN - DCC>0"
+  },
+  {
+    "code": "40001.01",
+    "name": "Tiền mặt",
+    "formula": "DCN TK 10"
+  },
+  {
+    "code": "40002.01",
+    "name": "Tiền gửi tại các TCTD khác",
+    "formula": "DCN TK 13"
+  },
+  {
+    "code": "40003.01",
+    "name": "Dự phòng rủi ro tiền gửi tại các TCTD khác",
+    "formula": "DCC TK 139"
+  },
+  {
+    "code": "40004.01",
+    "name": "Cho vay khách hàng",
+    "formula": "DCN TK 21"
+  },
+  {
+    "code": "40005.01",
+    "name": "Dự phòng rủi ro cho vay khách hàng",
+    "formula": "DCC TK 21"
+  },
+  {
+    "code": "40006.01",
+    "name": "Góp vốn, đầu tư dài hạn",
+    "formula": "DCN TK 34"
+  },
+  {
+    "code": "40007.01",
+    "name": "Dự phòng giảm giá đầu tư dài hạn",
+    "formula": "DCC TK 349"
+  },
+  {
+    "code": "40008.01",
+    "name": "Tài sản cố định",
+    "formula": "DCN TK 30 - DCC TK 305"
+  },
+  {
+    "code": "40009.01",
+    "name": "Hao mòn tài sản cố định",
+    "formula": "DCC TK 3051"
+  },
+  {
+    "code": "40010.01",
+    "name": "Nguyên giá tài sản cố định",
+    "formula": "DCN TK 30"
+  },
+  {
+    "code": "40011.01",
+    "name": "Nguyên giá tài sản cố định hữu hình",
+    "formula": "DCN TK 301"
+  },
+  {
+    "code": "40012.01",
+    "name": "Nguyên giá tài sản cố định vô hình",
+    "formula": "DCN TK 302"
+  },
+  {
+    "code": "40013.01",
+    "name": "Nguyên giá tài sản cố định thuê tài chính",
+    "formula": "DCN TK 303"
+  },
+  {
+    "code": "40014.01",
+    "name": "Tài sản cố định hữu hình",
+    "formula": "DCN TK 301 - DCC TK 3051"
+  },
+  {
+    "code": "40015.01",
+    "name": "Tài sản cố định vô hình",
+    "formula": "DCN TK 302 - DCC TK 3052"
+  },
+  {
+    "code": "40016.02",
+    "name": "Tài sản cố định thuê tài chính",
+    "formula": "DCN TK 303 - DCC TK 3053"
+  },
+  {
+    "code": "40017.02",
+    "name": "Tổng tài sản có khác",
+    "formula": "Tổng DCN TK 31, 35, 36 (trừ TK 366), 38 (trừ Tk 386), 39 + Chênh lệch (DN-DC) TK 50 - 51 (nếu DN > DC) - Tổng DCC TK 3599, 386, 4892, 4899"
+  },
+  {
+    "code": "40018.02",
+    "name": "Tài sản có khác",
+    "formula": "DCN TK 31, 38 (trừ Tk 386) + Chênh lệch (DN-DC) TK 50, 51 (nếu DN > DC)"
+  },
+  {
+    "code": "40019.02",
+    "name": "Tài sản khác",
+    "formula": "Dư nợ TK 31"
+  },
+  {
+    "code": "40020.02",
+    "name": "Phải thu từ hoạt động thanh toán",
+    "formula": "Chênh lệch (DN-DC) TK 50, 51 (nếu DN > DC)"
+  },
+  {
+    "code": "40021.02",
+    "name": "Các tài sản có khác",
+    "formula": "Dư nợ TK 38 (trừ TK 386)"
+  },
+  {
+    "code": "40022.02",
+    "name": "Tổng các khoản phải thu",
+    "formula": "DCN TK 35, 36 (trừ TK 366) + DCN TK 453"
+  },
+  {
+    "code": "40023.02",
+    "name": "Ký quỹ, thế chấp, cầm cố",
+    "formula": "Dư nợ TK 351"
+  },
+  {
+    "code": "40024.02",
+    "name": "Các khoản tham ô lợi dụng",
+    "formula": "Dư nợ TK 352"
+  },
+  {
+    "code": "40025.02",
+    "name": "Thanh toán với NSNN",
+    "formula": "Dư nợ TK 353"
+  },
+  {
+    "code": "40026.02",
+    "name": "Các khoản phải thu nội bộ",
+    "formula": "Dự nợ TK 36 (trừ TK 366)"
+  },
+  {
+    "code": "40027.02",
+    "name": "Phải thu NSNN (nếu có)",
+    "formula": "Dư nợ TK 453"
+  },
+  {
+    "code": "40028.02",
+    "name": "Các khoản lãi, phí phải thu",
+    "formula": "DCN TK 39"
+  },
+  {
+    "code": "40029.02",
+    "name": "Lãi và phí phải thu",
+    "formula": "Dư nợ TK 39"
+  },
+  {
+    "code": "40030.02",
+    "name": "Dự phòng rủi ro cho các tài sản Có nội bảng khác",
+    "formula": "DCC TK 3599, 386, 4892, 4899"
+  },
+  {
+    "code": "40031.01",
+    "name": "Dự phòng phải thu khó đòi",
+    "formula": "Dư có TK 3599"
+  },
+  {
+    "code": "40032.01",
+    "name": "Các tài sản có khác - Dự phòng rủi ro",
+    "formula": "Dư có TK 386"
+  },
+  {
+    "code": "40033.01",
+    "name": "Các tài sản nợ khác - Dự phòng giảm giá hàng tồn kho",
+    "formula": "Dư có TK 4892"
+  },
+  {
+    "code": "40034.01",
+    "name": "Các tài sản nợ khác - Dự phòng rủi ro khác",
+    "formula": "Dư có TK 4899"
+  },
+  {
+    "code": "40035.01",
+    "name": "Tổng tài sản có",
+    "formula": "Trùng công thức với tổng tài sản Tổng DCN các TK (10, 11, 13, 20, 211, 212, 213, 251, 252, 253, 281, 282, 283, 284, 285, 291, 292, 293, 344, 301, 302, 303, 32, 351, 352, 353, 3592, 361, 369, 31, 381, 387, 388, 389, 39, 453) - Tổng DCC các TK (139, 209, 219, 259, 289, 299, 349, 305, 3599, 386, 4892, 4899) + (DCN TK 5 - DCC TK 5) nếu DCN - DCC>0"
+  },
+  {
+    "code": "40036.01",
+    "name": "Nợ phải trả và vốn chủ sở hữu",
+    "formula": "Tổng DCC TK (40, 41, 42, 44, 45, 46, 48, 49) - DCC TK 489 + Chênh lệch DCC - DCN TK 51, 50 >0"
+  },
+  {
+    "code": "40037.01",
+    "name": "Các khoản nợ Chính phủ và NHNN",
+    "formula": "DCC TK 40"
+  },
+  {
+    "code": "40038.01",
+    "name": "Tiền gửi và vay các TCTD khác",
+    "formula": "DCC TK 41"
+  },
+  {
+    "code": "40039.01",
+    "name": "Tiền gửi của các TCTD khác",
+    "formula": "DCC TK 411"
+  },
+  {
+    "code": "40040.01",
+    "name": "Vay các TCTD khác",
+    "formula": "DCC TK 415"
+  },
+  {
+    "code": "40041.01",
+    "name": "Tiền gửi của khách hàng",
+    "formula": "DCC TK 421, 4231, 4232"
+  },
+  {
+    "code": "40042.01",
+    "name": "Vốn tài trợ, uỷ thác đầu tư, cho vay mà TCTD chịu rủi ro",
+    "formula": "DCC TK 44"
+  },
+  {
+    "code": "40043.01",
+    "name": "Các khoản nợ khác",
+    "formula": "DCC TK 49, 45, 46, 48"
+  },
+  {
+    "code": "40045.01",
+    "name": "Các khoản lãi và phí phải trả",
+    "formula": "DCC TK 49"
+  },
+  {
+    "code": "40046.01",
+    "name": "Các khoản phải trả và công nợ khác",
+    "formula": "DCC TK 45, 46, 48 (trừ TK 489) + Chênh lệch DCC - DCN TK 51, 50 >0"
+  },
+  {
+    "code": "40047.01",
+    "name": "Dự phòng rủi ro khác",
+    "formula": "DCC TK 489"
+  },
+  {
+    "code": "40048.01",
+    "name": "Tổng nợ phải trả",
+    "formula": "Tổng DCC TK (40, 41, 42, 44, 45, 46, 48, 49) - DCC TK 489 + Chênh lệch DCC - DCN TK 51, 50 >0"
+  },
+  {
+    "code": "40049.01",
+    "name": "Vốn của TCTD",
+    "formula": "DCC TK 60"
+  },
+  {
+    "code": "40050.01",
+    "name": "Vốn khác",
+    "formula": "DCC TK 609"
+  },
+  {
+    "code": "40052.01",
+    "name": "Chênh lệch đánh giá lại tài sản",
+    "formula": "DCC TK 642"
+  },
+  {
+    "code": "40053.01",
+    "name": "Lợi nhuận chưa phân phối/Lỗ lũy kế",
+    "formula": "DCC TK 7 - DCN TK 8 + DCC TK 692"
+  },
+  {
+    "code": "40054.01",
+    "name": "Lợi nhuận /Lỗ năm nay",
+    "formula": "DCC TK 7 - DCN TK 8"
+  },
+  {
+    "code": "40055.01",
+    "name": "Lợi nhuận /Lỗ luỹ kế năm trước",
+    "formula": "DCC TK 692"
+  },
+  {
+    "code": "40056.01",
+    "name": "Tổng vốn chủ sở hữu",
+    "formula": "DCC Tk 60, 61, 642 + DCC TK 7 - DCN TK 8 + DCC TK 692"
+  },
+  {
+    "code": "40057.01",
+    "name": "Tổng nợ phải trả và vốn chủ sở hữu",
+    "formula": "Trùng với công thức chỉ tiêu: Nợ phải trả và vốn chủ sở hữu Tổng DCC TK (40, 41, 42, 44, 45, 46, 48, 49) - DCC TK 489 + Chênh lệch DCC - DCN TK 51, 50 >0 + DCC TK 60, 61, 642 + DCC TK 7 - DCN TK 8 + DCC TK 692"
+  },
+  {
+    "code": "40058.01",
+    "name": "Thu nhập lãi và các khoản thu nhập tương tự",
+    "formula": "DCC TK 70"
+  },
+  {
+    "code": "40059.01",
+    "name": "Chi phí lãi và các chi phí tương tự",
+    "formula": "DCN TK 80"
+  },
+  {
+    "code": "40060.01",
+    "name": "Thu nhập lãi thuần",
+    "formula": "DCC TK 70 - DCN TK 80"
+  },
+  {
+    "code": "40061.01",
+    "name": "Thu nhập từ hoạt động dịch vụ",
+    "formula": "DCC TK 71"
+  },
+  {
+    "code": "40062.01",
+    "name": "Chi phí hoạt động dịch vụ",
+    "formula": "DCN TK 81"
+  },
+  {
+    "code": "40063.01",
+    "name": "Lãi/(lỗ) thuần từ hoạt động dịch vụ",
+    "formula": "DCC TK 71 - DCN TK 81"
+  },
+  {
+    "code": "40064.01",
+    "name": "Thu nhập từ hoạt động khác",
+    "formula": "DCC TK 74, 79"
+  },
+  {
+    "code": "40065.01",
+    "name": "Thu nhập hoạt động khác",
+    "formula": "DCN TK 84, 89"
+  },
+  {
+    "code": "40066.01",
+    "name": "Lãi/ (lỗ) thuần từ hoạt động khác",
+    "formula": "DCC TK 74, 79 - DCN TK 84, 49"
+  },
+  {
+    "code": "40067.01",
+    "name": "Thu nhập từ góp vốn, mua cổ phần",
+    "formula": "DCC TK 78"
+  },
+  {
+    "code": "40068.01",
+    "name": "Chi phí hoạt động",
+    "formula": "DCN TK 831, 832, 85, 86, 87, 883, 8824, 8825, 8826, 8829, 89"
+  },
+  {
+    "code": "40069.01",
+    "name": "Lợi nhuận thuần từ hoạt động kinh doanh trước chi phí dự phòng rủi tín dụng",
+    "formula": "DCC TK 7 - DCN TK 8 (trừ 833, 8822)"
+  },
+  {
+    "code": "40070.01",
+    "name": "Chi phí dự phòng rủi ro tín dụng",
+    "formula": "DCN TK 8822"
+  },
+  {
+    "code": "40071.01",
+    "name": "Tổng lợi nhuận trước thuế",
+    "formula": "DCC TK 7 - DCN TK 8 (trừ 833)"
+  },
+  {
+    "code": "40072.01",
+    "name": "Chi phí thuế TNDN",
+    "formula": "DCN TK 833"
+  },
+  {
+    "code": "40073.01",
+    "name": "Lợi nhuận sau thuế",
+    "formula": "DCN TK 7 - DCN TK 8"
+  },
+  {
+    "code": "40074.01",
+    "name": "Vốn và các quỹ",
+    "formula": "DCC TK 60, 61"
+  },
+  {
+    "code": "40074.02",
+    "name": "Vốn huy động",
+    "formula": "DCC TK 42"
+  },
+  {
+    "code": "40075.01",
+    "name": "Tiền gửi tiết kiệm",
+    "formula": "DCC TK 423"
+  },
+  {
+    "code": "40075.02",
+    "name": "Tiền gửi tiết kiệm không kỳ hạn",
+    "formula": "DCC TK 4231"
+  },
+  {
+    "code": "40076.01",
+    "name": "Tiền gửi tiết kiệm có kỳ hạn",
+    "formula": "DCC TK 4232"
+  },
+  {
+    "code": "40076.02",
+    "name": "Tiền gửi khác",
+    "formula": "DCC TK 4238, 427, 421"
+  },
+  {
+    "code": "40077.01",
+    "name": "Vay NHHT (không bao gồm vay từ quỹ bảo toàn)",
+    "formula": "DCC các TK: 41512, 41513, 41592, 41593"
+  },
+  {
+    "code": "40078.01",
+    "name": "Vay NHHT (bao gồm vay từ quỹ bảo toàn)",
+    "formula": "DCC các TK: 41511, 41512, 41513, 41591, 41592, 41593"
+  },
+  {
+    "code": "40079.01",
+    "name": "Vay TCTD khác (không bao gồm vay NHHT)",
+    "formula": "DCC các TK: 41519, 41599"
+  },
+  {
+    "code": "40080.01",
+    "name": "Thu lãi tiền gửi",
+    "formula": "DCC TK 701"
+  },
+  {
+    "code": "40080.019999999997",
+    "name": "Thu lãi tiền vay",
+    "formula": "DCC TK 702"
+  },
+  {
+    "code": "40080.03",
+    "name": "Thu khác từ hoạt động tín dụng",
+    "formula": "DCC TK 709"
+  },
+  {
+    "code": "40080.04",
+    "name": "Thu nhập khác",
+    "formula": "DCC TK 79"
+  },
+  {
+    "code": "40081.01",
+    "name": "Cho vay các TCTD",
+    "formula": "DCN TK 20"
+  },
+  {
+    "code": "40082.01",
+    "name": "Tiền gửi tại NHHT không kỳ hạn",
+    "formula": "DCN TK 13111"
+  },
+  {
+    "code": "40083.01",
+    "name": "Tiền gửi tại NHHT có kỳ hạn",
+    "formula": "DCN TK 13121"
+  },
+  {
+    "code": "40084.01",
+    "name": "Tiền gửi tại NHHT",
+    "formula": "DCN TK 13111, 13121"
+  },
+  {
+    "code": "40085.01",
+    "name": "Các khoản phải thu",
+    "formula": "DCN TK 35, 36, 39"
+  },
+  {
+    "code": "40086.01",
+    "name": "Phải thu của khách hàng",
+    "formula": "DCN TK 39"
+  },
+  {
+    "code": "40086.019999999997",
+    "name": "Phải thu nội bộ",
+    "formula": "DCN TK 36"
+  },
+  {
+    "code": "40086.03",
+    "name": "Phải thu khác",
+    "formula": "DCN TK 35"
+  },
+  {
+    "code": "40087.01",
+    "name": "Tổng chi phí",
+    "formula": "DCN TK 8"
+  },
+  {
+    "code": "40087.019999999997",
+    "name": "Chi phí lương và phụ cấp lương",
+    "formula": "DCN TK 851"
+  },
+  {
+    "code": "40087.03",
+    "name": "Chi trang phục giao dịch",
+    "formula": "DCN TK 852"
+  },
+  {
+    "code": "40087.040000000001",
+    "name": "Chi các khoản đóng góp theo lương",
+    "formula": "DCN TK 853"
+  },
+  {
+    "code": "40087.050000000003",
+    "name": "Chi trợ cấp",
+    "formula": "DCN TK 854"
+  },
+  {
+    "code": "40087.06",
+    "name": "Chi ăn ca cho CBNV",
+    "formula": "DCN TK 856"
+  },
+  {
+    "code": "40087.07",
+    "name": "Chi y tế cho CBNV",
+    "formula": "DCN TK 857"
+  },
+  {
+    "code": "40087.08",
+    "name": "Chi khác cho CBNV",
+    "formula": "DCN TK 859"
+  },
+  {
+    "code": "40087.089999999997",
+    "name": "Chi phí vật liệu văn phòng",
+    "formula": "DCN TK 8611"
+  },
+  {
+    "code": "40087.10",
+    "name": "Chi phí ấn chỉ",
+    "formula": "DCN TK 8612"
+  },
+  {
+    "code": "40087.109999999899",
+    "name": "Chi phí xăng dầu",
+    "formula": "DCN TK 8614"
+  },
+  {
+    "code": "40087.119999999901",
+    "name": "Chí phí vật liệu khác",
+    "formula": "DCN TK 8619"
+  },
+  {
+    "code": "40087.129999999903",
+    "name": "Chi phí bảo hiểm tiền gửi",
+    "formula": "DCN TK 88301"
+  },
+  {
+    "code": "40087.139999999898",
+    "name": "Chi nộp quỹ bảo toàn",
+    "formula": "DCN TK 88302"
+  },
+  {
+    "code": "40087.1499999999",
+    "name": "Chi phí dự phòng rủi ro",
+    "formula": "DCN TK 882"
+  },
+  {
+    "code": "40087.159999999902",
+    "name": "Chi phí khấu hao TSCĐ",
+    "formula": "DCN TK 871"
+  },
+  {
+    "code": "40087.169999999896",
+    "name": "Chi phí mua sắm CCDC",
+    "formula": "DCN TK 87401"
+  },
+  {
+    "code": "40087.179999999898",
+    "name": "Chi phí sửa chữa TSCĐ",
+    "formula": "DCN TK 872"
+  },
+  {
+    "code": "40087.1899999999",
+    "name": "Chi phí sửa chữa CCDC",
+    "formula": "DCN TK 87402"
+  },
+  {
+    "code": "40087.20",
+    "name": "Chi phí thuê tài sản",
+    "formula": "DCN TK 876"
+  },
+  {
+    "code": "40087.209999999897",
+    "name": "Chi phí trả lãi tiền gửi",
+    "formula": "DCN TK 801"
+  },
+  {
+    "code": "40087.219999999899",
+    "name": "Chi phí trả lãi tiền vay",
+    "formula": "DCN TK 802"
+  },
+  {
+    "code": "40087.229999999901",
+    "name": "Chi phí hoạt động tín dụng khác",
+    "formula": "DCN TK 809"
+  },
+  {
+    "code": "40087.239999999903",
+    "name": "Chi phí khác về hoạt động dịch vụ (TK 819)",
+    "formula": "DCN TK 819"
+  },
+  {
+    "code": "40087.249999999898",
+    "name": "Chi nộp thuế và các khoản phí, lệ phí",
+    "formula": "DCN TK 83"
+  },
+  {
+    "code": "40087.2599999999",
+    "name": "Chi công tác phí",
+    "formula": "DCN TK 862"
+  },
+  {
+    "code": "40087.269999999902",
+    "name": "Chi đào tạo",
+    "formula": "DCN TK 863"
+  },
+  {
+    "code": "40087.279999999897",
+    "name": "Chi bưu phí, điện thoại",
+    "formula": "DCN TK 865"
+  },
+  {
+    "code": "40087.289999999899",
+    "name": "Chi quảng cáo, khuyến mại",
+    "formula": "DCN TK 866"
+  },
+  {
+    "code": "40087.30",
+    "name": "Chi điện, nước, vệ sinh",
+    "formula": "DCN TK 8691"
+  },
+  {
+    "code": "40087.309999999801",
+    "name": "Chi hội nghị",
+    "formula": "DCN TK 8693"
+  },
+  {
+    "code": "40087.319999999803",
+    "name": "Chi phí lễ tân, khánh tiết",
+    "formula": "DCN TK 8694"
+  },
+  {
+    "code": "40087.329999999798",
+    "name": "Chi phí phòng cháy, chữa cháy",
+    "formula": "DCN TK 8697"
+  },
+  {
+    "code": "40087.3399999998",
+    "name": "Các khoản chi khác",
+    "formula": "DCN TK 8699"
+  },
+  {
+    "code": "40087.349999999802",
+    "name": "Chi công tác xã hội",
+    "formula": "DCN TK 868"
+  },
+  {
+    "code": "40087.359999999797",
+    "name": "Chi khác theo chế độ tài chính",
+    "formula": "DCN TK 8692, 8695, 8696"
+  },
+  {
+    "code": "40088.01",
+    "name": "Thu từ dịch vụ thanh toán",
+    "formula": "DCC TK 711"
+  },
+  {
+    "code": "40089.01",
+    "name": "Thu từ dịch vụ ngân quỹ",
+    "formula": "DCC TK 713"
+  },
+  {
+    "code": "40090.01",
+    "name": "Thu từ dịch vụ đại lý",
+    "formula": "DCC TK 714"
+  },
+  {
+    "code": "40091.01",
+    "name": "Thu khác",
+    "formula": "DCC TK 719"
+  },
+  {
+    "code": "40092.01",
+    "name": "Chi về dịch vụ thanh toán",
+    "formula": "DCN TK 811"
+  },
+  {
+    "code": "40093.01",
+    "name": "Chi khác",
+    "formula": "DCN TK 81 (trừ 819)"
+  },
+  {
+    "code": "40094.01",
+    "name": "Tiền gửi tại các TCTD khác không kỳ hạn",
+    "formula": "DCN TK 1311"
+  },
+  {
+    "code": "40095.01",
+    "name": "Tiền gửi tại các TCTD khác có kỳ hạn",
+    "formula": "DCN TK 1312"
+  },
+  {
+    "code": "40096.01",
+    "name": "Tiền gửi thanh toán NHNN",
+    "formula": "DCN TK 1113"
+  },
+  {
+    "code": "40097.01",
+    "name": "Góp vốn vào Ngân hàng hợp tác",
+    "formula": "DCN TK 34401"
+  },
+  {
+    "code": "40098.01",
+    "name": "Tạm ứng hoạt động nghiệp vụ",
+    "formula": "DCN TK 3612"
+  },
+  {
+    "code": "40099.01",
+    "name": "Tổng sử dụng vốn",
+    "formula": "Tự tính = Tổng dư nợ cho vay + Tiền mặt tại quỹ + Tiền gửi tại NHHT + Sử dụng vốn khác = Tổng tài sản"
+  },
+  {
+    "code": "40100.01",
+    "name": "Sử dụng vốn khác",
+    "formula": "=Tổng tài sản - (trừ) Tổng dư nợ cho vay - (trừ) Tiền mặt tại quỹ - (trừ) Tiền gửi tại NHHT = Tổng tài sản - (trừ) DCN TK 2 - (trừ) DCN TK 10 - (trừ) DCN TK 13111, 13121"
+  },
+  {
+    "code": "40102.01",
+    "name": "Tổng lợi nhuận trước thuế năm trước",
+    "formula": "DCC TK 7 - DCN TK 8 (trừ 833) cuối năm trước"
+  },
+  {
+    "code": "40102.019999999997",
+    "name": "Chi phí thuế TNDN năm nay",
+    "formula": "DCN TK 8331 năm nay"
+  },
+  {
+    "code": "40102.03",
+    "name": "Chi phí thuế TNDN năm trước",
+    "formula": "DCN TK 8331 năm trước"
+  },
+  {
+    "code": "40102.04",
+    "name": "Thuế Chi phí doanh nghiệp đầu năm",
+    "formula": "=0"
+  },
+  {
+    "code": "40102.050000000003",
+    "name": "Thuế Chi phí doanh nghiệp phải nộp",
+    "formula": "Tự tính = Lợi nhuận trước thuế * Thuế suất thuế TNDN = PSN TK 8331"
+  },
+  {
+    "code": "40102.06",
+    "name": "Thuế Chi phí doanh nghiệp đã nộp",
+    "formula": "PSN TK 4534"
+  },
+  {
+    "code": "40103.01",
+    "name": "Kết quả kinh doanh",
+    "formula": "DCC TK 7 - DCN TK 8"
+  },
+  {
+    "code": "40104.01",
+    "name": "Lợi nhuận không chia",
+    "formula": "Đặt X= (Số dư Có TK 7 - Số dư Nợ TK 8) + (Số dư Có TK 69 - Số dư Nợ TK 69) - Nếu X>=0 so sánh tiếp + Số dư Có TK 69 - Số dư Nợ TK 69>=0 --> Lợi nhuận không chia = Số dư Có TK 69 - Số dư Nợ TK 69 + Số dư Có TK 69 - Số dư Nợ TK 69<0 --> Lợi nhuận không chia = 0 - Nếu X<0 --> Lợi nhuận không chia = 0"
+  },
+  {
+    "code": "40105.01",
+    "name": "Tổng cộng nguồn vốn",
+    "formula": "Trùng công thức với tổng tài sản Tổng DCN các TK (10, 11, 13, 20, 211, 212, 213, 251, 252, 253, 281, 282, 283, 284, 285, 291, 292, 293, 344, 301, 302, 303, 32, 351, 352, 353, 3592, 361, 369, 31, 381, 387, 388, 389, 39, 453) - Tổng DCC các TK (139, 209, 219, 259, 289, 299, 349, 305, 3599, 386, 4892, 4899) + (DCN TK 5 - DCC TK 5) nếu DCN - DCC>0"
+  },
+  {
+    "code": "40106.01",
+    "name": "Chi phí hoạt động kinh doanh khác",
+    "formula": "DCN TK 84"
+  },
+  {
+    "code": "40111.01",
+    "name": "Chi phí hoạt động và hành chính khác",
+    "formula": "DCN TK 8 - các TK 80, 81, 83, 85"
+  },
+  {
+    "code": "40112.01",
+    "name": "Lợi nhuận thuần",
+    "formula": "DCC TK 7 - DCN TK 8 (trừ TK 8331)"
+  },
+  {
+    "code": "40113.01",
+    "name": "Tỷ lệ Lợi nhuận thuần/tổng thu nhập",
+    "formula": "Lợi nhuận thuần = DCC TK 7 - DCN TK 8 (trừ TK 8331) Tổng thu nhập = DCC TK 7"
+  },
+  {
+    "code": "40114.01",
+    "name": "Lợi nhuận thuần/tổng tài sản - theo năm",
+    "formula": "Lợi nhuận thuần = DCC TK 7 - DCN TK 8 (trừ TK 8331) Tổng tài sản = Tổng DCN các TK (10, 11, 13, 20, 211, 212, 213, 251, 252, 253, 281, 282, 283, 284, 285, 291, 292, 293, 344, 301, 302, 303, 32, 351, 352, 353, 3592, 361, 369, 31, 381, 387, 388, 389, 39, 453) - Tổng DCC các TK (139, 209, 219, 259, 289, 299, 349, 305, 3599, 386, 4892, 4899) + (DCN TK 5 - DCC TK 5) nếu DCN - DCC>0"
+  },
+  {
+    "code": "40115.01",
+    "name": "Lợi nhuận thuần/tổng dư nợ - theo năm",
+    "formula": "Lợi nhuận thuần = DCC TK 7 - DCN TK 8 (trừ TK 8331) Tổng dư nợ = DCN TK 2"
+  },
+  {
+    "code": "40116.01",
+    "name": "Lợi nhuận thuần/vốn tự có - theo năm",
+    "formula": "Vốn tự có là vốn tự có để tính tỷ lệ an toàn vốn tối thiểu"
+  },
+  {
+    "code": "40117.01",
+    "name": "Lợi nhuận sau thuế năm nay",
+    "formula": "Lấy DCC TK 7 - DCN TK 8 tại thời điểm hiện tại"
+  },
+  {
+    "code": "40118.01",
+    "name": "Lợi nhuận sau thuế năm trước",
+    "formula": "Lấy DCC TK 7 - DCN TK 8 tại thời điểm cuối năm trước"
+  },
+  {
+    "code": "40119.01",
+    "name": "Lợi nhuận sau thuế",
+    "formula": "DCC TK 7 - DCN TK 9"
+  },
+  {
+    "code": "40120.01",
+    "name": "Quỹ phát triển nghiệp vụ",
+    "formula": "DCC TK 612"
+  },
+  {
+    "code": "40121.01",
+    "name": "Trích quỹ khen thưởng",
+    "formula": "DCC TK 4841"
+  },
+  {
+    "code": "40122.01",
+    "name": "Trích quỹ phúc lợi",
+    "formula": "DCC TK 4842"
+  },
+  {
+    "code": "40123.01",
+    "name": "Trích quỹ thường ban điều hành",
+    "formula": "DCC TK 4844"
+  },
+  {
+    "code": "40133.01",
+    "name": "Vốn điều lệ trong đó CPXL",
+    "formula": "DCC TK 601011"
+  },
+  {
+    "code": "40133.019999999997",
+    "name": "Vốn điều lệ trong đó CPBS",
+    "formula": "DCC TK 601012"
+  },
+  {
+    "code": "40134.01",
+    "name": "Trích dự phòng rủi ro",
+    "formula": "DCC Tk 219"
+  },
+  {
+    "code": "40135.01",
+    "name": "Lãi dự thu tiền vay",
+    "formula": "DCN TK 3941"
+  },
+  {
+    "code": "40136.01",
+    "name": "Lãi dự thu tiền gửi",
+    "formula": "DCC TK 3911"
+  },
+  {
+    "code": "40137.01",
+    "name": "Lãi dự chi tiền gửi",
+    "formula": "DCN TK 491"
+  },
+  {
+    "code": "40138.01",
+    "name": "Lãi dự chi tiền vay",
+    "formula": "DCN TK 493"
+  },
+  {
+    "code": "40139.01",
+    "name": "Chi phí chờ phân bổ",
+    "formula": "DCN TK 388"
+  },
+  {
+    "code": "40140.01",
+    "name": "Doanh thu chờ phân bổ",
+    "formula": "DCC TK 488"
+  },
+  {
+    "code": "40141.01",
+    "name": "Các loại thuế khác (TK 4538)",
+    "formula": "DCC TK 4538"
+  },
+  {
+    "code": "40142.01",
+    "name": "Chuyển tiền đến",
+    "formula": "DCC TK 5199"
+  },
+  {
+    "code": "40143.01",
+    "name": "Chuyển tiền đi",
+    "formula": "DCN TK 5199"
+  },
+  {
+    "code": "40144.01",
+    "name": "Vật liệu (sổ có kỳ hạn, séc)",
+    "formula": "DCN TK 313001, 313002, 313003"
+  },
+  {
+    "code": "40145.01",
+    "name": "Vật liệu (giấy A4, A5, bút...)",
+    "formula": "DCN TK 313004 đến 313011"
+  },
+  {
+    "code": "40146.01",
+    "name": "Mua sắm TSCĐ",
+    "formula": "DCN TK 321"
+  },
+  {
+    "code": "40147.01",
+    "name": "Vốn điều lệ",
+    "formula": "DCC TK 601"
+  },
+  {
+    "code": "40148.01",
+    "name": "Vốn đầu tư XDCB",
+    "formula": "DCC TK 602"
+  },
+  {
+    "code": "40149.01",
+    "name": "Quỹ bổ sung vốn điều lệ",
+    "formula": "DCC TK 611"
+  },
+  {
+    "code": "40149.019999999997",
+    "name": "Quỹ dự phòng tài chính",
+    "formula": "DCC TK 613"
+  }
+]
