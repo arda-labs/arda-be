@@ -20,6 +20,9 @@ type Config struct {
 	DepositServiceURL string `yaml:"deposit_service_url"`
 	CapitalServiceURL string `yaml:"capital_service_url"`
 	CRMServiceURL     string `yaml:"crm_service_url"`
+	// GotenbergURL enables PDF rendering of report documents (empty disables
+	// it: xlsx/html still render).
+	GotenbergURL string `yaml:"gotenberg_url"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -51,6 +54,7 @@ func Load() Config {
 	envStr("DEPOSIT_SERVICE_URL", &cfg.DepositServiceURL)
 	envStr("CAPITAL_SERVICE_URL", &cfg.CapitalServiceURL)
 	envStr("CRM_SERVICE_URL", &cfg.CRMServiceURL)
+	envStr("GOTENBERG_URL", &cfg.GotenbergURL)
 
 	return cfg
 }
@@ -79,6 +83,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("deposit_service_url", &c.DepositServiceURL)
 	setStr("capital_service_url", &c.CapitalServiceURL)
 	setStr("crm_service_url", &c.CRMServiceURL)
+	setStr("gotenberg_url", &c.GotenbergURL)
 	return true
 }
 

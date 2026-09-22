@@ -24,9 +24,10 @@ type StatisticalSubmitter interface {
 // StatisticalService runs QCMS flows: report definitions, indicators,
 // and report submission cases (maker-checker via workflow).
 type StatisticalService struct {
-	repo     *repository.StatisticalRepository
-	workflow StatisticalSubmitter
-	engine   *indicator.Engine
+	repo         *repository.StatisticalRepository
+	workflow     StatisticalSubmitter
+	engine       *indicator.Engine
+	presentation *presentationService
 }
 
 // NewStatisticalService wires the service. The indicator engine is optional so
@@ -301,9 +302,23 @@ func (s *StatisticalService) ListIndicatorResults(ctx context.Context, params re
 	return s.repo.ListIndicatorResults(ctx, params)
 }
 
-// ComputeIndicator evaluates one indicator for one period (optionally sliced by
-// dimension) and stores the result. Series formulas (growth / trailing_average)
-// resolve their base values from previously stored results.
+// Presentation returns the service's presentation surface (chart + document
+// rendering), or nil when the service was built without one.
+func (s *StatisticalService) Presentation() *presentationService {
+	return s.presentation
+}
+
+// SetPresentation wires the presentation surface (called from main, where the
+// Gotenberg URL is known).
+func (s *StatisticalService) SetPresentation(p *presentationService) {
+	s.presentation = p
+}
+
+// NewPresentationService builds the presentation surface for main; the
+// concrete type stays private to this package.
+func NewPresentationService(statistical *StatisticalService, gotenbergURL string) (*presentationService, error) {
+	return newPresentationService(statistical, gotenbergURL)
+}
 func (s *StatisticalService) ComputeIndicator(ctx context.Context, tenantID, actor, code string, params map[string]string) (*repository.IndicatorResult, error) {
 	if s.engine == nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInternal, "indicator engine is not configured")

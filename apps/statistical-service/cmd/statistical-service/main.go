@@ -70,6 +70,16 @@ func main() {
 	internalAIHandler := handler.NewInternalAIHandler(statisticalSvc)
 	indicatorResultHandler := handler.NewIndicatorResultHandler(statisticalSvc)
 
+	// Presentation surface. Gotenberg is optional: without it the document
+	// endpoint reports PDF as unconfigured (xlsx/html still work).
+	presentationSvc, err := service.NewPresentationService(statisticalSvc, cfg.GotenbergURL)
+	if err != nil {
+		logger.Error("presentation service", "err", err)
+		os.Exit(1)
+	}
+	statisticalSvc.SetPresentation(presentationSvc)
+	presentationHandler := handler.NewPresentationHandler(presentationSvc)
+
 	// ── gRPC server (StatisticalCommandService) ──
 	serviceSecret, err := identity.SecretFromEnv()
 	if err != nil {
@@ -114,7 +124,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(statisticalHandler, internalAIHandler, reportingJobHandler, indicatorResultHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(statisticalHandler, internalAIHandler, reportingJobHandler, indicatorResultHandler, presentationHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 120 * time.Second, // the reporting ETL job fans out to domain services
 		IdleTimeout:  60 * time.Second,
@@ -152,6 +162,7 @@ type config struct {
 	DepositServiceURL string
 	CapitalServiceURL string
 	CRMServiceURL     string
+	GotenbergURL      string
 }
 
 // StatisticalSubmitterAdapter adapts the workflow client to the service
@@ -181,6 +192,7 @@ func loadConfig() config {
 		DepositServiceURL: base.DepositServiceURL,
 		CapitalServiceURL: base.CapitalServiceURL,
 		CRMServiceURL:     base.CRMServiceURL,
+		GotenbergURL:      base.GotenbergURL,
 	}
 }
 

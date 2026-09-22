@@ -8,7 +8,7 @@ import (
 )
 
 // NewRouter wires the statistical-service HTTP surface.
-func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.InternalAIHandler, reportingJob *handler.ReportingJobHandler, indicatorResults *handler.IndicatorResultHandler) http.Handler {
+func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.InternalAIHandler, reportingJob *handler.ReportingJobHandler, indicatorResults *handler.IndicatorResultHandler, presentation *handler.PresentationHandler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -82,6 +82,11 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 		}
 	})
 	mux.HandleFunc("POST /api/statistical/indicators/compute", indicatorResults.ComputeIndicators)
+
+	// Presentation: chart contract + rendered documents (pdf/xlsx/html).
+	mux.HandleFunc("GET /api/statistical/reports/{code}/chart", presentation.ReportChart)
+	mux.HandleFunc("GET /api/statistical/reports/{code}/document", presentation.ReportDocument)
+	mux.HandleFunc("GET /api/statistical/indicators/document", presentation.IndicatorDocument)
 	mux.HandleFunc("/api/statistical/score-results", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			h.ListScoreResults(w, r)
