@@ -487,6 +487,34 @@ tăng trưởng tiền gửi TCTD dưới tên chỉ tiêu khách hàng.
 **Chưa seed**: nhóm "trong địa bàn / ngoài địa bàn" (cần vùng của khách hàng) và
 "chuyển tiền" (cần domain chuyển tiền).
 
+## 9l. Đối soát — đã nối vào vòng EOD
+
+`ReconcileAccounting` trước đây chỉ là thư viện + test, **không ai gọi**. Nay có
+hai đường vào:
+
+| Đường | Dùng cho |
+|---|---|
+| `GET /api/statistical/indicators/reconcile?period_code=` | Admin đọc, xem mismatch |
+| `POST /internal/jobs/reconcile-accounting` (EOD step `RPT_RECONCILE_ACCOUNTING`, sequence 38) | Tự động sau bước trích xuất fact |
+
+**Hợp đồng trạng thái**: job trả **422** khi có mismatch **hoặc** trial balance
+không cân → EOD engine đánh dấu bước **FAILED**. Đây chính là mục đích: mapping
+tài khoản sai hay thiếu số hạng trong seed kế toán **lộ ra lúc COB**, trước khi
+lên báo cáo, thay vì thành một bảng cân đối sai âm thầm.
+
+Hai kiểm tra độc lập:
+1. Trial balance **phải cân** (`SUM(close_debit) == SUM(close_credit)`) — kiểm
+   tra fact + ETL, chạy **kể cả khi chưa seed chỉ tiêu kế toán nào**.
+2. Mỗi công thức `account_balance` được **tính lại bằng SQL tay** (khác đường
+   builder của engine) rồi so — lệch dấu, thiếu prefix hay clamp sai lộ ra thành
+   mismatch.
+
+Đường tính tay **từ chối** block nó không mô phỏng được (term có clamp) thay vì
+so hai công thức khác nhau.
+
+Test khoá hợp đồng: mismatch → 422 · clean → 200 và suy period từ `to_date` ·
+thiếu tenant → 403.
+
 ## 9k. Phân tích GSATHĐ (178) — phần lớn bị chặn
 
 | Nhóm | Số | Trạng thái |
