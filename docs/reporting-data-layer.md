@@ -467,6 +467,40 @@ Hoặc chọn dùng đúng hệ TT31 cho sổ QTDND.
 2. ~10 chỉ tiêu **tỷ lệ** (Lợi nhuận thuần/tổng tài sản…) dùng `type: ratio`.
 3. Biểu thức điều kiện nhiều nhánh còn lại.
 
+## 9j. Nhóm Khách hàng (36 chỉ tiêu)
+
+Chỉ tiêu khách hàng của PCF là **đếm theo quan hệ**, không phải "tất cả khách
+hàng": thành viên / ngoài thành viên, đang gửi tiền, đang vay vốn. Đó là các vị
+từ **xuyên fact**, nên ETL **đóng cờ** `is_member` / `has_deposit` / `has_loan`
+lên `rpt_fact_customer_daily` **sau khi mọi nguồn đã vào** (một transaction).
+
+Cờ dùng `VARCHAR(1)` `'Y'/'N'` (không phải `BOOLEAN`) vì engine so literal text —
+boolean sẽ phải cast ở mọi filter.
+
+Seed **10 chỉ tiêu**: 10001.01 (tổng), 10002.01 (thành viên), 10003.01 (ngoài
+thành viên), 10006.01 (đang gửi tiền), 10007.01 (đang vay vốn) + cặp tăng trưởng.
+
+**Đồng thời xoá một seed sai**: mã `60001.01` nằm **sai nhóm** ("Khách hàng") và
+growth tham chiếu `60000.01` — chỉ tiêu **tiền gửi liên ngân hàng** — nên nó báo
+tăng trưởng tiền gửi TCTD dưới tên chỉ tiêu khách hàng.
+
+**Chưa seed**: nhóm "trong địa bàn / ngoài địa bàn" (cần vùng của khách hàng) và
+"chuyển tiền" (cần domain chuyển tiền).
+
+## 9k. Phân tích GSATHĐ (178) — phần lớn bị chặn
+
+| Nhóm | Số | Trạng thái |
+|---|---|---|
+| Dùng mã tài khoản (TK) | 33 | ⛔ chờ mapping COA |
+| Không có công thức (metadata: địa chỉ, điện thoại, tên lãnh đạo) | 29 | Không tính được |
+| "Điểm..." (scoring theo ngưỡng) | ~60 | Cần **engine scoring** mới |
+| Nhân sự (CBTD, trình độ, chức vụ) | ~8 | Cần fact HR |
+| Tỷ lệ cần vốn CSH/tài sản (CAR, giới hạn cho vay) | nhiều | ⛔ chờ mapping COA |
+
+Vì vậy GSATHĐ **không phải nhóm rẻ**: phần lớn phụ thuộc mapping tài khoản — cùng
+một blocker với 307 chỉ tiêu tài chính kế toán. Nhóm sinh lời tốt hơn là Khách
+hàng (trên) và phần còn lại của Huy động vốn / Tín dụng theo kỳ hạn.
+
 ## 9g. Nhóm dẫn xuất Tín dụng / Huy động vốn
 
 11 chỉ tiêu dẫn xuất dùng fact đã có (`rpt_fact_loan_agreement_daily`,
