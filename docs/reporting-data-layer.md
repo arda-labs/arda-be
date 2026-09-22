@@ -379,6 +379,26 @@ sai lên báo cáo quy định**. Fact giữ `counterparty_code` + dimension
 Còn lại của Bước 6: **tiền vay TCTD (26 chỉ tiêu)** — chưa có domain trong Arda
 (cần bảng `ibm_borrows` + workflow); kho quỹ/chuyển tiền/TSCĐ. Sau đó Bước 7.
 
+## 9f. Bước 6c (Tài chính kế toán, 322 chỉ tiêu) — nền dữ liệu đã xong
+
+Nhóm "Tài chính kế toán" (227 P + 80 C + 15 khác) **không** lấy từ bảng nghiệp vụ
+riêng mà từ **tổng hợp kế toán** (`KT_TONG_HOP`): mỗi chỉ tiêu là một công thức
+tài khoản, ví dụ `DCN TK 10` (tiền mặt), `DCN TK 21 - DCC TK 21` (cho vay thuần).
+
+Phân loại công thức trong catalog (227 chỉ tiêu P):
+- 112 dạng đơn giản `DCN/DCC TK <n>` (67 + 45)
+- 44 dạng biểu thức (cộng/trừ/điều kiện)
+- 71 dạng khác (`Dư nợ/Dư có TK`, `DCC các TK: …`, `Tự tính = …`, hằng số)
+
+Nền dữ liệu: `rpt_fact_trial_balance_daily` (statistical) ←
+`GET /internal/reporting/trial-balance` (finance-service) ← `fin_trial_balance_daily`.
+Grain tenant × date × account_code × currency × org; giữ `account_code` nguyên
+bản (prefix là khoá map) và giữ cả `close_debit_minor`/`close_credit_minor`
+(vài chỉ tiêu đọc thẳng bên Có).
+
+Chưa seed chỉ tiêu: cần **parser** đọc công thức + **cơ chế đối soát** để không
+đặt số sai lên báo cáo tài chính.
+
 ## 9d. Bước 6 (member) — ĐÓNG, verified trên cluster (2026-09-22)
 
 Luồng đầy đủ chạy thật: **đăng ký thành viên → yêu cầu góp vốn → maker SUBMIT
