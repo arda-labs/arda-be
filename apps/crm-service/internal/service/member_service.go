@@ -201,19 +201,32 @@ func (s *MemberService) SubmitCapitalRequest(ctx context.Context, tenantID strin
 	if err != nil {
 		return created, fmt.Errorf("create member case: %w", err)
 	}
+	// Mark SUBMITTED before submitting the case: this bumps the request version,
+	// and the checker's optimistic-lock token travels in the case variables. If
+	// the case carried the pre-submit version the checker would always send a
+	// stale token and every approval would fail ErrMemberVersionConflict.
+	if _, err := s.repo.MarkMemberRequestSubmitted(ctx, tenantID, created.ID, cs.Id, in.Actor); err != nil {
+		return created, err
+	}
+	submittedVersion := created.DataVersion + 1
 	if _, err := s.workflow.SubmitCase(ctx, cs.Id, in.Actor, map[string]any{
 		"request_id":   created.ID,
 		"member_code":  member.MemberCode,
 		"request_type": in.RequestType,
 		"amount_minor": in.AmountMinor,
 		"org_code":     member.OrgCode,
+		// orgId/actorUserId match the keys crmJobContext reads for the worker's
+		// delegated scope (the customer-registration flow uses the same names).
+		"orgId":       member.OrgCode,
+		"actorUserId": in.Actor,
+		// The member worker reads `dataVersion` (camunda-style camelCase), the
+		// same key the FE carries on the checker task.
+		"dataVersion": submittedVersion,
 	}, in.IdempotencyKey); err != nil {
 		return created, fmt.Errorf("submit member case: %w", err)
 	}
-	if _, err := s.repo.MarkMemberRequestSubmitted(ctx, tenantID, created.ID, cs.Id, in.Actor); err != nil {
-		return created, err
-	}
 	created.Status = "SUBMITTED"
+	created.DataVersion = submittedVersion
 	created.WorkflowCaseID = &cs.Id
 	return created, nil
 }
