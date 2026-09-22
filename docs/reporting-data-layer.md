@@ -491,8 +491,23 @@ ngưỡng và ghi cảnh báo.
 - Alert là **bản ghi bền**; gửi qua event-bus tới notification-service là mối nối
   còn lại — relay có thể publish từ chính bảng này mà không đổi hợp đồng.
 
-**Chưa làm**: outbox + NATS relay tới notification-service (statistical-service
-chưa có kết nối NATS); template noti cho event `arda.statistical.indicator.breached.v1`.
+### Gửi cảnh báo qua event bus — đã nối
+
+| Thành phần | Nội dung |
+|---|---|
+| Outbox | `rpt_outbox_events` |
+| Relay | `service.OutboxRelay` → NATS JetStream (`ARDA_EVENTS`, subject `arda.>`) |
+| Event | `arda.statistical.indicator.breached.v1` (đã vào registry notification) |
+| Env | `NATS_URL` từ `arda-app-secrets` (**optional**) |
+
+- **Enqueue idempotent** theo `(rule, period, slice, value)`: COB chạy lại không
+  gửi trùng; giá trị đổi khác thì gửi lại.
+- Publish lỗi → row ở lại pending + đếm attempts, **không mất**.
+- **Relay là optional theo cấu trúc**: `NewOutboxRelay` trả `nil` khi không có
+  NATS → ETL và alert vẫn chạy (alert vốn đã bền trong `rpt_indicator_alerts`).
+
+**Còn lại**: template `noti_templates` cho event mới (nội dung email/inbox do
+nghiệp vụ cấu hình, không phải code).
 
 ## 9j. Nhóm Khách hàng (36 chỉ tiêu)
 
