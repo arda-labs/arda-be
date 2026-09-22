@@ -295,7 +295,6 @@ Quy tắc rút ra: trước khi thêm migration/khởi động, kiểm tra **con
 unique index và thứ tự phụ thuộc hiện hành**, không suy ra từ file cũ.
 
 ## 9c. Bài học verify HTTP write path (2026-09-22)
-
 Hai bug nữa chỉ lộ khi **gọi thẳng endpoint như FE gọi** (unit test dựng struct
 trong Go nên không chạm đường decode/serialize):
 
@@ -348,6 +347,33 @@ bộ** fact trong cùng transaction.
     `10022.01` (vốn góp > 0) fail. So text cũng **sai số học** (`"9" > "10"`).
     Sửa: whitelist cột số (`numericFactColumns`) → cast `col::numeric op
     ALL($n::numeric[])`.
+
+## 9d. Bước 6 (member) — ĐÓNG, verified trên cluster (2026-09-22)
+
+Luồng đầy đủ chạy thật: **đăng ký thành viên → yêu cầu góp vốn → maker SUBMIT
+→ checker APPROVE → `ST_Execute` → vốn góp chuyển → case COMPLETED**.
+
+Bằng chứng số:
+- `POST /api/crm/members` → 201; `total_capital_minor` = 50.000.000.
+- 2 yêu cầu ADDITIONAL 20.000.000 được duyệt → `add_capital_minor` = 40.000.000,
+  `total_capital_minor` = **90.000.000** (khớp sổ).
+- `RPT_EXTRACT_DAILY` → `members: 1, member_requests: 4`; fact ghi đúng, mỗi
+  request một `request_key` riêng.
+- `POST /api/statistical/indicators/compute?period_code=2026-09` → **25/25
+  computed, 0 failed**; 12 chỉ tiêu vốn góp khớp fact (10024.04 = 90tr,
+  10025.01 = 50tr, 10025.02 = 40tr, 10022.01 = 1).
+- `GET /api/statistical/indicators/document` → PDF 29.913 bytes
+  (`indicators-2026-09.pdf`, Gotenberg).
+- `GET /api/statistical/reports/DEPOSIT_PORTFOLIO/export` → XLSX
+  (`Content-Type: ...spreadsheetml.sheet`).
+- `GET /api/statistical/reports/CUSTOMER_SUMMARY/run` → 1 dòng `RETAIL|ACTIVE|1`.
+
+Còn lại của Bước 6: IBM borrow/deposit (37 chỉ tiêu), kho quỹ/chuyển tiền/TSCĐ;
+Bước 7 (proactive agent).
+
+Vận hành: commit code mà bị commit docs theo sau **ngay** thì GitHub Actions
+cancel build của commit code → không có image cho commit đó; phải dispatch lại
+`images.yml` trên tip. Đây là lý do phải pin tay thay vì chờ ImageUpdater.
 
 Quy tắc rút ra: contract HTTP phải verify bằng **payload thật của FE**
 (snake_case), không bằng struct Go; và expression SQL phải cast kiểu tường minh
