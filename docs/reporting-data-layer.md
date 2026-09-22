@@ -467,6 +467,23 @@ Hoặc chọn dùng đúng hệ TT31 cho sổ QTDND.
 2. ~10 chỉ tiêu **tỷ lệ** (Lợi nhuận thuần/tổng tài sản…) dùng `type: ratio`.
 3. Biểu thức điều kiện nhiều nhánh còn lại.
 
+## 9g. Nhóm dẫn xuất Tín dụng / Huy động vốn
+
+11 chỉ tiêu dẫn xuất dùng fact đã có (`rpt_fact_loan_agreement_daily`,
+`rpt_fact_deposit_contract_daily`):
+
+| Nhóm | Chỉ tiêu |
+|---|---|
+| Huy động vốn | 20000.01.01 (TB 3 tháng), 20000.01.02 (tăng trưởng), 20007.01 (số người gửi), 20007.01.02, 20019.01 (bình quân/người), 20019.01.02 |
+| Tín dụng | 30000.01.02 (tăng trưởng dư nợ), 30000.01.03 (TB 3 tháng), 30020.01.01/.02 (nợ xấu), 30021.01.02 (dự phòng) |
+
+**Cố ý chưa seed**: các chỉ tiêu chia theo **kỳ hạn / phương thức / địa bàn /
+nông nghiệp** — cần cột term/method/region/sector mà fact chưa có; bịa ra sẽ đặt
+số sai lên báo cáo.
+
+Đồng thời sửa `60000.01.02`: seed trước thiếu `percent:true` nên lưu tỷ lệ thô
+(0.5) trong khi đơn vị là `%` — nay lưu đúng 50.
+
 ## 9d. Bước 6 (member) — ĐÓNG, verified trên cluster (2026-09-22)
 
 Luồng đầy đủ chạy thật: **đăng ký thành viên → yêu cầu góp vốn → maker SUBMIT
