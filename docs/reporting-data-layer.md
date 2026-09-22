@@ -343,6 +343,11 @@ Ghi nhận thêm (chưa sửa, không thuộc member):
 Quy tắc rút ra: khoá fact phải là **định danh nguồn** (id), không phải tổ hợp
 thuộc tính "chắc là đủ unique"; và một bước ETL fail phải nhìn ra nó chặn **toàn
 bộ** fact trong cùng transaction.
+15. **So sánh filter trên cột số bị so như text**: engine bind literal dạng text
+    rồi so nguyên cột → `bigint > text` (`SQLSTATE 42883`); chỉ tiêu
+    `10022.01` (vốn góp > 0) fail. So text cũng **sai số học** (`"9" > "10"`).
+    Sửa: whitelist cột số (`numericFactColumns`) → cast `col::numeric op
+    ALL($n::numeric[])`.
 
 Quy tắc rút ra: contract HTTP phải verify bằng **payload thật của FE**
 (snake_case), không bằng struct Go; và expression SQL phải cast kiểu tường minh
