@@ -569,6 +569,64 @@
           }
         }
       }
+    },
+    "/internal/ai/report-presentation": {
+      "get": {
+        "operationId": "aiGetReportPresentation",
+        "summary": "Run a catalogued report and return its presentation (rows + chart + KPI).",
+        "description": "Run one catalogued report (identified by report_code, never by SQL) for a period and return the computed rows together with the deterministic presentation: a chart contract the frontend renders as an ECharts option, and KPI cards built from the stored indicator results for the same period. This is the presentation target for assistant answers that should show a KPI/chart view instead of raw rows. The chart and KPI come from the same presentation layer the downloadable documents use, so a chat answer and a document never disagree. Internal wiring (query_id, sql, param schema, tenant_id) is never exposed.",
+        "x-ai-tool": {
+          "sdkPath": "arda.statistical.getReportPresentation",
+          "domain": "statistical",
+          "kind": "read",
+          "risk": "low",
+          "timeoutMs": 8000,
+          "keywords": [
+            "statistical", "report", "chart", "kpi", "dashboard", "presentation", "visualize",
+            "báo cáo", "biểu đồ", "chỉ số", "chỉ tiêu", "phân tích", "dashboard",
+            "trực quan", "kpi card", "dư nợ", "nợ xấu", "huy động", "thống kê"
+          ],
+          "requiredPerms": ["statistical.read"],
+          "service": "statistical-service",
+          "envelope": "result",
+          "returns": "ReportPresentation { report_code, report_name, period_code, org_code, columns: [string], rows: [[any]], row_count, chart: { type, title, categories: [string], series: [{ name, values: [number] }], value_format, reason }, kpis: [{ code, label, value, unit }], render }"
+        },
+        "parameters": [
+          {
+            "name": "report_code", "in": "query", "x-ai-arg": "reportCode", "required": true,
+            "schema": { "type": "string", "maxLength": 128 },
+            "description": "Report code from the report-definition catalog (e.g. LOAN_PORTFOLIO_SUMMARY)"
+          },
+          {
+            "name": "period_code", "in": "query", "x-ai-arg": "periodCode", "required": true,
+            "schema": { "type": "string", "maxLength": 7 },
+            "description": "Reporting period as YYYY-MM"
+          },
+          {
+            "name": "org_code", "in": "query", "x-ai-arg": "orgCode",
+            "schema": { "type": "string", "maxLength": 128 },
+            "description": "Optional org unit filter"
+          },
+          {
+            "name": "tenant_id", "in": "query", "x-ai-scope": "tenant", "required": true,
+            "schema": { "type": "string" },
+            "description": "Delegated tenant; sourced from the verified actor scope, never from tool arguments."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report rows with chart and KPI cards.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "result": { "$ref": "#/components/schemas/AiReportPresentation" } }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -688,6 +746,51 @@
             "type": "string",
             "format": "date-time"
           }
+        }
+      },
+      "AiReportPresentation": {
+        "type": "object",
+        "description": "Assistant-facing report presentation: report identity, computed rows, a chart the frontend renders, and KPI cards from stored indicator results. Internal wiring (query_id, sql, param schema, tenant_id) is not part of this shape.",
+        "properties": {
+          "report_code": { "type": "string" },
+          "report_name": { "type": "string" },
+          "period_code": { "type": "string" },
+          "org_code": { "type": "string" },
+          "columns": { "type": "array", "items": { "type": "string" } },
+          "rows": { "type": "array", "items": { "type": "array" } },
+          "row_count": { "type": "integer" },
+          "chart": { "$ref": "#/components/schemas/AiChart" },
+          "kpis": { "type": "array", "items": { "$ref": "#/components/schemas/AiKPI" } },
+          "render": { "type": "string" }
+        }
+      },
+      "AiChart": {
+        "type": "object",
+        "description": "Deterministic chart contract emitted by the presentation layer; the frontend maps it to an ECharts option. type=none carries a reason instead of series.",
+        "properties": {
+          "type": { "type": "string", "enum": ["bar", "line", "pie", "none"] },
+          "title": { "type": "string" },
+          "categories": { "type": "array", "items": { "type": "string" } },
+          "series": { "type": "array", "items": { "$ref": "#/components/schemas/AiChartSeries" } },
+          "value_format": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      },
+      "AiChartSeries": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "values": { "type": "array", "items": { "type": "number" } }
+        }
+      },
+      "AiKPI": {
+        "type": "object",
+        "description": "One headline KPI card: the stored indicator value for the period, already labelled and unit-tagged.",
+        "properties": {
+          "code": { "type": "string" },
+          "label": { "type": "string" },
+          "value": { "type": "string" },
+          "unit": { "type": "string" }
         }
       }
     }

@@ -824,6 +824,41 @@ func GeneratedCatalog() []GeneratedEntry {
 			Enabled:        true,
 		},
 		{
+			SDKPath:   "arda.statistical.getReportPresentation",
+			Domain:    "statistical",
+			Signature: "arda.statistical.getReportPresentation(args: {reportCode: string; periodCode: string; orgCode?: string}): Promise<ReportPresentation>;",
+			JSDoc: `/**
+ * Run a catalogued report and return its presentation (rows + chart + KPI).
+ *
+ * Run one catalogued report (identified by report_code, never by SQL) for a period and return the computed rows together with the deterministic presentation: a chart contract the frontend renders as an ECharts option, and KPI cards built from the stored indicator results for the same period. This is the presentation target for assistant answers that should show a KPI/chart view instead of raw rows. The chart and KPI come from the same presentation layer the downloadable documents use, so a chat answer and a document never disagree. Internal wiring (query_id, sql, param schema, tenant_id) is never exposed.
+ * @param args.reportCode Report code from the report-definition catalog (e.g. LOAN_PORTFOLIO_SUMMARY) [maxLength 128, required]
+ * @param args.periodCode Reporting period as YYYY-MM [maxLength 7, required]
+ * @param args.orgCode Optional org unit filter [maxLength 128]
+ * @returns ReportPresentation { report_code, report_name, period_code, org_code, columns: [string], rows: [[any]], row_count, chart: { type, title, categories: [string], series: [{ name, values: [number] }], value_format, reason }, kpis: [{ code, label, value, unit }], render }
+ * @requires statistical.read
+ * @domain statistical
+ */`,
+			Keywords:            []string{"statistical", "report", "chart", "kpi", "dashboard", "presentation", "visualize", "báo cáo", "biểu đồ", "chỉ số", "chỉ tiêu", "phân tích", "dashboard", "trực quan", "kpi card", "dư nợ", "nợ xấu", "huy động", "thống kê"},
+			Kind:                "read",
+			RequiredPermissions: []string{"statistical.read"},
+			Risk:                "low",
+			Timeout:             8000 * time.Millisecond,
+			Service:             "statistical-service",
+			Method:              "GET",
+			Path:                "/internal/ai/report-presentation",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "reportCode", Param: "report_code", In: "query", Required: true, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "periodCode", Param: "period_code", In: "query", Required: true, Type: "string", MaxLength: 7, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "orgCode", Param: "org_code", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"chart":{"type":"object","properties":{"categories":{"type":"array","items":{"type":"string"}},"reason":{"type":"string"},"series":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"values":{"type":"array","items":{"type":"number"}}}}},"title":{"type":"string"},"type":{"type":"string"},"value_format":{"type":"string"}}},"columns":{"type":"array","items":{"type":"string"}},"kpis":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"label":{"type":"string"},"unit":{"type":"string"},"value":{"type":"string"}}}},"org_code":{"type":"string"},"period_code":{"type":"string"},"render":{"type":"string"},"report_code":{"type":"string"},"report_name":{"type":"string"},"row_count":{"type":"integer"},"rows":{"type":"array","items":{"type":"array"}}}}`,
+			Enabled:        true,
+		},
+		{
 			SDKPath:   "arda.statistical.listIndicatorAlerts",
 			Domain:    "statistical",
 			Signature: "arda.statistical.listIndicatorAlerts(args: {periodCode?: string; status?: string; limit?: number}): Promise<IndicatorAlertListPage>;",
