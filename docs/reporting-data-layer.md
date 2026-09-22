@@ -238,7 +238,6 @@ tiền lương, TSCĐ, CCDC) chưa tính.
    IAM `crm.member.read/manage` + policy route. Commit BE `58472a8a`, FE `769b28a`.
    Còn lại Bước 6: IBM borrow/deposit (37 chỉ tiêu) + kho quỹ/chuyển tiền/TSCĐ.
 7. **Bước 7** — Proactive (SOCIUS nhóm 7): rule + as-of + notification-service.
-
 Ánh xạ SOCIUS: nhóm 1–3 + 7 dùng chung Bước 1–5; nhóm 4 (document-to-txn) và
 5 (instruction-to-txn) thuộc P3 riêng (media + HITL); nhóm 6 (system operation)
 **ngoài phạm vi**.
@@ -466,6 +465,34 @@ Hoặc chọn dùng đúng hệ TT31 cho sổ QTDND.
 1. Chốt mapping TT31 ↔ TT92 (quyết định nghiệp vụ, cần kế toán).
 2. ~10 chỉ tiêu **tỷ lệ** (Lợi nhuận thuần/tổng tài sản…) dùng `type: ratio`.
 3. Biểu thức điều kiện nhiều nhánh còn lại.
+
+## 9m. Bước 7 — Proactive (rule + alert), đã code
+
+Thay vì chờ ai đó mở báo cáo, vòng EOD **tự đánh giá** chỉ tiêu đã tính theo
+ngưỡng và ghi cảnh báo.
+
+| Thành phần | Nội dung |
+|---|---|
+| Bảng | `rpt_indicator_rules` + `rpt_indicator_alerts` |
+| API | `GET/POST /api/statistical/indicator-rules`, `GET /api/statistical/indicator-alerts`, `POST .../{id}/ack` |
+| EOD | `RPT_EVALUATE_RULES` (seq 40, chạy **cuối** để số đã chốt) |
+| AI | `arda.statistical.listIndicatorAlerts` → Olorin trả lời "có cảnh báo gì" |
+
+**Quyết định thiết kế:**
+
+- Rule **chỉ so một giá trị đã lưu với một con số** — không mang SQL. Vì vậy một
+  rule **chỉ có thể canh thứ engine đã tính được**; `UpsertRule` từ chối
+  `indicator_code` không tồn tại.
+- Alert **idempotent** theo `(rule, period, slice)`: chạy lại kỳ cập nhật cùng
+  dòng; chỉ tiêu hồi phục thì **xoá alert cũ**. COB chạy lại hay backfill không
+  spam hộp thư.
+- Operator/severity là **tập đóng** (`> >= < <= = <>`, `INFO|WARN|CRITICAL`) ràng
+  buộc bằng CHECK ở DB **và** validate ở service.
+- Alert là **bản ghi bền**; gửi qua event-bus tới notification-service là mối nối
+  còn lại — relay có thể publish từ chính bảng này mà không đổi hợp đồng.
+
+**Chưa làm**: outbox + NATS relay tới notification-service (statistical-service
+chưa có kết nối NATS); template noti cho event `arda.statistical.indicator.breached.v1`.
 
 ## 9j. Nhóm Khách hàng (36 chỉ tiêu)
 
