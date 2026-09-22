@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/statistical-service/internal/indicator"
@@ -476,7 +477,7 @@ func (s *StatisticalService) EvaluateIndicatorRules(ctx context.Context, tenantI
 			if msg == "" {
 				msg = fmt.Sprintf("%s %s %g (giá trị %g)", rule.Name, rule.Operator, rule.Threshold, *value)
 			}
-			if _, err := s.repo.UpsertAlert(ctx, &repository.IndicatorAlert{
+			alert, err := s.repo.UpsertAlert(ctx, &repository.IndicatorAlert{
 				TenantID:      tenantID,
 				RuleCode:      rule.Code,
 				IndicatorCode: rule.IndicatorCode,
@@ -487,8 +488,15 @@ func (s *StatisticalService) EvaluateIndicatorRules(ctx context.Context, tenantI
 				Operator:      rule.Operator,
 				Severity:      rule.Severity,
 				Message:       msg,
-			}); err != nil {
+			})
+			if err != nil {
 				return nil, err
+			}
+			// Hand the durable alert to the outbox; the relay publishes it and
+			// notification-service renders it. Failure here must not lose the
+			// alert itself, so it is logged, not fatal.
+			if err := s.repo.EnqueueAlertEvent(ctx, alert); err != nil {
+				slog.Warn("indicator alert enqueue failed", "rule", rule.Code, "err", err)
 			}
 			raised++
 			continue

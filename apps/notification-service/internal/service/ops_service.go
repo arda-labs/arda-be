@@ -31,6 +31,7 @@ var notificationEventRegistry = []NotificationEvent{
 	{Code: "capital.formation.approved", Subject: "arda.capital.formation.approved.v1", Domain: "CFM", Description: "Hợp đồng nguồn vốn được duyệt"},
 	{Code: "finance.posting.approved", Subject: "arda.finance.posting.approved.v1", Domain: "FIN", Description: "Bút toán kế toán được duyệt"},
 	{Code: "report.submission.approved", Subject: "arda.report.submission.approved.v1", Domain: "RPT", Description: "Báo cáo được duyệt"},
+	{Code: "statistical.indicator.breached", Subject: "arda.statistical.indicator.breached.v1", Domain: "RPT", Description: "Chỉ tiêu vượt ngưỡng cảnh báo"},
 	{Code: "hrm.employee.registered", Subject: "arda.hrm.employee.registered.v1", Domain: "HRM", Description: "Nhân sự mới được đăng ký"},
 	{Code: "workflow.task.assigned", Subject: "arda.workflow.task.assigned.v1", Domain: "BPM", Description: "Công việc được phân công"},
 	{Code: "notification.inbox.created", Subject: "arda.notification.inbox.created.v1", Domain: "NOTI", Description: "Thông báo hộp thư đến"},

@@ -21,6 +21,7 @@ type Config struct {
 	CapitalServiceURL string `yaml:"capital_service_url"`
 	CRMServiceURL     string `yaml:"crm_service_url"`
 	FinanceServiceURL string `yaml:"finance_service_url"`
+	NATSURL           string `yaml:"nats_url"`
 	// GotenbergURL enables PDF rendering of report documents (empty disables
 	// it: xlsx/html still render).
 	GotenbergURL string `yaml:"gotenberg_url"`
@@ -34,6 +35,7 @@ func Load() Config {
 		LogLevel:         "info",
 		DatabaseDSN:      "",
 		WorkflowGRPCAddr: "localhost:9090",
+		NATSURL:          "nats://localhost:4222",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -56,6 +58,7 @@ func Load() Config {
 	envStr("CAPITAL_SERVICE_URL", &cfg.CapitalServiceURL)
 	envStr("CRM_SERVICE_URL", &cfg.CRMServiceURL)
 	envStr("FINANCE_SERVICE_URL", &cfg.FinanceServiceURL)
+	envStr("NATS_URL", &cfg.NATSURL)
 	envStr("GOTENBERG_URL", &cfg.GotenbergURL)
 
 	return cfg
@@ -86,6 +89,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("capital_service_url", &c.CapitalServiceURL)
 	setStr("crm_service_url", &c.CRMServiceURL)
 	setStr("finance_service_url", &c.FinanceServiceURL)
+	setStr("nats_url", &c.NATSURL)
 	setStr("gotenberg_url", &c.GotenbergURL)
 	return true
 }

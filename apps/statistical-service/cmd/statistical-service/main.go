@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"github.com/nats-io/nats.go"
 	"log/slog"
 	"net"
 	"net/http"
@@ -138,6 +139,19 @@ func main() {
 		}
 	}()
 
+	// Event-bus relay for the reporting outbox (indicator alerts). A NATS outage
+	// only delays delivery — the alert row is already durable.
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+	if conn, err := nats.Connect(cfg.NATSURL); err != nil {
+		logger.Warn("reporting outbox relay disabled: nats unavailable", "err", err)
+	} else {
+		defer conn.Close()
+		if relay := service.NewOutboxRelay(db, conn, logger); relay != nil {
+			go relay.Run(appCtx)
+		}
+	}
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
@@ -163,6 +177,7 @@ type config struct {
 	CapitalServiceURL string
 	CRMServiceURL     string
 	FinanceServiceURL string
+	NATSURL           string
 	GotenbergURL      string
 }
 
@@ -194,6 +209,7 @@ func loadConfig() config {
 		CapitalServiceURL: base.CapitalServiceURL,
 		CRMServiceURL:     base.CRMServiceURL,
 		FinanceServiceURL: base.FinanceServiceURL,
+		NATSURL:           base.NATSURL,
 		GotenbergURL:      base.GotenbergURL,
 	}
 }

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -178,6 +179,45 @@ func (r *StatisticalRepository) AckAlert(ctx context.Context, tenantID, id, acto
 		return errors.New("alert not found or already acknowledged")
 	}
 	return nil
+}
+
+// IndicatorAlertSubject is the event subject notification-service consumes.
+const IndicatorAlertSubject = "arda.statistical.indicator.breached.v1"
+
+// EnqueueAlertEvent appends one alert event to the outbox for the relay to
+// publish. dedupe_key makes it idempotent across COB re-runs: a breach that
+// keeps the same value enqueues once, a materially different value enqueues
+// again.
+func (r *StatisticalRepository) EnqueueAlertEvent(ctx context.Context, a *IndicatorAlert) error {
+	payload, err := json.Marshal(map[string]any{
+		"rule_code":      a.RuleCode,
+		"indicator_code": a.IndicatorCode,
+		"period_code":    a.PeriodCode,
+		"dimension_key":  a.DimensionKey,
+		"value":          a.Value,
+		"threshold":      a.Threshold,
+		"operator":       a.Operator,
+		"severity":       a.Severity,
+		"message":        a.Message,
+	})
+	if err != nil {
+		return err
+	}
+	dedupe := fmt.Sprintf("%s|%s|%s|%v", a.RuleCode, a.PeriodCode, a.DimensionKey, valueOrNil(a.Value))
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO rpt_outbox_events
+		    (tenant_id, subject, aggregate_type, aggregate_id, dedupe_key, payload)
+		VALUES ($1,$2,'indicator_alert',$3,$4,$5)
+		ON CONFLICT (tenant_id, dedupe_key) DO NOTHING`,
+		a.TenantID, IndicatorAlertSubject, a.RuleCode, dedupe, payload)
+	return err
+}
+
+func valueOrNil(v *float64) any {
+	if v == nil {
+		return "nil"
+	}
+	return *v
 }
 
 // ValidRuleOperator is the closed set of comparison operators a rule may use.
