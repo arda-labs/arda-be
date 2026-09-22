@@ -15,7 +15,7 @@ INSERT INTO iam_roles (id, code, name, status, tenant_id)
 VALUES
     (uuidv7(), 'CRM_MEMBER_MAKER',   'CRM member maker',   'ACTIVE', 'default'),
     (uuidv7(), 'CRM_MEMBER_CHECKER', 'CRM member checker', 'ACTIVE', 'default')
-ON CONFLICT (code) DO NOTHING;
+ON CONFLICT (tenant_id, code) DO NOTHING;
 
 INSERT INTO iam_role_permissions (role_id, permission_id)
 SELECT r.id, p.id
