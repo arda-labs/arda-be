@@ -229,9 +229,14 @@ tiền lương, TSCĐ, CCDC) chưa tính.
    formula/sources/dimensions không lộ). Catalog regen 33 entry; dùng lại
    `statistical.read` + policy wildcard sẵn có. **Đây là routing, không phải
    text-to-SQL** — model chỉ được nêu tên báo cáo/chỉ tiêu có thật (đúng Q8).
-6. **Bước 6** — Domain thiếu (trần 923 chỉ tiêu): `member`/vốn góp cổ phần
-   (54) + IBM borrow/deposit (37) + `CT_GIAO_DICH`; chỉ tiêu C (tăng trưởng/
-   trung bình 3 tháng) cần thêm bảng kết quả đã tính.
+6. **Bước 6 — Domain thiếu — ĐÃ CODE (member domain đầy đủ)**: `crm-service`
+   có domain thành viên QTDND — `crm_member_products`/`crm_members`/
+   `crm_member_requests`; register + góp/rút vốn maker-checker qua case
+   `CRM_MEMBER_V1` (BPMN `crm-member-v1` + roles CRM_MAKER/CHECKER + SLA);
+   decision ghi ngược qua proto `MemberCommandService`; FE `/customers/members`
+   (list + dialog góp/rút); reporting: 2 fact table + ETL + 12 chỉ tiêu seed;
+   IAM `crm.member.read/manage` + policy route. Commit BE `58472a8a`, FE `769b28a`.
+   Còn lại Bước 6: IBM borrow/deposit (37 chỉ tiêu) + kho quỹ/chuyển tiền/TSCĐ.
 7. **Bước 7** — Proactive (SOCIUS nhóm 7): rule + as-of + notification-service.
 
 Ánh xạ SOCIUS: nhóm 1–3 + 7 dùng chung Bước 1–5; nhóm 4 (document-to-txn) và

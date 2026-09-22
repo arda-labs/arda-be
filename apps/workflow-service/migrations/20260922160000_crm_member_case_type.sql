@@ -4,6 +4,16 @@
 -- withdraw share one case-type. Roles CRM_MAKER / CRM_CHECKER are the maker-
 -- checker pair for the member book (distinct from the CRM_AGENT role used by
 -- customer registration, so the member book has its own duty owners).
+--
+-- workflow_assignment_rules.role_code references workflow_role_catalog, so the
+-- catalog rows must exist first — the initial version of this migration failed
+-- the FK and crash-looped the workflow pod.
+
+INSERT INTO workflow_role_catalog (role_code, role_name, role_type, business_subsystem, status)
+VALUES
+    ('CRM_MAKER',   'CRM member maker - lập yêu cầu vốn góp thành viên', 'MAKER',   'CRM', 'ACTIVE'),
+    ('CRM_CHECKER', 'CRM member checker - phê duyệt vốn góp thành viên', 'CHECKER', 'CRM', 'ACTIVE')
+ON CONFLICT (role_code) DO NOTHING;
 
 INSERT INTO business_operation_types (
     case_type, business_area, operation_name, bpmn_process_id, bpmn_version,

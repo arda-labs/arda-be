@@ -64,6 +64,16 @@ func main() {
 	amendmentRepo := repository.NewAmendmentRepository(db)
 	memberRepo := repository.NewMemberRepository(db)
 
+	// Workflow client: the member service (registered on the gRPC server below)
+	// needs it, and gRPC services must be registered before Serve.
+	workflowClient, err := workflowclient.Dial(context.Background(), cfg.WorkflowGRPCAddr, cfg.AppName, logger)
+	if err != nil {
+		logger.Error("workflow grpc unavailable", "addr", cfg.WorkflowGRPCAddr, "err", err)
+		os.Exit(1)
+	}
+	defer workflowClient.Close()
+	logger.Info("workflow grpc configured", "addr", cfg.WorkflowGRPCAddr)
+
 	serviceSecret, err := identity.SecretFromEnv()
 	if err != nil {
 		logger.Error("service identity is not configured", "err", err)
@@ -83,6 +93,10 @@ func main() {
 		),
 	)
 	crmv1.RegisterCustomerCommandServiceServer(grpcSrv, grpcserver.NewCustomerCommandServer(customerRepo, amendmentRepo))
+	// Member callback must be registered before Serve(): a gRPC server rejects
+	// RegisterService once it is serving.
+	memberSvc := service.NewMemberService(memberRepo, workflowClient)
+	crmv1.RegisterMemberCommandServiceServer(grpcSrv, grpcserver.NewMemberCommandServer(memberSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
@@ -98,19 +112,7 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-
-	workflowClient, err := workflowclient.Dial(context.Background(), cfg.WorkflowGRPCAddr, cfg.AppName, logger)
-	if err != nil {
-		logger.Error("workflow grpc unavailable", "addr", cfg.WorkflowGRPCAddr, "err", err)
-		os.Exit(1)
-	}
 	defer workflowClient.Close()
-	logger.Info("workflow grpc configured", "addr", cfg.WorkflowGRPCAddr)
-
-	// Member service is needed by both the gRPC callback server and the HTTP
-	// handlers, so it is built right after the workflow dial.
-	memberSvc := service.NewMemberService(memberRepo, workflowClient)
-	crmv1.RegisterMemberCommandServiceServer(grpcSrv, grpcserver.NewMemberCommandServer(memberSvc))
 
 	// Handlers
 	customerHandler := handler.NewCustomerHandler(customerRepo, workflowClient)
