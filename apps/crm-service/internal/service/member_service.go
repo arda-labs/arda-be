@@ -47,16 +47,19 @@ func (s *MemberService) GetMember(ctx context.Context, tenantID, id string) (*do
 	return s.repo.GetMember(ctx, tenantID, id)
 }
 
-// RegisterMemberInput is the create payload.
+// RegisterMemberInput is the create payload. Tags are snake_case because this
+// struct is decoded straight from the HTTP body, whose wire shape follows
+// docs/conventions: without them the FE payload binds nothing and every
+// register fails "customer_code is required".
 type RegisterMemberInput struct {
-	MemberCode       string
-	CustomerCode     string
-	OrgCode          string
-	MemberBookNo     string
-	MemberTypeCode   string
-	OpenDate         string
-	EstbCapitalMinor int64
-	Actor            string
+	MemberCode       string `json:"member_code"`
+	CustomerCode     string `json:"customer_code"`
+	OrgCode          string `json:"org_code"`
+	MemberBookNo     string `json:"member_book_no"`
+	MemberTypeCode   string `json:"member_type_code"`
+	OpenDate         string `json:"open_date"`
+	EstbCapitalMinor int64  `json:"estb_capital_minor"`
+	Actor            string `json:"-"`
 }
 
 // RegisterMember turns a customer into a member. The customer must exist and no
@@ -117,17 +120,17 @@ func (s *MemberService) UpdateMemberProfile(ctx context.Context, tenantID, id, b
 }
 
 // SubmitCapitalRequestInput stages one capital movement and pushes it to the
-// CRM_MEMBER_V1 case.
+// CRM_MEMBER_V1 case. snake_case tags for the same reason as RegisterMemberInput.
 type SubmitCapitalRequestInput struct {
-	MemberID       string
-	RequestType    string
-	ProductCode    string
-	AmountMinor    int64
-	CurrencyCode   string
-	EffectiveDate  string
-	Reason         string
-	IdempotencyKey string
-	Actor          string
+	MemberID       string `json:"member_id"`
+	RequestType    string `json:"request_type"`
+	ProductCode    string `json:"product_code"`
+	AmountMinor    int64  `json:"amount_minor"`
+	CurrencyCode   string `json:"currency_code"`
+	EffectiveDate  string `json:"effective_date"`
+	Reason         string `json:"reason"`
+	IdempotencyKey string `json:"idempotency_key"`
+	Actor          string `json:"-"`
 }
 
 // SubmitCapitalRequest validates, persists the DRAFT request and submits the
