@@ -13,7 +13,6 @@ import (
 	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
-
 const (
 	TaskStatusRouting   = "ROUTING"
 	TaskStatusReady     = "READY"
@@ -65,11 +64,11 @@ type WorkItem struct {
 	// Registry v2 step metadata (decorated by the HTTP layer from
 	// workflow_case_type_steps): the shared task UI renders actions/forms from
 	// these fields instead of hardcoded case-type maps.
-	StepKind          string   `json:"stepKind,omitempty"`
-	FormKey           string   `json:"formKey,omitempty"`
-	AllowedActions    []string `json:"allowedActions,omitempty"`
-	RequiredCommentOn []string `json:"requiredCommentOn,omitempty"`
-	RegistryVersion   int      `json:"registryVersion,omitempty"`
+	StepKind          string    `json:"stepKind,omitempty"`
+	FormKey           string    `json:"formKey,omitempty"`
+	AllowedActions    []string  `json:"allowedActions,omitempty"`
+	RequiredCommentOn []string  `json:"requiredCommentOn,omitempty"`
+	RegistryVersion   int       `json:"registryVersion,omitempty"`
 	CreatedAt         time.Time `json:"createdAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
 }

@@ -16,7 +16,7 @@ type Router struct {
 	amendmentHandler *handler.AmendmentHandler
 }
 
-func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handler.AmendmentHandler, projectHandler *handler.ProjectHandler, reportHandler *handler.ReportHandler) http.Handler {
+func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handler.AmendmentHandler, projectHandler *handler.ProjectHandler, reportHandler *handler.ReportHandler, memberHandler *handler.MemberHandler) http.Handler {
 	r := &Router{
 		customerHandler:  customerHandler,
 		amendmentHandler: amendmentHandler,
@@ -71,6 +71,13 @@ func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handl
 	mux.HandleFunc("DELETE /api/crm/projects/{id}/members/{memberId}", projectHandler.ProjectMemberByID)
 	mux.HandleFunc("GET /api/crm/reports/customers", reportHandler.GetCustomerReport)
 
+	// QTDND membership: register + capital-movement pipeline (maker-checker).
+	mux.HandleFunc("/api/crm/members", memberHandler.Members)
+	mux.HandleFunc("GET /api/crm/members/{id}", memberHandler.MemberByID)
+	mux.HandleFunc("PUT /api/crm/members/{id}", memberHandler.MemberByID)
+	mux.HandleFunc("/api/crm/member-requests", memberHandler.MemberRequests)
+	mux.HandleFunc("POST /api/crm/member-requests/{id}/decision", memberHandler.MemberRequestDecision)
+
 	// Internal AI surface: ai-service calls here with a signed caller
 	// assertion and the delegated subject as headers. Resource-level scoping
 	// still applies inside the handler (see InternalAIGetCustomer).
@@ -79,6 +86,8 @@ func NewRouter(customerHandler *handler.CustomerHandler, amendmentHandler *handl
 	// Internal reporting surface: statistical-service's reporting ETL reads the
 	// tenant customer slice (signed caller; tenant re-checked in the handler).
 	mux.Handle("GET /internal/reporting/customers", internalReportingService(http.HandlerFunc(customerHandler.InternalReportingCustomers)))
+	mux.Handle("GET /internal/reporting/members", internalReportingService(http.HandlerFunc(memberHandler.InternalReportingMembers)))
+	mux.Handle("GET /internal/reporting/member-requests", internalReportingService(http.HandlerFunc(memberHandler.InternalReportingMemberRequests)))
 
 	return ardametadata.HTTPMiddleware(mux)
 }

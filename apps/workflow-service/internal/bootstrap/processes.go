@@ -95,6 +95,9 @@ var cfcAmendment []byte
 //go:embed cfc-movement-v1.bpmn
 var cfcMovement []byte
 
+//go:embed crm-member-v1.bpmn
+var crmMember []byte
+
 //go:embed ibm-place-v1.bpmn
 var ibmPlace []byte
 
@@ -326,6 +329,15 @@ func BuiltInProcesses() []Process {
 			Name:         "Giao dịch vốn (v1)",
 			ResourceName: "cfc-movement-v1.bpmn",
 			Content:      cfcMovement,
+		},
+		{
+			// QTDND membership: register/additional/withdraw capital movements
+			// share one case; the kind arrives via case variables and the
+			// execute worker moves the member's stake.
+			ProcessCode:  "CRM_MEMBER_V1",
+			Name:         "Vốn góp thành viên (v1)",
+			ResourceName: "crm-member-v1.bpmn",
+			Content:      crmMember,
 		},
 		{
 			// IBM (tiền gửi liên ngân hàng): placement + 4 movement kinds share

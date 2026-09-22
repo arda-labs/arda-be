@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package arda.crm.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/crm/v1;crmv1";
+
+// MemberCommandService is the callback surface workflow-service workers use for
+// the CRM_MEMBER_V1 flow (QTDND membership capital movements live in
+// crm-service). Tenant scope arrives via gRPC metadata.
+service MemberCommandService {
+  // CheckMemberRequest re-reads the staged capital request and reports whether
+  // the checker may approve it (member active, withdrawal within the stake).
+  rpc CheckMemberRequest(CheckMemberRequestRequest) returns (CheckMemberRequestResponse);
+  // ResolveMemberRequest records the checker decision; APPROVE moves the stake
+  // and marks the request APPROVED in one transaction.
+  rpc ResolveMemberRequest(ResolveMemberRequestRequest) returns (ResolveMemberRequestResponse);
+}
+
+message CheckMemberRequestRequest {
+  string request_id = 1;
+}
+
+message CheckMemberRequestResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+// decision is APPROVE | REJECT (case variables approvalStatus); data_version is
+// the optimistic-concurrency token the checker saw.
+message ResolveMemberRequestRequest {
+  string request_id = 1;
+  string decision = 2;
+  string actor = 3;
+  string note = 4;
+  int64 data_version = 5;
+}
+
+message ResolveMemberRequestResponse {
+  bool ok = 1;
+}

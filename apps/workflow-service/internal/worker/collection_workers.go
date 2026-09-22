@@ -7,11 +7,11 @@ import (
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
+	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
-	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -72,9 +72,9 @@ func (w *CollectionWorkers) buildPostingRequest(ctx context.Context, job entitie
 		return nil, err
 	}
 	return &financev1.PostingRequest{
-		IdempotencyKey: fmt.Sprintf("lnm-collection-%s", detail.GetCollectionId()),		AccountingDate: detail.GetCollectionDate(),
-		CurrencyCode:   detail.GetCurrencyCode(),
-		Description:    fmt.Sprintf("Thu nợ %s / %s", detail.GetContractCode(), detail.GetAgreementCode()),
+		IdempotencyKey: fmt.Sprintf("lnm-collection-%s", detail.GetCollectionId()), AccountingDate: detail.GetCollectionDate(),
+		CurrencyCode: detail.GetCurrencyCode(),
+		Description:  fmt.Sprintf("Thu nợ %s / %s", detail.GetContractCode(), detail.GetAgreementCode()),
 		BusinessReference: &financev1.BusinessReference{
 			Domain:       "lnm",
 			DocumentType: "LNM_COLLECTION",

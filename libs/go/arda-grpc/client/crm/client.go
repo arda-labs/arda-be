@@ -20,6 +20,7 @@ const defaultTimeout = 5 * time.Second
 type Client struct {
 	conn    *grpc.ClientConn
 	api     crmv1.CustomerCommandServiceClient
+	member  crmv1.MemberCommandServiceClient
 	timeout time.Duration
 }
 
@@ -54,6 +55,7 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 	client := &Client{
 		conn:    conn,
 		api:     crmv1.NewCustomerCommandServiceClient(conn),
+		member:  crmv1.NewMemberCommandServiceClient(conn),
 		timeout: defaultTimeout,
 	}
 	conn.Connect()
@@ -93,4 +95,36 @@ func (c *Client) CheckDuplicateIdentity(ctx context.Context, customerID string) 
 		return false, err
 	}
 	return resp.GetDuplicateFound(), nil
+}
+
+// CheckMemberRequest asks crm-service whether a staged capital request may be
+// approved (member active, withdrawal within the stake). Read-only, so it is
+// goroutine-safe to retry.
+func (c *Client) CheckMemberRequest(ctx context.Context, requestID string) (bool, string, error) {
+	if c == nil || c.member == nil {
+		return false, "", errors.New("crm member client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.member.CheckMemberRequest(callCtx, &crmv1.CheckMemberRequestRequest{RequestId: requestID})
+	if err != nil {
+		return false, "", err
+	}
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
+// ResolveMemberRequest records the checker decision; APPROVE moves the stake.
+func (c *Client) ResolveMemberRequest(ctx context.Context, requestID, decision, actor string, dataVersion int64) error {
+	if c == nil || c.member == nil {
+		return errors.New("crm member client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	_, err := c.member.ResolveMemberRequest(callCtx, &crmv1.ResolveMemberRequestRequest{
+		RequestId:   requestID,
+		Decision:    decision,
+		Actor:       actor,
+		DataVersion: dataVersion,
+	})
+	return err
 }

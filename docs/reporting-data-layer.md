@@ -246,6 +246,30 @@ tiền lương, TSCĐ, CCDC) chưa tính.
 - Backfill lịch sử: từ EPAS `_h` (nếu migrate) hay chỉ từ ngày bật ETL?
 - Chiều phân tích: 19 chiều của EPAS — làm dim đầy đủ hay theo nhu cầu?
 
+## 9b. Bài học verify trên cluster (2026-09-22)
+
+Chạy thật phát hiện 5 lỗi mà unit test không thấy:
+
+1. **`rpt_indicator_results.id` là UUID** nhưng code truyền `indres_<hex>`
+   (`NewStatisticalID`) → `SQLSTATE 22P02`, chặn **mọi** compute. Bài học: bảng
+   dùng `DEFAULT uuidv7()` thì để DB sinh id.
+2. **EOD seed `loan-service:8097`** trong khi Service thật là 8080 → 2 step loan
+   fail timeout mỗi lần COB. Endpoint job phải khớp Service port thật.
+3. **Tên file tải về lặp period** (`indicators-2026-09-2026-09.pdf`) khi tên đã
+   chứa period.
+4. **`coerceArg` chỉ nhận `float64`** — Goja truyền số nguyên JS sang Go dạng
+   `int64`, nên `limit: 20` (giá trị đúng) bị từ chối `must be a number` và
+   **mọi tool phân trang** fail. Bind tham số phải chấp nhận mọi kiểu số; nhúng
+   ràng buộc vào JSDoc (`[1..20, default 10]`) để model thấy cạnh tên tham số.
+5. **Chỉ tiêu amount bị nhân 100** (`"scale":100`) trong khi report đọc cùng cột
+   trả giá trị gốc → chỉ tiêu 10 tỷ vs sổ thật 100 triệu. Arda lưu tiền là
+   `int64 *_minor` theo ISO 4217 (`docs/db-schema-conventions.md` §5); **VND có
+   0 chữ số thập phân nên minor == major** → không chỉ tiêu VND nào được có
+   scale. Model tự phát hiện mâu thuẫn khi trả lời.
+
+Hệ quả thiết kế: chỉ tiêu và report **phải đọc cùng một fact column với cùng
+đơn vị**; mọi khác biệt đơn vị phải là bước biến đổi tường minh có test.
+
 ## 10. Non-goals
 
 - Không SQL-as-config (`EXPRESSION_SQL`), không free-form text-to-SQL.

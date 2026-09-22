@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 // UserTaskProjector is the single writer for native user task work items on v2 processes.

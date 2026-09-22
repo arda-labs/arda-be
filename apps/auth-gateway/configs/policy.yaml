@@ -403,6 +403,41 @@ routes:
     permissions:
       - crm.project.manage
 
+  # QTDND membership (thành viên / vốn góp cổ phần). The member book has its
+  # own read/manage permissions so duty owners are separable from customer
+  # registration.
+  - id: crm-member-read
+    path: /api/crm/members/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - crm.member.read
+
+  - id: crm-member-write
+    path: /api/crm/members/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: medium
+    permissions:
+      - crm.member.manage
+
+  - id: crm-member-requests-read
+    path: /api/crm/member-requests/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - crm.member.read
+
+  - id: crm-member-requests-write
+    path: /api/crm/member-requests/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - crm.member.manage
+
   - id: hrm-read
     path: /api/hrm/**
     methods: [GET]

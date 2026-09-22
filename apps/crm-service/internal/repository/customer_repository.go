@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Customer struct {

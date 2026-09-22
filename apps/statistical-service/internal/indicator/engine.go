@@ -76,17 +76,27 @@ var factColumns = map[string]map[string]bool{
 		"customer_code": true, "status": true, "org_code": true,
 		"segment": true, "customer_type": true, "risk_level": true,
 	},
+	"rpt_fact_member_daily": {
+		"member_code": true, "customer_code": true, "org_code": true,
+		"member_type_code": true, "member_status": true,
+		"estb_capital_minor": true, "add_capital_minor": true, "total_capital_minor": true,
+	},
+	"rpt_fact_member_request_daily": {
+		"member_code": true, "org_code": true, "request_type": true,
+		"status": true, "amount_minor": true,
+	},
 }
 
 // dimDef maps an indicator dimension name to the fact column it slices on.
 // Only these dimensions are accepted in a compute request.
 var dimDef = map[string]string{
-	"org":        "org_code",
-	"product":    "product_code",
-	"fund_type":  "fund_type_code",
-	"coll_type":  "coll_type_code",
-	"segment":    "segment",
-	"debt_group": "debt_group_code",
+	"org":         "org_code",
+	"product":     "product_code",
+	"fund_type":   "fund_type_code",
+	"coll_type":   "coll_type_code",
+	"segment":     "segment",
+	"debt_group":  "debt_group_code",
+	"member_type": "member_type_code",
 }
 
 // DimensionNames is the sorted list of accepted dimension names (stable order
@@ -402,7 +412,18 @@ func (e *Engine) leaf(ctx context.Context, tenantID, periodCode string, f *Formu
 		if !cols[col] {
 			return 0, fmt.Errorf("filter column %q does not exist on %s", col, f.Fact)
 		}
-		values, err := jsonValues(f.Filter[col])
+		raw := f.Filter[col]
+		// A comparison operator is expressed as {"col": {"op": ">", "value": "0"}};
+		// a bare value keeps the equality/ANY form.
+		if op, values, ok := comparisonFilter(raw); ok {
+			if !validFilterOp(op) {
+				return 0, fmt.Errorf("unsupported filter operator %q on %s", op, col)
+			}
+			args = append(args, values)
+			where = append(where, fmt.Sprintf("%s %s ALL($%d::text[])", col, op, len(args)))
+			continue
+		}
+		values, err := jsonValues(raw)
 		if err != nil {
 			return 0, fmt.Errorf("filter %s: %w", col, err)
 		}
@@ -474,6 +495,36 @@ func jsonValues(raw json.RawMessage) ([]string, error) {
 		return many, nil
 	}
 	return nil, fmt.Errorf("must be a string or array of strings")
+}
+
+// comparisonFilter recognises {"op": ">", "value": "0"} filters, which the
+// membership indicators need (e.g. "members with capital above zero"). The
+// comparison runs as text comparison against the bound literals, matching the
+// all-text filter convention the rest of the engine uses.
+func comparisonFilter(raw json.RawMessage) (string, []string, bool) {
+	var spec struct {
+		Op    string          `json:"op"`
+		Value json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil || spec.Op == "" || len(spec.Value) == 0 {
+		return "", nil, false
+	}
+	values, err := jsonValues(spec.Value)
+	if err != nil || len(values) == 0 {
+		return "", nil, false
+	}
+	return spec.Op, values, true
+}
+
+// validFilterOp is the closed set of comparison operators (never arbitrary
+// SQL).
+func validFilterOp(op string) bool {
+	switch op {
+	case ">", ">=", "<", "<=", "=", "<>":
+		return true
+	default:
+		return false
+	}
 }
 
 func itoa(n int) string {

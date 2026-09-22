@@ -40,10 +40,10 @@ type TaskDecision struct {
 	OrgID          string
 	Status         string
 	IdempotencyKey string
-	RecordedAt         time.Time
-	DispatchedAt       *time.Time
-	AppliedAt          *time.Time
-	LastError          string
+	RecordedAt     time.Time
+	DispatchedAt   *time.Time
+	AppliedAt      *time.Time
+	LastError      string
 
 	// Joined case fields for the dispatcher.
 	CaseType          string

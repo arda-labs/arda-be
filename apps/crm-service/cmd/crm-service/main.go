@@ -62,6 +62,7 @@ func main() {
 	// Repositories
 	customerRepo := repository.NewCustomerRepository(db)
 	amendmentRepo := repository.NewAmendmentRepository(db)
+	memberRepo := repository.NewMemberRepository(db)
 
 	serviceSecret, err := identity.SecretFromEnv()
 	if err != nil {
@@ -106,6 +107,11 @@ func main() {
 	defer workflowClient.Close()
 	logger.Info("workflow grpc configured", "addr", cfg.WorkflowGRPCAddr)
 
+	// Member service is needed by both the gRPC callback server and the HTTP
+	// handlers, so it is built right after the workflow dial.
+	memberSvc := service.NewMemberService(memberRepo, workflowClient)
+	crmv1.RegisterMemberCommandServiceServer(grpcSrv, grpcserver.NewMemberCommandServer(memberSvc))
+
 	// Handlers
 	customerHandler := handler.NewCustomerHandler(customerRepo, workflowClient)
 	projectRepo := repository.NewProjectRepository(db)
@@ -113,11 +119,12 @@ func main() {
 	amendmentHandler := handler.NewAmendmentHandler(customerRepo, amendmentRepo, workflowClient)
 	reportSvc := service.NewReportService(customerRepo)
 	reportHandler := handler.NewReportHandler(reportSvc)
+	memberHandler := handler.NewMemberHandler(memberSvc)
 
 	// Router and HTTP Server
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(customerHandler, amendmentHandler, projectHandler, reportHandler)),
+		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(customerHandler, amendmentHandler, projectHandler, reportHandler, memberHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

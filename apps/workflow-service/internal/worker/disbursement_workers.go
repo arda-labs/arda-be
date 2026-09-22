@@ -153,8 +153,8 @@ func disbursementLegs(flow DisbursementFlow, detail *loanv1.DisbursementPostingD
 			Direction:   "CREDIT",
 			AmountMinor: detail.GetDisburseAmtMinor(),
 			Analytics: &financev1.Analytics{
-				OrgUnitCode:   detail.GetOrgUnitCode(),
-				ContractCode:  detail.GetContractCode(),
+				OrgUnitCode:    detail.GetOrgUnitCode(),
+				ContractCode:   detail.GetContractCode(),
 				FundSourceCode: detail.GetFundSourceCode(),
 			},
 		},

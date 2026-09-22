@@ -160,3 +160,34 @@ func TestDimensionNamesSorted(t *testing.T) {
 		}
 	}
 }
+
+// TestComparisonFilterIsRecognisedAndClosed locks the operator filter the
+// membership indicators need: a valid op is accepted, an arbitrary string is
+// rejected before any SQL is built.
+func TestComparisonFilterIsRecognisedAndClosed(t *testing.T) {
+	op, values, ok := comparisonFilter(json.RawMessage(`{"op":">","value":"0"}`))
+	if !ok || op != ">" || len(values) != 1 || values[0] != "0" {
+		t.Fatalf("comparison filter not recognised: %q %v %v", op, values, ok)
+	}
+	if !validFilterOp(">=") || validFilterOp("DROP TABLE") {
+		t.Fatal("operator whitelist is not closed")
+	}
+	if _, _, ok := comparisonFilter(json.RawMessage(`"ACTIVE"`)); ok {
+		t.Fatal("bare value must not parse as a comparison")
+	}
+}
+
+// TestLeafRejectsUnknownOperator keeps injection out of the comparison path.
+func TestLeafRejectsUnknownOperator(t *testing.T) {
+	e := &Engine{}
+	f := Formula{
+		Type: "count",
+		Fact: "rpt_fact_member_daily",
+		Filter: map[string]json.RawMessage{
+			"total_capital_minor": json.RawMessage(`{"op":"; DROP TABLE x --","value":"0"}`),
+		},
+	}
+	if _, err := e.leaf(tContext(), "tenant-1", "2026-09", &f, nil); err == nil {
+		t.Fatal("unknown operator must fail closed")
+	}
+}

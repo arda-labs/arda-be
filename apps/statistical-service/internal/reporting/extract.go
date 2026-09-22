@@ -62,6 +62,8 @@ type ExtractResult struct {
 	CapitalContracts int      `json:"capital_contracts"`
 	CapitalMovements int      `json:"capital_movements"`
 	Customers        int      `json:"customers"`
+	Members          int      `json:"members"`
+	MemberRequests   int      `json:"member_requests"`
 	SkippedSources   []string `json:"skipped_sources,omitempty"`
 }
 
@@ -86,6 +88,8 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		contracts   []capitalContract
 		movements   []capitalMovement
 		customers   []customer
+		members     []member
+		memberReqs  []memberRequest
 	)
 	if s.loanURL == "" {
 		result.SkippedSources = append(result.SkippedSources, "loan-service")
@@ -123,6 +127,12 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		var err error
 		if customers, err = s.fetchCustomers(ctx, tenantID, businessDate); err != nil {
 			return result, fmt.Errorf("customer extract: %w", err)
+		}
+		if members, err = s.fetchMembers(ctx, tenantID, businessDate); err != nil {
+			return result, fmt.Errorf("member extract: %w", err)
+		}
+		if memberReqs, err = s.fetchMemberRequests(ctx, tenantID, businessDate); err != nil {
+			return result, fmt.Errorf("member request extract: %w", err)
 		}
 	}
 
@@ -232,6 +242,35 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 			return result, err
 		}
 		result.Customers = len(customers)
+
+		if err := replaceFacts(ctx, tx, "rpt_fact_member_daily", tenantID, businessDate, len(members), func() error {
+			for _, item := range members {
+				if _, err := tx.ExecContext(ctx, insertMemberFact,
+					tenantID, businessDate, item.OrgCode, item.MemberCode, item.CustomerCode,
+					item.MemberTypeCode, item.MemberStatus, nullDate(item.OpenDate), nullDate(item.LeaveDate),
+					item.EstbCapitalMinor, item.AddCapitalMinor, item.TotalCapitalMinor); err != nil {
+					return fmt.Errorf("insert member fact %s: %w", item.MemberCode, err)
+				}
+			}
+			return nil
+		}); err != nil {
+			return result, err
+		}
+		result.Members = len(members)
+
+		if err := replaceFacts(ctx, tx, "rpt_fact_member_request_daily", tenantID, businessDate, len(memberReqs), func() error {
+			for _, item := range memberReqs {
+				if _, err := tx.ExecContext(ctx, insertMemberRequestFact,
+					tenantID, businessDate, item.OrgCode, memberRequestKey(item), item.MemberCode,
+					item.RequestType, item.Status, item.AmountMinor, nullDate(item.RequestDate)); err != nil {
+					return fmt.Errorf("insert member request fact %s: %w", item.MemberCode, err)
+				}
+			}
+			return nil
+		}); err != nil {
+			return result, err
+		}
+		result.MemberRequests = len(memberReqs)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -288,6 +327,23 @@ const insertCustomerFact = `INSERT INTO rpt_fact_customer_daily
 	 segment, customer_rank, risk_level)
 	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9)`
 
+const insertMemberFact = `INSERT INTO rpt_fact_member_daily
+	(tenant_id, business_date, org_code, member_code, customer_code, member_type_code,
+	 member_status, open_date, leave_date, estb_capital_minor, add_capital_minor, total_capital_minor)
+	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8::date, $9::date, $10, $11, $12)`
+
+const insertMemberRequestFact = `INSERT INTO rpt_fact_member_request_daily
+	(tenant_id, business_date, org_code, request_key, member_code, request_type,
+	 status, amount_minor, request_date)
+	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9::date)`
+
+// memberRequestKey is the stable per-request identity inside a daily fact: the
+// source rows carry no id on this surface, and (member, type, date) is unique
+// enough for the pipeline indicators.
+func memberRequestKey(item memberRequest) string {
+	return item.MemberCode + ":" + item.RequestType + ":" + item.RequestDate
+}
+
 func nullDate(value string) any {
 	if strings.TrimSpace(value) == "" {
 		return nil
@@ -340,6 +396,22 @@ func (s *Service) fetchCapitalMovements(ctx context.Context, tenantID, businessD
 func (s *Service) fetchCustomers(ctx context.Context, tenantID, businessDate string) ([]customer, error) {
 	var env envelope[customerResult]
 	if err := s.fetch(ctx, s.crmURL, "crm-service", "/internal/reporting/customers", tenantID, businessDate, &env); err != nil {
+		return nil, err
+	}
+	return env.Result.Items, nil
+}
+
+func (s *Service) fetchMembers(ctx context.Context, tenantID, businessDate string) ([]member, error) {
+	var env envelope[memberResult]
+	if err := s.fetch(ctx, s.crmURL, "crm-service", "/internal/reporting/members", tenantID, businessDate, &env); err != nil {
+		return nil, err
+	}
+	return env.Result.Items, nil
+}
+
+func (s *Service) fetchMemberRequests(ctx context.Context, tenantID, businessDate string) ([]memberRequest, error) {
+	var env envelope[memberRequestResult]
+	if err := s.fetch(ctx, s.crmURL, "crm-service", "/internal/reporting/member-requests", tenantID, businessDate, &env); err != nil {
 		return nil, err
 	}
 	return env.Result.Items, nil
@@ -487,4 +559,36 @@ type customer struct {
 	Segment      string `json:"segment"`
 	CustomerRank string `json:"customer_rank"`
 	RiskLevel    string `json:"risk_level"`
+}
+
+type memberResult struct {
+	AsOf  string   `json:"as_of"`
+	Items []member `json:"items"`
+}
+
+type member struct {
+	MemberCode        string `json:"member_code"`
+	CustomerCode      string `json:"customer_code"`
+	OrgCode           string `json:"org_code"`
+	MemberTypeCode    string `json:"member_type_code"`
+	MemberStatus      string `json:"member_status"`
+	OpenDate          string `json:"open_date"`
+	LeaveDate         string `json:"leave_date"`
+	EstbCapitalMinor  int64  `json:"estb_capital_minor"`
+	AddCapitalMinor   int64  `json:"add_capital_minor"`
+	TotalCapitalMinor int64  `json:"total_capital_minor"`
+}
+
+type memberRequestResult struct {
+	AsOf  string          `json:"as_of"`
+	Items []memberRequest `json:"items"`
+}
+
+type memberRequest struct {
+	MemberCode  string `json:"member_code"`
+	OrgCode     string `json:"org_code"`
+	RequestType string `json:"request_type"`
+	Status      string `json:"status"`
+	AmountMinor int64  `json:"amount_minor"`
+	RequestDate string `json:"request_date"`
 }

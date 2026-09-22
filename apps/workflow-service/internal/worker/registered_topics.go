@@ -67,6 +67,11 @@ var RegisteredJobTopics = []string{
 	"cfc.movement.validate",
 	"cfc.movement.execute",
 	"cfc.movement.cancel",
+
+	// QTDND membership capital movements (crm-member-v1.bpmn)
+	"crm.member.validate",
+	"crm.member.execute",
+	"crm.member.cancel",
 	// IBM lifecycle (ibm-place-v1 + ibm-movement-v1)
 	"ibm.place.validate",
 	"ibm.place.execute",

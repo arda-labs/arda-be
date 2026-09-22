@@ -46,7 +46,7 @@ func TestAssignmentResolverResolvesPoolAndDelegations(t *testing.T) {
 			CaseType: "LOAN_V2", StepCode: "UT_CheckerReview", RoleCode: "LOAN_CHECKER",
 			AssignmentMode: "CANDIDATE_POOL", RequireSeparationOfDuties: true,
 		},
-		members: map[string][]string{"LOAN_CHECKER": {"maker-a", "checker-b", "checker-c"}},
+		members:     map[string][]string{"LOAN_CHECKER": {"maker-a", "checker-b", "checker-c"}},
 		delegations: map[string][]string{"checker-b": {"checker-d"}},
 	})
 	result := resolver.Resolve(context.Background(), AssignmentRequest{

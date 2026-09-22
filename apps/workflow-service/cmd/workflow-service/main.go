@@ -530,6 +530,21 @@ func main() {
 	}
 	logger.Info("workflow capital workers registered")
 
+	// QTDND membership capital movements (CRM_MEMBER_V1): the staged request
+	// lives in crm-service; validate/execute/cancel write the checker decision
+	// back via MemberCommandService gRPC.
+	if crmClient != nil {
+		crmMemberWorkers := worker.NewCRMMemberWorkers(crmClient, caseRepo)
+		mv, me, mc := crmMemberWorkers.Handlers()
+		mvw := zeebeSvc.NewJobWorker(worker.JobCRMMemberValidate, mv)
+		mew := zeebeSvc.NewJobWorker(worker.JobCRMMemberExecute, me)
+		mcw := zeebeSvc.NewJobWorker(worker.JobCRMMemberCancel, mc)
+		defer mvw.Close()
+		defer mew.Close()
+		defer mcw.Close()
+		logger.Info("workflow CRM member workers registered")
+	}
+
 	var statisticalClient *statisticalclient.Client
 	if cfg.StatisticalGRPCAddr != "" {
 		sc, err := statisticalclient.Dial(context.Background(), cfg.StatisticalGRPCAddr, cfg.AppName, logger)
