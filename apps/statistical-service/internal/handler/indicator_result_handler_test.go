@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/arda-labs/arda/apps/statistical-service/internal/indicator"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/repository"
 )
 
@@ -36,6 +37,11 @@ func (s *stubIndicatorResultService) ComputeIndicator(_ context.Context, tenantI
 
 func (s *stubIndicatorResultService) ComputeAllIndicators(_ context.Context, _, _ string, _ map[string]string) (map[string]any, error) {
 	return map[string]any{"computed_count": 0, "failed_count": 0}, nil
+}
+
+func (s *stubIndicatorResultService) ReconcileAccountingIndicators(_ context.Context, tenantID, periodCode string) (indicator.ReconciliationReport, error) {
+	s.seenTen = tenantID
+	return indicator.ReconciliationReport{PeriodCode: periodCode, Checked: 0, TrialBalanced: true}, nil
 }
 
 func TestIndicatorResult_TenantRequired(t *testing.T) {

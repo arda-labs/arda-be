@@ -1,11 +1,12 @@
 package indicator
 
 import (
-	"github.com/arda-labs/arda/apps/statistical-service/internal/repository"
-
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/arda-labs/arda/apps/statistical-service/internal/repository"
 )
 
 // ReconcileResult is the outcome of checking one indicator against an
@@ -27,6 +28,28 @@ type ReconciliationReport struct {
 	TrialBalanced bool              `json:"trial_balanced"`
 	DebitTotal    int64             `json:"debit_total_minor"`
 	CreditTotal   int64             `json:"credit_total_minor"`
+}
+
+// ReconcileIndicatorFormulas is the entry point the service uses: it takes the
+// stored formulas of the account-type indicators and reconciles the ones that
+// are account-balance shaped. Codes without an account_balance formula are
+// ignored (they are not backed by the trial balance).
+func ReconcileIndicatorFormulas(ctx context.Context, repo *repository.StatisticalRepository, tenantID, periodCode string, formulas map[string]json.RawMessage) (ReconciliationReport, error) {
+	blocks := map[string]*accountBalance{}
+	for code, raw := range formulas {
+		var f Formula
+		if err := json.Unmarshal(raw, &f); err != nil {
+			continue
+		}
+		if f.Type != "account_balance" || f.Accounts == nil {
+			continue
+		}
+		blocks[code] = f.Accounts
+	}
+	if len(blocks) == 0 {
+		return ReconciliationReport{PeriodCode: periodCode, TrialBalanced: true}, nil
+	}
+	return ReconcileAccounting(ctx, repo, tenantID, periodCode, blocks)
 }
 
 // ReconcileAccounting cross-checks the account_balance indicators against the

@@ -370,6 +370,30 @@ func (s *StatisticalService) ComputeIndicator(ctx context.Context, tenantID, act
 	return s.UpsertIndicatorResult(ctx, tenantID, actor, result)
 }
 
+// ReconcileAccountingIndicators re-checks every account-type indicator against
+// the trial-balance fact: the trial balance must balance, and each formula must
+// agree with an independent recomputation over the same accounts. It is the
+// safety net for the accounting seeds — a wrong account mapping or a dropped
+// term shows up as a mismatch instead of a silently wrong balance sheet.
+func (s *StatisticalService) ReconcileAccountingIndicators(ctx context.Context, tenantID, periodCode string) (indicator.ReconciliationReport, error) {
+	report := indicator.ReconciliationReport{PeriodCode: periodCode}
+	if periodCode == "" {
+		return report, ardaerrors.New(ardaerrors.CodeRequired, "period_code is required")
+	}
+	indicators, err := s.repo.ListIndicators(ctx, repository.ListIndicatorsParams{TenantID: tenantID})
+	if err != nil {
+		return report, err
+	}
+	formulas := map[string]json.RawMessage{}
+	for _, ind := range indicators {
+		if len(ind.Formula) == 0 {
+			continue
+		}
+		formulas[ind.Code] = ind.Formula
+	}
+	return indicator.ReconcileIndicatorFormulas(ctx, s.repo, tenantID, periodCode, formulas)
+}
+
 // ComputeAllIndicators evaluates every active indicator whose kpi_type is P or
 // C for a period and stores the results. Indicators whose formula cannot be
 // evaluated (e.g. growth without a comparison period) are reported, not

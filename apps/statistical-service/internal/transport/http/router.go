@@ -82,6 +82,7 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 		}
 	})
 	mux.HandleFunc("POST /api/statistical/indicators/compute", indicatorResults.ComputeIndicators)
+	mux.HandleFunc("GET /api/statistical/indicators/reconcile", indicatorResults.ReconcileIndicators)
 
 	// Presentation: chart contract + rendered documents (pdf/xlsx/html).
 	mux.HandleFunc("GET /api/statistical/reports/{code}/chart", presentation.ReportChart)
@@ -121,6 +122,11 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 	// network-policy protected like the other /internal/jobs/* steps). Tenant
 	// travels in X-Tenant-Id, the business date in ?to_date=.
 	mux.HandleFunc("/internal/jobs/report-extract-daily", method("POST", reportingJob.RunReportExtractDaily))
+
+	// Accounting reconciliation step: re-checks the account-type indicators
+	// against the trial-balance fact. A non-empty mismatches list fails the
+	// step, so a wrong account mapping surfaces at COB instead of on a report.
+	mux.HandleFunc("/internal/jobs/reconcile-accounting", indicatorResults.RunReconcileAccountingJob)
 
 	return mux
 }

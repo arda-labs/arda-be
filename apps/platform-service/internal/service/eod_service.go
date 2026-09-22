@@ -59,6 +59,10 @@ func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
 		// domain services after the day's posts so period reports see the
 		// as-of snapshot (arda-be/docs/reporting-data-layer.md).
 		{Code: "RPT_EXTRACT_DAILY", Name: "Trích xuất dữ liệu báo cáo (EOD)", Sequence: 35, Endpoint: "http://statistical-service:8080/internal/jobs/report-extract-daily", IsEnabled: true},
+		// Verify the accounting indicators against the trial balance the ETL
+		// just materialised: a wrong account mapping surfaces at COB rather
+		// than on a published balance sheet.
+		{Code: "RPT_RECONCILE_ACCOUNTING", Name: "Đối soát chỉ tiêu tài chính kế toán (EOD)", Sequence: 38, Endpoint: "http://statistical-service:8080/internal/jobs/reconcile-accounting", IsEnabled: true},
 	}
 	for _, j := range jobs {
 		if _, err := s.db.ExecContext(ctx, `
