@@ -30,7 +30,7 @@ import (
 // The posting half (Reserve/Post/Release) is proven by the finance
 // two_phase_smoke; Zeebe routing is exercised by the CRM v2 flow.
 type fakeWorkflow struct {
-	created   []struct {
+	created []struct {
 		CaseType  string
 		PrimaryID string
 	}

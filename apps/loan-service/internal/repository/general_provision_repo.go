@@ -196,7 +196,7 @@ func (r *LoanRepository) LatestPostedRequired(ctx context.Context, tenantID, org
 }
 
 // SumGeneralProvisionOutstanding sums active agreement outstanding for the
-// org ('' = all orgs) as of the provision date.
+// org (” = all orgs) as of the provision date.
 func (r *LoanRepository) SumGeneralProvisionOutstanding(ctx context.Context, tenantID, orgCode, asOf string) (int64, error) {
 	var total sql.NullInt64
 	err := r.db.QueryRowContext(ctx, `

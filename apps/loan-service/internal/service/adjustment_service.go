@@ -10,9 +10,9 @@ import (
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	loangrpc "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
-	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
 )
 

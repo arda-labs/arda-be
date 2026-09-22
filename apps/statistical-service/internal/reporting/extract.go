@@ -172,7 +172,9 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 					tenantID, businessDate, item.OrgCode, item.AgreementCode, item.ContractCode,
 					item.CustomerCode, item.ProductCode, nullDate(item.DisburseDate), nullDate(item.MaturityDate),
 					item.DebtGroupCode, item.Status, item.CurrencyCode, item.InterestRate,
-					item.DisburseAmtMinor, item.OutstandingAmtMinor, item.ProvisionAmtMinor); err != nil {
+					item.DisburseAmtMinor, item.OutstandingAmtMinor, item.ProvisionAmtMinor,
+					item.LoanTermMonths, item.TermBucket, item.LoanMethodCode,
+					item.IndustryCode, item.PurposeCode); err != nil {
 					return fmt.Errorf("insert loan fact %s: %w", item.AgreementCode, err)
 				}
 			}
@@ -353,8 +355,10 @@ func replaceFacts(ctx context.Context, tx *sql.Tx, table, tenantID, businessDate
 const insertLoanFact = `INSERT INTO rpt_fact_loan_agreement_daily
 	(tenant_id, business_date, org_code, agreement_code, contract_code, customer_code, product_code,
 	 disburse_date, maturity_date, debt_group_code, status, currency_code, interest_rate,
-	 disburse_amt_minor, outstanding_amt_minor, provision_amt_minor)
-	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8::date, $9::date, $10, $11, $12, $13, $14, $15, $16)`
+	 disburse_amt_minor, outstanding_amt_minor, provision_amt_minor,
+	 loan_term_months, term_bucket, loan_method_code, industry_code, purpose_code)
+	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8::date, $9::date, $10, $11, $12, $13, $14, $15, $16,
+	        $17, $18, $19, $20, $21)`
 
 const insertCollateralFact = `INSERT INTO rpt_fact_loan_collateral_daily
 	(tenant_id, business_date, org_code, coll_code, coll_type_code, valuation_date, status,
@@ -564,6 +568,11 @@ type loanAgreement struct {
 	DisburseAmtMinor    int64   `json:"disburse_amt_minor"`
 	OutstandingAmtMinor int64   `json:"outstanding_amt_minor"`
 	ProvisionAmtMinor   int64   `json:"provision_amt_minor"`
+	LoanMethodCode      string  `json:"loan_method_code"`
+	IndustryCode        string  `json:"industry_code"`
+	PurposeCode         string  `json:"purpose_code"`
+	LoanTermMonths      int     `json:"loan_term_months"`
+	TermBucket          string  `json:"term_bucket"`
 }
 
 type collateralResult struct {

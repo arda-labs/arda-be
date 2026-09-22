@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/service"
-	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // AccrualHandler exposes the EOD accrual job endpoint (called by the EOD

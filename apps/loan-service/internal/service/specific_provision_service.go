@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
-	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	"github.com/shopspring/decimal"
 )
@@ -199,7 +199,7 @@ func (s *SpecificProvisionService) Resolve(ctx context.Context, tenantID, id, de
 
 func (s *SpecificProvisionService) postingRequest(ctx context.Context, row *repository.SpecificProvisionRow, preview SpecificProvisionPreview) *financev1.PostingRequest {
 	analytics := &financev1.Analytics{
-		ContractCode: row.ContractCode,
+		ContractCode:  row.ContractCode,
 		DebtGroupCode: row.DebtGroupCode,
 	}
 	legs := []financeclient.PostingLeg{

@@ -23,13 +23,13 @@ type BatchCollectionRowInput struct {
 
 // CreateBatchInputCollection is the batch collection request body.
 type CreateBatchInputCollection struct {
-	OrgCode       string                     `json:"org_code,omitempty"`
-	TxnDate       string                     `json:"txn_date"`
-	PaymentMethod string                     `json:"payment_method,omitempty"`
-	AccountCode   string                     `json:"account_code,omitempty"`
-	Description   string                     `json:"description,omitempty"`
-	Trader        map[string]string          `json:"trader,omitempty"`
-	Rows          []BatchCollectionRowInput  `json:"rows"`
+	OrgCode       string                    `json:"org_code,omitempty"`
+	TxnDate       string                    `json:"txn_date"`
+	PaymentMethod string                    `json:"payment_method,omitempty"`
+	AccountCode   string                    `json:"account_code,omitempty"`
+	Description   string                    `json:"description,omitempty"`
+	Trader        map[string]string         `json:"trader,omitempty"`
+	Rows          []BatchCollectionRowInput `json:"rows"`
 }
 
 // batchCollectionRowVars is the camelCase row shape stamped into the case

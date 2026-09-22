@@ -92,18 +92,18 @@ func TestContractUpdateSmoke(t *testing.T) {
 	run := time.Now().UTC().Format("20060102T150405.000000000")
 
 	created, err := repo.CreateContract(ctx, &domain.Contract{
-		ID:            repository.NewID("ctrt"),
-		TenantID:      tenantID,
-		ContractCode:  "SMKU-" + run,
-		CustomerCode:  "KH-SMKU",
-		ContractDate:  "2026-09-07",
-		MaturityDate:  "2027-09-07",
-		LoanTerm:      12,
-		TermUnit:      "MONTH",
-		LoanAmt:       500_000_000,
-		InterestRate:  8.5,
-		Status:        domain.ContractDraft,
-		CreatedBy:     "smoke",
+		ID:           repository.NewID("ctrt"),
+		TenantID:     tenantID,
+		ContractCode: "SMKU-" + run,
+		CustomerCode: "KH-SMKU",
+		ContractDate: "2026-09-07",
+		MaturityDate: "2027-09-07",
+		LoanTerm:     12,
+		TermUnit:     "MONTH",
+		LoanAmt:      500_000_000,
+		InterestRate: 8.5,
+		Status:       domain.ContractDraft,
+		CreatedBy:    "smoke",
 	})
 	if err != nil {
 		t.Fatalf("seed contract: %v", err)

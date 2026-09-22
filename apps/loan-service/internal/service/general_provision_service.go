@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
-	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	"github.com/shopspring/decimal"
 )
@@ -29,14 +29,14 @@ const (
 
 // GeneralProvisionPreview is the calculator result the maker screen renders.
 type GeneralProvisionPreview struct {
-	OrgCode               string  `json:"org_code"`
-	ProvisionDate         string  `json:"provision_date"`
-	RatePercent           float64 `json:"rate_percent"`
-	TotalOutstandingMinor int64   `json:"total_outstanding_minor"`
-	AccumProvisionMinor   int64   `json:"accum_provision_minor"`
-	RequiredProvisionMinor int64  `json:"required_provision_minor"`
-	AllocMinor            int64   `json:"alloc_minor"`
-	ReverseMinor          int64   `json:"reverse_minor"`
+	OrgCode                string  `json:"org_code"`
+	ProvisionDate          string  `json:"provision_date"`
+	RatePercent            float64 `json:"rate_percent"`
+	TotalOutstandingMinor  int64   `json:"total_outstanding_minor"`
+	AccumProvisionMinor    int64   `json:"accum_provision_minor"`
+	RequiredProvisionMinor int64   `json:"required_provision_minor"`
+	AllocMinor             int64   `json:"alloc_minor"`
+	ReverseMinor           int64   `json:"reverse_minor"`
 }
 
 // GeneralProvisionService runs the LNM.307 approval flow.

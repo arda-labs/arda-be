@@ -29,19 +29,19 @@ const (
 // pending; COMPLETE flow (LNM_DISB_COMPLETE rule card) clears the pending
 // in-transit balance for a posted REGISTER disbursement.
 type Disbursement struct {
-	ID               string          `json:"id"`
-	TenantID         string          `json:"tenant_id"`
-	ContractCode     string          `json:"contract_code"`
-	AgreementCode    string          `json:"agreement_code"`
-	DisburseDate     string          `json:"disburse_date"`
-	DisburseAmtMinor int64           `json:"disburse_amt_minor"`
-	CurrencyCode     string          `json:"currency_code"`
-	FundSourceCode   string          `json:"fund_source_code"`
-	FlowType         string          `json:"flow_type,omitempty"`
-	SourceRegisterID string          `json:"source_register_id,omitempty"`
+	ID               string `json:"id"`
+	TenantID         string `json:"tenant_id"`
+	ContractCode     string `json:"contract_code"`
+	AgreementCode    string `json:"agreement_code"`
+	DisburseDate     string `json:"disburse_date"`
+	DisburseAmtMinor int64  `json:"disburse_amt_minor"`
+	CurrencyCode     string `json:"currency_code"`
+	FundSourceCode   string `json:"fund_source_code"`
+	FlowType         string `json:"flow_type,omitempty"`
+	SourceRegisterID string `json:"source_register_id,omitempty"`
 	// BatchID links the row to its batch dossier (iteration 13); empty on
 	// legacy single-row disbursements.
-	BatchID          string          `json:"batch_id,omitempty"`
+	BatchID string `json:"batch_id,omitempty"`
 	// IsClosed marks a batch COMPLETE row that closes the contract after
 	// settle without moving cash (amount 0 — posting skips zero legs).
 	IsClosed         bool            `json:"is_closed,omitempty"`

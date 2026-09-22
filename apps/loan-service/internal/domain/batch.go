@@ -56,24 +56,24 @@ type DisbursementBatch struct {
 // EPAS LNM.301 iteration 13). Rows are lnm_collections with batch_id; the
 // workflow case rides LNM_COLLECTION_BATCH_V2.
 type CollectionBatch struct {
-	ID                 string            `json:"id"`
-	TenantID           string            `json:"tenant_id"`
-	OrgCode            string            `json:"org_code,omitempty"`
-	TxnDate            string            `json:"txn_date"`
-	PaymentMethod      string            `json:"payment_method,omitempty"`
-	AccountCode        string            `json:"account_code,omitempty"`
-	CurrencyCode       string            `json:"currency_code,omitempty"`
-	TotalPrincipalMinor int64            `json:"total_principal_minor"`
-	TotalInterestMinor int64             `json:"total_interest_minor"`
-	Description        string            `json:"description,omitempty"`
-	Trader             map[string]string `json:"trader,omitempty"`
-	Status             string            `json:"status"`
-	WorkflowCaseID     *string           `json:"workflow_case_id,omitempty"`
-	WorkflowCaseCode   string            `json:"workflow_case_code,omitempty"`
-	JournalEntryID     *string           `json:"journal_entry_id,omitempty"`
-	CreatedBy          string            `json:"created_by,omitempty"`
-	CreatedAt          time.Time         `json:"created_at"`
-	UpdatedAt          time.Time         `json:"updated_at"`
+	ID                  string            `json:"id"`
+	TenantID            string            `json:"tenant_id"`
+	OrgCode             string            `json:"org_code,omitempty"`
+	TxnDate             string            `json:"txn_date"`
+	PaymentMethod       string            `json:"payment_method,omitempty"`
+	AccountCode         string            `json:"account_code,omitempty"`
+	CurrencyCode        string            `json:"currency_code,omitempty"`
+	TotalPrincipalMinor int64             `json:"total_principal_minor"`
+	TotalInterestMinor  int64             `json:"total_interest_minor"`
+	Description         string            `json:"description,omitempty"`
+	Trader              map[string]string `json:"trader,omitempty"`
+	Status              string            `json:"status"`
+	WorkflowCaseID      *string           `json:"workflow_case_id,omitempty"`
+	WorkflowCaseCode    string            `json:"workflow_case_code,omitempty"`
+	JournalEntryID      *string           `json:"journal_entry_id,omitempty"`
+	CreatedBy           string            `json:"created_by,omitempty"`
+	CreatedAt           time.Time         `json:"created_at"`
+	UpdatedAt           time.Time         `json:"updated_at"`
 	// DataVersion is the row version the checker saw (lnm_collection_batches.version).
 	DataVersion int64        `json:"data_version"`
 	Rows        []Collection `json:"rows,omitempty"`

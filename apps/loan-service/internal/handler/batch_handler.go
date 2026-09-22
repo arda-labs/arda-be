@@ -6,17 +6,17 @@ import (
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/service"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
-	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
+	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 // BatchHandler exposes the iteration-13 batch flows (1 hồ sơ — N hợp đồng)
 // over HTTP: batch disbursement register/complete, batch collection, and the
 // finance posting-rules proxy the maker screen uses to preview rule cards.
 type BatchHandler struct {
-	disb  *service.BatchDisbursementService
-	col   *service.BatchCollectionService
-	fin   *financeclient.Client
+	disb *service.BatchDisbursementService
+	col  *service.BatchCollectionService
+	fin  *financeclient.Client
 }
 
 func NewBatchHandler(disb *service.BatchDisbursementService, col *service.BatchCollectionService, fin *financeclient.Client) *BatchHandler {
@@ -205,13 +205,13 @@ func (h *BatchHandler) ListPostingRules(w http.ResponseWriter, r *http.Request) 
 		}
 		for _, rule := range rules {
 			items = append(items, map[string]any{
-				"document_type":       docType,
-				"line_no":             rule.GetLineNo(),
-				"direction":           rule.GetDirection(),
-				"resolution_type":     rule.GetResolutionType(),
-				"account_ref":         rule.GetAccountRef(),
-				"acc_classification":  rule.GetAccClassification(),
-				"required_dimensions": rule.GetRequiredDimensions(),
+				"document_type":        docType,
+				"line_no":              rule.GetLineNo(),
+				"direction":            rule.GetDirection(),
+				"resolution_type":      rule.GetResolutionType(),
+				"account_ref":          rule.GetAccountRef(),
+				"acc_classification":   rule.GetAccClassification(),
+				"required_dimensions":  rule.GetRequiredDimensions(),
 				"description_template": rule.GetDescriptionTemplate(),
 			})
 		}

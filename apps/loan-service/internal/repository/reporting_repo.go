@@ -16,7 +16,25 @@ func (r *LoanRepository) ListAgreementsForReporting(ctx context.Context, tenantI
 		       COALESCE(c.product_code, ''), COALESCE(a.org_code, ''),
 		       a.disburse_date::text, a.maturity_date::text, a.debt_group_code,
 		       a.status, a.currency_code, a.interest_rate, a.disburse_amt_minor,
-		       a.outstanding_amt_minor, a.provision_amt_minor
+		       a.outstanding_amt_minor, a.provision_amt_minor,
+		       COALESCE(c.loan_method_code, ''), COALESCE(c.industry_code, ''),
+		       COALESCE(c.purpose_code, ''),
+		       -- Normalise the contract term to whole months (day units are
+		       -- rounded down to the nearest month; 0 stays 0 = demand).
+		       CASE UPPER(COALESCE(c.term_unit, 'MONTH'))
+		         WHEN 'DAY'  THEN COALESCE(c.loan_term, 0) / 30
+		         WHEN 'YEAR' THEN COALESCE(c.loan_term, 0) * 12
+		         ELSE COALESCE(c.loan_term, 0)
+		       END,
+		       CASE
+		         WHEN COALESCE(c.loan_term, 0) = 0 THEN 'DEMAND'
+		         WHEN (CASE UPPER(COALESCE(c.term_unit, 'MONTH'))
+		                 WHEN 'DAY'  THEN COALESCE(c.loan_term, 0) / 30
+		                 WHEN 'YEAR' THEN COALESCE(c.loan_term, 0) * 12
+		                 ELSE COALESCE(c.loan_term, 0)
+		               END) <= 12 THEN 'SHORT'
+		         ELSE 'MEDIUM_LONG'
+		       END
 		FROM lnm_agreements a
 		LEFT JOIN lnm_contracts c ON c.tenant_id = a.tenant_id AND c.contract_code = a.contract_code
 		WHERE a.tenant_id = $1 AND ($2 = '' OR a.org_code = $2)
@@ -31,7 +49,9 @@ func (r *LoanRepository) ListAgreementsForReporting(ctx context.Context, tenantI
 		if err := rows.Scan(&item.AgreementCode, &item.ContractCode, &item.CustomerCode,
 			&item.ProductCode, &item.OrgCode, &item.DisburseDate, &item.MaturityDate,
 			&item.DebtGroupCode, &item.Status, &item.CurrencyCode, &item.InterestRate,
-			&item.DisburseAmtMinor, &item.OutstandingAmtMinor, &item.ProvisionAmtMinor); err != nil {
+			&item.DisburseAmtMinor, &item.OutstandingAmtMinor, &item.ProvisionAmtMinor,
+			&item.LoanMethodCode, &item.IndustryCode, &item.PurposeCode,
+			&item.LoanTermMonths, &item.TermBucket); err != nil {
 			return nil, err
 		}
 		out = append(out, item)

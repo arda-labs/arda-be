@@ -9,9 +9,9 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"fmt"
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/migration"
-	"fmt"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 )

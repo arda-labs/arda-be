@@ -60,6 +60,8 @@ var factColumns = map[string]map[string]bool{
 		"disburse_amt_minor": true, "interest_rate": true,
 		"debt_group_code": true, "status": true, "org_code": true,
 		"customer_code": true, "product_code": true,
+		"loan_term_months": true, "term_bucket": true, "loan_method_code": true,
+		"industry_code": true, "purpose_code": true,
 	},
 	"rpt_fact_deposit_contract_daily": {
 		"principal_minor": true, "accrued_minor": true, "status": true,
@@ -112,6 +114,7 @@ var numericFactColumns = map[string]map[string]bool{
 	"rpt_fact_loan_agreement_daily": {
 		"outstanding_amt_minor": true, "provision_amt_minor": true,
 		"disburse_amt_minor": true, "interest_rate": true,
+		"loan_term_months": true,
 	},
 	"rpt_fact_deposit_contract_daily": {
 		"principal_minor": true, "accrued_minor": true,
@@ -154,6 +157,10 @@ var dimDef = map[string]string{
 	"member_type":  "member_type_code",
 	"counterparty": "counterparty_code",
 	"term":         "term_months",
+	"loan_term":    "term_bucket",
+	"loan_method":  "loan_method_code",
+	"industry":     "industry_code",
+	"purpose":      "purpose_code",
 }
 
 // DimensionNames is the sorted list of accepted dimension names (stable order

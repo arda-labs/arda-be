@@ -27,7 +27,7 @@ type BatchRowInput struct {
 	// PlanCode is optional input metadata; the authoritative value comes
 	// from the agreement (lnm_agreements.plan_code snapshot on the row's
 	// contract context — the agreement carries the group key).
-	PlanCode   string `json:"plan_code,omitempty"`
+	PlanCode    string `json:"plan_code,omitempty"`
 	AmountMinor int64  `json:"amount_minor"`
 	// IsClosed marks a closing row: no cash moves (amount 0), the contract
 	// is CLOSED after settle. Only valid on the COMPLETE batch.
@@ -327,10 +327,10 @@ func (s *BatchDisbursementService) submitBatchCase(ctx context.Context, tenantID
 		return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
 	}
 	vars := map[string]any{
-		"batchId":                batch.ID,
-		"batchType":              batchTypeOf(caseType),
-		"postingIdempotencyKey":  fmt.Sprintf("lnm-disb-batch-%s", batch.ID),
-		"disbursementBatch":      disbursementBatchVars(batch, rows),
+		"batchId":               batch.ID,
+		"batchType":             batchTypeOf(caseType),
+		"postingIdempotencyKey": fmt.Sprintf("lnm-disb-batch-%s", batch.ID),
+		"disbursementBatch":     disbursementBatchVars(batch, rows),
 	}
 	if _, err = s.workflow.SubmitCase(ctx, caseCreated.Id, actor, vars, fmt.Sprintf("%s-%s-submit", idempotencyPrefix, batch.ID)); err != nil {
 		return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
@@ -478,18 +478,18 @@ func (s *BatchDisbursementService) BatchPostingDetail(ctx context.Context, tenan
 		return nil, mapRepoError(err)
 	}
 	detail := &loanv1.BatchPostingDetail{
-		BatchId:         batch.ID,
-		BatchCode:       batch.ID,
-		BatchType:       batchTypeOfDisb(batch.FlowType),
-		TxnDate:         batch.TxnDate,
-		PaymentMethod:   batch.PaymentMethod,
-		AccountCode:     batch.AccountCode,
-		CurrencyCode:    batch.CurrencyCode,
-		TotalAmtMinor:   batch.TotalAmtMinor,
-		Description:     batch.Description,
-		OrgUnitCode:     batch.OrgCode,
-		WorkflowCaseId:  "",
-		Trader:          batch.Trader,
+		BatchId:        batch.ID,
+		BatchCode:      batch.ID,
+		BatchType:      batchTypeOfDisb(batch.FlowType),
+		TxnDate:        batch.TxnDate,
+		PaymentMethod:  batch.PaymentMethod,
+		AccountCode:    batch.AccountCode,
+		CurrencyCode:   batch.CurrencyCode,
+		TotalAmtMinor:  batch.TotalAmtMinor,
+		Description:    batch.Description,
+		OrgUnitCode:    batch.OrgCode,
+		WorkflowCaseId: "",
+		Trader:         batch.Trader,
 	}
 	if batch.WorkflowCaseID != nil {
 		detail.WorkflowCaseId = *batch.WorkflowCaseID

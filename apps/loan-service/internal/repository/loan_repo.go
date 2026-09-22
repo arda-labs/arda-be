@@ -13,8 +13,8 @@ import (
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
-	"github.com/shopspring/decimal"
 	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
+	"github.com/shopspring/decimal"
 )
 
 // Sentinel errors mapped to HTTP statuses by the service layer.
@@ -367,9 +367,9 @@ func (r *LoanRepository) CreateAgreement(ctx context.Context, a *domain.Agreemen
 			VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11::date,$12,$13,$14,$15,$16,$17,$18,$19)
 			ON CONFLICT (tenant_id, agreement_code) DO NOTHING
 			RETURNING `+agreementColumns,
-			a.ID, a.TenantID, a.ContractCode, a.AgreementCode, a.DisburseDate, a.DisburseAmt,
-			a.InterestRate, a.OverInterestRate, a.LoanTerm, a.TermUnit, a.MaturityDate, a.DebtGroupCode,
-			a.InterestPaymentFreq, a.PrincipalPaymentFreq, a.OutstandingAmt, a.PlanCode, a.CurrencyCode, a.AccClassification, a.CreatedBy)
+		a.ID, a.TenantID, a.ContractCode, a.AgreementCode, a.DisburseDate, a.DisburseAmt,
+		a.InterestRate, a.OverInterestRate, a.LoanTerm, a.TermUnit, a.MaturityDate, a.DebtGroupCode,
+		a.InterestPaymentFreq, a.PrincipalPaymentFreq, a.OutstandingAmt, a.PlanCode, a.CurrencyCode, a.AccClassification, a.CreatedBy)
 	out, err := scanAgreement(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w", ErrConflict)
@@ -1978,7 +1978,7 @@ type ApprovalLimit struct {
 }
 
 // GetApprovalLimits loads the lnm_approval_limits rows for a tenant+org: the
-// exact product row and the org-wide fallback (product_code = '') as two
+// exact product row and the org-wide fallback (product_code = ”) as two
 // independent lookups — the product-vs-org precedence decision lives in the
 // service layer (PickApprovalLimit) so it stays unit-testable without a DB.
 // orgCode "" or a missing table row returns nil for that slot.

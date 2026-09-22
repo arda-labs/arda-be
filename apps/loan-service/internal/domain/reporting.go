@@ -19,15 +19,25 @@ type ReportingAgreement struct {
 	DisburseAmtMinor    int64   `json:"disburse_amt_minor"`
 	OutstandingAmtMinor int64   `json:"outstanding_amt_minor"`
 	ProvisionAmtMinor   int64   `json:"provision_amt_minor"`
+
+	// Contract-level attributes the PCF credit indicators slice on: the loan
+	// method (từng lần / hạn mức / cầm cố), the industry (nông nghiệp / phi
+	// nông nghiệp) and the term normalised to months plus its bucket
+	// (ngắn hạn ≤ 12 tháng vs trung dài hạn).
+	LoanMethodCode string `json:"loan_method_code"`
+	IndustryCode   string `json:"industry_code"`
+	PurposeCode    string `json:"purpose_code"`
+	LoanTermMonths int    `json:"loan_term_months"`
+	TermBucket     string `json:"term_bucket"`
 }
 
 // ReportingCollateral is the reporting read-model projection of one collateral.
 type ReportingCollateral struct {
-	CollCode           string `json:"coll_code"`
-	CollTypeCode       string `json:"coll_type_code"`
-	OrgCode            string `json:"org_code"`
-	ValuationDate      string `json:"valuation_date"`
-	Status             string `json:"status"`
-	CollValueMinor     int64  `json:"coll_value_minor"`
-	CollUseValueMinor  int64  `json:"coll_use_value_minor"`
+	CollCode          string `json:"coll_code"`
+	CollTypeCode      string `json:"coll_type_code"`
+	OrgCode           string `json:"org_code"`
+	ValuationDate     string `json:"valuation_date"`
+	Status            string `json:"status"`
+	CollValueMinor    int64  `json:"coll_value_minor"`
+	CollUseValueMinor int64  `json:"coll_use_value_minor"`
 }
