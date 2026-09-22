@@ -23,6 +23,45 @@ import (
 // fetched via readResult (Cloudflare code-mode pattern).
 const resultPreviewLimit = 6 << 10
 
+// previewMaxRows bounds the rows kept in a presentation preview so a large
+// report still renders its chart/KPI in the interface; the full data stays in
+// the ResultStore and is reachable through readResult.
+const previewMaxRows = 50
+
+// presentationPreview keeps a report-presentation payload useful when it is too
+// large to echo whole: the chart, KPI cards and first rows survive, and the
+// model is told the full output is available via readResult. Without this a big
+// report would degrade to only a truncated hint and the chart would disappear.
+func presentationPreview(raw []byte) (map[string]any, bool) {
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, false
+	}
+	if _, hasChart := obj["chart"]; !hasChart {
+		if _, hasKPI := obj["kpis"]; !hasKPI {
+			return nil, false
+		}
+	}
+	rows, _ := obj["rows"].([]any)
+	kept := rows
+	if len(rows) > previewMaxRows {
+		kept = rows[:previewMaxRows]
+	}
+	preview := map[string]any{"truncated": true}
+	for _, key := range []string{"render", "report_code", "report_name", "period_code", "org_code", "columns", "kpis", "chart"} {
+		if value, ok := obj[key]; ok {
+			preview[key] = value
+		}
+	}
+	preview["rows"] = kept
+	preview["row_count"] = len(rows)
+	if len(rows) > previewMaxRows {
+		preview["rows_truncated"] = true
+	}
+	preview["hint"] = "call readResult({ resultId }) for the full output"
+	return preview, true
+}
+
 type CodeModeSuite struct {
 	SearchTool     tools.Tool
 	ExecuteTool    tools.Tool
@@ -173,11 +212,16 @@ func NewCodeModeSuite(
 			out["resultId"] = resultID
 		}
 		if len(rawOutput) > resultPreviewLimit {
-			// Too big to echo inline — tell the model where to read it.
-			out["output"] = map[string]any{
-				"truncated": true,
-				"size":      len(rawOutput),
-				"hint":      "call readResult({ resultId }) for the full output",
+			// Too big to echo inline — tell the model where to read it, but keep
+			// a chart/KPI-bearing presentation usable in the interface.
+			if preview, ok := presentationPreview(rawOutput); ok {
+				out["output"] = preview
+			} else {
+				out["output"] = map[string]any{
+					"truncated": true,
+					"size":      len(rawOutput),
+					"hint":      "call readResult({ resultId }) for the full output",
+				}
 			}
 		} else if len(rawOutput) > 0 {
 			out["output"] = json.RawMessage(rawOutput)
