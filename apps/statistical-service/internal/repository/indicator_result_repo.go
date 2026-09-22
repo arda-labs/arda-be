@@ -12,9 +12,6 @@ import (
 // write is idempotent on (tenant, indicator, period, dimension_key, revision):
 // re-running a period overwrites the value but never loses the audit trail.
 func (r *StatisticalRepository) UpsertIndicatorResult(ctx context.Context, res *IndicatorResult) (*IndicatorResult, error) {
-	if res.ID == "" {
-		res.ID = NewStatisticalID("indres")
-	}
 	if res.Revision <= 0 {
 		res.Revision = 1
 	}
@@ -32,19 +29,20 @@ func (r *StatisticalRepository) UpsertIndicatorResult(ctx context.Context, res *
 		return nil, err
 	}
 
+	// The table id is UUID DEFAULT uuidv7(); let the database generate it.
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO rpt_indicator_results
-			(id, tenant_id, indicator_code, period_code, dimension_key, business_date,
+			(tenant_id, indicator_code, period_code, dimension_key, business_date,
 			 value, revision, source, created_by)
-		VALUES ($1,$2,$3,$4,$5, NULLIF($6,'')::date, $7, $8, $9, $10)
+		VALUES ($1,$2,$3,$4, NULLIF($5,'')::date, $6, $7, $8, $9)
 		ON CONFLICT (tenant_id, indicator_code, period_code, dimension_key, revision)
 		DO UPDATE SET value = EXCLUDED.value, business_date = EXCLUDED.business_date,
 			source = EXCLUDED.source, created_by = EXCLUDED.created_by,
 			updated_at = now(), version = rpt_indicator_results.version + 1
-		RETURNING created_at, updated_at`,
-		res.ID, res.TenantID, res.IndicatorCode, res.PeriodCode, res.DimensionKey,
+		RETURNING id::text, created_at, updated_at`,
+		res.TenantID, res.IndicatorCode, res.PeriodCode, res.DimensionKey,
 		res.BusinessDate, res.Value, res.Revision, res.Source, res.CreatedBy)
-	if err := row.Scan(&res.CreatedAt, &res.UpdatedAt); err != nil {
+	if err := row.Scan(&res.ID, &res.CreatedAt, &res.UpdatedAt); err != nil {
 		return nil, err
 	}
 
