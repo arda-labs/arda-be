@@ -509,6 +509,44 @@ bucket.
 (mã nào là "nông nghiệp", mã nào là "từng lần") — đoán sẽ phân loại sai dư nợ
 trên báo cáo. Chỉ cần thêm filter khi có taxonomy.
 
+## 9i. Bước 6b-2 — tiền vay TCTD (domain mới)
+
+Arda chưa có nghiệp vụ **đi vay** liên ngân hàng. Đã dựng trong deposit-service
+(cạnh `ibm_deposits`, để hai chiều thị trường liên ngân hàng nằm cùng một service):
+
+| Thành phần | Nội dung |
+|---|---|
+| Schema | `ibm_borrows` + `ibm_borrow_movements` |
+| API | `GET/POST /api/deposit/borrows`, `GET /{id}`, `POST /{id}/decision`, `POST /{id}/movements` |
+| Reporting | `GET /internal/reporting/ibm-borrows` (signed) |
+| Fact | `rpt_fact_ibm_borrow_daily` |
+| Chỉ tiêu | 11 (tổng, trong hạn/quá hạn, NHHTX, quỹ bảo toàn, số món, lãi suất BQ, theo kỳ hạn, lãi dự chi, tăng trưởng, TB 3 tháng) |
+
+**Quyết định thiết kế:**
+
+- **Vòng đời nhẹ hơn** bên cho vay: submit → `PENDING_APPROVAL`, checker APPROVE
+  → `ACTIVE`. Giữ segregation of duties ở tầng API (**người nộp không được tự
+  duyệt**) mà không cần BPMN. Cột `workflow_case_id` đã có sẵn nên gắn
+  maker-checker engine sau **không cần đổi schema**.
+- `lender_type` (NHHTX/NHNN/OTHER_TCTD/SAFETY_FUND) và `funding_purpose` là **cột
+  thật**, không suy diễn — công thức PCF chia theo chúng.
+- `maturity_status` (CURRENT/OVERDUE/SETTLED) do **ETL tính**, không để chỉ tiêu
+  tự suy: engine so literal, không so ngày.
+- Policy `/api/deposit/**` đã bao trùm endpoint mới (không cần route riêng).
+
+**Còn lại**: FE cho nghiệp vụ vay (trang danh mục + form), BPMN maker-checker đầy
+đủ nếu cần, và verify trên cluster.
+
+### Verified trên cluster
+
+- Submit → `PENDING_APPROVAL` (300tr, NHHTX, CREDIT_EXPANSION, kỳ hạn 12 tháng).
+- **Maker tự duyệt → 403** `the submitter cannot approve their own borrowing`;
+  checker duyệt → `ACTIVE`.
+- ETL: `ibm_borrows: 1`; fact có `maturity_status=CURRENT` (đáo hạn 2027 > kỳ).
+- Compute: **70000.01 = 300tr · 70000.02 = 300tr · 70000.03 = 0 · 70001.01 =
+  300tr · 70005.01 = 1 · 70004.01 = 5.5 · 70000.01.03 = 150tr** (TB 3 tháng) —
+  khớp fact.
+
 ## 9d. Bước 6 (member) — ĐÓNG, verified trên cluster (2026-09-22)
 
 Luồng đầy đủ chạy thật: **đăng ký thành viên → yêu cầu góp vốn → maker SUBMIT
