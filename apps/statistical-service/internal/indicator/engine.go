@@ -81,6 +81,7 @@ var factColumns = map[string]map[string]bool{
 	"rpt_fact_customer_daily": {
 		"customer_code": true, "status": true, "org_code": true,
 		"segment": true, "customer_type": true, "risk_level": true,
+		"is_member": true, "has_deposit": true, "has_loan": true,
 	},
 	"rpt_fact_member_daily": {
 		"member_code": true, "customer_code": true, "org_code": true,
@@ -174,6 +175,9 @@ var dimDef = map[string]string{
 	"purpose":      "purpose_code",
 	"lender_type":  "lender_type",
 	"maturity":     "maturity_status",
+	"member_flag":  "is_member",
+	"deposit_flag": "has_deposit",
+	"loan_flag":    "has_loan",
 }
 
 // DimensionNames is the sorted list of accepted dimension names (stable order

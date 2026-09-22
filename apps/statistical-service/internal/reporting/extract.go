@@ -350,6 +350,13 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		result.TrialBalance = len(trialBal)
 	}
 
+	if s.crmURL != "" {
+		// Cross-fact flags must run once every source is loaded.
+		if _, err := tx.ExecContext(ctx, stampCustomerFlags, tenantID, businessDate); err != nil {
+			return result, fmt.Errorf("stamp customer flags: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return result, fmt.Errorf("commit extract: %w", err)
 	}
@@ -407,6 +414,30 @@ const insertCustomerFact = `INSERT INTO rpt_fact_customer_daily
 	(tenant_id, business_date, org_code, customer_code, customer_type, status,
 	 segment, customer_rank, risk_level)
 	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9)`
+
+// stampCustomerFlags sets the cross-fact predicates the customer counts need
+// (member / has a deposit / has a loan). It runs after every source is inserted
+// so it sees the whole tenant slice for the business date.
+const stampCustomerFlags = `
+	UPDATE rpt_fact_customer_daily c
+	SET is_member = CASE WHEN EXISTS (
+	        SELECT 1 FROM rpt_fact_member_daily m
+	        WHERE m.tenant_id = c.tenant_id AND m.business_date = c.business_date
+	          AND m.customer_code = c.customer_code AND m.member_status = 'ACTIVE')
+	      THEN 'Y' ELSE 'N' END,
+	    has_deposit = CASE WHEN EXISTS (
+	        SELECT 1 FROM rpt_fact_deposit_contract_daily d
+	        WHERE d.tenant_id = c.tenant_id AND d.business_date = c.business_date
+	          AND d.customer_code = c.customer_code AND d.status = 'ACTIVE'
+	          AND d.principal_minor > 0)
+	      THEN 'Y' ELSE 'N' END,
+	    has_loan = CASE WHEN EXISTS (
+	        SELECT 1 FROM rpt_fact_loan_agreement_daily l
+	        WHERE l.tenant_id = c.tenant_id AND l.business_date = c.business_date
+	          AND l.customer_code = c.customer_code AND l.status = 'ACTIVE'
+	          AND l.outstanding_amt_minor > 0)
+	      THEN 'Y' ELSE 'N' END
+	WHERE c.tenant_id = $1 AND c.business_date = $2::date`
 
 const insertMemberFact = `INSERT INTO rpt_fact_member_daily
 	(tenant_id, business_date, org_code, member_code, customer_code, member_type_code,
