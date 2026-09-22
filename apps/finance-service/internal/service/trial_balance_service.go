@@ -69,8 +69,10 @@ func (s *TrialBalanceService) TrialBalance(ctx context.Context, tenantID, asOf s
 		FULL OUTER JOIN openings o
 		  ON o.tenant_id = l.tenant_id AND o.coa_version = l.coa_version
 		 AND o.account_code = l.account_code AND o.currency_code = l.currency_code
-		LEFT JOIN fin_accounts a
-		  ON a.tenant_id = $1 AND a.code = COALESCE(l.account_code, o.account_code)
+		LEFT JOIN fin_coa_accounts a
+		  ON a.tenant_id = $1
+		 AND a.version_code = COALESCE(l.coa_version, o.coa_version)
+		 AND a.acc_code = COALESCE(l.account_code, o.account_code)
 		ORDER BY 2, 4`,
 		tenantID, asOf)
 	if err != nil {

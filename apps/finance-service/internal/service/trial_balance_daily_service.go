@@ -216,7 +216,10 @@ func (s *TrialBalanceDailyService) ListDaily(ctx context.Context, tenantID, asOf
 		       tbd.incr_debit_minor, tbd.incr_credit_minor,
 		       tbd.close_debit_minor, tbd.close_credit_minor
 		FROM fin_trial_balance_daily tbd
-		LEFT JOIN fin_accounts a ON a.tenant_id = tbd.tenant_id AND a.code = tbd.account_code
+		LEFT JOIN fin_coa_accounts a
+		       ON a.tenant_id = tbd.tenant_id
+		      AND a.version_code = tbd.coa_version
+		      AND a.acc_code = tbd.account_code
 		WHERE tbd.tenant_id = $1 AND tbd.business_date = $2::date
 		ORDER BY tbd.account_code, tbd.currency_code, tbd.org_code`, tenantID, asOf)
 	if err != nil {
