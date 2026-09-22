@@ -75,6 +75,83 @@ func (h *PresentationHandler) IndicatorDocument(w http.ResponseWriter, r *http.R
 	h.writeRendered(w, r, doc, "indicators-"+period)
 }
 
+// InternalAIReportPresentation handles
+// GET /internal/ai/report-presentation for ai-service: one call returns the
+// report rows plus the deterministic presentation (chart + KPI cards) so the
+// assistant can answer with a KPI/chart view instead of raw JSON. The chart and
+// KPI shapes come from the same presentation layer the public report endpoints
+// use, so a chat chart and a downloaded document never disagree.
+func (h *PresentationHandler) InternalAIReportPresentation(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeRequired, "verified tenant scope is required"))
+		return
+	}
+	code := strings.TrimSpace(r.URL.Query().Get("report_code"))
+	if code == "" {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeRequired, "report_code is required"))
+		return
+	}
+	period := strings.TrimSpace(r.URL.Query().Get("period_code"))
+	if period == "" {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeRequired, "period_code is required"))
+		return
+	}
+	doc, err := h.svc.ReportDocument(r.Context(), tenantID, code, map[string]string{
+		"period_code": period,
+		"org_code":    strings.TrimSpace(r.URL.Query().Get("org_code")),
+	})
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	kpis := make([]aiKPI, 0, len(doc.KPI))
+	for _, k := range doc.KPI {
+		kpis = append(kpis, aiKPI{Code: k.Code, Label: k.Label, Value: k.Value, Unit: k.Unit})
+	}
+	payload := aiReportPresentation{
+		ReportCode: doc.Subtitle,
+		ReportName: doc.Title,
+		PeriodCode: doc.Period,
+		OrgCode:    doc.Org,
+		Columns:    doc.Columns,
+		Rows:       doc.Rows,
+		RowCount:   len(doc.Rows),
+		Chart:      doc.Chart,
+		KPIs:       kpis,
+		Render:     "report",
+	}
+	if payload.ReportCode == "" {
+		payload.ReportCode = code
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, payload)
+}
+
+// aiReportPresentation is the assistant-facing presentation payload: the report
+// identity, the computed rows, and the chart/KPI cards the conversation can
+// render. Internal wiring (query_id, param schema, tenant_id) never appears.
+type aiReportPresentation struct {
+	ReportCode string              `json:"report_code"`
+	ReportName string              `json:"report_name"`
+	PeriodCode string              `json:"period_code,omitempty"`
+	OrgCode    string              `json:"org_code,omitempty"`
+	Columns    []string            `json:"columns"`
+	Rows       [][]any             `json:"rows"`
+	RowCount   int                 `json:"row_count"`
+	Chart      *presentation.Chart `json:"chart,omitempty"`
+	KPIs       []aiKPI             `json:"kpis"`
+	Render     string              `json:"render"`
+}
+
+// aiKPI is one headline figure; presentation.KPI carries no JSON tags (it is
+// consumed by the document templates), so the wire shape is defined here.
+type aiKPI struct {
+	Code  string `json:"code"`
+	Label string `json:"label"`
+	Value string `json:"value"`
+	Unit  string `json:"unit,omitempty"`
+}
+
 // writeRendered streams the rendered file with a download filename. The name
 // already carries any period suffix the caller chose, so the period is only
 // appended when it is not already part of the name (avoids

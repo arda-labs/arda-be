@@ -87,6 +87,67 @@ func TestPresentation_DocumentStreamsFileWithDisposition(t *testing.T) {
 	}
 }
 
+func TestPresentation_InternalAIPresentationValidates(t *testing.T) {
+	h := NewPresentationHandler(&stubPresentation{})
+
+	cases := []struct {
+		name   string
+		tenant string
+		query  string
+	}{
+		{"missing tenant", "", "?report_code=X&period_code=2026-09"},
+		{"missing report_code", "tenant-1", "?period_code=2026-09"},
+		{"missing period_code", "tenant-1", "?report_code=X"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/internal/ai/report-presentation"+tc.query, nil)
+			if tc.tenant != "" {
+				req.Header.Set("X-Tenant-Id", tc.tenant)
+			}
+			res := httptest.NewRecorder()
+			h.InternalAIReportPresentation(res, req)
+			if res.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (body %s)", res.Code, res.Body.String())
+			}
+		})
+	}
+}
+
+func TestPresentation_InternalAIReturnsChartAndKPI(t *testing.T) {
+	chart := presentation.Chart{
+		Type:       presentation.ChartBar,
+		Title:      "Dư nợ theo nhóm nợ",
+		Categories: []string{"Nhóm 1"},
+		Series:     []presentation.Series{{Name: "Dư nợ", Values: []float64{5}}},
+	}
+	doc := &presentation.ReportDocument{
+		Title:    "Dư nợ theo nhóm nợ",
+		Subtitle: "LOAN_PORTFOLIO",
+		Period:   "2026-09",
+		Org:      "HQ",
+		Columns:  []string{"group", "balance"},
+		Rows:     [][]any{{"Nhóm 1", 5}},
+		Chart:    &chart,
+		KPI:      []presentation.KPI{{Code: "NPL", Label: "Tỷ lệ nợ xấu", Value: "2.3", Unit: "%"}},
+	}
+	h := NewPresentationHandler(&stubPresentation{doc: doc})
+	req := httptest.NewRequest(http.MethodGet, "/internal/ai/report-presentation?report_code=LOAN_PORTFOLIO&period_code=2026-09&org_code=HQ", nil)
+	req.Header.Set("X-Tenant-Id", "tenant-1")
+	res := httptest.NewRecorder()
+	h.InternalAIReportPresentation(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", res.Code, res.Body.String())
+	}
+	body := res.Body.String()
+	for _, want := range []string{`"render":"report"`, `"type":"bar"`, `"label":"Tỷ lệ nợ xấu"`, `"report_code":"LOAN_PORTFOLIO"`, `"row_count":1`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %s: %s", want, body)
+		}
+	}
+}
+
 func TestSanitizeFileKeepsConservativeNames(t *testing.T) {
 	if got := sanitizeFile("LOAN_PORTFOLIO_SUMMARY"); got != "LOAN_PORTFOLIO_SUMMARY" {
 		t.Fatalf("name mangled: %q", got)
