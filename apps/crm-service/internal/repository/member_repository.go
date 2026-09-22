@@ -256,7 +256,8 @@ func (r *MemberRepository) ApplyApprovedCapital(ctx context.Context, tx *sql.Tx,
 
 	row := tx.QueryRowContext(ctx, `
 		UPDATE crm_members
-		SET estb_capital_minor = $3, add_capital_minor = $4, total_capital_minor = $3 + $4,
+		SET estb_capital_minor = $3::bigint, add_capital_minor = $4::bigint,
+		    total_capital_minor = $3::bigint + $4::bigint,
 		    updated_by = $5, updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2::uuid
 		RETURNING `+memberColumns,
