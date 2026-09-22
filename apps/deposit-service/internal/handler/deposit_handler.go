@@ -41,6 +41,11 @@ type IBMService interface {
 	GetIBMDetail(ctx context.Context, tenantID, id string) (*service.IBMDetail, error)
 	SubmitPlace(ctx context.Context, tenantID, actor string, in *repository.InterbankDeposit) (*repository.InterbankDeposit, error)
 	SubmitMovement(ctx context.Context, tenantID, actor, depositID, kind string, amountMinor int64, movementDate, periodFrom, periodTo, note string) (*repository.IBMMovement, error)
+	ListBorrows(ctx context.Context, tenantID string, orgCodes []string, status string) ([]repository.InterbankBorrow, error)
+	SubmitBorrow(ctx context.Context, tenantID, actor string, in *repository.InterbankBorrow) (*repository.InterbankBorrow, error)
+	DecideBorrow(ctx context.Context, tenantID, id, decision, actor, dataVersion string) (*repository.InterbankBorrow, error)
+	GetBorrowDetail(ctx context.Context, tenantID, id string) (*repository.InterbankBorrow, []repository.IBMBorrowMovement, error)
+	SubmitBorrowMovement(ctx context.Context, tenantID, borrowID, actor string, in *repository.IBMBorrowMovement) (*repository.IBMBorrowMovement, error)
 }
 
 // Interest surface used by the HTTP handler (rates + accrual + ops).

@@ -104,6 +104,13 @@ var factColumns = map[string]map[string]bool{
 		"incr_debit_minor": true, "incr_credit_minor": true,
 		"close_debit_minor": true, "close_credit_minor": true,
 	},
+	"rpt_fact_ibm_borrow_daily": {
+		"borrow_code": true, "counterparty_code": true, "lender_type": true,
+		"funding_purpose": true, "term_months": true, "maturity_status": true,
+		"status": true, "currency_code": true, "org_code": true,
+		"principal_minor": true, "outstanding_minor": true, "accrued_minor": true,
+		"interest_rate": true,
+	},
 }
 
 // numericFactColumns marks which whitelisted fact columns hold numbers, so a
@@ -143,6 +150,10 @@ var numericFactColumns = map[string]map[string]bool{
 		"incr_debit_minor": true, "incr_credit_minor": true,
 		"close_debit_minor": true, "close_credit_minor": true,
 	},
+	"rpt_fact_ibm_borrow_daily": {
+		"term_months": true, "principal_minor": true, "outstanding_minor": true,
+		"accrued_minor": true, "interest_rate": true,
+	},
 }
 
 // dimDef maps an indicator dimension name to the fact column it slices on.
@@ -161,6 +172,8 @@ var dimDef = map[string]string{
 	"loan_method":  "loan_method_code",
 	"industry":     "industry_code",
 	"purpose":      "purpose_code",
+	"lender_type":  "lender_type",
+	"maturity":     "maturity_status",
 }
 
 // DimensionNames is the sorted list of accepted dimension names (stable order

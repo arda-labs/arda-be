@@ -67,6 +67,7 @@ type ExtractResult struct {
 	Members          int      `json:"members"`
 	MemberRequests   int      `json:"member_requests"`
 	IBMDeposits      int      `json:"ibm_deposits"`
+	IBMBorrows       int      `json:"ibm_borrows"`
 	TrialBalance     int      `json:"trial_balance_rows"`
 	SkippedSources   []string `json:"skipped_sources,omitempty"`
 }
@@ -95,6 +96,7 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		members     []member
 		memberReqs  []memberRequest
 		ibmDeposits []ibmDeposit
+		ibmBorrows  []ibmBorrow
 		trialBal    []trialBalanceRow
 	)
 	if s.loanURL == "" {
@@ -117,6 +119,9 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		}
 		if ibmDeposits, err = s.fetchIBMDeposits(ctx, tenantID, businessDate); err != nil {
 			return result, fmt.Errorf("interbank deposit extract: %w", err)
+		}
+		if ibmBorrows, err = s.fetchIBMBorrows(ctx, tenantID, businessDate); err != nil {
+			return result, fmt.Errorf("interbank borrow extract: %w", err)
 		}
 	}
 	if s.capitalURL == "" {
@@ -230,6 +235,24 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 			return result, err
 		}
 		result.IBMDeposits = len(ibmDeposits)
+
+		if err := replaceFacts(ctx, tx, "rpt_fact_ibm_borrow_daily", tenantID, businessDate, len(ibmBorrows), func() error {
+			for _, item := range ibmBorrows {
+				if _, err := tx.ExecContext(ctx, insertIBMBorrowFact,
+					tenantID, businessDate, item.OrgCode, item.BorrowCode, item.CounterpartyCode,
+					item.LenderType, item.FundingPurpose, item.TermMonths,
+					nullDate(item.DrawdownDate), nullDate(item.MaturityDate),
+					maturityStatus(item, businessDate), item.Status, item.CurrencyCode,
+					item.PrincipalMinor, item.OutstandingMinor, item.AccruedMinor,
+					item.InterestRate); err != nil {
+					return fmt.Errorf("insert interbank borrow fact %s: %w", item.BorrowCode, err)
+				}
+			}
+			return nil
+		}); err != nil {
+			return result, err
+		}
+		result.IBMBorrows = len(ibmBorrows)
 	}
 
 	if s.capitalURL != "" {
@@ -401,6 +424,25 @@ const insertIBMDepositFact = `INSERT INTO rpt_fact_ibm_deposit_daily
 	 principal_minor, accrued_minor, interest_rate)
 	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8::date, $9::date, $10, $11, $12, $13, $14)`
 
+const insertIBMBorrowFact = `INSERT INTO rpt_fact_ibm_borrow_daily
+	(tenant_id, business_date, org_code, borrow_code, counterparty_code, lender_type,
+	 funding_purpose, term_months, drawdown_date, maturity_date, maturity_status,
+	 status, currency_code, principal_minor, outstanding_minor, accrued_minor, interest_rate)
+	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9::date, $10::date, $11, $12, $13, $14, $15, $16, $17)`
+
+// maturityStatus classifies a borrow against the snapshot date: a matured but
+// still outstanding ACTIVE borrow is OVERDUE, a retired one is SETTLED,
+// everything else is CURRENT. The "nợ trong hạn / quá hạn" indicators read it.
+func maturityStatus(item ibmBorrow, businessDate string) string {
+	if item.Status != "ACTIVE" {
+		return "SETTLED"
+	}
+	if item.MaturityDate != "" && item.MaturityDate < businessDate {
+		return "OVERDUE"
+	}
+	return "CURRENT"
+}
+
 const insertTrialBalanceFact = `INSERT INTO rpt_fact_trial_balance_daily
 	(tenant_id, business_date, org_code, coa_version, account_code, account_name, currency_code,
 	 open_debit_minor, open_credit_minor, incr_debit_minor, incr_credit_minor,
@@ -494,6 +536,14 @@ func (s *Service) fetchMemberRequests(ctx context.Context, tenantID, businessDat
 func (s *Service) fetchIBMDeposits(ctx context.Context, tenantID, businessDate string) ([]ibmDeposit, error) {
 	var env envelope[ibmDepositResult]
 	if err := s.fetch(ctx, s.depositURL, "deposit-service", "/internal/reporting/ibm-deposits", tenantID, businessDate, &env); err != nil {
+		return nil, err
+	}
+	return env.Result.Items, nil
+}
+
+func (s *Service) fetchIBMBorrows(ctx context.Context, tenantID, businessDate string) ([]ibmBorrow, error) {
+	var env envelope[ibmBorrowResult]
+	if err := s.fetch(ctx, s.depositURL, "deposit-service", "/internal/reporting/ibm-borrows", tenantID, businessDate, &env); err != nil {
 		return nil, err
 	}
 	return env.Result.Items, nil
@@ -703,6 +753,29 @@ type ibmDeposit struct {
 	DepositDate      string  `json:"deposit_date"`
 	MaturityDate     string  `json:"maturity_date"`
 	PrincipalMinor   int64   `json:"principal_minor"`
+	AccruedMinor     int64   `json:"accrued_minor"`
+	InterestRate     float64 `json:"interest_rate"`
+	CurrencyCode     string  `json:"currency_code"`
+	OrgCode          string  `json:"org_code"`
+	Status           string  `json:"status"`
+}
+
+type ibmBorrowResult struct {
+	AsOf  string      `json:"as_of"`
+	Items []ibmBorrow `json:"items"`
+}
+
+// ibmBorrow is one interbank borrowing contract (PCF topic "Tiền vay TCTD").
+type ibmBorrow struct {
+	BorrowCode       string  `json:"borrow_code"`
+	CounterpartyCode string  `json:"counterparty_code"`
+	LenderType       string  `json:"lender_type"`
+	FundingPurpose   string  `json:"funding_purpose"`
+	TermMonths       int     `json:"term_months"`
+	DrawdownDate     string  `json:"drawdown_date"`
+	MaturityDate     string  `json:"maturity_date"`
+	PrincipalMinor   int64   `json:"principal_minor"`
+	OutstandingMinor int64   `json:"outstanding_minor"`
 	AccruedMinor     int64   `json:"accrued_minor"`
 	InterestRate     float64 `json:"interest_rate"`
 	CurrencyCode     string  `json:"currency_code"`

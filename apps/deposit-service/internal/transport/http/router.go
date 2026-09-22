@@ -84,6 +84,21 @@ func NewRouter(h *handler.DepositHandler, ai *handler.InternalAIHandler, rep *ha
 	})
 	mux.HandleFunc("GET /api/deposit/interbank/{id}", h.GetInterbankDetail)
 	mux.HandleFunc("POST /api/deposit/interbank/{id}/movements", h.SubmitIBMMovement)
+
+	// Interbank borrowing (tiền vay TCTD khác) — the mirror of the placement side.
+	mux.HandleFunc("/api/deposit/borrows", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.ListBorrows(w, r)
+		case http.MethodPost:
+			h.CreateBorrow(w, r)
+		default:
+			writeMethodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("GET /api/deposit/borrows/{id}", h.GetBorrowDetail)
+	mux.HandleFunc("POST /api/deposit/borrows/{id}/decision", h.DecideBorrow)
+	mux.HandleFunc("POST /api/deposit/borrows/{id}/movements", h.SubmitBorrowMovement)
 	mux.HandleFunc("/api/deposit/ibm-products", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -107,6 +122,7 @@ func NewRouter(h *handler.DepositHandler, ai *handler.InternalAIHandler, rep *ha
 	// handler). Never exposed to browsers.
 	mux.Handle("GET /internal/reporting/deposit-savings", internalReportingService(http.HandlerFunc(rep.InternalReportingSavings)))
 	mux.Handle("GET /internal/reporting/ibm-deposits", internalReportingService(http.HandlerFunc(rep.InternalReportingIBMDeposits)))
+	mux.Handle("GET /internal/reporting/ibm-borrows", internalReportingService(http.HandlerFunc(rep.InternalReportingIBMBorrows)))
 
 	return mux
 }

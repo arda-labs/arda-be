@@ -40,6 +40,14 @@ func (s *stubReportingSavingsSource) ListIBMDepositsForReporting(_ context.Conte
 	return nil, nil
 }
 
+// ListBorrowsForReporting satisfies the interbank-borrow reporting source.
+func (s *stubReportingSavingsSource) ListBorrowsForReporting(_ context.Context, tenantID, orgCode string) ([]repository.IBMBorrowReportingRow, error) {
+	if tenantID == "" {
+		return nil, context.Canceled
+	}
+	return nil, nil
+}
+
 func reportingTestRouter() http.Handler {
 	source := &stubReportingSavingsSource{items: []repository.Savings{{
 		SavingsCode:    "SAV-001",
@@ -53,7 +61,7 @@ func reportingTestRouter() http.Handler {
 		CurrencyCode:   "VND",
 		Status:         "ACTIVE",
 	}}}
-	return NewRouter(nil, nil, handler.NewInternalReportingHandler(source, source))
+	return NewRouter(nil, nil, handler.NewInternalReportingHandler(source, source, source))
 }
 
 func reportingSignedRequest(t *testing.T, router http.Handler, path, tenantID, token string) *httptest.ResponseRecorder {

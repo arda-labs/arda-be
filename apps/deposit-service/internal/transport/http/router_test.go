@@ -68,8 +68,11 @@ func (f *fakeProducts) Get(context.Context, string, string) (*repository.Product
 }
 
 type fakeIBM struct {
-	depositID string
-	kind      string
+	depositID  string
+	kind       string
+	borrowCode string
+	borrowID   string
+	decision   string
 }
 
 func (f *fakeIBM) ListIBMProducts(context.Context, string, bool) ([]repository.IBMProduct, error) {
@@ -93,6 +96,32 @@ func (f *fakeIBM) SubmitMovement(_ context.Context, _, _, depositID, kind string
 	f.depositID = depositID
 	f.kind = kind
 	return &repository.IBMMovement{ID: "mv-1", DepositID: depositID, Kind: kind}, nil
+}
+
+// ── interbank borrowing (mirror of the placement side) ──
+
+func (f *fakeIBM) ListBorrows(context.Context, string, []string, string) ([]repository.InterbankBorrow, error) {
+	return nil, nil
+}
+
+func (f *fakeIBM) SubmitBorrow(_ context.Context, _, _ string, in *repository.InterbankBorrow) (*repository.InterbankBorrow, error) {
+	f.borrowCode = in.BorrowCode
+	return &repository.InterbankBorrow{ID: "ibmb-1", BorrowCode: in.BorrowCode, Status: "PENDING_APPROVAL"}, nil
+}
+
+func (f *fakeIBM) DecideBorrow(_ context.Context, _, id, decision, _, _ string) (*repository.InterbankBorrow, error) {
+	f.borrowID = id
+	f.decision = decision
+	return &repository.InterbankBorrow{ID: id, Status: "ACTIVE"}, nil
+}
+
+func (f *fakeIBM) GetBorrowDetail(_ context.Context, _, id string) (*repository.InterbankBorrow, []repository.IBMBorrowMovement, error) {
+	return &repository.InterbankBorrow{ID: id}, nil, nil
+}
+
+func (f *fakeIBM) SubmitBorrowMovement(_ context.Context, _, borrowID, _ string, in *repository.IBMBorrowMovement) (*repository.IBMBorrowMovement, error) {
+	f.borrowID = borrowID
+	return &repository.IBMBorrowMovement{ID: "bmv-1", BorrowID: borrowID, Kind: in.Kind}, nil
 }
 
 type fakeInterest struct{}

@@ -16,6 +16,7 @@ import (
 type InternalReportingHandler struct {
 	savings reportingSavingsSource
 	ibm     reportingIBMSource
+	borrows reportingIBMBorrowSource
 }
 
 // reportingSavingsSource is the slice of SettlementService the reporting
@@ -29,8 +30,13 @@ type reportingIBMSource interface {
 	ListIBMDepositsForReporting(ctx context.Context, tenantID, orgCode string) ([]repository.IBMReportingRow, error)
 }
 
-func NewInternalReportingHandler(savings reportingSavingsSource, ibm reportingIBMSource) *InternalReportingHandler {
-	return &InternalReportingHandler{savings: savings, ibm: ibm}
+// reportingIBMBorrowSource is the interbank-borrow slice of SettlementService.
+type reportingIBMBorrowSource interface {
+	ListBorrowsForReporting(ctx context.Context, tenantID, orgCode string) ([]repository.IBMBorrowReportingRow, error)
+}
+
+func NewInternalReportingHandler(savings reportingSavingsSource, ibm reportingIBMSource, borrows reportingIBMBorrowSource) *InternalReportingHandler {
+	return &InternalReportingHandler{savings: savings, ibm: ibm, borrows: borrows}
 }
 
 type reportingSavingsResponse struct {
@@ -157,4 +163,71 @@ func (h *InternalReportingHandler) InternalReportingIBMDeposits(w http.ResponseW
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusOK, reportingIBMResponse{AsOf: asOf, Items: toReportingIBM(items)})
+}
+
+type reportingIBMBorrowResponse struct {
+	AsOf  string               `json:"as_of"`
+	Items []reportingIBMBorrow `json:"items"`
+}
+
+// reportingIBMBorrow is one interbank borrowing exposed to the reporting ETL.
+type reportingIBMBorrow struct {
+	BorrowCode       string  `json:"borrow_code"`
+	CounterpartyCode string  `json:"counterparty_code"`
+	LenderType       string  `json:"lender_type"`
+	FundingPurpose   string  `json:"funding_purpose"`
+	TermMonths       int     `json:"term_months"`
+	DrawdownDate     string  `json:"drawdown_date"`
+	MaturityDate     string  `json:"maturity_date"`
+	PrincipalMinor   int64   `json:"principal_minor"`
+	OutstandingMinor int64   `json:"outstanding_minor"`
+	AccruedMinor     int64   `json:"accrued_minor"`
+	InterestRate     float64 `json:"interest_rate"`
+	CurrencyCode     string  `json:"currency_code"`
+	OrgCode          string  `json:"org_code"`
+	Status           string  `json:"status"`
+}
+
+func toReportingIBMBorrow(items []repository.IBMBorrowReportingRow) []reportingIBMBorrow {
+	out := make([]reportingIBMBorrow, 0, len(items))
+	for _, item := range items {
+		out = append(out, reportingIBMBorrow{
+			BorrowCode:       item.BorrowCode,
+			CounterpartyCode: item.CounterpartyCode,
+			LenderType:       item.LenderType,
+			FundingPurpose:   item.FundingPurpose,
+			TermMonths:       item.TermMonths,
+			DrawdownDate:     item.DrawdownDate,
+			MaturityDate:     item.MaturityDate,
+			PrincipalMinor:   item.PrincipalMinor,
+			OutstandingMinor: item.OutstandingMinor,
+			AccruedMinor:     item.AccruedMinor,
+			InterestRate:     item.InterestRate,
+			CurrencyCode:     item.CurrencyCode,
+			OrgCode:          item.OrgCode,
+			Status:           item.Status,
+		})
+	}
+	return out
+}
+
+// InternalReportingIBMBorrows serves GET /internal/reporting/ibm-borrows for
+// statistical-service (PCF "Tiền vay TCTD" indicators).
+func (h *InternalReportingHandler) InternalReportingIBMBorrows(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		aiMethodNotAllowed(w, r)
+		return
+	}
+	tenantID, ok := aiTenantID(w, r)
+	if !ok {
+		return
+	}
+	orgCode := strings.TrimSpace(r.URL.Query().Get("org_code"))
+	asOf := strings.TrimSpace(r.URL.Query().Get("as_of"))
+	items, err := h.borrows.ListBorrowsForReporting(r.Context(), tenantID, orgCode)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, reportingIBMBorrowResponse{AsOf: asOf, Items: toReportingIBMBorrow(items)})
 }
