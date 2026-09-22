@@ -176,7 +176,7 @@ func (r *MemberRepository) CreateMember(ctx context.Context, m *domain.Member) (
 		INSERT INTO crm_members
 			(tenant_id, member_code, customer_code, org_code, member_book_no, member_type_code,
 			 open_date, estb_capital_minor, add_capital_minor, total_capital_minor, member_status, created_by)
-		VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,$7::date,$8,$9,$8+$9,$10,$11)
+		VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,$7::date,$8::bigint,$9::bigint,$8::bigint + $9::bigint,$10,$11)
 		RETURNING `+memberColumns,
 		m.TenantID, memberCode, m.CustomerCode, m.OrgCode, m.MemberBookNo, m.MemberTypeCode,
 		m.OpenDate, m.EstbCapitalMinor, m.AddCapitalMinor, m.MemberStatus, m.CreatedBy)
