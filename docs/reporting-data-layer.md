@@ -312,10 +312,15 @@ trong Go nên không chạm đường decode/serialize):
 11. **`$8 + $9` với tham số untyped** trong INSERT `crm_members` →
     `SQLSTATE 42725 "operator is not unique: unknown + unknown"`. Mọi register
     fail ở INSERT dù body đã decode đúng. Sửa: `$8::bigint + $9::bigint`.
+12. **`CreateCase` thiếu `TenantID`** (và `CaseCode`/`PrimaryObjectType/ID`/
+    `DomainService`) → workflow-service trả `InvalidArgument: tenantId is
+    required`; mọi yêu cầu góp vốn fail 400 **sau khi** DRAFT đã persist (bản
+    ghi mồ côi). Sửa: dựng `CaseCreate` như luồng đăng ký khách hàng đang chạy.
 
 Quy tắc rút ra: contract HTTP phải verify bằng **payload thật của FE**
 (snake_case), không bằng struct Go; và expression SQL phải cast kiểu tường minh
-khi cộng tham số.
+khi cộng tham số; gọi service khác phải theo **đủ trường bắt buộc** như luồng
+đã chạy, không chỉ trường mình thấy cần.
 
 ## 10. Non-goals
 
