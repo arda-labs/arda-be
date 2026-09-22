@@ -15,6 +15,7 @@ type stubIndicatorResultService struct {
 	saved     *repository.IndicatorResult
 	seenTen   string
 	seenActor string
+	report    *indicator.ReconciliationReport
 }
 
 func (s *stubIndicatorResultService) UpsertIndicatorResult(_ context.Context, tenantID, actor string, in *repository.IndicatorResult) (*repository.IndicatorResult, error) {
@@ -41,7 +42,56 @@ func (s *stubIndicatorResultService) ComputeAllIndicators(_ context.Context, _, 
 
 func (s *stubIndicatorResultService) ReconcileAccountingIndicators(_ context.Context, tenantID, periodCode string) (indicator.ReconciliationReport, error) {
 	s.seenTen = tenantID
+	if s.report != nil {
+		return *s.report, nil
+	}
 	return indicator.ReconciliationReport{PeriodCode: periodCode, Checked: 0, TrialBalanced: true}, nil
+}
+
+// TestReconcileJobFailsTheStepOnMismatch: the EOD engine treats a non-2xx status
+// as a failed step, so a mismatch or an unbalanced trial balance must not be
+// reported as success — that is the whole point of running the check at COB.
+func TestReconcileJobFailsTheStepOnMismatch(t *testing.T) {
+	h := NewIndicatorResultHandler(&stubIndicatorResultService{
+		report: &indicator.ReconciliationReport{
+			Checked:    2,
+			Mismatches: []indicator.ReconcileResult{{Code: "40001.01"}},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/internal/jobs/reconcile-accounting?to_date=2026-09-22", nil)
+	req.Header.Set("X-Tenant-Id", "tenant-1")
+	res := httptest.NewRecorder()
+	h.RunReconcileAccountingJob(res, req)
+	if res.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("mismatch status = %d, want %d", res.Code, http.StatusUnprocessableEntity)
+	}
+}
+
+// TestReconcileJobSucceedsWhenCleanAndDerivesPeriod: a clean run is 200 and the
+// period is taken from to_date when period_code is absent.
+func TestReconcileJobSucceedsWhenCleanAndDerivesPeriod(t *testing.T) {
+	stub := &stubIndicatorResultService{}
+	h := NewIndicatorResultHandler(stub)
+	req := httptest.NewRequest(http.MethodPost, "/internal/jobs/reconcile-accounting?to_date=2026-09-22", nil)
+	req.Header.Set("X-Tenant-Id", "tenant-1")
+	res := httptest.NewRecorder()
+	h.RunReconcileAccountingJob(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("clean status = %d, want %d (body %s)", res.Code, http.StatusOK, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), `"period_code":"2026-09"`) {
+		t.Fatalf("period not derived from to_date: %s", res.Body.String())
+	}
+}
+
+func TestReconcileIndicatorsRequiresTenant(t *testing.T) {
+	h := NewIndicatorResultHandler(&stubIndicatorResultService{})
+	req := httptest.NewRequest(http.MethodGet, "/api/statistical/indicators/reconcile?period_code=2026-09", nil)
+	res := httptest.NewRecorder()
+	h.ReconcileIndicators(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusForbidden)
+	}
 }
 
 func TestIndicatorResult_TenantRequired(t *testing.T) {
