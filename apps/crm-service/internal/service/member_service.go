@@ -138,6 +138,9 @@ type SubmitCapitalRequestInput struct {
 // never be approved (e.g. a withdrawal beyond the stake) never enters the
 // approval queue.
 func (s *MemberService) SubmitCapitalRequest(ctx context.Context, tenantID string, in SubmitCapitalRequestInput) (*domain.MemberRequest, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, fmt.Errorf("tenant scope is required")
+	}
 	if !validRequestType(in.RequestType) {
 		return nil, fmt.Errorf("request_type must be one of %s", strings.Join(domain.MemberRequestTypes, ", "))
 	}
@@ -184,9 +187,16 @@ func (s *MemberService) SubmitCapitalRequest(ctx context.Context, tenantID strin
 		return created, nil
 	}
 	cs, err := s.workflow.CreateCase(ctx, workflowclient.CaseCreate{
-		CaseType:  MemberCaseType,
-		Title:     fmt.Sprintf("Vốn góp thành viên %s — %s", member.MemberCode, in.RequestType),
-		CreatedBy: in.Actor,
+		TenantID:          tenantID,
+		CaseType:          MemberCaseType,
+		CaseCode:          member.MemberCode + "-" + created.ID,
+		Title:             fmt.Sprintf("Vốn góp thành viên %s — %s", member.MemberCode, in.RequestType),
+		PrimaryObjectType: "CRM_MEMBER_REQUEST",
+		PrimaryObjectID:   created.ID,
+		DomainService:     "crm-service",
+		Priority:          "NORMAL",
+		CreatedBy:         in.Actor,
+		IdempotencyKey:    in.IdempotencyKey,
 	})
 	if err != nil {
 		return created, fmt.Errorf("create member case: %w", err)
