@@ -85,6 +85,12 @@ var factColumns = map[string]map[string]bool{
 		"member_code": true, "org_code": true, "request_type": true,
 		"status": true, "amount_minor": true,
 	},
+	"rpt_fact_ibm_deposit_daily": {
+		"deposit_code": true, "counterparty_code": true, "product_code": true,
+		"term_months": true, "status": true, "currency_code": true,
+		"org_code": true, "principal_minor": true, "accrued_minor": true,
+		"interest_rate": true,
+	},
 }
 
 // numericFactColumns marks which whitelisted fact columns hold numbers, so a
@@ -114,18 +120,24 @@ var numericFactColumns = map[string]map[string]bool{
 	"rpt_fact_member_request_daily": {
 		"amount_minor": true,
 	},
+	"rpt_fact_ibm_deposit_daily": {
+		"term_months": true, "principal_minor": true, "accrued_minor": true,
+		"interest_rate": true,
+	},
 }
 
 // dimDef maps an indicator dimension name to the fact column it slices on.
 // Only these dimensions are accepted in a compute request.
 var dimDef = map[string]string{
-	"org":         "org_code",
-	"product":     "product_code",
-	"fund_type":   "fund_type_code",
-	"coll_type":   "coll_type_code",
-	"segment":     "segment",
-	"debt_group":  "debt_group_code",
-	"member_type": "member_type_code",
+	"org":          "org_code",
+	"product":      "product_code",
+	"fund_type":    "fund_type_code",
+	"coll_type":    "coll_type_code",
+	"segment":      "segment",
+	"debt_group":   "debt_group_code",
+	"member_type":  "member_type_code",
+	"counterparty": "counterparty_code",
+	"term":         "term_months",
 }
 
 // DimensionNames is the sorted list of accepted dimension names (stable order
@@ -465,7 +477,7 @@ func (e *Engine) leaf(ctx context.Context, tenantID, periodCode string, f *Formu
 			continue
 		}
 		args = append(args, values)
-		where = append(where, fmt.Sprintf("%s = ANY($%d::text[])", col, len(args)))
+		where = append(where, fmt.Sprintf("%s = ANY($%d::text[])", eqExpr(f.Fact, col), len(args)))
 	}
 
 	// Dimension slicing from the request.
@@ -483,7 +495,7 @@ func (e *Engine) leaf(ctx context.Context, tenantID, periodCode string, f *Formu
 			return 0, fmt.Errorf("dimension %q is not available on %s", name, f.Fact)
 		}
 		args = append(args, dims[name])
-		where = append(where, fmt.Sprintf("%s = $%d::text", col, len(args)))
+		where = append(where, fmt.Sprintf("%s = $%d::text", eqExpr(f.Fact, col), len(args)))
 	}
 
 	value, err := e.repo.ScalarQuery(ctx, "SELECT "+expr+" FROM "+f.Fact+" WHERE "+strings.Join(where, " AND "), args)
@@ -548,6 +560,18 @@ func comparisonFilter(raw json.RawMessage) (string, []string, bool) {
 		return "", nil, false
 	}
 	return spec.Op, values, true
+}
+
+// eqExpr renders an equality predicate operand. A numeric column (including an
+// integer one like term_months) is cast to text so it can be compared against
+// the text-bound literals the equality path uses; casting a column to text
+// cannot change the WHERE semantics for equality. Non-numeric columns are used
+// as-is.
+func eqExpr(fact, col string) string {
+	if numericFactColumns[fact][col] {
+		return col + "::text"
+	}
+	return col
 }
 
 // validFilterOp is the closed set of comparison operators (never arbitrary

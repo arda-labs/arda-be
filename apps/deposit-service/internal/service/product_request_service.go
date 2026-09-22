@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
-	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 )
 
 const (

@@ -1,4 +1,4 @@
-﻿package http
+package http
 
 import (
 	"bytes"
@@ -187,5 +187,3 @@ func TestRouterRejectsWrongMethodOnActionRoutes(t *testing.T) {
 		t.Fatalf("status = %d, want 405", rec.Code)
 	}
 }
-
-

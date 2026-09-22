@@ -31,6 +31,15 @@ func (s *stubReportingSavingsSource) ListSavingsForReporting(_ context.Context, 
 	return s.items, nil
 }
 
+// ListIBMDepositsForReporting satisfies the interbank reporting source; the
+// savings-focused test asserts nothing about it.
+func (s *stubReportingSavingsSource) ListIBMDepositsForReporting(_ context.Context, tenantID, orgCode string) ([]repository.IBMReportingRow, error) {
+	if tenantID == "" {
+		return nil, context.Canceled
+	}
+	return nil, nil
+}
+
 func reportingTestRouter() http.Handler {
 	source := &stubReportingSavingsSource{items: []repository.Savings{{
 		SavingsCode:    "SAV-001",
@@ -44,7 +53,7 @@ func reportingTestRouter() http.Handler {
 		CurrencyCode:   "VND",
 		Status:         "ACTIVE",
 	}}}
-	return NewRouter(nil, nil, handler.NewInternalReportingHandler(source))
+	return NewRouter(nil, nil, handler.NewInternalReportingHandler(source, source))
 }
 
 func reportingSignedRequest(t *testing.T, router http.Handler, path, tenantID, token string) *httptest.ResponseRecorder {

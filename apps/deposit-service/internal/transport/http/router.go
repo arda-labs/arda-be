@@ -106,6 +106,7 @@ func NewRouter(h *handler.DepositHandler, ai *handler.InternalAIHandler, rep *ha
 	// the full tenant slice here (signed caller; tenant re-checked inside the
 	// handler). Never exposed to browsers.
 	mux.Handle("GET /internal/reporting/deposit-savings", internalReportingService(http.HandlerFunc(rep.InternalReportingSavings)))
+	mux.Handle("GET /internal/reporting/ibm-deposits", internalReportingService(http.HandlerFunc(rep.InternalReportingIBMDeposits)))
 
 	return mux
 }

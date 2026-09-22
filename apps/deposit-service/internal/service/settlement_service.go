@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
-	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
 	ardatime "github.com/arda-labs/arda/libs/go/arda-time"

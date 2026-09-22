@@ -11,3 +11,9 @@ import (
 func (s *SettlementService) ListSavingsForReporting(ctx context.Context, tenantID, orgCode string) ([]repository.Savings, error) {
 	return s.repo.ListSavingsForReporting(ctx, tenantID, orgCode)
 }
+
+// ListIBMDepositsForReporting is the statistical ETL read for the interbank
+// deposit indicators (PCF topic "Tiền gửi TCTD").
+func (s *SettlementService) ListIBMDepositsForReporting(ctx context.Context, tenantID, orgCode string) ([]repository.IBMReportingRow, error) {
+	return s.repo.ListIBMDepositsForReporting(ctx, tenantID, orgCode)
+}

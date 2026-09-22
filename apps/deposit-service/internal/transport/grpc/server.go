@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/service"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	depositv1 "github.com/arda-labs/arda/libs/go/arda-proto/deposit/v1"
-	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

@@ -64,6 +64,7 @@ type ExtractResult struct {
 	Customers        int      `json:"customers"`
 	Members          int      `json:"members"`
 	MemberRequests   int      `json:"member_requests"`
+	IBMDeposits      int      `json:"ibm_deposits"`
 	SkippedSources   []string `json:"skipped_sources,omitempty"`
 }
 
@@ -90,6 +91,7 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		customers   []customer
 		members     []member
 		memberReqs  []memberRequest
+		ibmDeposits []ibmDeposit
 	)
 	if s.loanURL == "" {
 		result.SkippedSources = append(result.SkippedSources, "loan-service")
@@ -108,6 +110,9 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		var err error
 		if savings, err = s.fetchDepositSavings(ctx, tenantID, businessDate); err != nil {
 			return result, fmt.Errorf("deposit extract: %w", err)
+		}
+		if ibmDeposits, err = s.fetchIBMDeposits(ctx, tenantID, businessDate); err != nil {
+			return result, fmt.Errorf("interbank deposit extract: %w", err)
 		}
 	}
 	if s.capitalURL == "" {
@@ -195,6 +200,22 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 			return result, err
 		}
 		result.DepositSavings = len(savings)
+
+		if err := replaceFacts(ctx, tx, "rpt_fact_ibm_deposit_daily", tenantID, businessDate, len(ibmDeposits), func() error {
+			for _, item := range ibmDeposits {
+				if _, err := tx.ExecContext(ctx, insertIBMDepositFact,
+					tenantID, businessDate, item.OrgCode, item.DepositCode, item.CounterpartyCode,
+					item.ProductCode, item.TermMonths, nullDate(item.DepositDate), nullDate(item.MaturityDate),
+					item.Status, item.CurrencyCode, item.PrincipalMinor, item.AccruedMinor,
+					item.InterestRate); err != nil {
+					return fmt.Errorf("insert interbank deposit fact %s: %w", item.DepositCode, err)
+				}
+			}
+			return nil
+		}); err != nil {
+			return result, err
+		}
+		result.IBMDeposits = len(ibmDeposits)
 	}
 
 	if s.capitalURL != "" {
@@ -281,6 +302,8 @@ func (s *Service) ExtractDaily(ctx context.Context, tenantID, businessDate strin
 		"loan_agreements", result.LoanAgreements, "loan_collaterals", result.LoanCollaterals,
 		"deposit_savings", result.DepositSavings, "capital_contracts", result.CapitalContracts,
 		"capital_movements", result.CapitalMovements, "customers", result.Customers,
+		"members", result.Members, "member_requests", result.MemberRequests,
+		"ibm_deposits", result.IBMDeposits,
 		"skipped", result.SkippedSources)
 	return result, nil
 }
@@ -336,6 +359,12 @@ const insertMemberRequestFact = `INSERT INTO rpt_fact_member_request_daily
 	(tenant_id, business_date, org_code, request_key, member_code, request_type,
 	 status, amount_minor, request_date)
 	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9::date)`
+
+const insertIBMDepositFact = `INSERT INTO rpt_fact_ibm_deposit_daily
+	(tenant_id, business_date, org_code, deposit_code, counterparty_code, product_code,
+	 term_months, deposit_date, maturity_date, status, currency_code,
+	 principal_minor, accrued_minor, interest_rate)
+	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8::date, $9::date, $10, $11, $12, $13, $14)`
 
 // memberRequestKey is the stable per-request identity inside a daily fact. Use
 // the source request id: (member, type, date) is NOT unique — a member may make
@@ -416,6 +445,14 @@ func (s *Service) fetchMembers(ctx context.Context, tenantID, businessDate strin
 func (s *Service) fetchMemberRequests(ctx context.Context, tenantID, businessDate string) ([]memberRequest, error) {
 	var env envelope[memberRequestResult]
 	if err := s.fetch(ctx, s.crmURL, "crm-service", "/internal/reporting/member-requests", tenantID, businessDate, &env); err != nil {
+		return nil, err
+	}
+	return env.Result.Items, nil
+}
+
+func (s *Service) fetchIBMDeposits(ctx context.Context, tenantID, businessDate string) ([]ibmDeposit, error) {
+	var env envelope[ibmDepositResult]
+	if err := s.fetch(ctx, s.depositURL, "deposit-service", "/internal/reporting/ibm-deposits", tenantID, businessDate, &env); err != nil {
 		return nil, err
 	}
 	return env.Result.Items, nil
@@ -596,4 +633,25 @@ type memberRequest struct {
 	Status      string `json:"status"`
 	AmountMinor int64  `json:"amount_minor"`
 	RequestDate string `json:"request_date"`
+}
+
+type ibmDepositResult struct {
+	AsOf  string       `json:"as_of"`
+	Items []ibmDeposit `json:"items"`
+}
+
+// ibmDeposit is one interbank deposit contract (PCF topic "Tiền gửi TCTD").
+type ibmDeposit struct {
+	DepositCode      string  `json:"deposit_code"`
+	CounterpartyCode string  `json:"counterparty_code"`
+	ProductCode      string  `json:"product_code"`
+	TermMonths       int     `json:"term_months"`
+	DepositDate      string  `json:"deposit_date"`
+	MaturityDate     string  `json:"maturity_date"`
+	PrincipalMinor   int64   `json:"principal_minor"`
+	AccruedMinor     int64   `json:"accrued_minor"`
+	InterestRate     float64 `json:"interest_rate"`
+	CurrencyCode     string  `json:"currency_code"`
+	OrgCode          string  `json:"org_code"`
+	Status           string  `json:"status"`
 }

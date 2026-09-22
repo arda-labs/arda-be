@@ -15,6 +15,7 @@ import (
 // it keeps org_code (the RLS/dimension key) which the AI surface drops.
 type InternalReportingHandler struct {
 	savings reportingSavingsSource
+	ibm     reportingIBMSource
 }
 
 // reportingSavingsSource is the slice of SettlementService the reporting
@@ -23,8 +24,13 @@ type reportingSavingsSource interface {
 	ListSavingsForReporting(ctx context.Context, tenantID, orgCode string) ([]repository.Savings, error)
 }
 
-func NewInternalReportingHandler(savings reportingSavingsSource) *InternalReportingHandler {
-	return &InternalReportingHandler{savings: savings}
+// reportingIBMSource is the interbank-deposit slice of SettlementService.
+type reportingIBMSource interface {
+	ListIBMDepositsForReporting(ctx context.Context, tenantID, orgCode string) ([]repository.IBMReportingRow, error)
+}
+
+func NewInternalReportingHandler(savings reportingSavingsSource, ibm reportingIBMSource) *InternalReportingHandler {
+	return &InternalReportingHandler{savings: savings, ibm: ibm}
 }
 
 type reportingSavingsResponse struct {
@@ -87,4 +93,68 @@ func (h *InternalReportingHandler) InternalReportingSavings(w http.ResponseWrite
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusOK, reportingSavingsResponse{AsOf: asOf, Items: toReportingSavings(items)})
+}
+
+type reportingIBMResponse struct {
+	AsOf  string         `json:"as_of"`
+	Items []reportingIBM `json:"items"`
+}
+
+// reportingIBM is one interbank deposit exposed to the reporting ETL: the
+// business fields plus org_code, without internal row id or audit columns.
+type reportingIBM struct {
+	DepositCode      string  `json:"deposit_code"`
+	CounterpartyCode string  `json:"counterparty_code"`
+	ProductCode      string  `json:"product_code"`
+	TermMonths       int     `json:"term_months"`
+	DepositDate      string  `json:"deposit_date"`
+	MaturityDate     string  `json:"maturity_date"`
+	PrincipalMinor   int64   `json:"principal_minor"`
+	AccruedMinor     int64   `json:"accrued_minor"`
+	InterestRate     float64 `json:"interest_rate"`
+	CurrencyCode     string  `json:"currency_code"`
+	OrgCode          string  `json:"org_code"`
+	Status           string  `json:"status"`
+}
+
+func toReportingIBM(items []repository.IBMReportingRow) []reportingIBM {
+	out := make([]reportingIBM, 0, len(items))
+	for _, item := range items {
+		out = append(out, reportingIBM{
+			DepositCode:      item.DepositCode,
+			CounterpartyCode: item.CounterpartyCode,
+			ProductCode:      item.ProductCode,
+			TermMonths:       item.TermMonths,
+			DepositDate:      item.DepositDate,
+			MaturityDate:     item.MaturityDate,
+			PrincipalMinor:   item.PrincipalMinor,
+			AccruedMinor:     item.AccruedMinor,
+			InterestRate:     item.InterestRate,
+			CurrencyCode:     item.CurrencyCode,
+			OrgCode:          item.OrgCode,
+			Status:           item.Status,
+		})
+	}
+	return out
+}
+
+// InternalReportingIBMDeposits serves GET /internal/reporting/ibm-deposits for
+// statistical-service (PCF "Tiền gửi TCTD" indicators).
+func (h *InternalReportingHandler) InternalReportingIBMDeposits(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		aiMethodNotAllowed(w, r)
+		return
+	}
+	tenantID, ok := aiTenantID(w, r)
+	if !ok {
+		return
+	}
+	orgCode := strings.TrimSpace(r.URL.Query().Get("org_code"))
+	asOf := strings.TrimSpace(r.URL.Query().Get("as_of"))
+	items, err := h.ibm.ListIBMDepositsForReporting(r.Context(), tenantID, orgCode)
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, reportingIBMResponse{AsOf: asOf, Items: toReportingIBM(items)})
 }
