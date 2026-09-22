@@ -46,9 +46,9 @@ func ReconcileIndicatorFormulas(ctx context.Context, repo *repository.Statistica
 		}
 		blocks[code] = f.Accounts
 	}
-	if len(blocks) == 0 {
-		return ReconciliationReport{PeriodCode: periodCode, TrialBalanced: true}, nil
-	}
+	// Always reconcile, even with no account indicators: ReconcileAccounting
+	// still runs the trial-balance balance check, which validates the fact and
+	// the ETL before any accounting indicator is seeded.
 	return ReconcileAccounting(ctx, repo, tenantID, periodCode, blocks)
 }
 
