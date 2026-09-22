@@ -316,6 +316,16 @@ trong Go nên không chạm đường decode/serialize):
     `DomainService`) → workflow-service trả `InvalidArgument: tenantId is
     required`; mọi yêu cầu góp vốn fail 400 **sau khi** DRAFT đã persist (bản
     ghi mồ côi). Sửa: dựng `CaseCreate` như luồng đăng ký khách hàng đang chạy.
+13. **Checker token version lệch một nhịp**: `SubmitCase` chạy **trước**
+    `MarkMemberRequestSubmitted` (thao tác này mới tăng `version`), nên case
+    variable `dataVersion` luôn nhỏ hơn version thật của request. `ST_Execute`
+    retry vô hạn với `member changed while you were editing`; vốn góp không bao
+    giờ chuyển. Sửa: mark SUBMITTED trước rồi mới submit case với version
+    **sau** khi tăng; thêm `orgId`/`actorUserId` — đúng key `crmJobContext` đọc.
+
+Ghi nhận thêm (chưa sửa, không thuộc member): timeline completion log WARN
+`SQLSTATE 42P08 inconsistent types deduced for parameter $2` — sự kiện timeline
+bị mất im lặng ở **mọi** completion, không riêng member.
 
 Quy tắc rút ra: contract HTTP phải verify bằng **payload thật của FE**
 (snake_case), không bằng struct Go; và expression SQL phải cast kiểu tường minh
