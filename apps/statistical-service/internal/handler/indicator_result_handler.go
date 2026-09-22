@@ -26,6 +26,11 @@ type indicatorResultService interface {
 	ComputeIndicator(ctx context.Context, tenantID, actor, code string, params map[string]string) (*repository.IndicatorResult, error)
 	ComputeAllIndicators(ctx context.Context, tenantID, actor string, params map[string]string) (map[string]any, error)
 	ReconcileAccountingIndicators(ctx context.Context, tenantID, periodCode string) (indicator.ReconciliationReport, error)
+	UpsertRule(ctx context.Context, tenantID, actor string, in *repository.IndicatorRule) (*repository.IndicatorRule, error)
+	ListRules(ctx context.Context, tenantID string, onlyActive bool) ([]repository.IndicatorRule, error)
+	ListAlerts(ctx context.Context, tenantID, status, periodCode string) ([]repository.IndicatorAlert, error)
+	AckAlert(ctx context.Context, tenantID, id, actor string) error
+	EvaluateIndicatorRules(ctx context.Context, tenantID, periodCode string) (map[string]any, error)
 }
 
 func NewIndicatorResultHandler(svc indicatorResultService) *IndicatorResultHandler {

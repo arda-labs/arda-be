@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/arda-labs/arda/apps/statistical-service/internal/indicator"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/reports"
@@ -392,6 +393,139 @@ func (s *StatisticalService) ReconcileAccountingIndicators(ctx context.Context, 
 		formulas[ind.Code] = ind.Formula
 	}
 	return indicator.ReconcileIndicatorFormulas(ctx, s.repo, tenantID, periodCode, formulas)
+}
+
+// UpsertRule creates or updates one threshold rule. The indicator it watches
+// must exist, so a rule cannot be pointed at something the engine cannot
+// produce.
+func (s *StatisticalService) UpsertRule(ctx context.Context, tenantID, actor string, in *repository.IndicatorRule) (*repository.IndicatorRule, error) {
+	in.TenantID = tenantID
+	in.CreatedBy = actor
+	indicators, err := s.repo.ListIndicators(ctx, repository.ListIndicatorsParams{TenantID: tenantID})
+	if err != nil {
+		return nil, err
+	}
+	known := false
+	for _, ind := range indicators {
+		if ind.Code == in.IndicatorCode {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "indicator_code does not exist: "+in.IndicatorCode)
+	}
+	return s.repo.UpsertRule(ctx, in)
+}
+
+// ListRules returns the tenant's threshold rules.
+func (s *StatisticalService) ListRules(ctx context.Context, tenantID string, onlyActive bool) ([]repository.IndicatorRule, error) {
+	return s.repo.ListRules(ctx, tenantID, onlyActive)
+}
+
+// ListAlerts returns the tenant's indicator alerts.
+func (s *StatisticalService) ListAlerts(ctx context.Context, tenantID, status, periodCode string) ([]repository.IndicatorAlert, error) {
+	return s.repo.ListAlerts(ctx, tenantID, status, periodCode)
+}
+
+// AckAlert acknowledges one alert.
+func (s *StatisticalService) AckAlert(ctx context.Context, tenantID, id, actor string) error {
+	return s.repo.AckAlert(ctx, tenantID, id, actor)
+}
+
+// EvaluateIndicatorRules compares each active rule against the period's stored
+// indicator result and records or clears the matching alert. It is the
+// proactive half of the reporting layer: a breach is recorded at COB without
+// anyone opening a report.
+//
+// Idempotent per (rule, period, slice): re-running a period updates the same
+// alert row, and a recovered indicator clears its stale alert.
+func (s *StatisticalService) EvaluateIndicatorRules(ctx context.Context, tenantID, periodCode string) (map[string]any, error) {
+	if strings.TrimSpace(periodCode) == "" {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "period_code is required")
+	}
+	rules, err := s.repo.ListRules(ctx, tenantID, true)
+	if err != nil {
+		return nil, err
+	}
+	raised, cleared, skipped := 0, 0, 0
+	for _, rule := range rules {
+		results, err := s.repo.ListIndicatorResults(ctx, repository.ListIndicatorResultsParams{
+			TenantID:      tenantID,
+			IndicatorCode: rule.IndicatorCode,
+			PeriodCode:    periodCode,
+		})
+		if err != nil {
+			return nil, err
+		}
+		var value *float64
+		for _, r := range results {
+			if r.DimensionKey == rule.DimensionKey && r.Value != nil {
+				value = r.Value
+				break
+			}
+		}
+		if value == nil {
+			// The indicator has not been computed for this period: nothing to
+			// judge, and no alert to clear either.
+			skipped++
+			continue
+		}
+		if compareValues(*value, rule.Operator, rule.Threshold) {
+			msg := rule.Message
+			if msg == "" {
+				msg = fmt.Sprintf("%s %s %g (giá trị %g)", rule.Name, rule.Operator, rule.Threshold, *value)
+			}
+			if _, err := s.repo.UpsertAlert(ctx, &repository.IndicatorAlert{
+				TenantID:      tenantID,
+				RuleCode:      rule.Code,
+				IndicatorCode: rule.IndicatorCode,
+				DimensionKey:  rule.DimensionKey,
+				PeriodCode:    periodCode,
+				Value:         value,
+				Threshold:     rule.Threshold,
+				Operator:      rule.Operator,
+				Severity:      rule.Severity,
+				Message:       msg,
+			}); err != nil {
+				return nil, err
+			}
+			raised++
+			continue
+		}
+		if err := s.repo.ClearAlert(ctx, tenantID, rule.Code, periodCode, rule.DimensionKey); err != nil {
+			return nil, err
+		}
+		cleared++
+	}
+	return map[string]any{
+		"period_code": periodCode,
+		"rules":       len(rules),
+		"raised":      raised,
+		"cleared":     cleared,
+		"skipped":     skipped,
+	}, nil
+}
+
+// compareValues applies the rule operator. The operator is a closed set
+// (ValidRuleOperator), never free text.
+func compareValues(value float64, operator string, threshold float64) bool {
+	switch operator {
+	case ">":
+		return value > threshold
+	case ">=":
+		return value >= threshold
+	case "<":
+		return value < threshold
+	case "<=":
+		return value <= threshold
+	case "=":
+		return value == threshold
+	case "<>":
+		return value != threshold
+	default:
+		return false
+	}
 }
 
 // ComputeAllIndicators evaluates every active indicator whose kpi_type is P or

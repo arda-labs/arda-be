@@ -63,6 +63,9 @@ func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
 		// just materialised: a wrong account mapping surfaces at COB rather
 		// than on a published balance sheet.
 		{Code: "RPT_RECONCILE_ACCOUNTING", Name: "Đối soát chỉ tiêu tài chính kế toán (EOD)", Sequence: 38, Endpoint: "http://statistical-service:8080/internal/jobs/reconcile-accounting", IsEnabled: true},
+		// Proactive reporting: judge the period's computed results against the
+		// threshold rules and raise alerts. Last, so the numbers are final.
+		{Code: "RPT_EVALUATE_RULES", Name: "Đánh giá ngưỡng cảnh báo chỉ tiêu (EOD)", Sequence: 40, Endpoint: "http://statistical-service:8080/internal/jobs/evaluate-rules", IsEnabled: true},
 	}
 	for _, j := range jobs {
 		if _, err := s.db.ExecContext(ctx, `

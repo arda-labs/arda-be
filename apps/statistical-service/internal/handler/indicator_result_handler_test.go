@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +17,7 @@ type stubIndicatorResultService struct {
 	seenTen   string
 	seenActor string
 	report    *indicator.ReconciliationReport
+	savedRule *repository.IndicatorRule
 }
 
 func (s *stubIndicatorResultService) UpsertIndicatorResult(_ context.Context, tenantID, actor string, in *repository.IndicatorResult) (*repository.IndicatorResult, error) {
@@ -47,6 +49,42 @@ func (s *stubIndicatorResultService) ReconcileAccountingIndicators(_ context.Con
 	}
 	return indicator.ReconciliationReport{PeriodCode: periodCode, Checked: 0, TrialBalanced: true}, nil
 }
+
+func (s *stubIndicatorResultService) UpsertRule(_ context.Context, tenantID, actor string, in *repository.IndicatorRule) (*repository.IndicatorRule, error) {
+	s.seenTen = tenantID
+	s.seenActor = actor
+	s.savedRule = in
+	if in.Code == "" || in.IndicatorCode == "" {
+		return nil, errStubRuleInvalid
+	}
+	return in, nil
+}
+
+func (s *stubIndicatorResultService) ListRules(_ context.Context, tenantID string, _ bool) ([]repository.IndicatorRule, error) {
+	s.seenTen = tenantID
+	return []repository.IndicatorRule{}, nil
+}
+
+func (s *stubIndicatorResultService) ListAlerts(_ context.Context, tenantID, _, _ string) ([]repository.IndicatorAlert, error) {
+	s.seenTen = tenantID
+	return []repository.IndicatorAlert{}, nil
+}
+
+func (s *stubIndicatorResultService) AckAlert(_ context.Context, tenantID, id, actor string) error {
+	s.seenTen = tenantID
+	s.seenActor = actor
+	if id == "" {
+		return errStubRuleInvalid
+	}
+	return nil
+}
+
+func (s *stubIndicatorResultService) EvaluateIndicatorRules(_ context.Context, tenantID, periodCode string) (map[string]any, error) {
+	s.seenTen = tenantID
+	return map[string]any{"period_code": periodCode, "rules": 1, "raised": 1, "cleared": 0, "skipped": 0}, nil
+}
+
+var errStubRuleInvalid = errors.New("invalid")
 
 // TestReconcileJobFailsTheStepOnMismatch: the EOD engine treats a non-2xx status
 // as a failed step, so a mismatch or an unbalanced trial balance must not be

@@ -83,6 +83,9 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 	})
 	mux.HandleFunc("POST /api/statistical/indicators/compute", indicatorResults.ComputeIndicators)
 	mux.HandleFunc("GET /api/statistical/indicators/reconcile", indicatorResults.ReconcileIndicators)
+	mux.HandleFunc("/api/statistical/indicator-rules", indicatorResults.Rules)
+	mux.HandleFunc("GET /api/statistical/indicator-alerts", indicatorResults.Alerts)
+	mux.HandleFunc("POST /api/statistical/indicator-alerts/{id}/ack", indicatorResults.AckAlert)
 
 	// Presentation: chart contract + rendered documents (pdf/xlsx/html).
 	mux.HandleFunc("GET /api/statistical/reports/{code}/chart", presentation.ReportChart)
@@ -127,6 +130,11 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 	// against the trial-balance fact. A non-empty mismatches list fails the
 	// step, so a wrong account mapping surfaces at COB instead of on a report.
 	mux.HandleFunc("/internal/jobs/reconcile-accounting", indicatorResults.RunReconcileAccountingJob)
+
+	// Proactive reporting step: compare the period's stored results against the
+	// active threshold rules and raise/clear alerts. Runs last so the numbers
+	// it judges are already computed for the period.
+	mux.HandleFunc("/internal/jobs/evaluate-rules", indicatorResults.RunEvaluateRulesJob)
 
 	return mux
 }
