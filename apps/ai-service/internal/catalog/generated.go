@@ -824,6 +824,41 @@ func GeneratedCatalog() []GeneratedEntry {
 			Enabled:        true,
 		},
 		{
+			SDKPath:   "arda.statistical.listIndicatorResults",
+			Domain:    "statistical",
+			Signature: "arda.statistical.listIndicatorResults(args: {periodCode?: string; indicatorCode?: string; limit?: number}): Promise<IndicatorResultListPage>;",
+			JSDoc: `/**
+ * List stored computed indicator values for a period.
+ *
+ * List the stored values of computed indicators (chỉ tiêu QCMS) for a reporting period, optionally narrowed to one indicator code. Only computed results are exposed: the declarative formula, sources and dimension configuration stay behind this boundary. The dimension key survives because it tells the assistant which slice a value covers.
+ * @param args.periodCode Reporting period as YYYY-MM (all periods when omitted)
+ * @param args.indicatorCode Optional indicator code filter (e.g. 30020.02)
+ * @param args.limit Page size, 1-20
+ * @returns IndicatorResultListPage { items: [{ indicator_code, name, unit, period_code, dimension_key, value, source }], page, per_page, total }
+ * @requires statistical.read
+ * @domain statistical
+ */`,
+			Keywords:            []string{"statistical", "indicator", "indicator result", "kpi value", "metric value", "period", "chỉ tiêu", "giá trị chỉ tiêu", "kết quả chỉ tiêu", "chỉ số", "tỷ lệ nợ xấu", "kpi", "thống kê"},
+			Kind:                "read",
+			RequiredPermissions: []string{"statistical.read"},
+			Risk:                "low",
+			Timeout:             3000 * time.Millisecond,
+			Service:             "statistical-service",
+			Method:              "GET",
+			Path:                "/internal/ai/indicator-results",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "periodCode", Param: "period_code", In: "query", Required: false, Type: "string", MaxLength: 7, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "indicatorCode", Param: "indicator_code", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "limit", Param: "per_page", In: "query", Required: false, Type: "integer", MaxLength: 0, Min: ptr(1.0), Max: ptr(20.0), Default: "10", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"dimension_key":{"type":"string"},"indicator_code":{"type":"string"},"name":{"type":"string"},"period_code":{"type":"string"},"source":{"type":"string"},"unit":{"type":"string"},"value":{"type":"number"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
+		},
+		{
 			SDKPath:   "arda.statistical.listIndicators",
 			Domain:    "statistical",
 			Signature: "arda.statistical.listIndicators(args: {search?: string; cursor?: number; limit?: number}): Promise<IndicatorListPage>;",
@@ -930,6 +965,41 @@ func GeneratedCatalog() []GeneratedEntry {
 				{Param: "tenant_id", Scope: "tenant"},
 			},
 			ResponseSchema: `{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"period_code":{"type":"string"},"report_code":{"type":"string"},"status":{"type":"string"},"submitted_at":{"type":"string"}}}},"page":{"type":"integer"},"per_page":{"type":"integer"},"total":{"type":"integer"}}}`,
+			Enabled:        true,
+		},
+		{
+			SDKPath:   "arda.statistical.runReport",
+			Domain:    "statistical",
+			Signature: "arda.statistical.runReport(args: {reportCode: string; periodCode: string; orgCode?: string}): Promise<ReportRun>;",
+			JSDoc: `/**
+ * Run one catalogued report for a period in the delegated tenant.
+ *
+ * Run one catalogued report (identified by its report_code, never by SQL) for a reporting period and return the computed rows. This is the natural-language routing target: the assistant picks a report code from the catalog plus a period/org parameter, and the service executes the parameterised builder. Internal wiring (query_id, sql text, param schema, tenant_id) is never exposed; the rows are read-model values.
+ * @param args.reportCode Report code from the report-definition catalog (e.g. LOAN_PORTFOLIO_SUMMARY)
+ * @param args.periodCode Reporting period as YYYY-MM
+ * @param args.orgCode Optional org unit filter
+ * @returns ReportRun { code, name, period_code, columns: [string], rows: [[any]], row_count }
+ * @requires statistical.read
+ * @domain statistical
+ */`,
+			Keywords:            []string{"statistical", "report", "run report", "report result", "report data", "period", "báo cáo", "chạy báo cáo", "kết quả báo cáo", "số liệu báo cáo", "dư nợ", "tiền gửi", "nợ xấu", "huy động", "khách hàng", "thống kê"},
+			Kind:                "read",
+			RequiredPermissions: []string{"statistical.read"},
+			Risk:                "low",
+			Timeout:             8000 * time.Millisecond,
+			Service:             "statistical-service",
+			Method:              "GET",
+			Path:                "/internal/ai/report-run",
+			Envelope:            "result",
+			Args: []GeneratedArg{
+				{Name: "reportCode", Param: "report_code", In: "query", Required: true, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "periodCode", Param: "period_code", In: "query", Required: true, Type: "string", MaxLength: 7, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+				{Name: "orgCode", Param: "org_code", In: "query", Required: false, Type: "string", MaxLength: 128, Min: nil, Max: nil, Default: "", Transform: "", Enum: []string{}},
+			},
+			ScopeQuery: []GeneratedScopeQuery{
+				{Param: "tenant_id", Scope: "tenant"},
+			},
+			ResponseSchema: `{"type":"object","properties":{"code":{"type":"string"},"columns":{"type":"array","items":{"type":"string"}},"name":{"type":"string"},"period_code":{"type":"string"},"row_count":{"type":"integer"},"rows":{"type":"array","items":{"type":"array"}}}}`,
 			Enabled:        true,
 		},
 		{

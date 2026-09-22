@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/statistical-service/internal/handler"
+	"github.com/arda-labs/arda/apps/statistical-service/internal/reports"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/repository"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 )
@@ -26,15 +27,37 @@ var errAIMissingTenant = errors.New("stub: missing tenant scope")
 // InternalAIHandler so the signed-request tests run without a database. It
 // records the verified tenant and the filters it was handed.
 type stubStatisticalAISource struct {
-	definitions []repository.ReportDefinition
-	indicators  []repository.Indicator
-	submissions []repository.ReportSubmission
-	total       int
+	definitions      []repository.ReportDefinition
+	indicators       []repository.Indicator
+	submissions      []repository.ReportSubmission
+	indicatorResults []repository.IndicatorResult
+	reportRun        [][]any
+	total            int
 
 	lastTenantID         string
 	lastDefinitionQ      string
 	lastSubmissionParams repository.ListSubmissionsParams
 	submissionCalls      int
+}
+
+func (s *stubStatisticalAISource) ListIndicatorResults(_ context.Context, params repository.ListIndicatorResultsParams) ([]repository.IndicatorResult, error) {
+	if params.TenantID == "" {
+		return nil, errAIMissingTenant
+	}
+	s.lastTenantID = params.TenantID
+	return s.indicatorResults, nil
+}
+
+func (s *stubStatisticalAISource) RunReport(_ context.Context, tenantID, code string, params map[string]string) (*repository.ReportDefinition, *reports.ReportQuery, [][]any, error) {
+	if tenantID == "" {
+		return nil, nil, nil, errAIMissingTenant
+	}
+	s.lastTenantID = tenantID
+	if s.reportRun == nil {
+		return nil, nil, nil, errors.New("stub: report not found")
+	}
+	return &repository.ReportDefinition{Code: code, Name: "Stub " + code},
+		&reports.ReportQuery{QueryID: code, Columns: []string{"segment", "customer_count"}}, s.reportRun, nil
 }
 
 func (s *stubStatisticalAISource) ListReportDefinitions(_ context.Context, params repository.ListReportDefinitionsParams) ([]repository.ReportDefinition, error) {
@@ -120,6 +143,80 @@ func aiTestSource() *stubStatisticalAISource {
 
 func aiStatisticalRouter(source *stubStatisticalAISource) http.Handler {
 	return NewRouter(handler.NewStatisticalHandler(nil), handler.NewInternalAIHandler(source), nil, nil, nil)
+}
+
+// aiStatisticalRouterWithRun also carries report-run and indicator-result data
+// so the NL-routing tools have something to return.
+func aiStatisticalRouterWithRun() http.Handler {
+	source := aiTestSource()
+	source.reportRun = [][]any{{"RETAIL", int64(3)}, {"CORP", int64(1)}}
+	source.indicatorResults = []repository.IndicatorResult{{
+		IndicatorCode: "60000.01",
+		PeriodCode:    "2026-09",
+		Value:         func() *float64 { v := 3.0; return &v }(),
+		Source:        "COMPUTED",
+	}}
+	return aiStatisticalRouter(source)
+}
+
+// TestInternalAI_RunReportRequiresCodeAndPeriod keeps the routing contract
+// strict: the assistant must name a catalogued report and a period.
+func TestInternalAI_RunReportRequiresCodeAndPeriod(t *testing.T) {
+	t.Setenv("ARDA_SERVICE_AUTH_SECRET", aiTestSecret)
+	router := aiStatisticalRouterWithRun()
+	token := aiValidToken(t)
+
+	res := aiSignedRequest(t, router, "/internal/ai/report-run?period_code=2026-09", "tenant-1", token)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("missing report_code status = %d, want 400", res.Code)
+	}
+	res = aiSignedRequest(t, router, "/internal/ai/report-run?report_code=CUSTOMER_SUMMARY", "tenant-1", token)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("missing period_code status = %d, want 400", res.Code)
+	}
+}
+
+// TestInternalAI_RunReportReturnsRowsWithoutWiring proves the run tool returns
+// computed rows and never leaks the internal query wiring.
+func TestInternalAI_RunReportReturnsRowsWithoutWiring(t *testing.T) {
+	t.Setenv("ARDA_SERVICE_AUTH_SECRET", aiTestSecret)
+	router := aiStatisticalRouterWithRun()
+
+	res := aiSignedRequest(t, router,
+		"/internal/ai/report-run?report_code=CUSTOMER_SUMMARY&period_code=2026-09", "tenant-1", aiValidToken(t))
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", res.Code, res.Body.String())
+	}
+	body := res.Body.String()
+	for _, leaked := range []string{"query_id", "tenant_id", "param_schema", "sql"} {
+		if strings.Contains(body, leaked) {
+			t.Errorf("report-run leaks %q: %s", leaked, body)
+		}
+	}
+	if !strings.Contains(body, `"row_count":2`) {
+		t.Errorf("report-run missing rows: %s", body)
+	}
+}
+
+// TestInternalAI_ListIndicatorResultsExposesValuesOnly: values + dimension key
+// are shared, the declarative formula is not.
+func TestInternalAI_ListIndicatorResultsExposesValuesOnly(t *testing.T) {
+	t.Setenv("ARDA_SERVICE_AUTH_SECRET", aiTestSecret)
+	router := aiStatisticalRouterWithRun()
+
+	res := aiSignedRequest(t, router, "/internal/ai/indicator-results?period_code=2026-09", "tenant-1", aiValidToken(t))
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", res.Code, res.Body.String())
+	}
+	body := res.Body.String()
+	if !strings.Contains(body, "60000.01") || !strings.Contains(body, `"value":3`) {
+		t.Errorf("indicator results missing values: %s", body)
+	}
+	for _, leaked := range []string{"formula", "sources", "dimensions", "tenant_id", "created_by"} {
+		if strings.Contains(body, leaked) {
+			t.Errorf("indicator results leak %q: %s", leaked, body)
+		}
+	}
 }
 
 type aiListEnvelope struct {

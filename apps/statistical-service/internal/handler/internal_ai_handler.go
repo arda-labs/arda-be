@@ -3,9 +3,11 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/statistical-service/internal/reports"
 	"github.com/arda-labs/arda/apps/statistical-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -35,6 +37,8 @@ type aiStatisticalSource interface {
 	ListReportDefinitions(ctx context.Context, params repository.ListReportDefinitionsParams) ([]repository.ReportDefinition, error)
 	ListIndicators(ctx context.Context, params repository.ListIndicatorsParams) ([]repository.Indicator, error)
 	ListSubmissions(ctx context.Context, params repository.ListSubmissionsParams) ([]repository.ReportSubmission, int, error)
+	ListIndicatorResults(ctx context.Context, params repository.ListIndicatorResultsParams) ([]repository.IndicatorResult, error)
+	RunReport(ctx context.Context, tenantID, code string, params map[string]string) (*repository.ReportDefinition, *reports.ReportQuery, [][]any, error)
 }
 
 // InternalAIHandler serves the /internal/ai/* surface consumed by ai-service.
@@ -123,6 +127,168 @@ func (h *InternalAIHandler) InternalAIListSubmissions(w http.ResponseWriter, r *
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(page, listReq.PerPage, total, toAISubmissions(items)))
+}
+
+// InternalAIRunReport serves GET /internal/ai/report-run for ai-service: run
+// one catalogued report (identified by code, never by SQL) for a period and
+// return the already-redacted rows. This is the NL-routing target — the model
+// picks a report code + parameters, and the service does the rest.
+func (h *InternalAIHandler) InternalAIRunReport(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := aiGetTenant(w, r)
+	if !ok {
+		return
+	}
+	code := aiQueryParam(r, "report_code")
+	if code == "" {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeRequired, "report_code is required"))
+		return
+	}
+	period := aiQueryParam(r, "period_code")
+	if period == "" {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeRequired, "period_code is required"))
+		return
+	}
+	definition, query, rows, err := h.source.RunReport(r.Context(), tenantID, code, map[string]string{
+		"period_code": period,
+		"org_code":    aiQueryParam(r, "org_code"),
+	})
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, toAIReportRun(definition, query.Columns, rows))
+}
+
+// InternalAIListIndicatorResults serves GET /internal/ai/indicator-results for
+// ai-service: the stored values of computed indicators for one period. Only
+// computed results are exposed — the formula, sources and dimensions JSON stay
+// behind this boundary.
+func (h *InternalAIHandler) InternalAIListIndicatorResults(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := aiGetTenant(w, r)
+	if !ok {
+		return
+	}
+	results, err := h.source.ListIndicatorResults(r.Context(), repository.ListIndicatorResultsParams{
+		TenantID:      tenantID,
+		PeriodCode:    aiQueryParam(r, "period_code"),
+		IndicatorCode: aiQueryParam(r, "indicator_code"),
+	})
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	// Labels come from the catalog so the assistant can answer with names.
+	indicators, err := h.source.ListIndicators(r.Context(), repository.ListIndicatorsParams{TenantID: tenantID})
+	if err != nil {
+		ardahttp.WriteServiceError(w, r, err)
+		return
+	}
+	res := aiPageSlice(results, aiResultLimit(r))
+	ardahttp.WriteSuccess(w, r, http.StatusOK, ardahttp.NewListResponse(res.page, res.perPage, res.total, toAIIndicatorResults(res.items, indicators)))
+}
+
+// aiGetTenant reads the delegated tenant for non-list AI reads.
+func aiGetTenant(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if r.Method != http.MethodGet {
+		ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
+		return "", false
+	}
+	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
+	if tenantID == "" {
+		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeRequired, "verified tenant scope is required"))
+		return "", false
+	}
+	return tenantID, true
+}
+
+// aiResultLimit bounds the indicator-result page (ai-service never asks for an
+// unbounded slice).
+func aiResultLimit(r *http.Request) int {
+	limit := aiListSpec.DefaultPerPage
+	if raw := strings.TrimSpace(r.URL.Query().Get("per_page")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n >= 1 && n <= aiListSpec.MaxPerPage {
+			limit = n
+		}
+	}
+	return limit
+}
+
+func aiPageSlice[T any](items []T, limit int) struct {
+	items   []T
+	page    int
+	perPage int
+	total   int
+} {
+	total := len(items)
+	if limit <= 0 {
+		limit = aiListSpec.DefaultPerPage
+	}
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	return struct {
+		items   []T
+		page    int
+		perPage int
+		total   int
+	}{items: items, page: 1, perPage: limit, total: total}
+}
+
+// aiReportRun is the assistant-facing report result: the catalog metadata plus
+// the rows. tenant_id and the internal query wiring (query_id, param schema)
+// are never included.
+type aiReportRun struct {
+	Code       string   `json:"code"`
+	Name       string   `json:"name"`
+	PeriodCode string   `json:"period_code"`
+	Columns    []string `json:"columns"`
+	Rows       [][]any  `json:"rows"`
+	RowCount   int      `json:"row_count"`
+}
+
+func toAIReportRun(def *repository.ReportDefinition, columns []string, rows [][]any) aiReportRun {
+	out := aiReportRun{Columns: columns, Rows: rows, RowCount: len(rows)}
+	if def != nil {
+		out.Code = def.Code
+		out.Name = def.Name
+	}
+	return out
+}
+
+// aiIndicatorResult is the assistant-facing computed indicator value. The
+// formula/sources/dimensions configuration is not exposed; the dimension key
+// survives because it tells the assistant which slice the value covers.
+type aiIndicatorResult struct {
+	IndicatorCode string   `json:"indicator_code"`
+	Name          string   `json:"name,omitempty"`
+	Unit          string   `json:"unit,omitempty"`
+	PeriodCode    string   `json:"period_code"`
+	DimensionKey  string   `json:"dimension_key,omitempty"`
+	Value         *float64 `json:"value,omitempty"`
+	Source        string   `json:"source"`
+}
+
+func toAIIndicatorResults(items []repository.IndicatorResult, catalog []repository.Indicator) []aiIndicatorResult {
+	names := make(map[string]repository.Indicator, len(catalog))
+	for _, ind := range catalog {
+		names[ind.Code] = ind
+	}
+	out := make([]aiIndicatorResult, 0, len(items))
+	for _, item := range items {
+		row := aiIndicatorResult{
+			IndicatorCode: item.IndicatorCode,
+			PeriodCode:    item.PeriodCode,
+			DimensionKey:  item.DimensionKey,
+			Value:         item.Value,
+			Source:        item.Source,
+		}
+		if ind, ok := names[item.IndicatorCode]; ok {
+			row.Name = ind.Name
+			row.Unit = ind.Unit
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // aiListRequest enforces the shared AI list preconditions: GET only, the

@@ -213,8 +213,14 @@ tiền lương, TSCĐ, CCDC) chưa tính.
    (`POST /api/statistical/indicators/compute`, whitelist đóng) + compute series
    (growth `previous_period`/`same_period_last_year`, `trailing_average`);
    seed 13 chỉ tiêu mẫu.
-4. **Bước 4** — Presentation: KPI cards → chart → Word/PDF (`arda-doc` +
-   Gotenberg + excelize).
+4. **Bước 4 — Presentation — ĐÃ CODE** (commit `1c7f3e9f` + infra `7a33c27`):
+   `internal/presentation` (chart picker deterministic + HTML print template +
+   XLSX có title/KPI/table); `presentation_service` dựng document từ report
+   result + indicator đã lưu (document và API không thể lệch nhau); PDF qua
+   arda-doc Gotenberg, thiếu `GOTENBERG_URL` → 503 rõ ràng thay vì file rỗng.
+   Route: `GET /reports/{code}/chart`, `/reports/{code}/document?format=`,
+   `/indicators/document?period_code=`. Fix tên file lặp period.
+   Còn lại: verify trên cluster.
 5. **Bước 5** — NL routing: hỏi tự nhiên → chọn report/indicator + tham số
    (không sinh SQL), qua ai-service.
 6. **Bước 6** — Domain thiếu (trần 923 chỉ tiêu): `member`/vốn góp cổ phần

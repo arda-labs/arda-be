@@ -114,6 +114,8 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 	mux.Handle("GET /internal/ai/report-definitions", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListReportDefinitions)))
 	mux.Handle("GET /internal/ai/indicators", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListIndicators)))
 	mux.Handle("GET /internal/ai/submissions", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListSubmissions)))
+	mux.Handle("GET /internal/ai/report-run", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIRunReport)))
+	mux.Handle("GET /internal/ai/indicator-results", internalAIService(http.HandlerFunc(internalAIHandler.InternalAIListIndicatorResults)))
 
 	// Internal reporting ETL job: platform EOD calls this (no gateway policy;
 	// network-policy protected like the other /internal/jobs/* steps). Tenant
