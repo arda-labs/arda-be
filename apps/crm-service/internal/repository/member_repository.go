@@ -438,6 +438,7 @@ func (r *MemberRepository) ListMembersForReporting(ctx context.Context, tenantID
 // MemberCapitalRequestRow is one approved/pending capital request as the
 // reporting ETL sees it (joined to the member's org).
 type MemberCapitalRequestRow struct {
+	RequestID   string `json:"request_id"`
 	MemberCode  string `json:"member_code"`
 	OrgCode     string `json:"org_code"`
 	RequestType string `json:"request_type"`
@@ -450,7 +451,7 @@ type MemberCapitalRequestRow struct {
 // with its member code + org, for the pipeline indicators (10023/10030-10034).
 func (r *MemberRepository) ListMemberRequestsForReporting(ctx context.Context, tenantID string) ([]MemberCapitalRequestRow, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT m.member_code, COALESCE(m.org_code,''), r.request_type, r.status,
+		SELECT r.id::text, m.member_code, COALESCE(m.org_code,''), r.request_type, r.status,
 		       r.amount_minor, COALESCE(r.effective_date, r.created_at::date)::text
 		FROM crm_member_requests r JOIN crm_members m ON m.id = r.member_id
 		WHERE r.tenant_id = $1
@@ -462,7 +463,7 @@ func (r *MemberRepository) ListMemberRequestsForReporting(ctx context.Context, t
 	out := []MemberCapitalRequestRow{}
 	for rows.Next() {
 		var x MemberCapitalRequestRow
-		if err := rows.Scan(&x.MemberCode, &x.OrgCode, &x.RequestType, &x.Status,
+		if err := rows.Scan(&x.RequestID, &x.MemberCode, &x.OrgCode, &x.RequestType, &x.Status,
 			&x.AmountMinor, &x.RequestDate); err != nil {
 			return nil, err
 		}

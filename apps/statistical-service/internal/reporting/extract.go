@@ -337,10 +337,14 @@ const insertMemberRequestFact = `INSERT INTO rpt_fact_member_request_daily
 	 status, amount_minor, request_date)
 	VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9::date)`
 
-// memberRequestKey is the stable per-request identity inside a daily fact: the
-// source rows carry no id on this surface, and (member, type, date) is unique
-// enough for the pipeline indicators.
+// memberRequestKey is the stable per-request identity inside a daily fact. Use
+// the source request id: (member, type, date) is NOT unique — a member may make
+// several additional-capital requests on the same day, which collided on the
+// fact primary key and failed the whole extract.
 func memberRequestKey(item memberRequest) string {
+	if item.RequestID != "" {
+		return item.RequestID
+	}
 	return item.MemberCode + ":" + item.RequestType + ":" + item.RequestDate
 }
 
@@ -585,6 +589,7 @@ type memberRequestResult struct {
 }
 
 type memberRequest struct {
+	RequestID   string `json:"request_id"`
 	MemberCode  string `json:"member_code"`
 	OrgCode     string `json:"org_code"`
 	RequestType string `json:"request_type"`
