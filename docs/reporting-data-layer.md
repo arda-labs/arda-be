@@ -275,6 +275,25 @@ Chạy thật phát hiện 5 lỗi mà unit test không thấy:
 Hệ quả thiết kế: chỉ tiêu và report **phải đọc cùng một fact column với cùng
 đơn vị**; mọi khác biệt đơn vị phải là bước biến đổi tường minh có test.
 
+3 bug còn lại (6–9) đến từ **migration/khởi động**, và cùng một nguyên nhân gốc:
+**bắt chước migration cũ mà không đọc schema hiện tại**. Migration cũ chỉ chứng
+minh nó *từng* hợp lệ; schema đã tiến hoá sau đó.
+
+6. **gRPC service đăng ký sau `Serve()`** (`crm-service` crash-loop:
+   `Server.RegisterService after Server.Serve`). Mọi `RegisterXxxServiceServer`
+   phải chạy trước `grpcSrv.Serve(...)`; service phụ thuộc workflow client nên
+   dial phải nằm trên khối gRPC.
+7. **FK `workflow_assignment_rules.role_code` → `workflow_role_catalog`**:
+   phải seed catalog role *trước* assignment rules (thứ tự, không phải di tích).
+8. **`ON CONFLICT (code)` trên `iam_roles`** → `SQLSTATE 42P10`: unique hiện tại
+   là `(tenant_id, code)`; seed cũ ghi `(code)` chỉ vì nó chạy trước khi đổi.
+9. **`iam_roles.tenant_id = 'default'`** → `SQLSTATE 23514`
+   (`iam_roles_explicit_tenant_ck` cấm `''`/`'default'`); roles thật dùng tenant
+   pilot (`…010`).
+
+Quy tắc rút ra: trước khi thêm migration/khởi động, kiểm tra **constraint,
+unique index và thứ tự phụ thuộc hiện hành**, không suy ra từ file cũ.
+
 ## 10. Non-goals
 
 - Không SQL-as-config (`EXPRESSION_SQL`), không free-form text-to-SQL.
