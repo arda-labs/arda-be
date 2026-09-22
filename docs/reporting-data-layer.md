@@ -323,9 +323,16 @@ trong Go nên không chạm đường decode/serialize):
     giờ chuyển. Sửa: mark SUBMITTED trước rồi mới submit case với version
     **sau** khi tăng; thêm `orgId`/`actorUserId` — đúng key `crmJobContext` đọc.
 
-Ghi nhận thêm (chưa sửa, không thuộc member): timeline completion log WARN
-`SQLSTATE 42P08 inconsistent types deduced for parameter $2` — sự kiện timeline
-bị mất im lặng ở **mọi** completion, không riêng member.
+Ghi nhận thêm (chưa sửa, không thuộc member):
+- **Workflow user-task projector**: `case projection: upsert user task work item`
+  fail `SQLSTATE 42804 could not determine polymorphic type because input has
+  type unknown`, retry mỗi 2s → work item của checker không được project.
+- **Timeline completion** log WARN `SQLSTATE 42P08 inconsistent types deduced for
+  parameter $2` — sự kiện timeline bị mất im lặng ở **mọi** completion, không
+  riêng member.
+- **`$3 + $4` untyped trong `ApplyApprovedCapital`** (bug 11 nay lộ mặt thứ hai):
+  `SQLSTATE 42725 operator is not unique: unknown + unknown`. Tưởng int64 Go local
+  là an toàn, nhưng pgx vẫn gửi `unknown` trong câu UPDATE này — đã cast bigint.
 
 Quy tắc rút ra: contract HTTP phải verify bằng **payload thật của FE**
 (snake_case), không bằng struct Go; và expression SQL phải cast kiểu tường minh
