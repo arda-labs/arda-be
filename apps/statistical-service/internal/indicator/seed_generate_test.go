@@ -17,6 +17,15 @@ import (
 // to rewrite the seed migration from the catalog fixture when the parser or the
 // catalog changes. It is skipped by default so CI never writes files, and the
 // committed migration is reviewed like any other.
+//
+// It is NOT currently enabled: the PCF formulas reference the QTDND regulatory
+// chart of accounts (Thông tư 31: TK 10 cash, TK 13 interbank, TK 21 loans),
+// while the pilot books post to a Thông tư 92 chart (fin_coa_accounts:
+// 1011/1131/1311/1321/…). Matching the two by prefix silently mis-buckets money
+// — "13…" would pull customer loans into "Tiền gửi tại TCTD khác". The seed
+// must wait for an explicit, accountant-reviewed mapping from each PCF account
+// reference to a fin_coa_accounts code; only then is this generator safe to run
+// and commit.
 func TestGenerateAccountingSeed(t *testing.T) {
 	if os.Getenv("GEN_ACCOUNTING_SEED") != "1" {
 		t.Skip("set GEN_ACCOUNTING_SEED=1 to regenerate the seed migration")

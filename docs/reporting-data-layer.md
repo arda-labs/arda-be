@@ -427,11 +427,45 @@ giữ sàn 100; hiện **155/184 parse được, 29 từ chối**. Trong 29 đó
 ~10 là chỉ tiêu **tỷ lệ** (cần `type: ratio` tham chiếu chỉ tiêu khác, không phải
 `account_balance`), phần còn lại là biểu thức điều kiện nhiều nhánh.
 
+### Seed + đối soát — đã có, NHƯNG seed bị chặn bởi hệ tài khoản
+
+- **Parser + `account_balance`** đã xong (155/184 công thức).
+- **`ReconcileAccounting`** đã xong: trial balance phải cân, và mỗi công thức được
+  **tính lại bằng SQL tay** rồi so với engine. Đường tính tay **từ chối** block nó
+  không mô phỏng được (term có clamp) thay vì so hai công thức khác nhau.
+- **Seed: CHƯA bật** — xem blocker dưới.
+
+#### Blocker: hai hệ tài khoản khác nhau (TT31 vs TT92)
+
+Công thức PCF viết theo **hệ tài khoản QTDND Thông tư 31** (`TK 10` tiền mặt,
+`TK 13` tiền gửi TCTD, `TK 21` cho vay, `TK 30`/`305` TSCĐ, `41512` vay TCTD…).
+
+Nhưng sổ pilot của Arda hạch toán theo **Thông tư 92** (`fin_coa_accounts` V1, 40
+tài khoản): `1011` Tiền mặt, `1131` Tiền gửi ngân hàng, `1311` Cho vay khách
+hàng, `1321` Tiền gửi tại TCTD khác, `1319` Dự phòng phải thu khó đòi…
+
+Khớp theo **prefix** giữa hai hệ là **sai âm thầm**:
+
+| PCF | Prefix khớp | Khớp nhầm vào |
+|---|---|---|
+| `TK 13` Tiền gửi tại TCTD khác | `1311`, `1319`, `13101`, `1321` | **Cho vay khách hàng**, dự phòng… |
+| `TK 21` Cho vay khách hàng | (không có `21…`) | ra 0 dù `1311` chính là cho vay |
+| `TK 30` TSCĐ | (không có `30…`) | ra 0 |
+| `41512` Vay TCTD | (không có) | ra 0 |
+
+Vì vậy seed đã được **rút khỏi repo** (`20260922210000_rpt_accounting_indicator_seeds.sql`)
+để không đặt số sai lên báo cáo tài chính. `TestGenerateAccountingSeed` vẫn còn
+(opt-in) và sẽ sinh lại được ngay khi có mapping.
+
+**Cần**: một bảng mapping **tường minh, do kế toán duyệt** từng tham chiếu tài
+khoản PCF → `fin_coa_accounts.acc_code` (không suy theo prefix), rồi mới seed.
+Hoặc chọn dùng đúng hệ TT31 cho sổ QTDND.
+
 ### Còn lại của 6c
 
-1. Cơ chế **đối soát** (mỗi chỉ tiêu khớp trial balance ở mức nhóm).
-2. Seed 155 chỉ tiêu parse được + verify compute.
-3. Parser cho ~10 chỉ tiêu tỷ lệ (dùng `ratio`).
+1. Chốt mapping TT31 ↔ TT92 (quyết định nghiệp vụ, cần kế toán).
+2. ~10 chỉ tiêu **tỷ lệ** (Lợi nhuận thuần/tổng tài sản…) dùng `type: ratio`.
+3. Biểu thức điều kiện nhiều nhánh còn lại.
 
 ## 9d. Bước 6 (member) — ĐÓNG, verified trên cluster (2026-09-22)
 
