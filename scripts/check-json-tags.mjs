@@ -202,6 +202,17 @@ let camelStructs = 0
 let camelTags = 0
 let snakeTags = 0
 
+// HTTP-body decode targets must declare json tags. This is a separate invariant
+// from camelCase-vs-snake_case: a request struct with NO tags at all passes the
+// camel check silently, yet encoding/json cannot then bind a snake_case body,
+// so every call fails at the handler ("customer_code is required"). That
+// happened to the CRM member register/capital payloads, which only surfaced
+// when the endpoint was driven for real.
+// structTypeNames: "path#Type" -> number of json tags declared.
+const structTagCount = new Map()
+// decodeTargets: count of HTTP-body decode sites inspected.
+let decodeTargets = 0
+
 for (const file of walk(join(root, "apps"))) {
   if (!file.endsWith(".go") || file.endsWith("_test.go")) continue
   const rel = relative(root, file).replaceAll("\\", "/")
@@ -211,6 +222,7 @@ for (const file of walk(join(root, "apps"))) {
   const flush = () => {
     if (!current) return
     structs += 1
+    structTagCount.set(`${rel}#${current}`, tags.length)
     const camel = tags.filter((name) => /^[a-z][a-zA-Z0-9]*[A-Z]/.test(name))
     camelTags += camel.length
     snakeTags += tags.length - camel.length
@@ -255,6 +267,45 @@ for (const file of walk(join(root, "apps"))) {
     tags.push(name)
   }
   flush()
+}
+
+// Second pass: find HTTP-body decode targets and require json tags on the
+// struct type they name. The target type is the nearest preceding
+// `var <name> <Type>` for the decoded variable (variables like `in` are reused
+// across handlers, so a whole-file map would resolve to the wrong type).
+const untaggedDecodeTargets = []
+// Struct names are not globally unique (e.g. two `Organization` types, one an
+// internal read model with no tags). Index by leaf name but keep every tag
+// count seen, and only flag a decode target when ALL same-named structs are
+// untagged — an ambiguous name with a tagged twin is not this gate's business.
+const tagCountsByTypeName = new Map()
+for (const key of structTagCount.keys()) {
+  const leaf = key.split("#")[1]
+  const list = tagCountsByTypeName.get(leaf) ?? []
+  list.push(structTagCount.get(key))
+  tagCountsByTypeName.set(leaf, list)
+}
+for (const file of walk(join(root, "apps"))) {
+  if (!file.endsWith(".go") || file.endsWith("_test.go")) continue
+  const rel = relative(root, file).replaceAll("\\", "/")
+  const src = readFileSync(file, "utf8")
+  if (!/json\.NewDecoder\(r\.Body\)\.Decode\(&/.test(src)) continue
+  for (const m of src.matchAll(/json\.NewDecoder\(r\.Body\)\.Decode\(&(\w+)\)/g)) {
+    const name = m[1]
+    const before = src.slice(0, m.index)
+    // nearest `var <name> <Type>` above the decode
+    const declRe = new RegExp(`var\\s+${name}\\s+([A-Za-z_][\\w.]*)`, "g")
+    let ref = null
+    let d
+    while ((d = declRe.exec(before))) ref = d[1]
+    if (!ref) continue
+    const leaf = ref.includes(".") ? ref.split(".").pop() : ref
+    if (leaf === "struct" || leaf === "map") continue
+    const counts = tagCountsByTypeName.get(leaf)
+    if (!counts) continue
+    decodeTargets += 1
+    if (counts.every((c) => c === 0)) untaggedDecodeTargets.push(`${rel} -> ${leaf}`)
+  }
 }
 
 if (cleaned.length > 0) {
@@ -306,8 +357,24 @@ if (violations.length > 0) {
   }
 }
 
+if (untaggedDecodeTargets.length > 0) {
+  const message = [
+    "HTTP request structs decoded from the body must declare json tags:",
+    ...[...new Set(untaggedDecodeTargets)].sort().map((t) => `  ${t}`),
+    "",
+    "A body struct with no tags cannot bind a snake_case payload, so every call",
+    "fails at the handler. Tag each field, e.g. CustomerCode string `json:\"customer_code\"`.",
+  ].join("\n")
+  if (isReport) {
+    console.warn(message)
+  } else {
+    console.error(message)
+    process.exit(1)
+  }
+}
+
 console.log(
-  `JSON tag invariant OK (${structs} structs, ${snakeTags} snake | ${camelTags} camel tags; ${camelStructs} structs with camel, ${PROTOCOL_ALLOWLIST.size} protocol exception entries)`
+  `JSON tag invariant OK (${structs} structs, ${snakeTags} snake | ${camelTags} camel tags; ${camelStructs} structs with camel, ${PROTOCOL_ALLOWLIST.size} protocol exception entries; ${decodeTargets} decode targets)`
 )
 
 function* walk(dir) {
