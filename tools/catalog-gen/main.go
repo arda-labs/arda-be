@@ -564,6 +564,13 @@ func buildJSDoc(summary, desc string, args []goArg, tool *aiTool) string {
 		if arg.Description != "" {
 			b.WriteString(" " + strings.ReplaceAll(arg.Description, "\n", " "))
 		}
+		// Spell the accepted range and defaults into the JSDoc itself. The
+		// description alone let a model ask for limit:100 and get a hard
+		// execution error, so the constraint is repeated in machine-readable
+		// form next to the parameter name.
+		if bracket := argConstraints(arg); bracket != "" {
+			b.WriteString(" " + bracket)
+		}
 		b.WriteString("\n")
 	}
 	if tool.Returns != "" {
@@ -577,6 +584,35 @@ func buildJSDoc(summary, desc string, args []goArg, tool *aiTool) string {
 	}
 	b.WriteString(" * @domain " + tool.Domain + "\n */")
 	return b.String()
+}
+
+// argConstraints renders the accepted values for one argument, e.g.
+// "[1..20, default 10]" — only the parts that are actually declared.
+func argConstraints(arg goArg) string {
+	var parts []string
+	if arg.Min != nil && arg.Max != nil {
+		parts = append(parts, fmt.Sprintf("%v..%v", *arg.Min, *arg.Max))
+	} else if arg.Min != nil {
+		parts = append(parts, fmt.Sprintf(">= %v", *arg.Min))
+	} else if arg.Max != nil {
+		parts = append(parts, fmt.Sprintf("<= %v", *arg.Max))
+	}
+	if arg.MaxLength > 0 {
+		parts = append(parts, fmt.Sprintf("maxLength %d", arg.MaxLength))
+	}
+	if len(arg.Enum) > 0 {
+		parts = append(parts, "one of: "+strings.Join(arg.Enum, "|"))
+	}
+	if arg.Default != "" {
+		parts = append(parts, "default "+arg.Default)
+	}
+	if arg.Required {
+		parts = append(parts, "required")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 func render(entries []goEntry) string {

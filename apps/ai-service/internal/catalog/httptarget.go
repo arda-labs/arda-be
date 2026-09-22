@@ -182,6 +182,30 @@ func executeGenerated(
 // ptr is referenced by generated.go for numeric bound literals.
 func ptr[T any](v T) *T { return &v }
 
+// toFloat64 accepts every numeric representation a sandbox value can carry.
+// Goja hands JavaScript numbers to Go as int64 when they are integral, so a
+// strict `raw.(float64)` rejected limit:20 with "must be a number" — the tool
+// looked broken even though the model sent a correct value.
+func toFloat64(raw any) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	default:
+		return 0, false
+	}
+}
+
 // coerceArg converts an SDK argument into its wire string form, enforcing
 // type/enum/bounds. A missing optional argument yields nil (no wire param).
 func coerceArg(arg GeneratedArg, raw any, present bool) (string, error) {
@@ -193,7 +217,7 @@ func coerceArg(arg GeneratedArg, raw any, present bool) (string, error) {
 	}
 	switch arg.Type {
 	case "integer", "number":
-		num, ok := raw.(float64)
+		num, ok := toFloat64(raw)
 		if !ok {
 			return "", fmt.Errorf("%w: %s must be a number", tools.ErrInvalidArgument, arg.Name)
 		}

@@ -221,8 +221,14 @@ tiền lương, TSCĐ, CCDC) chưa tính.
    Route: `GET /reports/{code}/chart`, `/reports/{code}/document?format=`,
    `/indicators/document?period_code=`. Fix tên file lặp period.
    Còn lại: verify trên cluster.
-5. **Bước 5** — NL routing: hỏi tự nhiên → chọn report/indicator + tham số
-   (không sinh SQL), qua ai-service.
+5. **Bước 5 — NL routing — ĐÃ CODE** (commit `1f10db81`): 2 tool đọc trên AI
+   surface — `arda.statistical.runReport` (`GET /internal/ai/report-run`: chọn
+   báo cáo theo `report_code` + `period_code`, trả rows đã tính; query_id/SQL/
+   param schema không rời service) và `arda.statistical.listIndicatorResults`
+   (`GET /internal/ai/indicator-results`: giá trị chỉ tiêu đã lưu + tên/đơn vị;
+   formula/sources/dimensions không lộ). Catalog regen 33 entry; dùng lại
+   `statistical.read` + policy wildcard sẵn có. **Đây là routing, không phải
+   text-to-SQL** — model chỉ được nêu tên báo cáo/chỉ tiêu có thật (đúng Q8).
 6. **Bước 6** — Domain thiếu (trần 923 chỉ tiêu): `member`/vốn góp cổ phần
    (54) + IBM borrow/deposit (37) + `CT_GIAO_DICH`; chỉ tiêu C (tăng trưởng/
    trung bình 3 tháng) cần thêm bảng kết quả đã tính.

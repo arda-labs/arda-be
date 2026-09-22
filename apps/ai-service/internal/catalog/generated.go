@@ -64,12 +64,12 @@ func GeneratedCatalog() []GeneratedEntry {
  * List fund contracts in the delegated tenant and organization scope.
  *
  * List fund contracts (hợp đồng vốn) in the active tenant, narrowed by the delegated organization scope. Returns contract economics (amount, interest_rate, currency_code), dates, status and business codes per contract, with pagination. Internal fields (tenant_id, workflow_case_id, journal_entry_id, created_by, timestamps) are dropped by the handler and again by this response allowlist.
- * @param args.search Free-text filter on contract code, counterparty code or fund-type code
- * @param args.status Optional contract lifecycle status filter
- * @param args.sort Optional whitelisted sort column
- * @param args.order Sort direction, asc or desc
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on contract code, counterparty code or fund-type code [maxLength 128]
+ * @param args.status Optional contract lifecycle status filter [one of: PENDING_APPROVAL|ACTIVE|REJECTED|CLOSED]
+ * @param args.sort Optional whitelisted sort column [one of: contract_code|contract_date]
+ * @param args.order Sort direction, asc or desc [one of: asc|desc]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns CapitalContractListPage { items: [{ id, contract_code, fund_type_code, product_code, counterparty_code, contract_date, maturity_date, amount_minor, interest_rate, currency_code, status, org_code }], page, per_page, total }
  * @requires capital.read
  * @domain capital
@@ -105,9 +105,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * List active capital fund types in the delegated tenant.
  *
  * List active fund classifications (loại quỹ) in the active tenant. Returns id, code, name and is_active per fund type, with pagination. Internal fields (tenant_id, created_by, timestamps) are dropped by the handler and again by this response allowlist.
- * @param args.search Free-text filter on fund-type code/name
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on fund-type code/name [maxLength 128]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns FundTypeListPage { items: [{ id, code, name, is_active }], page, per_page, total }
  * @requires capital.read
  * @domain capital
@@ -140,9 +140,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * List active capital products (fund products) in the delegated tenant.
  *
  * List active capital products (sản phẩm vốn) in the active tenant. Returns id, code, name, fund_type_code, term_months, interest_rate, currency_code and is_active per product, with pagination. Internal fields (tenant_id, created_by, timestamps) are dropped by the handler and again by this response allowlist.
- * @param args.search Free-text filter on product code/name
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on product code/name [maxLength 128]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns CapitalProductListPage { items: [{ id, code, name, fund_type_code, term_months, interest_rate, currency_code, is_active }], page, per_page, total }
  * @requires capital.read
  * @domain capital
@@ -173,7 +173,7 @@ func GeneratedCatalog() []GeneratedEntry {
 			Signature: "arda.crm.getCustomer(args: {customerId: string}): Promise<CustomerSummary>;",
 			JSDoc: `/**
  * Read a redacted customer summary in the active tenant and organization scope.
- * @param args.customerId Arda customer identifier or customer code (max 128 chars)
+ * @param args.customerId Arda customer identifier or customer code (max 128 chars) [maxLength 128, required]
  * @returns CustomerSummary { id, customerCode, name, status, segment, rank, riskLevel, orgId, updatedAt }
  * @requires crm.customer.read
  * @domain crm
@@ -202,7 +202,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * Read one savings passbook and its recent movements.
  *
  * Read one savings account by savings code. Returns the redacted savings row plus a bounded preview of the 20 newest transactions (type, amount, currency, date, status) and the total transaction count. tenant_id, internal row ids, journal/workflow linkage and audit fields are never returned.
- * @param args.savingsCode Savings code from arda.deposit.listSavings (max 128 chars)
+ * @param args.savingsCode Savings code from arda.deposit.listSavings (max 128 chars) [maxLength 128, required]
  * @returns DepositSavingsDetail { savings: { savings_code, customer_code, product_code, open_date, maturity_date, principal_minor, accrued_minor, currency_code, status }, transactions: [{ txn_type, amount_minor, currency_code, txn_date, status }], transaction_count }
  * @requires deposit.read
  * @domain deposit
@@ -233,9 +233,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * List active savings interest-rate tiers in the delegated tenant.
  *
  * List active deposit rate tiers, optionally narrowed to one product_code, newest effective date first, with pagination. Returns the redacted tier (product code, term months, method, denominator, rate, effective date, active flag) — tenant_id, row id and audit fields are never returned.
- * @param args.productCode Savings product code to narrow the tiers (also matches the default/global tier)
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.productCode Savings product code to narrow the tiers (also matches the default/global tier) [maxLength 128]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns DepositInterestRateListPage { items: [{ product_code, term_months, method, denominator, rate, effective_from, is_active }], page, per_page, total }
  * @requires deposit.read
  * @domain deposit
@@ -268,10 +268,10 @@ func GeneratedCatalog() []GeneratedEntry {
  * List savings accounts in the delegated tenant.
  *
  * List savings accounts in the active tenant and delegated org scope, newest open date first, with pagination. q narrows savings_code/customer_code; status is an exact uppercase match. Returns the redacted savings row (code, customer code, product, open/maturity dates, principal, accrued interest, currency, status) — tenant_id, internal row id, org/workflow/journal linkage and audit fields are never returned.
- * @param args.search Free-text filter on savings code or customer code
- * @param args.status Exact savings status filter (ACTIVE, SETTLED, MATURED, ...)
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on savings code or customer code [maxLength 128]
+ * @param args.status Exact savings status filter (ACTIVE, SETTLED, MATURED, ...) [maxLength 32]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns DepositSavingsListPage { items: [{ savings_code, customer_code, product_code, open_date, maturity_date, principal_minor, accrued_minor, currency_code, status }], page, per_page, total }
  * @requires deposit.read
  * @domain deposit
@@ -305,7 +305,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * Read a chart-of-accounts entry in the delegated tenant.
  *
  * Read a chart-of-accounts entry with its current balance in the active tenant.
- * @param args.accountId Finance account identifier (max 128 chars)
+ * @param args.accountId Finance account identifier (max 128 chars) [maxLength 128, required]
  * @returns GetAccountResult { account: { id, code, name, type, normalBalance, currency, isActive }, balance }
  * @requires finance.read
  * @domain finance
@@ -334,10 +334,10 @@ func GeneratedCatalog() []GeneratedEntry {
  * List employees in the delegated tenant directory.
  *
  * List employees in the active tenant's HR directory. Returns id, employeeCode, fullName, status per employee, with pagination.
- * @param args.search Free-text filter on employee code/full name
- * @param args.status Filter by employment status
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-50
+ * @param args.search Free-text filter on employee code/full name [maxLength 128]
+ * @param args.status Filter by employment status [one of: ACTIVE|PROBATION|INACTIVE]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-50 [1..50, default 20]
  * @returns EmployeeListPage { items: [{ id, employeeCode, fullName, status }], page, perPage, total }
  * @requires hrm.read
  * @domain hrm
@@ -397,10 +397,10 @@ func GeneratedCatalog() []GeneratedEntry {
  * List directory users in the delegated tenant (admin read).
  *
  * List users in the active tenant's directory (admin). Returns id, username, email, name, status, roles per user, with pagination.
- * @param args.search Free-text filter on username/email/name
- * @param args.status Filter by status: ACTIVE, SUSPENDED, DISABLED, PENDING
- * @param args.limit Page size, 1-50
- * @param args.cursor One-based page number
+ * @param args.search Free-text filter on username/email/name [maxLength 128]
+ * @param args.status Filter by status: ACTIVE, SUSPENDED, DISABLED, PENDING [one of: ACTIVE|SUSPENDED|DISABLED|PENDING]
+ * @param args.limit Page size, 1-50 [1..50, default 20]
+ * @param args.cursor One-based page number [>= 1, default 1]
  * @returns UserListPage { items: [{ id, username, email, name, status, roles }], total, page, perPage }
  * @requires iam.user.read
  * @domain iam
@@ -434,7 +434,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * Read one redacted credit contract in the delegated tenant.
  *
  * Read one credit contract by Arda contract id. The id comes from arda.loan.listContracts. Returns the redacted detail (codes, term, dates, amount, rate, repayment frequencies, status); tenant_id, employee_code, org/workflow linkage and audit fields are never returned.
- * @param args.contractId Arda contract identifier from arda.loan.listContracts (max 128 chars)
+ * @param args.contractId Arda contract identifier from arda.loan.listContracts (max 128 chars) [maxLength 128, required]
  * @returns LoanContractDetail { id, contract_code, contract_no, customer_code, contract_type_code, product_code, contract_date, loan_term, term_unit, maturity_date, loan_amt_minor, interest_rate, interest_rate_type, interest_payment_freq, principal_payment_freq, status }
  * @requires loan.read
  * @domain loan
@@ -465,10 +465,10 @@ func GeneratedCatalog() []GeneratedEntry {
  * List credit contracts in the delegated tenant.
  *
  * List credit contracts in the active tenant, newest first, with pagination. q narrows contract_no/customer_code/contract_code; status is an exact uppercase match. Returns the redacted contract summary (code, customer code, product, dates, amount, rate, status) — tenant_id, employee_code, org/workflow linkage and audit fields are never returned.
- * @param args.search Free-text filter on contract number, customer code or contract code
- * @param args.status Exact contract status filter (DRAFT, PENDING, ACTIVE, REJECTED, CLOSED)
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on contract number, customer code or contract code [maxLength 128]
+ * @param args.status Exact contract status filter (DRAFT, PENDING, ACTIVE, REJECTED, CLOSED) [maxLength 32]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns LoanContractListPage { items: [{ id, contract_code, contract_no, customer_code, contract_type_code, product_code, contract_date, maturity_date, loan_amt_minor, interest_rate, status }], page, per_page, total }
  * @requires loan.read
  * @domain loan
@@ -502,10 +502,10 @@ func GeneratedCatalog() []GeneratedEntry {
  * List the repayment schedule of one contract or agreement.
  *
  * List repayment schedule rows for one contract_code or agreement_code in the active tenant, ordered by agreement and term. contract_code or agreement_code is required: without a schedule key the query would span the whole tenant. Returns the redacted plan (term window, planned and collected principal/interest, rate, active flag) — tenant_id, row id and audit timestamps are never returned.
- * @param args.contractCode Contract code the schedule belongs to (contract_code or agreement_code is required)
- * @param args.agreementCode Disbursement agreement code (contract_code or agreement_code is required)
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.contractCode Contract code the schedule belongs to (contract_code or agreement_code is required) [maxLength 128]
+ * @param args.agreementCode Disbursement agreement code (contract_code or agreement_code is required) [maxLength 128]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns LoanRepayPlanListPage { items: [{ contract_code, agreement_code, plan_no, term_no, from_date, to_date, interest_rate, plan_principal_amt_minor, plan_interest_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor, is_active }], page, per_page, total }
  * @requires loan.read
  * @domain loan
@@ -539,9 +539,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * List active countries in the delegated tenant.
  *
  * List active countries in the active tenant's master data. Returns id, code, name and display-safe attributes (nationality) per country, with pagination.
- * @param args.search Free-text filter on country code/name
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on country code/name [maxLength 128]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns CountryListPage { items: [{ id, code, name, description, is_active, attributes: { nationality } }], page, per_page, total }
  * @requires mdm.read
  * @domain mdm
@@ -574,9 +574,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * List active currencies in the delegated tenant.
  *
  * List active currencies in the active tenant's master data. Returns id, code, name and display-safe attributes (symbol, decimal_places) per currency, with pagination.
- * @param args.search Free-text filter on currency code/name
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on currency code/name [maxLength 128]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns CurrencyListPage { items: [{ id, code, name, description, is_active, attributes: { symbol, decimal_places } }], page, per_page, total }
  * @requires mdm.read
  * @domain mdm
@@ -609,9 +609,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * List active interest rates in the delegated tenant.
  *
  * List active interest-rate headers in the active tenant. Returns id, code, name, rate_type, apply_type, currency_code per rate, with pagination. Rate tiers (decision numbers/dates) are never returned.
- * @param args.search Free-text filter on rate code/name
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on rate code/name [maxLength 128]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns InterestRateListPage { items: [{ id, code, name, rate_type, apply_type, currency_code, description, is_active }], page, per_page, total }
  * @requires mdm.read
  * @domain mdm
@@ -644,7 +644,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * List the delegated user's notification inbox.
  *
  * List recent inbox notifications for the delegated user (X-User-Id / X-User-Subject) within the active tenant. Returns id, type, titleKey, bodyKey, href, readAt and createdAt per item, newest first. The params map is redacted.
- * @param args.limit Maximum number of inbox items, 1-20
+ * @param args.limit Maximum number of inbox items, 1-20 [1..20, default 10]
  * @returns InboxPage { items: [{ id, type, titleKey, bodyKey, href, readAt, createdAt }] }
  * @requires notification.read
  * @domain notification
@@ -703,7 +703,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * Get the business calendar status.
  *
  * Return the current business calendar state for the given branch: current, previous and next business dates plus the system-date status (OPEN, EOD_PROCESSING, CLOSED).
- * @param args.branchCode Branch code; defaults to HEAD_OFFICE
+ * @param args.branchCode Branch code; defaults to HEAD_OFFICE [maxLength 64, default HEAD_OFFICE]
  * @returns SystemDate { id, branch_code, current_business_date, previous_business_date, next_business_date, status, last_eod_at, updated_at }
  * @requires platform.read
  * @domain platform
@@ -734,9 +734,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * List organizations in the delegated tenant.
  *
  * List organizations of the active tenant, optionally filtered by a free-text query on code/name. Returns id, code, name, parentId, parentName and isActive per organization, with pagination.
- * @param args.search Free-text filter on organization code/name
- * @param args.page One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on organization code/name [maxLength 128]
+ * @param args.page One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 20]
  * @returns OrganizationListPage { items: [{ id, code, name, parentId, parentName, isActive }], page, per_page, total }
  * @requires platform.read
  * @domain platform
@@ -769,7 +769,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * List tenant parameters (secrets excluded).
  *
  * List configuration parameters of the active tenant, optionally filtered by scope type. Rows marked is_secret are never returned, so Parameter.value only appears for non-secret parameters.
- * @param args.scopeType Optional filter by parameter scope type
+ * @param args.scopeType Optional filter by parameter scope type [one of: global|tenant|org|branch|department]
  * @returns ParameterList { items: [{ id, key, value, valueType, scopeType, description }] }
  * @requires platform.read
  * @domain platform
@@ -800,7 +800,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * List values of a lookup category.
  *
  * List the active-tenant values of the given lookup category. Returns id, code, name, sortOrder and isActive per value.
- * @param args.lookupCode Lookup category code, at most 64 characters
+ * @param args.lookupCode Lookup category code, at most 64 characters [maxLength 64, required]
  * @returns LookupValueList { items: [{ id, code, name, sortOrder, isActive }] }
  * @requires platform.read
  * @domain platform
@@ -831,9 +831,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * List stored computed indicator values for a period.
  *
  * List the stored values of computed indicators (chỉ tiêu QCMS) for a reporting period, optionally narrowed to one indicator code. Only computed results are exposed: the declarative formula, sources and dimension configuration stay behind this boundary. The dimension key survives because it tells the assistant which slice a value covers.
- * @param args.periodCode Reporting period as YYYY-MM (all periods when omitted)
- * @param args.indicatorCode Optional indicator code filter (e.g. 30020.02)
- * @param args.limit Page size, 1-20
+ * @param args.periodCode Reporting period as YYYY-MM (all periods when omitted) [maxLength 7]
+ * @param args.indicatorCode Optional indicator code filter (e.g. 30020.02) [maxLength 128]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns IndicatorResultListPage { items: [{ indicator_code, name, unit, period_code, dimension_key, value, source }], page, per_page, total }
  * @requires statistical.read
  * @domain statistical
@@ -866,9 +866,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * List active statistical indicators in the delegated tenant.
  *
  * List active statistical indicators (chỉ tiêu thống kê) in the active tenant. Returns id, code, name, unit, group_code and is_active per indicator, with pagination. Internal fields (tenant_id, created_by, timestamps) are dropped by the handler and again by this response allowlist.
- * @param args.search Free-text filter on indicator code/name
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on indicator code/name [maxLength 128]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns IndicatorListPage { items: [{ id, code, name, unit, group_code, is_active }], page, per_page, total }
  * @requires statistical.read
  * @domain statistical
@@ -901,9 +901,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * List active report definitions in the delegated tenant.
  *
  * List active report definitions (danh mục báo cáo) in the active tenant. Returns id, code, name, group_code, output_format and is_active per definition, with pagination. Internal wiring (query_id, param_schema, template_file_id, actor ids, timestamps) is dropped by the handler and again by this response allowlist.
- * @param args.search Free-text filter on report code/name
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.search Free-text filter on report code/name [maxLength 128]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns ReportDefinitionListPage { items: [{ id, code, name, group_code, output_format, is_active }], page, per_page, total }
  * @requires statistical.read
  * @domain statistical
@@ -936,11 +936,11 @@ func GeneratedCatalog() []GeneratedEntry {
  * List report submission statuses in the delegated tenant.
  *
  * List report submission periods (trạng thái nộp báo cáo) in the active tenant, optionally narrowed by report_code, period_code and lifecycle status. Returns id, report_code, period_code, status and submitted_at per submission. The raw payload (report data), workflow case, submitter identity and internal timestamps are dropped by the handler and again by this response allowlist.
- * @param args.reportCode Optional report code filter (substring match)
- * @param args.periodCode Optional reporting period code filter (substring match, e.g. 2026-08)
- * @param args.status Optional submission lifecycle status filter
- * @param args.cursor One-based page number
- * @param args.limit Page size, 1-20
+ * @param args.reportCode Optional report code filter (substring match) [maxLength 128]
+ * @param args.periodCode Optional reporting period code filter (substring match, e.g. 2026-08) [maxLength 128]
+ * @param args.status Optional submission lifecycle status filter [one of: DRAFT|SUBMITTED|APPROVED|REJECTED]
+ * @param args.cursor One-based page number [>= 1, default 1]
+ * @param args.limit Page size, 1-20 [1..20, default 10]
  * @returns SubmissionStatusListPage { items: [{ id, report_code, period_code, status, submitted_at }], page, per_page, total }
  * @requires statistical.read
  * @domain statistical
@@ -975,9 +975,9 @@ func GeneratedCatalog() []GeneratedEntry {
  * Run one catalogued report for a period in the delegated tenant.
  *
  * Run one catalogued report (identified by its report_code, never by SQL) for a reporting period and return the computed rows. This is the natural-language routing target: the assistant picks a report code from the catalog plus a period/org parameter, and the service executes the parameterised builder. Internal wiring (query_id, sql text, param schema, tenant_id) is never exposed; the rows are read-model values.
- * @param args.reportCode Report code from the report-definition catalog (e.g. LOAN_PORTFOLIO_SUMMARY)
- * @param args.periodCode Reporting period as YYYY-MM
- * @param args.orgCode Optional org unit filter
+ * @param args.reportCode Report code from the report-definition catalog (e.g. LOAN_PORTFOLIO_SUMMARY) [maxLength 128, required]
+ * @param args.periodCode Reporting period as YYYY-MM [maxLength 7, required]
+ * @param args.orgCode Optional org unit filter [maxLength 128]
  * @returns ReportRun { code, name, period_code, columns: [string], rows: [[any]], row_count }
  * @requires statistical.read
  * @domain statistical
@@ -1010,7 +1010,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * Read the status timeline of a business case in the delegated tenant.
  *
  * Read the timeline events of one business case in the active tenant, ordered oldest first. Returns id, eventType, createdAt per event; raw event data, actor identities and notes are dropped.
- * @param args.caseId Business case identifier (max 128 chars)
+ * @param args.caseId Business case identifier (max 128 chars) [maxLength 128, required]
  * @returns TimelinePage { items: [{ id, eventType, createdAt }], page, per_page, total }
  * @requires workflow.read
  * @domain workflow
@@ -1041,7 +1041,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * Read a single business case in the delegated tenant.
  *
  * Read one business case by id in the active tenant. Returns the redacted case shape: id, caseCode, caseType, status, title, createdAt, updatedAt.
- * @param args.caseId Business case identifier (max 128 chars)
+ * @param args.caseId Business case identifier (max 128 chars) [maxLength 128, required]
  * @returns AiBusinessCase { id, caseCode, caseType, status, title, createdAt, updatedAt }
  * @requires workflow.read
  * @domain workflow
@@ -1072,7 +1072,7 @@ func GeneratedCatalog() []GeneratedEntry {
  * Read a single work item in the delegated tenant.
  *
  * Read one work item by id in the active tenant. Returns the redacted work-item shape: id, caseCode, caseType, taskType, stepCode, title, status, transactionStatus, slaStatus, slaDueAt, createdAt, updatedAt, canClaim, canOpen, canReassign.
- * @param args.workItemId Workflow work item identifier (max 128 chars)
+ * @param args.workItemId Workflow work item identifier (max 128 chars) [maxLength 128, required]
  * @returns AiWorkItem { id, caseCode, caseType, taskType, stepCode, title, status, transactionStatus, slaStatus, slaDueAt, createdAt, updatedAt, canClaim, canOpen, canReassign }
  * @requires workflow.read
  * @domain workflow
@@ -1104,9 +1104,9 @@ func GeneratedCatalog() []GeneratedEntry {
  *
  * List business cases in the active tenant, optionally filtered by status and a keyword matched against case code, title and primary object id. Returns id, caseCode, caseType, status, title, createdAt, updatedAt per case, with pagination over the newest fetched window.
  * @param args.status Filter by case status (e.g. SUBMITTED, IN_REVIEW, COMPLETED)
- * @param args.keyword Free-text filter on case code, title and primary object id (max 128 chars)
- * @param args.page One-based page number
- * @param args.perPage Page size, 1-20
+ * @param args.keyword Free-text filter on case code, title and primary object id (max 128 chars) [maxLength 128]
+ * @param args.page One-based page number [>= 1, default 1]
+ * @param args.perPage Page size, 1-20 [1..20, default 10]
  * @returns CaseListPage { items: [{ id, caseCode, caseType, status, title, createdAt, updatedAt }], page, per_page, total }
  * @requires workflow.read
  * @domain workflow
@@ -1140,10 +1140,10 @@ func GeneratedCatalog() []GeneratedEntry {
  * List workflow work items (work queues) in the delegated tenant.
  *
  * List work items in the active tenant's incoming or outgoing work queue for the delegated user. Incoming items are filtered to what the user can claim, is assigned to, or created (maker track). Returns id, caseCode, caseType, taskType, stepCode, title, status, transactionStatus, slaStatus, slaDueAt, createdAt, updatedAt, canClaim, canOpen, canReassign per item, with pagination over the newest fetched window.
- * @param args.direction Work queue direction; INCOMING (default) or OUTGOING. Search/ALL is not exposed to the assistant.
+ * @param args.direction Work queue direction; INCOMING (default) or OUTGOING. Search/ALL is not exposed to the assistant. [one of: INCOMING|OUTGOING, default INCOMING]
  * @param args.status Filter by case transaction status (e.g. SUBMITTED, IN_REVIEW)
- * @param args.page One-based page number
- * @param args.perPage Page size, 1-20
+ * @param args.page One-based page number [>= 1, default 1]
+ * @param args.perPage Page size, 1-20 [1..20, default 10]
  * @returns WorkItemListPage { items: [{ id, caseCode, caseType, taskType, stepCode, title, status, transactionStatus, slaStatus, slaDueAt, createdAt, updatedAt, canClaim, canOpen, canReassign }], page, per_page, total }
  * @requires workflow.read
  * @domain workflow
