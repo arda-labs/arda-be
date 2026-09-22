@@ -333,6 +333,16 @@ Ghi nhận thêm (chưa sửa, không thuộc member):
 - **`$3 + $4` untyped trong `ApplyApprovedCapital`** (bug 11 nay lộ mặt thứ hai):
   `SQLSTATE 42725 operator is not unique: unknown + unknown`. Tưởng int64 Go local
   là an toàn, nhưng pgx vẫn gửi `unknown` trong câu UPDATE này — đã cast bigint.
+14. **Key fact request không duy nhất**: `memberRequestKey` =
+    `member_code:request_type:request_date`. Một thành viên góp vốn bổ sung
+    **nhiều lần trong cùng ngày** → trùng key → `rpt_fact_member_request_daily_pkey`
+    `SQLSTATE 23505` → cả bước `RPT_EXTRACT_DAILY` fail, **không fact nào được ghi**
+    (kể cả member fact). Sửa: mang `request_id` từ CRM reporting surface qua và
+    dùng làm key.
+
+Quy tắc rút ra: khoá fact phải là **định danh nguồn** (id), không phải tổ hợp
+thuộc tính "chắc là đủ unique"; và một bước ETL fail phải nhìn ra nó chặn **toàn
+bộ** fact trong cùng transaction.
 
 Quy tắc rút ra: contract HTTP phải verify bằng **payload thật của FE**
 (snake_case), không bằng struct Go; và expression SQL phải cast kiểu tường minh

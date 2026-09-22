@@ -87,6 +87,35 @@ var factColumns = map[string]map[string]bool{
 	},
 }
 
+// numericFactColumns marks which whitelisted fact columns hold numbers, so a
+// comparison filter compares them as numbers. Postgres has no bigint > text
+// operator: without this, `total_capital_minor > "0"` fails SQLSTATE 42883. Text
+// comparison would also be wrong for numbers ("9" > "10").
+var numericFactColumns = map[string]map[string]bool{
+	"rpt_fact_loan_agreement_daily": {
+		"outstanding_amt_minor": true, "provision_amt_minor": true,
+		"disburse_amt_minor": true, "interest_rate": true,
+	},
+	"rpt_fact_deposit_contract_daily": {
+		"principal_minor": true, "accrued_minor": true,
+	},
+	"rpt_fact_loan_collateral_daily": {
+		"coll_value_minor": true, "coll_use_value_minor": true,
+	},
+	"rpt_fact_capital_contract_daily": {
+		"amount_minor": true, "interest_rate": true,
+	},
+	"rpt_fact_capital_movement_daily": {
+		"amount_minor": true,
+	},
+	"rpt_fact_member_daily": {
+		"estb_capital_minor": true, "add_capital_minor": true, "total_capital_minor": true,
+	},
+	"rpt_fact_member_request_daily": {
+		"amount_minor": true,
+	},
+}
+
 // dimDef maps an indicator dimension name to the fact column it slices on.
 // Only these dimensions are accepted in a compute request.
 var dimDef = map[string]string{
@@ -420,6 +449,11 @@ func (e *Engine) leaf(ctx context.Context, tenantID, periodCode string, f *Formu
 				return 0, fmt.Errorf("unsupported filter operator %q on %s", op, col)
 			}
 			args = append(args, values)
+			if numericFactColumns[f.Fact][col] {
+				where = append(where, fmt.Sprintf("%s::numeric %s ALL($%d::numeric[])",
+					col, op, len(args)))
+				continue
+			}
 			where = append(where, fmt.Sprintf("%s %s ALL($%d::text[])", col, op, len(args)))
 			continue
 		}
@@ -498,9 +532,9 @@ func jsonValues(raw json.RawMessage) ([]string, error) {
 }
 
 // comparisonFilter recognises {"op": ">", "value": "0"} filters, which the
-// membership indicators need (e.g. "members with capital above zero"). The
-// comparison runs as text comparison against the bound literals, matching the
-// all-text filter convention the rest of the engine uses.
+// membership indicators need (e.g. "members with capital above zero"). Numeric
+// columns compare as numbers (see numericFactColumns); everything else stays
+// the all-text filter convention the rest of the engine uses.
 func comparisonFilter(raw json.RawMessage) (string, []string, bool) {
 	var spec struct {
 		Op    string          `json:"op"`
