@@ -13,6 +13,12 @@ import (
 // only in endpoint conventions and required request metadata.
 type ProviderType string
 
+// Jev uses System One typed decisions, not chat-completions.
+func IsDecisionModelID(id string) bool {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(id)), "/")
+	return strings.HasPrefix(parts[len(parts)-1], "jev-")
+}
+
 const (
 	ProviderOpenAI           ProviderType = "openai"
 	ProviderOpenAICompatible ProviderType = "openai-compatible"

@@ -153,6 +153,7 @@ func runAgentStream(
 	}
 
 	messages := buildModelMessages(ctx, store, options, scope, scopeRun, latestUserMessage(input.Messages), uiContextFromForwardedProps(input.ForwardedProps))
+	options.decisionSkill, messages = routeDecision(ctx, store, options, scopeRun, messages)
 	agentStepsLoop(w, r, store, resolver, scope, scopeRun, input, sse, options, modelProvider, messages)
 }
 
@@ -360,12 +361,18 @@ func agentStepsLoop(
 	}
 	executedCalls := make(map[callKey]int)
 	for step := 0; step < maxSteps && !awaitingApproval; step++ {
+		turnDefs := defs
+		if options.decisionSkill != "" && step == maxSteps-1 {
+			// Reserve a synthesis turn instead of spending every round on tools.
+			turnDefs = nil
+			messages = append(messages, model.Message{Role: "system", Content: "Tool budget reached. Write the final answer now using only verified evidence already collected. If data or parameters are missing, state precisely what is missing. Do not claim the analysis is complete unless the evidence supports it."})
+		}
 		var turnText strings.Builder
 		var turnReasoning strings.Builder
 		var collected []model.ToolCall
 		modelTimer := startModelStreamTimer()
 		recordPromptSize(messages)
-		finishReason, usage, err := modelProvider.StreamChat(ctx, messages, defs, model.StreamCallbacks{
+		finishReason, usage, err := modelProvider.StreamChat(ctx, messages, turnDefs, model.StreamCallbacks{
 			OnTextDelta: func(delta string) {
 				modelTimer.firstDelta()
 				turnText.WriteString(delta)

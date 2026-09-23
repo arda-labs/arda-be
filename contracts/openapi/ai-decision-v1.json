@@ -1,0 +1,82 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Arda AI Decision Settings", "version": "1.0.0" },
+  "servers": [{ "url": "https://api.arda.io.vn" }],
+  "security": [{ "ardaSession": [] }],
+  "paths": {
+    "/api/ai/settings/decision": {
+      "get": {
+        "operationId": "getAIDecisionSettings",
+        "summary": "Read tenant decision settings without exposing credentials",
+        "responses": {
+          "200": { "description": "Tenant settings (disabled defaults if not configured)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SettingsResponse" } } } },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "put": {
+        "operationId": "saveAIDecisionSettings",
+        "summary": "Save encrypted, tenant-scoped decision model configuration",
+        "requestBody": { "$ref": "#/components/requestBodies/Settings" },
+        "responses": {
+          "200": { "description": "Saved settings", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SettingsResponse" } } } },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/ai/settings/decision/test": {
+      "post": {
+        "operationId": "testAIDecisionSettings",
+        "summary": "Probe draft configuration using a fixed sample without saving",
+        "requestBody": { "$ref": "#/components/requestBodies/Settings" },
+        "responses": {
+          "200": { "description": "Connection result, including unsuccessful probes", "content": { "application/json": { "schema": { "type": "object", "required": ["success", "result"], "properties": { "success": { "const": true }, "errors": { "type": "array", "items": {} }, "messages": { "type": "array", "items": { "type": "string" } }, "result": { "$ref": "#/components/schemas/TestResult" } } } } } },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "ardaSession": { "type": "apiKey", "in": "cookie", "name": "arda_session", "x-browser-credentials": "include" } },
+    "requestBodies": { "Settings": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SettingsInput" } } } } },
+    "responses": { "Problem": { "description": "Problem details", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } } },
+    "schemas": {
+      "ResponseMeta": { "type": "object", "properties": { "request_id": { "type": "string" }, "trace_id": { "type": "string" } } },
+      "Problem": { "type": "object", "required": ["type", "title", "status"], "properties": { "type": { "type": "string" }, "title": { "type": "string" }, "status": { "type": "integer" }, "code": { "type": "string" }, "detail": { "type": "string" }, "request_id": { "type": "string" } } },
+      "SettingsInput": {
+        "type": "object", "additionalProperties": false, "required": ["enabled", "model_id", "min_confidence"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "model_id": { "type": "string", "enum": ["jev-1.13-free", "jev-1.13"] },
+          "min_confidence": { "type": "number", "minimum": 0.5, "maximum": 1 },
+          "api_key": { "type": "string", "maxLength": 4096, "writeOnly": true, "description": "Omit to preserve saved key; empty clears the key and requires enabled=false." }
+        }
+      },
+      "Settings": {
+        "type": "object", "required": ["enabled", "model_id", "min_confidence", "has_api_key", "provider", "purpose"],
+        "properties": {
+          "enabled": { "type": "boolean" }, "model_id": { "type": "string", "enum": ["jev-1.13-free", "jev-1.13"] },
+          "min_confidence": { "type": "number", "minimum": 0.5, "maximum": 1 },
+          "has_api_key": { "type": "boolean" }, "provider": { "const": "opencode-zen" }, "purpose": { "const": "decision" }
+        }
+      },
+      "SettingsResponse": {
+        "type": "object", "required": ["success", "result"], "properties": { "success": { "const": true }, "errors": { "type": "array", "items": {} }, "messages": { "type": "array", "items": { "type": "string" } }, "result": { "$ref": "#/components/schemas/Settings" } }
+      },
+      "TestResult": {
+        "type": "object", "required": ["success", "latency_ms"], "properties": {
+          "success": { "type": "boolean" }, "latency_ms": { "type": "integer", "minimum": 0 }, "model_id": { "type": "string" },
+          "skill": { "type": "string", "enum": ["general", "report", "loan_portfolio", "knowledge"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }, "error": { "type": "string" }
+        }
+      }
+    }
+  }
+}

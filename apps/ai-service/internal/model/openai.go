@@ -144,6 +144,9 @@ func (c *Client) Validate() error {
 	if c == nil || c.baseURL == "" || c.model == "" {
 		return fmt.Errorf("model client is not configured")
 	}
+	if IsDecisionModelID(c.model) {
+		return fmt.Errorf("decision models cannot be used for chat generation")
+	}
 	u, err := url.Parse(c.baseURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
 		return fmt.Errorf("model base URL must be an http or https URL")

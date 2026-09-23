@@ -7,6 +7,14 @@
   "columns": [
     {
       "service": "ai-service",
+      "table": "public.ai_decision_settings",
+      "column": "api_key",
+      "handling": "encrypted",
+      "implementation": "internal/repository/decision_settings.go",
+      "cipher": "enc:v1 AES-256-GCM with HKDF-SHA256 key derivation"
+    },
+    {
+      "service": "ai-service",
       "table": "public.ai_tenant_settings",
       "column": "api_key",
       "handling": "encrypted",

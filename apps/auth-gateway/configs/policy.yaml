@@ -94,6 +94,8 @@ routes:
       - superadmin
       - platform.manage
 
+  # Includes /api/ai/settings/decision (GET/PUT) and /decision/test (POST).
+  # Decision model credentials are admin-only, just like chat profiles.
   - id: ai-settings-read
     path: /api/ai/settings/**
     methods: [GET]

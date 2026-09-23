@@ -124,6 +124,9 @@ func handleProfiles(w http.ResponseWriter, r *http.Request, store runStore, opti
 		if !validateProfileURL(w, req.BaseURL, options) {
 			return
 		}
+		if !validateChatModels(w, req.Models) {
+			return
+		}
 		profile, err := profilesStore.CreateProfile(r.Context(), scope.TenantID, req.Name, string(providerType), req.BaseURL, req.APIKey, req.Models)
 		if err != nil {
 			writeProfileError(w, err)
@@ -183,6 +186,9 @@ func handleProfileByID(w http.ResponseWriter, r *http.Request, store runStore, o
 		var req applyModelRequest
 		if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
 			problem(w, http.StatusBadRequest, "ai.invalid_request_body")
+			return
+		}
+		if !validateChatModels(w, []string{req.ModelID}) {
 			return
 		}
 		profile, err := profilesStore.ApplyProfileModel(r.Context(), scope.TenantID, profileID, req.ModelID)
@@ -258,6 +264,9 @@ func handleProfileModels(w http.ResponseWriter, r *http.Request, store repositor
 		problem(w, http.StatusBadRequest, "ai.invalid_request_body")
 		return
 	}
+	if !validateChatModels(w, req.Models) {
+		return
+	}
 	profile, err := store.AddProfileModels(r.Context(), tenantID, profileID, req.Models)
 	if err != nil {
 		writeProfileError(w, err)
@@ -292,6 +301,9 @@ func handleProfileTest(w http.ResponseWriter, r *http.Request, store repository.
 		return
 	}
 	modelID := strings.TrimSpace(req.ModelID)
+	if !validateChatModels(w, []string{modelID}) {
+		return
+	}
 	if modelID == "" {
 		writeJSON(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "result": testConnectionResponse{Success: false, Error: "Model ID không được để trống"}})
 		return

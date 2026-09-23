@@ -150,6 +150,16 @@ func (s *SQLRunStore) FinalizeQuota(ctx context.Context, tenantID, externalRunID
 	if err != nil {
 		return err
 	}
+	// Decision usage stays separate from chat model attribution, but counts
+	// against the same reservation. A resumed run finalizes it only once.
+	var decisionTokens int64
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE((decision_usage->>'input_tokens')::bigint, 0)
+		+ COALESCE((decision_usage->>'output_tokens')::bigint, 0) FROM public.ai_runs
+		WHERE tenant_id = $1 AND external_run_id = $2`, tenantID, externalRunID).Scan(&decisionTokens)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	actualTokens += decisionTokens
 	delta := actualTokens - reserved
 	if _, err := tx.ExecContext(ctx, `UPDATE public.ai_quota_reservations SET actual_tokens = $3, status = 'FINALIZED', finalized_at = now() WHERE tenant_id = $1 AND external_run_id = $2`, tenantID, externalRunID, actualTokens); err != nil {
 		return err

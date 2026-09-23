@@ -35,6 +35,9 @@ type ragFeedbacker interface {
 }
 
 type RouterOptions struct {
+	// DecisionEvaluator uses System One typed decisions, never the chat transport.
+	DecisionEvaluator   decisionEvaluator
+	decisionSkill       string
 	EnableHITLProposals bool
 	// ModelPool caches tenant model clients and their circuit-breaker state.
 	// Tenant model configuration itself lives in ai_tenant_settings (UI).
@@ -294,6 +297,12 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	})
 	mux.HandleFunc("/api/ai/settings/agent", func(w http.ResponseWriter, r *http.Request) {
 		handleAgentSettings(w, r, store)
+	})
+	mux.HandleFunc("/api/ai/settings/decision", func(w http.ResponseWriter, r *http.Request) {
+		handleDecisionSettings(w, r, store, options)
+	})
+	mux.HandleFunc("/api/ai/settings/decision/test", func(w http.ResponseWriter, r *http.Request) {
+		handleDecisionSettings(w, r, store, options)
 	})
 	mux.HandleFunc("/api/ai/answers/feedback", func(w http.ResponseWriter, r *http.Request) {
 		handleAnswerFeedback(w, r, store)
