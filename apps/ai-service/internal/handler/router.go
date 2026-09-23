@@ -295,6 +295,9 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	mux.HandleFunc("/api/ai/settings/agent", func(w http.ResponseWriter, r *http.Request) {
 		handleAgentSettings(w, r, store)
 	})
+	mux.HandleFunc("/api/ai/answers/feedback", func(w http.ResponseWriter, r *http.Request) {
+		handleAnswerFeedback(w, r, store)
+	})
 	mux.HandleFunc("/api/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		listConversations(w, r, store, options)
 	})
