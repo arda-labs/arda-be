@@ -839,9 +839,16 @@ func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*Analy
 			count(*),
 			count(*) FILTER (WHERE helpful = true),
 			count(*) FILTER (WHERE helpful = false)
-		FROM public.ai_rag_feedback f
-		JOIN public.ai_rag_runs r ON r.id = f.run_id
-		WHERE r.tenant_id = $1
+		FROM (
+			SELECT f.helpful AS helpful
+			FROM public.ai_rag_feedback f
+			JOIN public.ai_rag_runs r ON r.id = f.run_id
+			WHERE r.tenant_id = $1
+			UNION ALL
+			SELECT (fb.rating >= 4) AS helpful
+			FROM public.ai_feedback fb
+			WHERE fb.tenant_id = $1
+		) ratings
 	`, tenantID).Scan(&fbTotal, &fbPos, &fbNeg)
 
 	if fbErr == nil && fbTotal > 0 {

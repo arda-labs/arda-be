@@ -13,6 +13,7 @@ import (
 // answerFeedbackInput is the POST /api/ai/answers/feedback body.
 type answerFeedbackInput struct {
 	ThreadID string `json:"thread_id"`
+	RunID    string `json:"run_id,omitempty"`
 	Helpful  bool   `json:"helpful"`
 	Comment  string `json:"comment,omitempty"`
 }
@@ -50,7 +51,11 @@ func handleAnswerFeedback(w http.ResponseWriter, r *http.Request, store runStore
 	if len(comment) > 2000 {
 		comment = comment[:2000]
 	}
-	if err := feedbackStore.SaveAnswerFeedback(r.Context(), scope.TenantID, scope.ActorUserID, threadID, input.Helpful, comment); err != nil {
+	runID := strings.TrimSpace(input.RunID)
+	if len(runID) > 64 {
+		runID = ""
+	}
+	if err := feedbackStore.SaveAnswerFeedback(r.Context(), scope.TenantID, scope.ActorUserID, threadID, runID, input.Helpful, comment); err != nil {
 		if errors.Is(err, repository.ErrConversationNotFound) {
 			problem(w, http.StatusNotFound, "ai.conversation_not_found")
 			return
