@@ -66,7 +66,7 @@ func (s *presentationService) ReportDocument(ctx context.Context, tenantID, code
 		GeneratedAt: ardatime.Now().Format("2006-01-02 15:04"),
 	}
 	if period != "" {
-		kpi, err := s.periodKPI(ctx, tenantID, period)
+		kpi, err := s.periodKPI(ctx, tenantID, period, definition.GroupCode)
 		if err != nil {
 			return nil, err
 		}
@@ -148,8 +148,40 @@ func (s *presentationService) RenderDocument(ctx context.Context, doc *presentat
 	}
 }
 
-// periodKPI lists stored indicator values for the period as KPI cards.
-func (s *presentationService) periodKPI(ctx context.Context, tenantID, period string) ([]presentation.KPI, error) {
+// maxReportKPI bounds the headline cards on a report so a single document does
+// not turn into a wall of every indicator the tenant has computed.
+const maxReportKPI = 8
+
+// reportKPIGroups maps a report definition's group code to the Vietnamese
+// indicator groups that belong to the same business area. Reports group by
+// code (LNM/DPM/CFM/CRM/OPS) while indicators group by name, so the two are
+// bridged here; an unmapped group falls back to every indicator.
+var reportKPIGroups = map[string][]string{
+	"LNM": {"Tín dụng", "TSĐB"},
+	"DPM": {"Huy động vốn"},
+	"CFM": {"Góp vốn cổ phần", "Nguồn vốn"},
+	"CRM": {"Khách hàng"},
+	"OPS": {},
+}
+
+// reportKpiFilter returns the indicator groups a report's cards may use and
+// whether a filter applies. An empty (non-nil) list means "this report has no
+// matching indicator group"; a nil list means no filtering.
+func reportKpiFilter(reportGroup string) ([]string, bool) {
+	group := strings.ToUpper(strings.TrimSpace(reportGroup))
+	if group == "" {
+		return nil, false
+	}
+	mapped, ok := reportKPIGroups[group]
+	if !ok {
+		return nil, false
+	}
+	return mapped, true
+}
+
+// periodKPI lists stored indicator values for the period as KPI cards, narrowed
+// to the report's business area and capped so the card stays readable.
+func (s *presentationService) periodKPI(ctx context.Context, tenantID, period, reportGroup string) ([]presentation.KPI, error) {
 	results, err := s.statistical.ListIndicatorResults(ctx, repository.ListIndicatorResultsParams{
 		TenantID: tenantID, PeriodCode: period,
 	})
@@ -160,25 +192,41 @@ func (s *presentationService) periodKPI(ctx context.Context, tenantID, period st
 	if err != nil {
 		return nil, err
 	}
-	labels := make(map[string]string, len(indicators))
-	units := make(map[string]string, len(indicators))
+	byCode := make(map[string]repository.Indicator, len(indicators))
 	for _, ind := range indicators {
-		labels[ind.Code] = ind.Name
-		units[ind.Code] = ind.Unit
+		byCode[ind.Code] = ind
 	}
-	kpi := make([]presentation.KPI, 0, len(results))
+	groups, filtered := reportKpiFilter(reportGroup)
+
+	kpi := make([]presentation.KPI, 0, maxReportKPI)
 	for _, r := range results {
 		if r.DimensionKey != "" {
 			continue // totals only on the headline cards
 		}
+		ind, known := byCode[r.IndicatorCode]
+		if filtered && (!known || !containsString(groups, ind.GroupCode)) {
+			continue
+		}
 		kpi = append(kpi, presentation.KPI{
 			Code:  r.IndicatorCode,
-			Label: firstNonEmpty(labels[r.IndicatorCode], r.IndicatorCode),
+			Label: firstNonEmpty(ind.Name, r.IndicatorCode),
 			Value: valueText(r.Value),
-			Unit:  units[r.IndicatorCode],
+			Unit:  ind.Unit,
 		})
+		if len(kpi) >= maxReportKPI {
+			break
+		}
 	}
 	return kpi, nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func valueText(v *float64) string {
