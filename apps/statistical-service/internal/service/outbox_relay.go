@@ -64,12 +64,24 @@ func (r *OutboxRelay) Run(ctx context.Context) {
 }
 
 func (r *OutboxRelay) publishOnce(ctx context.Context) {
-	rows, err := r.db.QueryContext(ctx, `
+	// Claim the batch in a transaction so two replicas (or a restart racing a
+	// still-running relay) cannot publish the same row: SKIP LOCKED hands each
+	// pending row to exactly one relay, and the lock is held until the row is
+	// marked published. Nats-Msg-Id is the row id, so a republish after a
+	// commit failure is deduplicated by JetStream.
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		r.logger.Error("outbox relay: begin", "err", err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, `
 		SELECT id, subject, payload
 		FROM rpt_outbox_events
 		WHERE published_at IS NULL
 		ORDER BY created_at
-		LIMIT 50`)
+		LIMIT 50
+		FOR UPDATE SKIP LOCKED`)
 	if err != nil {
 		r.logger.Error("outbox relay: query", "err", err)
 		return
@@ -89,20 +101,30 @@ func (r *OutboxRelay) publishOnce(ctx context.Context) {
 		}
 		batch = append(batch, p)
 	}
+	if err := rows.Err(); err != nil {
+		r.logger.Error("outbox relay: iterate", "err", err)
+		rows.Close()
+		return
+	}
 	rows.Close()
 
 	for _, p := range batch {
-		if _, err := r.js.Publish(p.subject, p.payload); err != nil {
+		msg := &nats.Msg{Subject: p.subject, Data: p.payload, Header: nats.Header{}}
+		msg.Header.Set(nats.MsgIdHdr, p.id)
+		if _, err := r.js.PublishMsg(msg); err != nil {
 			r.logger.Error("outbox relay: publish", "id", p.id, "subject", p.subject, "err", err)
-			_, _ = r.db.ExecContext(ctx, `
+			_, _ = tx.ExecContext(ctx, `
 				UPDATE rpt_outbox_events
 				SET publish_attempts = publish_attempts + 1, last_error = $2
 				WHERE id = $1::uuid`, p.id, err.Error())
 			continue
 		}
-		if _, err := r.db.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE rpt_outbox_events SET published_at = now() WHERE id = $1::uuid`, p.id); err != nil {
 			r.logger.Error("outbox relay: mark published", "id", p.id, "err", err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		r.logger.Error("outbox relay: commit", "err", err)
 	}
 }

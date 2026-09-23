@@ -128,13 +128,33 @@ func (r *StatisticalRepository) UpsertAlert(ctx context.Context, a *IndicatorAle
 }
 
 // ClearAlert removes the alert for a rule + period + slice that is no longer
-// breached, so a recovered indicator does not leave a stale open alert.
+// breached, so a recovered indicator does not leave a stale open alert. The
+// matching outbox row is dropped too: its dedupe key would otherwise suppress
+// the notification of a later re-breach in the same period.
 func (r *StatisticalRepository) ClearAlert(ctx context.Context, tenantID, ruleCode, periodCode, dimensionKey string) error {
-	_, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM rpt_indicator_alerts
 		WHERE tenant_id = $1 AND rule_code = $2 AND period_code = $3 AND dimension_key = $4`,
-		tenantID, ruleCode, periodCode, dimensionKey)
-	return err
+		tenantID, ruleCode, periodCode, dimensionKey); err != nil {
+		return err
+	}
+	// dedupe_key is "rule|period|dimension|value"; split_part avoids having to
+	// escape LIKE wildcards in the business values.
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM rpt_outbox_events
+		WHERE tenant_id = $1 AND aggregate_type = 'indicator_alert' AND aggregate_id = $2
+		  AND split_part(dedupe_key, '|', 1) = $2
+		  AND split_part(dedupe_key, '|', 2) = $3
+		  AND split_part(dedupe_key, '|', 3) = $4`,
+		tenantID, ruleCode, periodCode, dimensionKey); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ListAlerts returns the tenant's alerts, newest first.
@@ -187,10 +207,15 @@ const IndicatorAlertSubject = "arda.statistical.indicator.breached.v1"
 // EnqueueAlertEvent appends one alert event to the outbox for the relay to
 // publish. dedupe_key makes it idempotent across COB re-runs: a breach that
 // keeps the same value enqueues once, a materially different value enqueues
-// again.
-func (r *StatisticalRepository) EnqueueAlertEvent(ctx context.Context, a *IndicatorAlert) error {
+// again. The rule name and owner travel with the payload so notification-service
+// can render and address the alert without reading the statistical schema.
+func (r *StatisticalRepository) EnqueueAlertEvent(ctx context.Context, a *IndicatorAlert, ruleName, ownerUserID string) error {
 	payload, err := json.Marshal(map[string]any{
+		"alert_id":       a.ID,
+		"tenant_id":      a.TenantID,
 		"rule_code":      a.RuleCode,
+		"rule_name":      ruleName,
+		"owner_user_id":  ownerUserID,
 		"indicator_code": a.IndicatorCode,
 		"period_code":    a.PeriodCode,
 		"dimension_key":  a.DimensionKey,

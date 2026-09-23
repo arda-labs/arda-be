@@ -495,7 +495,7 @@ func (s *StatisticalService) EvaluateIndicatorRules(ctx context.Context, tenantI
 			// Hand the durable alert to the outbox; the relay publishes it and
 			// notification-service renders it. Failure here must not lose the
 			// alert itself, so it is logged, not fatal.
-			if err := s.repo.EnqueueAlertEvent(ctx, alert); err != nil {
+			if err := s.repo.EnqueueAlertEvent(ctx, alert, rule.Name, rule.CreatedBy); err != nil {
 				slog.Warn("indicator alert enqueue failed", "rule", rule.Code, "err", err)
 			}
 			raised++
