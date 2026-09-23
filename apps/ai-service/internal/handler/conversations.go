@@ -59,6 +59,22 @@ func listConversations(w http.ResponseWriter, r *http.Request, store runStore, _
 			limit = parsed
 		}
 	}
+	// `?status=deleted` lists the trash (soft-deleted conversations), which the
+	// UI shows with a restore action.
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("status")), "deleted") {
+		trash, hasTrash := store.(repository.ConversationTrash)
+		if !hasTrash {
+			problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+			return
+		}
+		items, err := trash.ListDeletedConversations(r.Context(), scope.TenantID, scope.ActorUserID, limit)
+		if err != nil {
+			problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "messages": []string{}, "result": items})
+		return
+	}
 	items, err := reader.ListConversations(r.Context(), scope.TenantID, scope.ActorUserID, limit)
 	if err != nil {
 		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
@@ -113,6 +129,33 @@ func deleteConversation(w http.ResponseWriter, r *http.Request, store runStore, 
 	}
 	err := mutator.DeleteConversation(r.Context(), scope.TenantID, scope.ActorUserID, threadID)
 	if err != nil {
+		if errors.Is(err, repository.ErrConversationNotFound) {
+			problem(w, http.StatusNotFound, "ai.conversation_not_found")
+			return
+		}
+		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "messages": []string{}, "result": map[string]string{"threadId": threadID}})
+}
+
+// restoreConversation brings a trashed conversation back (POST …/{id}/restore).
+func restoreConversation(w http.ResponseWriter, r *http.Request, store runStore, _ RouterOptions) {
+	scope, ok := requireConversationScope(w, r, http.MethodPost)
+	if !ok {
+		return
+	}
+	trash, hasTrash := store.(repository.ConversationTrash)
+	if !hasTrash {
+		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+		return
+	}
+	threadID := strings.Trim(strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/ai/conversations/"), "/restore"), "/")
+	if threadID == "" || len(threadID) > 255 || strings.Contains(threadID, "/") {
+		problem(w, http.StatusNotFound, "ai.conversation_not_found")
+		return
+	}
+	if err := trash.RestoreConversation(r.Context(), scope.TenantID, scope.ActorUserID, threadID); err != nil {
 		if errors.Is(err, repository.ErrConversationNotFound) {
 			problem(w, http.StatusNotFound, "ai.conversation_not_found")
 			return

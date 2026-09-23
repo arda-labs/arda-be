@@ -89,6 +89,13 @@ type ConversationMutator interface {
 	DeleteConversation(ctx context.Context, tenantID, actorUserID, threadID string) error
 }
 
+// ConversationTrash is the soft-delete recovery surface: conversations are
+// never hard-deleted from the UI, so the trash lists them and can restore.
+type ConversationTrash interface {
+	ListDeletedConversations(ctx context.Context, tenantID, actorUserID string, limit int) ([]ConversationSummary, error)
+	RestoreConversation(ctx context.Context, tenantID, actorUserID, threadID string) error
+}
+
 type SQLRunStore struct {
 	db               *sql.DB
 	encryptionSecret string
@@ -627,6 +634,63 @@ func (s *SQLRunStore) DeleteConversation(ctx context.Context, tenantID, actorUse
 	`, tenantID, actorUserID, threadID)
 	if err != nil {
 		return fmt.Errorf("delete AI conversation: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return ErrConversationNotFound
+	}
+	return nil
+}
+
+// ListDeletedConversations lists the tenant's trashed conversations (most
+// recently deleted first) so the UI can offer restore.
+func (s *SQLRunStore) ListDeletedConversations(ctx context.Context, tenantID, actorUserID string, limit int) ([]ConversationSummary, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("AI run store is not configured")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.external_thread_id,
+		       COALESCE(c.title, LEFT(COALESCE((
+		           SELECT content FROM public.ai_messages m
+		           WHERE m.conversation_id = c.id ORDER BY m.sequence ASC LIMIT 1
+		       ), ''), 120)),
+		       (SELECT COUNT(*) FROM public.ai_messages m WHERE m.conversation_id = c.id),
+		       COALESCE(c.last_message_at::text, ''),
+		       c.status
+		FROM public.ai_conversations c
+		WHERE c.tenant_id = $1 AND c.actor_user_id = $2 AND c.status = 'DELETED'
+		ORDER BY c.updated_at DESC
+		LIMIT $3
+	`, tenantID, actorUserID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list deleted AI conversations: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]ConversationSummary, 0, limit)
+	for rows.Next() {
+		var item ConversationSummary
+		if err := rows.Scan(&item.ThreadID, &item.Title, &item.MessageCount, &item.LastMessageAt, &item.Status); err != nil {
+			return nil, fmt.Errorf("scan deleted AI conversation: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// RestoreConversation brings a trashed conversation back to ACTIVE.
+func (s *SQLRunStore) RestoreConversation(ctx context.Context, tenantID, actorUserID, threadID string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("AI run store is not configured")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE public.ai_conversations SET status = 'ACTIVE', updated_at = now()
+		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_thread_id = $3 AND status = 'DELETED'
+	`, tenantID, actorUserID, threadID)
+	if err != nil {
+		return fmt.Errorf("restore AI conversation: %w", err)
 	}
 	if rows, _ := result.RowsAffected(); rows == 0 {
 		return ErrConversationNotFound

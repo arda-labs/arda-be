@@ -301,6 +301,10 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 			conversationMessages(w, r, store, options)
 			return
 		}
+		if strings.HasSuffix(suffix, "/restore") && r.Method == http.MethodPost {
+			restoreConversation(w, r, store, options)
+			return
+		}
 		if r.Method == http.MethodDelete {
 			deleteConversation(w, r, store, options)
 			return
