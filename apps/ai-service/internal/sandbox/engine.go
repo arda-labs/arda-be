@@ -48,6 +48,9 @@ type ExecutionResult struct {
 	ProposalTool   string         `json:"proposalTool,omitempty"`
 	ProposalRisk   string         `json:"proposalRisk,omitempty"`
 	ProposalArgs   map[string]any `json:"proposalArgs,omitempty"`
+	// AutoApprovedMethods lists confirm-kind SDK methods that ran without a
+	// human decision because the run was in act mode. Empty in ask mode.
+	AutoApprovedMethods []string `json:"autoApprovedMethods,omitempty"`
 }
 
 type SDKMethod struct {
@@ -298,19 +301,27 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 			// themselves. Act mode (scope.AutoApproveRisk) can let a low/medium
 			// risk action through without a human decision; high risk always
 			// requires approval.
-			if methodCopy.RequiresApproval && !autoApprove(scope, methodCopy.Risk) {
+			if methodCopy.RequiresApproval {
+				if !autoApprove(scope, methodCopy.Risk) {
+					mu.Lock()
+					approvalRequiredErr = tools.ErrApprovalRequired
+					approvalTool = methodCopy.MethodName
+					approvalRisk = methodCopy.Risk
+					approvalArgs = rawArgs
+					mu.Unlock()
+					panic(vm.ToValue(map[string]any{
+						"code":    "approval_required",
+						"domain":  methodCopy.Domain,
+						"method":  methodCopy.SDKPath,
+						"message": "Action requires human approval",
+					}))
+				}
+				// Act mode: the user opted in and holds the permission, so this
+				// low/medium risk action runs now. Record which methods ran for
+				// the audit trail (the run's tool row carries policy mode:act).
 				mu.Lock()
-				approvalRequiredErr = tools.ErrApprovalRequired
-				approvalTool = methodCopy.MethodName
-				approvalRisk = methodCopy.Risk
-				approvalArgs = rawArgs
+				res.AutoApprovedMethods = append(res.AutoApprovedMethods, methodCopy.SDKPath)
 				mu.Unlock()
-				panic(vm.ToValue(map[string]any{
-					"code":    "approval_required",
-					"domain":  methodCopy.Domain,
-					"method":  methodCopy.SDKPath,
-					"message": "Action requires human approval",
-				}))
 			}
 
 			// Execute dispatcher

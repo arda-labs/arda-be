@@ -208,6 +208,11 @@ func NewCodeModeSuite(
 			"methodsCalled": res.MethodsCalled,
 			"scriptHash":    res.ScriptHash,
 		}
+		if len(res.AutoApprovedMethods) > 0 {
+			// Act mode ran confirm methods without approval; surface them so
+			// the transcript and audit trail record what executed.
+			out["autoApprovedMethods"] = res.AutoApprovedMethods
+		}
 		if resultID != "" {
 			out["resultId"] = resultID
 		}

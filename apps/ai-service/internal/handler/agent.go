@@ -1150,9 +1150,14 @@ func executeModelToolCall(
 	// the audit trail silently loses a real side effect.
 	toolStore, hasToolStore := store.(repository.ToolExecutionStore)
 	var executionID string
+	policyDecision := "allow_model"
+	if scope.AutoApproveRisk != "" {
+		// Act mode: the run may auto-execute low/medium risk confirm tools.
+		policyDecision = "mode:act"
+	}
 	if hasToolStore {
 		var startErr error
-		executionID, startErr = toolStore.StartTool(ctx, scopeRun, definition.Name, definition.Version, definition.Risk, "allow_model", redactArgumentsJSON(call.Arguments))
+		executionID, startErr = toolStore.StartTool(ctx, scopeRun, definition.Name, definition.Version, definition.Risk, policyDecision, redactArgumentsJSON(call.Arguments))
 		if startErr != nil {
 			slog.Error("start AI tool execution failed; refusing to run tool",
 				"err", startErr,
