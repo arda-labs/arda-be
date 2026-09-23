@@ -186,6 +186,37 @@ func main() {
 	}()
 	logger.Info("Notification inbox consumer started", "subject", "arda.notification.inbox.created.v1")
 
+	// statistical-service publishes indicator breaches through its outbox; this
+	// consumer turns each one into an in-app notification for the rule owner.
+	// Accept is idempotent on the event id, so at-least-once redelivery cannot
+	// create duplicates.
+	breachConsumer, breachErr := appevents.NewConsumer(nc, appevents.StatisticalBreachSubject, "notification-statistical-breach-cg")
+	if breachErr != nil {
+		logger.Error("statistical breach consumer setup failed", "err", breachErr)
+		os.Exit(1)
+	}
+	go func() {
+		breachRunErr := breachConsumer.Run(workerCtx, func(ctx context.Context, msg *nats.Msg) error {
+			input, mapErr := appevents.StatisticalBreachInput(msg.Data)
+			if mapErr != nil {
+				// A malformed or unaddressable event can never succeed on
+				// redelivery: ack it and surface the reason instead of
+				// poisoning the consumer.
+				logger.Error("statistical breach event dropped", "err", mapErr)
+				return nil
+			}
+			if _, acceptErr := notificationService.Accept(ctx, input); acceptErr != nil {
+				logger.Error("statistical breach notification failed", "err", acceptErr)
+				return acceptErr
+			}
+			return nil
+		})
+		if breachRunErr != nil && workerCtx.Err() == nil {
+			logger.Error("statistical breach consumer stopped", "err", breachRunErr)
+		}
+	}()
+	logger.Info("Statistical breach consumer started", "subject", appevents.StatisticalBreachSubject)
+
 	// Keep SSE streams open (inbox poll). Read header timeout only.
 	srv := &http.Server{
 		Addr:        cfg.HTTPAddr,
