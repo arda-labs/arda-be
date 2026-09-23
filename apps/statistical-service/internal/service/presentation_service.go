@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/statistical-service/internal/presentation"
@@ -197,8 +198,25 @@ func (s *presentationService) periodKPI(ctx context.Context, tenantID, period, r
 		byCode[ind.Code] = ind
 	}
 	groups, filtered := reportKpiFilter(reportGroup)
+	return rankKpiCards(results, byCode, groups, filtered, maxReportKPI), nil
+}
 
-	kpi := make([]presentation.KPI, 0, maxReportKPI)
+// rankKpiCards selects the headline KPI cards for a report. It keeps totals
+// only, narrows to the report's business groups when a filter applies, then
+// orders base indicators (short codes) before growth/average derivations so a
+// cap cannot drop risk KPIs such as dư nợ xấu or tỷ lệ nợ xấu.
+func rankKpiCards(
+	results []repository.IndicatorResult,
+	byCode map[string]repository.Indicator,
+	groups []string,
+	filtered bool,
+	limit int,
+) []presentation.KPI {
+	type candidate struct {
+		kpi   presentation.KPI
+		depth int
+	}
+	candidates := make([]candidate, 0, len(results))
 	for _, r := range results {
 		if r.DimensionKey != "" {
 			continue // totals only on the headline cards
@@ -207,17 +225,30 @@ func (s *presentationService) periodKPI(ctx context.Context, tenantID, period, r
 		if filtered && (!known || !containsString(groups, ind.GroupCode)) {
 			continue
 		}
-		kpi = append(kpi, presentation.KPI{
-			Code:  r.IndicatorCode,
-			Label: firstNonEmpty(ind.Name, r.IndicatorCode),
-			Value: valueText(r.Value),
-			Unit:  ind.Unit,
+		candidates = append(candidates, candidate{
+			kpi: presentation.KPI{
+				Code:  r.IndicatorCode,
+				Label: firstNonEmpty(ind.Name, r.IndicatorCode),
+				Value: valueText(r.Value),
+				Unit:  ind.Unit,
+			},
+			depth: strings.Count(r.IndicatorCode, "."),
 		})
-		if len(kpi) >= maxReportKPI {
-			break
-		}
 	}
-	return kpi, nil
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].depth != candidates[j].depth {
+			return candidates[i].depth < candidates[j].depth
+		}
+		return candidates[i].kpi.Code < candidates[j].kpi.Code
+	})
+	if limit > 0 && len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	kpi := make([]presentation.KPI, 0, len(candidates))
+	for _, c := range candidates {
+		kpi = append(kpi, c.kpi)
+	}
+	return kpi
 }
 
 func containsString(values []string, target string) bool {
