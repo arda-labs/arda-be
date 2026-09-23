@@ -19,7 +19,9 @@ func TestChartMetaToolBuildsPresentationPayload(t *testing.T) {
 		"chart_type": "bar",
 		"categories": ["Nhóm 1", "Nhóm 3"],
 		"series": [{"name": "Dư nợ", "values": [100, 40]}],
-		"value_format": "amount"
+		"value_format": "amount",
+		"report_code": "LOAN_PORTFOLIO",
+		"period_code": "2026-08"
 	}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -30,6 +32,9 @@ func TestChartMetaToolBuildsPresentationPayload(t *testing.T) {
 	}
 	if payload["render"] != "report" {
 		t.Fatalf("render = %v, want report", payload["render"])
+	}
+	if payload["report_code"] != "LOAN_PORTFOLIO" || payload["period_code"] != "2026-08" {
+		t.Fatalf("report metadata not echoed: %v / %v", payload["report_code"], payload["period_code"])
 	}
 	chart, ok := payload["chart"].(map[string]any)
 	if !ok || chart["type"] != "bar" {

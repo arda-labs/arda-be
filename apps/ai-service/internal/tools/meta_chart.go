@@ -21,7 +21,12 @@ type chartArguments struct {
 	ChartType   string   `json:"chart_type"`
 	Categories  []string `json:"categories"`
 	ValueFormat string   `json:"value_format"`
-	Series      []struct {
+	// Optional report metadata: when the chart comes from a catalogued report,
+	// echoing the code/period lets the interface offer the Excel/PDF download.
+	ReportCode string `json:"report_code"`
+	PeriodCode string `json:"period_code"`
+	OrgCode    string `json:"org_code"`
+	Series     []struct {
 		Name   string    `json:"name"`
 		Values []float64 `json:"values"`
 	} `json:"series"`
@@ -72,6 +77,18 @@ func (t *ChartMetaTool) Definition() Definition {
 					"type": "string",
 					"enum": ["amount", "percent", "int", "number"],
 					"description": "How the interface formats the values."
+				},
+				"report_code": {
+					"type": "string",
+					"description": "Optional: report code when this chart comes from a catalogued report (enables the Excel/PDF download)."
+				},
+				"period_code": {
+					"type": "string",
+					"description": "Optional: reporting period YYYY-MM for the download."
+				},
+				"org_code": {
+					"type": "string",
+					"description": "Optional: org unit filter for the download."
 				}
 			},
 			"required": ["title", "chart_type", "categories", "series"]
@@ -151,8 +168,10 @@ func (t *ChartMetaTool) Execute(ctx context.Context, scope Context, arguments js
 
 	payload := map[string]any{
 		"render":      "report",
+		"report_code": strings.TrimSpace(input.ReportCode),
 		"report_name": title,
-		"period_code": "",
+		"period_code": strings.TrimSpace(input.PeriodCode),
+		"org_code":    strings.TrimSpace(input.OrgCode),
 		"columns":     columns,
 		"rows":        rows,
 		"row_count":   len(rows),
