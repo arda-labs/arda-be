@@ -278,6 +278,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if store != nil {
+		go runConversationRetention(ctx, store, logger)
+	}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -295,6 +298,32 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("AI service stopped gracefully")
+}
+
+func runConversationRetention(ctx context.Context, store *repository.SQLRunStore, logger *slog.Logger) {
+	clean := func() {
+		cleanupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		deleted, err := store.PurgeExpiredConversations(cleanupCtx)
+		if err != nil {
+			logger.Warn("conversation retention cleanup failed", "err", err)
+			return
+		}
+		if deleted > 0 {
+			logger.Info("expired AI conversations permanently deleted", "count", deleted)
+		}
+	}
+	clean()
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			clean()
+		}
+	}
 }
 
 // proposalToolSpecs builds the FE-initiated proposal allowlist from the

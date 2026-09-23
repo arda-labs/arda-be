@@ -304,11 +304,17 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	mux.HandleFunc("/api/ai/settings/decision/test", func(w http.ResponseWriter, r *http.Request) {
 		handleDecisionSettings(w, r, store, options)
 	})
+	mux.HandleFunc("/api/ai/settings/conversations", func(w http.ResponseWriter, r *http.Request) {
+		handleConversationSettings(w, r, store)
+	})
 	mux.HandleFunc("/api/ai/answers/feedback", func(w http.ResponseWriter, r *http.Request) {
 		handleAnswerFeedback(w, r, store)
 	})
 	mux.HandleFunc("/api/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
 		listConversations(w, r, store, options)
+	})
+	mux.HandleFunc("/api/ai/conversations/trash/purge", func(w http.ResponseWriter, r *http.Request) {
+		permanentlyDeleteAllConversations(w, r, store)
 	})
 	mux.HandleFunc("/api/ai/conversations/", func(w http.ResponseWriter, r *http.Request) {
 		suffix := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/ai/conversations/"), "/")
@@ -318,6 +324,10 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 		}
 		if strings.HasSuffix(suffix, "/restore") && r.Method == http.MethodPost {
 			restoreConversation(w, r, store, options)
+			return
+		}
+		if strings.HasSuffix(suffix, "/permanent") && r.Method == http.MethodDelete {
+			permanentlyDeleteConversation(w, r, store)
 			return
 		}
 		if r.Method == http.MethodDelete {

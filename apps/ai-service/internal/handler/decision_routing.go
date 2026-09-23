@@ -82,7 +82,8 @@ func routeDecision(ctx context.Context, store runStore, options RouterOptions, r
 	skill := result.Skill(settings.MinConfidence)
 	if recorder, ok := store.(repository.DecisionRecorder); ok {
 		persistCtx, cancelPersist := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-		err = recorder.RecordDecision(persistCtx, run, result, skill)
+		confidence := decisionConfidence(result)
+		err = recorder.RecordDecision(persistCtx, run, result, skill, confidence, time.Since(start).Milliseconds(), confidence < settings.MinConfidence)
 		cancelPersist()
 		if err != nil {
 			slog.Warn("decision usage persistence failed", "run_id", run.ExternalRun)

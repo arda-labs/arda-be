@@ -165,3 +165,48 @@ func restoreConversation(w http.ResponseWriter, r *http.Request, store runStore,
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "messages": []string{}, "result": map[string]string{"threadId": threadID}})
 }
+
+func permanentlyDeleteConversation(w http.ResponseWriter, r *http.Request, store runStore) {
+	scope, ok := requireConversationScope(w, r, http.MethodDelete)
+	if !ok {
+		return
+	}
+	trash, ok := store.(repository.ConversationTrash)
+	if !ok {
+		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+		return
+	}
+	suffix := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/ai/conversations/"), "/")
+	threadID := strings.TrimSuffix(suffix, "/permanent")
+	if threadID == "" || threadID == suffix || len(threadID) > 255 || strings.Contains(threadID, "/") {
+		problem(w, http.StatusNotFound, "ai.conversation_not_found")
+		return
+	}
+	if err := trash.PermanentlyDeleteConversation(r.Context(), scope.TenantID, scope.ActorUserID, threadID); err != nil {
+		if errors.Is(err, repository.ErrConversationNotFound) {
+			problem(w, http.StatusNotFound, "ai.conversation_not_found")
+			return
+		}
+		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+		return
+	}
+	writeResultEnvelope(w, map[string]string{"threadId": threadID})
+}
+
+func permanentlyDeleteAllConversations(w http.ResponseWriter, r *http.Request, store runStore) {
+	scope, ok := requireConversationScope(w, r, http.MethodPost)
+	if !ok {
+		return
+	}
+	trash, ok := store.(repository.ConversationTrash)
+	if !ok {
+		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+		return
+	}
+	deleted, err := trash.PermanentlyDeleteAllDeletedConversations(r.Context(), scope.TenantID, scope.ActorUserID)
+	if err != nil {
+		problem(w, http.StatusServiceUnavailable, "ai.persistence_unavailable")
+		return
+	}
+	writeResultEnvelope(w, map[string]int64{"deleted_count": deleted})
+}

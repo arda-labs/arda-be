@@ -17,12 +17,13 @@ type DecisionSettingsStore interface {
 }
 
 type DecisionRecorder interface {
-	RecordDecision(context.Context, RunContext, *decision.Result, string) error
+	RecordDecision(context.Context, RunContext, *decision.Result, string, float64, int64, bool) error
 }
 
-func (s *SQLRunStore) RecordDecision(ctx context.Context, run RunContext, result *decision.Result, skill string) error {
+func (s *SQLRunStore) RecordDecision(ctx context.Context, run RunContext, result *decision.Result, skill string, confidence float64, latencyMs int64, lowConfidence bool) error {
 	payload, err := json.Marshal(map[string]any{"model_id": result.Model, "skill": skill,
-		"input_tokens": result.Usage.InputTokens, "output_tokens": result.Usage.OutputTokens})
+		"input_tokens": result.Usage.InputTokens, "output_tokens": result.Usage.OutputTokens,
+		"confidence": confidence, "latency_ms": latencyMs, "low_confidence": lowConfidence})
 	if err != nil {
 		return err
 	}

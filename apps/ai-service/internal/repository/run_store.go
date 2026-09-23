@@ -66,6 +66,8 @@ type ConversationSummary struct {
 	Title         string `json:"title"`
 	MessageCount  int    `json:"messageCount"`
 	LastMessageAt string `json:"lastMessageAt,omitempty"`
+	DeletedAt     string `json:"deletedAt,omitempty"`
+	ExpiresAt     string `json:"expiresAt,omitempty"`
 	Status        string `json:"status"`
 }
 
@@ -89,11 +91,18 @@ type ConversationMutator interface {
 	DeleteConversation(ctx context.Context, tenantID, actorUserID, threadID string) error
 }
 
-// ConversationTrash is the soft-delete recovery surface: conversations are
-// never hard-deleted from the UI, so the trash lists them and can restore.
+// ConversationTrash provides scoped recovery and permanent-delete operations
+// for conversations that have already been soft-deleted.
 type ConversationTrash interface {
 	ListDeletedConversations(ctx context.Context, tenantID, actorUserID string, limit int) ([]ConversationSummary, error)
 	RestoreConversation(ctx context.Context, tenantID, actorUserID, threadID string) error
+	PermanentlyDeleteConversation(ctx context.Context, tenantID, actorUserID, threadID string) error
+	PermanentlyDeleteAllDeletedConversations(ctx context.Context, tenantID, actorUserID string) (int64, error)
+}
+
+type ConversationRetentionStore interface {
+	GetConversationRetention(ctx context.Context, tenantID string) (int, error)
+	SaveConversationRetention(ctx context.Context, tenantID string, months int) error
 }
 
 type SQLRunStore struct {
@@ -629,7 +638,7 @@ func (s *SQLRunStore) DeleteConversation(ctx context.Context, tenantID, actorUse
 		return fmt.Errorf("AI run store is not configured")
 	}
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE public.ai_conversations SET status = 'DELETED', updated_at = now()
+		UPDATE public.ai_conversations SET status = 'DELETED', deleted_at = now(), updated_at = now()
 		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_thread_id = $3 AND status = 'ACTIVE'
 	`, tenantID, actorUserID, threadID)
 	if err != nil {
@@ -658,8 +667,11 @@ func (s *SQLRunStore) ListDeletedConversations(ctx context.Context, tenantID, ac
 		       ), ''), 120)),
 		       (SELECT COUNT(*) FROM public.ai_messages m WHERE m.conversation_id = c.id),
 		       COALESCE(c.last_message_at::text, ''),
+		       COALESCE(c.deleted_at::text, ''),
+		       COALESCE((c.deleted_at + make_interval(months => COALESCE(s.trash_retention_months, 1)))::text, ''),
 		       c.status
 		FROM public.ai_conversations c
+		LEFT JOIN public.ai_conversation_settings s ON s.tenant_id = c.tenant_id
 		WHERE c.tenant_id = $1 AND c.actor_user_id = $2 AND c.status = 'DELETED'
 		ORDER BY c.updated_at DESC
 		LIMIT $3
@@ -672,7 +684,7 @@ func (s *SQLRunStore) ListDeletedConversations(ctx context.Context, tenantID, ac
 	items := make([]ConversationSummary, 0, limit)
 	for rows.Next() {
 		var item ConversationSummary
-		if err := rows.Scan(&item.ThreadID, &item.Title, &item.MessageCount, &item.LastMessageAt, &item.Status); err != nil {
+		if err := rows.Scan(&item.ThreadID, &item.Title, &item.MessageCount, &item.LastMessageAt, &item.DeletedAt, &item.ExpiresAt, &item.Status); err != nil {
 			return nil, fmt.Errorf("scan deleted AI conversation: %w", err)
 		}
 		items = append(items, item)
@@ -686,7 +698,7 @@ func (s *SQLRunStore) RestoreConversation(ctx context.Context, tenantID, actorUs
 		return fmt.Errorf("AI run store is not configured")
 	}
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE public.ai_conversations SET status = 'ACTIVE', updated_at = now()
+		UPDATE public.ai_conversations SET status = 'ACTIVE', deleted_at = NULL, updated_at = now()
 		WHERE tenant_id = $1 AND actor_user_id = $2 AND external_thread_id = $3 AND status = 'DELETED'
 	`, tenantID, actorUserID, threadID)
 	if err != nil {
@@ -699,18 +711,38 @@ func (s *SQLRunStore) RestoreConversation(ctx context.Context, tenantID, actorUs
 }
 
 type AnalyticsSummary struct {
-	TotalRuns        int64           `json:"totalRuns"`
-	SuccessfulRuns   int64           `json:"successfulRuns"`
-	FailedRuns       int64           `json:"failedRuns"`
-	SuccessRate      float64         `json:"successRate"`
-	TotalTokens      int64           `json:"totalTokens"`
-	PromptTokens     int64           `json:"promptTokens"`
-	CompletionTokens int64           `json:"completionTokens"`
-	Latency          LatencyStats    `json:"latency"`
-	Feedback         FeedbackStats   `json:"feedback"`
-	RAGQuality       RAGQualityStats `json:"ragQuality"`
-	RunsByDay        []DayTrend      `json:"runsByDay"`
-	ModelsByUsage    []ModelUsage    `json:"modelsByUsage"`
+	TotalRuns        int64              `json:"totalRuns"`
+	SuccessfulRuns   int64              `json:"successfulRuns"`
+	FailedRuns       int64              `json:"failedRuns"`
+	SuccessRate      float64            `json:"successRate"`
+	TotalTokens      int64              `json:"totalTokens"`
+	PromptTokens     int64              `json:"promptTokens"`
+	CompletionTokens int64              `json:"completionTokens"`
+	Latency          LatencyStats       `json:"latency"`
+	Feedback         FeedbackStats      `json:"feedback"`
+	RAGQuality       RAGQualityStats    `json:"ragQuality"`
+	RunsByDay        []DayTrend         `json:"runsByDay"`
+	ModelsByUsage    []ModelUsage       `json:"modelsByUsage"`
+	Decision         DecisionUsageStats `json:"decision"`
+	Agentic          AgenticUsageStats  `json:"agentic"`
+}
+
+type DecisionUsageStats struct {
+	Evaluations       int64   `json:"evaluations"`
+	Routed            int64   `json:"routed"`
+	LowConfidence     int64   `json:"low_confidence"`
+	Tokens            int64   `json:"tokens"`
+	AvgLatencyMs      int64   `json:"avg_latency_ms"`
+	AverageConfidence float64 `json:"average_confidence"`
+}
+
+type AgenticUsageStats struct {
+	ToolCalls        int64 `json:"tool_calls"`
+	SuccessfulCalls  int64 `json:"successful_calls"`
+	FailedCalls      int64 `json:"failed_calls"`
+	PendingApprovals int64 `json:"pending_approvals"`
+	ApprovedActions  int64 `json:"approved_actions"`
+	RejectedActions  int64 `json:"rejected_actions"`
 }
 
 type LatencyStats struct {
@@ -856,6 +888,38 @@ func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*Analy
 		summary.Feedback.Positive = fbPos
 		summary.Feedback.Negative = fbNeg
 		summary.Feedback.SatisfactionRate = float64(fbPos) / float64(fbTotal) * 100.0
+	}
+
+	err = s.db.QueryRowContext(ctx, `
+		SELECT count(*) FILTER (WHERE decision_usage <> '{}'::jsonb),
+		       count(*) FILTER (WHERE decision_usage->>'skill' IS NOT NULL AND decision_usage->>'skill' <> 'general'),
+		       count(*) FILTER (WHERE decision_usage->>'low_confidence' = 'true'),
+	       COALESCE(sum(CASE WHEN decision_usage->>'input_tokens' ~ '^[0-9]+$' THEN (decision_usage->>'input_tokens')::bigint ELSE 0 END), 0)
+	       + COALESCE(sum(CASE WHEN decision_usage->>'output_tokens' ~ '^[0-9]+$' THEN (decision_usage->>'output_tokens')::bigint ELSE 0 END), 0),
+	       COALESCE(avg(CASE WHEN decision_usage->>'latency_ms' ~ '^[0-9]+$' THEN (decision_usage->>'latency_ms')::double precision END), 0)::bigint,
+	       COALESCE(avg(CASE WHEN decision_usage->>'confidence' ~ '^(0(\.[0-9]+)?|1(\.0+)?)$' THEN (decision_usage->>'confidence')::double precision END), 0)
+		FROM public.ai_runs WHERE tenant_id = $1
+	`, tenantID).Scan(&summary.Decision.Evaluations, &summary.Decision.Routed, &summary.Decision.LowConfidence,
+		&summary.Decision.Tokens, &summary.Decision.AvgLatencyMs, &summary.Decision.AverageConfidence)
+	if err != nil {
+		return nil, fmt.Errorf("load decision analytics: %w", err)
+	}
+
+	err = s.db.QueryRowContext(ctx, `
+		SELECT count(*), count(*) FILTER (WHERE status = 'SUCCEEDED'), count(*) FILTER (WHERE status = 'FAILED')
+		FROM public.ai_tool_executions WHERE tenant_id = $1
+	`).Scan(&summary.Agentic.ToolCalls, &summary.Agentic.SuccessfulCalls, &summary.Agentic.FailedCalls)
+	if err != nil {
+		return nil, fmt.Errorf("load AI tool analytics: %w", err)
+	}
+	err = s.db.QueryRowContext(ctx, `
+		SELECT count(*) FILTER (WHERE status = 'PENDING'),
+		       count(*) FILTER (WHERE status IN ('APPROVED', 'CONSUMED')),
+		       count(*) FILTER (WHERE status = 'REJECTED')
+		FROM public.ai_approvals WHERE tenant_id = $1
+	`).Scan(&summary.Agentic.PendingApprovals, &summary.Agentic.ApprovedActions, &summary.Agentic.RejectedActions)
+	if err != nil {
+		return nil, fmt.Errorf("load AI approval analytics: %w", err)
 	}
 
 	return summary, nil
