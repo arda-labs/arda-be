@@ -72,6 +72,13 @@ type Context struct {
 	TraceID     string
 	Permissions map[string]struct{}
 
+	// AutoApproveRisk is the act-mode ceiling for confirm-kind methods: when
+	// set to "low" or "medium", a confirm tool at or below that risk runs
+	// without a human decision (the user opted into act mode and holds the
+	// permission). Empty means every confirm tool requires approval. "high" is
+	// never auto-approved regardless of this value.
+	AutoApproveRisk string
+
 	// ExternalThread/ExternalRun are the AG-UI protocol ids of the durable run
 	// currently executing. They are resolved server-side by the handler (from
 	// the validated run input, or from the persisted run on resume) — never

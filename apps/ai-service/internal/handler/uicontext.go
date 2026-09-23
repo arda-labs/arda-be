@@ -1,8 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
+
+	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
+	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
 )
 
 const (
@@ -39,6 +43,40 @@ func uiContextFromForwardedProps(raw json.RawMessage) string {
 		return ""
 	}
 	return context
+}
+
+// actModeFromForwardedProps reports whether the client asked for act mode
+// ("act"). This is a request only: the server still requires the tenant setting
+// to be enabled before any confirm tool auto-executes.
+func actModeFromForwardedProps(raw json.RawMessage) bool {
+	if len(raw) == 0 || len(raw) > uiContextRawLimit {
+		return false
+	}
+	var forwarded struct {
+		ArdaMode string `json:"ardaMode"`
+	}
+	if err := json.Unmarshal(raw, &forwarded); err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(forwarded.ArdaMode), "act")
+}
+
+// applyActMode sets the act-mode ceiling on the scope when the client asked for
+// it AND the tenant has enabled it. Absent settings leave the scope untouched,
+// so confirm tools keep requiring approval.
+func applyActMode(ctx context.Context, store runStore, raw json.RawMessage, scope *tools.Context) {
+	if !actModeFromForwardedProps(raw) {
+		return
+	}
+	settingsStore, ok := store.(repository.AgentSettingsStore)
+	if !ok {
+		return
+	}
+	settings, err := settingsStore.GetAgentSettings(ctx, scope.TenantID)
+	if err != nil || settings == nil || !settings.ActModeEnabled {
+		return
+	}
+	scope.AutoApproveRisk = settings.ActModeMaxRisk
 }
 
 // uiContextPrompt frames the payload for the model. Retrieved knowledge and

@@ -281,6 +281,7 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 	}
 	ctx := r.Context()
 	scope := scopeFromRequest(r)
+	applyActMode(r.Context(), store, input.ForwardedProps, &scope)
 	// Refresh governance before executing approved tools: a tool disabled
 	// after the proposal was created must fail closed (ADR-003).
 	if options.ToolGovernance != nil {

@@ -68,6 +68,36 @@ type MethodRegistry interface {
 	AllSDKMethods() []SDKMethod
 }
 
+// riskRank orders the risk tiers so an act-mode ceiling can be compared.
+func riskRank(risk string) int {
+	switch strings.ToLower(strings.TrimSpace(risk)) {
+	case "low":
+		return 1
+	case "medium":
+		return 2
+	case "high":
+		return 3
+	default:
+		return 0
+	}
+}
+
+// autoApprove reports whether a confirm-kind method may run without a human
+// decision under the run's act-mode ceiling. Only low/medium ceilings are
+// valid and high risk is never auto-approved; the permission check has already
+// run before this point.
+func autoApprove(scope tools.Context, risk string) bool {
+	ceiling := riskRank(scope.AutoApproveRisk)
+	if ceiling != riskRank("low") && ceiling != riskRank("medium") {
+		return false
+	}
+	rank := riskRank(risk)
+	if rank != riskRank("low") && rank != riskRank("medium") {
+		return false
+	}
+	return rank <= ceiling
+}
+
 type Engine struct {
 	registry MethodRegistry
 	sem      chan struct{}
@@ -265,8 +295,10 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 			// Confirm-kind methods never dispatch: the engine raises the
 			// approval flow before the dispatcher can run. This is the
 			// enforcement point — dispatchers are not trusted to gate
-			// themselves.
-			if methodCopy.RequiresApproval {
+			// themselves. Act mode (scope.AutoApproveRisk) can let a low/medium
+			// risk action through without a human decision; high risk always
+			// requires approval.
+			if methodCopy.RequiresApproval && !autoApprove(scope, methodCopy.Risk) {
 				mu.Lock()
 				approvalRequiredErr = tools.ErrApprovalRequired
 				approvalTool = methodCopy.MethodName

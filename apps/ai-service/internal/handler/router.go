@@ -372,6 +372,7 @@ func runInputFlow(w http.ResponseWriter, r *http.Request, store runStore, resolv
 	}
 
 	scope := scopeFromRequest(r)
+	applyActMode(r.Context(), store, input.ForwardedProps, &scope)
 	var selectedTool tools.Tool
 	var definition tools.Definition
 	if input.Tool != nil {
