@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/crm-service/internal/repository"
@@ -59,10 +60,21 @@ func (s *MemberCommandServer) ResolveMemberRequest(ctx context.Context, req *crm
 		return nil, status.Error(codes.InvalidArgument, "decision must be APPROVE or REJECT")
 	}
 	if _, _, err := s.svc.ResolveCapitalRequest(ctx, tenantID, req.GetRequestId(), decision, req.GetActor(), req.GetDataVersion()); err != nil {
-		if err == repository.ErrMemberVersionConflict {
+		// Only genuine domain conflicts are terminal for the caller: Aborted is
+		// the stale optimistic-lock token and FailedPrecondition means the
+		// decision cannot apply (unknown request, inactive member, over-draw).
+		// Infrastructure failures must stay retryable, so they surface as
+		// Internal instead of being mistaken for a permanent conflict.
+		switch {
+		case errors.Is(err, repository.ErrMemberVersionConflict):
 			return nil, status.Error(codes.Aborted, err.Error())
+		case errors.Is(err, repository.ErrMemberRequestNotFound),
+			errors.Is(err, repository.ErrMemberNotActive),
+			errors.Is(err, repository.ErrMemberInsufficientCapital):
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		default:
+			return nil, status.Error(codes.Internal, err.Error())
 		}
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return &crmv1.ResolveMemberRequestResponse{Ok: true}, nil
 }

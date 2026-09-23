@@ -18,6 +18,18 @@ var ErrMemberConflict = errors.New("member already exists")
 // changed after the caller read it.
 var ErrMemberVersionConflict = errors.New("member changed while you were editing")
 
+// ErrMemberRequestNotFound marks a decision for a capital request that does not
+// exist in the tenant. Retrying cannot change the outcome.
+var ErrMemberRequestNotFound = errors.New("member request not found")
+
+// ErrMemberNotActive marks an approval for a member whose status blocks capital
+// changes. Retrying cannot change the outcome.
+var ErrMemberNotActive = errors.New("member is not active")
+
+// ErrMemberInsufficientCapital marks a withdrawal larger than the member's
+// current capital. Retrying cannot change the outcome.
+var ErrMemberInsufficientCapital = errors.New("withdrawal exceeds available capital")
+
 // MemberRepository persists QTDND membership + capital-movement requests.
 type MemberRepository struct {
 	db *sql.DB
@@ -223,7 +235,7 @@ func (r *MemberRepository) ApplyApprovedCapital(ctx context.Context, tx *sql.Tx,
 		return nil, err
 	}
 	if status != "ACTIVE" {
-		return nil, fmt.Errorf("member is not active")
+		return nil, ErrMemberNotActive
 	}
 
 	switch requestType {
@@ -233,7 +245,7 @@ func (r *MemberRepository) ApplyApprovedCapital(ctx context.Context, tx *sql.Tx,
 		add += amountMinor
 	case domain.MemberRequestWithdraw:
 		if amountMinor > total {
-			return nil, fmt.Errorf("withdrawal %d exceeds available capital %d", amountMinor, total)
+			return nil, fmt.Errorf("%w: withdrawal %d exceeds available capital %d", ErrMemberInsufficientCapital, amountMinor, total)
 		}
 		// Withdraw consumes the additional stake first, then the establishing
 		// stake — the order EPAS used so the "tư cách thành viên" survives as

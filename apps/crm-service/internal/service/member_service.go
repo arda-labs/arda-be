@@ -300,7 +300,7 @@ func (s *MemberService) ResolveCapitalRequest(ctx context.Context, tenantID, id,
 		return nil, nil, err
 	}
 	if req == nil {
-		return nil, nil, fmt.Errorf("member request not found")
+		return nil, nil, repository.ErrMemberRequestNotFound
 	}
 	if req.Status != "SUBMITTED" {
 		return req, nil, nil // idempotent: already decided
