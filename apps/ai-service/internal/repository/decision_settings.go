@@ -70,8 +70,8 @@ func (s *SQLRunStore) SaveDecisionSettings(ctx context.Context, tenantID string,
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO public.ai_decision_settings
 		(tenant_id, enabled, model_id, min_confidence, api_key)
-		VALUES ($1, $2, $3, $4, COALESCE($5::text,
-		    (SELECT api_key FROM public.ai_decision_settings WHERE tenant_id = $1), ''))
+		VALUES ($1::varchar(64), $2, $3, $4, COALESCE($5::text,
+		    (SELECT api_key FROM public.ai_decision_settings WHERE tenant_id = $1::varchar(64)), ''))
 		ON CONFLICT (tenant_id) DO UPDATE SET enabled = EXCLUDED.enabled,
 		model_id = EXCLUDED.model_id, min_confidence = EXCLUDED.min_confidence,
 		api_key = COALESCE($5::text, ai_decision_settings.api_key), updated_at = now()`,
