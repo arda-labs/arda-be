@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -73,6 +74,10 @@ type ConversationMessage struct {
 	Role      string `json:"role"`
 	Content   string `json:"content"`
 	CreatedAt string `json:"createdAt"`
+	// Artifacts are the renderable tool outputs of the run (report
+	// presentations / charts). They are replayed in the UI when a thread is
+	// reopened, so a chart or table is not lost on reload.
+	Artifacts []json.RawMessage `json:"artifacts,omitempty"`
 }
 
 type ConversationReader interface {
@@ -504,9 +509,24 @@ func (s *SQLRunStore) ConversationMessages(ctx context.Context, tenantID, actorU
 		limit = 200
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT m.sequence, m.role, m.content, m.created_at::text
+		SELECT m.sequence, m.role, m.content, m.created_at::text,
+		       COALESCE(arts.artifacts, '[]'::jsonb)
 		FROM public.ai_messages m
 		JOIN public.ai_conversations c ON c.id = m.conversation_id
+		LEFT JOIN LATERAL (
+			SELECT jsonb_agg(jsonb_build_object('tool_name', a.tool_name, 'result', a.payload) ORDER BY a.finished_at NULLS LAST) AS artifacts
+			FROM (
+				SELECT t.tool_name, t.finished_at,
+				       CASE WHEN t.tool_name = 'execute' THEN t.result_redacted->'output' ELSE t.result_redacted END AS payload
+				FROM public.ai_tool_executions t
+				WHERE t.run_id = m.run_id
+				  AND m.role = 'assistant'
+				  AND t.status = 'SUCCEEDED'
+				  AND t.tool_name IN ('execute', 'renderChart')
+				  AND t.result_redacted IS NOT NULL
+			) a
+			WHERE (a.payload ? 'chart') OR ((a.payload ? 'columns') AND (a.payload ? 'rows'))
+		) arts ON TRUE
 		WHERE c.tenant_id = $1 AND c.actor_user_id = $2 AND c.external_thread_id = $3
 		ORDER BY m.sequence ASC
 		LIMIT $4
@@ -519,12 +539,70 @@ func (s *SQLRunStore) ConversationMessages(ctx context.Context, tenantID, actorU
 	items := make([]ConversationMessage, 0, limit)
 	for rows.Next() {
 		var item ConversationMessage
-		if err := rows.Scan(&item.Sequence, &item.Role, &item.Content, &item.CreatedAt); err != nil {
+		var artifactsRaw []byte
+		if err := rows.Scan(&item.Sequence, &item.Role, &item.Content, &item.CreatedAt, &artifactsRaw); err != nil {
 			return nil, fmt.Errorf("scan AI message: %w", err)
 		}
+		item.Artifacts = selectArtifacts(artifactsRaw)
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// storedArtifact is one renderable tool output persisted for a run.
+type storedArtifact struct {
+	ToolName string          `json:"tool_name"`
+	Result   json.RawMessage `json:"result"`
+}
+
+// selectArtifacts picks the artifacts worth replaying in a reopened thread.
+// A run that asked for a report produces both an `execute` presentation and a
+// `renderChart` call; preferring renderChart avoids rendering the same chart
+// twice. The list is capped so a long agent run cannot flood the transcript.
+func selectArtifacts(raw []byte) []json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var items []storedArtifact
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil
+	}
+	var chosen []json.RawMessage
+	for _, item := range items {
+		if item.ToolName == "renderChart" && len(item.Result) > 0 {
+			chosen = append(chosen, item.Result)
+		}
+	}
+	if len(chosen) == 0 {
+		// Fall back to the last execute presentation that carries a chart.
+		for index := len(items) - 1; index >= 0; index-- {
+			if items[index].ToolName == "execute" && len(items[index].Result) > 0 && hasJSONKey(items[index].Result, "chart") {
+				chosen = append(chosen, items[index].Result)
+				break
+			}
+		}
+	}
+	if len(chosen) == 0 {
+		for index := len(items) - 1; index >= 0; index-- {
+			if len(items[index].Result) > 0 {
+				chosen = append(chosen, items[index].Result)
+				break
+			}
+		}
+	}
+	if len(chosen) > 2 {
+		chosen = chosen[:2]
+	}
+	return chosen
+}
+
+func hasJSONKey(raw json.RawMessage, key string) bool {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return false
+	}
+	_, ok := object[key]
+	return ok
 }
 
 func insertMessage(ctx context.Context, tx *sql.Tx, conversationID, runID, role, content string) error {
