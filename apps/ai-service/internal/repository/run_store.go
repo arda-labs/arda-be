@@ -908,7 +908,7 @@ func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*Analy
 	err = s.db.QueryRowContext(ctx, `
 		SELECT count(*), count(*) FILTER (WHERE status = 'SUCCEEDED'), count(*) FILTER (WHERE status = 'FAILED')
 		FROM public.ai_tool_executions WHERE tenant_id = $1
-	`).Scan(&summary.Agentic.ToolCalls, &summary.Agentic.SuccessfulCalls, &summary.Agentic.FailedCalls)
+	`, tenantID).Scan(&summary.Agentic.ToolCalls, &summary.Agentic.SuccessfulCalls, &summary.Agentic.FailedCalls)
 	if err != nil {
 		return nil, fmt.Errorf("load AI tool analytics: %w", err)
 	}
@@ -917,7 +917,7 @@ func (s *SQLRunStore) GetAnalytics(ctx context.Context, tenantID string) (*Analy
 		       count(*) FILTER (WHERE status IN ('APPROVED', 'CONSUMED')),
 		       count(*) FILTER (WHERE status = 'REJECTED')
 		FROM public.ai_approvals WHERE tenant_id = $1
-	`).Scan(&summary.Agentic.PendingApprovals, &summary.Agentic.ApprovedActions, &summary.Agentic.RejectedActions)
+	`, tenantID).Scan(&summary.Agentic.PendingApprovals, &summary.Agentic.ApprovedActions, &summary.Agentic.RejectedActions)
 	if err != nil {
 		return nil, fmt.Errorf("load AI approval analytics: %w", err)
 	}
