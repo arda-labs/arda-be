@@ -53,25 +53,11 @@ func routeDecision(ctx context.Context, store runStore, options RouterOptions, r
 		return "", messages
 	}
 	// No identity, raw report data, tool outputs or secrets go to the router.
-	var userMessages []string
-	for _, message := range messages {
-		if message.Role == "user" {
-			userMessages = append(userMessages, message.Content)
-		}
-	}
-	if len(userMessages) == 0 {
+	// BuildState owns the production budgets: no user message, or a latest
+	// message over 4096 bytes, skips classification entirely.
+	state, ok := decision.BuildState(decisionMessages(messages))
+	if !ok {
 		return "", messages
-	}
-	latest := userMessages[len(userMessages)-1]
-	if len(latest) > 4096 {
-		return "", messages
-	} // never classify truncated intent
-	state := "Latest user request: " + sanitizeTranscript(latest)
-	if len(userMessages) > 1 {
-		previous := userMessages[len(userMessages)-2]
-		if len(previous) <= 2048 {
-			state = "Previous user request (context only): " + sanitizeTranscript(previous) + "\n" + state
-		}
 	}
 	start := time.Now()
 	result, err := decisionClient(options).Evaluate(ctx, settings, state)
@@ -97,4 +83,15 @@ func routeDecision(ctx context.Context, store runStore, options RouterOptions, r
 		return skill, out
 	}
 	return "", messages
+}
+
+// decisionMessages narrows chat messages to the routing state input. BuildState
+// owns selection, sanitation and truncation so evaluation and production run
+// the same pipeline.
+func decisionMessages(messages []model.Message) []decision.Message {
+	narrowed := make([]decision.Message, 0, len(messages))
+	for _, message := range messages {
+		narrowed = append(narrowed, decision.Message{Role: message.Role, Content: message.Content})
+	}
+	return narrowed
 }

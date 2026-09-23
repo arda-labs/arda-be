@@ -13,8 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/decision"
 	"github.com/arda-labs/arda/apps/ai-service/internal/events"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
@@ -1359,18 +1359,10 @@ func boundContent(value string) string {
 	return truncateRunes(value, modelResultContentLimit)
 }
 
-// truncateRunes cuts a string at max bytes without splitting a multi-byte
-// character: a byte-slice cut through Vietnamese text produces invalid UTF-8,
-// which model providers reject and Postgres refuses to store.
+// truncateRunes delegates to the decision package so the routing state
+// pipeline has a single implementation (see decision.BuildState).
 func truncateRunes(value string, maxBytes int) string {
-	if len(value) <= maxBytes {
-		return value
-	}
-	cut := maxBytes
-	for cut > 0 && !utf8.RuneStart(value[cut]) {
-		cut--
-	}
-	return value[:cut]
+	return decision.TruncateRunes(value, maxBytes)
 }
 
 func compactToolFeedback(data json.RawMessage, summary string) string {

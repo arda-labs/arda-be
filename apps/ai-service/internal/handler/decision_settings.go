@@ -125,8 +125,5 @@ func handleDecisionSettings(w http.ResponseWriter, r *http.Request, store runSto
 }
 
 func decisionConfidence(result *decision.Result) float64 {
-	if result == nil || result.Answers["skill"].Confidence == nil {
-		return 0
-	}
-	return *result.Answers["skill"].Confidence
+	return result.ChoiceConfidence("skill")
 }

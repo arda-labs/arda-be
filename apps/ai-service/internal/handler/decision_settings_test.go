@@ -38,9 +38,9 @@ func (e *fakeDecisionEvaluator) Evaluate(_ context.Context, _ decision.Settings,
 }
 
 func routedDecisionResult(skill, topic string, skillConfidence, topicConfidence float64) *decision.Result {
-	return &decision.Result{Model: decision.DefaultModel, Answers: map[string]decision.Choice{
-		"skill":        {Type: "choice", Choice: skill, Confidence: &skillConfidence, Probabilities: map[string]float64{"report": skillConfidence, "knowledge": (1 - skillConfidence) / 2, "general": (1 - skillConfidence) / 2}},
-		"report_topic": {Type: "choice", Choice: topic, Confidence: &topicConfidence, Probabilities: map[string]float64{"loan_portfolio": topicConfidence, "other": 1 - topicConfidence}},
+	return &decision.Result{Model: decision.DefaultModel, Answers: map[string]decision.Answer{
+		"skill":        decision.ChoiceAnswer(skill, skillConfidence, map[string]float64{"report": skillConfidence, "knowledge": (1 - skillConfidence) / 2, "general": (1 - skillConfidence) / 2}),
+		"report_topic": decision.ChoiceAnswer(topic, topicConfidence, map[string]float64{"loan_portfolio": topicConfidence, "other": 1 - topicConfidence}),
 	}}
 }
 

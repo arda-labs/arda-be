@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/decision"
 	"github.com/arda-labs/arda/apps/ai-service/internal/events"
 	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
@@ -1177,12 +1177,10 @@ func latestUserMessage(messages []inputMessage) string {
 	return ""
 }
 
-var transcriptSecretPattern = regexp.MustCompile(`(?i)(bearer\s+[^\s,;]+|(?:authorization|arda_sid|arda_did)\s*[:=]\s*(?:bearer\s+)?[^\s,;]+)`)
-
+// sanitizeTranscript delegates to the decision package so the routing state
+// pipeline has a single implementation (see decision.BuildState).
 func sanitizeTranscript(value string) string {
-	value = strings.TrimSpace(value)
-	value = transcriptSecretPattern.ReplaceAllString(value, "[REDACTED]")
-	return truncateRunes(value, 16*1024)
+	return decision.SanitizeTranscript(value)
 }
 
 // redactArgumentsJSON builds the display/audit copy of tool arguments. It is
