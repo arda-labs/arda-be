@@ -1,0 +1,106 @@
+# Dev answer-level golden set for the synthetic corpus in
+# scripts/ai-dev-corpus/docs (tenant 00000000-0000-0000-0000-000000000010).
+#
+# Same questions as evaluation-set.yaml, but scored on the final agent answer
+# (citations, source keys, no-answer behaviour). Run from arda-be/apps/ai-service:
+#   $env:AI_ANSWER_EVAL_SET="../../scripts/ai-dev-corpus/answer-evaluation-set.yaml"
+#   go run ./cmd/ai-eval -mode=answer
+#
+# Needs a deployed ai-service with a configured tenant model and the corpus
+# published; it is not an offline CI set. Cross-tenant ACL isolation stays in
+# evaluation-set.yaml (retrieval): answer mode needs a configured model for the
+# other tenant, so this set does not repeat it.
+version: 1
+description: >-
+  Dev answer-level golden questions for the synthetic policy corpus, scored on
+  the agent's final answer (citation labels and expected source keys).
+cases:
+  - id: annual-leave-days
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Nhân viên được bao nhiêu ngày phép năm?"
+    expected:
+      must_cite: true
+      source_keys: ["3", "2"]
+
+  - id: payment-approval-threshold
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Thanh toán bao nhiêu thì cần Giám đốc Tài chính duyệt?"
+    expected:
+      must_cite: true
+      source_keys: ["5"]
+
+  - id: expense-deadline
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Hoàn ứng chi phí phải nộp trong bao nhiêu ngày?"
+    expected:
+      must_cite: true
+      source_keys: ["4"]
+
+  - id: sev1-incident-response
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Khi có sự cố Sev1 thì phải làm gì?"
+    expected:
+      must_cite: true
+      source_keys: ["13"]
+
+  - id: customer-data-export
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Quy trình xin xuất dữ liệu khách hàng diễn ra thế nào?"
+    expected:
+      must_cite: true
+      source_keys: ["12"]
+
+  - id: procurement-quotes
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Mua sắm trên 5 triệu có cần bao nhiêu báo giá?"
+    expected:
+      must_cite: true
+      source_keys: ["6"]
+
+  - id: password-policy
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Chính sách mật khẩu yêu cầu tối thiểu bao nhiêu ký tự?"
+    expected:
+      must_cite: true
+      source_keys: ["11"]
+
+  - id: olorin-open-shortcut
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Làm sao mở trợ lý AI Olorin?"
+    expected:
+      must_cite: true
+      source_keys: ["10"]
+
+  - id: probation-leave-abbrev
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "NV thử việc được nghỉ phép năm bao nhiêu ngày?"
+    expected:
+      must_cite: true
+      source_keys: ["3"]
+
+  - id: hotel-per-diem
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Khách sạn công tác nội địa được thanh toán tối đa bao nhiêu một đêm?"
+    expected:
+      must_cite: true
+      source_keys: ["4"]
+
+  - id: procurement-thresholds
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Quy trình mua sắm áp dụng cho những mức giá trị nào?"
+    expected:
+      must_cite: true
+      source_keys: ["6"]
+
+  - id: incident-severity-levels
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Các mức độ sự cố được phân loại như thế nào?"
+    expected:
+      must_cite: true
+      source_keys: ["13"]
+
+  - id: out-of-corpus
+    tenant: 00000000-0000-0000-0000-000000000010
+    query: "Chính sách hỗ trợ mua xe ô tô cho nhân viên là gì?"
+    expected:
+      allow_no_answer: true

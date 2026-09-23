@@ -1,0 +1,86 @@
+# Human labels for Jev judge calibration (plan B3).
+#
+# The calibration runner compares these labels with a judge artifact produced
+# by `go run ./cmd/ai-eval -mode=answer` with AI_EVAL_JUDGE=jev and
+# AI_ANSWER_EVAL_ARTIFACT set:
+#
+#   go run ./cmd/ai-eval -mode=judge-calibrate
+#
+# Conventions:
+# - grounded / answers_question are booleans for the reviewed answer.
+# - correct_abstention only applies to allow_no_answer cases; null elsewhere.
+# - null means the dimension does not apply to that case.
+# - These labels describe the expected behaviour, not a review of a specific
+#   model answer. Re-verify them against the answers stored in the artifact
+#   (answer_excerpt) before enabling any strict gate.
+version: 1
+description: >-
+  Human labels for the Jev answer judge across the dev corpus answer set and
+  the FAQ answer set.
+cases:
+  # --- scripts/ai-dev-corpus/answer-evaluation-set.yaml ---------------------
+  - id: annual-leave-days
+    grounded: true
+    answers_question: true
+  - id: payment-approval-threshold
+    grounded: true
+    answers_question: true
+  - id: expense-deadline
+    grounded: true
+    answers_question: true
+  - id: sev1-incident-response
+    grounded: true
+    answers_question: true
+  - id: customer-data-export
+    grounded: true
+    answers_question: true
+  - id: procurement-quotes
+    grounded: true
+    answers_question: true
+  - id: password-policy
+    grounded: true
+    answers_question: true
+  - id: olorin-open-shortcut
+    grounded: true
+    answers_question: true
+  - id: probation-leave-abbrev
+    grounded: true
+    answers_question: true
+  - id: hotel-per-diem
+    grounded: true
+    answers_question: true
+  - id: procurement-thresholds
+    grounded: true
+    answers_question: true
+  - id: incident-severity-levels
+    grounded: true
+    answers_question: true
+  - id: out-of-corpus
+    grounded: null
+    answers_question: true
+    correct_abstention: true
+
+  # --- docs/ai/answer-evaluation-set.yaml -----------------------------------
+  - id: faq-olorin-la-gi
+    grounded: true
+    answers_question: true
+  - id: faq-olorin-lam-duoc-gi
+    grounded: true
+    answers_question: true
+  - id: faq-phe-duyet
+    grounded: true
+    answers_question: true
+  - id: faq-khi-nao-khong-co-du-lieu
+    grounded: true
+    answers_question: true
+  - id: faq-xuat-du-lieu-khach-hang
+    grounded: true
+    answers_question: true
+  - id: out-of-corpus-gia-vang
+    grounded: null
+    answers_question: true
+    correct_abstention: true
+  - id: out-of-corpus-thoi-tiet
+    grounded: null
+    answers_question: true
+    correct_abstention: true

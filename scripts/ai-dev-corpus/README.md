@@ -10,6 +10,9 @@ corpus belongs to tenant `00000000-0000-0000-0000-000000000010`.
 |---|---|
 | `docs/*.md` | 12 synthetic policy/process documents (sources `src-2`..`src-13`) |
 | `evaluation-set.yaml` | Golden questions, validated offline by `apps/ai-service/internal/evaluation/devset_test.go` |
+| `routing-evaluation-set.yaml` | Jev routing golden set (skills, tags, `must_not_route`), validated offline by `routing_test.go` |
+| `answer-evaluation-set.yaml` | Dev answer-level set (13 cases) for the Jev judge; needs a deployed service and model |
+| `judge-calibration.yaml` | Human labels for judge calibration, compared by `-mode=judge-calibrate` |
 | `seed.mjs` | Pushes docs through the real knowledge API (create → version → review → publish) |
 | `query-test.mjs` | Ad-hoc retrieval smoke queries |
 
@@ -44,6 +47,26 @@ go run ./cmd/ai-eval
 Use `AI_EVAL_TENANT` when the seeder targeted a tenant other than the one
 hard-coded in the set. The report includes recall@k, citation coverage, hit
 counts and per-case pass/fail.
+
+## Routing evaluate
+
+`routing-evaluation-set.yaml` drives the Jev router offline. No corpus and no
+tenant chat model are needed: the runner builds the production state with
+`decision.BuildState` and calls the System One provider directly.
+
+```powershell
+# from arda-be/apps/ai-service
+$env:AI_EVAL_DECISION_API_KEY="<zen key>"
+$env:AI_EVAL_ROUTING_ARTIFACT="$env:TEMP\routing.json"   # optional
+go run ./cmd/ai-eval -mode=routing
+```
+
+The report scores accuracy, macro F1, confusion, per-tag accuracy, per-skill
+false positives, critical `must_not_route` violations, confidence buckets,
+p50/p95, tokens and a 0.50 → 0.95 threshold sweep over the same answers.
+Baseline 2026-09-23 (`jev-1.13-free`, 41 cases, three runs): accuracy
+0.951–0.976, critical FP 0; the short confirmation follow-up is the known weak
+spot. Full numbers: `docs/ai/decision-models.md` §Evaluation.
 
 Closing the production quality gate requires replacing this synthetic corpus
 with approved tenant documents and re-running the evaluator; see

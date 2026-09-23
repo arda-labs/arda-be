@@ -66,31 +66,47 @@ type AnswerResponse struct {
 	Text         string
 	Citations    []string
 	ToolContents []string
+	ToolCalls    int
 	LatencyMs    int
 }
 
 type AnswerFunc func(context.Context, AnswerCase) (AnswerResponse, error)
 
 type AnswerCaseResult struct {
-	ID             string   `json:"id"`
-	Passed         bool     `json:"passed"`
-	CitationCount  int      `json:"citation_count"`
-	MissingKeys    []string `json:"missing_keys,omitempty"`
-	MissingWords   []string `json:"missing_words,omitempty"`
-	Error          string   `json:"error,omitempty"`
-	LatencyMs      int      `json:"latency_ms"`
-	AnswerExcerpt  string   `json:"answer_excerpt,omitempty"`
-	CitationSample []string `json:"citation_sample,omitempty"`
+	ID                string   `json:"id"`
+	Passed            bool     `json:"passed"`
+	CitationCount     int      `json:"citation_count"`
+	ToolCalls         int      `json:"tool_calls"`
+	MissingKeys       []string `json:"missing_keys,omitempty"`
+	MissingWords      []string `json:"missing_words,omitempty"`
+	Error             string   `json:"error,omitempty"`
+	LatencyMs         int      `json:"latency_ms"`
+	AnswerExcerpt     string   `json:"answer_excerpt,omitempty"`
+	CitationSample    []string `json:"citation_sample,omitempty"`
+	Grounded          *float64 `json:"grounded,omitempty"`
+	AnswersQuestion   *float64 `json:"answers_question,omitempty"`
+	CorrectAbstention *float64 `json:"correct_abstention,omitempty"`
+	JudgeLatencyMs    int64    `json:"judge_latency_ms,omitempty"`
+	JudgeError        string   `json:"judge_error,omitempty"`
 }
 
 type AnswerReport struct {
-	Version    int                `json:"version"`
-	Cases      []AnswerCaseResult `json:"cases"`
-	Passed     int                `json:"passed"`
-	Failed     int                `json:"failed"`
-	PassRate   float64            `json:"pass_rate"`
-	AnswerRate float64            `json:"answer_rate"`
-	DurationMs int64              `json:"duration_ms"`
+	Version             int                `json:"version"`
+	Cases               []AnswerCaseResult `json:"cases"`
+	Passed              int                `json:"passed"`
+	Failed              int                `json:"failed"`
+	PassRate            float64            `json:"pass_rate"`
+	AnswerRate          float64            `json:"answer_rate"`
+	ToolCallsTotal      int                `json:"tool_calls_total"`
+	ToolCallsAvg        float64            `json:"tool_calls_avg"`
+	P50Ms               int64              `json:"p50_ms"`
+	P95Ms               int64              `json:"p95_ms"`
+	GroundedRate        float64            `json:"grounded_rate"`
+	AnswersQuestionRate float64            `json:"answers_question_rate"`
+	AbstentionRate      float64            `json:"correct_abstention_rate,omitempty"`
+	JudgeErrors         int                `json:"judge_errors"`
+	JudgeLatencyAvgMs   int64              `json:"judge_latency_avg_ms,omitempty"`
+	DurationMs          int64              `json:"duration_ms"`
 }
 
 // Citation labels look like [123:heading] (source id + heading) and are
@@ -98,10 +114,29 @@ type AnswerReport struct {
 // result so citation checks do not depend on the model restating the source.
 var citationPattern = regexp.MustCompile(`\[(\d+):[^\]]*\]`)
 
+// RunAnswers scores the full agent answer without a judge.
 func RunAnswers(ctx context.Context, set AnswerSet, ask AnswerFunc) AnswerReport {
+	return RunAnswersWithJudge(ctx, set, ask, nil)
+}
+
+// RunAnswersWithJudge additionally runs the optional Jev judge per answered
+// case. Judge failures are recorded per case and never change pass/fail: the
+// judge stays report-only until its calibration gate is approved.
+func RunAnswersWithJudge(ctx context.Context, set AnswerSet, ask AnswerFunc, judge JudgeFunc) AnswerReport {
 	started := time.Now()
 	report := AnswerReport{Version: set.Version, Cases: make([]AnswerCaseResult, 0, len(set.Cases))}
 	answered := 0
+	var (
+		latencies         []int64
+		groundedSum       float64
+		groundedCount     int
+		answersSum        float64
+		answersCount      int
+		abstentionSum     float64
+		abstentionCount   int
+		judgedCount       int
+		judgeLatencyTotal int64
+	)
 	for _, c := range set.Cases {
 		result := AnswerCaseResult{ID: c.ID}
 		res, err := ask(ctx, c)
@@ -112,11 +147,39 @@ func RunAnswers(ctx context.Context, set AnswerSet, ask AnswerFunc) AnswerReport
 			continue
 		}
 		result.LatencyMs = res.LatencyMs
+		result.ToolCalls = res.ToolCalls
 		result.CitationCount = len(res.Citations)
 		result.CitationSample = firstN(res.Citations, 3)
 		result.AnswerExcerpt = excerpt(res.Text, 240)
+		latencies = append(latencies, int64(res.LatencyMs))
+		report.ToolCallsTotal += res.ToolCalls
 		if len(res.Citations) > 0 {
 			answered++
+		}
+		if judge != nil {
+			judged := judge(ctx, c, res)
+			result.Grounded = judged.Grounded
+			result.AnswersQuestion = judged.AnswersQuestion
+			result.CorrectAbstention = judged.CorrectAbstention
+			result.JudgeLatencyMs = judged.LatencyMs
+			result.JudgeError = judged.Error
+			judgedCount++
+			judgeLatencyTotal += judged.LatencyMs
+			if judged.Error != "" {
+				report.JudgeErrors++
+			}
+			if judged.Grounded != nil {
+				groundedSum += *judged.Grounded
+				groundedCount++
+			}
+			if judged.AnswersQuestion != nil {
+				answersSum += *judged.AnswersQuestion
+				answersCount++
+			}
+			if judged.CorrectAbstention != nil {
+				abstentionSum += *judged.CorrectAbstention
+				abstentionCount++
+			}
 		}
 
 		switch {
@@ -151,7 +214,22 @@ func RunAnswers(ctx context.Context, set AnswerSet, ask AnswerFunc) AnswerReport
 	if len(set.Cases) > 0 {
 		report.PassRate = float64(report.Passed) / float64(len(set.Cases))
 		report.AnswerRate = float64(answered) / float64(len(set.Cases))
+		report.ToolCallsAvg = float64(report.ToolCallsTotal) / float64(len(set.Cases))
 	}
+	if groundedCount > 0 {
+		report.GroundedRate = groundedSum / float64(groundedCount)
+	}
+	if answersCount > 0 {
+		report.AnswersQuestionRate = answersSum / float64(answersCount)
+	}
+	if abstentionCount > 0 {
+		report.AbstentionRate = abstentionSum / float64(abstentionCount)
+	}
+	if judgedCount > 0 {
+		report.JudgeLatencyAvgMs = judgeLatencyTotal / int64(judgedCount)
+	}
+	report.P50Ms = percentile(latencies, 0.50)
+	report.P95Ms = percentile(latencies, 0.95)
 	report.DurationMs = time.Since(started).Milliseconds()
 	return report
 }
@@ -237,6 +315,8 @@ func HTTPAsk(baseURL, userID, tenantID, permissions, cookie string, client *http
 			switch event.Type {
 			case "TEXT_MESSAGE_CONTENT":
 				response.Text += event.Delta
+			case "TOOL_CALL_START":
+				response.ToolCalls++
 			case "TOOL_CALL_RESULT":
 				content := event.Content
 				if content == "" && len(event.Result) > 0 {
