@@ -366,7 +366,7 @@ func (r *DepositRepository) RecordTxn(ctx context.Context, t *DepositTxn) (*Depo
 func (r *DepositRepository) SetTxnJournal(ctx context.Context, tenantID, id, status, journalEntryID string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE dpm_transactions SET status = $3, journal_entry_id = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullStringDep(journalEntryID))
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, status, nullStringDep(journalEntryID))
 	return err
 }
 

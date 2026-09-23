@@ -697,7 +697,7 @@ func (r *CapitalRepository) SetMovementCase(ctx context.Context, tenantID, id, c
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE cfc_movements SET workflow_case_id = NULLIF($3,'')::uuid, status = 'SUBMITTED',
 			updated_at = now(), version = version + 1 WHERE tenant_id = $1 AND id = $2`,
-		tenantID, id, caseID, actor)
+		tenantID, id, caseID)
 	return err
 }
 
