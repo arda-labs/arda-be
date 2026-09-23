@@ -5,9 +5,11 @@ AG-UI/SSE boundary, citation guard, quota reservation, cost ledger, and
 readiness diagnostics are implemented in code; deployment verification is
 environment-specific. The service enforces gateway identity and tenant scope,
 persists runs/conversations, exposes structured citations, and keeps write tools
-behind approval. Production readiness still requires a real model, published
-knowledge content, gateway smoke tests, provider health/failover, and the
-evaluation gate.
+behind approval. A tenant-configurable Jev decision layer routes each new run to
+server-owned guidance (fail-open, no capability grant) and has offline routing
+and answer-judge evaluation tooling; the judge stays report-only. Production
+readiness still requires a real model, published knowledge content, gateway
+smoke tests, provider health/failover, and the evaluation gate.
 
 This directory is the source of truth for the first AI phase across `arda-be`,
 `arda-mfe`, and `arda-infra`. The documents describe the committed baseline;
@@ -63,14 +65,25 @@ gates.
     contract, and the CI gates that enforce both.
 18. [adr-005-run-lifecycle.md](adr-005-run-lifecycle.md) — proposed step-durable
     run lifecycle and shared result store (audit item A7).
+19. [decision-models.md](decision-models.md) — the System One (Jev) decision
+    layer: tenant settings, routing runtime, the routing golden set, and the
+    routing OFF vs ON results.
+20. [judge-calibration.md](judge-calibration.md) — the report-only answer judge
+    (grounded, answers_question, correct_abstention) and its calibration
+    against human labels.
 
 The September 2026 stack audit — findings with file/line and production
 evidence, severity, and the Phase A cleanup order — is
 [audit-2026-09.md](audit-2026-09.md).
 
-The retrieval gate can be run with `go run ./cmd/ai-eval` from
-`apps/ai-service`; it consumes `evaluation-set.yaml` and exits non-zero in
-strict mode when expected evidence or no-answer cases fail.
+The evaluation gates run with `go run ./cmd/ai-eval` from `apps/ai-service`:
+`-mode=retrieval` (golden RAG questions and no-answer cases), `-mode=routing`
+(offline Jev routing set: accuracy, macro F1, critical false positives,
+confidence sweep), `-mode=answer` (full agent answers plus the optional
+report-only Jev judge) and `-mode=judge-calibrate` (judge against human
+labels). Strict exits stay off by default; see
+[decision-models.md](decision-models.md) and
+[judge-calibration.md](judge-calibration.md).
 
 Deferred designs stay in this directory until their phase starts: [multi-provider-design.md](multi-provider-design.md), [nats-events.md](nats-events.md), [enterprise-security-and-crypto.md](enterprise-security-and-crypto.md), [agent-evolution-roadmap.md](agent-evolution-roadmap.md), [catalog-scale-plan.md](catalog-scale-plan.md), [code-mode-design.md](code-mode-design.md), [sandbox-threat-model.md](sandbox-threat-model.md), [sdk-catalog-design.md](sdk-catalog-design.md), and [performance-baseline.md](performance-baseline.md). The former CopilotKit spike is retained under [archive/](archive/).
 
@@ -85,6 +98,8 @@ Deferred designs stay in this directory until their phase starts: [multi-provide
   allowlist), Goose migrations, tenant/actor-owned conversation persistence
   (list, messages, delete, auto-title), replay protection, production workload
   identity verification, and redacted read tools with knowledge citations.
+  Tenant-owned decision routing (`ai_decision_settings`, Jev key `enc:v1`) adds
+  reviewed server-owned guidance per new run and fails open to the normal path.
   Internal HTTP tools (`iam.listUsers`, `crm.getCustomer`, `finance.getAccount`)
   are generated from `contracts/ai-internal/*.json` (`x-ai-tool`) via
   `tools/catalog-gen` with response-schema redaction; hand-written entries

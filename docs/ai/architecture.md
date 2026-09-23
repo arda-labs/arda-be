@@ -1,7 +1,7 @@
 # Arda AI & RAG Architecture (Single Source of Truth)
 
 Status: **Hoàn thiện & Hợp nhất toàn bộ về Go thuần (Go-native)**
-Ngày cập nhật: **2026-09-03**
+Ngày cập nhật: **2026-09-23**
 Sở hữu: `arda-be/apps/ai-service`
 
 ---
@@ -57,6 +57,13 @@ Không còn runtime Python, không còn adapter Node.js, không còn network hop
   - **Hợp nhất điểm số (RRF Fusion)**: Công thức chuẩn $RRF\_Score = \sum \frac{1}{60 + rank}$.
 - **Hàng đợi nhúng ngầm (Ingestion Worker - `service.go`)**: Goroutine chạy nền định kỳ quét bảng `ai_ingestion_jobs` với khóa `FOR UPDATE SKIP LOCKED`, tự động chia chunk và sinh vector embedding.
 
+### 2.3. Lớp quyết định (System One - Jev)
+- **Transport tách khỏi model hội thoại**: `POST https://opencode.ai/zen/v1/systemone`; key tenant-owned mã hoá `enc:v1` trong `ai_decision_settings` (model_id validate theo pattern, không còn allowlist cố định).
+- **Phạm vi**: một request bounded 3s cho mỗi run mới (không route lại khi resume approval). State do `decision.BuildState` dựng từ tối đa 2 message người dùng, có sanitize và budget 4096/2048 bytes.
+- **Kết quả typed** (`choice`/`noul`) chỉ chọn instruction server-owned (`report`, `loan_portfolio`, `knowledge`, `general`); dưới `min_confidence` (mặc định 0.8) fallback `general`.
+- **Fail-open**: thiếu cấu hình, lỗi provider hoặc low-confidence giữ nguyên đường hội thoại; routing không cấp capability, không đổi quyền, không bật Act mode.
+- **Đánh giá offline**: `cmd/ai-eval -mode=routing` (golden set `scripts/ai-dev-corpus/routing-evaluation-set.yaml`) và judge answer report-only (`-mode=answer` + `-mode=judge-calibrate`); chi tiết ở `decision-models.md`, `judge-calibration.md`.
+
 ---
 
 ## 3. Ranh giới API & Phân quyền
@@ -94,3 +101,4 @@ Tất cả bảng ứng dụng nằm trong schema `public`, quản lý tập tru
 * `ai_ingestion_jobs`: Hàng đợi xử lý chunking và embedding nền.
 * `ai_rag_runs`: Ghi nhận nhật ký truy vấn để đo độ trễ và số ứng viên tìm kiếm.
 * `ai_rag_feedback`: Phản hồi chất lượng từ người dùng.
+* `ai_decision_settings`: Cấu hình decision model theo tenant (`model_id` validate theo pattern, `min_confidence`, API key `enc:v1`) cho lớp routing Jev; usage lưu ở `ai_runs.decision_usage`.
