@@ -8,6 +8,8 @@ import (
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Job topics for the CRM_MEMBER_V1 flow (QTDND membership capital movements).
@@ -72,7 +74,7 @@ func (w *CRMMemberWorkers) ExecuteHandler(client worker.JobClient, job entities.
 	}
 	actor, dataVersion := memberDecisionContext(job)
 	if err := w.crmClient.ResolveMemberRequest(crmJobContext(job), requestID, "APPROVE", actor, dataVersion); err != nil {
-		failWorkflowJob(client, job, "CRM Error: "+err.Error())
+		failMemberDecision(client, job, err)
 		return
 	}
 	if err := completeWorkflowJob(client, job, map[string]any{"approvalStatus": "APPROVED"}); err != nil {
@@ -89,7 +91,7 @@ func (w *CRMMemberWorkers) CancelHandler(client worker.JobClient, job entities.J
 	}
 	actor, dataVersion := memberDecisionContext(job)
 	if err := w.crmClient.ResolveMemberRequest(crmJobContext(job), requestID, "REJECT", actor, dataVersion); err != nil {
-		failWorkflowJob(client, job, "CRM Error: "+err.Error())
+		failMemberDecision(client, job, err)
 		return
 	}
 	if err := completeWorkflowJob(client, job, map[string]any{"approvalStatus": "REJECTED"}); err != nil {
@@ -155,11 +157,61 @@ func completeWorkflowJob(client worker.JobClient, job entities.Job, result map[s
 }
 
 // failWorkflowJob fails a job with bounded retries (a domain callback outage
-// should be retried, not dropped).
+// should be retried, not dropped). The retry budget is decremented from the
+// job's own counter — a fixed value would reset it on every attempt and spin
+// forever.
 func failWorkflowJob(client worker.JobClient, job entities.Job, reason string) {
-	const retries = 3
+	retries := job.GetRetries() - 1
+	if retries < 0 {
+		retries = 0
+	}
+	slog.Warn("workflow crm member job failed",
+		"jobKey", job.GetKey(),
+		"jobType", job.GetType(),
+		"retriesLeft", retries,
+		"reason", reason,
+	)
 	_, err := client.NewFailJobCommand().JobKey(job.GetKey()).Retries(retries).ErrorMessage(reason).Send(context.Background())
 	if err != nil {
 		slog.Error("fail job", "jobKey", job.GetKey(), "err", err)
+	}
+}
+
+// failMemberDecision routes a ResolveMemberRequest error: a version/status
+// conflict is terminal (the token the checker saw is stale, so retrying with
+// the same value can never succeed) and stops the job with an incident for
+// ops; anything else is retried with the remaining budget.
+func failMemberDecision(client worker.JobClient, job entities.Job, err error) {
+	if isMemberTerminalError(err) {
+		failWorkflowJobTerminal(client, job, "CRM Conflict: "+status.Convert(err).Message())
+		return
+	}
+	failWorkflowJob(client, job, "CRM Error: "+err.Error())
+}
+
+// isMemberTerminalError reports whether a ResolveMemberRequest failure is a
+// permanent domain conflict. Aborted is the stale optimistic-lock token
+// (repository.ErrMemberVersionConflict); FailedPrecondition is a request that
+// cannot be decided (already decided / not found / malformed decision).
+func isMemberTerminalError(err error) bool {
+	switch status.Code(err) {
+	case codes.Aborted, codes.FailedPrecondition:
+		return true
+	default:
+		return false
+	}
+}
+
+// failWorkflowJobTerminal stops a job without retries when retrying cannot
+// change the outcome (stale data version / status conflict).
+func failWorkflowJobTerminal(client worker.JobClient, job entities.Job, reason string) {
+	slog.Warn("workflow crm member job stopped",
+		"jobKey", job.GetKey(),
+		"jobType", job.GetType(),
+		"reason", reason,
+	)
+	_, err := client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).ErrorMessage(reason).Send(context.Background())
+	if err != nil {
+		slog.Error("fail job terminal", "jobKey", job.GetKey(), "err", err)
 	}
 }
