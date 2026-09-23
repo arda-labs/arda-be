@@ -13,8 +13,8 @@ import (
 )
 
 // IBMWorkers run the ibm-place-v1 and ibm-movement-v1 flows (IBM.200/300/301/
-// 302/304). The place flow uses a fixed kind; the movement flow reads the kind
-// from the case variables (TOP_UP/INTEREST/EXPECTED/WITHDRAW).
+// 302/304). Both flows read the kind from the case variables: PLACE/BORROW for
+// the placement process, TOP_UP/INTEREST/EXPECTED/WITHDRAW for movements.
 type IBMWorkers struct {
 	deposit    DepositIBMRequester
 	projection *CaseProjection
@@ -46,8 +46,19 @@ func (w *IBMWorkers) request(job entities.Job) (kind, refID string, ok bool) {
 	if kind == "" {
 		kind, _ = vars["kind"].(string)
 	}
+	if kind == "" {
+		// Placement cases created before the borrowing case type existed carry
+		// no kind variable; their depositId is the discriminator. A borrow case
+		// always sets kind explicitly.
+		if depositID, _ := vars["depositId"].(string); depositID != "" {
+			kind = "PLACE"
+		}
+	}
 	kind = strings.ToUpper(kind)
-	refID, _ = vars["movementId"].(string)
+	refID, _ = vars["refId"].(string)
+	if refID == "" {
+		refID, _ = vars["movementId"].(string)
+	}
 	if refID == "" {
 		refID, _ = vars["depositId"].(string)
 	}

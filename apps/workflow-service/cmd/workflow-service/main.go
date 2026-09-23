@@ -424,7 +424,11 @@ func main() {
 				defer pcw.Close()
 			}
 
-			ibmPlaceWorkers := worker.NewIBMWorkers(depositClient, caseRepo, "PLACE")
+			// The place workers serve BOTH IBM_PLACE_V1 and IBM_BORROW_V1 (the
+			// borrowing reuses ibm-place-v1). The kind must therefore come from
+			// the case variables, not a fixed value — a hardcoded "PLACE" would
+			// resolve a borrow id against the deposit table.
+			ibmPlaceWorkers := worker.NewIBMWorkers(depositClient, caseRepo, "")
 			ipv, ipe, ipc := ibmPlaceWorkers.Handlers()
 			ipvw := zeebeSvc.NewJobWorker("ibm.place.validate", ipv)
 			ipw := zeebeSvc.NewJobWorker("ibm.place.execute", ipe)

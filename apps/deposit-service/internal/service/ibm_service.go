@@ -22,6 +22,9 @@ const (
 	CaseIBMInterest = "IBM_INTEREST_V1"
 	CaseIBMExpected = "IBM_EXPECTED_V1"
 	CaseIBMWithdraw = "IBM_WITHDRAW_V1"
+	// Interbank borrowing placement reuses the placement BPMN: the same
+	// maker-input → checker-review shape, different object.
+	CaseIBMBorrow = "IBM_BORROW_V1"
 
 	// IBM request kinds (mirror the proto kind values).
 	IBMKindPlace    = "PLACE"
@@ -29,6 +32,7 @@ const (
 	IBMKindInterest = "INTEREST"
 	IBMKindExpected = "EXPECTED"
 	IBMKindWithdraw = "WITHDRAW"
+	IBMKindBorrow   = "BORROW"
 )
 
 // IBMDetail is the aggregate read model for the interbank contract detail.
@@ -141,6 +145,7 @@ func (s *IBMService) SubmitPlace(ctx context.Context, tenantID, actor string, in
 		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
 	}
 	if _, err = s.workflow.SubmitCase(ctx, caseCreated.Id, actor, map[string]any{
+		"kind":        IBMKindPlace,
 		"depositId":   created.ID,
 		"depositCode": created.DepositCode,
 	}, fmt.Sprintf("ibm-place-%s-submit", created.ID)); err != nil {
@@ -259,6 +264,18 @@ func (s *IBMService) CheckIBMRequest(ctx context.Context, tenantID, kind, refID 
 			return false, "status " + deposit.Status + " is not actionable", nil
 		}
 		return true, "", nil
+	case IBMKindBorrow:
+		borrow, err := s.repo.GetIBMBorrowByID(ctx, tenantID, refID)
+		if err != nil {
+			return false, "", err
+		}
+		if borrow == nil {
+			return false, "interbank borrow not found", nil
+		}
+		if borrow.Status != "PENDING_APPROVAL" {
+			return false, "status " + borrow.Status + " is not actionable", nil
+		}
+		return true, "", nil
 	case IBMKindTopUp, IBMKindInterest, IBMKindExpected, IBMKindWithdraw:
 		movement, err := s.repo.GetIBMMovementByID(ctx, tenantID, refID)
 		if err != nil {
@@ -293,10 +310,57 @@ func (s *IBMService) ResolveIBMRequest(ctx context.Context, tenantID, kind, refI
 	switch strings.ToUpper(kind) {
 	case IBMKindPlace:
 		return s.resolvePlace(ctx, tenantID, refID, decision, actor, dataVersion)
+	case IBMKindBorrow:
+		return s.resolveBorrow(ctx, tenantID, refID, decision, actor, dataVersion)
 	case IBMKindTopUp, IBMKindInterest, IBMKindExpected, IBMKindWithdraw:
 		return s.resolveMovement(ctx, tenantID, refID, strings.ToUpper(kind), decision, actor, dataVersion)
 	default:
 		return ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown kind "+kind)
+	}
+}
+
+// resolveBorrow applies the checker decision to a staged borrowing.
+//
+// It activates the contract but does not post a journal entry: the borrowing
+// accounting rules (which account the drawdown credits and which it debits)
+// belong in the finance posting policies, and inventing a leg here would put an
+// unreviewed entry in the books. The status transition is what the reporting
+// fact and the "Tiền vay TCTD" indicators read, so they are correct today.
+func (s *IBMService) resolveBorrow(ctx context.Context, tenantID, id, decision, actor, dataVersion string) error {
+	borrow, err := s.repo.GetIBMBorrowByID(ctx, tenantID, id)
+	if err != nil {
+		return err
+	}
+	if borrow == nil {
+		return ardaerrors.New(ardaerrors.CodeNotFound, "interbank borrow not found")
+	}
+	if decision == "APPROVE" && dataVersion != "" &&
+		strconv.FormatInt(borrow.DataVersion, 10) != dataVersion {
+		return ardaerrors.New(ardaerrors.CodeConflict,
+			fmt.Sprintf("dossier changed: interbank borrow %s is at version %d", borrow.BorrowCode, borrow.DataVersion))
+	}
+	switch decision {
+	case "APPROVE":
+		if borrow.Status == "ACTIVE" {
+			return nil
+		}
+		if borrow.Status != "PENDING_APPROVAL" {
+			return ardaerrors.New(ardaerrors.CodeInvalidInput, "borrow is not PENDING_APPROVAL")
+		}
+		if err := s.repo.UpdateIBMBorrowStatus(ctx, tenantID, id, "ACTIVE", actor, dataVersion); err != nil {
+			return ardaerrors.New(ardaerrors.CodeConflict, err.Error())
+		}
+		return nil
+	case "REJECT":
+		if borrow.Status == "REJECTED" {
+			return nil
+		}
+		if borrow.Status != "PENDING_APPROVAL" {
+			return ardaerrors.New(ardaerrors.CodeInvalidInput, "borrow is not PENDING_APPROVAL")
+		}
+		return s.repo.UpdateIBMBorrowStatus(ctx, tenantID, id, "REJECTED", actor, "")
+	default:
+		return ardaerrors.New(ardaerrors.CodeInvalidInput, "decision must be APPROVE or REJECT")
 	}
 }
 

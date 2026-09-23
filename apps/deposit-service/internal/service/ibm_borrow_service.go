@@ -2,17 +2,19 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 )
 
-// IBM borrow lifecycle (tiền vay TCTD khác). Mirrors the deposit side but stays
-// deliberately lighter: a submission stages a PENDING_APPROVAL borrow and a
-// checker APPROVE activates it, which preserves segregation of duties at the
-// API boundary without a BPMN case. The workflow case columns are already on the
-// table, so wiring the maker-checker engine later needs no schema change.
+// IBM borrow lifecycle (tiền vay TCTD khác). A submission stages a
+// PENDING_APPROVAL borrow and opens an IBM_BORROW_V1 maker-checker case (the
+// placement BPMN shape with a different object); the case checker's APPROVE
+// activates the contract. Deployments without a workflow client keep the staged
+// row, and the DecideBorrow API still refuses a self-approval.
 //
 // The PCF "Tiền vay TCTD" indicators read the reporting projection, so the
 // lifecycle here only has to keep status truthful.
@@ -39,6 +41,38 @@ func (s *IBMService) SubmitBorrow(ctx context.Context, tenantID, actor string, i
 	if err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeConflict, err.Error())
 	}
+	// Route through the same maker-checker gate as the placement side: the
+	// contract stays PENDING_APPROVAL until a checker APPROVE. A deployment
+	// without a workflow client keeps the staged row (the API gate in
+	// DecideBorrow still refuses a self-approval), it just does not open a case.
+	if s.workflow == nil {
+		return created, nil
+	}
+	caseCreated, err := s.workflow.CreateCase(ctx, workflowclient.CaseCreate{
+		TenantID:          tenantID,
+		CaseType:          CaseIBMBorrow,
+		Title:             fmt.Sprintf("Đề nghị vay vốn TCTD khác %s", created.BorrowCode),
+		PrimaryObjectType: "ibm.borrow",
+		PrimaryObjectID:   created.ID,
+		DomainService:     "deposit-service",
+		Priority:          "NORMAL",
+		CreatedBy:         actor,
+		IdempotencyKey:    fmt.Sprintf("ibm-borrow-%s", created.ID),
+	})
+	if err != nil {
+		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
+	}
+	if _, err = s.workflow.SubmitCase(ctx, caseCreated.Id, actor, map[string]any{
+		"kind":       IBMKindBorrow,
+		"refId":      created.ID,
+		"borrowCode": created.BorrowCode,
+	}, fmt.Sprintf("ibm-borrow-%s-submit", created.ID)); err != nil {
+		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
+	}
+	if err := s.repo.SetIBMBorrowCase(ctx, tenantID, created.ID, caseCreated.Id, actor); err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	created.WorkflowCaseID = &caseCreated.Id
 	return created, nil
 }
 
