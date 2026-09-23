@@ -65,10 +65,8 @@ func ChartFromReport(title string, columns []string, rows [][]any) Chart {
 		if isLabelColumn(col) && labelIdx == -1 {
 			labelIdx = i
 		}
-		if isValueColumn(col) && valueIdx == -1 {
-			valueIdx = i
-		}
 	}
+	valueIdx = preferValueColumn(columns)
 	if labelIdx == -1 || valueIdx == -1 {
 		c.Reason = "không xác định được cột nhãn và cột số liệu"
 		return c
@@ -93,6 +91,10 @@ func ChartFromReport(title string, columns []string, rows [][]any) Chart {
 	c.ValueFormat = formatForColumn(columns[valueIdx])
 
 	switch {
+	case len(categories) == 1:
+		// A one-point line or a full-circle pie reads as an empty chart; a
+		// single bar at least shows the magnitude, so keep the point visible.
+		c.Type = ChartBar
 	case isTemporalColumn(columns[labelIdx]):
 		c.Type = ChartLine
 	case len(categories) <= 6:
@@ -166,6 +168,34 @@ func isValueColumn(col string) bool {
 		}
 	}
 	return false
+}
+
+// valueColumnPriority orders the numeric columns by how meaningful they are to
+// chart: money first, then balances/totals, then counts, then rates. A report
+// like the loan appraisal carries both a count and an amount; charting the
+// count would show "1" while the amount is the point of the report.
+var valueColumnPriority = [][]string{
+	{"minor", "amt", "amount"},
+	{"balance", "total"},
+	{"count"},
+	{"rate", "ratio"},
+	{"value", "npl"},
+}
+
+// preferValueColumn returns the index of the most chart-worthy numeric column,
+// or -1 when the report has none.
+func preferValueColumn(columns []string) int {
+	for _, hints := range valueColumnPriority {
+		for index, col := range columns {
+			lower := strings.ToLower(col)
+			for _, hint := range hints {
+				if strings.Contains(lower, hint) {
+					return index
+				}
+			}
+		}
+	}
+	return -1
 }
 
 func isTemporalColumn(col string) bool {

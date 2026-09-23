@@ -43,6 +43,30 @@ func TestChartFromReportDegradesWithReason(t *testing.T) {
 	}
 }
 
+// TestChartFromReportPrefersAmountAndSingleBar locks two display fixes: a
+// report carrying both a count and an amount charts the amount, and a single
+// row renders as a bar (a one-point line looks like an empty chart).
+func TestChartFromReportPrefersAmountAndSingleBar(t *testing.T) {
+	single := ChartFromReport("Báo cáo thẩm định khoản vay",
+		[]string{"period_code", "agreement_count", "disburse_minor", "avg_interest_rate", "outstanding_minor"},
+		[][]any{{"2026-08", int64(1), "500000000", "9.5000", "500000000"}})
+	if single.Type != ChartBar {
+		t.Fatalf("single row should be a bar, got %s", single.Type)
+	}
+	if len(single.Series) != 1 || single.Series[0].Name != "disburse_minor" {
+		t.Fatalf("should chart the amount column, got %+v", single.Series)
+	}
+	if single.ValueFormat != "amount" {
+		t.Fatalf("value format = %q, want amount", single.ValueFormat)
+	}
+
+	countOnly := ChartFromReport("Số lượng", []string{"segment", "customer_count"},
+		[][]any{{"A", int64(2)}, {"B", int64(1)}})
+	if len(countOnly.Series) != 1 || countOnly.Series[0].Name != "customer_count" {
+		t.Fatalf("count-only report should chart the count, got %+v", countOnly.Series)
+	}
+}
+
 // TestSortSeriesDesc keeps label/value pairs aligned while ranking.
 func TestSortSeriesDesc(t *testing.T) {
 	c := Chart{Categories: []string{"A", "B", "C"}, Series: []Series{{Name: "x", Values: []float64{1, 9, 5}}}}
