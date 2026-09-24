@@ -29,6 +29,7 @@ import (
 	notificationgrpc "github.com/arda-labs/arda/apps/notification-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/notification-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/notification-service/internal/worker"
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
@@ -141,6 +142,34 @@ func main() {
 		os.Exit(1)
 	}
 	defer nc.Close()
+	streamHub := handler.NewStreamHub()
+	_, err = nc.Subscribe(ardaevents.SubjectNotificationInboxCreated, func(msg *nats.Msg) {
+		streamHub.PublishOutboxEvent(msg.Data)
+	})
+	if err != nil {
+		logger.Error("notification SSE subscription setup failed", "err", err)
+		os.Exit(1)
+	}
+	_, err = nc.Subscribe(handler.UserInboxChangedSubject, func(msg *nats.Msg) {
+		streamHub.PublishUserChange(msg.Data)
+	})
+	if err != nil {
+		logger.Error("notification inbox-state subscription setup failed", "err", err)
+		os.Exit(1)
+	}
+	if err := nc.Flush(); err != nil {
+		logger.Error("notification SSE subscription flush failed", "err", err)
+		os.Exit(1)
+	}
+	notificationHandler.SetStreamHub(streamHub)
+	notificationHandler.SetInboxChangePublisher(func(tenantID, userID string) error {
+		payload, err := json.Marshal(map[string]string{"tenant_id": tenantID, "user_id": userID})
+		if err != nil {
+			return err
+		}
+		return nc.Publish(handler.UserInboxChangedSubject, payload)
+	})
+	logger.Info("Notification SSE event subscription started", "subject", ardaevents.SubjectNotificationInboxCreated)
 	publisher, publisherErr := appevents.NewNATSPublisher(nc)
 	if publisherErr != nil {
 		logger.Error("JetStream required for notification outbox", "err", publisherErr)

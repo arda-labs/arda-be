@@ -17,9 +17,11 @@ import (
 )
 
 type NotificationHandler struct {
-	svc        *service.NotificationService
-	secret     string
-	mailTester *service.MailTester
+	svc                *service.NotificationService
+	secret             string
+	mailTester         *service.MailTester
+	streamHub          *StreamHub
+	publishInboxChange func(tenantID, userID string) error
 }
 
 func NewNotificationHandler(svc *service.NotificationService, secret string) *NotificationHandler {
@@ -29,6 +31,12 @@ func NewNotificationHandler(svc *service.NotificationService, secret string) *No
 // SetMailTester enables POST /api/notifications/test-send.
 func (h *NotificationHandler) SetMailTester(t *service.MailTester) {
 	h.mailTester = t
+}
+
+func (h *NotificationHandler) SetStreamHub(hub *StreamHub) { h.streamHub = hub }
+
+func (h *NotificationHandler) SetInboxChangePublisher(publish func(tenantID, userID string) error) {
+	h.publishInboxChange = publish
 }
 
 // SendTest handles POST /api/notifications/test-send — sends one email through
@@ -87,6 +95,7 @@ func (h *NotificationHandler) MarkRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.publishInboxChanged(tenantID, userID)
 	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -96,7 +105,14 @@ func (h *NotificationHandler) MarkAllRead(w http.ResponseWriter, r *http.Request
 		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.publishInboxChanged(tenantID, userID)
 	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *NotificationHandler) publishInboxChanged(tenantID, userID string) {
+	if h.publishInboxChange != nil {
+		_ = h.publishInboxChange(tenantID, userID)
+	}
 }
 
 func (h *NotificationHandler) PushPublicKey(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +160,12 @@ func (h *NotificationHandler) UnsubscribePush(w http.ResponseWriter, r *http.Req
 
 func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	tenantID, userID := requestUser(r)
+	if h.streamHub == nil {
+		writeError(w, r, http.StatusServiceUnavailable, "notification stream is not configured")
+		return
+	}
+	events, unsubscribe := h.streamHub.Subscribe(tenantID, userID)
+	defer unsubscribe()
 	count, err := h.svc.UnreadCount(r.Context(), tenantID, userID)
 	if err != nil {
 		writeNotificationError(w, r, err)
@@ -163,16 +185,7 @@ func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	writeSSE(w, "unread_count", map[string]int{"count": count})
 	flusher.Flush()
 
-	seen := map[string]struct{}{}
-	if items, err := h.svc.ListInbox(r.Context(), tenantID, userID, 20); err == nil {
-		for _, item := range items {
-			seen[item.PublicID] = struct{}{}
-		}
-	}
-
-	poll := time.NewTicker(2 * time.Second)
 	heartbeat := time.NewTicker(30 * time.Second)
-	defer poll.Stop()
 	defer heartbeat.Stop()
 
 	for {
@@ -182,30 +195,9 @@ func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		case <-heartbeat.C:
 			_, _ = w.Write([]byte(": heartbeat\n\n"))
 			flusher.Flush()
-		case <-poll.C:
-			items, err := h.svc.ListInbox(r.Context(), tenantID, userID, 20)
-			if err != nil {
-				continue
-			}
-			// Newest first — push oldest-unseen first so UI order feels natural.
-			var fresh []domain.InboxItem
-			for i := len(items) - 1; i >= 0; i-- {
-				item := items[i]
-				if _, ok := seen[item.PublicID]; ok {
-					continue
-				}
-				seen[item.PublicID] = struct{}{}
-				fresh = append(fresh, item)
-			}
-			for _, item := range fresh {
-				writeSSE(w, "notification", inboxItemJSON(item))
-			}
-			if len(fresh) > 0 {
-				if nextCount, err := h.svc.UnreadCount(r.Context(), tenantID, userID); err == nil {
-					writeSSE(w, "unread_count", map[string]int{"count": nextCount})
-				}
-				flusher.Flush()
-			}
+		case eventID := <-events:
+			writeSSE(w, "inbox_changed", map[string]string{"id": eventID})
+			flusher.Flush()
 		}
 	}
 }
