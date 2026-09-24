@@ -20,12 +20,35 @@ func TestBuildStateUsesLatestUserMessageOnly(t *testing.T) {
 func TestBuildStateAttachesPreviousUserMessageWithinBudget(t *testing.T) {
 	state, ok := BuildState([]Message{
 		{Role: "user", Content: "Phân tích dư nợ theo nhóm nợ"},
-		{Role: "assistant", Content: "ignored"},
 		{Role: "user", Content: "thế còn nhóm 3-5?"},
 	})
 	want := "Previous user request (context only): Phân tích dư nợ theo nhóm nợ\nLatest user request: thế còn nhóm 3-5?"
 	if !ok || state != want {
 		t.Fatalf("state=%q ok=%v", state, ok)
+	}
+}
+
+func TestBuildStateAttachesPreviousAssistantContextInMultiTurn(t *testing.T) {
+	state, ok := BuildState([]Message{
+		{Role: "user", Content: "Phân tích dư nợ theo nhóm nợ"},
+		{Role: "assistant", Content: "Bạn muốn xem kỳ báo cáo nào?"},
+		{Role: "user", Content: "kỳ 2026-08"},
+	})
+	want := "Previous user request (context only): Phân tích dư nợ theo nhóm nợ\nPrevious assistant context: Bạn muốn xem kỳ báo cáo nào?\nLatest user request: kỳ 2026-08"
+	if !ok || state != want {
+		t.Fatalf("state=%q ok=%v want=%q", state, ok, want)
+	}
+}
+
+func TestBuildStateDropsOversizedPreviousAssistant(t *testing.T) {
+	state, ok := BuildState([]Message{
+		{Role: "user", Content: "Phân tích dư nợ theo nhóm nợ"},
+		{Role: "assistant", Content: strings.Repeat("x", 1025)},
+		{Role: "user", Content: "kỳ 2026-08"},
+	})
+	want := "Previous user request (context only): Phân tích dư nợ theo nhóm nợ\nLatest user request: kỳ 2026-08"
+	if !ok || state != want {
+		t.Fatalf("oversized assistant must be dropped: %q ok=%v", state, ok)
 	}
 }
 

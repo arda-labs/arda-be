@@ -3,6 +3,8 @@ package handler
 import (
 	"context"
 	"log/slog"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/decision"
@@ -20,22 +22,91 @@ const reportSkill = `Report analysis skill:
 - When the requested report is available, render its chart if present, summarize the verified data and finish. Optional label lookups or extra periods must not delay the answer. Only compare periods explicitly requested by the user.
 - Compute arithmetic in code; do not invent thresholds or regulatory violations.`
 
-func skillInstructions(skill string) string {
-	switch skill {
-	case "loan_portfolio":
-		return reportSkill + "\nThe matching report is LOAN_PORTFOLIO (dư nợ theo nhóm nợ). Use arda.statistical.getReportPresentation with this code and the user-confirmed period; no report catalog discovery is needed."
-	case "report":
-		return reportSkill
-	case "knowledge":
-		return "Knowledge lookup skill: use arda.knowledge.search for documented policies and instructions. Answer from relevant returned evidence with citations. If no relevant evidence exists, explain that once and stop. Do not browse unrelated domains to replace missing evidence."
-	default:
-		return ""
+// SkillPack defines a structured capability pack for a domain/skill.
+type SkillPack struct {
+	ID           string
+	Instructions string
+	AllowedTools []string // Whitelist of tool names allowed in direct-tool mode; nil allows all tools.
+}
+
+var skillPacks = map[string]SkillPack{
+	"loan_portfolio": {
+		ID:           "loan_portfolio",
+		Instructions: reportSkill + "\nThe matching report is LOAN_PORTFOLIO (dư nợ theo nhóm nợ). Use arda.statistical.getReportPresentation with this code and the user-confirmed period; no report catalog discovery is needed.",
+		AllowedTools: []string{
+			"arda.statistical.getReportPresentation",
+			"readResult",
+			"render_chart",
+		},
+	},
+	"report": {
+		ID:           "report",
+		Instructions: reportSkill,
+		AllowedTools: []string{
+			"arda.statistical.getReportPresentation",
+			"arda.statistical.listReportDefinitions",
+			"arda.statistical.runReport",
+			"arda.statistical.listIndicatorResults",
+			"readResult",
+			"render_chart",
+		},
+	},
+	"knowledge": {
+		ID:           "knowledge",
+		Instructions: "Knowledge lookup skill: use arda.knowledge.search for documented policies and instructions. Answer from relevant returned evidence with citations. If no relevant evidence exists, explain that once and stop. Do not browse unrelated domains to replace missing evidence.",
+		AllowedTools: []string{
+			"arda.knowledge.search",
+			"readResult",
+		},
+	},
+	"general": {
+		ID:           "general",
+		Instructions: "",
+		AllowedTools: nil,
+	},
+}
+
+func getSkillPack(skill string) SkillPack {
+	if pack, ok := skillPacks[skill]; ok {
+		return pack
 	}
+	return skillPacks["general"]
+}
+
+func skillInstructions(skill string) string {
+	return getSkillPack(skill).Instructions
+}
+
+func skillAllowedTools(skill string) []string {
+	return getSkillPack(skill).AllowedTools
+}
+
+var fastPathTrivialPattern = regexp.MustCompile(`^(?i)\s*(xin\s+chào|chào\s+(bạn|em|anh|chị|bot|ai)|chào|hello|hi|hey|cảm\s+ơn(\s+bạn)?|thanks?(\s+you)?|tạm\s+biệt|goodbye|bye|ok|oke|okie|dạ|vâng)\s*[!.,?~]*\s*$`)
+
+func isFastPathTrivialQuery(messages []model.Message) bool {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			trimmed := strings.TrimSpace(messages[i].Content)
+			if len(trimmed) == 0 {
+				return true
+			}
+			if len(trimmed) <= 64 && fastPathTrivialPattern.MatchString(trimmed) {
+				return true
+			}
+			return false
+		}
+	}
+	return false
 }
 
 func routeDecision(ctx context.Context, store runStore, options RouterOptions, run repository.RunContext, messages []model.Message) (string, []model.Message) {
 	settingsStore, ok := store.(repository.DecisionSettingsStore)
 	if !ok {
+		return "", messages
+	}
+	// Fast-path: simple greetings, acknowledgments or empty messages bypass Jev.
+	if isFastPathTrivialQuery(messages) {
+		slog.Info("decision routing skipped", "reason", "fast_path_trivial", "run_id", run.ExternalRun)
 		return "", messages
 	}
 	// One bounded classification per new run; never classify approval resumes.

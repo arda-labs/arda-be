@@ -13,6 +13,7 @@ import (
 const (
 	maxLatestBytes    = 4096
 	maxPreviousBytes  = 2048
+	maxAssistantBytes = 1024
 	maxSanitizedBytes = 16 * 1024
 	maxStateBytes     = 8192
 )
@@ -49,27 +50,39 @@ func TruncateRunes(value string, maxBytes int) string {
 }
 
 // BuildState builds the System One state string for one run, mirroring
-// production exactly: only user messages are considered, the latest message
-// over maxLatestBytes is never classified, and at most one previous user
-// message is attached as context. ok=false means the caller must skip
-// classification and keep the normal conversation path.
+// production: user messages define intent; when available in a multi-turn
+// conversation, the previous assistant message provides disambiguating context;
+// the latest message over maxLatestBytes is never classified.
+// ok=false means the caller must skip classification and keep the normal conversation path.
 func BuildState(messages []Message) (string, bool) {
-	var userMessages []string
-	for _, message := range messages {
+	var userIndices []int
+	for i, message := range messages {
 		if message.Role == "user" {
-			userMessages = append(userMessages, message.Content)
+			userIndices = append(userIndices, i)
 		}
 	}
-	if len(userMessages) == 0 {
+	if len(userIndices) == 0 {
 		return "", false
 	}
-	latest := userMessages[len(userMessages)-1]
+	latestIdx := userIndices[len(userIndices)-1]
+	latest := messages[latestIdx].Content
 	if len(latest) > maxLatestBytes {
 		return "", false
 	}
 	state := "Latest user request: " + SanitizeTranscript(latest)
-	if len(userMessages) > 1 {
-		previous := userMessages[len(userMessages)-2]
+
+	if len(userIndices) > 1 {
+		// In a multi-turn conversation, attach the previous assistant message if present
+		// between the previous and latest user message to disambiguate follow-ups.
+		for j := latestIdx - 1; j > userIndices[len(userIndices)-2]; j-- {
+			if messages[j].Role == "assistant" && len(messages[j].Content) > 0 && len(messages[j].Content) <= maxAssistantBytes {
+				state = "Previous assistant context: " + SanitizeTranscript(messages[j].Content) + "\n" + state
+				break
+			}
+		}
+
+		prevUserIdx := userIndices[len(userIndices)-2]
+		previous := messages[prevUserIdx].Content
 		if len(previous) <= maxPreviousBytes {
 			state = "Previous user request (context only): " + SanitizeTranscript(previous) + "\n" + state
 		}

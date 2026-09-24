@@ -345,6 +345,11 @@ func agentStepsLoop(
 	}
 
 	defs := modelToolDefinitions(resolver)
+	if options.decisionSkill != "" {
+		if allowed := skillAllowedTools(options.decisionSkill); len(allowed) > 0 {
+			defs = pruneToolDefinitions(defs, allowed)
+		}
+	}
 	maxSteps := options.AgentMaxSteps
 	if maxSteps <= 0 || maxSteps > 20 {
 		maxSteps = 10
@@ -1099,6 +1104,33 @@ func modelToolDefinitions(resolver toolResolver) []model.ToolDef {
 		})
 	}
 	return items
+}
+
+func pruneToolDefinitions(defs []model.ToolDef, allowed []string) []model.ToolDef {
+	if len(allowed) == 0 || len(defs) == 0 {
+		return defs
+	}
+	// In Code Mode, meta-tools (search, execute, readResult, render_chart) are preserved
+	// so the Goja sandbox execution works.
+	for _, def := range defs {
+		if def.Name == "execute" {
+			return defs
+		}
+	}
+	allowedMap := make(map[string]struct{}, len(allowed))
+	for _, a := range allowed {
+		allowedMap[a] = struct{}{}
+	}
+	pruned := make([]model.ToolDef, 0, len(defs))
+	for _, def := range defs {
+		if _, ok := allowedMap[def.Name]; ok {
+			pruned = append(pruned, def)
+		}
+	}
+	if len(pruned) == 0 {
+		return defs
+	}
+	return pruned
 }
 
 // returns (awaitingApproval, toolFeedbackContent)

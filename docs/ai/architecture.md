@@ -59,8 +59,8 @@ Không còn runtime Python, không còn adapter Node.js, không còn network hop
 
 ### 2.3. Lớp quyết định (System One - Jev)
 - **Transport tách khỏi model hội thoại**: `POST https://opencode.ai/zen/v1/systemone`; key tenant-owned mã hoá `enc:v1` trong `ai_decision_settings` (model_id validate theo pattern, không còn allowlist cố định).
-- **Phạm vi**: một request bounded 3s cho mỗi run mới (không route lại khi resume approval). State do `decision.BuildState` dựng từ tối đa 2 message người dùng, có sanitize và budget 4096/2048 bytes.
-- **Kết quả typed** (`choice`/`noul`) chỉ chọn instruction server-owned (`report`, `loan_portfolio`, `knowledge`, `general`); dưới `min_confidence` (mặc định 0.8) fallback `general`.
+- **Phạm vi & Fast-path**: một request bounded 3s cho mỗi run mới (không route lại khi resume approval). Các câu chào hỏi/cảm ơn đơn giản đi qua Fast-path bỏ qua Jev (< 1µs, 0 token). State do `decision.BuildState` dựng từ user messages và context assistant liền trước (nếu là multi-turn), có sanitize và budget 4096/2048/1024 bytes.
+- **Kết quả typed & Skill Packs**: (`choice`/`noul`) kích hoạt `SkillPack` tương ứng (`report`, `loan_portfolio`, `knowledge`, `general`), cung cấp instruction server-owned và tự động cắt tỉa công cụ (`pruneToolDefinitions`) trong direct-tool mode; dưới `min_confidence` (mặc định 0.8) fallback `general`.
 - **Fail-open**: thiếu cấu hình, lỗi provider hoặc low-confidence giữ nguyên đường hội thoại; routing không cấp capability, không đổi quyền, không bật Act mode.
 - **Đánh giá offline**: `cmd/ai-eval -mode=routing` (golden set `scripts/ai-dev-corpus/routing-evaluation-set.yaml`) và judge answer report-only (`-mode=answer` + `-mode=judge-calibrate`); chi tiết ở `decision-models.md`, `judge-calibration.md`.
 

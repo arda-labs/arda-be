@@ -33,14 +33,22 @@ appear in responses, model state or logs.
 ## Runtime
 
 One bounded (3 s), non-retrying request per new conversational run, after quota
-reservation. Jev receives only the latest user message and at most one prior
-user message, with transcript sanitization and byte limits. It never receives
-raw tool data, actor metadata or the SDK catalog. Approval resumes do not
-reclassify. Two independent Choice questions are batched: task group and
-report topic. Code validates enums, probabilities and confidence before use.
+reservation. Trivial queries (greetings, thank-yous, pure acknowledgments) pass
+through a sub-microsecond Fast-Path, skipping Jev entirely to eliminate latency
+and token waste. For non-trivial runs, Jev receives the latest user message, at
+most one prior user message, and when present in multi-turn dialogues, the
+preceding assistant message (up to 1024 bytes) to disambiguate follow-ups, with
+transcript sanitization and byte limits. It never receives raw tool data, actor
+metadata or the SDK catalog. Approval resumes do not reclassify. Two independent
+Choice questions are batched: task group and report topic. Code validates enums,
+probabilities and confidence before use.
 
-High-confidence results select server-owned guidance for reporting,
-LOAN_PORTFOLIO or knowledge retrieval. Specialized report guidance avoids
+High-confidence results select server-owned `SkillPack` definitions (`loan_portfolio`,
+`report`, `knowledge`, `general`). In addition to system guidance, each pack carries
+an allowed tools whitelist (`AllowedTools`): in direct-tool mode, `turnDefs` are
+pruned dynamically (`pruneToolDefinitions`) to reduce token consumption and eliminate
+cross-domain tool hallucinations, while Code Mode preserves meta-tools (`search`,
+`execute`, `readResult`, `render_chart`). Specialized report guidance avoids
 catalog rediscovery for loan portfolios, asks for a missing period, stops on
 empty data and avoids speculative period/label lookups. A final tool-free
 model round is reserved for evidence-based synthesis. These are focused
