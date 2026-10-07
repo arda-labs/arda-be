@@ -30,12 +30,6 @@ END $$;
 -- +goose StatementEnd
 
 ALTER TABLE hrm_positions ALTER COLUMN tenant_id SET NOT NULL;
-ALTER TABLE hrm_job_titles ADD COLUMN tenant_id text;
-ALTER TABLE hrm_org_units ADD COLUMN tenant_id text;
-ALTER TABLE hrm_employees ADD COLUMN tenant_id text;
-ALTER TABLE hrm_employee_registrations ADD COLUMN tenant_id text;
-
-ALTER TABLE hrm_positions ALTER COLUMN tenant_id SET NOT NULL;
 ALTER TABLE hrm_job_titles ALTER COLUMN tenant_id SET NOT NULL;
 ALTER TABLE hrm_org_units ALTER COLUMN tenant_id SET NOT NULL;
 ALTER TABLE hrm_employees ALTER COLUMN tenant_id SET NOT NULL;

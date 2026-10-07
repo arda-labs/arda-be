@@ -44,6 +44,18 @@ ON CONFLICT (id) DO UPDATE SET
 -- Convert only the known legacy placeholder. Do not infer a tenant from an
 -- email address or from an organization name.
 UPDATE iam_users
+SET tenant_id = 'system', updated_at = now()
+WHERE id = '00000000-0000-0000-0000-000000000002'
+  AND username = 'superadmin'
+  AND lower(btrim(tenant_id)) IN ('', 'default');
+
+UPDATE iam_roles
+SET tenant_id = 'system', updated_at = now()
+WHERE id = '00000000-0000-0000-0000-000000000002'
+  AND code = 'SUPER_ADMIN'
+  AND lower(btrim(tenant_id)) IN ('', 'default');
+
+UPDATE iam_users
 SET tenant_id = '00000000-0000-0000-0000-000000000010', updated_at = now()
 WHERE lower(btrim(tenant_id)) IN ('', 'default')
   AND username <> 'superadmin';

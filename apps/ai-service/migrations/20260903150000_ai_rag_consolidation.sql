@@ -1,5 +1,26 @@
 -- +goose Up
 
+-- Fresh installs still have the unused UUID knowledge tables from the
+-- foundation migration. Replace only empty legacy tables; populated legacy
+-- knowledge requires an explicit data migration instead of losing records.
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'ai_knowledge_sources'
+          AND column_name = 'id' AND data_type = 'uuid'
+    ) THEN
+        IF EXISTS (SELECT 1 FROM public.ai_knowledge_sources)
+           OR EXISTS (SELECT 1 FROM public.ai_knowledge_chunks) THEN
+            RAISE EXCEPTION 'Legacy UUID knowledge tables contain data; migrate records before RAG consolidation';
+        END IF;
+        DROP TABLE public.ai_knowledge_chunks;
+        DROP TABLE public.ai_knowledge_sources;
+    END IF;
+END $$;
+-- +goose StatementEnd
+
 CREATE TABLE IF NOT EXISTS public.ai_knowledge_sources (
     id BIGSERIAL PRIMARY KEY,
     tenant_id TEXT,
