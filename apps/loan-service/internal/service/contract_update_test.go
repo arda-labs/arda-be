@@ -32,36 +32,36 @@ func TestContractEditableStatus(t *testing.T) {
 		{"", false},
 	}
 	for _, tt := range tests {
-		if got := contractEditableStatus(tt.status); got != tt.wantAllowed {
-			t.Fatalf("contractEditableStatus(%q) = %v, want %v", tt.status, got, tt.wantAllowed)
+		if got := domain.ContractEditable(tt.status); got != tt.wantAllowed {
+			t.Fatalf("ContractEditable(%q) = %v, want %v", tt.status, got, tt.wantAllowed)
 		}
 	}
 }
 
 func TestValidateContractUpdate(t *testing.T) {
 	valid := &domain.Contract{LoanAmt: 500_000_000, InterestRate: 8.5, LoanTerm: 12}
-	if err := validateContractUpdate(valid); err != nil {
+	if err := domain.ValidateContractUpdate(valid); err != nil {
 		t.Fatalf("valid payload rejected: %v", err)
 	}
-	if err := validateContractUpdate(&domain.Contract{LoanAmt: 0, InterestRate: 8.5, LoanTerm: 12}); err == nil {
+	if err := domain.ValidateContractUpdate(&domain.Contract{LoanAmt: 0, InterestRate: 8.5, LoanTerm: 12}); err == nil {
 		t.Fatal("expected loan_amt <= 0 to be rejected")
 	}
-	if err := validateContractUpdate(&domain.Contract{LoanAmt: 1, InterestRate: 0, LoanTerm: 12}); err == nil {
+	if err := domain.ValidateContractUpdate(&domain.Contract{LoanAmt: 1, InterestRate: 0, LoanTerm: 12}); err == nil {
 		t.Fatal("expected interest_rate <= 0 to be rejected")
 	}
-	if err := validateContractUpdate(&domain.Contract{LoanAmt: 1, InterestRate: 8.5, LoanTerm: 0}); err == nil {
+	if err := domain.ValidateContractUpdate(&domain.Contract{LoanAmt: 1, InterestRate: 8.5, LoanTerm: 0}); err == nil {
 		t.Fatal("expected loan_term <= 0 to be rejected")
 	}
-	if err := validateContractUpdate(&domain.Contract{LoanAmt: 1, InterestRate: 8.5, LoanTerm: 12, ContractDate: "07/09/2026"}); err == nil {
+	if err := domain.ValidateContractUpdate(&domain.Contract{LoanAmt: 1, InterestRate: 8.5, LoanTerm: 12, ContractDate: "07/09/2026"}); err == nil {
 		t.Fatal("expected non-ISO contract_date to be rejected")
 	}
-	if err := validateContractUpdate(&domain.Contract{LoanAmt: 1, InterestRate: 8.5, LoanTerm: 12, MaturityDate: "2026-13-40"}); err == nil {
+	if err := domain.ValidateContractUpdate(&domain.Contract{LoanAmt: 1, InterestRate: 8.5, LoanTerm: 12, MaturityDate: "2026-13-40"}); err == nil {
 		t.Fatal("expected invalid maturity_date to be rejected")
 	}
 }
 
 func TestValidateContractUpdateAcceptsOptionalDates(t *testing.T) {
-	err := validateContractUpdate(&domain.Contract{LoanAmt: 1, InterestRate: 8.5, LoanTerm: 12,
+	err := domain.ValidateContractUpdate(&domain.Contract{LoanAmt: 1, InterestRate: 8.5, LoanTerm: 12,
 		ContractDate: "2026-09-07", MaturityDate: "2027-09-07"})
 	if err != nil {
 		t.Fatalf("valid dates rejected: %v", err)
@@ -139,7 +139,7 @@ func TestContractUpdateSmoke(t *testing.T) {
 		t.Fatalf("disburse: %v", err)
 	}
 	if _, err := repo.UpdateContract(ctx, tenantID, created.ID, &patch); !errors.Is(err, repository.ErrContractNotEditable) {
-		 t.Fatalf("expected ErrContractNotEditable on DISBURSED contract, got %v", err)
+		t.Fatalf("expected ErrContractNotEditable on DISBURSED contract, got %v", err)
 	}
 
 	// Not-found contract maps to ErrNotFound, not not-editable.
