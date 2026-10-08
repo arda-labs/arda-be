@@ -20,6 +20,7 @@ WHERE case_type = 'LNM_RECOVERY_V2'
   AND status = 'DRAFT'
   AND bpmn_process_id = 'lnm-recovery-v2';
 
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -34,11 +35,13 @@ BEGIN
     END IF;
 END
 $$;
+-- +goose StatementEnd
 
 -- +goose Down
 
 -- Rollback only after every non-terminal LNM_RECOVERY_V2 case using the
 -- common process has drained. Never switch a live common-process instance.
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF EXISTS (
@@ -52,6 +55,7 @@ BEGIN
     END IF;
 END
 $$;
+-- +goose StatementEnd
 
 UPDATE business_cases
 SET bpmn_process_id = 'lnm-recovery-v2',
