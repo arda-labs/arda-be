@@ -36,6 +36,7 @@ var (
 	ErrTenantMigrationRequired = errors.New("tenant migration is required")
 	ErrUserContextRequired     = errors.New("authenticated user context is required")
 	ErrPushEndpointOwned       = errors.New("push endpoint is already registered to another account")
+	ErrStreamLeaseLimit        = repository.ErrStreamLeaseLimit
 )
 
 func NewNotificationService(repo *repository.NotificationRepository, pushSender *push.Sender, resolvers ...EmailResolver) *NotificationService {
@@ -454,6 +455,58 @@ func (s *NotificationService) ListInbox(ctx context.Context, tenantID, userID st
 		limit = 20
 	}
 	return s.repo.ListInbox(ctx, tenantID, userID, limit)
+}
+
+func (s *NotificationService) ListInboxAfter(ctx context.Context, tenantID, userID string, afterSeq int64, limit int) ([]domain.InboxItem, error) {
+	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return nil, err
+	}
+	if afterSeq < 0 {
+		return nil, errors.New("event sequence must be non-negative")
+	}
+	if limit <= 0 || limit > 101 {
+		limit = 101
+	}
+	return s.repo.ListInboxAfter(ctx, tenantID, userID, afterSeq, limit)
+}
+
+func (s *NotificationService) LatestInboxEventSeq(ctx context.Context, tenantID, userID string) (int64, error) {
+	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return 0, err
+	}
+	return s.repo.LatestInboxEventSeq(ctx, tenantID, userID)
+}
+
+func (s *NotificationService) AcquireStreamLease(ctx context.Context, tenantID, userID string, limit int, ttl time.Duration) (string, error) {
+	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return "", err
+	}
+	return s.repo.AcquireStreamLease(ctx, tenantID, userID, limit, ttl)
+}
+
+func (s *NotificationService) RenewStreamLease(ctx context.Context, tenantID, userID, token string, ttl time.Duration) error {
+	tenantID, userID, token = strings.TrimSpace(tenantID), strings.TrimSpace(userID), strings.TrimSpace(token)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return err
+	}
+	if token == "" {
+		return errors.New("stream lease token is required")
+	}
+	return s.repo.RenewStreamLease(ctx, tenantID, userID, token, ttl)
+}
+
+func (s *NotificationService) ReleaseStreamLease(ctx context.Context, tenantID, userID, token string) error {
+	tenantID, userID, token = strings.TrimSpace(tenantID), strings.TrimSpace(userID), strings.TrimSpace(token)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return err
+	}
+	if token == "" {
+		return errors.New("stream lease token is required")
+	}
+	return s.repo.ReleaseStreamLease(ctx, tenantID, userID, token)
 }
 
 func (s *NotificationService) UnreadCount(ctx context.Context, tenantID, userID string) (int, error) {
