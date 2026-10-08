@@ -359,36 +359,25 @@ func (s *NotificationService) dispatchWebPush(ctx context.Context, in AcceptInpu
 			slog.Warn("list push subscriptions failed", "userId", item.UserID, "err", err)
 			continue
 		}
-		title := renderPushText(item.TitleKey, item.Locale)
-		body := renderPushText(item.BodyKey, item.Locale)
 		for _, sub := range subs {
 			err := s.pushSender.Send(ctx, push.Subscription{
 				Endpoint: sub.Endpoint,
 				P256dh:   sub.P256dh,
 				Auth:     sub.Auth,
 			}, push.Payload{
-				Title: title,
-				Body:  body,
-				Href:  item.Href,
-				Tag:   item.PublicID,
+				ID:   item.PublicID,
+				Href: item.Href,
 			})
 			if err != nil {
 				slog.Warn("web push send failed", "userId", item.UserID, "err", err)
-				_ = s.repo.DeletePushSubscriptionByEndpoint(ctx, item.TenantID, item.UserID, sub.Endpoint)
+				if errors.Is(err, push.ErrSubscriptionExpired) {
+					if deleteErr := s.repo.DeletePushSubscriptionByEndpoint(ctx, item.TenantID, item.UserID, sub.Endpoint); deleteErr != nil {
+						slog.Warn("delete expired web push subscription failed", "userId", item.UserID, "err", deleteErr)
+					}
+				}
 			}
 		}
 	}
-}
-
-func renderPushText(key, locale string) string {
-	key = strings.TrimSpace(key)
-	if strings.HasSuffix(key, ".title") {
-		return "Arda"
-	}
-	if locale == "en-US" {
-		return "You have a new notification."
-	}
-	return "Bạn có thông báo mới."
 }
 
 func (s *NotificationService) VAPIDPublicKey() string {
