@@ -39,6 +39,8 @@ func mapRepoError(err error) error {
 		// A replay of the same decision is a no-op success inside the
 		// repository, so reaching here means a real conflict.
 		return ardaerrors.Wrap(ardaerrors.CodeConflict, "adjustment is not pending anymore", err)
+	case errors.Is(err, repository.ErrCollectionNotApproved):
+		return ardaerrors.Wrap(ardaerrors.CodeConflict, "collection is not approved for settlement", err)
 	case strings.Contains(err.Error(), "lnm: record not found"):
 		return ardaerrors.New(ardaerrors.CodeNotFound, "loan record not found")
 	case strings.Contains(err.Error(), "lnm: code conflict"):

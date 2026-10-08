@@ -30,6 +30,9 @@ var (
 	// reached — the repository reports that as an idempotent no-op instead)
 	// or still in a pre-submit state.
 	ErrAdjustmentNotPending = errors.New("lnm: adjustment is not pending")
+	// ErrCollectionNotApproved marks an attempt to post a receipt that is not
+	// approved and has no journal entry proving an earlier successful settle.
+	ErrCollectionNotApproved = errors.New("lnm: collection is not approved")
 	// ErrStaleVersion marks a guarded decision transition whose row version no
 	// longer matches the one the checker saw: the dossier changed while it was
 	// in review, so the decision must not be applied.
@@ -1898,6 +1901,78 @@ func (r *LoanRepository) SetCollectionCaseAndJournal(ctx context.Context, tenant
 		UPDATE lnm_collections SET workflow_case_id = $3, workflow_case_code = $4, journal_entry_id = $5, updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2`, tenantID, id, nullText(caseID), nullText(caseCode), nullText(journalEntryID))
 	return err
+}
+
+// SettleCollectionTx atomically posts an approved collection and applies its
+// agreement side effects. A previously posted row with a journal entry is an
+// idempotent replay; any other non-approved state is rejected.
+func (r *LoanRepository) SettleCollectionTx(ctx context.Context, tenantID, id, journalEntryID, updatedBy string) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	expected := domain.DataVersionFromContext(ctx)
+	var agreementCode string
+	var principalMinor, interestMinor int64
+	err = tx.QueryRowContext(ctx, `
+		UPDATE lnm_collections
+		SET status = 'POSTED', journal_entry_id = $3, updated_by = $4,
+		    updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'APPROVED'
+		  AND ($5 = 0 OR version = $5)
+		RETURNING agreement_code, principal_minor, interest_minor`,
+		tenantID, id, nullText(journalEntryID), nullText(updatedBy), expected).
+		Scan(&agreementCode, &principalMinor, &interestMinor)
+	if errors.Is(err, sql.ErrNoRows) {
+		var status string
+		var existingJournalID sql.NullString
+		var version int64
+		lookupErr := tx.QueryRowContext(ctx, `
+			SELECT status, journal_entry_id::text, version
+			FROM lnm_collections WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+			tenantID, id).Scan(&status, &existingJournalID, &version)
+		if errors.Is(lookupErr, sql.ErrNoRows) {
+			return false, ErrNotFound
+		}
+		if lookupErr != nil {
+			return false, lookupErr
+		}
+		if status == domain.CollectionPosted && existingJournalID.Valid {
+			if err := tx.Commit(); err != nil {
+				return false, err
+			}
+			return false, nil
+		}
+		if expected != 0 && version != expected {
+			return false, ErrStaleVersion
+		}
+		return false, ErrCollectionNotApproved
+	}
+	if err != nil {
+		return false, err
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE lnm_agreements
+		SET outstanding_amt_minor = GREATEST(outstanding_amt_minor - $3, 0),
+		    coln_principal_amt_minor = coln_principal_amt_minor + $3,
+		    coln_interest_amt_minor = coln_interest_amt_minor + $4,
+		    status = CASE WHEN GREATEST(outstanding_amt_minor - $3, 0) = 0 THEN 'CLOSED' ELSE status END,
+		    updated_at = now()
+		WHERE tenant_id = $1 AND agreement_code = $2`,
+		tenantID, agreementCode, principalMinor, interestMinor)
+	if err != nil {
+		return false, err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return false, fmt.Errorf("agreement %s not found while settling collection", agreementCode)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ApplyCollection applies the posting side effect: reduce outstanding

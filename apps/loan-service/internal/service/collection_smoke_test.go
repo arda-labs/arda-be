@@ -95,6 +95,9 @@ func TestCollectionSmoke(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("check: ok=%v message=%q err=%v", ok, message, err)
 	}
+	if err := svc.Resolve(ctx, tenantID, created.ID, "APPROVE", "smoke-checker", "approved"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
 
 	detail, err := svc.PostingDetail(ctx, tenantID, created.ID)
 	if err != nil {
