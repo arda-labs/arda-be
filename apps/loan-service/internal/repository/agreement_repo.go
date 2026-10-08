@@ -559,3 +559,21 @@ func (r *LoanRepository) ListContractCaseIDs(ctx context.Context, tenantID, cont
 	}
 	return out, rows.Err()
 }
+
+// CloseContractByCode transitions a contract to CLOSED after its final batch
+// disbursement has been settled.
+func (r *LoanRepository) CloseContractByCode(ctx context.Context, tenantID, contractCode string) error {
+	if err := domain.CanTransition(domain.ContractMachine, domain.StatusDisbursed, domain.StatusClosed, ""); err != nil {
+		return err
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE lnm_contracts SET status = 'CLOSED', updated_at = now()
+		WHERE tenant_id = $1 AND contract_code = $2 AND status = 'DISBURSED'`, tenantID, contractCode)
+	if err != nil {
+		return err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return domain.ErrInvalidTransition
+	}
+	return nil
+}
