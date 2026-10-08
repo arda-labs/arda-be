@@ -40,7 +40,19 @@ func NewMakerCheckerWorkers(loanWorkers *LoanWorkers, workerKinds, supportedKind
 	for _, kind := range supportedKinds {
 		supported[strings.TrimSpace(kind)] = struct{}{}
 	}
-	handlers := make(map[string]makerCheckerHandlerSet, len(workerKinds))
+	// Register every supported kind at startup, including before its first
+	// operation type is switched to the shared process. Otherwise the canary
+	// migration could make mc.* jobs live before this process subscribes to
+	// those topics, leaving newly created cases stuck until a restart.
+	handlers := make(map[string]makerCheckerHandlerSet, len(supportedKinds))
+	for _, supportedKind := range supportedKinds {
+		kind, err := normalizeMakerCheckerKind(supportedKind)
+		if err != nil {
+			return nil, err
+		}
+		validate, execute, cancel := loanWorkers.Handlers(kind)
+		handlers[kind] = makerCheckerHandlerSet{validate: validate, execute: execute, cancel: cancel}
+	}
 	for _, workerKind := range workerKinds {
 		kind, err := normalizeMakerCheckerKind(workerKind)
 		if err != nil {
@@ -49,8 +61,6 @@ func NewMakerCheckerWorkers(loanWorkers *LoanWorkers, workerKinds, supportedKind
 		if _, ok := supported[kind]; !ok {
 			return nil, fmt.Errorf("maker-checker worker kind %q is not supported", workerKind)
 		}
-		validate, execute, cancel := loanWorkers.Handlers(kind)
-		handlers[kind] = makerCheckerHandlerSet{validate: validate, execute: execute, cancel: cancel}
 	}
 	return &MakerCheckerWorkers{handlers: handlers}, nil
 }

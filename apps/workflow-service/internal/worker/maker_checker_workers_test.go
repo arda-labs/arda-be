@@ -64,3 +64,19 @@ func TestMakerCheckerRegistrationsMatchRegisteredTopicManifest(t *testing.T) {
 		}
 	}
 }
+
+func TestMakerCheckerRegistersSupportedKindsBeforeAnyOperationIsConfigured(t *testing.T) {
+	loanWorkers := NewLoanWorkers(nil, nil)
+	workers, err := NewMakerCheckerWorkers(loanWorkers, nil, []string{"recovery"})
+	if err != nil {
+		t.Fatalf("NewMakerCheckerWorkers() error = %v", err)
+	}
+	if _, ok := resolveMakerCheckerHandlers("lnm.recovery", workers.handlers); !ok {
+		t.Fatal("supported recovery kind must be dispatchable before a maker-checker operation is configured")
+	}
+	for _, registration := range workers.Registrations() {
+		if registration.Handler == nil {
+			t.Fatalf("topic %q has no handler", registration.Topic)
+		}
+	}
+}
