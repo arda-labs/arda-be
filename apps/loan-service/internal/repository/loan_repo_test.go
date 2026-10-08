@@ -81,7 +81,7 @@ func TestBuildEvenPrincipalPlansSumsToOutstanding(t *testing.T) {
 		OutstandingAmt: 1_000_000_000,
 		InterestRate:   12,
 	}
-	plans, err := buildEvenPrincipalPlans(agreement, 7, "2026-10-01")
+	plans, err := domain.BuildEvenPrincipalPlans(agreement, 7, "2026-10-01")
 	if err != nil {
 		t.Fatalf("buildEvenPrincipalPlans: %v", err)
 	}
@@ -116,10 +116,10 @@ func TestBuildEvenPrincipalPlansSumsToOutstanding(t *testing.T) {
 
 func TestBuildEvenPrincipalPlansRejectsBadInput(t *testing.T) {
 	agreement := domain.Agreement{CurrencyCode: "VND", OutstandingAmt: 100}
-	if _, err := buildEvenPrincipalPlans(agreement, 0, "2026-10-01"); err == nil {
+	if _, err := domain.BuildEvenPrincipalPlans(agreement, 0, "2026-10-01"); err == nil {
 		t.Fatal("term count 0 must be rejected")
 	}
-	if _, err := buildEvenPrincipalPlans(agreement, 3, "not-a-date"); err == nil {
+	if _, err := domain.BuildEvenPrincipalPlans(agreement, 3, "not-a-date"); err == nil {
 		t.Fatal("invalid start date must be rejected")
 	}
 }

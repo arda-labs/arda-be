@@ -2,11 +2,7 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
-	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
-	"github.com/shopspring/decimal"
-	"time"
 )
 
 func (r *LoanRepository) ListRepayPlans(ctx context.Context, tenantID, contractCode, agreementCode string) ([]domain.RepayPlan, error) {
@@ -117,55 +113,11 @@ func regeneratePlansTx(ctx context.Context, q repoTX, tenantID, agreementCode st
 	if err != nil {
 		return err
 	}
-	plans, err := buildEvenPrincipalPlans(agreement, termCount, startDate)
+	plans, err := domain.BuildEvenPrincipalPlans(agreement, termCount, startDate)
 	if err != nil {
 		return err
 	}
 	return replaceRepayPlansTx(ctx, q, tenantID, agreementCode, plans)
-}
-
-// buildEvenPrincipalPlans is the pure schedule math for a restructure: an
-// even-principal monthly schedule whose principal shares sum exactly to the
-// agreement's outstanding balance (the LoanReconciliation invariant) and
-// whose interest is charged on the declining balance at the agreement rate.
-// Money math goes through arda-money (decimal + currency rounding), never
-// float64.
-func buildEvenPrincipalPlans(agreement domain.Agreement, termCount int, startDate string) ([]domain.RepayPlan, error) {
-	if termCount <= 0 {
-		return nil, fmt.Errorf("term count must be positive, got %d", termCount)
-	}
-	currency := agreement.CurrencyCode
-	if currency == "" {
-		currency = "VND"
-	}
-	outstanding := ardamoney.FromMinor(agreement.OutstandingAmt, currency)
-	rate := decimal.NewFromFloat(agreement.InterestRate)
-	shares := ardamoney.AllocateEven(outstanding, termCount, currency)
-
-	start, err := time.Parse("2006-01-02", startDate)
-	if err != nil {
-		return nil, fmt.Errorf("invalid effective start date %q: %w", startDate, err)
-	}
-	plans := make([]domain.RepayPlan, 0, termCount)
-	remaining := outstanding
-	for i := 1; i <= termCount; i++ {
-		principal := shares[i-1]
-		from := start.AddDate(0, i-1, 0)
-		to := start.AddDate(0, i, 0)
-		plans = append(plans, domain.RepayPlan{
-			ContractCode:     agreement.ContractCode,
-			AgreementCode:    agreement.AgreementCode,
-			PlanNo:           1,
-			TermNo:           i,
-			FromDate:         from.Format("2006-01-02"),
-			ToDate:           to.Format("2006-01-02"),
-			InterestRate:     agreement.InterestRate,
-			PlanPrincipalAmt: ardamoney.MustToMinor(principal, currency),
-			PlanInterestAmt:  ardamoney.MustToMinor(ardamoney.MonthlyInterest(remaining, rate, currency), currency),
-		})
-		remaining = remaining.Sub(principal)
-	}
-	return plans, nil
 }
 
 // ReducePlanInterest applies an interest waiver across unpaid active schedule
