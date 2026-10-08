@@ -16,7 +16,7 @@ import (
 // X-Global-Admin, X-Global-Roles and X-Global-Permissions can only originate
 // from a verified gateway session. Tenant-scoped X-Roles / X-Permissions
 // deliberately do not count: every tenant admin holds platform.manage (the
-// gateway route permission), while plt_system_dates and geo_admin_units are
+// gateway route permission), while plt_business_dates and geo_admin_units are
 // system-wide state, so a tenant-scoped operator must not mutate them.
 // Mirrors iam-service hasGlobalAdminCapability.
 func requireGlobalAdmin(w http.ResponseWriter, r *http.Request) bool {
