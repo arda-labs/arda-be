@@ -48,6 +48,7 @@ func Dial(ctx context.Context, addr, sourceService string) (*Client, error) {
 		grpc.WithTransportCredentials(transportCreds),
 		// Only read-only RPCs are retried.
 		retry.ReadOnly("arda.iam.v1.UserService", "GetUserBatch"),
+		retry.ReadOnly("arda.iam.v1.UserService", "ListActiveTenants"),
 		grpc.WithChainUnaryInterceptor(
 			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
 			interceptors.UnaryClientServiceAuth(secret, sourceService, "iam-service"),
@@ -91,4 +92,15 @@ func (c *Client) GetUserBatch(ctx context.Context, userIDs []string) (map[string
 		}
 	}
 	return result, nil
+}
+
+// ListActiveTenants returns tenant IDs for internal system-wide orchestration.
+func (c *Client) ListActiveTenants(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	resp, err := c.api.ListActiveTenants(ctx, &iamv1.ListActiveTenantsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("list active tenants: %w", err)
+	}
+	return resp.TenantIds, nil
 }

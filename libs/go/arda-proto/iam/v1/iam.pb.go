@@ -21,6 +21,86 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ListActiveTenantsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListActiveTenantsRequest) Reset() {
+	*x = ListActiveTenantsRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListActiveTenantsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListActiveTenantsRequest) ProtoMessage() {}
+
+func (x *ListActiveTenantsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListActiveTenantsRequest.ProtoReflect.Descriptor instead.
+func (*ListActiveTenantsRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{0}
+}
+
+type ListActiveTenantsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantIds     []string               `protobuf:"bytes,1,rep,name=tenant_ids,json=tenantIds,proto3" json:"tenant_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListActiveTenantsResponse) Reset() {
+	*x = ListActiveTenantsResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListActiveTenantsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListActiveTenantsResponse) ProtoMessage() {}
+
+func (x *ListActiveTenantsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListActiveTenantsResponse.ProtoReflect.Descriptor instead.
+func (*ListActiveTenantsResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ListActiveTenantsResponse) GetTenantIds() []string {
+	if x != nil {
+		return x.TenantIds
+	}
+	return nil
+}
+
 type GetUserBatchRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserIds       []string               `protobuf:"bytes,1,rep,name=user_ids,json=userIds,proto3" json:"user_ids,omitempty"`
@@ -30,7 +110,7 @@ type GetUserBatchRequest struct {
 
 func (x *GetUserBatchRequest) Reset() {
 	*x = GetUserBatchRequest{}
-	mi := &file_arda_iam_v1_iam_proto_msgTypes[0]
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -42,7 +122,7 @@ func (x *GetUserBatchRequest) String() string {
 func (*GetUserBatchRequest) ProtoMessage() {}
 
 func (x *GetUserBatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_iam_v1_iam_proto_msgTypes[0]
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -55,7 +135,7 @@ func (x *GetUserBatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserBatchRequest.ProtoReflect.Descriptor instead.
 func (*GetUserBatchRequest) Descriptor() ([]byte, []int) {
-	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{0}
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *GetUserBatchRequest) GetUserIds() []string {
@@ -81,7 +161,7 @@ type UserInfo struct {
 
 func (x *UserInfo) Reset() {
 	*x = UserInfo{}
-	mi := &file_arda_iam_v1_iam_proto_msgTypes[1]
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -93,7 +173,7 @@ func (x *UserInfo) String() string {
 func (*UserInfo) ProtoMessage() {}
 
 func (x *UserInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_iam_v1_iam_proto_msgTypes[1]
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -106,7 +186,7 @@ func (x *UserInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserInfo.ProtoReflect.Descriptor instead.
 func (*UserInfo) Descriptor() ([]byte, []int) {
-	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{1}
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *UserInfo) GetId() string {
@@ -174,7 +254,7 @@ type GetUserBatchResponse struct {
 
 func (x *GetUserBatchResponse) Reset() {
 	*x = GetUserBatchResponse{}
-	mi := &file_arda_iam_v1_iam_proto_msgTypes[2]
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -186,7 +266,7 @@ func (x *GetUserBatchResponse) String() string {
 func (*GetUserBatchResponse) ProtoMessage() {}
 
 func (x *GetUserBatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_iam_v1_iam_proto_msgTypes[2]
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -199,7 +279,7 @@ func (x *GetUserBatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserBatchResponse.ProtoReflect.Descriptor instead.
 func (*GetUserBatchResponse) Descriptor() ([]byte, []int) {
-	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{2}
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetUserBatchResponse) GetUsers() []*UserInfo {
@@ -213,7 +293,11 @@ var File_arda_iam_v1_iam_proto protoreflect.FileDescriptor
 
 const file_arda_iam_v1_iam_proto_rawDesc = "" +
 	"\n" +
-	"\x15arda/iam/v1/iam.proto\x12\varda.iam.v1\"0\n" +
+	"\x15arda/iam/v1/iam.proto\x12\varda.iam.v1\"\x1a\n" +
+	"\x18ListActiveTenantsRequest\":\n" +
+	"\x19ListActiveTenantsResponse\x12\x1d\n" +
+	"\n" +
+	"tenant_ids\x18\x01 \x03(\tR\ttenantIds\"0\n" +
 	"\x13GetUserBatchRequest\x12\x19\n" +
 	"\buser_ids\x18\x01 \x03(\tR\auserIds\"\xd5\x01\n" +
 	"\bUserInfo\x12\x0e\n" +
@@ -230,9 +314,10 @@ const file_arda_iam_v1_iam_proto_rawDesc = "" +
 	"department\x12\x14\n" +
 	"\x05title\x18\b \x01(\tR\x05title\"C\n" +
 	"\x14GetUserBatchResponse\x12+\n" +
-	"\x05users\x18\x01 \x03(\v2\x15.arda.iam.v1.UserInfoR\x05users2b\n" +
+	"\x05users\x18\x01 \x03(\v2\x15.arda.iam.v1.UserInfoR\x05users2\xc6\x01\n" +
 	"\vUserService\x12S\n" +
-	"\fGetUserBatch\x12 .arda.iam.v1.GetUserBatchRequest\x1a!.arda.iam.v1.GetUserBatchResponseB;Z9github.com/arda-labs/arda/libs/go/arda-proto/iam/v1;iamv1b\x06proto3"
+	"\fGetUserBatch\x12 .arda.iam.v1.GetUserBatchRequest\x1a!.arda.iam.v1.GetUserBatchResponse\x12b\n" +
+	"\x11ListActiveTenants\x12%.arda.iam.v1.ListActiveTenantsRequest\x1a&.arda.iam.v1.ListActiveTenantsResponseB;Z9github.com/arda-labs/arda/libs/go/arda-proto/iam/v1;iamv1b\x06proto3"
 
 var (
 	file_arda_iam_v1_iam_proto_rawDescOnce sync.Once
@@ -246,18 +331,22 @@ func file_arda_iam_v1_iam_proto_rawDescGZIP() []byte {
 	return file_arda_iam_v1_iam_proto_rawDescData
 }
 
-var file_arda_iam_v1_iam_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_arda_iam_v1_iam_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_arda_iam_v1_iam_proto_goTypes = []any{
-	(*GetUserBatchRequest)(nil),  // 0: arda.iam.v1.GetUserBatchRequest
-	(*UserInfo)(nil),             // 1: arda.iam.v1.UserInfo
-	(*GetUserBatchResponse)(nil), // 2: arda.iam.v1.GetUserBatchResponse
+	(*ListActiveTenantsRequest)(nil),  // 0: arda.iam.v1.ListActiveTenantsRequest
+	(*ListActiveTenantsResponse)(nil), // 1: arda.iam.v1.ListActiveTenantsResponse
+	(*GetUserBatchRequest)(nil),       // 2: arda.iam.v1.GetUserBatchRequest
+	(*UserInfo)(nil),                  // 3: arda.iam.v1.UserInfo
+	(*GetUserBatchResponse)(nil),      // 4: arda.iam.v1.GetUserBatchResponse
 }
 var file_arda_iam_v1_iam_proto_depIdxs = []int32{
-	1, // 0: arda.iam.v1.GetUserBatchResponse.users:type_name -> arda.iam.v1.UserInfo
-	0, // 1: arda.iam.v1.UserService.GetUserBatch:input_type -> arda.iam.v1.GetUserBatchRequest
-	2, // 2: arda.iam.v1.UserService.GetUserBatch:output_type -> arda.iam.v1.GetUserBatchResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
+	3, // 0: arda.iam.v1.GetUserBatchResponse.users:type_name -> arda.iam.v1.UserInfo
+	2, // 1: arda.iam.v1.UserService.GetUserBatch:input_type -> arda.iam.v1.GetUserBatchRequest
+	0, // 2: arda.iam.v1.UserService.ListActiveTenants:input_type -> arda.iam.v1.ListActiveTenantsRequest
+	4, // 3: arda.iam.v1.UserService.GetUserBatch:output_type -> arda.iam.v1.GetUserBatchResponse
+	1, // 4: arda.iam.v1.UserService.ListActiveTenants:output_type -> arda.iam.v1.ListActiveTenantsResponse
+	3, // [3:5] is the sub-list for method output_type
+	1, // [1:3] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -274,7 +363,7 @@ func file_arda_iam_v1_iam_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_iam_v1_iam_proto_rawDesc), len(file_arda_iam_v1_iam_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

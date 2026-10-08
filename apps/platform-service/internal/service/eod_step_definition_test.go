@@ -38,3 +38,18 @@ func TestOrderEODStepsRejectsDuplicateCodes(t *testing.T) {
 		t.Fatal("expected duplicate step code to fail validation")
 	}
 }
+
+func TestEODStepBlockReasonStopsFailedDependencyButAllowsIndependentStep(t *testing.T) {
+	states := map[string]string{"ACCRUAL": "FAILED"}
+	dependent := EODStepDefinition{Code: "PROVISION", DependsOn: []string{"ACCRUAL"}}
+	if got := eodStepBlockReason(dependent, states, false); got != "dependency did not succeed: ACCRUAL" {
+		t.Fatalf("dependent step block reason = %q", got)
+	}
+	independent := EODStepDefinition{Code: "DEPOSIT"}
+	if got := eodStepBlockReason(independent, states, false); got != "" {
+		t.Fatalf("independent step unexpectedly blocked: %q", got)
+	}
+	if got := eodStepBlockReason(independent, states, true); got != "stopped after a previous step failure" {
+		t.Fatalf("stop-on-failure block reason = %q", got)
+	}
+}

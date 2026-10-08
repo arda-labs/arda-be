@@ -26,19 +26,25 @@ func (h *EODHandler) RunCOB(w http.ResponseWriter, r *http.Request) {
 		ardahttp.WriteProblem(w, r, http.StatusMethodNotAllowed, ardaerrors.New(ardaerrors.CodeMethodNotAllowed, "method not allowed"))
 		return
 	}
-	tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-Id"))
-	if tenantID == "" {
-		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+	if !requireGlobalAdmin(w, r) {
 		return
 	}
 	businessDate := r.URL.Query().Get("business_date")
-	result, err := h.svc.Run(r.Context(), tenantID, businessDate)
+	result, err := h.svc.RunSystem(r.Context(), businessDate)
 	if err != nil {
 		if errors.Is(err, service.ErrEODBusinessDateUnavailable) {
 			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeBadGateway, err.Error()))
 			return
 		}
-		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error()))
+		if errors.Is(err, service.ErrEODInvalidBusinessDate) {
+			ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error()))
+			return
+		}
+		if errors.Is(err, service.ErrEODRunInProgress) {
+			ardahttp.WriteProblem(w, r, http.StatusConflict, ardaerrors.New(ardaerrors.CodeConflict, err.Error()))
+			return
+		}
+		ardahttp.WriteProblem(w, r, http.StatusInternalServerError, ardaerrors.New(ardaerrors.CodeInternal, err.Error()))
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusOK, result)

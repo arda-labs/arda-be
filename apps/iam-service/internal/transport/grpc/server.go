@@ -17,11 +17,20 @@ import (
 
 type UserServiceServer struct {
 	iamv1.UnimplementedUserServiceServer
-	userRepo *repository.UserRepository
+	userRepo   *repository.UserRepository
+	tenantRepo *repository.TenantRepository
 }
 
-func NewUserServiceServer(userRepo *repository.UserRepository) *UserServiceServer {
-	return &UserServiceServer{userRepo: userRepo}
+func NewUserServiceServer(userRepo *repository.UserRepository, tenantRepo *repository.TenantRepository) *UserServiceServer {
+	return &UserServiceServer{userRepo: userRepo, tenantRepo: tenantRepo}
+}
+
+func (s *UserServiceServer) ListActiveTenants(ctx context.Context, _ *iamv1.ListActiveTenantsRequest) (*iamv1.ListActiveTenantsResponse, error) {
+	ids, err := s.tenantRepo.ListActiveTenantIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &iamv1.ListActiveTenantsResponse{TenantIds: ids}, nil
 }
 
 func (s *UserServiceServer) GetUserBatch(ctx context.Context, req *iamv1.GetUserBatchRequest) (*iamv1.GetUserBatchResponse, error) {
@@ -57,7 +66,7 @@ func (s *UserServiceServer) GetUserBatch(ctx context.Context, req *iamv1.GetUser
 	return &iamv1.GetUserBatchResponse{Users: infos}, nil
 }
 
-func ListenAndServe(grpcAddr string, userRepo *repository.UserRepository) (*grpc.Server, error) {
+func ListenAndServe(grpcAddr string, userRepo *repository.UserRepository, tenantRepo *repository.TenantRepository) (*grpc.Server, error) {
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
 		return nil, fmt.Errorf("listen grpc: %w", err)
@@ -74,10 +83,14 @@ func ListenAndServe(grpcAddr string, userRepo *repository.UserRepository) (*grpc
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
 			interceptors.UnaryServerRecovery(slog.Default()),
-			interceptors.UnaryServerServiceAuth(serviceSecret, "iam-service", map[string]struct{}{"workflow-service": {}}),
+			interceptors.UnaryServerServiceAuthMethodSources(serviceSecret, "iam-service",
+				map[string]struct{}{"workflow-service": {}},
+				map[string]map[string]struct{}{
+					"/arda.iam.v1.UserService/ListActiveTenants": {"platform-service": {}},
+				}),
 		),
 	)
-	iamv1.RegisterUserServiceServer(srv, NewUserServiceServer(userRepo))
+	iamv1.RegisterUserServiceServer(srv, NewUserServiceServer(userRepo, tenantRepo))
 	go func() {
 		if err := srv.Serve(lis); err != nil {
 			// The listener is owned by this long-running process; a serve failure

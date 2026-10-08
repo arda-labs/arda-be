@@ -15,7 +15,6 @@ type CalendarRepo interface {
 	GetSystemDate(ctx context.Context, branchCode string) (*domain.SystemDate, error)
 	ClaimEOD(ctx context.Context, branchCode string) (*domain.SystemDate, error)
 	ReleaseEOD(ctx context.Context, branchCode string) error
-	UpdateSystemDate(ctx context.Context, sd *domain.SystemDate) error
 	IsHoliday(ctx context.Context, date time.Time) (bool, error)
 	AddHoliday(ctx context.Context, holiday *domain.HolidayCalendar) error
 	ListHolidays(ctx context.Context) ([]domain.HolidayCalendar, error)
@@ -122,62 +121,38 @@ func (s *CalendarService) EvaluateAccountingDate(ctx context.Context, branchCode
 	return sd.CurrentBusinessDate, nil
 }
 
-// RunEOD performs the End-Of-Day transition: shifts business dates forward.
-//
-// The race-prone read-then-write status check was replaced by an atomic claim
-// in the repository (conditional UPDATE with rows-affected): a second
-// concurrent trigger receives domain.ErrEODInProgress instead of advancing the
-// date again. The claim is always released on failure, so a failed job cannot
-// leave the branch stuck in EOD_PROCESSING.
-func (s *CalendarService) RunEOD(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
-	if branchCode == "" {
-		branchCode = "HEAD_OFFICE"
-	}
+// BeginEOD atomically closes the global SYSTEM date to new posting while the
+// orchestrator executes its required tenant steps.
+func (s *CalendarService) BeginEOD(ctx context.Context) (*domain.SystemDate, error) {
+	return s.repo.ClaimEOD(ctx, "HEAD_OFFICE")
+}
 
-	sd, err := s.repo.ClaimEOD(ctx, branchCode)
+func (s *CalendarService) ReleaseEOD(ctx context.Context) error {
+	return s.repo.ReleaseEOD(ctx, "HEAD_OFFICE")
+}
+
+// CompleteEOD advances the canonical SYSTEM date only after every required
+// step succeeded. The date comparison protects against stale orchestrators.
+func (s *CalendarService) CompleteEOD(ctx context.Context, expectedDate string) (*domain.SystemDate, error) {
+	sd, err := s.repo.BusinessDateForScope(ctx, ardaBusinessDate.Scope{Type: ardaBusinessDate.ScopeSystem})
 	if err != nil {
 		return nil, err
 	}
-
-	completed := false
-	defer func() {
-		if completed {
-			return
-		}
-		// Detach from the request context: the release must still run when the
-		// caller timed out or disconnected mid-EOD.
-		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		if releaseErr := s.repo.ReleaseEOD(releaseCtx, branchCode); releaseErr != nil {
-			slog.Error("failed to release EOD processing state", "branch", branchCode, "err", releaseErr)
-		}
-	}()
-
-	slog.Info("EOD process started", "branch", branchCode, "currentBusinessDate", sd.CurrentBusinessDate)
-
-	// Simulate EOD reconciliation tasks
-	time.Sleep(50 * time.Millisecond)
-
-	sd.PreviousBusinessDate = sd.CurrentBusinessDate
-	sd.CurrentBusinessDate = sd.NextBusinessDate
-
-	nextDay, err := s.calculateNextBusinessDay(ctx, sd.CurrentBusinessDate)
+	if sd.CurrentBusinessDate.Format("2006-01-02") != expectedDate {
+		return nil, fmt.Errorf("SYSTEM business date changed during EOD: expected %s, found %s", expectedDate, sd.CurrentBusinessDate.Format("2006-01-02"))
+	}
+	newCurrent := sd.NextBusinessDate
+	newNext, err := s.calculateNextBusinessDay(ctx, newCurrent)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate next business day: %w", err)
+		return nil, fmt.Errorf("calculate next SYSTEM business date: %w", err)
 	}
-	sd.NextBusinessDate = nextDay
-
-	nowTime := time.Now()
-	sd.LastEODAt = &nowTime
-	sd.Status = domain.SystemDateOpen
-
-	if err := s.repo.UpdateSystemDate(ctx, sd); err != nil {
-		return nil, fmt.Errorf("failed to complete EOD transition in DB: %w", err)
+	completer, ok := s.repo.(interface {
+		CompleteEOD(context.Context, string, time.Time, time.Time) (*domain.SystemDate, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("calendar repository does not support atomic EOD completion")
 	}
-	completed = true
-
-	slog.Info("EOD process completed successfully", "newBusinessDate", sd.CurrentBusinessDate, "nextBusinessDate", sd.NextBusinessDate)
-	return sd, nil
+	return completer.CompleteEOD(ctx, expectedDate, newCurrent, newNext)
 }
 
 func (s *CalendarService) calculateNextBusinessDay(ctx context.Context, start time.Time) (time.Time, error) {
