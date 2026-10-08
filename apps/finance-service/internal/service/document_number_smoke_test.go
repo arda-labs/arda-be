@@ -124,8 +124,12 @@ func TestDocumentNumberIssueConcurrencyRollbackAndRenumber(t *testing.T) {
 		return hex.EncodeToString(sum[:])
 	}
 	beforeHash := ledgerHash()
+	var renumberDocumentID string
+	if err = db.QueryRowContext(ctx, `SELECT document_id FROM document_number WHERE tenant_id=$1 AND display_no='T-202610-0001'`, tenantID).Scan(&renumberDocumentID); err != nil {
+		t.Fatal(err)
+	}
 	svc := NewDocumentNumberService(db)
-	request, err := svc.RequestRenumber(ctx, tenantID, "parallel-0", "maker-1", "T-202610-9999", "correction approved by finance")
+	request, err := svc.RequestRenumber(ctx, tenantID, renumberDocumentID, "maker-1", "T-202610-9999", "correction approved by finance")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +147,7 @@ func TestDocumentNumberIssueConcurrencyRollbackAndRenumber(t *testing.T) {
 		t.Fatalf("old-number alias status=%q err=%v", aliasStatus, err)
 	}
 	resolved, err := docno.Lookup(ctx, db, tenantID, "T-202610-0001")
-	if err != nil || resolved.DocumentID != "parallel-0" || resolved.DisplayNo != "T-202610-9999" {
+	if err != nil || resolved.DocumentID != renumberDocumentID || resolved.DisplayNo != "T-202610-9999" {
 		t.Fatalf("old alias lookup=%+v err=%v", resolved, err)
 	}
 	if _, err = svc.RequestRenumber(ctx, tenantID, "after-rollback", "maker-1", "R-202609-0002", "closed-period correction"); err != nil {
