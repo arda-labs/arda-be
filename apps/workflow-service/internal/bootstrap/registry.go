@@ -127,6 +127,12 @@ func DeriveRegistrySteps(processID string, content []byte) ([]RegistryStep, erro
 				break
 			}
 		}
+		// Native user-task assignment and SLA configuration are keyed by the
+		// stable BPMN element ID. Keep the shared process headers for Camunda
+		// compatibility, while deriving registry step codes as UT_*.
+		if proc.ID == "common-maker-checker" {
+			stepCode = elementID
+		}
 		steps = append(steps, RegistryStep{
 			ElementID:         elementID,
 			StepCode:          stepCode,

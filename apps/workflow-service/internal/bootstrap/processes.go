@@ -20,6 +20,9 @@ var lnmWriteoff []byte
 //go:embed lnm-recovery-v2.bpmn
 var lnmRecovery []byte
 
+//go:embed common-maker-checker.bpmn
+var commonMakerChecker []byte
+
 //go:embed lnm-fund-check-v2.bpmn
 var lnmFundCheck []byte
 
@@ -187,6 +190,12 @@ func BuiltInProcesses() []Process {
 			Name:         "Thu hồi nợ (v2)",
 			ResourceName: "lnm-recovery-v2.bpmn",
 			Content:      lnmRecovery,
+		},
+		{
+			ProcessCode:  "COMMON_MAKER_CHECKER",
+			Name:         "Quy trình maker-checker dùng chung",
+			ResourceName: "common-maker-checker.bpmn",
+			Content:      commonMakerChecker,
 		},
 		{
 			ProcessCode:  "LNM_FUND_CHECK_V2",

@@ -54,6 +54,7 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 		"IBM_MOVEMENT_V1":            "ibm-movement-v1",
 		"DPM_RATE_V1":                "dpm-rate-v1",
 		"DPM_INTEREST_V1":            "dpm-interest-v1",
+		"COMMON_MAKER_CHECKER":       "common-maker-checker",
 	}
 	if len(processes) != len(want) {
 		t.Fatalf("BuiltInProcesses() len = %d, want %d", len(processes), len(want))
@@ -65,6 +66,36 @@ func TestBuiltInCustomerRegistrationProcessID(t *testing.T) {
 		}
 		if got != want[process.ProcessCode] {
 			t.Fatalf("process id for %s = %q, want %q", process.ProcessCode, got, want[process.ProcessCode])
+		}
+	}
+}
+
+func TestCommonMakerCheckerPreservesStableApprovalSkeleton(t *testing.T) {
+	content := builtInProcessContent(t, "COMMON_MAKER_CHECKER")
+	for _, fragment := range []string{
+		`id="Start_Submitted"`,
+		`id="UT_MakerInput"`,
+		`<zeebe:header key="stepCode" value="maker_input" />`,
+		`id="ST_Validate"`,
+		`id="Err_Validate"`,
+		`id="UT_CheckerReview"`,
+		`<zeebe:header key="stepCode" value="checker_review" />`,
+		`id="GW_Decision"`,
+		`id="ST_Execute"`,
+		`id="ST_Cancel"`,
+		`id="End_Approved"`,
+		`id="End_Rejected"`,
+		`candidateGroups="=[mcMakerRole]"`,
+		`candidateGroups="=[mcCheckerRole]"`,
+		`type="mc.validate"`,
+		`type="mc.execute"`,
+		`type="mc.cancel"`,
+		`errorCode="VALIDATION_FAILED"`,
+		`=decision = "APPROVE"`,
+		`=decision = "REJECT"`,
+	} {
+		if !strings.Contains(content, fragment) {
+			t.Fatalf("common maker-checker process missing %q", fragment)
 		}
 	}
 }

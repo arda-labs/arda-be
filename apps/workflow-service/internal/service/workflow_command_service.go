@@ -78,6 +78,18 @@ func (s *WorkflowCommandService) submitCaseLocked(ctx context.Context, id string
 	if s.zeebeSvc == nil {
 		return nil, fmt.Errorf("zeebe service is not configured")
 	}
+	if *bc.BpmnProcessID == "common-maker-checker" {
+		config, err := s.caseRepo.MakerCheckerRuntimeConfig(ctx, bc.CaseType)
+		if err != nil {
+			return nil, fmt.Errorf("resolve maker-checker runtime config for %s: %w", bc.CaseType, err)
+		}
+		if config.WorkerKind == "" || config.MakerRole == "" || config.CheckerRole == "" {
+			return nil, fmt.Errorf("%w: %s has incomplete maker-checker runtime config", ErrCaseTypeUnavailable, bc.CaseType)
+		}
+		bc.WorkerKind = config.WorkerKind
+		bc.MakerRole = config.MakerRole
+		bc.CheckerRole = config.CheckerRole
+	}
 	// Capability gate (no fallback): a case type without ACTIVE registry steps
 	// cannot be discovered by the projector, so refuse to start a workflow
 	// that would hang with no inbox row. The check runs before the engine call.
@@ -165,6 +177,9 @@ var reservedCaseVariableKeys = map[string]struct{}{
 	"actor_user_id":     {},
 	"createdBy":         {},
 	"created_by":        {},
+	"mcKind":            {},
+	"mcMakerRole":       {},
+	"mcCheckerRole":     {},
 }
 
 // dropReservedCaseVariables removes service-owned keys from client-supplied
@@ -201,6 +216,11 @@ func authoritativeCaseVariables(bc *repository.BusinessCase, actor string) map[s
 	if actor = strings.TrimSpace(actor); actor != "" {
 		variables["actorUserId"] = actor
 		variables["createdBy"] = actor
+	}
+	if bc.WorkerKind != "" {
+		variables["mcKind"] = bc.WorkerKind
+		variables["mcMakerRole"] = bc.MakerRole
+		variables["mcCheckerRole"] = bc.CheckerRole
 	}
 	return variables
 }

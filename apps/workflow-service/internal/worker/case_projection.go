@@ -55,3 +55,12 @@ func (p *CaseProjection) FinishCase(ctx context.Context, processInstanceKey int6
 		slog.Error("case projection: finish case", "processInstanceKey", processInstanceKey, "err", err)
 	}
 }
+
+func (p *CaseProjection) FinishCaseByCaseID(ctx context.Context, caseID, status string) {
+	if p == nil || p.caseRepo == nil || caseID == "" {
+		return
+	}
+	if err := p.caseRepo.FinishCaseByCaseID(ctx, caseID, status); err != nil {
+		slog.Error("case projection: finish case by id", "caseId", caseID, "err", err)
+	}
+}
