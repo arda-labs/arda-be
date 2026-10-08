@@ -16,7 +16,7 @@ import (
 )
 
 func TestDocumentNumberIssueConcurrencyRollbackAndRenumber(t *testing.T) {
-	const tenantID = "00000000-0000-0000-0000-000000000010"
+	const tenantID = "10000000-0000-0000-0000-000000000010"
 	db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
 	defer db.Close()
 	ctx := context.Background()
