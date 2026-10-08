@@ -1,5 +1,6 @@
 -- +goose Up
 
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION fin_guard_journal_entry_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -34,7 +35,9 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+-- +goose StatementEnd
 
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION fin_guard_journal_line_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -69,6 +72,7 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+-- +goose StatementEnd
 
 CREATE TRIGGER trg_fin_journal_entries_immutable
 BEFORE UPDATE OR DELETE ON fin_journal_entries
