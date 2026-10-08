@@ -694,7 +694,7 @@ func (r *LoanRepository) CreateAdjustment(ctx context.Context, table string, a *
 		a.Status = domain.AdjustmentDraft
 	}
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO `+table+` (id, tenant_id, contract_code, agreement_code, effective_date, amount, payload, status, created_by)
+		INSERT INTO `+table+` (id, tenant_id, contract_code, agreement_code, effective_date, amount_minor, payload, status, created_by)
 		VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9)
 		RETURNING `+adjustmentColumns,
 		a.ID, a.TenantID, a.ContractCode, a.AgreementCode, a.EffectiveDate, a.Amount, nullIfEmpty(a.Payload), a.Status, a.CreatedBy)
