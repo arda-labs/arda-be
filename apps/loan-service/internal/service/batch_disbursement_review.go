@@ -42,8 +42,8 @@ func (s *BatchDisbursementService) Get(ctx context.Context, tenantID, id string)
 
 // UpdateDraft replaces a saved DRAFT header and rows under a version guard.
 func (s *BatchDisbursementService) UpdateDraft(ctx context.Context, tenantID, actor, id string, in *CreateBatchInput) (*domain.DisbursementBatch, error) {
-	if in == nil || in.DataVersion <= 0 || len(in.Rows) == 0 {
-		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "data_version and rows are required")
+	if in == nil || in.DataVersion <= 0 {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "data_version is required")
 	}
 	current, err := s.repo.GetDisbursementBatch(ctx, tenantID, id)
 	if err != nil {

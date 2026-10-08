@@ -14,8 +14,8 @@ import (
 // one tx. Workflow submission and contract reservations happen only when the
 // maker explicitly submits the saved draft.
 func (s *BatchDisbursementService) CreateBatchRegister(ctx context.Context, tenantID, actor, orgCode string, in *CreateBatchInput) (*domain.DisbursementBatch, error) {
-	if in == nil || len(in.Rows) == 0 {
-		return nil, ardaerrors.New(ardaerrors.CodeRequired, "rows must not be empty")
+	if in == nil {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "batch input is required")
 	}
 	if !isValidISODate(in.TxnDate) {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "txn_date must be YYYY-MM-DD")

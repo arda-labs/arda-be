@@ -103,18 +103,61 @@ func TestDisbursementDraftUpdateUsesVersionAndCanBeCancelled(t *testing.T) {
 	ctx := context.Background()
 	svc := NewBatchDisbursementService(repo, &outboxWorkflow{})
 	draft, err := svc.CreateBatchRegister(ctx, headroomTenantID, "maker", "", batchRegisterInput(contractCode, agreementCode, 100))
-	if err != nil { t.Fatalf("create draft: %v", err) }
+	if err != nil {
+		t.Fatalf("create draft: %v", err)
+	}
 	update := batchRegisterInput(contractCode, agreementCode, 125)
 	update.DataVersion = draft.DataVersion
 	updated, err := svc.UpdateDraft(ctx, headroomTenantID, "maker", draft.ID, update)
-	if err != nil { t.Fatalf("update draft: %v", err) }
-	if updated.TotalAmtMinor != 125 || updated.Rows[0].DisburseAmtMinor != 125 || updated.DataVersion <= draft.DataVersion { t.Fatalf("updated draft = %+v", updated) }
+	if err != nil {
+		t.Fatalf("update draft: %v", err)
+	}
+	if updated.TotalAmtMinor != 125 || updated.Rows[0].DisburseAmtMinor != 125 || updated.DataVersion <= draft.DataVersion {
+		t.Fatalf("updated draft = %+v", updated)
+	}
 	update.DataVersion = draft.DataVersion
-	if _, err := svc.UpdateDraft(ctx, headroomTenantID, "maker", draft.ID, update); err == nil { t.Fatal("stale draft update succeeded") }
-	if err := svc.CancelDraft(ctx, headroomTenantID, "maker", draft.ID, updated.DataVersion); err != nil { t.Fatalf("cancel draft: %v", err) }
+	if _, err := svc.UpdateDraft(ctx, headroomTenantID, "maker", draft.ID, update); err == nil {
+		t.Fatal("stale draft update succeeded")
+	}
+	if err := svc.CancelDraft(ctx, headroomTenantID, "maker", draft.ID, updated.DataVersion); err != nil {
+		t.Fatalf("cancel draft: %v", err)
+	}
 	cancelled, err := svc.Get(ctx, headroomTenantID, draft.ID)
-	if err != nil { t.Fatal(err) }
-	if cancelled.Status != domain.BatchCancelled { t.Fatalf("cancelled status = %s", cancelled.Status) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.Status != domain.BatchCancelled {
+		t.Fatalf("cancelled status = %s", cancelled.Status)
+	}
+}
+
+func TestDisbursementRegisterDraftCanBeSavedBeforeRowsAreAdded(t *testing.T) {
+	_, repo, _, _ := openHeadroomFixture(t)
+	ctx := context.Background()
+	wf := &outboxWorkflow{}
+	svc := NewBatchDisbursementService(repo, wf)
+	input := &CreateBatchInput{TxnDate: "2026-10-08", PaymentMethod: "TRANSFER", Rows: []BatchRowInput{}}
+	draft, err := svc.CreateBatchRegister(ctx, headroomTenantID, "maker", "", input)
+	if err != nil {
+		t.Fatalf("create empty register draft: %v", err)
+	}
+	if draft.Status != domain.BatchDraft || len(draft.Rows) != 0 {
+		t.Fatalf("empty register draft = status %s, rows %d", draft.Status, len(draft.Rows))
+	}
+	input.DataVersion = draft.DataVersion
+	updated, err := svc.UpdateDraft(ctx, headroomTenantID, "maker", draft.ID, input)
+	if err != nil {
+		t.Fatalf("update empty register draft: %v", err)
+	}
+	if updated.DataVersion <= draft.DataVersion || len(updated.Rows) != 0 {
+		t.Fatalf("updated empty draft = version %d, rows %d", updated.DataVersion, len(updated.Rows))
+	}
+	if _, err := svc.Submit(ctx, headroomTenantID, "maker", draft.ID, updated.DataVersion); err == nil {
+		t.Fatal("submit of empty register draft succeeded")
+	}
+	if wf.createCalls != 0 || wf.submitCalls != 0 {
+		t.Fatalf("empty draft submit called workflow %d/%d times", wf.createCalls, wf.submitCalls)
+	}
 }
 
 func TestDisbursementOutboxExhaustionCanBeResubmitted(t *testing.T) {
