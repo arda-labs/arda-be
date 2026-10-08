@@ -34,7 +34,7 @@ var batchListSpec = ardahttp.ListSpec{
 
 // batchStatuses is the whitelisted status filter set.
 var batchStatuses = map[string]bool{
-	"DRAFT": true, "SUBMITTED": true, "APPROVED": true,
+	"DRAFT": true, "PENDING_APPROVAL": true, "APPROVED": true,
 	"REJECTED": true, "CANCELLED": true, "POSTED": true,
 }
 
@@ -42,7 +42,7 @@ func batchStatusFilter(w http.ResponseWriter, raw string) (string, bool) {
 	status := strings.ToUpper(strings.TrimSpace(raw))
 	if status != "" && !batchStatuses[status] {
 		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput,
-			"status must be one of: DRAFT, SUBMITTED, APPROVED, REJECTED, CANCELLED, POSTED")
+			"status must be one of: DRAFT, PENDING_APPROVAL, APPROVED, REJECTED, CANCELLED, POSTED")
 		return "", false
 	}
 	return status, true

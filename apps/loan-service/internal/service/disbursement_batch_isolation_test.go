@@ -56,7 +56,7 @@ func TestBatchReject_MarksRowsRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create batch: %v", err)
 	}
-	if err := svc.Resolve(ctx, headroomTenantID, batch.ID, "REJECT"); err != nil {
+	if err := svc.Resolve(ctx, headroomTenantID, batch.ID, "REJECT", "rejected by checker"); err != nil {
 		t.Fatalf("reject batch: %v", err)
 	}
 	rows, err := repo.GetBatchRows(ctx, headroomTenantID, batch.ID)

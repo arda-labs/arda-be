@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -395,27 +396,24 @@ func (r *LoanRepository) SetDisbursementBatchCase(ctx context.Context, tenantID,
 }
 
 // SetDisbursementBatchStatus transitions the batch status.
-func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantID, id, status string) error {
-	if status == domain.BatchRejected || status == domain.BatchCancelled {
-		tx, err := r.db.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
-		if err := setDisbursementBatchStatus(ctx, tx, tenantID, id, status); err != nil {
-			return err
-		}
-		rowStatus := domain.DisbursementRejected
-		if status == domain.BatchCancelled {
-			rowStatus = domain.DisbursementCancelled
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE lnm_disbursements
-			SET status = $3, updated_at = now(), version = version + 1
-			WHERE tenant_id = $1 AND batch_id = $2
-			  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')`, tenantID, id, rowStatus); err != nil {
-			return err
-		}
+func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantID, id, from, to, reason string) error {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(from), domain.Status(to), reason); err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := setDisbursementBatchStatus(ctx, tx, tenantID, id, from, to); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE lnm_disbursements SET status = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND batch_id = $2 AND status = $3`, tenantID, id, from, to); err != nil {
+		return err
+	}
+	if to == domain.BatchRejected || to == domain.BatchCancelled {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE lnm_contract_reservations r SET status = 'RELEASED'
 			WHERE r.tenant_id = $1 AND r.source_type = 'DISBURSEMENT' AND r.status = 'HELD'
@@ -423,17 +421,16 @@ func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantI
 			                      WHERE d.tenant_id = $1 AND d.batch_id = $2)`, tenantID, id); err != nil {
 			return err
 		}
-		return tx.Commit()
 	}
-	return setDisbursementBatchStatus(ctx, r.db, tenantID, id, status)
+	return tx.Commit()
 }
 
-func setDisbursementBatchStatus(ctx context.Context, q repoTX, tenantID, id, status string) error {
+func setDisbursementBatchStatus(ctx context.Context, q repoTX, tenantID, id, from, to string) error {
 	expected := domain.DataVersionFromContext(ctx)
 	res, err := q.ExecContext(ctx, `
-		UPDATE lnm_disbursement_batches SET status = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2
-		  AND ($4 = 0 OR version = $4)`, tenantID, id, status, expected)
+		UPDATE lnm_disbursement_batches SET status = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = $3
+		  AND ($5 = 0 OR version = $5)`, tenantID, id, from, to, expected)
 	if err != nil {
 		return err
 	}
@@ -441,18 +438,29 @@ func setDisbursementBatchStatus(ctx context.Context, q repoTX, tenantID, id, sta
 		if staleVersion(ctx, q, "lnm_disbursement_batches", tenantID, id, expected) {
 			return ErrStaleVersion
 		}
-		return fmt.Errorf("%w", ErrNotFound)
+		var current string
+		lookupErr := q.QueryRowContext(ctx, `SELECT status FROM lnm_disbursement_batches WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&current)
+		if errors.Is(lookupErr, sql.ErrNoRows) {
+			return fmt.Errorf("%w", ErrNotFound)
+		}
+		if lookupErr != nil {
+			return lookupErr
+		}
+		return fmt.Errorf("%w: disbursement batch is %s, expected %s", domain.ErrInvalidTransition, current, from)
 	}
 	return nil
 }
 
 // SetDisbursementBatchPosted marks the batch POSTED with its journal entry.
 func (r *LoanRepository) SetDisbursementBatchPosted(ctx context.Context, tenantID, id, journalEntryID string) error {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(domain.BatchApproved), domain.Status(domain.BatchPosted), ""); err != nil {
+		return err
+	}
 	expected := domain.DataVersionFromContext(ctx)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_disbursement_batches
 		SET status = 'POSTED', journal_entry_id = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2
+		WHERE tenant_id = $1 AND id = $2 AND status = 'APPROVED'
 		  AND ($4 = 0 OR version = $4)`, tenantID, id, nullText(journalEntryID), expected)
 	if err != nil {
 		return err
@@ -476,31 +484,78 @@ func (r *LoanRepository) SetCollectionBatchCase(ctx context.Context, tenantID, i
 }
 
 // SetCollectionBatchStatus transitions the collection batch status.
-func (r *LoanRepository) SetCollectionBatchStatus(ctx context.Context, tenantID, id, status string) error {
+func (r *LoanRepository) SetCollectionBatchStatus(ctx context.Context, tenantID, id, from, to, reason string) error {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(from), domain.Status(to), reason); err != nil {
+		return err
+	}
+	if to == domain.BatchRejected || to == domain.BatchCancelled {
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if err := setCollectionBatchStatus(ctx, tx, tenantID, id, from, to); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE lnm_collections SET status = $4, updated_at = now(), version = version + 1
+			WHERE tenant_id = $1 AND batch_id = $2 AND status = $3`, tenantID, id, from, to); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := setCollectionBatchStatus(ctx, tx, tenantID, id, from, to); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE lnm_collections SET status = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND batch_id = $2 AND status = $3`, tenantID, id, from, to); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func setCollectionBatchStatus(ctx context.Context, q repoTX, tenantID, id, from, to string) error {
 	expected := domain.DataVersionFromContext(ctx)
-	res, err := r.db.ExecContext(ctx, `
-		UPDATE lnm_collection_batches SET status = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2
-		  AND ($4 = 0 OR version = $4)`, tenantID, id, status, expected)
+	res, err := q.ExecContext(ctx, `
+		UPDATE lnm_collection_batches SET status = $4, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = $3
+		  AND ($5 = 0 OR version = $5)`, tenantID, id, from, to, expected)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		if staleVersion(ctx, r.db, "lnm_collection_batches", tenantID, id, expected) {
+		if staleVersion(ctx, q, "lnm_collection_batches", tenantID, id, expected) {
 			return ErrStaleVersion
 		}
-		return fmt.Errorf("%w", ErrNotFound)
+		var current string
+		lookupErr := q.QueryRowContext(ctx, `SELECT status FROM lnm_collection_batches WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&current)
+		if errors.Is(lookupErr, sql.ErrNoRows) {
+			return fmt.Errorf("%w", ErrNotFound)
+		}
+		if lookupErr != nil {
+			return lookupErr
+		}
+		return fmt.Errorf("%w: collection batch is %s, expected %s", domain.ErrInvalidTransition, current, from)
 	}
 	return nil
 }
 
 // SetCollectionBatchPosted marks the collection batch POSTED with its journal entry.
 func (r *LoanRepository) SetCollectionBatchPosted(ctx context.Context, tenantID, id, journalEntryID string) error {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(domain.BatchApproved), domain.Status(domain.BatchPosted), ""); err != nil {
+		return err
+	}
 	expected := domain.DataVersionFromContext(ctx)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_collection_batches
 		SET status = 'POSTED', journal_entry_id = $3, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2
+		WHERE tenant_id = $1 AND id = $2 AND status = 'APPROVED'
 		  AND ($4 = 0 OR version = $4)`, tenantID, id, nullText(journalEntryID), expected)
 	if err != nil {
 		return err
@@ -515,7 +570,7 @@ func (r *LoanRepository) SetCollectionBatchPosted(ctx context.Context, tenantID,
 }
 
 // SumCompleteForAgreement totals the COMPLETE drawdowns already booked
-// against one agreement — in-flight cases (SUBMITTED/APPROVED) count too, so
+// against one agreement — in-flight cases (PENDING_APPROVAL/APPROVED) count too, so
 // concurrent batch completes cannot overshoot the register amounts
 // (complete remainder guard, per agreement).
 func (r *LoanRepository) SumCompleteForAgreement(ctx context.Context, tenantID, agreementCode string) (int64, error) {
@@ -523,7 +578,7 @@ func (r *LoanRepository) SumCompleteForAgreement(ctx context.Context, tenantID, 
 		SELECT COALESCE(SUM(disburse_amt_minor), 0)
 		FROM lnm_disbursements
 		WHERE tenant_id = $1 AND agreement_code = $2 AND flow_type = 'COMPLETE'
-		  AND status IN ('SUBMITTED', 'APPROVED', 'POSTED')`, tenantID, agreementCode)
+		  AND status IN ('PENDING_APPROVAL', 'APPROVED', 'POSTED')`, tenantID, agreementCode)
 	var total int64
 	return total, row.Scan(&total)
 }
@@ -543,8 +598,17 @@ func (r *LoanRepository) SumPostedRegisterForAgreement(ctx context.Context, tena
 // CloseContractByCode statuses a contract CLOSED (batch COMPLETE settle of
 // an is_closed row — mirror of the single-row write-off close semantics).
 func (r *LoanRepository) CloseContractByCode(ctx context.Context, tenantID, contractCode string) error {
-	_, err := r.db.ExecContext(ctx, `
+	if err := domain.CanTransition(domain.ContractMachine, domain.StatusDisbursed, domain.StatusClosed, ""); err != nil {
+		return err
+	}
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_contracts SET status = 'CLOSED', updated_at = now()
-		WHERE tenant_id = $1 AND contract_code = $2`, tenantID, contractCode)
-	return err
+		WHERE tenant_id = $1 AND contract_code = $2 AND status = 'DISBURSED'`, tenantID, contractCode)
+	if err != nil {
+		return err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return domain.ErrInvalidTransition
+	}
+	return nil
 }

@@ -48,6 +48,7 @@ message GetOperationMetricsResponse {
 message UpdateContractStatusRequest {
   string contract_id = 1;
   string status = 2;
+  string reason = 3;
 }
 
 message UpdateContractStatusResponse {

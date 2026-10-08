@@ -8,7 +8,7 @@ import (
 // Collection statuses.
 const (
 	CollectionDraft     = "DRAFT"
-	CollectionSubmitted = "SUBMITTED"
+	CollectionSubmitted = "PENDING_APPROVAL"
 	CollectionApproved  = "APPROVED"
 	CollectionRejected  = "REJECTED"
 	CollectionCancelled = "CANCELLED"

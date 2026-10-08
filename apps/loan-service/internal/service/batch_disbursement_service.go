@@ -72,7 +72,7 @@ type batchRowVars struct {
 }
 
 // CreateBatchRegister creates a DRAFT batch REGISTER dossier and its rows in
-// one tx, then opens the LNM_DISB_BATCH_REGISTER_V2 case (SUBMITTED). Contract
+// one tx, then opens the LNM_DISB_BATCH_REGISTER_V2 case (PENDING_APPROVAL). Contract
 // headroom validation and reservations happen together under contract locks.
 func (s *BatchDisbursementService) CreateBatchRegister(ctx context.Context, tenantID, actor, orgCode string, in *CreateBatchInput) (*domain.DisbursementBatch, error) {
 	if in == nil || len(in.Rows) == 0 {
@@ -98,7 +98,7 @@ func (s *BatchDisbursementService) CreateBatchRegister(ctx context.Context, tena
 		CurrencyCode:  "VND",
 		Description:   in.Description,
 		Trader:        in.Trader,
-		Status:        domain.BatchSubmitted,
+		Status:        domain.BatchDraft,
 		CreatedBy:     actor,
 		Rows:          make([]domain.Disbursement, 0, len(in.Rows)),
 	}
@@ -205,7 +205,7 @@ func (s *BatchDisbursementService) CreateBatchComplete(ctx context.Context, tena
 		CurrencyCode:  source.CurrencyCode,
 		Description:   in.Description,
 		Trader:        in.Trader,
-		Status:        domain.BatchSubmitted,
+		Status:        domain.BatchDraft,
 		CreatedBy:     actor,
 		Rows:          make([]domain.Disbursement, 0, len(in.Rows)),
 	}
@@ -291,7 +291,7 @@ func batchRowVarsList(rows []domain.Disbursement, inputs []BatchRowInput) []batc
 }
 
 // submitBatchCase opens + submits the batch's workflow case, stamps the case
-// on the batch header and flips it SUBMITTED.
+// on the batch header and flips it PENDING_APPROVAL.
 func (s *BatchDisbursementService) submitBatchCase(ctx context.Context, tenantID, actor string, batch *domain.DisbursementBatch, caseType, titlePrefix, idempotencyPrefix string, rows []batchRowVars) error {
 	if s.workflow == nil {
 		return ardaerrors.New(ardaerrors.CodeInternal, "workflow client is not configured")
@@ -323,7 +323,7 @@ func (s *BatchDisbursementService) submitBatchCase(ctx context.Context, tenantID
 	if err := s.repo.SetDisbursementBatchCase(ctx, tenantID, batch.ID, caseCreated.Id, caseCreated.GetCaseCode()); err != nil {
 		return mapRepoError(err)
 	}
-	if err := s.repo.SetDisbursementBatchStatus(ctx, tenantID, batch.ID, domain.BatchSubmitted); err != nil {
+	if err := s.repo.SetDisbursementBatchStatus(ctx, tenantID, batch.ID, batch.Status, domain.BatchSubmitted, ""); err != nil {
 		return mapRepoError(err)
 	}
 	batch.Status = domain.BatchSubmitted
@@ -387,7 +387,7 @@ func (s *BatchDisbursementService) Get(ctx context.Context, tenantID, id string)
 	return batch, nil
 }
 
-// Check validates the batch is actionable (BPMN validate job): SUBMITTED and
+// Check validates the batch is actionable (BPMN validate job): PENDING_APPROVAL and
 // every row still fits its guard (headroom for REGISTER rows, remainder for
 // COMPLETE rows) — re-checked because the maker may have edited the case.
 func (s *BatchDisbursementService) Check(ctx context.Context, tenantID, id string) (bool, string, error) {
@@ -433,7 +433,11 @@ func (s *BatchDisbursementService) Check(ctx context.Context, tenantID, id strin
 
 // Resolve applies the workflow decision. REJECT/CANCEL are terminal without
 // posting — the finance hold release is the batch cancel worker's job.
-func (s *BatchDisbursementService) Resolve(ctx context.Context, tenantID, id, decision string) error {
+func (s *BatchDisbursementService) Resolve(ctx context.Context, tenantID, id, decision, note string) error {
+	batch, err := s.repo.GetDisbursementBatch(ctx, tenantID, id)
+	if err != nil {
+		return mapRepoError(err)
+	}
 	var status string
 	switch decision {
 	case "APPROVE":
@@ -445,7 +449,10 @@ func (s *BatchDisbursementService) Resolve(ctx context.Context, tenantID, id, de
 	default:
 		return ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown decision "+decision)
 	}
-	if err := s.repo.SetDisbursementBatchStatus(ctx, tenantID, id, status); err != nil {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(batch.Status), domain.Status(status), note); err != nil {
+		return mapRepoError(err)
+	}
+	if err := s.repo.SetDisbursementBatchStatus(ctx, tenantID, id, batch.Status, status, note); err != nil {
 		return mapRepoError(err)
 	}
 	return nil
@@ -526,6 +533,18 @@ func (s *BatchDisbursementService) SettleBatch(ctx context.Context, tenantID, ba
 // each agreement (outstanding + pending bump, PENDING → ACTIVE) — the exact
 // per-row side effects of the single-row SettleRegister, looped.
 func (s *BatchDisbursementService) SettleBatchRegister(ctx context.Context, tenantID, batchID, journalEntryID, actor string) error {
+	batch, err := s.repo.GetDisbursementBatch(ctx, tenantID, batchID)
+	if err != nil {
+		return mapRepoError(err)
+	}
+	if batch.Status == domain.BatchPosted {
+		return nil
+	}
+	if batch.Status == domain.BatchSubmitted {
+		if err := s.repo.SetDisbursementBatchStatus(ctx, tenantID, batchID, batch.Status, domain.BatchApproved, ""); err != nil {
+			return mapRepoError(err)
+		}
+	}
 	rows, err := s.repo.GetBatchRows(ctx, tenantID, batchID)
 	if err != nil {
 		return mapRepoError(err)
@@ -548,6 +567,18 @@ func (s *BatchDisbursementService) SettleBatchRegister(ctx context.Context, tena
 // COMPLETE row of the contract, so looping the per-row repo call reproduces
 // it; is_closed rows additionally CLOSE the contract.
 func (s *BatchDisbursementService) SettleBatchComplete(ctx context.Context, tenantID, batchID, journalEntryID, actor string) error {
+	batch, err := s.repo.GetDisbursementBatch(ctx, tenantID, batchID)
+	if err != nil {
+		return mapRepoError(err)
+	}
+	if batch.Status == domain.BatchPosted {
+		return nil
+	}
+	if batch.Status == domain.BatchSubmitted {
+		if err := s.repo.SetDisbursementBatchStatus(ctx, tenantID, batchID, batch.Status, domain.BatchApproved, ""); err != nil {
+			return mapRepoError(err)
+		}
+	}
 	rows, err := s.repo.GetBatchRows(ctx, tenantID, batchID)
 	if err != nil {
 		return mapRepoError(err)
