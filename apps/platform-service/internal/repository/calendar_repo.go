@@ -29,7 +29,7 @@ func (r *CalendarRepository) GetSystemDate(ctx context.Context, branchCode strin
 	return sd, err
 }
 
-// ClaimEOD atomically moves a branch into EOD_PROCESSING and returns the
+// ClaimEOD atomically moves the SYSTEM date into EOD_PROCESSING and returns the
 // claimed row. The conditional UPDATE plus RowsAffected is the concurrency
 // gate: only one caller can transition a row out of a non-processing status,
 // so two parallel triggers can never both pass and advance the business date
@@ -65,9 +65,6 @@ func (r *CalendarRepository) ClaimEOD(ctx context.Context, branchCode string) (*
 		}
 		return nil, domain.ErrEODInProgress
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE plt_system_dates SET status=$1, updated_at=now() WHERE branch_code=$2", domain.SystemDateEODProcessing, branchCode); err != nil {
-		return nil, err
-	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -97,9 +94,6 @@ func (r *CalendarRepository) ReleaseEOD(ctx context.Context, branchCode string) 
 	if _, err := tx.ExecContext(ctx, "UPDATE plt_business_dates SET status=$1, updated_at=now() WHERE tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL AND status=$2", domain.SystemDateOpen, domain.SystemDateEODProcessing); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE plt_system_dates SET status=$1, updated_at=now() WHERE branch_code=$2 AND status=$3", domain.SystemDateOpen, branchCode, domain.SystemDateEODProcessing); err != nil {
-		return err
-	}
 	return tx.Commit()
 }
 
@@ -125,17 +119,6 @@ func (r *CalendarRepository) UpdateSystemDate(ctx context.Context, sd *domain.Sy
 	if rows != 1 {
 		return domain.ErrSystemDateNotFound
 	}
-	_, err = tx.ExecContext(ctx, "UPDATE plt_system_dates SET current_business_date=$2, previous_business_date=$3, next_business_date=$4, status=$5, last_eod_at=$6, updated_at=now() WHERE id=$1",
-		sd.ID,
-		sd.CurrentBusinessDate,
-		sd.PreviousBusinessDate,
-		sd.NextBusinessDate,
-		sd.Status,
-		lastEOD,
-	)
-	if err != nil {
-		return err
-	}
 	return tx.Commit()
 }
 
@@ -151,26 +134,15 @@ func (r *CalendarRepository) AddHoliday(ctx context.Context, holiday *domain.Hol
 		holiday.ID = NewID("holiday")
 	}
 
-	query := `
-		INSERT INTO plt_holiday_calendars (id, holiday_date, description, is_recurring, holiday_year)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING created_at
-	`
-	var yearVal any
-	if holiday.HolidayYear != nil {
-		yearVal = *holiday.HolidayYear
-	}
-
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if err := tx.QueryRowContext(ctx, query, holiday.ID, holiday.HolidayDate, holiday.Description, holiday.IsRecurring, yearVal).
-		Scan(&holiday.CreatedAt); err != nil {
+	if err := addVersionedHolidayTx(ctx, tx, holiday); err != nil {
 		return err
 	}
-	if err := addVersionedHolidayTx(ctx, tx, holiday); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT created_at FROM plt_working_calendar_versions WHERE tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL AND is_active").Scan(&holiday.CreatedAt); err != nil {
 		return err
 	}
 	return tx.Commit()

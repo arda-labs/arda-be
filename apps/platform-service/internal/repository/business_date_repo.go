@@ -53,8 +53,7 @@ func (r *CalendarRepository) IsHolidayForScope(ctx context.Context, scope ardaBu
 	err := r.db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM plt_working_calendar_holidays h "+
 		"JOIN plt_working_calendar_versions v ON v.id=h.calendar_version_id "+
 		"WHERE v.tenant_id IS NULL AND v.scope_type='SYSTEM' AND v.org_code IS NULL AND v.is_active "+
-		"AND ((h.holiday_date=$1 AND NOT h.is_recurring) OR (h.is_recurring AND EXTRACT(MONTH FROM h.holiday_date)=$2 AND EXTRACT(DAY FROM h.holiday_date)=$3))) OR "+
-		"EXISTS (SELECT 1 FROM plt_holiday_calendars old WHERE (old.holiday_date=$1 AND NOT old.is_recurring) OR (old.is_recurring AND EXTRACT(MONTH FROM old.holiday_date)=$2 AND EXTRACT(DAY FROM old.holiday_date)=$3))",
+		"AND ((h.holiday_date=$1 AND NOT h.is_recurring) OR (h.is_recurring AND EXTRACT(MONTH FROM h.holiday_date)=$2 AND EXTRACT(DAY FROM h.holiday_date)=$3)))",
 		date.Format("2006-01-02"), int(date.Month()), date.Day()).Scan(&holiday)
 	return holiday, err
 }

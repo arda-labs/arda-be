@@ -27,8 +27,11 @@ func TestBusinessDateMigrationMapsHeadOfficeToSystem(t *testing.T) {
 	if versions != 1 {
 		t.Fatalf("system calendar versions = %d, want 1", versions)
 	}
-	if _, err := db.Exec("UPDATE plt_system_dates SET current_business_date=DATE '2026-06-30' WHERE branch_code='HEAD_OFFICE'"); err != nil { t.Fatal(err) }
-	var mirrored string
-	if err := db.QueryRow("SELECT business_date::text FROM plt_business_dates WHERE scope_type='SYSTEM' AND tenant_id IS NULL").Scan(&mirrored); err != nil { t.Fatal(err) }
-	if mirrored != "2026-06-30" { t.Fatalf("legacy writer mirror = %s", mirrored) }
+	var legacyDates, legacyCalendars sql.NullString
+	if err := db.QueryRow("SELECT to_regclass('public.plt_system_dates')::text, to_regclass('public.plt_holiday_calendars')::text").Scan(&legacyDates, &legacyCalendars); err != nil {
+		t.Fatal(err)
+	}
+	if legacyDates.Valid || legacyCalendars.Valid {
+		t.Fatalf("legacy business-date tables still exist: dates=%v calendars=%v", legacyDates, legacyCalendars)
+	}
 }
