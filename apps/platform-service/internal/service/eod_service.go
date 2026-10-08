@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -376,7 +377,7 @@ func (s *EODService) RunSystem(ctx context.Context, requestedDate string) (*RunR
 }
 
 func (s *EODService) listEODSteps(ctx context.Context, tenantID string) ([]EODStepDefinition, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT code, name, module, sequence, depends_on, mandatory, stop_on_fail, retryable, endpoint
+	rows, err := s.db.QueryContext(ctx, `SELECT code, name, module, sequence, to_json(depends_on)::text, mandatory, stop_on_fail, retryable, endpoint
 		FROM plt_job_definitions WHERE tenant_id=$1 AND is_enabled ORDER BY sequence,code`, tenantID)
 	if err != nil {
 		return nil, err
@@ -385,8 +386,12 @@ func (s *EODService) listEODSteps(ctx context.Context, tenantID string) ([]EODSt
 	steps := make([]EODStepDefinition, 0)
 	for rows.Next() {
 		var item EODStepDefinition
-		if err := rows.Scan(&item.Code, &item.Name, &item.Module, &item.Order, &item.DependsOn, &item.Mandatory, &item.StopOnFail, &item.Retryable, &item.Endpoint); err != nil {
+		var dependencies string
+		if err := rows.Scan(&item.Code, &item.Name, &item.Module, &item.Order, &dependencies, &item.Mandatory, &item.StopOnFail, &item.Retryable, &item.Endpoint); err != nil {
 			return nil, err
+		}
+		if err := json.Unmarshal([]byte(dependencies), &item.DependsOn); err != nil {
+			return nil, fmt.Errorf("decode EOD step %s dependencies: %w", item.Code, err)
 		}
 		steps = append(steps, item)
 	}
