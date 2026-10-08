@@ -42,7 +42,7 @@ func SeedRegistry(ctx context.Context, writer RegistryWriter, processes []Proces
 			return fmt.Errorf("active case type %s references %s but no embedded BPMN matches",
 				ref.CaseType, ref.BpmnProcessID)
 		}
-		derived, err := DeriveRegistrySteps(ref.BpmnProcessID, content)
+		derived, err := DeriveRegistryStepsForCaseType(ref.CaseType, ref.BpmnProcessID, content)
 		if err != nil {
 			return fmt.Errorf("derive steps for %s: %w", ref.CaseType, err)
 		}
@@ -63,6 +63,37 @@ func SeedRegistry(ctx context.Context, writer RegistryWriter, processes []Proces
 		}
 	}
 	return nil
+}
+
+// DeriveRegistryStepsForCaseType applies per-operation action policy after
+// deriving the shared BPMN steps. Submitted batch disbursements currently have
+// no safe edit endpoint for REQUEST_CHANGES, so their checker step exposes only
+// approve/reject even though the shared process retains that path for other
+// operations.
+func DeriveRegistryStepsForCaseType(caseType, processID string, content []byte) ([]RegistryStep, error) {
+	steps, err := DeriveRegistrySteps(processID, content)
+	if err != nil {
+		return nil, err
+	}
+	if processID != "common-maker-checker" || !isBatchDisbursementCaseType(caseType) {
+		return steps, nil
+	}
+	for i := range steps {
+		if steps[i].Kind == StepKindChecker {
+			steps[i].AllowedActions = []string{ActionApprove, ActionReject}
+			steps[i].RequiredCommentOn = []string{ActionReject}
+		}
+	}
+	return steps, nil
+}
+
+func isBatchDisbursementCaseType(caseType string) bool {
+	switch strings.ToUpper(strings.TrimSpace(caseType)) {
+	case "LNM_DISB_BATCH_REGISTER_V2", "LNM_DISB_BATCH_COMPLETE_V2":
+		return true
+	default:
+		return false
+	}
 }
 
 // RegistryVersion is the case-type step registry version derived from the

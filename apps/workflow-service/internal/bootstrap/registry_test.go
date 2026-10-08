@@ -94,6 +94,31 @@ func TestCommonMakerCheckerRegistryStepsAreCaseTypeSpecific(t *testing.T) {
 	}
 }
 
+func TestBatchDisbursementRegistryDoesNotOfferUnsupportedRequestChanges(t *testing.T) {
+	for _, caseType := range []string{"LNM_DISB_BATCH_REGISTER_V2", "LNM_DISB_BATCH_COMPLETE_V2"} {
+		steps, err := DeriveRegistryStepsForCaseType(caseType, "common-maker-checker", commonMakerChecker)
+		if err != nil {
+			t.Fatalf("derive %s steps: %v", caseType, err)
+		}
+		checker := steps[len(steps)-1]
+		if contains(checker.AllowedActions, ActionRequestChanges) {
+			t.Errorf("%s checker actions = %v; batch has no submitted-batch edit endpoint", caseType, checker.AllowedActions)
+		}
+		if !contains(checker.AllowedActions, ActionApprove) || !contains(checker.AllowedActions, ActionReject) {
+			t.Errorf("%s checker actions = %v; want APPROVE and REJECT", caseType, checker.AllowedActions)
+		}
+	}
+}
+
+func TestCommonMakerCheckerCanSkipInitialMakerInput(t *testing.T) {
+	if !strings.Contains(string(commonMakerChecker), `=mcSkipMakerInput = true`) {
+		t.Fatal("shared process must route submitted batches to validation without opening a duplicate maker task")
+	}
+	if !strings.Contains(string(commonMakerChecker), `id="Flow_ValidationError_Cancel"`) {
+		t.Fatal("batch validation errors must end through cancel when the submitted batch cannot be edited")
+	}
+}
+
 func TestEveryBuiltInProcessDerivesRegistrySteps(t *testing.T) {
 	for _, process := range BuiltInProcesses() {
 		processID, err := ProcessIDOf(process.Content)

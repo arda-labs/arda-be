@@ -180,6 +180,7 @@ var reservedCaseVariableKeys = map[string]struct{}{
 	"mcKind":            {},
 	"mcMakerRole":       {},
 	"mcCheckerRole":     {},
+	"mcSkipMakerInput":  {},
 }
 
 // dropReservedCaseVariables removes service-owned keys from client-supplied
@@ -221,8 +222,18 @@ func authoritativeCaseVariables(bc *repository.BusinessCase, actor string) map[s
 		variables["mcKind"] = bc.WorkerKind
 		variables["mcMakerRole"] = bc.MakerRole
 		variables["mcCheckerRole"] = bc.CheckerRole
+		variables["mcSkipMakerInput"] = isBatchDisbursementWorkerKind(bc.WorkerKind)
 	}
 	return variables
+}
+
+func isBatchDisbursementWorkerKind(workerKind string) bool {
+	switch strings.ToLower(strings.TrimSpace(workerKind)) {
+	case "lnm.disb-batch-register", "lnm.disb-batch-complete":
+		return true
+	default:
+		return false
+	}
 }
 
 // buildCaseVariables merges client variables over the authoritative system

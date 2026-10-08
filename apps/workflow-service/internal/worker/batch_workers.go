@@ -83,6 +83,13 @@ func (w *BatchWorkers) Handlers() (worker.JobHandler, worker.JobHandler, worker.
 	return w.init(), w.validate(), w.execute(), w.cancel()
 }
 
+// MakerCheckerHandlers returns the phases shared by common-maker-checker.
+// Reserve runs during validate because submitted batches already carry the
+// contract reservation created by loan-service before the workflow starts.
+func (w *BatchWorkers) MakerCheckerHandlers() MakerCheckerHandlers {
+	return MakerCheckerHandlers{Validate: w.validate(), Execute: w.execute(), Cancel: w.cancel()}
+}
+
 func (w *BatchWorkers) batchID(job entities.Job) (string, error) {
 	vars, err := job.GetVariablesAsMap()
 	if err != nil {

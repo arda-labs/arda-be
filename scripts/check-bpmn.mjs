@@ -158,6 +158,13 @@ for (const file of files) {
   }
 
   const reachable = new Set()
+  const boundaryEventsByAttached = new Map()
+  for (const node of nodes) {
+    if (node.tag !== "boundaryEvent") continue
+    const attached = attr(node.block, "attachedToRef")
+    if (!attached) continue
+    boundaryEventsByAttached.set(attached, [...(boundaryEventsByAttached.get(attached) || []), node.id])
+  }
   const start = nodes.find((node) => node.tag === "startEvent")
   if (start) {
     const stack = [start.id]
@@ -166,6 +173,9 @@ for (const file of files) {
       if (reachable.has(id)) continue
       reachable.add(id)
       for (const flow of outgoing.get(id) || []) stack.push(flow.target)
+      // Error boundary paths are reachable from their attached task even
+      // though BPMN models the event's error edge outside normal task flow.
+      for (const boundaryID of boundaryEventsByAttached.get(id) || []) stack.push(boundaryID)
     }
   } else {
     fail("no startEvent")
