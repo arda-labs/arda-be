@@ -12,6 +12,7 @@ import (
 const (
 	SubjectPlatformParameterChanged = "arda.platform.parameter.changed"
 	SubjectPlatformLookupChanged    = "arda.platform.lookup.changed"
+	// SubjectFinanceTransactionPosted is the canonical finance outbox subject.
 	SubjectFinanceTransactionPosted = "arda.finance.transaction.posted"
 	SubjectIAMUserChanged           = "arda.iam.user.changed"
 	SubjectNotificationInboxCreated = "arda.notification.inbox.created.v1"
