@@ -19,6 +19,7 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/config"
 	"github.com/arda-labs/arda/apps/loan-service/internal/handler"
 	"github.com/arda-labs/arda/apps/loan-service/internal/migration"
+	"github.com/arda-labs/arda/apps/loan-service/internal/paramspec"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	"github.com/arda-labs/arda/apps/loan-service/internal/service"
 	grpcserver "github.com/arda-labs/arda/apps/loan-service/internal/transport/grpc"
@@ -29,6 +30,7 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardaParams "github.com/arda-labs/arda/libs/go/arda-params"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
 )
@@ -70,6 +72,15 @@ func main() {
 	logger.Info("migrations applied")
 
 	repo := repository.NewLoanRepository(db)
+	parameterRegistry := ardaParams.NewRegistry(db)
+	if err := parameterRegistry.Declare(paramspec.LoanModule()); err != nil {
+		logger.Error("declare parameter registry", "err", err)
+		os.Exit(1)
+	}
+	if err := parameterRegistry.Verify(context.Background()); err != nil {
+		logger.Error("verify parameter registry", "err", err)
+		os.Exit(1)
+	}
 	loanSvc := service.NewLoanService(repo, workflow)
 	adjSvc := service.NewAdjustmentService(repo, workflow)
 	loanHandler := handler.NewLoanHandler(loanSvc, adjSvc)
@@ -94,7 +105,7 @@ func main() {
 	accrualHandler := handler.NewAccrualHandler(accrualSvc)
 	provisionSvc := service.NewProvisionService(repo, db, financeClient)
 	provisionHandler := handler.NewProvisionHandler(provisionSvc)
-	generalProvSvc := service.NewGeneralProvisionService(repo, workflow, financeClient)
+	generalProvSvc := service.NewGeneralProvisionService(repo, workflow, financeClient, parameterRegistry)
 	generalProvHandler := handler.NewGeneralProvisionHandler(generalProvSvc)
 	reportSvc := service.NewLoanReportService(repo)
 	reportHandler := handler.NewReportHandler(reportSvc)
