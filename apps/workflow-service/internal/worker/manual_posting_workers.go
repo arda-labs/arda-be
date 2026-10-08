@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -81,29 +82,11 @@ var FundUtilizationFlow = ManualPostingFlow{
 	DocumentType:      "FIN_FUND_USE",
 }
 
-// postingPolicySentinels are the finance posting-date policy error codes
-// (finance service posting_policy_service.go). They arrive inside the gRPC
-// error message of Reserve/Post. A policy violation is a proposal problem —
-// permanent and maker-fixable — not an infrastructure failure, so the job
-// must throw the BPMN VALIDATION_FAILED boundary error (case back to the
-// maker) instead of burning job retries.
-var postingPolicySentinels = []string{
-	"TRANSACTION_DATE_EXCEEDS_CURRENT_DATE",
-	"BACKDATE_NOT_ALLOWED",
-	"TRANSACTION_DATE_EXCEEDS_BACKDATE",
-	"POSTING_DATE_BEFORE_CLOSING_LOCK",
-}
-
-// isPostingPolicyError reports whether a finance client failure carries a
-// posting-date policy sentinel.
+// isPostingPolicyError retains the legacy helper surface for the policy tests;
+// classification is now shared with all finance posting business errors.
 func isPostingPolicyError(err error) bool {
-	msg := err.Error()
-	for _, sentinel := range postingPolicySentinels {
-		if strings.Contains(msg, sentinel) {
-			return true
-		}
-	}
-	return false
+	_, business := classifyPostingError(err)
+	return business
 }
 
 // ManualPostingWorkers run the FIN_SINGLE_ENTRY_V2 / FIN_DOUBLE_ENTRY_V2
@@ -236,11 +219,29 @@ func (w *ManualPostingWorkers) buildPostingRequest(vars map[string]any) (*financ
 // fixable) throw the VALIDATION_FAILED boundary error so the case returns
 // to the maker; everything else is a retryable job failure.
 func (w *ManualPostingWorkers) failPostingError(client worker.JobClient, job entities.Job, err error) {
-	if isPostingPolicyError(err) {
-		throwValidationError(client, job, "Posting Error: "+grpcMessage(err))
-		return
+	w.handlePostingError(client, job, err, "")
+}
+
+func (w *ManualPostingWorkers) handlePostingError(client worker.JobClient, job entities.Job, err error, journalEntryID string) {
+	ctx := context.Background()
+	vars, _ := job.GetVariablesAsMap()
+	actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
+	var release func() error
+	if journalEntryID != "" {
+		release = func() error {
+			_, releaseErr := w.financeClient.Release(ctx, &financev1.ReleaseRequest{
+				JournalEntryId: journalEntryID,
+				Reason:         "Automatic release after a business posting failure",
+				Actor:          actor,
+			})
+			return releaseErr
+		}
 	}
-	w.failJob(client, job, "Posting Error: "+err.Error())
+	routePostingFailure(err, journalEntryID, release,
+		func(code financev1.PostingErrorCode, message string) {
+			throwPostingValidationError(ctx, client, job, w.projection, code, message)
+		},
+		func(failure error) { w.failJob(client, job, "Posting Error: "+failure.Error()) })
 }
 
 // init reserves the posting right after submission — the balance hold exists
@@ -284,16 +285,16 @@ func (w *ManualPostingWorkers) validate() worker.JobHandler {
 		}
 		result, err := w.financeClient.Validate(ctx, req)
 		if err != nil {
-			w.failJob(client, job, "Posting Error: "+err.Error())
+			w.handlePostingError(client, job, err, stringVariable(vars, "journalEntryId"))
 			return
 		}
 		if !result.GetValid() {
-			throwValidationError(client, job, validationErrorsMessage(result))
+			w.handlePostingError(client, job, errors.New(validationErrorsMessage(result)), stringVariable(vars, "journalEntryId"))
 			return
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
 		if err != nil {
-			w.failPostingError(client, job, err)
+			w.handlePostingError(client, job, err, stringVariable(vars, "journalEntryId"))
 			return
 		}
 		if err := w.complete(ctx, client, job, map[string]any{
@@ -334,7 +335,7 @@ func (w *ManualPostingWorkers) execute() worker.JobHandler {
 		}
 		posted, err := w.financeClient.Post(ctx, req)
 		if err != nil {
-			w.failPostingError(client, job, err)
+			w.handlePostingError(client, job, err, stringVariable(vars, "journalEntryId"))
 			return
 		}
 		if err := w.complete(ctx, client, job, map[string]any{

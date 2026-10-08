@@ -9,6 +9,7 @@ import (
 
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -57,7 +58,7 @@ func (s *PostingServer) PostTransaction(ctx context.Context, req *financev1.Post
 	resp, err := s.posting.PostTransaction(ctx, tenantID, req)
 	if err != nil {
 		slog.Warn("posting grpc: post failed", "docType", req.GetBusinessReference().GetDocumentType(), "err", err)
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
+		return nil, postingErrorStatus(err)
 	}
 	return resp, nil
 }
@@ -66,7 +67,7 @@ func (s *PostingServer) ReverseTransaction(ctx context.Context, req *financev1.R
 	resp, err := s.posting.ReverseTransaction(ctx, req)
 	if err != nil {
 		slog.Warn("posting grpc: reverse failed", "entryId", req.GetJournalEntryId(), "err", err)
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
+		return nil, postingErrorStatus(err)
 	}
 	return resp, nil
 }
@@ -114,7 +115,7 @@ func (s *PostingServer) ReservePosting(ctx context.Context, req *financev1.Posti
 	resp, err := s.posting.ReservePosting(ctx, tenantID, req)
 	if err != nil {
 		slog.Warn("posting grpc: reserve failed", "docType", req.GetBusinessReference().GetDocumentType(), "err", err)
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
+		return nil, postingErrorStatus(err)
 	}
 	return resp, nil
 }
@@ -127,7 +128,28 @@ func (s *PostingServer) ReleasePosting(ctx context.Context, req *financev1.Relea
 	resp, err := s.posting.ReleasePosting(ctx, tenantID, req)
 	if err != nil {
 		slog.Warn("posting grpc: release failed", "entryId", req.GetJournalEntryId(), "err", err)
-		return nil, status.Error(codes.FailedPrecondition, err.Error())
+		return nil, postingErrorStatus(err)
 	}
 	return resp, nil
+}
+
+// postingErrorStatus preserves the existing FailedPrecondition status and
+// message while adding a machine-readable detail for upgraded clients.
+func postingErrorStatus(err error) error {
+	code := service.ClassifyPostingError(err)
+	if code == financev1.PostingErrorCode_POSTING_ERROR_CODE_UNSPECIFIED {
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	st := status.New(codes.FailedPrecondition, err.Error())
+	withDetails, detailErr := st.WithDetails(&errdetails.ErrorInfo{
+		Reason: "POSTING_ERROR",
+		Domain: "finance.arda.io.vn",
+		Metadata: map[string]string{
+			"posting_error_code": code.String(),
+		},
+	})
+	if detailErr != nil {
+		return st.Err()
+	}
+	return withDetails.Err()
 }

@@ -330,7 +330,7 @@ func (w *BatchWorkers) init() worker.JobHandler {
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
 		if err != nil {
-			w.failJob(client, job, "Posting Error: "+err.Error())
+			w.handlePostingError(client, job, err, stringVariable(mustJobVars(job), "journalEntryId"))
 			return
 		}
 		if err := w.complete(ctx, client, job, map[string]any{
@@ -369,7 +369,7 @@ func (w *BatchWorkers) validate() worker.JobHandler {
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
 		if err != nil {
-			w.failJob(client, job, "Posting Error: "+err.Error())
+			w.handlePostingError(client, job, err, stringVariable(mustJobVars(job), "journalEntryId"))
 			return
 		}
 		if err := w.complete(ctx, client, job, map[string]any{
@@ -400,7 +400,7 @@ func (w *BatchWorkers) execute() worker.JobHandler {
 		}
 		posted, err := w.financeClient.Post(ctx, req)
 		if err != nil {
-			w.failJob(client, job, "Posting Error: "+err.Error())
+			w.handlePostingError(client, job, err, stringVariable(mustJobVars(job), "journalEntryId"))
 			return
 		}
 		if err := w.loanClient.SettleBatch(crmJobContext(job), id, w.flow.BatchType, posted.GetJournalEntryId(), actor, dataVersionFromVars(mustJobVars(job))); err != nil {
@@ -420,6 +420,28 @@ func (w *BatchWorkers) execute() worker.JobHandler {
 		w.projection.FinishCase(ctx, job.GetProcessInstanceKey(), repository.CaseStatusCompleted)
 		slog.Info("batch posted", "flow", w.flow.TopicPrefix, "id", id, "entry", posted.GetJournalEntryId())
 	}
+}
+
+func (w *BatchWorkers) handlePostingError(client worker.JobClient, job entities.Job, err error, journalEntryID string) {
+	ctx := context.Background()
+	vars := mustJobVars(job)
+	actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
+	var release func() error
+	if journalEntryID != "" {
+		release = func() error {
+			_, releaseErr := w.financeClient.Release(ctx, &financev1.ReleaseRequest{
+				JournalEntryId: journalEntryID,
+				Reason:         "Automatic release after a business posting failure",
+				Actor:          actor,
+			})
+			return releaseErr
+		}
+	}
+	routePostingFailure(err, journalEntryID, release,
+		func(code financev1.PostingErrorCode, message string) {
+			throwPostingValidationError(ctx, client, job, w.projection, code, message)
+		},
+		func(failure error) { w.failJob(client, job, "Posting Error: "+failure.Error()) })
 }
 
 // cancel releases the finance hold (when one exists — init may never have
