@@ -41,6 +41,12 @@ func mapRepoError(err error) error {
 		return ardaerrors.Wrap(ardaerrors.CodeConflict, "adjustment is not pending anymore", err)
 	case errors.Is(err, repository.ErrCollectionNotApproved):
 		return ardaerrors.Wrap(ardaerrors.CodeConflict, "collection is not approved for settlement", err)
+	case errors.Is(err, repository.ErrSpecificProvisionNotPending):
+		return ardaerrors.Wrap(ardaerrors.CodeConflict, "specific provision is not awaiting approval", err)
+	case errors.Is(err, repository.ErrAgreementClosedForProvision):
+		return ardaerrors.Wrap(ardaerrors.CodeConflict, "closed agreement cannot be provisioned", err)
+	case errors.Is(err, repository.ErrProvisionRateMissing):
+		return ardaerrors.New("PROVISION_RATE_MISSING", err.Error())
 	case strings.Contains(err.Error(), "lnm: record not found"):
 		return ardaerrors.New(ardaerrors.CodeNotFound, "loan record not found")
 	case strings.Contains(err.Error(), "lnm: code conflict"):

@@ -521,7 +521,7 @@ func (r *LoanRepository) CreateMortgage(ctx context.Context, m *domain.Mortgage)
 func (r *LoanRepository) ListCollaterals(ctx context.Context, tenantID, mortgageCode, q string) ([]domain.Collateral, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, coll_code, coll_name, coll_type_code, mortgage_code, owner_cif_code, owner_name,
-		       coll_address, quantity, unit_price_minor, coll_value_minor, coll_use_value_minor, valuation_date::text, status,
+		       coll_address, quantity, unit_price_minor, coll_value_minor, coll_use_value_minor, deduction_ratio::float8, valuation_date::text, status,
 		       created_at, updated_at
 		FROM lnm_collaterals
 		WHERE tenant_id = $1
@@ -535,11 +535,13 @@ func (r *LoanRepository) ListCollaterals(ctx context.Context, tenantID, mortgage
 	items := []domain.Collateral{}
 	for rows.Next() {
 		var c domain.Collateral
+		var deductionRatio float64
 		if err := rows.Scan(&c.ID, &c.TenantID, &c.CollCode, &c.CollName, &c.CollTypeCode, &c.MortgageCode,
 			&c.OwnerCifCode, &c.OwnerName, &c.CollAddress, &c.Quantity, &c.UnitPrice, &c.CollValue,
-			&c.CollUseValue, &c.ValuationDate, &c.Status, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			&c.CollUseValue, &deductionRatio, &c.ValuationDate, &c.Status, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
+		c.DeductionRatio = &deductionRatio
 		items = append(items, c)
 	}
 	return items, rows.Err()
@@ -549,14 +551,14 @@ func (r *LoanRepository) CreateCollateral(ctx context.Context, c *domain.Collate
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO lnm_collaterals (id, tenant_id, coll_code, coll_name, coll_type_code, mortgage_code,
 			owner_cif_code, owner_name, coll_address, quantity, unit_price_minor, coll_value_minor, coll_use_value_minor,
-			valuation_date, status, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::date,$15,$16)
+			deduction_ratio, valuation_date, status, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::date,$16,$17)
 		ON CONFLICT (tenant_id, coll_code) DO NOTHING
 		RETURNING id, tenant_id, coll_code, coll_name, coll_type_code, mortgage_code, owner_cif_code, owner_name,
-		          coll_address, quantity, unit_price_minor, coll_value_minor, coll_use_value_minor, valuation_date::text, status,
+		          coll_address, quantity, unit_price_minor, coll_value_minor, coll_use_value_minor, deduction_ratio::float8, valuation_date::text, status,
 		          created_at, updated_at`,
 		c.ID, c.TenantID, c.CollCode, c.CollName, c.CollTypeCode, c.MortgageCode, c.OwnerCifCode, c.OwnerName,
-		c.CollAddress, c.Quantity, c.UnitPrice, c.CollValue, c.CollUseValue, c.ValuationDate, c.Status, c.CreatedAt)
+		c.CollAddress, c.Quantity, c.UnitPrice, c.CollValue, c.CollUseValue, c.DeductionRatio, c.ValuationDate, c.Status, c.CreatedAt)
 	out, err := scanCollateral(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w", ErrConflict)
@@ -566,9 +568,11 @@ func (r *LoanRepository) CreateCollateral(ctx context.Context, c *domain.Collate
 
 func scanCollateral(s interface{ Scan(...any) error }) (domain.Collateral, error) {
 	var c domain.Collateral
+	var deductionRatio float64
 	err := s.Scan(&c.ID, &c.TenantID, &c.CollCode, &c.CollName, &c.CollTypeCode, &c.MortgageCode, &c.OwnerCifCode,
-		&c.OwnerName, &c.CollAddress, &c.Quantity, &c.UnitPrice, &c.CollValue, &c.CollUseValue,
+		&c.OwnerName, &c.CollAddress, &c.Quantity, &c.UnitPrice, &c.CollValue, &c.CollUseValue, &deductionRatio,
 		&c.ValuationDate, &c.Status, &c.CreatedAt, &c.UpdatedAt)
+	c.DeductionRatio = &deductionRatio
 	return c, err
 }
 

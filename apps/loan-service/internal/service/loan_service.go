@@ -281,6 +281,12 @@ func (s *LoanService) CreateCollateral(ctx context.Context, tenantID, createdBy 
 	if strings.TrimSpace(in.CollCode) == "" || !codePattern.MatchString(in.CollCode) {
 		return nil, ardaerrors.New(ardaerrors.CodeRequired, "coll_code is required")
 	}
+	if in.DeductionRatio == nil {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "deduction_ratio is required")
+	}
+	if *in.DeductionRatio < 0 || *in.DeductionRatio > 100 {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "deduction_ratio must be between 0 and 100")
+	}
 	in.ID = repository.NewID("coll")
 	in.TenantID = tenantID
 	in.Status = "ACTIVE"

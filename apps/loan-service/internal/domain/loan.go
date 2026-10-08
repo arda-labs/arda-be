@@ -140,23 +140,24 @@ type Mortgage struct {
 
 // Collateral is one collateral asset (EPAS lnm_inf_coll).
 type Collateral struct {
-	ID            string    `json:"id"`
-	TenantID      string    `json:"tenant_id"`
-	CollCode      string    `json:"coll_code"`
-	CollName      string    `json:"coll_name"`
-	CollTypeCode  string    `json:"coll_type_code"`
-	MortgageCode  string    `json:"mortgage_code"`
-	OwnerCifCode  string    `json:"owner_cif_code"`
-	OwnerName     string    `json:"owner_name"`
-	CollAddress   string    `json:"coll_address"`
-	Quantity      float64   `json:"quantity"`
-	UnitPrice     int64     `json:"unit_price_minor"`
-	CollValue     int64     `json:"coll_value_minor"`
-	CollUseValue  int64     `json:"coll_use_value_minor"`
-	ValuationDate string    `json:"valuation_date"`
-	Status        string    `json:"status"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	TenantID       string    `json:"tenant_id"`
+	CollCode       string    `json:"coll_code"`
+	CollName       string    `json:"coll_name"`
+	CollTypeCode   string    `json:"coll_type_code"`
+	MortgageCode   string    `json:"mortgage_code"`
+	OwnerCifCode   string    `json:"owner_cif_code"`
+	OwnerName      string    `json:"owner_name"`
+	CollAddress    string    `json:"coll_address"`
+	Quantity       float64   `json:"quantity"`
+	UnitPrice      int64     `json:"unit_price_minor"`
+	CollValue      int64     `json:"coll_value_minor"`
+	CollUseValue   int64     `json:"coll_use_value_minor"`
+	DeductionRatio *float64  `json:"deduction_ratio"`
+	ValuationDate  string    `json:"valuation_date"`
+	Status         string    `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // ContractCollateral links a contract to a collateral asset with an
