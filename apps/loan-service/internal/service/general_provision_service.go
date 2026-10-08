@@ -187,7 +187,11 @@ func (s *GeneralProvisionService) Resolve(ctx context.Context, tenantID, id, dec
 	}
 	journalEntryID := ""
 	if preview.AllocMinor > 0 || preview.ReverseMinor > 0 {
-		posted, err := s.finance.Post(ctx, s.postingRequest(ctx, row, preview))
+		request, err := s.postingRequest(ctx, row, preview)
+		if err != nil {
+			return err
+		}
+		posted, err := s.finance.Post(ctx, request)
 		if err != nil {
 			return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "provision posting failed", err)
 		}
@@ -199,20 +203,24 @@ func (s *GeneralProvisionService) Resolve(ctx context.Context, tenantID, id, dec
 		journalEntryID, decidedBy))
 }
 
-func (s *GeneralProvisionService) postingRequest(ctx context.Context, row *repository.GeneralProvisionRow, preview GeneralProvisionPreview) *financev1.PostingRequest {
+func (s *GeneralProvisionService) postingRequest(ctx context.Context, row *repository.GeneralProvisionRow, preview GeneralProvisionPreview) (*financev1.PostingRequest, error) {
 	analytics := &financev1.Analytics{OrgUnitCode: row.OrgCode}
 	legs := []financeclient.PostingLeg{}
 	if preview.AllocMinor > 0 {
 		legs = append(legs,
-			financeclient.PostingLeg{CardLine: 1, Fallback: "LNM_PROVISION_EXPENSE", Direction: "DEBIT", AmountMinor: preview.AllocMinor, Analytics: analytics},
-			financeclient.PostingLeg{CardLine: 2, Fallback: "LNM_PROVISION_LIABILITY", Direction: "CREDIT", AmountMinor: preview.AllocMinor, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 1, Direction: "DEBIT", AmountMinor: preview.AllocMinor, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 2, Direction: "CREDIT", AmountMinor: preview.AllocMinor, Analytics: analytics},
 		)
 	}
 	if preview.ReverseMinor > 0 {
 		legs = append(legs,
-			financeclient.PostingLeg{CardLine: 3, Fallback: "LNM_PROVISION_LIABILITY", Direction: "DEBIT", AmountMinor: preview.ReverseMinor, Analytics: analytics},
-			financeclient.PostingLeg{CardLine: 4, Fallback: "LNM_PROVISION_RELEASE", Direction: "CREDIT", AmountMinor: preview.ReverseMinor, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 3, Direction: "DEBIT", AmountMinor: preview.ReverseMinor, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 4, Direction: "CREDIT", AmountMinor: preview.ReverseMinor, Analytics: analytics},
 		)
+	}
+	lines, err := financeclient.BuildPostingLines(ctx, s.finance, generalProvisionDocumentType, legs, generalProvisionDefaultCurrency)
+	if err != nil {
+		return nil, err
 	}
 	return &financev1.PostingRequest{
 		IdempotencyKey: fmt.Sprintf("lnm-general-provision-%s-%s", row.OrgCode, row.ProvisionDate),
@@ -225,10 +233,8 @@ func (s *GeneralProvisionService) postingRequest(ctx context.Context, row *repos
 			DocumentId:   row.ID,
 			DocumentCode: row.OrgCode + "/" + row.ProvisionDate,
 		},
-		Lines: financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(ctx, s.finance, generalProvisionDocumentType),
-			legs, generalProvisionDefaultCurrency),
-	}
+		Lines: lines,
+	}, nil
 }
 
 // requiredGeneralProvision = outstanding × rate / 100, HALF_UP to đồng (minor).
