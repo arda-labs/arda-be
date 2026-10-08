@@ -32,7 +32,7 @@ func TestPostingStrategyConfigurationQueries(t *testing.T) {
 	}
 
 	repo := NewPostingRepository(db)
-	got, err := repo.ListDebtGroupTransitions(t.Context(), tenantID, "2026-03-01")
+	got, err := repo.ListDebtGroupTransitions(t.Context(), tenantID, "2026-07-01")
 	if err != nil {
 		t.Fatal(err)
 	}
