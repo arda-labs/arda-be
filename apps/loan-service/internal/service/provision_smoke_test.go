@@ -50,8 +50,8 @@ func TestProvisionSmoke(t *testing.T) {
 
 	// Rate table must resolve GROUP_3 -> 20.
 	svc := NewProvisionService(repo, db, nil)
-	if _, ok := debtGroupRate["GROUP_3"]; !ok || debtGroupRate["GROUP_3"] != "20" {
-		t.Fatalf("CM130 rate table wrong: %v", debtGroupRate)
+	if rate, ok := domain.DebtGroupProvisionRate("GROUP_3"); !ok || rate.String() != "20" {
+		t.Fatalf("CM130 rate table wrong: rate=%s found=%v", rate, ok)
 	}
 
 	// RunDaily with nil finance must fail closed (no posting without client).
