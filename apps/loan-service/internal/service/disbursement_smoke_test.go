@@ -19,8 +19,8 @@ import (
 // GATE smoke (P1b v2 disbursement): requires the loan Postgres. Runs
 // migrations, seeds contract + agreement, then drives the two-flow EPAS
 // LNM.300.02 shape — REGISTER create → submit (fake workflow capture) → check
-// → posting detail → SettleRegister (outstanding + pending bump), then
-// COMPLETE create(source=register) → submit → SettleComplete (pending unwind,
+// → posting detail → SettleRegister (pending bump), then
+// COMPLETE create(source=register) → submit → SettleComplete (pending moves to outstanding,
 // contract ACTIVE on first completion) — plus the two guards (register
 // over-limit, complete exceeding source remainder). Skipped when
 // ARDA_TEST_DSN unset.
@@ -172,14 +172,22 @@ func TestDisbursementSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload agreement: %v", err)
 	}
-	if registerAgreement.OutstandingAmt != register.DisburseAmtMinor {
-		t.Fatalf("outstanding = %d, want %d", registerAgreement.OutstandingAmt, register.DisburseAmtMinor)
+	if registerAgreement.OutstandingAmt != 0 {
+		t.Fatalf("outstanding after register = %d, want 0 until COMPLETE", registerAgreement.OutstandingAmt)
 	}
 	if pending := agreementPending(); pending != register.DisburseAmtMinor {
 		t.Fatalf("pending after register settle = %d, want %d", pending, register.DisburseAmtMinor)
 	}
 	if registerAgreement.Status != "ACTIVE" {
 		t.Fatalf("agreement status = %q, want ACTIVE after register settle", registerAgreement.Status)
+	}
+	var reservationStatus string
+	if err := db.QueryRow(`SELECT status FROM lnm_contract_reservations
+		WHERE tenant_id = $1 AND source_type = 'DISBURSEMENT' AND source_id = $2`, tenantID, register.ID).Scan(&reservationStatus); err != nil {
+		t.Fatalf("read consumed register reservation: %v", err)
+	}
+	if reservationStatus != "CONSUMED" {
+		t.Fatalf("register reservation status = %q, want CONSUMED", reservationStatus)
 	}
 	// Register settle must NOT flip the contract — that is the COMPLETE leg's job.
 	if status := contractStatus(); status != domain.ContractDraft {
@@ -229,8 +237,8 @@ func TestDisbursementSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload agreement: %v", err)
 	}
-	if completeAgreement.OutstandingAmt != register.DisburseAmtMinor {
-		t.Fatalf("outstanding after complete settle = %d, want unchanged %d", completeAgreement.OutstandingAmt, register.DisburseAmtMinor)
+	if completeAgreement.OutstandingAmt != complete.DisburseAmtMinor {
+		t.Fatalf("outstanding after complete settle = %d, want completed amount %d", completeAgreement.OutstandingAmt, complete.DisburseAmtMinor)
 	}
 	wantPending := register.DisburseAmtMinor - complete.DisburseAmtMinor
 	if pending := agreementPending(); pending != wantPending {
@@ -251,7 +259,7 @@ func TestDisbursementSmoke(t *testing.T) {
 		DisburseAmtMinor: 600_000_000,
 		CurrencyCode:     "VND",
 		FlowType:         domain.FlowRegister,
-	}); err == nil || !strings.Contains(err.Error(), "exceeds contract headroom") {
+	}); err == nil || !strings.Contains(err.Error(), "headroom") {
 		t.Fatalf("register over-limit guard: err=%v", err)
 	}
 	// Complete exceeding source remainder: 300M of the 500M register is

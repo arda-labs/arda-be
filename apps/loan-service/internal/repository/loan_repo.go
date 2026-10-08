@@ -33,6 +33,7 @@ var (
 	// ErrCollectionNotApproved marks an attempt to post a receipt that is not
 	// approved and has no journal entry proving an earlier successful settle.
 	ErrCollectionNotApproved = errors.New("lnm: collection is not approved")
+	ErrHeadroomExceeded      = errors.New("lnm: contract headroom exceeded")
 	// ErrStaleVersion marks a guarded decision transition whose row version no
 	// longer matches the one the checker saw: the dossier changed while it was
 	// in review, so the decision must not be applied.
@@ -1492,6 +1493,39 @@ func (r *LoanRepository) CreateDisbursement(ctx context.Context, d *domain.Disbu
 	return d, nil
 }
 
+// CreateDisbursementWithReservation atomically creates a REGISTER request and
+// holds its contract amount. The contract row lock serializes all writers for
+// the same contract before exposure is read and the HELD reservation inserted.
+func (r *LoanRepository) CreateDisbursementWithReservation(ctx context.Context, d *domain.Disbursement) (*domain.Disbursement, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	flowType := d.FlowType
+	if flowType == "" {
+		flowType = domain.FlowRegister
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO lnm_disbursements
+			(tenant_id, contract_code, agreement_code, disburse_date, disburse_amt_minor,
+			 currency_code, fund_source_code, flow_type, source_register_id, status, org_code, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'DRAFT',$10,$11)
+		RETURNING id::text, created_at, updated_at`,
+		d.TenantID, d.ContractCode, d.AgreementCode, d.DisburseDate, d.DisburseAmtMinor,
+		d.CurrencyCode, nullText(d.FundSourceCode), flowType, nullText(d.SourceRegisterID), nullText(d.OrgCode), d.CreatedBy).
+		Scan(&d.ID, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		return nil, err
+	}
+	if err := reserveContractAmount(ctx, tx, d.TenantID, d.ContractCode, "DISBURSEMENT", d.ID, d.DisburseAmtMinor); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
 func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id string) (*domain.Disbursement, error) {
 	var d domain.Disbursement
 	var caseID, entryID, sourceID sql.NullString
@@ -1527,8 +1561,28 @@ func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id strin
 }
 
 func (r *LoanRepository) SetDisbursementStatus(ctx context.Context, tenantID, id, status, updatedBy string) error {
+	if status == domain.DisbursementRejected || status == domain.DisbursementCancelled {
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if err := setDisbursementStatus(ctx, tx, tenantID, id, status, updatedBy); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE lnm_contract_reservations SET status = 'RELEASED'
+			WHERE tenant_id = $1 AND source_type = 'DISBURSEMENT' AND source_id = $2 AND status = 'HELD'`, tenantID, id); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+	return setDisbursementStatus(ctx, r.db, tenantID, id, status, updatedBy)
+}
+
+func setDisbursementStatus(ctx context.Context, q repoTX, tenantID, id, status, updatedBy string) error {
 	expected := domain.DataVersionFromContext(ctx)
-	res, err := r.db.ExecContext(ctx, `
+	res, err := q.ExecContext(ctx, `
 		UPDATE lnm_disbursements SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2
 		  AND ($5 = 0 OR version = $5)`, tenantID, id, status, updatedBy, expected)
@@ -1536,7 +1590,7 @@ func (r *LoanRepository) SetDisbursementStatus(ctx context.Context, tenantID, id
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		if staleVersion(ctx, r.db, "lnm_disbursements", tenantID, id, expected) {
+		if staleVersion(ctx, q, "lnm_disbursements", tenantID, id, expected) {
 			return ErrStaleVersion
 		}
 		return fmt.Errorf("%w", ErrNotFound)
@@ -1551,33 +1605,35 @@ func (r *LoanRepository) SetDisbursementCaseAndJournal(ctx context.Context, tena
 	return err
 }
 
-// SettleRegisterDisbursement applies the REGISTER posting side effect: the
-// drawdown becomes real outstanding and parks in pending (in-transit) until
-// the COMPLETE flow settles the cash movement. Contract status is
-// deliberately untouched — that belongs to the COMPLETE settle.
+// SettleRegisterDisbursement is a legacy fixture helper for tests that seed
+// already-disbursed principal directly. Production REGISTER posting uses the
+// transactional SettleDisbursementRegister path below.
 func (r *LoanRepository) SettleRegisterDisbursement(ctx context.Context, tenantID, agreementCode string, amountMinor int64) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_agreements
 		SET outstanding_amt_minor = outstanding_amt_minor + $3,
-		    pending_disburse_amt_minor = pending_disburse_amt_minor + $3,
 		    status = CASE WHEN status = 'PENDING' THEN 'ACTIVE' ELSE status END,
 		    updated_at = now()
 		WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode, amountMinor)
 	return err
 }
 
-// SettleCompleteDisbursement applies the COMPLETE posting side effect: cash
-// actually moved, so the in-transit pending drops (never below zero), and
-// the first completed drawdown statuses the contract ACTIVE.
+// SettleCompleteDisbursement applies the COMPLETE posting side effect: move
+// the amount from pending into outstanding, and activate the contract.
 func (r *LoanRepository) SettleCompleteDisbursement(ctx context.Context, tenantID, contractCode, agreementCode string, amountMinor int64) error {
-	if _, err := r.db.ExecContext(ctx, `
+	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_agreements
-		SET pending_disburse_amt_minor = GREATEST(pending_disburse_amt_minor - $3, 0),
+		SET outstanding_amt_minor = outstanding_amt_minor + $3,
+		    pending_disburse_amt_minor = pending_disburse_amt_minor - $3,
 		    updated_at = now()
-		WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode, amountMinor); err != nil {
+		WHERE tenant_id = $1 AND agreement_code = $2 AND pending_disburse_amt_minor >= $3`, tenantID, agreementCode, amountMinor)
+	if err != nil {
 		return err
 	}
-	_, err := r.db.ExecContext(ctx, `
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("agreement %s does not have enough pending amount to complete", agreementCode)
+	}
+	_, err = r.db.ExecContext(ctx, `
 		UPDATE lnm_contracts c SET status = 'ACTIVE', updated_at = now()
 		WHERE c.tenant_id = $1
 		  AND c.contract_code = $2
@@ -1591,7 +1647,7 @@ func (r *LoanRepository) SettleCompleteDisbursement(ctx context.Context, tenantI
 }
 
 // SettleDisbursementRegister atomically marks one REGISTER drawdown POSTED and
-// applies its agreement side effect (outstanding + in-transit pending bump,
+// applies its agreement side effect (in-transit pending bump,
 // PENDING → ACTIVE). Returns false when the disbursement was already settled,
 // keeping worker retries idempotent instead of double-counting the drawdown.
 func (r *LoanRepository) SettleDisbursementRegister(ctx context.Context, tenantID, id, agreementCode string, amountMinor int64, journalEntryID, updatedBy string) (bool, error) {
@@ -1621,8 +1677,7 @@ func (r *LoanRepository) SettleDisbursementRegister(ctx context.Context, tenantI
 
 	res, err = tx.ExecContext(ctx, `
 		UPDATE lnm_agreements
-		SET outstanding_amt_minor = outstanding_amt_minor + $3,
-		    pending_disburse_amt_minor = pending_disburse_amt_minor + $3,
+		SET pending_disburse_amt_minor = pending_disburse_amt_minor + $3,
 		    status = CASE WHEN status = 'PENDING' THEN 'ACTIVE' ELSE status END,
 		    updated_at = now()
 		WHERE tenant_id = $1 AND agreement_code = $2`,
@@ -1632,6 +1687,15 @@ func (r *LoanRepository) SettleDisbursementRegister(ctx context.Context, tenantI
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
 		return false, fmt.Errorf("agreement %s not found while settling disbursement", agreementCode)
+	}
+	reservation, err := tx.ExecContext(ctx, `
+		UPDATE lnm_contract_reservations SET status = 'CONSUMED'
+		WHERE tenant_id = $1 AND source_type = 'DISBURSEMENT' AND source_id = $2 AND status = 'HELD'`, tenantID, id)
+	if err != nil {
+		return false, err
+	}
+	if affected, _ := reservation.RowsAffected(); affected == 0 {
+		return false, fmt.Errorf("held contract reservation not found while settling disbursement %s", id)
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err
@@ -1668,13 +1732,18 @@ func (r *LoanRepository) SettleDisbursementComplete(ctx context.Context, tenantI
 		return false, nil
 	}
 
-	if _, err := tx.ExecContext(ctx, `
+	res, err = tx.ExecContext(ctx, `
 		UPDATE lnm_agreements
-		SET pending_disburse_amt_minor = GREATEST(pending_disburse_amt_minor - $3, 0),
+		SET outstanding_amt_minor = outstanding_amt_minor + $3,
+		    pending_disburse_amt_minor = pending_disburse_amt_minor - $3,
 		    updated_at = now()
-		WHERE tenant_id = $1 AND agreement_code = $2`,
-		tenantID, agreementCode, amountMinor); err != nil {
+		WHERE tenant_id = $1 AND agreement_code = $2 AND pending_disburse_amt_minor >= $3`,
+		tenantID, agreementCode, amountMinor)
+	if err != nil {
 		return false, err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return false, fmt.Errorf("agreement %s does not have enough pending amount to complete", agreementCode)
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE lnm_contracts c SET status = 'ACTIVE', updated_at = now()
@@ -1692,35 +1761,6 @@ func (r *LoanRepository) SettleDisbursementComplete(ctx context.Context, tenantI
 		return false, err
 	}
 	return true, nil
-}
-
-// SumAgreementOutstanding totals the settled principal across one contract's
-// agreements — the consumed share of the contract's loan-amount headroom
-// (register over-limit guard).
-func (r *LoanRepository) SumAgreementOutstanding(ctx context.Context, tenantID, contractCode string) (int64, error) {
-	row := r.db.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(outstanding_amt_minor), 0)
-		FROM lnm_agreements WHERE tenant_id = $1 AND contract_code = $2`, tenantID, contractCode)
-	var total int64
-	return total, row.Scan(&total)
-}
-
-// SumContractRegisterExposure totals the contract's committed REGISTER
-// drawdowns: settled outstanding plus in-flight (SUBMITTED/APPROVED) register
-// disbursements. Agreements start at outstanding 0 until their drawdown
-// settles, so the in-flight part is what keeps concurrent registers from
-// overshooting the contract headroom.
-func (r *LoanRepository) SumContractRegisterExposure(ctx context.Context, tenantID, contractCode string) (int64, error) {
-	row := r.db.QueryRowContext(ctx, `
-		SELECT COALESCE((SELECT SUM(outstanding_amt_minor) FROM lnm_agreements
-		                 WHERE tenant_id = $1 AND contract_code = $2), 0)
-		     + COALESCE((SELECT SUM(disburse_amt_minor) FROM lnm_disbursements
-		                 WHERE tenant_id = $1 AND contract_code = $2
-		                   AND flow_type = 'REGISTER'
-		                   AND status IN ('SUBMITTED', 'APPROVED')), 0)`,
-		tenantID, contractCode)
-	var total int64
-	return total, row.Scan(&total)
 }
 
 // SumCompleteForSource totals the COMPLETE drawdowns already booked against

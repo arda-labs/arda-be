@@ -74,21 +74,17 @@ func (s *DisbursementService) Create(ctx context.Context, tenantID, createdBy st
 	if in.FlowType == "" {
 		in.FlowType = domain.FlowRegister
 	}
-	if _, err := s.repo.GetAgreementByCode(ctx, tenantID, in.AgreementCode); err != nil {
+	agreement, err := s.repo.GetAgreementByCode(ctx, tenantID, in.AgreementCode)
+	if err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "agreement_code not found: "+in.AgreementCode)
+	}
+	if agreement.ContractCode != strings.TrimSpace(in.ContractCode) {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "agreement_code does not belong to contract_code")
 	}
 	switch in.FlowType {
 	case domain.FlowRegister:
-		contract, err := s.repo.GetContractByCode(ctx, tenantID, strings.TrimSpace(in.ContractCode))
-		if err != nil {
+		if _, err := s.repo.GetContractByCode(ctx, tenantID, strings.TrimSpace(in.ContractCode)); err != nil {
 			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "contract_code not found: "+in.ContractCode)
-		}
-		outstanding, err := s.repo.SumContractRegisterExposure(ctx, tenantID, contract.ContractCode)
-		if err != nil {
-			return nil, mapRepoError(err)
-		}
-		if err := checkRegisterLimit(contract.LoanAmt, outstanding, in.DisburseAmtMinor); err != nil {
-			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
 		}
 	case domain.FlowComplete:
 		source, err := s.validateCompleteSource(ctx, tenantID, strings.TrimSpace(in.SourceRegisterID))
@@ -113,8 +109,16 @@ func (s *DisbursementService) Create(ctx context.Context, tenantID, createdBy st
 		in.CurrencyCode = "VND"
 	}
 	in.CreatedBy = createdBy
-	created, err := s.repo.CreateDisbursement(ctx, in)
+	var created *domain.Disbursement
+	if in.FlowType == domain.FlowRegister {
+		created, err = s.repo.CreateDisbursementWithReservation(ctx, in)
+	} else {
+		created, err = s.repo.CreateDisbursement(ctx, in)
+	}
 	if err != nil {
+		if errors.Is(err, repository.ErrHeadroomExceeded) {
+			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
+		}
 		return nil, mapRepoError(err)
 	}
 	return created, nil
@@ -142,23 +146,25 @@ func (s *DisbursementService) validateCompleteSource(ctx context.Context, tenant
 	return source, nil
 }
 
-// checkRegisterLimit is the over-limit guard: one contract's drawdowns may
-// never exceed its loan amount, measured by the outstanding its agreements
-// already carry (the settled share of the headroom).
-func checkRegisterLimit(contractLoanAmtMinor, contractOutstandingMinor, disburseAmtMinor int64) error {
-	if disburseAmtMinor > contractLoanAmtMinor-contractOutstandingMinor {
-		return fmt.Errorf("disburse_amt_minor %d exceeds contract headroom %d (loan_amt_minor %d - outstanding_amt_minor %d)",
-			disburseAmtMinor, contractLoanAmtMinor-contractOutstandingMinor, contractLoanAmtMinor, contractOutstandingMinor)
-	}
-	return nil
-}
-
 // checkCompleteRemainder guards the COMPLETE flow: completions of one source
 // register may never exceed the register amount (in-flight cases count).
 func checkCompleteRemainder(sourceRegisterAmtMinor, completedAmtMinor, disburseAmtMinor int64) error {
 	if disburseAmtMinor > sourceRegisterAmtMinor-completedAmtMinor {
 		return fmt.Errorf("disburse_amt_minor %d exceeds source remainder %d (register %d - completed %d)",
 			disburseAmtMinor, sourceRegisterAmtMinor-completedAmtMinor, sourceRegisterAmtMinor, completedAmtMinor)
+	}
+	return nil
+}
+
+// checkRegisterLimit is retained for pure unit callers and delegates the
+// calculation to the canonical domain exposure model.
+func checkRegisterLimit(contractLoanAmtMinor, contractOutstandingMinor, disburseAmtMinor int64) error {
+	exposure := domain.ContractExposure{
+		LoanAmountMinor:  contractLoanAmtMinor,
+		OutstandingMinor: contractOutstandingMinor,
+	}
+	if !exposure.Allows(disburseAmtMinor) {
+		return fmt.Errorf("disburse_amt_minor %d exceeds contract headroom %d", disburseAmtMinor, exposure.HeadroomMinor())
 	}
 	return nil
 }
@@ -249,8 +255,12 @@ func (s *DisbursementService) Resolve(ctx context.Context, tenantID, id, decisio
 		if err := s.repo.SetDisbursementStatus(ctx, tenantID, id, domain.DisbursementApproved, decidedBy); err != nil {
 			return mapRepoError(err)
 		}
-	case "REJECT", "CANCEL":
+	case "REJECT":
 		if err := s.repo.SetDisbursementStatus(ctx, tenantID, id, domain.DisbursementRejected, decidedBy); err != nil {
+			return mapRepoError(err)
+		}
+	case "CANCEL":
+		if err := s.repo.SetDisbursementStatus(ctx, tenantID, id, domain.DisbursementCancelled, decidedBy); err != nil {
 			return mapRepoError(err)
 		}
 	default:
