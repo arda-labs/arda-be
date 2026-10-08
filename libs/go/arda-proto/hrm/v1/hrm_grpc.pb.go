@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EmployeeCommandService_CheckRegistration_FullMethodName  = "/arda.hrm.v1.EmployeeCommandService/CheckRegistration"
-	EmployeeCommandService_SettleRegistration_FullMethodName = "/arda.hrm.v1.EmployeeCommandService/SettleRegistration"
-	EmployeeCommandService_RejectRegistration_FullMethodName = "/arda.hrm.v1.EmployeeCommandService/RejectRegistration"
+	EmployeeCommandService_CheckRegistration_FullMethodName     = "/arda.hrm.v1.EmployeeCommandService/CheckRegistration"
+	EmployeeCommandService_SettleRegistration_FullMethodName    = "/arda.hrm.v1.EmployeeCommandService/SettleRegistration"
+	EmployeeCommandService_RejectRegistration_FullMethodName    = "/arda.hrm.v1.EmployeeCommandService/RejectRegistration"
+	EmployeeCommandService_ListIAMUsersByOrgUnit_FullMethodName = "/arda.hrm.v1.EmployeeCommandService/ListIAMUsersByOrgUnit"
 )
 
 // EmployeeCommandServiceClient is the client API for EmployeeCommandService service.
@@ -35,6 +36,7 @@ type EmployeeCommandServiceClient interface {
 	CheckRegistration(ctx context.Context, in *CheckRegistrationRequest, opts ...grpc.CallOption) (*CheckRegistrationResponse, error)
 	SettleRegistration(ctx context.Context, in *SettleRegistrationRequest, opts ...grpc.CallOption) (*SettleRegistrationResponse, error)
 	RejectRegistration(ctx context.Context, in *RejectRegistrationRequest, opts ...grpc.CallOption) (*RejectRegistrationResponse, error)
+	ListIAMUsersByOrgUnit(ctx context.Context, in *ListIAMUsersByOrgUnitRequest, opts ...grpc.CallOption) (*ListIAMUsersByOrgUnitResponse, error)
 }
 
 type employeeCommandServiceClient struct {
@@ -75,6 +77,16 @@ func (c *employeeCommandServiceClient) RejectRegistration(ctx context.Context, i
 	return out, nil
 }
 
+func (c *employeeCommandServiceClient) ListIAMUsersByOrgUnit(ctx context.Context, in *ListIAMUsersByOrgUnitRequest, opts ...grpc.CallOption) (*ListIAMUsersByOrgUnitResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListIAMUsersByOrgUnitResponse)
+	err := c.cc.Invoke(ctx, EmployeeCommandService_ListIAMUsersByOrgUnit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EmployeeCommandServiceServer is the server API for EmployeeCommandService service.
 // All implementations must embed UnimplementedEmployeeCommandServiceServer
 // for forward compatibility.
@@ -86,6 +98,7 @@ type EmployeeCommandServiceServer interface {
 	CheckRegistration(context.Context, *CheckRegistrationRequest) (*CheckRegistrationResponse, error)
 	SettleRegistration(context.Context, *SettleRegistrationRequest) (*SettleRegistrationResponse, error)
 	RejectRegistration(context.Context, *RejectRegistrationRequest) (*RejectRegistrationResponse, error)
+	ListIAMUsersByOrgUnit(context.Context, *ListIAMUsersByOrgUnitRequest) (*ListIAMUsersByOrgUnitResponse, error)
 	mustEmbedUnimplementedEmployeeCommandServiceServer()
 }
 
@@ -104,6 +117,9 @@ func (UnimplementedEmployeeCommandServiceServer) SettleRegistration(context.Cont
 }
 func (UnimplementedEmployeeCommandServiceServer) RejectRegistration(context.Context, *RejectRegistrationRequest) (*RejectRegistrationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RejectRegistration not implemented")
+}
+func (UnimplementedEmployeeCommandServiceServer) ListIAMUsersByOrgUnit(context.Context, *ListIAMUsersByOrgUnitRequest) (*ListIAMUsersByOrgUnitResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListIAMUsersByOrgUnit not implemented")
 }
 func (UnimplementedEmployeeCommandServiceServer) mustEmbedUnimplementedEmployeeCommandServiceServer() {
 }
@@ -181,6 +197,24 @@ func _EmployeeCommandService_RejectRegistration_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EmployeeCommandService_ListIAMUsersByOrgUnit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListIAMUsersByOrgUnitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EmployeeCommandServiceServer).ListIAMUsersByOrgUnit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EmployeeCommandService_ListIAMUsersByOrgUnit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EmployeeCommandServiceServer).ListIAMUsersByOrgUnit(ctx, req.(*ListIAMUsersByOrgUnitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // EmployeeCommandService_ServiceDesc is the grpc.ServiceDesc for EmployeeCommandService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -199,6 +233,10 @@ var EmployeeCommandService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RejectRegistration",
 			Handler:    _EmployeeCommandService_RejectRegistration_Handler,
+		},
+		{
+			MethodName: "ListIAMUsersByOrgUnit",
+			Handler:    _EmployeeCommandService_ListIAMUsersByOrgUnit_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

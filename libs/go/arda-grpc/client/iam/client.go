@@ -47,7 +47,7 @@ func Dial(ctx context.Context, addr, sourceService string) (*Client, error) {
 		addr,
 		grpc.WithTransportCredentials(transportCreds),
 		// Only read-only RPCs are retried.
-		retry.ReadOnly("arda.iam.v1.UserService", "GetUserBatch"),
+		retry.ReadOnly("arda.iam.v1.UserService", "GetUserBatch", "ResolveNotificationRecipients"),
 		grpc.WithChainUnaryInterceptor(
 			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
 			interceptors.UnaryClientServiceAuth(secret, sourceService, "iam-service"),
@@ -63,6 +63,26 @@ func Dial(ctx context.Context, addr, sourceService string) (*Client, error) {
 	}
 	conn.Connect()
 	return client, nil
+}
+
+// ResolveNotificationRecipients expands active IAM users by explicit IDs,
+// group IDs/codes and role codes within the trusted tenant metadata.
+func (c *Client) ResolveNotificationRecipients(ctx context.Context, tenantID string, userIDs, groupIDs, roleCodes []string) ([]string, error) {
+	if c == nil {
+		return nil, errors.New("iam client is nil")
+	}
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, errors.New("tenant id is required")
+	}
+	callCtx, cancel := context.WithTimeout(ardametadata.AppendToOutgoing(ctx, ardametadata.Context{TenantID: tenantID}), c.timeout)
+	defer cancel()
+	resp, err := c.api.ResolveNotificationRecipients(callCtx, &iamv1.ResolveNotificationRecipientsRequest{
+		UserIds: userIDs, GroupIds: groupIDs, RoleCodes: roleCodes,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve IAM notification recipients: %w", err)
+	}
+	return resp.GetUserIds(), nil
 }
 
 func (c *Client) Close() error {
