@@ -219,8 +219,8 @@ func TestTwoPhaseBalanceSmoke(t *testing.T) {
 	}
 
 	// 8. Manual posting path: line carries account_code directly (FAC-native
-	// single-entry shape), classification left empty; nature-B (off-balance
-	// memo) account exempt from balance checks.
+	// single-entry shape), classification left empty; account 091 is seeded as
+	// nature-B (off-balance memo) and exempt from balance checks.
 	memo := &financev1.PostingRequest{
 		IdempotencyKey: runKey + "-memo",
 		AccountingDate: "2026-09-08",
@@ -231,10 +231,10 @@ func TestTwoPhaseBalanceSmoke(t *testing.T) {
 		},
 		Lines: []*financev1.PostingLine{
 			{LineNo: 1, Direction: "DEBIT", AmountMinor: 77_000,
-				AccountCode: "1311", // nature D — but direction DEBIT is an inflow
+				AccountCode: "091",
 				Analytics:   &financev1.Analytics{OrgUnitCode: "HO"}},
 			{LineNo: 2, Direction: "CREDIT", AmountMinor: 77_000,
-				AccountCode: "1311",
+				AccountCode: "091",
 				Analytics:   &financev1.Analytics{OrgUnitCode: "HO"}},
 		},
 	}
