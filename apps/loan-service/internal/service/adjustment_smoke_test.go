@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/migration"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
+	"github.com/arda-labs/arda/libs/go/arda-postgres/testdb"
 )
 
 // GATE smoke (adjustment resolve): requires the loan Postgres. Proves the two
@@ -24,23 +24,13 @@ import (
 //     version swap, writeoff balance reduction) is applied exactly once, and
 //     a decision against a non-PENDING row is rejected.
 //
-// Skipped when LOAN_SMOKE_DSN unset.
+// Skipped when ARDA_TEST_DSN is unset.
 func TestAdjustmentResolveSmoke(t *testing.T) {
-	dsn := os.Getenv("LOAN_SMOKE_DSN")
-	if dsn == "" {
-		t.Skip("LOAN_SMOKE_DSN not set")
-	}
 	const tenantID = "00000000-0000-0000-0000-000000000010"
 
-	db, err := sql.Open("pgx/v5", dsn)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
 	defer db.Close()
 	ctx := context.Background()
-	if err := migration.Run(db, "postgres"); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
 
 	repo := repository.NewLoanRepository(db)
 	svc := NewAdjustmentService(repo, &fakeWorkflow{})

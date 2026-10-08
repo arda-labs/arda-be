@@ -4,15 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
-
 	"github.com/arda-labs/arda/apps/finance-service/internal/migration"
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
+	"github.com/arda-labs/arda/libs/go/arda-postgres/testdb"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 )
 
@@ -21,24 +19,14 @@ import (
 // actual untouched) → idempotent reserve replay → overdraft guard (second
 // pending must fail) → Release (hold freed) → re-Reserve → Post (hold
 // graduates to posted, availability preserved, outbox fires) → Reverse.
-// Skipped when FINANCE_SMOKE_DSN unset.
+// Skipped when ARDA_TEST_DSN is unset.
 //
-//	FINANCE_SMOKE_DSN=<dsn> go test ./internal/service -run TestTwoPhaseBalanceSmoke -v
+// See docs/postgres-integration-tests.md for the test command.
 func TestTwoPhaseBalanceSmoke(t *testing.T) {
-	dsn := os.Getenv("FINANCE_SMOKE_DSN")
-	if dsn == "" {
-		t.Skip("FINANCE_SMOKE_DSN not set")
-	}
 	const tenantID = "00000000-0000-0000-0000-000000000010"
 
-	db, err := sql.Open("pgx/v5", dsn)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
 	defer db.Close()
-	if err := migration.Run(db, "postgres"); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
 
 	for _, stmt := range []string{
 		`INSERT INTO fin_coa_versions (tenant_id, code, name, effective_date)
@@ -70,7 +58,7 @@ func TestTwoPhaseBalanceSmoke(t *testing.T) {
 	ctx := context.Background()
 	svc := NewPostingService(repository.NewPostingRepository(db), db)
 
-	// Re-run safety (live DB): drop artifacts of previous smoke runs —
+	// Keep cleanup explicit so fixture artifacts cannot affect later steps —
 	// entries, their outbox rows, and the seeded accounts' balance rows
 	// (recreated from zero by the run itself; the opening balance supplies
 	// the value). Safe because smoke doc codes are dedicated to the smokes.

@@ -4,46 +4,41 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"slices"
 	"testing"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
-
 	"github.com/arda-labs/arda/apps/finance-service/internal/migration"
+	"github.com/arda-labs/arda/libs/go/arda-postgres/testdb"
 )
 
-// GATE smoke (P3a): same contract as TestPostingSmoke — requires a Postgres
-// DSN (local disposable or the real finance DB via NodePort). Runs all
-// finance migrations (applies 20260908150000 on a live DB), backfills
+// GATE smoke (P3a): requires the disposable PostgreSQL 18 database configured
+// by ARDA_TEST_DSN. Runs finance migrations, seeds isolated opening balances, backfills
 // fin_trial_balance_daily across the full journal date range, proves
 // idempotent re-run, the invariant close(daily) == on-the-fly
 // TrialBalance(asOf), and renders the seeded CDKT/B02 statements.
 //
-//	FINANCE_SMOKE_DSN=<finance-db-dsn> \
-//	     go test ./internal/service -run TestReportingSmoke -v
+// See docs/postgres-integration-tests.md for the test command.
 func TestReportingSmoke(t *testing.T) {
-	dsn := os.Getenv("FINANCE_SMOKE_DSN")
-	if dsn == "" {
-		t.Skip("FINANCE_SMOKE_DSN not set")
-	}
 	const tenantID = "00000000-0000-0000-0000-000000000010"
 
-	db, err := sql.Open("pgx/v5", dsn)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
 	defer db.Close()
-	if err := migration.Run(db, "postgres"); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
 
 	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO fin_opening_balances
+			(tenant_id, accounting_date, coa_version, account_code, currency_code, direction, amount_minor, created_by)
+		VALUES
+			($1, '2026-09-07', 'V1', '1131', 'VND', 'DEBIT', 1000000, 'reporting-smoke'),
+			($1, '2026-09-07', 'V1', '5111', 'VND', 'CREDIT', 200000, 'reporting-smoke'),
+			($1, '2026-09-07', 'V1', '6321', 'VND', 'DEBIT', 50000, 'reporting-smoke')`, tenantID); err != nil {
+		t.Fatalf("seed reporting smoke opening balances: %v", err)
+	}
 
 	// Date range present in the ledger (journal + opening balances).
 	var d0, d1 sql.NullString
-	err = db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		SELECT min(d)::text, max(d)::text FROM (
 			SELECT e.accounting_date AS d FROM fin_journal_entries e
 			  WHERE e.tenant_id = $1 AND e.status = 'POSTED'
@@ -54,7 +49,7 @@ func TestReportingSmoke(t *testing.T) {
 		t.Fatalf("date range: %v", err)
 	}
 	if !d0.Valid || !d1.Valid {
-		t.Skip("no journal or opening data for the tenant — post something first")
+		t.Fatal("reporting smoke fixture did not create journal or opening-balance data")
 	}
 	start, _ := time.Parse("2006-01-02", d0.String)
 	end, _ := time.Parse("2006-01-02", d1.String)

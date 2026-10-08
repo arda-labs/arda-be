@@ -4,17 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/migration"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	"github.com/arda-labs/arda/libs/go/arda-postgres/testdb"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
 )
 
@@ -25,7 +23,7 @@ import (
 // COMPLETE create(source=register) → submit → SettleComplete (pending unwind,
 // contract ACTIVE on first completion) — plus the two guards (register
 // over-limit, complete exceeding source remainder). Skipped when
-// LOAN_SMOKE_DSN unset.
+// ARDA_TEST_DSN unset.
 //
 // The posting half (Reserve/Post/Release) is proven by the finance
 // two_phase_smoke; Zeebe routing is exercised by the CRM v2 flow.
@@ -54,21 +52,11 @@ func (f *fakeWorkflow) SubmitCase(ctx context.Context, caseID, actor string, var
 }
 
 func TestDisbursementSmoke(t *testing.T) {
-	dsn := os.Getenv("LOAN_SMOKE_DSN")
-	if dsn == "" {
-		t.Skip("LOAN_SMOKE_DSN not set")
-	}
 	const tenantID = "00000000-0000-0000-0000-000000000010"
 
-	db, err := sql.Open("pgx/v5", dsn)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
 	defer db.Close()
 	ctx := context.Background()
-	if err := migration.Run(db, "postgres"); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
 
 	repo := repository.NewLoanRepository(db)
 	run := time.Now().UTC().Format("20060102T150405")

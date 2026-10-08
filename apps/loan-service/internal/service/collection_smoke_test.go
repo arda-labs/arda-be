@@ -3,40 +3,28 @@ package service
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 	"time"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"fmt"
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/migration"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
+	"github.com/arda-labs/arda/libs/go/arda-postgres/testdb"
 )
 
 // GATE smoke (P1b.4a collection): requires the loan Postgres. Drives
 // create → submit (fake workflow capture) → check → posting detail →
 // settle, asserting the agreement outstanding/collected side effects.
-// Skipped when LOAN_SMOKE_DSN unset. Posting half is proven by the
+// Skipped when ARDA_TEST_DSN is unset. Posting half is proven by the
 // finance PostingSmoke.
 func TestCollectionSmoke(t *testing.T) {
-	dsn := os.Getenv("LOAN_SMOKE_DSN")
-	if dsn == "" {
-		t.Skip("LOAN_SMOKE_DSN not set")
-	}
 	const tenantID = "00000000-0000-0000-0000-000000000010"
 
-	db, err := sql.Open("pgx/v5", dsn)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
 	defer db.Close()
 	ctx := context.Background()
-	if err := migration.Run(db, "postgres"); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
 
 	repo := repository.NewLoanRepository(db)
 	run := time.Now().UTC().Format("20060102T150405.000000000")
