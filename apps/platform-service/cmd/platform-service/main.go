@@ -74,7 +74,7 @@ func main() {
 	platformHandler := handler.NewPlatformHandler(platformSvc, mediaClient)
 	calendarHandler := handler.NewCalendarHandler(calendarSvc)
 	menuHandler := handler.NewMenuHandler(menuSvc)
-	eodSvc := service.NewEODService(db, logger)
+	eodSvc := service.NewEODService(db, logger, calendarSvc)
 	eodHandler := handler.NewEODHandler(eodSvc)
 
 	srv := &http.Server{

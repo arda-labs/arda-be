@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -8,7 +9,6 @@ import (
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
-	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 // EODHandler exposes the COB trigger + job definitions (P2.4).
@@ -32,11 +32,12 @@ func (h *EODHandler) RunCOB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	businessDate := r.URL.Query().Get("business_date")
-	if businessDate == "" {
-		businessDate = ardatime.TodayCtx(r.Context())
-	}
 	result, err := h.svc.Run(r.Context(), tenantID, businessDate)
 	if err != nil {
+		if errors.Is(err, service.ErrEODBusinessDateUnavailable) {
+			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeBadGateway, err.Error()))
+			return
+		}
 		ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error()))
 		return
 	}

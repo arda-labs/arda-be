@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,18 +11,45 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	ardaBusinessDate "github.com/arda-labs/arda/libs/go/arda-businessdate"
 )
+
+var ErrEODBusinessDateUnavailable = errors.New("EOD business-date source is unavailable")
 
 // EODService runs the COB job sequence: ordered, idempotent per business
 // date, with checkpoint rows in plt_job_runs (service-boundary-design §6).
 type EODService struct {
-	db     *sql.DB
-	client *http.Client
-	logger *slog.Logger
+	db       *sql.DB
+	client   *http.Client
+	logger   *slog.Logger
+	calendar ardaBusinessDate.Calendar
 }
 
-func NewEODService(db *sql.DB, logger *slog.Logger) *EODService {
-	return &EODService{db: db, client: &http.Client{Timeout: 5 * time.Minute}, logger: logger}
+func NewEODService(db *sql.DB, logger *slog.Logger, calendars ...ardaBusinessDate.Calendar) *EODService {
+	service := &EODService{db: db, client: &http.Client{Timeout: 5 * time.Minute}, logger: logger}
+	if len(calendars) > 0 {
+		service.calendar = calendars[0]
+	}
+	return service
+}
+
+func resolveEODBusinessDate(ctx context.Context, calendar ardaBusinessDate.Calendar, tenantID, requested string) (string, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return "", fmt.Errorf("EOD tenant scope is required")
+	}
+	if requested != "" {
+		parsed, err := time.Parse("2006-01-02", requested)
+		if err != nil || parsed.Format("2006-01-02") != requested {
+			return "", fmt.Errorf("EOD business date must use YYYY-MM-DD")
+		}
+		return requested, nil
+	}
+	date, err := ardaBusinessDate.BusinessDate(ctx, calendar, ardaBusinessDate.Scope{TenantID: tenantID, Type: ardaBusinessDate.ScopeSystem})
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrEODBusinessDateUnavailable, err)
+	}
+	return date.Format("2006-01-02"), nil
 }
 
 // JobDefinition is one EOD step.
@@ -31,6 +59,78 @@ type JobDefinition struct {
 	Sequence  int    `json:"sequence"`
 	Endpoint  string `json:"endpoint"`
 	IsEnabled bool   `json:"is_enabled"`
+}
+
+// EODStepDefinition configures one idempotent internal step and its execution
+// contract within an end-of-day run.
+type EODStepDefinition struct {
+	Code       string   `json:"code"`
+	Module     string   `json:"module"`
+	Order      int      `json:"order"`
+	DependsOn  []string `json:"depends_on"`
+	Mandatory  bool     `json:"mandatory"`
+	StopOnFail bool     `json:"stop_on_fail"`
+	Retryable  bool     `json:"retryable"`
+	Endpoint   string   `json:"endpoint"`
+}
+
+func orderEODSteps(steps []EODStepDefinition) ([]EODStepDefinition, error) {
+	byCode := make(map[string]EODStepDefinition, len(steps))
+	indegree := make(map[string]int, len(steps))
+	dependents := make(map[string][]string, len(steps))
+	for _, step := range steps {
+		code := strings.TrimSpace(step.Code)
+		if code == "" {
+			return nil, fmt.Errorf("EOD step code is required")
+		}
+		if _, exists := byCode[code]; exists {
+			return nil, fmt.Errorf("duplicate EOD step code %q", code)
+		}
+		step.Code = code
+		byCode[code] = step
+		indegree[code] = 0
+	}
+	for _, step := range byCode {
+		seen := make(map[string]struct{}, len(step.DependsOn))
+		for _, dependency := range step.DependsOn {
+			dependency = strings.TrimSpace(dependency)
+			if _, exists := byCode[dependency]; !exists {
+				return nil, fmt.Errorf("EOD step %q depends on unknown step %q", step.Code, dependency)
+			}
+			if _, exists := seen[dependency]; exists {
+				return nil, fmt.Errorf("EOD step %q declares dependency %q more than once", step.Code, dependency)
+			}
+			seen[dependency] = struct{}{}
+			indegree[step.Code]++
+			dependents[dependency] = append(dependents[dependency], step.Code)
+		}
+	}
+
+	ordered := make([]EODStepDefinition, 0, len(steps))
+	for len(ordered) < len(steps) {
+		ready := make([]EODStepDefinition, 0)
+		for code, degree := range indegree {
+			if degree == 0 {
+				ready = append(ready, byCode[code])
+			}
+		}
+		if len(ready) == 0 {
+			return nil, fmt.Errorf("EOD step dependencies contain a cycle")
+		}
+		sort.Slice(ready, func(i, j int) bool {
+			if ready[i].Order != ready[j].Order {
+				return ready[i].Order < ready[j].Order
+			}
+			return ready[i].Code < ready[j].Code
+		})
+		next := ready[0]
+		ordered = append(ordered, next)
+		delete(indegree, next.Code)
+		for _, dependent := range dependents[next.Code] {
+			indegree[dependent]--
+		}
+	}
+	return ordered, nil
 }
 
 // RunResult summarizes one COB execution.
@@ -106,6 +206,11 @@ func orderEODJobs(jobs []eodJob) {
 // with the tenant + date; the unique (tenant, job, business_date) run row
 // makes each step idempotent.
 func (s *EODService) Run(ctx context.Context, tenantID, businessDate string) (*RunResult, error) {
+	resolvedDate, err := resolveEODBusinessDate(ctx, s.calendar, tenantID, businessDate)
+	if err != nil {
+		return nil, err
+	}
+	businessDate = resolvedDate
 	lockConn, err := s.acquireLeaderLock(ctx, tenantID, businessDate)
 	if err != nil {
 		return nil, err
