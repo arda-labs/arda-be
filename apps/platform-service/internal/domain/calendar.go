@@ -20,6 +20,9 @@ var (
 	ErrSystemDateNotFound = errors.New("system date config not found")
 	// ErrEODInProgress means another EOD run already holds EOD_PROCESSING.
 	ErrEODInProgress = errors.New("EOD process is already in progress")
+	// ErrBusinessDateScopeMappingRequired means a requested ORG scope has not
+	// been explicitly mapped to a tenant in the canonical calendar.
+	ErrBusinessDateScopeMappingRequired = errors.New("business-date scope mapping is required")
 )
 
 // SystemDate tracks the business calendar state.

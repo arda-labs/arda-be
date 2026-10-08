@@ -22,6 +22,8 @@ const (
 	PlatformService_ListParameters_FullMethodName       = "/arda.platform.v1.PlatformService/ListParameters"
 	PlatformService_UpsertParameter_FullMethodName      = "/arda.platform.v1.PlatformService/UpsertParameter"
 	PlatformService_ResolveParameter_FullMethodName     = "/arda.platform.v1.PlatformService/ResolveParameter"
+	PlatformService_GetBusinessDate_FullMethodName      = "/arda.platform.v1.PlatformService/GetBusinessDate"
+	PlatformService_IsWorkingDay_FullMethodName         = "/arda.platform.v1.PlatformService/IsWorkingDay"
 	PlatformService_ListLookupCategories_FullMethodName = "/arda.platform.v1.PlatformService/ListLookupCategories"
 	PlatformService_UpsertLookupCategory_FullMethodName = "/arda.platform.v1.PlatformService/UpsertLookupCategory"
 	PlatformService_ListLookupValues_FullMethodName     = "/arda.platform.v1.PlatformService/ListLookupValues"
@@ -39,6 +41,8 @@ type PlatformServiceClient interface {
 	ListParameters(ctx context.Context, in *ListParametersRequest, opts ...grpc.CallOption) (*ListParametersResponse, error)
 	UpsertParameter(ctx context.Context, in *UpsertParameterRequest, opts ...grpc.CallOption) (*Parameter, error)
 	ResolveParameter(ctx context.Context, in *ResolveParameterRequest, opts ...grpc.CallOption) (*Parameter, error)
+	GetBusinessDate(ctx context.Context, in *GetBusinessDateRequest, opts ...grpc.CallOption) (*BusinessDate, error)
+	IsWorkingDay(ctx context.Context, in *IsWorkingDayRequest, opts ...grpc.CallOption) (*IsWorkingDayResponse, error)
 	ListLookupCategories(ctx context.Context, in *ListLookupCategoriesRequest, opts ...grpc.CallOption) (*ListLookupCategoriesResponse, error)
 	UpsertLookupCategory(ctx context.Context, in *UpsertLookupCategoryRequest, opts ...grpc.CallOption) (*LookupCategory, error)
 	ListLookupValues(ctx context.Context, in *ListLookupValuesRequest, opts ...grpc.CallOption) (*ListLookupValuesResponse, error)
@@ -81,6 +85,26 @@ func (c *platformServiceClient) ResolveParameter(ctx context.Context, in *Resolv
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Parameter)
 	err := c.cc.Invoke(ctx, PlatformService_ResolveParameter_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformServiceClient) GetBusinessDate(ctx context.Context, in *GetBusinessDateRequest, opts ...grpc.CallOption) (*BusinessDate, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BusinessDate)
+	err := c.cc.Invoke(ctx, PlatformService_GetBusinessDate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformServiceClient) IsWorkingDay(ctx context.Context, in *IsWorkingDayRequest, opts ...grpc.CallOption) (*IsWorkingDayResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IsWorkingDayResponse)
+	err := c.cc.Invoke(ctx, PlatformService_IsWorkingDay_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +198,8 @@ type PlatformServiceServer interface {
 	ListParameters(context.Context, *ListParametersRequest) (*ListParametersResponse, error)
 	UpsertParameter(context.Context, *UpsertParameterRequest) (*Parameter, error)
 	ResolveParameter(context.Context, *ResolveParameterRequest) (*Parameter, error)
+	GetBusinessDate(context.Context, *GetBusinessDateRequest) (*BusinessDate, error)
+	IsWorkingDay(context.Context, *IsWorkingDayRequest) (*IsWorkingDayResponse, error)
 	ListLookupCategories(context.Context, *ListLookupCategoriesRequest) (*ListLookupCategoriesResponse, error)
 	UpsertLookupCategory(context.Context, *UpsertLookupCategoryRequest) (*LookupCategory, error)
 	ListLookupValues(context.Context, *ListLookupValuesRequest) (*ListLookupValuesResponse, error)
@@ -200,6 +226,12 @@ func (UnimplementedPlatformServiceServer) UpsertParameter(context.Context, *Upse
 }
 func (UnimplementedPlatformServiceServer) ResolveParameter(context.Context, *ResolveParameterRequest) (*Parameter, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveParameter not implemented")
+}
+func (UnimplementedPlatformServiceServer) GetBusinessDate(context.Context, *GetBusinessDateRequest) (*BusinessDate, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBusinessDate not implemented")
+}
+func (UnimplementedPlatformServiceServer) IsWorkingDay(context.Context, *IsWorkingDayRequest) (*IsWorkingDayResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method IsWorkingDay not implemented")
 }
 func (UnimplementedPlatformServiceServer) ListLookupCategories(context.Context, *ListLookupCategoriesRequest) (*ListLookupCategoriesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListLookupCategories not implemented")
@@ -296,6 +328,42 @@ func _PlatformService_ResolveParameter_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PlatformServiceServer).ResolveParameter(ctx, req.(*ResolveParameterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformService_GetBusinessDate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBusinessDateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformServiceServer).GetBusinessDate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformService_GetBusinessDate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformServiceServer).GetBusinessDate(ctx, req.(*GetBusinessDateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformService_IsWorkingDay_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IsWorkingDayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformServiceServer).IsWorkingDay(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformService_IsWorkingDay_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformServiceServer).IsWorkingDay(ctx, req.(*IsWorkingDayRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -462,6 +530,14 @@ var PlatformService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveParameter",
 			Handler:    _PlatformService_ResolveParameter_Handler,
+		},
+		{
+			MethodName: "GetBusinessDate",
+			Handler:    _PlatformService_GetBusinessDate_Handler,
+		},
+		{
+			MethodName: "IsWorkingDay",
+			Handler:    _PlatformService_IsWorkingDay_Handler,
 		},
 		{
 			MethodName: "ListLookupCategories",

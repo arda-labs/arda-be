@@ -108,12 +108,14 @@ func main() {
 				map[string]map[string]struct{}{
 					"/arda.platform.v1.PlatformService/ResolveParameter": {"finance-service": {}, "loan-service": {}},
 					"/arda.platform.v1.PlatformService/ListLookupValues": {"loan-service": {}},
+					"/arda.platform.v1.PlatformService/GetBusinessDate":  {"loan-service": {}},
+					"/arda.platform.v1.PlatformService/IsWorkingDay":     {"loan-service": {}},
 				},
 			),
 			interceptors.UnaryServerLogging(logger),
 		),
 	)
-	platformv1.RegisterPlatformServiceServer(grpcSrv, grpcserver.NewPlatformServer(platformSvc))
+	platformv1.RegisterPlatformServiceServer(grpcSrv, grpcserver.NewPlatformServer(platformSvc, calendarSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)

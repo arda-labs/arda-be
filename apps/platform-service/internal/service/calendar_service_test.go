@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
+	ardaBusinessDate "github.com/arda-labs/arda/libs/go/arda-businessdate"
 )
 
 type mockCalendarRepo struct {
@@ -26,6 +27,19 @@ type mockCalendarRepo struct {
 
 func (m *mockCalendarRepo) GetSystemDate(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
 	return m.systemDate, nil
+}
+
+func (m *mockCalendarRepo) BusinessDateForScope(ctx context.Context, scope ardaBusinessDate.Scope) (*domain.SystemDate, error) {
+	return m.systemDate, nil
+}
+func (m *mockCalendarRepo) CurrentBusinessDate(ctx context.Context, scope ardaBusinessDate.Scope) (time.Time, error) {
+	if m.systemDate == nil {
+		return time.Time{}, domain.ErrSystemDateNotFound
+	}
+	return m.systemDate.CurrentBusinessDate, nil
+}
+func (m *mockCalendarRepo) IsHolidayForScope(ctx context.Context, scope ardaBusinessDate.Scope, date time.Time) (bool, error) {
+	return m.IsHoliday(ctx, date)
 }
 
 // ClaimEOD mimics the repository's conditional UPDATE: a claim is only granted

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	ardaBusinessDate "github.com/arda-labs/arda/libs/go/arda-businessdate"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/client/retry"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
@@ -51,7 +52,7 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 		addr,
 		grpc.WithTransportCredentials(transportCreds),
 		// Only read-only RPCs are retried; ResolveParameter reads a setting.
-		retry.ReadOnly("arda.platform.v1.PlatformService", "ResolveParameter", "ListLookupValues"),
+		retry.ReadOnly("arda.platform.v1.PlatformService", "ResolveParameter", "ListLookupValues", "GetBusinessDate", "IsWorkingDay"),
 		grpc.WithChainUnaryInterceptor(
 			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
 			interceptors.UnaryClientServiceAuth(secret, sourceService, "platform-service"),
@@ -128,6 +129,64 @@ func (c *Client) ListLookupValues(ctx context.Context, tenantID, categoryCode st
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	return c.api.ListLookupValues(callCtx, &platformv1.ListLookupValuesRequest{CategoryCode: categoryCode})
+}
+
+func (c *Client) CurrentBusinessDate(ctx context.Context, scope ardaBusinessDate.Scope) (time.Time, error) {
+	if c == nil {
+		return time.Time{}, errors.New("platform client is nil")
+	}
+	ctx, tenantID, err := businessDateContext(ctx, scope)
+	if err != nil {
+		return time.Time{}, err
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	response, err := c.api.GetBusinessDate(callCtx, &platformv1.GetBusinessDateRequest{Scope: &platformv1.ScopeSelector{TenantId: tenantID, ScopeType: string(scope.Type), ScopeId: scope.OrgCode}})
+	if err != nil {
+		return time.Time{}, err
+	}
+	date, err := time.Parse("2006-01-02", response.GetBusinessDate())
+	if err != nil {
+		return time.Time{}, errors.New("Platform returned an invalid business date")
+	}
+	return date, nil
+}
+
+func (c *Client) IsHoliday(ctx context.Context, scope ardaBusinessDate.Scope, date time.Time) (bool, error) {
+	if c == nil {
+		return false, errors.New("platform client is nil")
+	}
+	ctx, tenantID, err := businessDateContext(ctx, scope)
+	if err != nil {
+		return false, err
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	response, err := c.api.IsWorkingDay(callCtx, &platformv1.IsWorkingDayRequest{
+		Scope: &platformv1.ScopeSelector{TenantId: tenantID, ScopeType: string(scope.Type), ScopeId: scope.OrgCode},
+		Date:  date.Format("2006-01-02"),
+	})
+	if err != nil {
+		return false, err
+	}
+	return !response.GetIsWorkingDay(), nil
+}
+
+func businessDateContext(ctx context.Context, scope ardaBusinessDate.Scope) (context.Context, string, error) {
+	tenantID := strings.TrimSpace(scope.TenantID)
+	if tenantID == "" {
+		tenantID = strings.TrimSpace(ardametadata.FromOutgoing(ctx).TenantID)
+	}
+	if tenantID == "" {
+		return ctx, "", errors.New("Platform business-date RPC requires a verified tenant context")
+	}
+	if existing := ardametadata.FromOutgoing(ctx).TenantID; existing != "" && existing != tenantID {
+		return ctx, "", errors.New("Platform business-date tenant is outside outgoing context scope")
+	}
+	if ardametadata.FromOutgoing(ctx).TenantID == "" {
+		ctx = ardametadata.AppendToOutgoing(ctx, ardametadata.Context{TenantID: tenantID})
+	}
+	return ctx, tenantID, nil
 }
 
 func scopeSelectors(scopes []Scope) []*platformv1.ScopeSelector {

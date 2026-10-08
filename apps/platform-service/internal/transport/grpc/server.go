@@ -3,12 +3,14 @@ package grpc
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
 	"github.com/arda-labs/arda/apps/platform-service/internal/repository"
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
+	ardaBusinessDate "github.com/arda-labs/arda/libs/go/arda-businessdate"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	platformv1 "github.com/arda-labs/arda/libs/go/arda-proto/platform/v1"
@@ -19,11 +21,82 @@ import (
 
 type PlatformServer struct {
 	platformv1.UnimplementedPlatformServiceServer
-	svc *service.PlatformService
+	svc      *service.PlatformService
+	calendar *service.CalendarService
 }
 
-func NewPlatformServer(svc *service.PlatformService) *PlatformServer {
-	return &PlatformServer{svc: svc}
+func NewPlatformServer(svc *service.PlatformService, calendars ...*service.CalendarService) *PlatformServer {
+	server := &PlatformServer{svc: svc}
+	if len(calendars) > 0 {
+		server.calendar = calendars[0]
+	}
+	return server
+}
+
+func (s *PlatformServer) GetBusinessDate(ctx context.Context, req *platformv1.GetBusinessDateRequest) (*platformv1.BusinessDate, error) {
+	if s.calendar == nil {
+		return nil, status.Error(codes.Unavailable, "business-date calendar is unavailable")
+	}
+	scope := req.GetScope()
+	tenantID, err := verifiedTenant(ctx, scope.GetTenantId())
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := businessDateScope(tenantID, scope)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	item, err := s.calendar.BusinessDateForScope(ctx, resolved)
+	if err != nil {
+		if errors.Is(err, domain.ErrSystemDateNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		if errors.Is(err, domain.ErrBusinessDateScopeMappingRequired) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &platformv1.BusinessDate{
+		PreviousBusinessDate: item.PreviousBusinessDate.Format("2006-01-02"),
+		BusinessDate:         item.CurrentBusinessDate.Format("2006-01-02"),
+		NextBusinessDate:     item.NextBusinessDate.Format("2006-01-02"),
+		Status:               item.Status,
+	}, nil
+}
+
+func (s *PlatformServer) IsWorkingDay(ctx context.Context, req *platformv1.IsWorkingDayRequest) (*platformv1.IsWorkingDayResponse, error) {
+	if s.calendar == nil {
+		return nil, status.Error(codes.Unavailable, "business-date calendar is unavailable")
+	}
+	scope := req.GetScope()
+	tenantID, err := verifiedTenant(ctx, scope.GetTenantId())
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := businessDateScope(tenantID, scope)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	date, err := time.Parse("2006-01-02", req.GetDate())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "date must use YYYY-MM-DD")
+	}
+	working, err := ardaBusinessDate.IsWorkingDay(ctx, s.calendar, resolved, date)
+	if err != nil {
+		if errors.Is(err, domain.ErrBusinessDateScopeMappingRequired) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &platformv1.IsWorkingDayResponse{IsWorkingDay: working}, nil
+}
+
+func businessDateScope(tenantID string, scope *platformv1.ScopeSelector) (ardaBusinessDate.Scope, error) {
+	result := ardaBusinessDate.Scope{TenantID: tenantID, Type: ardaBusinessDate.ScopeType(strings.ToUpper(strings.TrimSpace(scope.GetScopeType()))), OrgCode: strings.TrimSpace(scope.GetScopeId())}
+	if err := ardaBusinessDate.ValidateScope(result); err != nil {
+		return ardaBusinessDate.Scope{}, err
+	}
+	return result, nil
 }
 
 func verifiedTenant(ctx context.Context, requested string) (string, error) {

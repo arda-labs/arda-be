@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
+	ardaBusinessDate "github.com/arda-labs/arda/libs/go/arda-businessdate"
 )
 
 type CalendarRepo interface {
@@ -19,6 +20,9 @@ type CalendarRepo interface {
 	AddHoliday(ctx context.Context, holiday *domain.HolidayCalendar) error
 	ListHolidays(ctx context.Context) ([]domain.HolidayCalendar, error)
 	GetCutoffConfig(ctx context.Context, channelCode, txnType string) (*domain.CutoffConfig, error)
+	BusinessDateForScope(ctx context.Context, scope ardaBusinessDate.Scope) (*domain.SystemDate, error)
+	CurrentBusinessDate(ctx context.Context, scope ardaBusinessDate.Scope) (time.Time, error)
+	IsHolidayForScope(ctx context.Context, scope ardaBusinessDate.Scope, date time.Time) (bool, error)
 }
 
 type CalendarService struct {
@@ -34,6 +38,25 @@ func (s *CalendarService) GetSystemDate(ctx context.Context, branchCode string) 
 		branchCode = "HEAD_OFFICE"
 	}
 	return s.repo.GetSystemDate(ctx, branchCode)
+}
+
+func (s *CalendarService) BusinessDateForScope(ctx context.Context, scope ardaBusinessDate.Scope) (*domain.SystemDate, error) {
+	if scope.Type != ardaBusinessDate.ScopeSystem && scope.Type != ardaBusinessDate.ScopeOrg {
+		return nil, fmt.Errorf("unsupported business-date scope %q", scope.Type)
+	}
+	return s.repo.BusinessDateForScope(ctx, scope)
+}
+
+func (s *CalendarService) CurrentBusinessDate(ctx context.Context, scope ardaBusinessDate.Scope) (time.Time, error) {
+	return s.repo.CurrentBusinessDate(ctx, scope)
+}
+
+func (s *CalendarService) IsHolidayForScope(ctx context.Context, scope ardaBusinessDate.Scope, date time.Time) (bool, error) {
+	return s.repo.IsHolidayForScope(ctx, scope, date)
+}
+
+func (s *CalendarService) IsHoliday(ctx context.Context, scope ardaBusinessDate.Scope, date time.Time) (bool, error) {
+	return s.IsHolidayForScope(ctx, scope, date)
 }
 
 func (s *CalendarService) AddHoliday(ctx context.Context, date time.Time, description string, recurring bool) (*domain.HolidayCalendar, error) {
@@ -158,25 +181,15 @@ func (s *CalendarService) RunEOD(ctx context.Context, branchCode string) (*domai
 }
 
 func (s *CalendarService) calculateNextBusinessDay(ctx context.Context, start time.Time) (time.Time, error) {
-	nextDay := start.AddDate(0, 0, 1)
-	for {
-		// Skip weekends (Saturday = 6, Sunday = 0)
-		if nextDay.Weekday() == time.Saturday || nextDay.Weekday() == time.Sunday {
-			nextDay = nextDay.AddDate(0, 0, 1)
-			continue
-		}
+	return ardaBusinessDate.NextWorkingDay(ctx, repositoryCalendar{repo: s.repo}, ardaBusinessDate.Scope{Type: ardaBusinessDate.ScopeSystem}, start)
+}
 
-		// Skip holidays
-		isHoliday, err := s.repo.IsHoliday(ctx, nextDay)
-		if err != nil {
-			return time.Time{}, err
-		}
-		if isHoliday {
-			nextDay = nextDay.AddDate(0, 0, 1)
-			continue
-		}
+type repositoryCalendar struct{ repo CalendarRepo }
 
-		break
-	}
-	return nextDay, nil
+func (c repositoryCalendar) CurrentBusinessDate(ctx context.Context, scope ardaBusinessDate.Scope) (time.Time, error) {
+	return c.repo.CurrentBusinessDate(ctx, scope)
+}
+
+func (c repositoryCalendar) IsHoliday(ctx context.Context, scope ardaBusinessDate.Scope, date time.Time) (bool, error) {
+	return c.repo.IsHolidayForScope(ctx, scope, date)
 }

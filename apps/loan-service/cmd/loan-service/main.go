@@ -109,7 +109,7 @@ func main() {
 	colSvc := service.NewCollectionService(repo, workflow)
 	colHandler := handler.NewCollectionHandler(colSvc)
 	accrualSvc := service.NewAccrualService(repo, db, financeClient)
-	accrualHandler := handler.NewAccrualHandler(accrualSvc)
+	accrualHandler := handler.NewAccrualHandler(accrualSvc, platform)
 	provisionSvc := service.NewProvisionService(repo, db, financeClient)
 	provisionHandler := handler.NewProvisionHandler(provisionSvc)
 	generalProvSvc := service.NewGeneralProvisionService(repo, workflow, financeClient, parameterRegistry)

@@ -462,6 +462,214 @@ func (x *ResolveParameterRequest) GetEffectiveDate() string {
 	return ""
 }
 
+type GetBusinessDateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Scope         *ScopeSelector         `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBusinessDateRequest) Reset() {
+	*x = GetBusinessDateRequest{}
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBusinessDateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBusinessDateRequest) ProtoMessage() {}
+
+func (x *GetBusinessDateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBusinessDateRequest.ProtoReflect.Descriptor instead.
+func (*GetBusinessDateRequest) Descriptor() ([]byte, []int) {
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetBusinessDateRequest) GetScope() *ScopeSelector {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+type BusinessDate struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	PreviousBusinessDate string                 `protobuf:"bytes,1,opt,name=previous_business_date,json=previousBusinessDate,proto3" json:"previous_business_date,omitempty"`
+	BusinessDate         string                 `protobuf:"bytes,2,opt,name=business_date,json=businessDate,proto3" json:"business_date,omitempty"`
+	NextBusinessDate     string                 `protobuf:"bytes,3,opt,name=next_business_date,json=nextBusinessDate,proto3" json:"next_business_date,omitempty"`
+	Status               string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *BusinessDate) Reset() {
+	*x = BusinessDate{}
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BusinessDate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BusinessDate) ProtoMessage() {}
+
+func (x *BusinessDate) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BusinessDate.ProtoReflect.Descriptor instead.
+func (*BusinessDate) Descriptor() ([]byte, []int) {
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *BusinessDate) GetPreviousBusinessDate() string {
+	if x != nil {
+		return x.PreviousBusinessDate
+	}
+	return ""
+}
+
+func (x *BusinessDate) GetBusinessDate() string {
+	if x != nil {
+		return x.BusinessDate
+	}
+	return ""
+}
+
+func (x *BusinessDate) GetNextBusinessDate() string {
+	if x != nil {
+		return x.NextBusinessDate
+	}
+	return ""
+}
+
+func (x *BusinessDate) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type IsWorkingDayRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Scope         *ScopeSelector         `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	Date          string                 `protobuf:"bytes,2,opt,name=date,proto3" json:"date,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IsWorkingDayRequest) Reset() {
+	*x = IsWorkingDayRequest{}
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IsWorkingDayRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IsWorkingDayRequest) ProtoMessage() {}
+
+func (x *IsWorkingDayRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IsWorkingDayRequest.ProtoReflect.Descriptor instead.
+func (*IsWorkingDayRequest) Descriptor() ([]byte, []int) {
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *IsWorkingDayRequest) GetScope() *ScopeSelector {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+func (x *IsWorkingDayRequest) GetDate() string {
+	if x != nil {
+		return x.Date
+	}
+	return ""
+}
+
+type IsWorkingDayResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IsWorkingDay  bool                   `protobuf:"varint,1,opt,name=is_working_day,json=isWorkingDay,proto3" json:"is_working_day,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IsWorkingDayResponse) Reset() {
+	*x = IsWorkingDayResponse{}
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IsWorkingDayResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IsWorkingDayResponse) ProtoMessage() {}
+
+func (x *IsWorkingDayResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IsWorkingDayResponse.ProtoReflect.Descriptor instead.
+func (*IsWorkingDayResponse) Descriptor() ([]byte, []int) {
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *IsWorkingDayResponse) GetIsWorkingDay() bool {
+	if x != nil {
+		return x.IsWorkingDay
+	}
+	return false
+}
+
 type LookupCategory struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -480,7 +688,7 @@ type LookupCategory struct {
 
 func (x *LookupCategory) Reset() {
 	*x = LookupCategory{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[6]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -492,7 +700,7 @@ func (x *LookupCategory) String() string {
 func (*LookupCategory) ProtoMessage() {}
 
 func (x *LookupCategory) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[6]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -505,7 +713,7 @@ func (x *LookupCategory) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupCategory.ProtoReflect.Descriptor instead.
 func (*LookupCategory) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{6}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *LookupCategory) GetId() string {
@@ -588,7 +796,7 @@ type ListLookupCategoriesRequest struct {
 
 func (x *ListLookupCategoriesRequest) Reset() {
 	*x = ListLookupCategoriesRequest{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[7]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -600,7 +808,7 @@ func (x *ListLookupCategoriesRequest) String() string {
 func (*ListLookupCategoriesRequest) ProtoMessage() {}
 
 func (x *ListLookupCategoriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[7]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -613,7 +821,7 @@ func (x *ListLookupCategoriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLookupCategoriesRequest.ProtoReflect.Descriptor instead.
 func (*ListLookupCategoriesRequest) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{7}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListLookupCategoriesRequest) GetScope() *ScopeSelector {
@@ -639,7 +847,7 @@ type ListLookupCategoriesResponse struct {
 
 func (x *ListLookupCategoriesResponse) Reset() {
 	*x = ListLookupCategoriesResponse{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[8]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -651,7 +859,7 @@ func (x *ListLookupCategoriesResponse) String() string {
 func (*ListLookupCategoriesResponse) ProtoMessage() {}
 
 func (x *ListLookupCategoriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[8]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -664,7 +872,7 @@ func (x *ListLookupCategoriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLookupCategoriesResponse.ProtoReflect.Descriptor instead.
 func (*ListLookupCategoriesResponse) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{8}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListLookupCategoriesResponse) GetCategories() []*LookupCategory {
@@ -683,7 +891,7 @@ type UpsertLookupCategoryRequest struct {
 
 func (x *UpsertLookupCategoryRequest) Reset() {
 	*x = UpsertLookupCategoryRequest{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[9]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -695,7 +903,7 @@ func (x *UpsertLookupCategoryRequest) String() string {
 func (*UpsertLookupCategoryRequest) ProtoMessage() {}
 
 func (x *UpsertLookupCategoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[9]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -708,7 +916,7 @@ func (x *UpsertLookupCategoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertLookupCategoryRequest.ProtoReflect.Descriptor instead.
 func (*UpsertLookupCategoryRequest) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{9}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UpsertLookupCategoryRequest) GetCategory() *LookupCategory {
@@ -735,7 +943,7 @@ type LookupValue struct {
 
 func (x *LookupValue) Reset() {
 	*x = LookupValue{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[10]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -747,7 +955,7 @@ func (x *LookupValue) String() string {
 func (*LookupValue) ProtoMessage() {}
 
 func (x *LookupValue) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[10]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -760,7 +968,7 @@ func (x *LookupValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LookupValue.ProtoReflect.Descriptor instead.
 func (*LookupValue) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{10}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *LookupValue) GetId() string {
@@ -836,7 +1044,7 @@ type ListLookupValuesRequest struct {
 
 func (x *ListLookupValuesRequest) Reset() {
 	*x = ListLookupValuesRequest{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[11]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -848,7 +1056,7 @@ func (x *ListLookupValuesRequest) String() string {
 func (*ListLookupValuesRequest) ProtoMessage() {}
 
 func (x *ListLookupValuesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[11]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -861,7 +1069,7 @@ func (x *ListLookupValuesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLookupValuesRequest.ProtoReflect.Descriptor instead.
 func (*ListLookupValuesRequest) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{11}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListLookupValuesRequest) GetCategoryCode() string {
@@ -887,7 +1095,7 @@ type ListLookupValuesResponse struct {
 
 func (x *ListLookupValuesResponse) Reset() {
 	*x = ListLookupValuesResponse{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[12]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -899,7 +1107,7 @@ func (x *ListLookupValuesResponse) String() string {
 func (*ListLookupValuesResponse) ProtoMessage() {}
 
 func (x *ListLookupValuesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[12]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -912,7 +1120,7 @@ func (x *ListLookupValuesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLookupValuesResponse.ProtoReflect.Descriptor instead.
 func (*ListLookupValuesResponse) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{12}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListLookupValuesResponse) GetValues() []*LookupValue {
@@ -932,7 +1140,7 @@ type UpsertLookupValueRequest struct {
 
 func (x *UpsertLookupValueRequest) Reset() {
 	*x = UpsertLookupValueRequest{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[13]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -944,7 +1152,7 @@ func (x *UpsertLookupValueRequest) String() string {
 func (*UpsertLookupValueRequest) ProtoMessage() {}
 
 func (x *UpsertLookupValueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[13]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -957,7 +1165,7 @@ func (x *UpsertLookupValueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertLookupValueRequest.ProtoReflect.Descriptor instead.
 func (*UpsertLookupValueRequest) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{13}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UpsertLookupValueRequest) GetCategoryCode() string {
@@ -993,7 +1201,7 @@ type Organization struct {
 
 func (x *Organization) Reset() {
 	*x = Organization{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[14]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1005,7 +1213,7 @@ func (x *Organization) String() string {
 func (*Organization) ProtoMessage() {}
 
 func (x *Organization) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[14]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1018,7 +1226,7 @@ func (x *Organization) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Organization.ProtoReflect.Descriptor instead.
 func (*Organization) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{14}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Organization) GetId() string {
@@ -1108,7 +1316,7 @@ type ListOrganizationsRequest struct {
 
 func (x *ListOrganizationsRequest) Reset() {
 	*x = ListOrganizationsRequest{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[15]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1120,7 +1328,7 @@ func (x *ListOrganizationsRequest) String() string {
 func (*ListOrganizationsRequest) ProtoMessage() {}
 
 func (x *ListOrganizationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[15]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1133,7 +1341,7 @@ func (x *ListOrganizationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrganizationsRequest.ProtoReflect.Descriptor instead.
 func (*ListOrganizationsRequest) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{15}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListOrganizationsRequest) GetTenantId() string {
@@ -1159,7 +1367,7 @@ type ListOrganizationsResponse struct {
 
 func (x *ListOrganizationsResponse) Reset() {
 	*x = ListOrganizationsResponse{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[16]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1171,7 +1379,7 @@ func (x *ListOrganizationsResponse) String() string {
 func (*ListOrganizationsResponse) ProtoMessage() {}
 
 func (x *ListOrganizationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[16]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1184,7 +1392,7 @@ func (x *ListOrganizationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrganizationsResponse.ProtoReflect.Descriptor instead.
 func (*ListOrganizationsResponse) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{16}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ListOrganizationsResponse) GetOrganizations() []*Organization {
@@ -1203,7 +1411,7 @@ type CreateOrganizationRequest struct {
 
 func (x *CreateOrganizationRequest) Reset() {
 	*x = CreateOrganizationRequest{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[17]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1215,7 +1423,7 @@ func (x *CreateOrganizationRequest) String() string {
 func (*CreateOrganizationRequest) ProtoMessage() {}
 
 func (x *CreateOrganizationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[17]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1228,7 +1436,7 @@ func (x *CreateOrganizationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrganizationRequest.ProtoReflect.Descriptor instead.
 func (*CreateOrganizationRequest) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{17}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CreateOrganizationRequest) GetOrganization() *Organization {
@@ -1260,7 +1468,7 @@ type AdminUnit struct {
 
 func (x *AdminUnit) Reset() {
 	*x = AdminUnit{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[18]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1272,7 +1480,7 @@ func (x *AdminUnit) String() string {
 func (*AdminUnit) ProtoMessage() {}
 
 func (x *AdminUnit) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[18]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1285,7 +1493,7 @@ func (x *AdminUnit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdminUnit.ProtoReflect.Descriptor instead.
 func (*AdminUnit) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{18}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *AdminUnit) GetCode() string {
@@ -1397,7 +1605,7 @@ type ListAdminUnitsRequest struct {
 
 func (x *ListAdminUnitsRequest) Reset() {
 	*x = ListAdminUnitsRequest{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[19]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1409,7 +1617,7 @@ func (x *ListAdminUnitsRequest) String() string {
 func (*ListAdminUnitsRequest) ProtoMessage() {}
 
 func (x *ListAdminUnitsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[19]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1422,7 +1630,7 @@ func (x *ListAdminUnitsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAdminUnitsRequest.ProtoReflect.Descriptor instead.
 func (*ListAdminUnitsRequest) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{19}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListAdminUnitsRequest) GetParentCode() string {
@@ -1455,7 +1663,7 @@ type ListAdminUnitsResponse struct {
 
 func (x *ListAdminUnitsResponse) Reset() {
 	*x = ListAdminUnitsResponse{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[20]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1467,7 +1675,7 @@ func (x *ListAdminUnitsResponse) String() string {
 func (*ListAdminUnitsResponse) ProtoMessage() {}
 
 func (x *ListAdminUnitsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[20]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1480,7 +1688,7 @@ func (x *ListAdminUnitsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAdminUnitsResponse.ProtoReflect.Descriptor instead.
 func (*ListAdminUnitsResponse) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{20}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListAdminUnitsResponse) GetAdminUnits() []*AdminUnit {
@@ -1499,7 +1707,7 @@ type UpsertAdminUnitRequest struct {
 
 func (x *UpsertAdminUnitRequest) Reset() {
 	*x = UpsertAdminUnitRequest{}
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[21]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1511,7 +1719,7 @@ func (x *UpsertAdminUnitRequest) String() string {
 func (*UpsertAdminUnitRequest) ProtoMessage() {}
 
 func (x *UpsertAdminUnitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_platform_v1_platform_proto_msgTypes[21]
+	mi := &file_arda_platform_v1_platform_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1524,7 +1732,7 @@ func (x *UpsertAdminUnitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertAdminUnitRequest.ProtoReflect.Descriptor instead.
 func (*UpsertAdminUnitRequest) Descriptor() ([]byte, []int) {
-	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{21}
+	return file_arda_platform_v1_platform_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *UpsertAdminUnitRequest) GetAdminUnit() *AdminUnit {
@@ -1580,7 +1788,19 @@ const file_arda_platform_v1_platform_proto_rawDesc = "" +
 	"\x06scopes\x18\x03 \x03(\v2\x1f.arda.platform.v1.ScopeSelectorR\x06scopes\x12\x16\n" +
 	"\x06locale\x18\x04 \x01(\tR\x06locale\x12\x16\n" +
 	"\x06module\x18\x05 \x01(\tR\x06module\x12%\n" +
-	"\x0eeffective_date\x18\x06 \x01(\tR\reffectiveDate\"\xd4\x02\n" +
+	"\x0eeffective_date\x18\x06 \x01(\tR\reffectiveDate\"O\n" +
+	"\x16GetBusinessDateRequest\x125\n" +
+	"\x05scope\x18\x01 \x01(\v2\x1f.arda.platform.v1.ScopeSelectorR\x05scope\"\xaf\x01\n" +
+	"\fBusinessDate\x124\n" +
+	"\x16previous_business_date\x18\x01 \x01(\tR\x14previousBusinessDate\x12#\n" +
+	"\rbusiness_date\x18\x02 \x01(\tR\fbusinessDate\x12,\n" +
+	"\x12next_business_date\x18\x03 \x01(\tR\x10nextBusinessDate\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\"`\n" +
+	"\x13IsWorkingDayRequest\x125\n" +
+	"\x05scope\x18\x01 \x01(\v2\x1f.arda.platform.v1.ScopeSelectorR\x05scope\x12\x12\n" +
+	"\x04date\x18\x02 \x01(\tR\x04date\"<\n" +
+	"\x14IsWorkingDayResponse\x12$\n" +
+	"\x0eis_working_day\x18\x01 \x01(\bR\fisWorkingDay\"\xd4\x02\n" +
 	"\x0eLookupCategory\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x12\n" +
@@ -1679,11 +1899,14 @@ const file_arda_platform_v1_platform_proto_rawDesc = "" +
 	"adminUnits\"T\n" +
 	"\x16UpsertAdminUnitRequest\x12:\n" +
 	"\n" +
-	"admin_unit\x18\x01 \x01(\v2\x1b.arda.platform.v1.AdminUnitR\tadminUnit2\xe7\b\n" +
+	"admin_unit\x18\x01 \x01(\v2\x1b.arda.platform.v1.AdminUnitR\tadminUnit2\xa3\n" +
+	"\n" +
 	"\x0fPlatformService\x12c\n" +
 	"\x0eListParameters\x12'.arda.platform.v1.ListParametersRequest\x1a(.arda.platform.v1.ListParametersResponse\x12X\n" +
 	"\x0fUpsertParameter\x12(.arda.platform.v1.UpsertParameterRequest\x1a\x1b.arda.platform.v1.Parameter\x12Z\n" +
-	"\x10ResolveParameter\x12).arda.platform.v1.ResolveParameterRequest\x1a\x1b.arda.platform.v1.Parameter\x12u\n" +
+	"\x10ResolveParameter\x12).arda.platform.v1.ResolveParameterRequest\x1a\x1b.arda.platform.v1.Parameter\x12[\n" +
+	"\x0fGetBusinessDate\x12(.arda.platform.v1.GetBusinessDateRequest\x1a\x1e.arda.platform.v1.BusinessDate\x12]\n" +
+	"\fIsWorkingDay\x12%.arda.platform.v1.IsWorkingDayRequest\x1a&.arda.platform.v1.IsWorkingDayResponse\x12u\n" +
 	"\x14ListLookupCategories\x12-.arda.platform.v1.ListLookupCategoriesRequest\x1a..arda.platform.v1.ListLookupCategoriesResponse\x12g\n" +
 	"\x14UpsertLookupCategory\x12-.arda.platform.v1.UpsertLookupCategoryRequest\x1a .arda.platform.v1.LookupCategory\x12i\n" +
 	"\x10ListLookupValues\x12).arda.platform.v1.ListLookupValuesRequest\x1a*.arda.platform.v1.ListLookupValuesResponse\x12^\n" +
@@ -1705,7 +1928,7 @@ func file_arda_platform_v1_platform_proto_rawDescGZIP() []byte {
 	return file_arda_platform_v1_platform_proto_rawDescData
 }
 
-var file_arda_platform_v1_platform_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_arda_platform_v1_platform_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_arda_platform_v1_platform_proto_goTypes = []any{
 	(*ScopeSelector)(nil),                // 0: arda.platform.v1.ScopeSelector
 	(*Parameter)(nil),                    // 1: arda.platform.v1.Parameter
@@ -1713,75 +1936,85 @@ var file_arda_platform_v1_platform_proto_goTypes = []any{
 	(*ListParametersResponse)(nil),       // 3: arda.platform.v1.ListParametersResponse
 	(*UpsertParameterRequest)(nil),       // 4: arda.platform.v1.UpsertParameterRequest
 	(*ResolveParameterRequest)(nil),      // 5: arda.platform.v1.ResolveParameterRequest
-	(*LookupCategory)(nil),               // 6: arda.platform.v1.LookupCategory
-	(*ListLookupCategoriesRequest)(nil),  // 7: arda.platform.v1.ListLookupCategoriesRequest
-	(*ListLookupCategoriesResponse)(nil), // 8: arda.platform.v1.ListLookupCategoriesResponse
-	(*UpsertLookupCategoryRequest)(nil),  // 9: arda.platform.v1.UpsertLookupCategoryRequest
-	(*LookupValue)(nil),                  // 10: arda.platform.v1.LookupValue
-	(*ListLookupValuesRequest)(nil),      // 11: arda.platform.v1.ListLookupValuesRequest
-	(*ListLookupValuesResponse)(nil),     // 12: arda.platform.v1.ListLookupValuesResponse
-	(*UpsertLookupValueRequest)(nil),     // 13: arda.platform.v1.UpsertLookupValueRequest
-	(*Organization)(nil),                 // 14: arda.platform.v1.Organization
-	(*ListOrganizationsRequest)(nil),     // 15: arda.platform.v1.ListOrganizationsRequest
-	(*ListOrganizationsResponse)(nil),    // 16: arda.platform.v1.ListOrganizationsResponse
-	(*CreateOrganizationRequest)(nil),    // 17: arda.platform.v1.CreateOrganizationRequest
-	(*AdminUnit)(nil),                    // 18: arda.platform.v1.AdminUnit
-	(*ListAdminUnitsRequest)(nil),        // 19: arda.platform.v1.ListAdminUnitsRequest
-	(*ListAdminUnitsResponse)(nil),       // 20: arda.platform.v1.ListAdminUnitsResponse
-	(*UpsertAdminUnitRequest)(nil),       // 21: arda.platform.v1.UpsertAdminUnitRequest
-	(*timestamppb.Timestamp)(nil),        // 22: google.protobuf.Timestamp
+	(*GetBusinessDateRequest)(nil),       // 6: arda.platform.v1.GetBusinessDateRequest
+	(*BusinessDate)(nil),                 // 7: arda.platform.v1.BusinessDate
+	(*IsWorkingDayRequest)(nil),          // 8: arda.platform.v1.IsWorkingDayRequest
+	(*IsWorkingDayResponse)(nil),         // 9: arda.platform.v1.IsWorkingDayResponse
+	(*LookupCategory)(nil),               // 10: arda.platform.v1.LookupCategory
+	(*ListLookupCategoriesRequest)(nil),  // 11: arda.platform.v1.ListLookupCategoriesRequest
+	(*ListLookupCategoriesResponse)(nil), // 12: arda.platform.v1.ListLookupCategoriesResponse
+	(*UpsertLookupCategoryRequest)(nil),  // 13: arda.platform.v1.UpsertLookupCategoryRequest
+	(*LookupValue)(nil),                  // 14: arda.platform.v1.LookupValue
+	(*ListLookupValuesRequest)(nil),      // 15: arda.platform.v1.ListLookupValuesRequest
+	(*ListLookupValuesResponse)(nil),     // 16: arda.platform.v1.ListLookupValuesResponse
+	(*UpsertLookupValueRequest)(nil),     // 17: arda.platform.v1.UpsertLookupValueRequest
+	(*Organization)(nil),                 // 18: arda.platform.v1.Organization
+	(*ListOrganizationsRequest)(nil),     // 19: arda.platform.v1.ListOrganizationsRequest
+	(*ListOrganizationsResponse)(nil),    // 20: arda.platform.v1.ListOrganizationsResponse
+	(*CreateOrganizationRequest)(nil),    // 21: arda.platform.v1.CreateOrganizationRequest
+	(*AdminUnit)(nil),                    // 22: arda.platform.v1.AdminUnit
+	(*ListAdminUnitsRequest)(nil),        // 23: arda.platform.v1.ListAdminUnitsRequest
+	(*ListAdminUnitsResponse)(nil),       // 24: arda.platform.v1.ListAdminUnitsResponse
+	(*UpsertAdminUnitRequest)(nil),       // 25: arda.platform.v1.UpsertAdminUnitRequest
+	(*timestamppb.Timestamp)(nil),        // 26: google.protobuf.Timestamp
 }
 var file_arda_platform_v1_platform_proto_depIdxs = []int32{
-	22, // 0: arda.platform.v1.Parameter.created_at:type_name -> google.protobuf.Timestamp
-	22, // 1: arda.platform.v1.Parameter.updated_at:type_name -> google.protobuf.Timestamp
+	26, // 0: arda.platform.v1.Parameter.created_at:type_name -> google.protobuf.Timestamp
+	26, // 1: arda.platform.v1.Parameter.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: arda.platform.v1.ListParametersRequest.scope:type_name -> arda.platform.v1.ScopeSelector
 	1,  // 3: arda.platform.v1.ListParametersResponse.parameters:type_name -> arda.platform.v1.Parameter
 	1,  // 4: arda.platform.v1.UpsertParameterRequest.parameter:type_name -> arda.platform.v1.Parameter
 	0,  // 5: arda.platform.v1.ResolveParameterRequest.scopes:type_name -> arda.platform.v1.ScopeSelector
-	22, // 6: arda.platform.v1.LookupCategory.created_at:type_name -> google.protobuf.Timestamp
-	22, // 7: arda.platform.v1.LookupCategory.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 8: arda.platform.v1.ListLookupCategoriesRequest.scope:type_name -> arda.platform.v1.ScopeSelector
-	6,  // 9: arda.platform.v1.ListLookupCategoriesResponse.categories:type_name -> arda.platform.v1.LookupCategory
-	6,  // 10: arda.platform.v1.UpsertLookupCategoryRequest.category:type_name -> arda.platform.v1.LookupCategory
-	22, // 11: arda.platform.v1.LookupValue.created_at:type_name -> google.protobuf.Timestamp
-	22, // 12: arda.platform.v1.LookupValue.updated_at:type_name -> google.protobuf.Timestamp
-	10, // 13: arda.platform.v1.ListLookupValuesResponse.values:type_name -> arda.platform.v1.LookupValue
-	10, // 14: arda.platform.v1.UpsertLookupValueRequest.value:type_name -> arda.platform.v1.LookupValue
-	22, // 15: arda.platform.v1.Organization.created_at:type_name -> google.protobuf.Timestamp
-	22, // 16: arda.platform.v1.Organization.updated_at:type_name -> google.protobuf.Timestamp
-	14, // 17: arda.platform.v1.ListOrganizationsResponse.organizations:type_name -> arda.platform.v1.Organization
-	14, // 18: arda.platform.v1.CreateOrganizationRequest.organization:type_name -> arda.platform.v1.Organization
-	22, // 19: arda.platform.v1.AdminUnit.created_at:type_name -> google.protobuf.Timestamp
-	22, // 20: arda.platform.v1.AdminUnit.updated_at:type_name -> google.protobuf.Timestamp
-	18, // 21: arda.platform.v1.ListAdminUnitsResponse.admin_units:type_name -> arda.platform.v1.AdminUnit
-	18, // 22: arda.platform.v1.UpsertAdminUnitRequest.admin_unit:type_name -> arda.platform.v1.AdminUnit
-	2,  // 23: arda.platform.v1.PlatformService.ListParameters:input_type -> arda.platform.v1.ListParametersRequest
-	4,  // 24: arda.platform.v1.PlatformService.UpsertParameter:input_type -> arda.platform.v1.UpsertParameterRequest
-	5,  // 25: arda.platform.v1.PlatformService.ResolveParameter:input_type -> arda.platform.v1.ResolveParameterRequest
-	7,  // 26: arda.platform.v1.PlatformService.ListLookupCategories:input_type -> arda.platform.v1.ListLookupCategoriesRequest
-	9,  // 27: arda.platform.v1.PlatformService.UpsertLookupCategory:input_type -> arda.platform.v1.UpsertLookupCategoryRequest
-	11, // 28: arda.platform.v1.PlatformService.ListLookupValues:input_type -> arda.platform.v1.ListLookupValuesRequest
-	13, // 29: arda.platform.v1.PlatformService.UpsertLookupValue:input_type -> arda.platform.v1.UpsertLookupValueRequest
-	15, // 30: arda.platform.v1.PlatformService.ListOrganizations:input_type -> arda.platform.v1.ListOrganizationsRequest
-	17, // 31: arda.platform.v1.PlatformService.CreateOrganization:input_type -> arda.platform.v1.CreateOrganizationRequest
-	19, // 32: arda.platform.v1.PlatformService.ListAdminUnits:input_type -> arda.platform.v1.ListAdminUnitsRequest
-	21, // 33: arda.platform.v1.PlatformService.UpsertAdminUnit:input_type -> arda.platform.v1.UpsertAdminUnitRequest
-	3,  // 34: arda.platform.v1.PlatformService.ListParameters:output_type -> arda.platform.v1.ListParametersResponse
-	1,  // 35: arda.platform.v1.PlatformService.UpsertParameter:output_type -> arda.platform.v1.Parameter
-	1,  // 36: arda.platform.v1.PlatformService.ResolveParameter:output_type -> arda.platform.v1.Parameter
-	8,  // 37: arda.platform.v1.PlatformService.ListLookupCategories:output_type -> arda.platform.v1.ListLookupCategoriesResponse
-	6,  // 38: arda.platform.v1.PlatformService.UpsertLookupCategory:output_type -> arda.platform.v1.LookupCategory
-	12, // 39: arda.platform.v1.PlatformService.ListLookupValues:output_type -> arda.platform.v1.ListLookupValuesResponse
-	10, // 40: arda.platform.v1.PlatformService.UpsertLookupValue:output_type -> arda.platform.v1.LookupValue
-	16, // 41: arda.platform.v1.PlatformService.ListOrganizations:output_type -> arda.platform.v1.ListOrganizationsResponse
-	14, // 42: arda.platform.v1.PlatformService.CreateOrganization:output_type -> arda.platform.v1.Organization
-	20, // 43: arda.platform.v1.PlatformService.ListAdminUnits:output_type -> arda.platform.v1.ListAdminUnitsResponse
-	18, // 44: arda.platform.v1.PlatformService.UpsertAdminUnit:output_type -> arda.platform.v1.AdminUnit
-	34, // [34:45] is the sub-list for method output_type
-	23, // [23:34] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	0,  // 6: arda.platform.v1.GetBusinessDateRequest.scope:type_name -> arda.platform.v1.ScopeSelector
+	0,  // 7: arda.platform.v1.IsWorkingDayRequest.scope:type_name -> arda.platform.v1.ScopeSelector
+	26, // 8: arda.platform.v1.LookupCategory.created_at:type_name -> google.protobuf.Timestamp
+	26, // 9: arda.platform.v1.LookupCategory.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 10: arda.platform.v1.ListLookupCategoriesRequest.scope:type_name -> arda.platform.v1.ScopeSelector
+	10, // 11: arda.platform.v1.ListLookupCategoriesResponse.categories:type_name -> arda.platform.v1.LookupCategory
+	10, // 12: arda.platform.v1.UpsertLookupCategoryRequest.category:type_name -> arda.platform.v1.LookupCategory
+	26, // 13: arda.platform.v1.LookupValue.created_at:type_name -> google.protobuf.Timestamp
+	26, // 14: arda.platform.v1.LookupValue.updated_at:type_name -> google.protobuf.Timestamp
+	14, // 15: arda.platform.v1.ListLookupValuesResponse.values:type_name -> arda.platform.v1.LookupValue
+	14, // 16: arda.platform.v1.UpsertLookupValueRequest.value:type_name -> arda.platform.v1.LookupValue
+	26, // 17: arda.platform.v1.Organization.created_at:type_name -> google.protobuf.Timestamp
+	26, // 18: arda.platform.v1.Organization.updated_at:type_name -> google.protobuf.Timestamp
+	18, // 19: arda.platform.v1.ListOrganizationsResponse.organizations:type_name -> arda.platform.v1.Organization
+	18, // 20: arda.platform.v1.CreateOrganizationRequest.organization:type_name -> arda.platform.v1.Organization
+	26, // 21: arda.platform.v1.AdminUnit.created_at:type_name -> google.protobuf.Timestamp
+	26, // 22: arda.platform.v1.AdminUnit.updated_at:type_name -> google.protobuf.Timestamp
+	22, // 23: arda.platform.v1.ListAdminUnitsResponse.admin_units:type_name -> arda.platform.v1.AdminUnit
+	22, // 24: arda.platform.v1.UpsertAdminUnitRequest.admin_unit:type_name -> arda.platform.v1.AdminUnit
+	2,  // 25: arda.platform.v1.PlatformService.ListParameters:input_type -> arda.platform.v1.ListParametersRequest
+	4,  // 26: arda.platform.v1.PlatformService.UpsertParameter:input_type -> arda.platform.v1.UpsertParameterRequest
+	5,  // 27: arda.platform.v1.PlatformService.ResolveParameter:input_type -> arda.platform.v1.ResolveParameterRequest
+	6,  // 28: arda.platform.v1.PlatformService.GetBusinessDate:input_type -> arda.platform.v1.GetBusinessDateRequest
+	8,  // 29: arda.platform.v1.PlatformService.IsWorkingDay:input_type -> arda.platform.v1.IsWorkingDayRequest
+	11, // 30: arda.platform.v1.PlatformService.ListLookupCategories:input_type -> arda.platform.v1.ListLookupCategoriesRequest
+	13, // 31: arda.platform.v1.PlatformService.UpsertLookupCategory:input_type -> arda.platform.v1.UpsertLookupCategoryRequest
+	15, // 32: arda.platform.v1.PlatformService.ListLookupValues:input_type -> arda.platform.v1.ListLookupValuesRequest
+	17, // 33: arda.platform.v1.PlatformService.UpsertLookupValue:input_type -> arda.platform.v1.UpsertLookupValueRequest
+	19, // 34: arda.platform.v1.PlatformService.ListOrganizations:input_type -> arda.platform.v1.ListOrganizationsRequest
+	21, // 35: arda.platform.v1.PlatformService.CreateOrganization:input_type -> arda.platform.v1.CreateOrganizationRequest
+	23, // 36: arda.platform.v1.PlatformService.ListAdminUnits:input_type -> arda.platform.v1.ListAdminUnitsRequest
+	25, // 37: arda.platform.v1.PlatformService.UpsertAdminUnit:input_type -> arda.platform.v1.UpsertAdminUnitRequest
+	3,  // 38: arda.platform.v1.PlatformService.ListParameters:output_type -> arda.platform.v1.ListParametersResponse
+	1,  // 39: arda.platform.v1.PlatformService.UpsertParameter:output_type -> arda.platform.v1.Parameter
+	1,  // 40: arda.platform.v1.PlatformService.ResolveParameter:output_type -> arda.platform.v1.Parameter
+	7,  // 41: arda.platform.v1.PlatformService.GetBusinessDate:output_type -> arda.platform.v1.BusinessDate
+	9,  // 42: arda.platform.v1.PlatformService.IsWorkingDay:output_type -> arda.platform.v1.IsWorkingDayResponse
+	12, // 43: arda.platform.v1.PlatformService.ListLookupCategories:output_type -> arda.platform.v1.ListLookupCategoriesResponse
+	10, // 44: arda.platform.v1.PlatformService.UpsertLookupCategory:output_type -> arda.platform.v1.LookupCategory
+	16, // 45: arda.platform.v1.PlatformService.ListLookupValues:output_type -> arda.platform.v1.ListLookupValuesResponse
+	14, // 46: arda.platform.v1.PlatformService.UpsertLookupValue:output_type -> arda.platform.v1.LookupValue
+	20, // 47: arda.platform.v1.PlatformService.ListOrganizations:output_type -> arda.platform.v1.ListOrganizationsResponse
+	18, // 48: arda.platform.v1.PlatformService.CreateOrganization:output_type -> arda.platform.v1.Organization
+	24, // 49: arda.platform.v1.PlatformService.ListAdminUnits:output_type -> arda.platform.v1.ListAdminUnitsResponse
+	22, // 50: arda.platform.v1.PlatformService.UpsertAdminUnit:output_type -> arda.platform.v1.AdminUnit
+	38, // [38:51] is the sub-list for method output_type
+	25, // [25:38] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_arda_platform_v1_platform_proto_init() }
@@ -1795,7 +2028,7 @@ func file_arda_platform_v1_platform_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_platform_v1_platform_proto_rawDesc), len(file_arda_platform_v1_platform_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
