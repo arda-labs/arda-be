@@ -13,7 +13,7 @@ import (
 // NewRouter wires HTTP routes for the finance service. Posting endpoints do
 // NOT live here — the gRPC PostingService owns them (contract v0.2 §1);
 // HTTP is read/config surface for the finance remote.
-func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHandler, postingHandler *handler.PostingHandler, cashHandler *handler.CashHandler, postingCaseHandler *handler.PostingCaseHandler, reportingHandler *handler.ReportingHandler, counterpartyHandler *handler.CounterpartyHandler) http.Handler {
+func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHandler, postingHandler *handler.PostingHandler, cashHandler *handler.CashHandler, postingCaseHandler *handler.PostingCaseHandler, reportingHandler *handler.ReportingHandler, counterpartyHandler *handler.CounterpartyHandler, documentNumberHandler *handler.DocumentNumberHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Health
@@ -97,6 +97,10 @@ func NewRouter(financeHandler *handler.FinanceHandler, coaHandler *handler.CoaHa
 	})
 
 	// Counterparty master (W4c-E): partner catalog + bank/GL accounts.
+	mux.HandleFunc("POST /api/finance/document-numbers/renumber-requests", documentNumberHandler.RequestRenumber)
+	mux.Handle("POST /api/finance/document-numbers/renumber-requests/approve", documentNumberHandler.ApproveRenumber(false))
+	mux.Handle("POST /api/finance/document-numbers/renumber-requests/approve-closed", documentNumberHandler.ApproveRenumber(true))
+
 	mux.HandleFunc("/api/finance/counterparties", counterpartyHandler.Counterparties)
 	mux.HandleFunc("PUT /api/finance/counterparties/{id}", counterpartyHandler.CounterpartyByID)
 	mux.HandleFunc("DELETE /api/finance/counterparties/{id}", counterpartyHandler.CounterpartyByID)
