@@ -138,7 +138,8 @@ func TestResolveDecisionStatus(t *testing.T) {
 		{"", "", true},
 	}
 	for _, tt := range cases {
-		got, err := resolveDecisionStatus(tt.decision)
+		gotStatus, err := domain.AdjustmentDecisionStatus(tt.decision)
+		got := string(gotStatus)
 		if tt.wantErr {
 			if err == nil {
 				t.Fatalf("resolveDecisionStatus(%q) must fail", tt.decision)
@@ -157,11 +158,11 @@ func TestResolveDecisionStatus(t *testing.T) {
 // A guarded-resolve miss is an idempotent no-op only when the row already
 // reached the requested status; any other status is a conflict.
 func TestReplayOutcome(t *testing.T) {
-	if err := replayOutcome(domain.AdjustmentActive, domain.AdjustmentActive); err != nil {
+	if err := domain.CheckAdjustmentReplay(domain.AdjustmentActive, domain.AdjustmentActive); err != nil {
 		t.Fatalf("same-status replay must be a no-op, got %v", err)
 	}
 	for _, current := range []string{domain.AdjustmentRejected, domain.AdjustmentCancelled, domain.AdjustmentDraft} {
-		err := replayOutcome(current, domain.AdjustmentActive)
+		err := domain.CheckAdjustmentReplay(current, domain.AdjustmentActive)
 		if !errors.Is(err, ErrAdjustmentNotPending) {
 			t.Fatalf("replay from %s must be ErrAdjustmentNotPending, got %v", current, err)
 		}

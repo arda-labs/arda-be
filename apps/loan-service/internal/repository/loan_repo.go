@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 )
 
 // Sentinel errors mapped to HTTP statuses by the service layer.
@@ -21,7 +22,7 @@ var (
 	// that is not in PENDING anymore: either already resolved (target status
 	// reached — the repository reports that as an idempotent no-op instead)
 	// or still in a pre-submit state.
-	ErrAdjustmentNotPending = errors.New("lnm: adjustment is not pending")
+	ErrAdjustmentNotPending = domain.ErrAdjustmentNotPending
 	// ErrCollectionNotApproved marks an attempt to post a receipt that is not
 	// approved and has no journal entry proving an earlier successful settle.
 	ErrCollectionNotApproved = errors.New("lnm: collection is not approved")
