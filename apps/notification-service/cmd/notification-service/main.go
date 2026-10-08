@@ -360,6 +360,7 @@ var domainNotificationSubjects = []string{
 	appevents.WorkflowTaskOverdueSubject,
 	appevents.WorkflowTaskCompletedSubject,
 	appevents.WorkflowTaskReassignedSubject,
+	appevents.WorkflowTaskSLAWarningSubject,
 	"arda.workflow.case.approved.v1",
 	"arda.workflow.case.rejected.v1",
 	"arda.workflow.case.failed.v1",

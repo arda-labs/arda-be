@@ -12,6 +12,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -70,6 +71,20 @@ func main() {
 	logger.Info("migrations applied")
 
 	repo := repository.NewLoanRepository(db)
+	if cfg.NATSURL != "" {
+		if conn, err := nats.Connect(cfg.NATSURL); err != nil {
+			logger.Warn("loan outbox relay disabled: nats unavailable", "err", err)
+		} else {
+			defer conn.Close()
+			relayCtx, relayCancel := context.WithCancel(context.Background())
+			defer relayCancel()
+			if relay := service.NewDisbursementOutboxRelay(db, conn, logger); relay != nil {
+				go relay.Run(relayCtx)
+			}
+		}
+	} else {
+		logger.Warn("loan outbox relay disabled: NATS_URL is empty")
+	}
 	loanSvc := service.NewLoanService(repo, workflow)
 	adjSvc := service.NewAdjustmentService(repo, workflow)
 	loanHandler := handler.NewLoanHandler(loanSvc, adjSvc)

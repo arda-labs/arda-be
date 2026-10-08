@@ -14,6 +14,7 @@ const (
 	WorkflowTaskOverdueSubject    = "arda.workflow.task.overdue.v1"
 	WorkflowTaskCompletedSubject  = "arda.workflow.task.completed.v1"
 	WorkflowTaskReassignedSubject = "arda.workflow.task.reassigned.v1"
+	WorkflowTaskSLAWarningSubject = "arda.workflow.task.sla_warning.v1"
 )
 
 type WorkflowTaskEvent struct {
@@ -29,6 +30,8 @@ type WorkflowTaskEvent struct {
 	RoleCodes          []string `json:"role_codes"`
 	OrgUnitIDs         []string `json:"org_unit_ids"`
 	IncludeDescendants bool     `json:"include_descendants"`
+	SLAMilestone       int      `json:"sla_milestone,omitempty"`
+	SLAEvent           string   `json:"sla_event,omitempty"`
 }
 
 func WorkflowTaskInput(payload []byte, subject string, recipients []string, defaultLocale string) (service.AcceptInput, error) {
