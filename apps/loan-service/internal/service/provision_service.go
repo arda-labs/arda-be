@@ -21,11 +21,15 @@ import (
 type ProvisionService struct {
 	repo    *repository.LoanRepository
 	db      *sql.DB
-	finance *financeclient.Client
+	finance batchPostingFinance
 }
 
 func NewProvisionService(repo *repository.LoanRepository, db *sql.DB, finance *financeclient.Client) *ProvisionService {
-	return &ProvisionService{repo: repo, db: db, finance: finance}
+	var batchFinance batchPostingFinance
+	if finance != nil {
+		batchFinance = finance
+	}
+	return &ProvisionService{repo: repo, db: db, finance: batchFinance}
 }
 
 // debtGroupRate is the CM130 evidence rate table (TT 02/2023).
@@ -63,6 +67,36 @@ func (s *ProvisionService) Run(ctx context.Context, tenantID, toDate, actor stri
 	}
 	result := &ProvisionRunResult{ToDate: toDate}
 	for _, a := range agreements {
+		pendingRows, err := s.pendingProvisions(ctx, tenantID, a.AgreementCode, toDate)
+		if err != nil {
+			result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": load pending provision: "+err.Error())
+			continue
+		}
+		pendingFailed := false
+		for _, pending := range pendingRows {
+			entryID, err := s.completeProvision(ctx, tenantID, a, pending)
+			if err != nil {
+				result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": "+err.Error())
+				slog.Error("provision retry failed", "agreement", a.AgreementCode, "err", err)
+				pendingFailed = true
+				break
+			}
+			result.Processed++
+			result.NetMinor += pending.deltaMinor
+			result.EntryIDs = append(result.EntryIDs, entryID)
+		}
+		if pendingFailed {
+			continue
+		}
+		exists, err := s.hasPostedProvisionDate(ctx, tenantID, a.AgreementCode, toDate)
+		if err != nil {
+			result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": check provision date: "+err.Error())
+			continue
+		}
+		if exists {
+			result.Skipped++
+			continue
+		}
 		rateStr, ok := debtGroupRate[a.DebtGroupCode]
 		if !ok {
 			result.Skipped++
@@ -73,11 +107,13 @@ func (s *ProvisionService) Run(ctx context.Context, tenantID, toDate, actor stri
 		required := outstanding.Mul(rate).Div(decimal.NewFromInt(100)).Round(0)
 		requiredMinor, err := ardamoney.ToMinor(required, "VND")
 		if err != nil {
-			return nil, err
+			result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": convert required provision: "+err.Error())
+			continue
 		}
 		accumulated, err := s.accumulatedProvision(ctx, tenantID, a.AgreementCode)
 		if err != nil {
-			return nil, err
+			result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": load accumulated provision: "+err.Error())
+			continue
 		}
 		delta := requiredMinor - accumulated
 		if delta == 0 {
@@ -85,44 +121,140 @@ func (s *ProvisionService) Run(ctx context.Context, tenantID, toDate, actor stri
 			continue
 		}
 
-		lines := s.provisionLines(ctx, a, delta)
-		postReq := &financev1.PostingRequest{
-			IdempotencyKey: fmt.Sprintf("lnm-provision-%s-%s", a.AgreementCode, toDate),
-			AccountingDate: toDate,
-			CurrencyCode:   "VND",
-			Description:    fmt.Sprintf("Trích lập dự phòng %s (nhóm %s)", a.AgreementCode, a.DebtGroupCode),
-			BusinessReference: &financev1.BusinessReference{
-				Domain:       "lnm",
-				DocumentType: "LNM_PROVISION",
-				DocumentId:   a.ID,
-				DocumentCode: a.AgreementCode,
-			},
-			Lines: lines,
+		pending, created, err := s.createPendingProvision(ctx, tenantID, a, toDate, rate, requiredMinor, delta, actor)
+		if err != nil {
+			result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": stage provision: "+err.Error())
+			continue
 		}
-		posted, err := s.finance.Post(ctx, postReq)
+		if !created {
+			result.Skipped++
+			continue
+		}
+		entryID, err := s.completeProvision(ctx, tenantID, a, pending)
 		if err != nil {
 			result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": "+err.Error())
 			slog.Error("provision post failed", "agreement", a.AgreementCode, "err", err)
 			continue
 		}
-		sign := 1
-		if delta < 0 {
-			sign = -1
-		}
-		if _, err := s.db.ExecContext(ctx, `
-			INSERT INTO lnm_provisions
-				(tenant_id, agreement_code, debt_group_code, provision_date, outstanding_minor,
-				 rate_percent, required_minor, delta_minor, journal_entry_id, created_by)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-			tenantID, a.AgreementCode, a.DebtGroupCode, toDate, a.OutstandingAmt,
-			rate, requiredMinor, delta*int64(sign), posted.GetJournalEntryId(), actor); err != nil {
-			return nil, fmt.Errorf("record provision %s: %w", a.AgreementCode, err)
-		}
 		result.Processed++
 		result.NetMinor += delta
-		result.EntryIDs = append(result.EntryIDs, posted.GetJournalEntryId())
+		result.EntryIDs = append(result.EntryIDs, entryID)
 	}
 	return result, nil
+}
+
+type pendingProvision struct {
+	id            string
+	debtGroupCode string
+	provisionDate string
+	outstanding   int64
+	ratePercent   decimal.Decimal
+	requiredMinor int64
+	deltaMinor    int64
+	journalEntry  sql.NullString
+}
+
+func (s *ProvisionService) pendingProvisions(ctx context.Context, tenantID, agreementCode, toDate string) ([]pendingProvision, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id::text, debt_group_code, provision_date::text, outstanding_minor,
+		       rate_percent::text, required_minor, delta_minor, journal_entry_id::text
+		FROM lnm_provisions
+		WHERE tenant_id = $1 AND agreement_code = $2 AND status = 'PENDING' AND provision_date <= $3::date
+		ORDER BY provision_date, created_at`, tenantID, agreementCode, toDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pending []pendingProvision
+	for rows.Next() {
+		var item pendingProvision
+		var rate string
+		if err := rows.Scan(&item.id, &item.debtGroupCode, &item.provisionDate, &item.outstanding, &rate, &item.requiredMinor, &item.deltaMinor, &item.journalEntry); err != nil {
+			return nil, err
+		}
+		parsed, err := decimal.NewFromString(rate)
+		if err != nil {
+			return nil, err
+		}
+		item.ratePercent = parsed
+		pending = append(pending, item)
+	}
+	return pending, rows.Err()
+}
+
+func (s *ProvisionService) createPendingProvision(ctx context.Context, tenantID string, agreement repository.AccruableAgreement, date string, rate decimal.Decimal, required, delta int64, actor string) (pendingProvision, bool, error) {
+	var item pendingProvision
+	var rateString string
+	err := s.db.QueryRowContext(ctx, `
+		INSERT INTO lnm_provisions
+			(tenant_id, agreement_code, debt_group_code, provision_date, outstanding_minor,
+			 rate_percent, required_minor, delta_minor, created_by, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING')
+		ON CONFLICT (tenant_id, agreement_code, provision_date) DO NOTHING
+		RETURNING id::text, debt_group_code, provision_date::text, outstanding_minor,
+		          rate_percent::text, required_minor, delta_minor, journal_entry_id::text`,
+		tenantID, agreement.AgreementCode, agreement.DebtGroupCode, date, agreement.OutstandingAmt,
+		rate, required, delta, actor).Scan(&item.id, &item.debtGroupCode, &item.provisionDate, &item.outstanding, &rateString, &item.requiredMinor, &item.deltaMinor, &item.journalEntry)
+	if err == sql.ErrNoRows {
+		return pendingProvision{}, false, nil
+	}
+	if err != nil {
+		return pendingProvision{}, false, err
+	}
+	item.ratePercent, err = decimal.NewFromString(rateString)
+	return item, true, err
+}
+
+func (s *ProvisionService) completeProvision(ctx context.Context, tenantID string, agreement repository.AccruableAgreement, pending pendingProvision) (string, error) {
+	entryID := pending.journalEntry.String
+	if !pending.journalEntry.Valid || entryID == "" {
+		postReq := &financev1.PostingRequest{
+			IdempotencyKey:    fmt.Sprintf("lnm-provision-%s", pending.id),
+			AccountingDate:    pending.provisionDate,
+			CurrencyCode:      "VND",
+			Description:       fmt.Sprintf("Trích lập dự phòng %s (nhóm %s)", agreement.AgreementCode, pending.debtGroupCode),
+			BusinessReference: &financev1.BusinessReference{Domain: "lnm", DocumentType: "LNM_PROVISION", DocumentId: agreement.ID, DocumentCode: agreement.AgreementCode},
+			Lines:             s.provisionLines(ctx, agreement, pending.deltaMinor),
+		}
+		posted, err := s.finance.Post(ctx, postReq)
+		if err != nil {
+			return "", err
+		}
+		entryID = posted.GetJournalEntryId()
+		if entryID == "" {
+			return "", fmt.Errorf("finance returned an empty journal entry id")
+		}
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE lnm_provisions SET status = 'POSTED', journal_entry_id = $3
+		WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`, tenantID, pending.id, entryID)
+	if err != nil {
+		return "", fmt.Errorf("complete provision %s: %w", agreement.AgreementCode, err)
+	}
+	changed, err := res.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if changed == 0 {
+		var status string
+		if err := s.db.QueryRowContext(ctx, `SELECT status FROM lnm_provisions WHERE tenant_id = $1 AND id = $2`, tenantID, pending.id).Scan(&status); err != nil {
+			return "", err
+		}
+		if status != "POSTED" {
+			return "", fmt.Errorf("provision %s is %s after finance post", agreement.AgreementCode, status)
+		}
+	}
+	return entryID, nil
+}
+
+func (s *ProvisionService) hasPostedProvisionDate(ctx context.Context, tenantID, agreementCode, date string) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM lnm_provisions
+			WHERE tenant_id = $1 AND agreement_code = $2 AND provision_date = $3::date AND status = 'POSTED'
+		)`, tenantID, agreementCode, date).Scan(&exists)
+	return exists, err
 }
 
 // accumulatedProvision sums prior provision deltas for the agreement.
@@ -130,7 +262,7 @@ func (s *ProvisionService) accumulatedProvision(ctx context.Context, tenantID, a
 	var accum sql.NullInt64
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(delta_minor), 0) FROM lnm_provisions
-		WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode).Scan(&accum)
+		WHERE tenant_id = $1 AND agreement_code = $2 AND status = 'POSTED'`, tenantID, agreementCode).Scan(&accum)
 	if err != nil {
 		return 0, err
 	}
@@ -159,7 +291,7 @@ func (s *ProvisionService) provisionLines(ctx context.Context, a repository.Accr
 		}
 	}
 	return financeclient.PostingLinesFromRules(
-		financeclient.FetchPostingRules(ctx, s.finance, "LNM_PROVISION"),
+		batchPostingRules(ctx, s.finance, "LNM_PROVISION"),
 		[]financeclient.PostingLeg{
 			{CardLine: cardLine, Fallback: debitFallback, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics()},
 			{CardLine: cardLine + 1, Fallback: creditFallback, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics()},

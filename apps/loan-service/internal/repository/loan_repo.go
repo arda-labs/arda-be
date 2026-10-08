@@ -2060,7 +2060,8 @@ func (r *LoanRepository) ListActiveAgreementsForAccrual(ctx context.Context, ten
 		  AND a.disburse_date <= $2::date
 		  AND NOT EXISTS (
 		        SELECT 1 FROM lnm_accruals x
-		        WHERE x.tenant_id = a.tenant_id AND x.agreement_code = a.agreement_code AND x.to_date = $2::date)
+		        WHERE x.tenant_id = a.tenant_id AND x.agreement_code = a.agreement_code
+		          AND x.to_date = $2::date AND x.status = 'POSTED')
 		ORDER BY a.agreement_code`, tenantID, toDate)
 	if err != nil {
 		return nil, err
