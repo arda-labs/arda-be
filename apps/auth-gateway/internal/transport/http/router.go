@@ -71,10 +71,24 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler,
 	mux.HandleFunc("/api/", bffHandler.Proxy)
 
 	var routed http.Handler = corsMiddleware(mux, cfg.CORSAllowedOrigins)
+	routed = ardahttp.LimitBodyMiddlewareByPrefix(ardahttp.DefaultMaxBodyBytes, gatewayBodyLimits, routed)
+	routed = ardahttp.RecoveryMiddleware(slog.Default(), routed)
 	if !cfg.SlowRequestLogEnabled || cfg.SlowRequestLogThresholdMS <= 0 {
 		return routed
 	}
 	return slowRequestLogger(routed, slog.Default(), time.Duration(cfg.SlowRequestLogThresholdMS)*time.Millisecond)
+}
+
+// gatewayBodyLimits raises the budget for the routes that legitimately carry a
+// large body. Everything else - every auth, session, consent, step-up and Kratos
+// bridge route on this internet-facing host - stays at DefaultMaxBodyBytes.
+//
+// The media raise is not optional. Proxy streams the body to media-service
+// rather than buffering it, but the bytes still cross this process, and a
+// client that could not declare an oversize body here would get a 413 from the
+// gateway instead of the upload it is entitled to make.
+var gatewayBodyLimits = []ardahttp.BodyLimitOverride{
+	{Prefix: "/api/media", MaxBytes: ardahttp.MaxUploadBodyBytes},
 }
 
 func corsMiddleware(next http.Handler, allowedOrigins string) http.Handler {

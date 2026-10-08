@@ -16,6 +16,7 @@ const (
 	CodeInvalidJSON             = "validation.invalid_json"
 	CodeInvalidInput            = "validation.invalid_input"
 	CodeRequired                = "validation.required"
+	CodeBodyTooLarge            = "validation.body_too_large"
 	CodeMethodNotAllowed        = "common.error.method_not_allowed"
 	CodeTenantScopeRequired     = "tenant.error.scope_required"
 	CodeTenantMigrationRequired = "tenant.error.migration_required"
@@ -200,6 +201,8 @@ func StatusForCode(code string) int {
 		return http.StatusConflict
 	case CodeMethodNotAllowed:
 		return http.StatusMethodNotAllowed
+	case CodeBodyTooLarge:
+		return http.StatusRequestEntityTooLarge
 	case CodeBadGateway:
 		return http.StatusBadGateway
 	default:

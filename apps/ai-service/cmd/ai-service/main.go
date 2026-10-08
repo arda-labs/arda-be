@@ -31,6 +31,15 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// bodyLimits raises the request-body budget only for the routes that legitimately
+// carry a large upload. Everything else stays at ardahttp.DefaultMaxBodyBytes,
+// which is what stops an unbounded json.Decode from buffering whatever the
+// client sends.
+var bodyLimits = []ardahttp.BodyLimitOverride{
+	// RAG source parse-preview buffers a 32MiB document.
+	{Prefix: "/api/rag/sources", MaxBytes: ardahttp.MaxRAGBodyBytes},
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
@@ -262,7 +271,7 @@ func main() {
 		rateLimitStore = handler.NewRedisRateLimitStore(rdb, cfg.RateLimitPerMinute)
 		logger.Info("rate limiter: redis")
 	}
-	handlerChain := ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(handler.ServiceAuthMiddleware(
+	handlerChain := ardahttp.HandlerChain(cfg.AppName, bodyLimits, ardahttp.UserTimezoneMiddleware(handler.ServiceAuthMiddleware(
 		handler.RateLimitMiddleware(mux, cfg.RateLimitPerMinute, rateLimitStore),
 		cfg.ServiceAuthSecret,
 		cfg.Mode == "production",
@@ -274,6 +283,9 @@ func main() {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,
+		// 16KiB is generous for a JSON API. net/http defaults to 1MiB of headers
+		// per connection, which is a cheap way to occupy a worker.
+		MaxHeaderBytes: 16 << 10,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

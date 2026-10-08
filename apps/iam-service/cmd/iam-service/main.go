@@ -135,10 +135,13 @@ func main() {
 	// WriteTimeout must be 0 for large-scale chunked HTTP streaming exports and SSE.
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(userHandler, policyHandler, adminHandler, sessionHandler, mfaHandler, auditHandler, oauthClientHandler, tenantHandler)),
+		Handler:      ardahttp.HandlerChain(cfg.AppName, nil, transport.NewRouter(userHandler, policyHandler, adminHandler, sessionHandler, mfaHandler, auditHandler, oauthClientHandler, tenantHandler)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,
+		// 16KiB is generous for a JSON API. net/http defaults to 1MiB of headers
+		// per connection, which is a cheap way to occupy a worker.
+		MaxHeaderBytes: 16 << 10,
 	}
 
 	go func() {
@@ -174,4 +177,3 @@ func parseLogLevel(level string) slog.Level {
 		return slog.LevelInfo
 	}
 }
-

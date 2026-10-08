@@ -249,9 +249,12 @@ func main() {
 	// Keep SSE streams open (inbox poll). Read header timeout only.
 	srv := &http.Server{
 		Addr:        cfg.HTTPAddr,
-		Handler:     ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(notificationHandler)),
+		Handler:     ardahttp.HandlerChain(cfg.AppName, nil, transport.NewRouter(notificationHandler)),
 		ReadTimeout: 10 * time.Second,
 		IdleTimeout: 120 * time.Second,
+		// 16KiB is generous for a JSON API. net/http defaults to 1MiB of headers
+		// per connection, which is a cheap way to occupy a worker.
+		MaxHeaderBytes: 16 << 10,
 	}
 
 	go func() {

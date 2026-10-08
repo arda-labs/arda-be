@@ -53,3 +53,6 @@ cloudflare/docs/dist/
 
 # wrangler local state
 .wrangler/
+
+# Local tunnel credentials
+cf.txt
