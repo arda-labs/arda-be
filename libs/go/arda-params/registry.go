@@ -66,8 +66,9 @@ type ParamSpec struct {
 	Required bool
 }
 type CodeSetSpec struct {
-	Code  string
-	Items []CodeItemSpec
+	Code     string
+	TenantID string
+	Items    []CodeItemSpec
 }
 type CodeItemSpec struct {
 	Code       string
@@ -96,6 +97,10 @@ type Registry struct {
 // Resolver is implemented by the platform-service gRPC client.
 type Resolver interface {
 	ResolveParameter(context.Context, *platformv1.ResolveParameterRequest) (*platformv1.Parameter, error)
+}
+
+type CatalogResolver interface {
+	ListLookupValues(context.Context, string, string) (*platformv1.ListLookupValuesResponse, error)
 }
 
 type cacheEntry struct {
@@ -175,13 +180,41 @@ func (r *Registry) Verify(ctx context.Context) error {
 			}
 		}
 		for _, set := range spec.CodeSets {
-			problems = append(problems, "code-set verification is not available through the platform resolver: "+set.Code)
+			catalog, ok := r.client.(CatalogResolver)
+			if !ok || set.TenantID == "" {
+				problems = append(problems, "code set requires a platform catalog resolver and tenant scope: "+set.Code)
+				continue
+			}
+			response, err := catalog.ListLookupValues(ctx, set.TenantID, set.Code)
+			if err != nil {
+				problems = append(problems, fmt.Sprintf("code set %s: %v", set.Code, err))
+				continue
+			}
+			items := make(map[string]*platformv1.LookupValue, len(response.GetValues()))
+			for _, item := range response.GetValues() {
+				items[item.GetCode()] = item
+			}
+			for _, expected := range set.Items {
+				actual, exists := items[expected.Code]
+				if !exists || actual.GetIsActive() != expected.Active || lookupParentCode(actual.GetMetadataJson()) != expected.ParentCode {
+					problems = append(problems, fmt.Sprintf("code item %s.%s", set.Code, expected.Code))
+				}
+			}
 		}
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("required parameter registry entries missing: %s", strings.Join(problems, ", "))
 	}
 	return nil
+}
+
+func lookupParentCode(metadata string) string {
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(metadata), &fields); err != nil {
+		return ""
+	}
+	parent, _ := fields["parent_code"].(string)
+	return parent
 }
 
 // Get resolves ORG > TENANT > GLOBAL for one effective date and enforces the declared type.

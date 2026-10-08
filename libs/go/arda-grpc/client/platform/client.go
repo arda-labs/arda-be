@@ -51,7 +51,7 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 		addr,
 		grpc.WithTransportCredentials(transportCreds),
 		// Only read-only RPCs are retried; ResolveParameter reads a setting.
-		retry.ReadOnly("arda.platform.v1.PlatformService", "ResolveParameter"),
+		retry.ReadOnly("arda.platform.v1.PlatformService", "ResolveParameter", "ListLookupValues"),
 		grpc.WithChainUnaryInterceptor(
 			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
 			interceptors.UnaryClientServiceAuth(secret, sourceService, "platform-service"),
@@ -109,6 +109,25 @@ func (c *Client) ResolveParameter(ctx context.Context, request *platformv1.Resol
 		return nil, err
 	}
 	return resp, nil
+}
+
+func (c *Client) ListLookupValues(ctx context.Context, tenantID, categoryCode string) (*platformv1.ListLookupValuesResponse, error) {
+	if c == nil {
+		return nil, errors.New("platform client is nil")
+	}
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(categoryCode) == "" {
+		return nil, errors.New("platform lookup tenant and category are required")
+	}
+	outgoing := ardametadata.FromOutgoing(ctx)
+	if outgoing.TenantID != "" && outgoing.TenantID != tenantID {
+		return nil, errors.New("platform lookup tenant is outside outgoing context scope")
+	}
+	if outgoing.TenantID == "" {
+		ctx = ardametadata.AppendToOutgoing(ctx, ardametadata.Context{TenantID: tenantID})
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	return c.api.ListLookupValues(callCtx, &platformv1.ListLookupValuesRequest{CategoryCode: categoryCode})
 }
 
 func scopeSelectors(scopes []Scope) []*platformv1.ScopeSelector {

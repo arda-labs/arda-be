@@ -30,6 +30,13 @@ func openPlatformDB(t *testing.T) *sql.DB {
 func TestTransferIsIdempotentAndRejectsUnmappedRows(t *testing.T) {
 	loanDB := testdb.Open(t, func(db *sql.DB) error { return loanmigration.Run(db, "postgres") })
 	platformDB := openPlatformDB(t)
+	var localRegistry sql.NullString
+	if err := loanDB.QueryRow(`SELECT to_regclass('public.parameter')::text`).Scan(&localRegistry); err != nil {
+		t.Fatal(err)
+	}
+	if localRegistry.Valid {
+		t.Fatal("loan-local parameter table should be removed by the owning migration")
+	}
 	if err := TransferGeneralProvisionRate(context.Background(), loanDB, platformDB); err != nil {
 		t.Fatal(err)
 	}

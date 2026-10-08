@@ -13,9 +13,14 @@ import (
 
 type fakeResolver struct {
 	parameter *platformv1.Parameter
+	values    []*platformv1.LookupValue
 	err       error
 	calls     int
 	request   *platformv1.ResolveParameterRequest
+}
+
+func (f *fakeResolver) ListLookupValues(context.Context, string, string) (*platformv1.ListLookupValuesResponse, error) {
+	return &platformv1.ListLookupValuesResponse{Values: f.values}, f.err
 }
 
 func (f *fakeResolver) ResolveParameter(_ context.Context, req *platformv1.ResolveParameterRequest) (*platformv1.Parameter, error) {
@@ -84,5 +89,16 @@ func TestVerifyUsesGlobalPlatformParameter(t *testing.T) {
 	}
 	if resolver.request.GetTenantId() != "" || len(resolver.request.GetScopes()) != 1 || resolver.request.GetScopes()[0].GetScopeType() != "global" {
 		t.Fatalf("startup verify must request global only: %+v", resolver.request)
+	}
+}
+
+func TestVerifyUsesPlatformCatalogAndChecksParent(t *testing.T) {
+	resolver := &fakeResolver{values: []*platformv1.LookupValue{{Code: "CHILD", IsActive: true, MetadataJson: `{"parent_code":"ROOT"}`}}}
+	r := NewRegistry(resolver)
+	if err := r.Declare(ModuleSpec{Name: "loan", CodeSets: []CodeSetSpec{{Code: "LNM_GROUPS", TenantID: "tenant-1", Items: []CodeItemSpec{{Code: "CHILD", ParentCode: "ROOT", Active: true}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Verify(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }

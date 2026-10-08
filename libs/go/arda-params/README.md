@@ -4,7 +4,7 @@
 
 Go does not support generic methods, so the typed API is the package function `params.Get[T](ctx, registry, module, code, scopeKey)`. The resolver applies ORG > TENANT > GLOBAL, filters by `effective_from <= EffectiveDate` and inclusive `effective_to >= EffectiveDate`, and requires a non-zero effective date. A GLOBAL row has no tenant or org; tenant/org rows require a tenant, and ORG additionally requires a non-empty org code. No `%` wildcard is used.
 
-`RenderGoConstants` deterministically renders string constants from declared `CodeSetSpec` items. Platform lookup RPC verification is not wired into this resolver yet; declaring code sets causes startup verification to fail closed instead of querying a service-local database.
+`RenderGoConstants` deterministically renders string constants from declared `CodeSetSpec` items. Catalog verification uses Platform lookup RPCs; each `CodeSetSpec` must declare its tenant scope, and lookup metadata may carry `parent_code` for hierarchy validation.
 
 `platform-service` owns parameter migrations and storage. `apps/platform-service/migrations/20261008160000_parameter_effective_dates.sql` adds module, unit, and effective-date fields. Loan-service must resolve parameters over its authenticated Platform RPC client; it must not read parameter tables directly.
 

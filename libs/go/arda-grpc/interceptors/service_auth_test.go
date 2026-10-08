@@ -50,7 +50,10 @@ func TestUnaryServerServiceAuthMethodSourceOverride(t *testing.T) {
 	secret := strings.Repeat("t", 32)
 	interceptor := UnaryServerServiceAuthMethodSources(secret, "platform-service",
 		map[string]struct{}{"finance-service": {}},
-		map[string]map[string]struct{}{"/arda.platform.v1.PlatformService/ResolveParameter": {"loan-service": {}}},
+		map[string]map[string]struct{}{
+			"/arda.platform.v1.PlatformService/ResolveParameter": {"loan-service": {}},
+			"/arda.platform.v1.PlatformService/ListLookupValues": {"loan-service": {}},
+		},
 	)
 	invoke := func(source, method string) error {
 		token, err := identity.Issue(secret, source, "platform-service", time.Now(), time.Minute)
@@ -63,6 +66,9 @@ func TestUnaryServerServiceAuthMethodSourceOverride(t *testing.T) {
 	}
 	if err := invoke("loan-service", "/arda.platform.v1.PlatformService/ResolveParameter"); err != nil {
 		t.Fatalf("loan resolver call rejected: %v", err)
+	}
+	if err := invoke("loan-service", "/arda.platform.v1.PlatformService/ListLookupValues"); err != nil {
+		t.Fatalf("loan catalog read rejected: %v", err)
 	}
 	if status.Code(invoke("loan-service", "/arda.platform.v1.PlatformService/UpsertParameter")) != codes.PermissionDenied {
 		t.Fatal("loan-service must not call parameter mutation")
