@@ -101,5 +101,9 @@ jobs:
         env:
           ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
         run: go test ./apps/platform-service/internal/service -run '^TestBusinessDateMigrationMapsHeadOfficeToSystem$' -count=1 -v
+      - name: Verify EOD orchestration on disposable PostgreSQL 18
+        env:
+          ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
+        run: go test ./apps/platform-service/internal/service -run '^TestRunSystem' -count=1 -v
       - name: Check patch hygiene
         run: git diff --check
