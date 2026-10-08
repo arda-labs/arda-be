@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
-	"github.com/shopspring/decimal"
 )
 
 const specificProvisionRateMissingCode = "PROVISION_RATE_MISSING"
@@ -88,7 +88,7 @@ func (s *SpecificProvisionService) Calculate(ctx context.Context, tenantID, agre
 		OutstandingMinor: outstanding,
 		DeductionMinor:   deduction,
 		BaseMinor:        base,
-		AmountMinor:      requiredSpecificProvision(base, rate),
+		AmountMinor:      domain.RequiredSpecificProvision(base, rate),
 	}, nil
 }
 
@@ -243,16 +243,4 @@ func specificProvisionPostingLegs(delta int64, analytics *financev1.Analytics) [
 		)
 	}
 	return legs
-}
-
-// requiredSpecificProvision = base × rate / 100, HALF_UP to đồng.
-func requiredSpecificProvision(baseMinor int64, ratePercent float64) int64 {
-	if baseMinor <= 0 || ratePercent <= 0 {
-		return 0
-	}
-	required := decimal.NewFromInt(baseMinor).
-		Mul(decimal.NewFromFloat(ratePercent)).
-		Div(decimal.NewFromInt(100)).
-		Round(0)
-	return required.IntPart()
 }

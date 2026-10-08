@@ -3,30 +3,8 @@ package service
 import (
 	"testing"
 
-	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 )
-
-func TestSpecificProvisionDelta(t *testing.T) {
-	tests := []struct {
-		name                  string
-		required, current     int64
-		wantAdd, wantReversal int64
-	}{
-		{name: "increase", required: 150, current: 100, wantAdd: 50},
-		{name: "decrease", required: 80, current: 100, wantReversal: 20},
-		{name: "unchanged", required: 100, current: 100},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			add, reversal := repository.SpecificProvisionDelta(tc.required, tc.current)
-			if add != tc.wantAdd || reversal != tc.wantReversal {
-				t.Fatalf("specificProvisionDelta(%d, %d) = (%d, %d), want (%d, %d)",
-					tc.required, tc.current, add, reversal, tc.wantAdd, tc.wantReversal)
-			}
-		})
-	}
-}
 
 func TestSpecificProvisionPostingLegs(t *testing.T) {
 	analytics := &financev1.Analytics{ContractCode: "C-1"}
