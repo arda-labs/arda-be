@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
-	"sort"
 )
 
 const disbursementBatchColumns = `id::text, tenant_id, COALESCE(org_code,''), flow_type, COALESCE(source_batch_id::text,''),
@@ -47,25 +46,6 @@ func (r *LoanRepository) CreateDisbursementBatch(ctx context.Context, b *domain.
 		return err
 	}
 	defer tx.Rollback()
-	if b.FlowType == domain.FlowRegister {
-		contractCodes := make([]string, 0, len(b.Rows))
-		seenContracts := make(map[string]struct{}, len(b.Rows))
-		for _, row := range b.Rows {
-			if _, seen := seenContracts[row.ContractCode]; !seen {
-				seenContracts[row.ContractCode] = struct{}{}
-				contractCodes = append(contractCodes, row.ContractCode)
-			}
-		}
-		sort.Strings(contractCodes)
-		for _, contractCode := range contractCodes {
-			var lockedCode string
-			if err := tx.QueryRowContext(ctx, `
-				SELECT contract_code FROM lnm_contracts
-				WHERE tenant_id = $1 AND contract_code = $2 FOR UPDATE`, b.TenantID, contractCode).Scan(&lockedCode); err != nil {
-				return mapNoRows(err)
-			}
-		}
-	}
 	trader, err := json.Marshal(b.Trader)
 	if err != nil {
 		return err
@@ -82,32 +62,136 @@ func (r *LoanRepository) CreateDisbursementBatch(ctx context.Context, b *domain.
 			(tenant_id, org_code, flow_type, source_batch_id, txn_date, payment_method, account_code,
 			 currency_code, total_amt_minor, description, trader, status, created_by)
 		VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11::jsonb,$12,$13)
-		RETURNING id::text, created_at, updated_at`,
+		RETURNING id::text, created_at, updated_at, version`,
 		b.TenantID, b.OrgCode, b.FlowType, sourceID, b.TxnDate, b.PaymentMethod, b.AccountCode,
 		b.CurrencyCode, b.TotalAmtMinor, b.Description, string(trader), b.Status, b.CreatedBy).
-		Scan(&b.ID, &b.CreatedAt, &b.UpdatedAt)
+		Scan(&b.ID, &b.CreatedAt, &b.UpdatedAt, &b.DataVersion)
 	if err != nil {
 		return err
 	}
 	for i := range b.Rows {
-		row := &b.Rows[i]
-		row.BatchID = b.ID
-		if err := tx.QueryRowContext(ctx, `
-			INSERT INTO lnm_disbursements
-				(tenant_id, contract_code, agreement_code, disburse_date, disburse_amt_minor,
-				 currency_code, flow_type, source_register_id, batch_id, is_closed, status, org_code, created_by)
-			VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10,'DRAFT',$11,$12)
-			RETURNING id::text`,
-			row.TenantID, row.ContractCode, row.AgreementCode, row.DisburseDate, row.DisburseAmtMinor,
-			row.CurrencyCode, row.FlowType, nullText(row.SourceRegisterID), row.BatchID, row.IsClosed,
-			row.OrgCode, row.CreatedBy).Scan(&row.ID); err != nil {
+		b.Rows[i].BatchID = b.ID
+		if err := insertDisbursementBatchRow(ctx, tx, &b.Rows[i]); err != nil {
 			return err
 		}
-		if b.FlowType == domain.FlowRegister && row.DisburseAmtMinor > 0 {
-			if err := reserveContractAmount(ctx, tx, b.TenantID, row.ContractCode, "DISBURSEMENT", row.ID, row.DisburseAmtMinor); err != nil {
-				return err
-			}
+	}
+	if err := insertDisbursementBatchHistory(ctx, tx, b.TenantID, b.ID, "CREATED", "", domain.BatchDraft, "", b.CreatedBy); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func insertDisbursementBatchRow(ctx context.Context, q repoTX, row *domain.Disbursement) error {
+	return q.QueryRowContext(ctx, `
+		INSERT INTO lnm_disbursements
+			(tenant_id, contract_code, agreement_code, disburse_date, disburse_amt_minor,
+			 currency_code, flow_type, source_register_id, batch_id, is_closed, status, org_code, created_by)
+		VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10,'DRAFT',$11,$12)
+		RETURNING id::text`,
+		row.TenantID, row.ContractCode, row.AgreementCode, row.DisburseDate, row.DisburseAmtMinor,
+		row.CurrencyCode, row.FlowType, nullText(row.SourceRegisterID), row.BatchID, row.IsClosed,
+		row.OrgCode, row.CreatedBy).Scan(&row.ID)
+}
+
+func insertDisbursementBatchHistory(ctx context.Context, q repoTX, tenantID, batchID, eventType, fromStatus, toStatus, detail, actor string) error {
+	_, err := q.ExecContext(ctx, `
+		INSERT INTO lnm_disbursement_batch_history
+			(tenant_id, batch_id, event_type, from_status, to_status, detail, actor)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)`, tenantID, batchID, eventType, fromStatus, toStatus, detail, actor)
+	return err
+}
+
+// GetDisbursementBatchHistory returns the append-only audit timeline.
+func (r *LoanRepository) GetDisbursementBatchHistory(ctx context.Context, tenantID, batchID string) ([]domain.DisbursementBatchEvent, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT event_type, from_status, to_status, detail, actor, created_at
+		FROM lnm_disbursement_batch_history
+		WHERE tenant_id = $1 AND batch_id = $2
+		ORDER BY created_at, id`, tenantID, batchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := make([]domain.DisbursementBatchEvent, 0)
+	for rows.Next() {
+		var event domain.DisbursementBatchEvent
+		if err := rows.Scan(&event.EventType, &event.FromStatus, &event.ToStatus, &event.Detail, &event.Actor, &event.CreatedAt); err != nil {
+			return nil, err
 		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
+}
+
+// UpdateDraftDisbursementBatch replaces the editable header and rows under a
+// tenant, status, and optimistic-version guard.
+func (r *LoanRepository) UpdateDraftDisbursementBatch(ctx context.Context, tenantID, id, actor string, expectedVersion int64, b *domain.DisbursementBatch) error {
+	trader, err := json.Marshal(b.Trader)
+	if err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `
+		UPDATE lnm_disbursement_batches
+		SET txn_date = $4::date, payment_method = $5, account_code = $6, total_amt_minor = $7,
+		    description = $8, trader = $9::jsonb, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT' AND version = $3`,
+		tenantID, id, expectedVersion, b.TxnDate, b.PaymentMethod, b.AccountCode, b.TotalAmtMinor, b.Description, string(trader))
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return ErrStaleVersion
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM lnm_disbursements WHERE tenant_id = $1 AND batch_id = $2 AND status = 'DRAFT'`, tenantID, id); err != nil {
+		return err
+	}
+	for i := range b.Rows {
+		b.Rows[i].BatchID = id
+		if err := insertDisbursementBatchRow(ctx, tx, &b.Rows[i]); err != nil {
+			return err
+		}
+	}
+	if err := insertDisbursementBatchHistory(ctx, tx, tenantID, id, "UPDATED", domain.BatchDraft, domain.BatchDraft, "", actor); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// CancelDraftDisbursementBatch retains rows and history while cancelling an
+// unsubmitted draft.
+func (r *LoanRepository) CancelDraftDisbursementBatch(ctx context.Context, tenantID, id, actor string, expectedVersion int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `
+		UPDATE lnm_disbursement_batches SET status = 'CANCELLED', updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2 AND status = 'DRAFT' AND version = $3`, tenantID, id, expectedVersion)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return ErrStaleVersion
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE lnm_disbursements SET status = 'CANCELLED', updated_at = now(), version = version + 1 WHERE tenant_id = $1 AND batch_id = $2 AND status = 'DRAFT'`, tenantID, id); err != nil {
+		return err
+	}
+	if err := insertDisbursementBatchHistory(ctx, tx, tenantID, id, "CANCELLED", domain.BatchDraft, domain.BatchCancelled, "", actor); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/service"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
@@ -35,7 +36,7 @@ var batchListSpec = ardahttp.ListSpec{
 // batchStatuses is the whitelisted status filter set.
 var batchStatuses = map[string]bool{
 	"DRAFT": true, "PENDING_APPROVAL": true, "APPROVED": true,
-	"REJECTED": true, "CANCELLED": true, "POSTED": true,
+	"SUBMIT_FAILED": true, "REJECTED": true, "CANCELLED": true, "POSTED": true,
 }
 
 func batchStatusFilter(w http.ResponseWriter, raw string) (string, bool) {
@@ -91,7 +92,64 @@ func (h *BatchHandler) CreateBatchRegister(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	created, err := h.disb.CreateBatchRegister(r.Context(), tenantID, actorOf(r), orgScopeFromRequest(r).ActiveOrg(), &req)
-	writeResult(w, r, created, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, draftCreatedResponse(created))
+}
+
+// SubmitDisbursementBatch queues workflow work and returns without waiting for Zeebe.
+func (h *BatchHandler) SubmitDisbursementBatch(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		DataVersion int64 `json:"data_version"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.disb.Submit(r.Context(), tenantID, actorOf(r), r.PathValue("id"), req.DataVersion)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusAccepted, map[string]any{"batch_id": item.ID, "reference_no": item.ID, "status": item.Status, "data_version": item.DataVersion})
+}
+
+// UpdateDisbursementDraft updates a DRAFT batch with optimistic concurrency.
+func (h *BatchHandler) UpdateDisbursementDraft(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req service.CreateBatchInput
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.disb.UpdateDraft(r.Context(), tenantID, actorOf(r), r.PathValue("id"), &req)
+	writeResult(w, r, item, err)
+}
+
+// CancelDisbursementDraft cancels a saved draft with an optimistic version guard.
+func (h *BatchHandler) CancelDisbursementDraft(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		DataVersion int64 `json:"data_version"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if err := h.disb.CancelDraft(r.Context(), tenantID, actorOf(r), r.PathValue("id"), req.DataVersion); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{"batch_id": r.PathValue("id"), "status": "CANCELLED"})
 }
 
 // CreateBatchComplete handles POST /api/loan/disbursement-batches/complete.
@@ -109,7 +167,15 @@ func (h *BatchHandler) CreateBatchComplete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	created, err := h.disb.CreateBatchComplete(r.Context(), tenantID, actorOf(r), orgScopeFromRequest(r).ActiveOrg(), req.SourceBatchID, &req.CreateBatchInput)
-	writeResult(w, r, created, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, draftCreatedResponse(created))
+}
+
+func draftCreatedResponse(batch *domain.DisbursementBatch) map[string]any {
+	return map[string]any{"id": batch.ID, "batch_id": batch.ID, "status": batch.Status, "data_version": batch.DataVersion}
 }
 
 // GetDisbursementBatch handles GET /api/loan/disbursement-batches/{id}

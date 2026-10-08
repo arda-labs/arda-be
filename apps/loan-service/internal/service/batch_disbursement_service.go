@@ -28,6 +28,7 @@ type BatchRowInput struct {
 
 // CreateBatchInput is the batch register/complete request body.
 type CreateBatchInput struct {
+	DataVersion   int64             `json:"data_version,omitempty"`
 	OrgCode       string            `json:"org_code,omitempty"`
 	TxnDate       string            `json:"txn_date"`
 	PaymentMethod string            `json:"payment_method,omitempty"`

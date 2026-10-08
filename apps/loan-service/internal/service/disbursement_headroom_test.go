@@ -83,6 +83,32 @@ func TestBatchRegisterHeadroom_NotDoubleCounted(t *testing.T) {
 	}
 }
 
+func TestCreateBatchRegisterStaysDraftWithoutWorkflowOrReservation(t *testing.T) {
+	db, repo, contractCode, agreementCode := openHeadroomFixture(t)
+	wf := &headroomWorkflow{}
+	svc := NewBatchDisbursementService(repo, wf)
+	batch, err := svc.CreateBatchRegister(context.Background(), headroomTenantID, "maker", "", batchRegisterInput(contractCode, agreementCode, 100))
+	if err != nil {
+		t.Fatalf("CreateBatchRegister: %v", err)
+	}
+	if batch.Status != domain.BatchDraft {
+		t.Fatalf("created batch status = %q, want %q", batch.Status, domain.BatchDraft)
+	}
+	wf.mu.Lock()
+	workflowCalls := wf.nextID
+	wf.mu.Unlock()
+	if workflowCalls != 0 {
+		t.Fatalf("create draft opened %d workflow cases, want none", workflowCalls)
+	}
+	var held int
+	if err := db.QueryRow(`SELECT count(*) FROM lnm_contract_reservations WHERE tenant_id = $1 AND source_type = 'DISBURSEMENT' AND status = 'HELD'`, headroomTenantID).Scan(&held); err != nil {
+		t.Fatalf("count held reservations: %v", err)
+	}
+	if held != 0 {
+		t.Fatalf("draft holds %d contract reservations, want none", held)
+	}
+}
+
 func TestLegacyRegisterExposureMigration_NormalizesPending(t *testing.T) {
 	db := testdb.Open(t, func(db *sql.DB) error {
 		goose.SetBaseFS(migrations.FS)
@@ -185,7 +211,11 @@ func TestHeadroom_SameForSingleAndBatch(t *testing.T) {
 		t.Fatal("single path accepted 401 after 600 was reserved")
 	}
 	batch := NewBatchDisbursementService(repo, &headroomWorkflow{})
-	if _, err := batch.CreateBatchRegister(context.Background(), headroomTenantID, "test", "", batchRegisterInput(contractCode, agreementCode, 401)); err == nil {
+	item, err := batch.CreateBatchRegister(context.Background(), headroomTenantID, "test", "", batchRegisterInput(contractCode, agreementCode, 401))
+	if err != nil {
+		t.Fatalf("create draft should not reserve headroom: %v", err)
+	}
+	if _, err := batch.Submit(context.Background(), headroomTenantID, "test", item.ID, item.DataVersion); err == nil {
 		t.Fatal("batch path accepted 401 after 600 was reserved by single path")
 	}
 }
@@ -224,6 +254,9 @@ func TestBatchRegisterReservationReleasedOnReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create batch register: %v", err)
 	}
+	if _, err := svc.Submit(context.Background(), headroomTenantID, "test", batch.ID, batch.DataVersion); err != nil {
+		t.Fatalf("submit batch: %v", err)
+	}
 	if err := svc.Resolve(context.Background(), headroomTenantID, batch.ID, "CANCEL", "cancelled by maker"); err != nil {
 		t.Fatalf("cancel batch: %v", err)
 	}
@@ -252,10 +285,14 @@ func TestTwoBatchesConcurrent_DoNotExceedLoanAmt(t *testing.T) {
 	svc := NewBatchDisbursementService(repo, wf)
 	start := make(chan struct{})
 	results := make(chan error, 2)
+	batches := make(chan *domain.DisbursementBatch, 2)
 	for range 2 {
 		go func() {
 			<-start
-			_, err := svc.CreateBatchRegister(context.Background(), headroomTenantID, "test", "", batchRegisterInput(contractCode, agreementCode, 600))
+			batch, err := svc.CreateBatchRegister(context.Background(), headroomTenantID, "test", "", batchRegisterInput(contractCode, agreementCode, 600))
+			if err == nil {
+				batches <- batch
+			}
 			results <- err
 		}()
 	}
@@ -264,11 +301,33 @@ func TestTwoBatchesConcurrent_DoNotExceedLoanAmt(t *testing.T) {
 	for range 2 {
 		if err := <-results; err == nil {
 			successes++
-		} else if !strings.Contains(strings.ToLower(err.Error()), "headroom") {
+		} else {
 			t.Errorf("unexpected batch create error: %v", err)
 		}
 	}
+	if successes != 2 {
+		t.Fatalf("created drafts = %d, want two", successes)
+	}
+	first, second := <-batches, <-batches
+	start = make(chan struct{})
+	results = make(chan error, 2)
+	for _, batch := range []*domain.DisbursementBatch{first, second} {
+		go func(batch *domain.DisbursementBatch) {
+			<-start
+			_, err := svc.Submit(context.Background(), headroomTenantID, "test", batch.ID, batch.DataVersion)
+			results <- err
+		}(batch)
+	}
+	close(start)
+	successes = 0
+	for range 2 {
+		if err := <-results; err == nil {
+			successes++
+		} else if !strings.Contains(strings.ToLower(err.Error()), "headroom") {
+			t.Errorf("unexpected batch submit error: %v", err)
+		}
+	}
 	if successes != 1 {
-		t.Fatalf("successful 600 batches = %d, want exactly 1", successes)
+		t.Fatalf("successful 600 submissions = %d, want exactly 1", successes)
 	}
 }

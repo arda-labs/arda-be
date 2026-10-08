@@ -124,7 +124,18 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 		}
 	})
 	mux.HandleFunc("/api/loan/disbursement-batches/complete", method("POST", b.CreateBatchComplete))
-	mux.HandleFunc("/api/loan/disbursement-batches/{id}", method("GET", b.GetDisbursementBatch))
+	mux.HandleFunc("/api/loan/disbursement-batches/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			b.GetDisbursementBatch(w, r)
+		case http.MethodPut:
+			b.UpdateDisbursementDraft(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/loan/disbursement-batches/{id}/submit", method("POST", b.SubmitDisbursementBatch))
+	mux.HandleFunc("/api/loan/disbursement-batches/{id}/cancel", method("POST", b.CancelDisbursementDraft))
 	mux.HandleFunc("/api/loan/collection-batches", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
