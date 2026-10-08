@@ -26,6 +26,7 @@ import (
 	transport "github.com/arda-labs/arda/apps/loan-service/internal/transport/http"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	loangrpc "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
+	platformclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/platform"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
@@ -72,7 +73,13 @@ func main() {
 	logger.Info("migrations applied")
 
 	repo := repository.NewLoanRepository(db)
-	parameterRegistry := ardaParams.NewRegistry(db)
+	platform, err := platformclient.Dial(context.Background(), cfg.PlatformGRPCAddr, "loan-service", logger)
+	if err != nil {
+		logger.Error("platform grpc dial failed", "err", err)
+		os.Exit(1)
+	}
+	defer platform.Close()
+	parameterRegistry := ardaParams.NewRegistry(platform)
 	if err := parameterRegistry.Declare(paramspec.LoanModule()); err != nil {
 		logger.Error("declare parameter registry", "err", err)
 		os.Exit(1)

@@ -16,6 +16,7 @@ type Config struct {
 	DatabaseDSN      string `yaml:"database_dsn"`
 	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr"`
 	FinanceGRPCAddr  string `yaml:"finance_grpc_addr"`
+	PlatformGRPCAddr string `yaml:"platform_grpc_addr"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -28,6 +29,7 @@ func Load() Config {
 		DatabaseDSN:      "",
 		WorkflowGRPCAddr: "",
 		FinanceGRPCAddr:  "localhost:9090",
+		PlatformGRPCAddr: "platform-service:9090",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -47,6 +49,7 @@ func Load() Config {
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("WORKFLOW_GRPC_ADDR", &cfg.WorkflowGRPCAddr)
 	envStr("FINANCE_GRPC_ADDR", &cfg.FinanceGRPCAddr)
+	envStr("PLATFORM_GRPC_ADDR", &cfg.PlatformGRPCAddr)
 
 	return cfg
 }
@@ -72,6 +75,8 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("log_level", &c.LogLevel)
 	setStr("database_dsn", &c.DatabaseDSN)
 	setStr("workflow_grpc_addr", &c.WorkflowGRPCAddr)
+	setStr("finance_grpc_addr", &c.FinanceGRPCAddr)
+	setStr("platform_grpc_addr", &c.PlatformGRPCAddr)
 	return true
 }
 

@@ -4,14 +4,18 @@ package params
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	platformv1 "github.com/arda-labs/arda/libs/go/arda-proto/platform/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type Scope string
@@ -83,15 +87,31 @@ type ScopeKey struct {
 	EffectiveDate time.Time
 }
 type Registry struct {
-	db      *sql.DB
+	client  Resolver
 	modules map[string]ModuleSpec
+	mu      sync.Mutex
+	cache   map[string]cacheEntry
 }
 
-func NewRegistry(db *sql.DB) *Registry { return &Registry{db: db, modules: map[string]ModuleSpec{}} }
+// Resolver is implemented by the platform-service gRPC client.
+type Resolver interface {
+	ResolveParameter(context.Context, *platformv1.ResolveParameterRequest) (*platformv1.Parameter, error)
+}
+
+type cacheEntry struct {
+	value     any
+	expiresAt time.Time
+}
+
+const cacheTTL = 30 * time.Second
+
+func NewRegistry(client Resolver) *Registry {
+	return &Registry{client: client, modules: map[string]ModuleSpec{}, cache: map[string]cacheEntry{}}
+}
 
 func (r *Registry) Declare(spec ModuleSpec) error {
-	if r == nil || r.db == nil {
-		return errors.New("parameter registry database is required")
+	if r == nil || r.client == nil {
+		return errors.New("platform parameter resolver is required")
 	}
 	spec.Name = strings.TrimSpace(spec.Name)
 	if spec.Name == "" {
@@ -132,40 +152,30 @@ func validScope(s Scope) bool { return s == ScopeGlobal || s == ScopeTenant || s
 // Verify fails startup when declared required values or declared catalogue rows are absent/mismatched.
 func (r *Registry) Verify(ctx context.Context) error {
 	var problems []string
+	effectiveDate := time.Now().UTC().Format("2006-01-02")
 	for module, spec := range r.modules {
 		for _, p := range spec.Params {
 			if !p.Required {
 				continue
 			}
-			var found bool
-			err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM parameter WHERE module=$1 AND code=$2 AND value_type=$3 AND unit=$4 AND effective_to IS NULL AND CASE scope WHEN 'ORG' THEN 1 WHEN 'TENANT' THEN 2 ELSE 3 END >= CASE $5 WHEN 'ORG' THEN 1 WHEN 'TENANT' THEN 2 ELSE 3 END)`, module, p.Code, p.Type, p.Unit, p.Scope).Scan(&found)
+			resolved, err := r.client.ResolveParameter(ctx, &platformv1.ResolveParameterRequest{
+				Module: module, Key: p.Code, EffectiveDate: effectiveDate,
+				Scopes: []*platformv1.ScopeSelector{{ScopeType: "global"}},
+			})
 			if err != nil {
-				return fmt.Errorf("verify parameter %s.%s: %w", module, p.Code, err)
+				problems = append(problems, fmt.Sprintf("%s.%s (%s, %s): %v", module, p.Code, p.Type, p.Scope, err))
+				continue
 			}
-			if !found {
+			if resolved == nil {
+				problems = append(problems, fmt.Sprintf("%s.%s: platform resolver returned an empty response", module, p.Code))
+				continue
+			}
+			if !strings.EqualFold(resolved.GetValueType(), string(p.Type)) || resolved.GetUnit() != p.Unit {
 				problems = append(problems, fmt.Sprintf("%s.%s (%s, %s)", module, p.Code, p.Type, p.Scope))
 			}
 		}
 		for _, set := range spec.CodeSets {
-			var found bool
-			err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM code_set WHERE code=$1)`, set.Code).Scan(&found)
-			if err != nil {
-				return fmt.Errorf("verify code set %s: %w", set.Code, err)
-			}
-			if !found {
-				problems = append(problems, "code set "+set.Code)
-				continue
-			}
-			for _, item := range set.Items {
-				var itemFound bool
-				err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM code_item WHERE set_code=$1 AND code=$2 AND active=$3 AND parent_code IS NOT DISTINCT FROM NULLIF($4,''))`, set.Code, item.Code, item.Active, item.ParentCode).Scan(&itemFound)
-				if err != nil {
-					return fmt.Errorf("verify code item %s.%s: %w", set.Code, item.Code, err)
-				}
-				if !itemFound {
-					problems = append(problems, fmt.Sprintf("code item %s.%s", set.Code, item.Code))
-				}
-			}
+			problems = append(problems, "code-set verification is not available through the platform resolver: "+set.Code)
 		}
 	}
 	if len(problems) > 0 {
@@ -194,14 +204,42 @@ func Get[T any](ctx context.Context, r *Registry, module, code string, key Scope
 	if declared == nil {
 		return zero, &ParamError{Code: "PARAM_UNDECLARED", Module: module, Param: code, Cause: ErrParamUndeclared}
 	}
-	var typ ValueType
-	var raw string
-	err := r.db.QueryRowContext(ctx, `SELECT value_type,value FROM parameter WHERE module=$1 AND code=$2 AND effective_from <= $3::date AND (effective_to IS NULL OR effective_to >= $3::date) AND CASE scope WHEN 'ORG' THEN 1 WHEN 'TENANT' THEN 2 ELSE 3 END >= CASE $6 WHEN 'ORG' THEN 1 WHEN 'TENANT' THEN 2 ELSE 3 END AND ((scope='ORG' AND tenant_id=$4 AND org_code=$5 AND $5<>'') OR (scope='TENANT' AND tenant_id=$4) OR (scope='GLOBAL' AND tenant_id IS NULL)) ORDER BY CASE scope WHEN 'ORG' THEN 1 WHEN 'TENANT' THEN 2 ELSE 3 END,effective_from DESC LIMIT 1`, module, code, key.EffectiveDate.Format("2006-01-02"), nullIfEmpty(key.TenantID), key.OrgCode, declared.Scope).Scan(&typ, &raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return zero, &ParamError{Code: "PARAM_MISSING", Module: module, Param: code, Cause: ErrParamMissing}
+	if r == nil || r.client == nil {
+		return zero, errors.New("platform parameter resolver is required")
 	}
+	cacheKey := fmt.Sprintf("%s|%s|%s|%s|%s", module, code, key.TenantID, key.OrgCode, key.EffectiveDate.Format("2006-01-02"))
+	r.mu.Lock()
+	entry, cached := r.cache[cacheKey]
+	if cached && time.Now().Before(entry.expiresAt) {
+		r.mu.Unlock()
+		value, ok := entry.value.(T)
+		if ok {
+			return value, nil
+		}
+	}
+	r.mu.Unlock()
+	scopes := make([]*platformv1.ScopeSelector, 0, 3)
+	if declared.Scope == ScopeOrg && key.OrgCode != "" {
+		scopes = append(scopes, &platformv1.ScopeSelector{TenantId: key.TenantID, ScopeType: "org", ScopeId: key.OrgCode})
+	}
+	if declared.Scope != ScopeGlobal && key.TenantID != "" {
+		scopes = append(scopes, &platformv1.ScopeSelector{TenantId: key.TenantID, ScopeType: "tenant"})
+	}
+	scopes = append(scopes, &platformv1.ScopeSelector{ScopeType: "global"})
+	resolved, err := r.client.ResolveParameter(ctx, &platformv1.ResolveParameterRequest{TenantId: key.TenantID, Module: module, Key: code, EffectiveDate: key.EffectiveDate.Format("2006-01-02"), Scopes: scopes})
 	if err != nil {
+		// Missing is a business/configuration error; transport/auth failures remain intact.
+		if status.Code(err) == codes.NotFound {
+			return zero, &ParamError{Code: "PARAM_MISSING", Module: module, Param: code, Cause: ErrParamMissing}
+		}
 		return zero, err
+	}
+	if resolved == nil {
+		return zero, errors.New("platform resolver returned an empty response")
+	}
+	typ, raw := ValueType(strings.ToUpper(resolved.GetValueType())), resolved.GetValue()
+	if resolved.GetModule() != "" && resolved.GetModule() != module || resolved.GetKey() != "" && resolved.GetKey() != code {
+		return zero, &ParamError{Code: "PARAM_IDENTITY_MISMATCH", Module: module, Param: code, Cause: errors.New("platform resolver returned a different parameter")}
 	}
 	if typ != declared.Type {
 		return zero, &ParamError{Code: "PARAM_TYPE_MISMATCH", Module: module, Param: code, Cause: ErrTypeMismatch}
@@ -237,13 +275,13 @@ func Get[T any](ctx context.Context, r *Registry, module, code string, key Scope
 	if !ok {
 		return zero, &ParamError{Code: "PARAM_TYPE_MISMATCH", Module: module, Param: code, Cause: ErrTypeMismatch}
 	}
-	return converted, nil
-}
-func nullIfEmpty(value string) any {
-	if value == "" {
-		return nil
+	if resolved.GetUnit() != declared.Unit {
+		return zero, &ParamError{Code: "PARAM_UNIT_MISMATCH", Module: module, Param: code, Cause: fmt.Errorf("expected unit %q, got %q", declared.Unit, resolved.GetUnit())}
 	}
-	return value
+	r.mu.Lock()
+	r.cache[cacheKey] = cacheEntry{value: converted, expiresAt: time.Now().Add(cacheTTL)}
+	r.mu.Unlock()
+	return converted, nil
 }
 
 // RenderGoConstants emits deterministic string constants from a declared code set.

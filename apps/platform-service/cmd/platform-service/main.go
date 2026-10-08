@@ -102,7 +102,11 @@ func main() {
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
 			interceptors.UnaryServerRecovery(logger),
-			interceptors.UnaryServerServiceAuth(serviceSecret, "platform-service", map[string]struct{}{"finance-service": {}}),
+			interceptors.UnaryServerServiceAuthMethodSources(
+				serviceSecret, "platform-service",
+				map[string]struct{}{"finance-service": {}},
+				map[string]map[string]struct{}{"/arda.platform.v1.PlatformService/ResolveParameter": {"finance-service": {}, "loan-service": {}}},
+			),
 			interceptors.UnaryServerLogging(logger),
 		),
 	)
