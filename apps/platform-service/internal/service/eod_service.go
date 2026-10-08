@@ -184,8 +184,8 @@ type StepResult struct {
 // SeedJobs upserts the default COB sequence (loan accrual -> provision).
 func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
 	jobs := []EODStepDefinition{
-		{Code: "LNM_ACCRUAL_DAILY", Name: "Tính lãi cho vay (EOD)", Module: "loan", Order: 10, Endpoint: "http://loan-service:8080/internal/jobs/accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
-		{Code: "DPM_ACCRUAL_DAILY", Name: "Dự chi lãi tiền gửi (EOD)", Module: "deposit", Order: 15, Endpoint: "http://deposit-service:8080/internal/jobs/deposit-accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+		{Code: "LNM_ACCRUAL_DAILY", Name: "Tính lãi cho vay (EOD)", Module: "loan", Order: 10, DependsOn: []string{}, Endpoint: "http://loan-service:8080/internal/jobs/accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+		{Code: "DPM_ACCRUAL_DAILY", Name: "Dự chi lãi tiền gửi (EOD)", Module: "deposit", Order: 15, DependsOn: []string{}, Endpoint: "http://deposit-service:8080/internal/jobs/deposit-accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
 		{Code: "LNM_PROVISION_DAILY", Name: "Trích lập dự phòng (EOD)", Module: "loan", Order: 20, DependsOn: []string{"LNM_ACCRUAL_DAILY"}, Endpoint: "http://loan-service:8080/internal/jobs/provision-daily", Mandatory: true, StopOnFail: true, Retryable: true},
 		// P3a reporting foundation: rebuild fin_trial_balance_daily after
 		// the loan steps so statements see the day's accrual/provision posts.
