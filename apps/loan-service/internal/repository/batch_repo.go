@@ -405,6 +405,17 @@ func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantI
 		if err := setDisbursementBatchStatus(ctx, tx, tenantID, id, status); err != nil {
 			return err
 		}
+		rowStatus := domain.DisbursementRejected
+		if status == domain.BatchCancelled {
+			rowStatus = domain.DisbursementCancelled
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE lnm_disbursements
+			SET status = $3, updated_at = now(), version = version + 1
+			WHERE tenant_id = $1 AND batch_id = $2
+			  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')`, tenantID, id, rowStatus); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE lnm_contract_reservations r SET status = 'RELEASED'
 			WHERE r.tenant_id = $1 AND r.source_type = 'DISBURSEMENT' AND r.status = 'HELD'

@@ -1426,11 +1426,12 @@ func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string,
 	sortCol := disbursementSortCol(sort)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
-		       currency_code, COALESCE(fund_source_code,''), flow_type, source_register_id::text, status, payload,
+		       currency_code, COALESCE(fund_source_code,''), flow_type, source_register_id::text, COALESCE(batch_id::text,''), status, payload,
 		       workflow_case_id::text, COALESCE(workflow_case_code,''), journal_entry_id::text, created_by, created_at, updated_at,
 		       count(*) OVER() AS total_count
 		FROM lnm_disbursements
 		WHERE tenant_id = $1::text
+		  AND batch_id IS NULL
 		  AND ($2::text = '' OR status = $2::text)
 		  AND ($3::text = '' OR contract_code = $3::text)
 		  AND ($4::text = '' OR flow_type = $4::text)
@@ -1450,7 +1451,7 @@ func (r *LoanRepository) ListDisbursements(ctx context.Context, tenantID string,
 		var caseID, entryID, sourceID sql.NullString
 		var payload []byte
 		if err := rows.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
-			&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.FlowType, &sourceID, &d.Status, &payload,
+			&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.FlowType, &sourceID, &d.BatchID, &d.Status, &payload,
 			&caseID, &d.WorkflowCaseCode, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &total); err != nil {
 			return nil, 0, err
 		}
@@ -1531,13 +1532,13 @@ func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id strin
 	var caseID, entryID, sourceID sql.NullString
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, disburse_date::text, disburse_amt_minor,
-		       currency_code, COALESCE(fund_source_code,''), flow_type, source_register_id::text, status, payload,
+		       currency_code, COALESCE(fund_source_code,''), flow_type, source_register_id::text, COALESCE(batch_id::text,''), status, payload,
 		       workflow_case_id::text, COALESCE(workflow_case_code,''), journal_entry_id::text, created_by, created_at, updated_at,
 		       version
 		FROM lnm_disbursements WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	var payload []byte
 	err := row.Scan(&d.ID, &d.TenantID, &d.ContractCode, &d.AgreementCode, &d.DisburseDate,
-		&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.FlowType, &sourceID, &d.Status, &payload,
+		&d.DisburseAmtMinor, &d.CurrencyCode, &d.FundSourceCode, &d.FlowType, &sourceID, &d.BatchID, &d.Status, &payload,
 		&caseID, &d.WorkflowCaseCode, &entryID, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt, &d.DataVersion)
 	if err == sql.ErrNoRows {
 		return nil, err

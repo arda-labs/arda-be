@@ -179,6 +179,9 @@ func (s *DisbursementService) Submit(ctx context.Context, tenantID, actor, id st
 	if item.Status != domain.DisbursementDraft {
 		return domain.Disbursement{}, ardaerrors.New(ardaerrors.CodeInvalidInput, "only DRAFT disbursements can be submitted")
 	}
+	if item.BatchID != "" {
+		return domain.Disbursement{}, ardaerrors.New(ardaerrors.CodeConflict, "disbursement belongs to a batch and cannot be submitted separately")
+	}
 	if s.workflow == nil {
 		return domain.Disbursement{}, ardaerrors.New(ardaerrors.CodeInternal, "workflow client is not configured")
 	}
