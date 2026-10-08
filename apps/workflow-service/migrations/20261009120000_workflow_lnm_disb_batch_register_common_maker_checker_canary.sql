@@ -20,6 +20,7 @@ WHERE case_type = 'LNM_DISB_BATCH_REGISTER_V2'
   AND status = 'DRAFT'
   AND bpmn_process_id = 'lnm-disb-batch-register-v2';
 
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -34,12 +35,14 @@ BEGIN
     END IF;
 END
 $$;
+-- +goose StatementEnd
 
 -- Roll back only after all non-terminal cases using common-maker-checker
 -- have drained; never repoint a live Zeebe process instance.
 --
 -- +goose Down
 
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF EXISTS (
@@ -53,6 +56,7 @@ BEGIN
     END IF;
 END
 $$;
+-- +goose StatementEnd
 
 UPDATE business_cases
 SET bpmn_process_id = 'lnm-disb-batch-register-v2',
