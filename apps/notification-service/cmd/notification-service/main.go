@@ -181,11 +181,7 @@ func main() {
 	}
 	notificationHandler.SetStreamHub(streamHub)
 	notificationHandler.SetInboxChangePublisher(func(tenantID, userID string) error {
-		payload, err := json.Marshal(map[string]string{"tenant_id": tenantID, "user_id": userID})
-		if err != nil {
-			return err
-		}
-		return nc.Publish(handler.UserInboxChangedSubject, payload)
+		return publishUserInboxChange(nc, userInboxChange{TenantID: tenantID, UserID: userID, Type: "state_changed"})
 	})
 	logger.Info("Notification SSE event subscription started", "subject", ardaevents.SubjectNotificationInboxCreated)
 	publisher, publisherErr := appevents.NewNATSPublisher(nc)
@@ -279,7 +275,8 @@ func main() {
 		}
 		go func(subject string, consumer *appevents.Consumer) {
 			runErr := consumer.Run(workerCtx, func(ctx context.Context, msg *nats.Msg) error {
-				return handleDomainNotificationEvent(ctx, msg, subject, notificationRepo, notificationService, directory, cfg.ManagementGroup, cfg.DefaultLocale, logger)
+				return handleDomainNotificationEvent(ctx, msg, subject, notificationRepo, notificationService, directory, cfg.ManagementGroup, cfg.DefaultLocale, logger,
+					func(change userInboxChange) error { return publishUserInboxChange(nc, change) })
 			})
 			if runErr != nil && workerCtx.Err() == nil {
 				logger.Error("domain notification consumer stopped", "subject", subject, "err", runErr)
@@ -392,7 +389,40 @@ func domainDurableName(subject string) string {
 	return "notification-" + strings.NewReplacer(".", "-", "_", "-").Replace(strings.TrimPrefix(subject, "arda.")) + "-cg"
 }
 
-func handleDomainNotificationEvent(ctx context.Context, msg *nats.Msg, subject string, repo *repository.NotificationRepository, svc *service.NotificationService, directory appevents.RecipientDirectory, managementGroup, defaultLocale string, logger *slog.Logger) error {
+type userInboxChange struct {
+	TenantID   string `json:"tenant_id"`
+	UserID     string `json:"user_id"`
+	Type       string `json:"type,omitempty"`
+	EventID    string `json:"event_id,omitempty"`
+	EntityType string `json:"entity_type,omitempty"`
+	EntityID   string `json:"entity_id,omitempty"`
+}
+
+func publishUserInboxChange(conn *nats.Conn, change userInboxChange) error {
+	payload, err := json.Marshal(change)
+	if err != nil {
+		return err
+	}
+	return conn.Publish(handler.UserInboxChangedSubject, payload)
+}
+
+func publishEntityResolved(ctx context.Context, repo *repository.NotificationRepository, tenantID, entityType, entityID, eventID string, publish func(userInboxChange) error) error {
+	if publish == nil {
+		return nil
+	}
+	users, err := repo.ListEntityUserIDs(ctx, tenantID, entityType, entityID)
+	if err != nil {
+		return err
+	}
+	for _, userID := range users {
+		if err := publish(userInboxChange{TenantID: tenantID, UserID: userID, Type: "resolved", EventID: eventID, EntityType: entityType, EntityID: entityID}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func handleDomainNotificationEvent(ctx context.Context, msg *nats.Msg, subject string, repo *repository.NotificationRepository, svc *service.NotificationService, directory appevents.RecipientDirectory, managementGroup, defaultLocale string, logger *slog.Logger, publishUserChange func(userInboxChange) error) error {
 	eventID := strings.TrimSpace(msg.Header.Get(nats.MsgIdHdr))
 	if eventID == "" {
 		sum := sha256.Sum256(msg.Data)
@@ -424,6 +454,9 @@ func handleDomainNotificationEvent(ctx context.Context, msg *nats.Msg, subject s
 				if err := repo.ProcessEventOnce(ctx, "notification-domain:"+subject, eventID, subject, tenantID, func(_ context.Context, tx *sql.Tx) error {
 					return repo.ResolveEntity(ctx, tx, tenantID, entityType, entityID, "reassigned", eventID)
 				}); err != nil {
+					return err
+				}
+				if err := publishEntityResolved(ctx, repo, tenantID, entityType, entityID, eventID, publishUserChange); err != nil {
 					return err
 				}
 				return recipientResolutionResult(ctx, repo, tenantID, eventID, entityType, entityID, errors.New("notification.recipient_unresolved: reassignment recipient set is empty"), logger)
@@ -489,11 +522,14 @@ func handleDomainNotificationEvent(ctx context.Context, msg *nats.Msg, subject s
 		return errors.New("event entity reference is required")
 	}
 	if strings.Contains(subject, "workflow.task.") && subject == appevents.WorkflowTaskCompletedSubject {
-		return repo.ProcessEventOnce(ctx, "notification-domain:"+subject, eventID, subject, tenantID, func(_ context.Context, tx *sql.Tx) error {
+		if err := repo.ProcessEventOnce(ctx, "notification-domain:"+subject, eventID, subject, tenantID, func(_ context.Context, tx *sql.Tx) error {
 			return repo.ResolveEntity(ctx, tx, tenantID, entityType, entityID, "completed", eventID)
-		})
+		}); err != nil {
+			return err
+		}
+		return publishEntityResolved(ctx, repo, tenantID, entityType, entityID, eventID, publishUserChange)
 	}
-	return repo.ProcessEventOnce(ctx, "notification-domain:"+subject, eventID, subject, tenantID, func(_ context.Context, tx *sql.Tx) error {
+	if err := repo.ProcessEventOnce(ctx, "notification-domain:"+subject, eventID, subject, tenantID, func(_ context.Context, tx *sql.Tx) error {
 		if subject == appevents.WorkflowTaskReassignedSubject {
 			if err := repo.ResolveEntity(ctx, tx, tenantID, entityType, entityID, "reassigned", eventID); err != nil {
 				return err
@@ -501,7 +537,13 @@ func handleDomainNotificationEvent(ctx context.Context, msg *nats.Msg, subject s
 		}
 		_, err := svc.Accept(ctx, input)
 		return err
-	})
+	}); err != nil {
+		return err
+	}
+	if subject == appevents.WorkflowTaskReassignedSubject {
+		return publishEntityResolved(ctx, repo, tenantID, entityType, entityID, eventID, publishUserChange)
+	}
+	return nil
 }
 
 func recipientResolutionResult(ctx context.Context, repo *repository.NotificationRepository, tenantID, eventID, entityType, entityID string, cause error, logger *slog.Logger) error {

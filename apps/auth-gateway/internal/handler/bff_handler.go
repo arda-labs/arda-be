@@ -1861,6 +1861,8 @@ func (h *BFFHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	if client == nil {
 		client = http.DefaultClient
 	}
+	proxyReq, cancelStream := withSessionStreamDeadline(proxyReq, isEventStreamRequest(r), sess)
+	defer cancelStream()
 	upstreamStart := time.Now()
 	resp, err := client.Do(proxyReq)
 	upstreamDuration := time.Since(upstreamStart)
@@ -1977,6 +1979,15 @@ func (h *BFFHandler) logProxyDenied(r *http.Request, requestID, traceID string, 
 
 func isEventStreamRequest(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/event-stream")
+}
+
+func withSessionStreamDeadline(req *http.Request, isStream bool, sess *session.Session) (*http.Request, context.CancelFunc) {
+	if !isStream || sess == nil || sess.ExpiresAt.IsZero() {
+		return req, func() {}
+	}
+	// Keep a long-lived stream bound to the authenticated session lifetime.
+	ctx, cancel := context.WithDeadline(req.Context(), sess.ExpiresAt)
+	return req.WithContext(ctx), cancel
 }
 
 func copyEventStream(w http.ResponseWriter, body io.Reader) {

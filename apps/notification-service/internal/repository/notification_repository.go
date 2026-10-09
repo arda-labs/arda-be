@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,8 @@ import (
 type NotificationRepository struct {
 	db *sql.DB
 }
+
+var ErrStreamLeaseLimit = errors.New("notification stream limit reached")
 
 func NewNotificationRepository(db *sql.DB) *NotificationRepository {
 	return &NotificationRepository{db: db}
@@ -390,6 +393,114 @@ func (r *NotificationRepository) ListInbox(ctx context.Context, tenantID, userID
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (r *NotificationRepository) ListInboxAfter(ctx context.Context, tenantID, userID string, afterSeq int64, limit int) ([]domain.InboxItem, error) {
+	if limit < 1 || limit > 101 {
+		limit = 101
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id::text, public_id, tenant_id, user_id, type, title_key, body_key, params, href, read_at,
+		       entity_type, entity_id, dedupe_key, resolved_at, resolved_reason, superseded_at, expires_at,
+	       locale, priority, event_seq, created_at
+		FROM noti_inbox
+		WHERE tenant_id = $1 AND user_id = $2 AND event_seq > $3
+		ORDER BY event_seq ASC LIMIT $4`, tenantID, userID, afterSeq, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]domain.InboxItem, 0, limit)
+	for rows.Next() {
+		var item domain.InboxItem
+		if err := rows.Scan(&item.ID, &item.PublicID, &item.TenantID, &item.UserID, &item.Type,
+			&item.TitleKey, &item.BodyKey, &item.Params, &item.Href, &item.ReadAt,
+			&item.EntityType, &item.EntityID, &item.DedupeKey, &item.ResolvedAt, &item.ResolvedReason,
+			&item.SupersededAt, &item.ExpiresAt, &item.Locale, &item.Priority, &item.EventSeq, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *NotificationRepository) LatestInboxEventSeq(ctx context.Context, tenantID, userID string) (int64, error) {
+	var seq int64
+	err := r.db.QueryRowContext(ctx, `SELECT COALESCE(last_event_seq, 0) FROM noti_user_seq WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID).Scan(&seq)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return seq, err
+}
+
+func (r *NotificationRepository) ListEntityUserIDs(ctx context.Context, tenantID, entityType, entityID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT user_id FROM noti_inbox WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3 ORDER BY user_id`, tenantID, entityType, entityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := make([]string, 0)
+	for rows.Next() {
+		var userID string
+		if err := rows.Scan(&userID); err != nil {
+			return nil, err
+		}
+		users = append(users, userID)
+	}
+	return users, rows.Err()
+}
+
+func (r *NotificationRepository) AcquireStreamLease(ctx context.Context, tenantID, userID string, limit int, ttl time.Duration) (string, error) {
+	var tokenBytes [16]byte
+	if _, err := rand.Read(tokenBytes[:]); err != nil {
+		return "", err
+	}
+	token := fmt.Sprintf("%x", tokenBytes[:])
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "notification-stream:"+tenantID+":"+userID); err != nil {
+		return "", err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM noti_stream_lease WHERE tenant_id=$1 AND user_id=$2 AND expires_at <= now()`, tenantID, userID); err != nil {
+		return "", err
+	}
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM noti_stream_lease WHERE tenant_id=$1 AND user_id=$2`, tenantID, userID).Scan(&count); err != nil {
+		return "", err
+	}
+	if count >= limit {
+		return "", ErrStreamLeaseLimit
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO noti_stream_lease (lease_id,tenant_id,user_id,expires_at) VALUES ($1,$2,$3,now()+($4 * interval '1 second'))`, token, tenantID, userID, ttl.Seconds()); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (r *NotificationRepository) RenewStreamLease(ctx context.Context, tenantID, userID, token string, ttl time.Duration) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE noti_stream_lease SET expires_at=now()+($4 * interval '1 second') WHERE lease_id=$1 AND tenant_id=$2 AND user_id=$3 AND expires_at > now()`, token, tenantID, userID, ttl.Seconds())
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated != 1 {
+		return errors.New("notification stream lease expired")
+	}
+	return nil
+}
+
+func (r *NotificationRepository) ReleaseStreamLease(ctx context.Context, tenantID, userID, token string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM noti_stream_lease WHERE lease_id=$1 AND tenant_id=$2 AND user_id=$3`, token, tenantID, userID)
+	return err
 }
 
 func (r *NotificationRepository) ListPreferences(ctx context.Context, tenantID, userID string) ([]domain.NotificationPreference, error) {
