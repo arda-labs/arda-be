@@ -172,7 +172,7 @@ func (h *LoanHandler) SubmitContract(w http.ResponseWriter, r *http.Request) {
 
 // UpdateContract is the maker revise (PUT /api/loan/contracts/{id}): only
 // the editable whitelist fields are applied and only while the contract is
-// DRAFT or PENDING.
+// DRAFT, PENDING_APPROVAL, or REJECTED.
 func (h *LoanHandler) UpdateContract(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {

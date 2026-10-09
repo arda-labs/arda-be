@@ -119,18 +119,25 @@ func (s *LoanService) SubmitContract(ctx context.Context, tenantID, actor, id st
 	return &item, mapRepoError(err)
 }
 
-func (s *LoanService) SetContractStatus(ctx context.Context, tenantID, id, status string) error {
+func (s *LoanService) SetContractStatus(ctx context.Context, tenantID, id, status, reason string) error {
 	if status == "" {
 		return ardaerrors.New(ardaerrors.CodeRequired, "status is required")
 	}
-	return mapRepoError(s.repo.UpdateContractStatus(ctx, tenantID, id, status))
+	contract, err := s.repo.GetContract(ctx, tenantID, id)
+	if err != nil {
+		return mapRepoError(err)
+	}
+	if err := domain.CanTransition(domain.ContractMachine, domain.Status(contract.Status), domain.Status(status), reason); err != nil {
+		return mapRepoError(err)
+	}
+	return mapRepoError(s.repo.UpdateContractStatus(ctx, tenantID, id, contract.Status, status))
 }
 
 // contractEditableStatus reports whether a contract in this status can still
-// be revised by the maker (mirror of the DRAFT/PENDING WHERE clause in
+// be revised by the maker (mirror of the DRAFT/PENDING_APPROVAL/REJECTED WHERE clause in
 // UpdateContract — the SQL guard stays as the race backstop).
 func contractEditableStatus(status string) bool {
-	return status == domain.ContractDraft || status == domain.ContractPending
+	return status == domain.ContractDraft || status == domain.ContractPendingApproval || status == domain.ContractRejected
 }
 
 // validateContractUpdate checks the editable payload of the maker revise
@@ -159,8 +166,8 @@ func validateContractUpdate(in *domain.Contract) error {
 
 // UpdateContract is the maker revise on the formation screen: only the
 // editable whitelist fields are taken from the payload and only while the
-// contract is still DRAFT or PENDING (checker-decided or active contracts
-// are frozen — REJECTED/ACTIVE/CLOSED reject with contract_not_editable).
+// contract is still DRAFT, PENDING_APPROVAL, or REJECTED. A rejected edit
+// returns the contract to DRAFT; APPROVED/DISBURSED/CLOSED contracts are frozen.
 func (s *LoanService) UpdateContract(ctx context.Context, tenantID, id string, in *domain.Contract) (*domain.Contract, error) {
 	if in == nil {
 		return nil, ardaerrors.New(ardaerrors.CodeRequired, "request body is required")
@@ -173,7 +180,7 @@ func (s *LoanService) UpdateContract(ctx context.Context, tenantID, id string, i
 		return nil, err
 	}
 	if !contractEditableStatus(current.Status) {
-		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "contract_not_editable: only DRAFT or PENDING contracts can be revised")
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "contract_not_editable: only DRAFT, PENDING_APPROVAL, or REJECTED contracts can be revised")
 	}
 	patch := domain.Contract{
 		ContractNo:           strings.TrimSpace(in.ContractNo),
@@ -194,7 +201,7 @@ func (s *LoanService) UpdateContract(ctx context.Context, tenantID, id string, i
 	item, err := s.repo.UpdateContract(ctx, tenantID, id, &patch)
 	if err != nil {
 		if errors.Is(err, repository.ErrContractNotEditable) {
-			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "contract_not_editable: only DRAFT or PENDING contracts can be revised")
+			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "contract_not_editable: only DRAFT, PENDING_APPROVAL, or REJECTED contracts can be revised")
 		}
 		return nil, mapRepoError(err)
 	}

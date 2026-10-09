@@ -8,10 +8,17 @@ import (
 // Contract statuses.
 const (
 	ContractDraft    = "DRAFT"
-	ContractPending  = "PENDING"
-	ContractActive   = "ACTIVE"
+	ContractPendingApproval = "PENDING_APPROVAL"
+	ContractApproved = "APPROVED"
+	ContractDisbursed = "DISBURSED"
 	ContractRejected = "REJECTED"
 	ContractClosed   = "CLOSED"
+)
+
+// Agreement lifecycle statuses remain separate from contract workflow state.
+const (
+	AgreementActive = "ACTIVE"
+	AgreementClosed = "CLOSED"
 )
 
 // Adjustment statuses.
@@ -117,6 +124,8 @@ type RepayPlan struct {
 	ColnPrincipalAmt int64     `json:"coln_principal_amt_minor"`
 	ColnInterestAmt  int64     `json:"coln_interest_amt_minor"`
 	IsActive         bool      `json:"is_active"`
+	LifecycleStatus  string    `json:"lifecycle_status"`
+	PaymentStatus    string    `json:"payment_status"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }

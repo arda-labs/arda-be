@@ -58,7 +58,7 @@ func NewBatchCollectionService(repo *repository.LoanRepository, workflow Adjustm
 }
 
 // CreateBatchCollection creates a DRAFT collection batch + rows in one tx,
-// then opens the LNM_COLLECTION_BATCH_V2 case (SUBMITTED). Guard per row:
+// then opens the LNM_COLLECTION_BATCH_V2 case (PENDING_APPROVAL). Guard per row:
 // the agreement exists and the principal may not exceed its outstanding.
 func (s *BatchCollectionService) CreateBatchCollection(ctx context.Context, tenantID, actor, orgCode string, in *CreateBatchInputCollection) (*domain.CollectionBatch, error) {
 	if in == nil || len(in.Rows) == 0 {
@@ -84,7 +84,7 @@ func (s *BatchCollectionService) CreateBatchCollection(ctx context.Context, tena
 		CurrencyCode:  "VND",
 		Description:   in.Description,
 		Trader:        in.Trader,
-		Status:        domain.BatchSubmitted,
+		Status:        domain.BatchDraft,
 		CreatedBy:     actor,
 		Rows:          make([]domain.Collection, 0, len(in.Rows)),
 	}
@@ -163,7 +163,7 @@ func batchCollectionRowVarsList(rows []domain.Collection, inputs []BatchCollecti
 }
 
 // submitBatchCase opens + submits the collection batch's workflow case,
-// stamps the case on the header and flips it SUBMITTED.
+// stamps the case on the header and flips it PENDING_APPROVAL.
 func (s *BatchCollectionService) submitBatchCase(ctx context.Context, tenantID, actor string, batch *domain.CollectionBatch, rows []batchCollectionRowVars) error {
 	if s.workflow == nil {
 		return ardaerrors.New(ardaerrors.CodeInternal, "workflow client is not configured")
@@ -195,7 +195,7 @@ func (s *BatchCollectionService) submitBatchCase(ctx context.Context, tenantID, 
 	if err := s.repo.SetCollectionBatchCase(ctx, tenantID, batch.ID, caseCreated.Id, caseCreated.GetCaseCode()); err != nil {
 		return mapRepoError(err)
 	}
-	if err := s.repo.SetCollectionBatchStatus(ctx, tenantID, batch.ID, domain.BatchSubmitted); err != nil {
+	if err := s.repo.SetCollectionBatchStatus(ctx, tenantID, batch.ID, batch.Status, domain.BatchSubmitted, ""); err != nil {
 		return mapRepoError(err)
 	}
 	batch.Status = domain.BatchSubmitted
@@ -249,7 +249,7 @@ func (s *BatchCollectionService) Get(ctx context.Context, tenantID, id string) (
 	return batch, nil
 }
 
-// Check validates the batch is actionable (BPMN validate job): SUBMITTED and
+// Check validates the batch is actionable (BPMN validate job): PENDING_APPROVAL and
 // every row's principal still fits the agreement outstanding.
 func (s *BatchCollectionService) Check(ctx context.Context, tenantID, id string) (bool, string, error) {
 	batch, err := s.repo.GetCollectionBatch(ctx, tenantID, id)
@@ -276,12 +276,26 @@ func (s *BatchCollectionService) Check(ctx context.Context, tenantID, id string)
 }
 
 // Resolve applies the workflow decision without posting.
-func (s *BatchCollectionService) Resolve(ctx context.Context, tenantID, id, decision string) error {
-	status := domain.BatchRejected
-	if decision == "APPROVE" {
-		status = domain.BatchApproved
+func (s *BatchCollectionService) Resolve(ctx context.Context, tenantID, id, decision, note string) error {
+	batch, err := s.repo.GetCollectionBatch(ctx, tenantID, id)
+	if err != nil {
+		return mapRepoError(err)
 	}
-	if err := s.repo.SetCollectionBatchStatus(ctx, tenantID, id, status); err != nil {
+	var status string
+	switch decision {
+	case "APPROVE":
+		status = domain.BatchApproved
+	case "REJECT":
+		status = domain.BatchRejected
+	case "CANCEL":
+		status = domain.BatchCancelled
+	default:
+		return ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown decision "+decision)
+	}
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(batch.Status), domain.Status(status), note); err != nil {
+		return mapRepoError(err)
+	}
+	if err := s.repo.SetCollectionBatchStatus(ctx, tenantID, id, batch.Status, status, note); err != nil {
 		return mapRepoError(err)
 	}
 	return nil
@@ -347,6 +361,18 @@ func (s *BatchCollectionService) BatchPostingDetail(ctx context.Context, tenantI
 // overdue interest included) — the exact per-row ApplyCollection semantics,
 // looped.
 func (s *BatchCollectionService) SettleBatchCollection(ctx context.Context, tenantID, batchID, journalEntryID, actor string) error {
+	batch, err := s.repo.GetCollectionBatch(ctx, tenantID, batchID)
+	if err != nil {
+		return mapRepoError(err)
+	}
+	if batch.Status == domain.BatchPosted {
+		return nil
+	}
+	if batch.Status == domain.BatchSubmitted {
+		if err := s.repo.SetCollectionBatchStatus(ctx, tenantID, batchID, batch.Status, domain.BatchApproved, ""); err != nil {
+			return mapRepoError(err)
+		}
+	}
 	rows, err := s.repo.GetCollectionBatchRows(ctx, tenantID, batchID)
 	if err != nil {
 		return mapRepoError(err)
@@ -356,7 +382,7 @@ func (s *BatchCollectionService) SettleBatchCollection(ctx context.Context, tena
 		if err := s.repo.SetCollectionCaseAndJournal(rowCtx, tenantID, row.ID, "", "", journalEntryID); err != nil {
 			return mapRepoError(err)
 		}
-		if err := s.repo.SetCollectionStatus(rowCtx, tenantID, row.ID, domain.CollectionPosted, actor); err != nil {
+		if err := s.repo.SetCollectionStatus(rowCtx, tenantID, row.ID, row.Status, domain.CollectionPosted, actor, ""); err != nil {
 			return mapRepoError(err)
 		}
 		if err := s.repo.ApplyCollection(rowCtx, tenantID, row.AgreementCode, row.PrincipalMinor, row.InterestMinor+row.OverdueInterestMinor); err != nil {

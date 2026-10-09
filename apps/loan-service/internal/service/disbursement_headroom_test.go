@@ -55,7 +55,7 @@ func openHeadroomFixture(t *testing.T) (*sql.DB, *repository.LoanRepository, str
 	if _, err := repo.CreateAgreement(ctx, &domain.Agreement{
 		ID: repository.NewID("agr"), TenantID: headroomTenantID, ContractCode: contractCode,
 		AgreementCode: agreementCode, DisburseDate: "2026-10-01", LoanTerm: 12,
-		TermUnit: "MONTH", MaturityDate: "2027-10-01", Status: "PENDING", CreatedBy: "test",
+		TermUnit: "MONTH", MaturityDate: "2027-10-01", Status: domain.AgreementActive, CreatedBy: "test",
 	}); err != nil {
 		t.Fatalf("seed agreement: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestLegacyRegisterExposureMigration_NormalizesPending(t *testing.T) {
 	if _, err := repo.CreateContract(ctx, &domain.Contract{
 		ID: repository.NewID("ctrt"), TenantID: headroomTenantID, ContractCode: contractCode,
 		CustomerCode: "HR-CUST", LoanAmt: 1_000, LoanTerm: 12, TermUnit: "MONTH",
-		ContractDate: "2026-10-01", MaturityDate: "2027-10-01", Status: domain.ContractDraft, CreatedBy: "test",
+		ContractDate: "2026-10-01", MaturityDate: "2027-10-01", Status: "PENDING", CreatedBy: "test",
 	}); err != nil {
 		t.Fatalf("seed contract: %v", err)
 	}
@@ -130,6 +130,19 @@ func TestLegacyRegisterExposureMigration_NormalizesPending(t *testing.T) {
 	}
 	if err := migration.Run(db, "postgres"); err != nil {
 		t.Fatalf("apply exposure normalization migration: %v", err)
+	}
+	var contractStatus, agreementStatus string
+	if err := db.QueryRow(`SELECT status FROM lnm_contracts WHERE tenant_id = $1 AND contract_code = $2`, headroomTenantID, contractCode).Scan(&contractStatus); err != nil {
+		t.Fatalf("read normalized contract status: %v", err)
+	}
+	if contractStatus != domain.ContractPendingApproval {
+		t.Fatalf("normalized contract status = %s, want PENDING_APPROVAL", contractStatus)
+	}
+	if err := db.QueryRow(`SELECT status FROM lnm_agreements WHERE tenant_id = $1 AND agreement_code = $2`, headroomTenantID, agreementCode).Scan(&agreementStatus); err != nil {
+		t.Fatalf("read normalized agreement status: %v", err)
+	}
+	if agreementStatus != domain.AgreementActive {
+		t.Fatalf("normalized agreement status = %s, want ACTIVE", agreementStatus)
 	}
 	var outstanding, pending int64
 	if err := db.QueryRow(`SELECT outstanding_amt_minor, pending_disburse_amt_minor
@@ -179,7 +192,7 @@ func TestHeadroom_SameForSingleAndBatch(t *testing.T) {
 
 func TestRegisterReservationReleasedOnReject(t *testing.T) {
 	db, repo, contractCode, agreementCode := openHeadroomFixture(t)
-	svc := NewDisbursementService(repo, nil)
+	svc := NewDisbursementService(repo, &fakeWorkflow{})
 	item, err := svc.Create(context.Background(), headroomTenantID, "test", &domain.Disbursement{
 		ContractCode: contractCode, AgreementCode: agreementCode, DisburseDate: "2026-10-01",
 		DisburseAmtMinor: 600, FlowType: domain.FlowRegister,
@@ -187,7 +200,10 @@ func TestRegisterReservationReleasedOnReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create register: %v", err)
 	}
-	if err := svc.Resolve(context.Background(), headroomTenantID, item.ID, "REJECT", "checker", ""); err != nil {
+	if _, err := svc.Submit(context.Background(), headroomTenantID, "test", item.ID); err != nil {
+		t.Fatalf("submit register: %v", err)
+	}
+	if err := svc.Resolve(context.Background(), headroomTenantID, item.ID, "REJECT", "checker", "rejected by checker"); err != nil {
 		t.Fatalf("reject register: %v", err)
 	}
 	var held, released int
@@ -208,7 +224,7 @@ func TestBatchRegisterReservationReleasedOnReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create batch register: %v", err)
 	}
-	if err := svc.Resolve(context.Background(), headroomTenantID, batch.ID, "CANCEL"); err != nil {
+	if err := svc.Resolve(context.Background(), headroomTenantID, batch.ID, "CANCEL", "cancelled by maker"); err != nil {
 		t.Fatalf("cancel batch: %v", err)
 	}
 	resolved, err := svc.Get(context.Background(), headroomTenantID, batch.ID)

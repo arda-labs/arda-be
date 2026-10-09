@@ -29,6 +29,8 @@ func mapRepoError(err error) error {
 		return nil
 	}
 	switch {
+	case errors.Is(err, domain.ErrInvalidTransition):
+		return ardaerrors.Wrap(ardaerrors.CodeConflict, "loan status transition is not allowed", err)
 	case errors.Is(err, repository.ErrStaleVersion):
 		// The checker approved a version that has since changed; the domain
 		// refused to apply it (fail-loud, not a silent no-op).

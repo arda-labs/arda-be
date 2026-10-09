@@ -22,7 +22,7 @@ var (
 	ErrNotFound = errors.New("lnm: record not found")
 	ErrConflict = errors.New("lnm: code conflict")
 	// ErrContractNotEditable marks a maker-revise attempt against a contract
-	// whose status left the DRAFT/PENDING window between the service guard
+	// whose status left the DRAFT/PENDING_APPROVAL/REJECTED window between the service guard
 	// read and the guarded UPDATE (race backstop).
 	ErrContractNotEditable = errors.New("lnm: contract not editable")
 	// ErrAdjustmentNotPending marks a workflow decision against an adjustment
@@ -237,14 +237,22 @@ func (r *LoanRepository) CreateContract(ctx context.Context, c *domain.Contract)
 	return &out, err
 }
 
-func (r *LoanRepository) UpdateContractStatus(ctx context.Context, tenantID, id, status string) error {
+func (r *LoanRepository) UpdateContractStatus(ctx context.Context, tenantID, id, from, to string) error {
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE lnm_contracts SET status = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id, status)
+		`UPDATE lnm_contracts SET status = $4, updated_at = now() WHERE tenant_id = $1 AND id = $2 AND status = $3`, tenantID, id, from, to)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("%w", ErrNotFound)
+		var current string
+		lookupErr := r.db.QueryRowContext(ctx, `SELECT status FROM lnm_contracts WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&current)
+		if errors.Is(lookupErr, sql.ErrNoRows) {
+			return fmt.Errorf("%w", ErrNotFound)
+		}
+		if lookupErr != nil {
+			return lookupErr
+		}
+		return fmt.Errorf("%w: contract is %s, expected %s", domain.ErrInvalidTransition, current, from)
 	}
 	return nil
 }
@@ -253,7 +261,7 @@ func (r *LoanRepository) UpdateContractStatus(ctx context.Context, tenantID, id,
 // contract_no, amount/rate/term, dates, schedule and codes) to a contract.
 // The status guard lives in the WHERE clause so a concurrent status flip
 // (submit/decision) can never be overwritten: the UPDATE only matches
-// DRAFT/PENDING rows and a zero-row result distinguishes not-found vs
+// DRAFT/PENDING_APPROVAL/REJECTED rows and a zero-row result distinguishes not-found vs
 // not-editable via a cheap re-read.
 func (r *LoanRepository) UpdateContract(ctx context.Context, tenantID, id string, in *domain.Contract) (*domain.Contract, error) {
 	row := r.db.QueryRowContext(ctx, `
@@ -262,8 +270,10 @@ func (r *LoanRepository) UpdateContract(ctx context.Context, tenantID, id string
 			term_unit = $7, contract_date = $8::date, maturity_date = $9::date,
 			interest_schedule_day = $10, interest_payment_freq = $11,
 			principal_payment_freq = $12, purpose_code = $13, employee_code = $14,
-			industry_code = $15, loan_method_code = $16, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2 AND status IN ('DRAFT','PENDING')
+			industry_code = $15, loan_method_code = $16,
+			status = CASE WHEN status = 'REJECTED' THEN 'DRAFT' ELSE status END,
+			updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND status IN ('DRAFT','PENDING_APPROVAL','REJECTED')
 		RETURNING `+contractColumns,
 		tenantID, id, in.ContractNo, in.LoanAmt, in.InterestRate, in.LoanTerm, in.TermUnit,
 		in.ContractDate, in.MaturityDate, in.InterestScheduleDay, in.InterestPaymentFreq,
@@ -281,9 +291,18 @@ func (r *LoanRepository) UpdateContract(ctx context.Context, tenantID, id string
 }
 
 func (r *LoanRepository) SetContractWorkflowCase(ctx context.Context, tenantID, id, caseID, caseCode string) error {
-	_, err := r.db.ExecContext(ctx,
-		`UPDATE lnm_contracts SET workflow_case_id = $3, workflow_case_code = $4, status = 'PENDING', updated_at = now() WHERE tenant_id = $1 AND id = $2`, tenantID, id, caseID, caseCode)
-	return err
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE lnm_contracts SET workflow_case_id = $3, workflow_case_code = $4,
+			status = 'PENDING_APPROVAL', updated_at = now()
+		WHERE tenant_id = $1 AND id = $2
+		  AND (status = 'DRAFT' OR (status = 'PENDING_APPROVAL' AND workflow_case_id = $3))`, tenantID, id, caseID, caseCode)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return domain.ErrInvalidTransition
+	}
+	return nil
 }
 
 // ── Agreements (disbursements) ──
@@ -390,7 +409,7 @@ func (r *LoanRepository) ListRepayPlans(ctx context.Context, tenantID, contractC
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, tenant_id, contract_code, agreement_code, plan_no, term_no, from_date::text, to_date::text,
 		       interest_rate, plan_principal_amt_minor, plan_interest_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor,
-		       is_active, created_at, updated_at
+		       is_active, lifecycle_status, payment_status, created_at, updated_at
 		FROM lnm_repay_plans
 		WHERE tenant_id = $1 AND is_active
 		  AND ($2 = '' OR contract_code = $2) AND ($3 = '' OR agreement_code = $3)
@@ -404,7 +423,8 @@ func (r *LoanRepository) ListRepayPlans(ctx context.Context, tenantID, contractC
 		var p domain.RepayPlan
 		if err := rows.Scan(&p.ID, &p.TenantID, &p.ContractCode, &p.AgreementCode, &p.PlanNo, &p.TermNo,
 			&p.FromDate, &p.ToDate, &p.InterestRate, &p.PlanPrincipalAmt, &p.PlanInterestAmt,
-			&p.ColnPrincipalAmt, &p.ColnInterestAmt, &p.IsActive, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			&p.ColnPrincipalAmt, &p.ColnInterestAmt, &p.IsActive, &p.LifecycleStatus, &p.PaymentStatus,
+			&p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, p)
@@ -436,8 +456,11 @@ func (r *LoanRepository) ReplaceRepayPlans(ctx context.Context, tenantID, agreem
 // one through the caller's query surface, so a restructure decision can do
 // the agreement update and the schedule version swap atomically.
 func replaceRepayPlansTx(ctx context.Context, q repoTX, tenantID, agreementCode string, plans []domain.RepayPlan) error {
+	if err := domain.CanTransition(domain.PlanLifecycleMachine, domain.StatusActive, domain.StatusSuperseded, ""); err != nil {
+		return err
+	}
 	if _, err := q.ExecContext(ctx, `
-		UPDATE lnm_repay_plans SET is_active = FALSE, updated_at = now()
+		UPDATE lnm_repay_plans SET is_active = FALSE, lifecycle_status = 'SUPERSEDED', updated_at = now()
 		WHERE tenant_id = $1 AND agreement_code = $2 AND is_active`, tenantID, agreementCode); err != nil {
 		return err
 	}
@@ -451,8 +474,9 @@ func replaceRepayPlansTx(ctx context.Context, q repoTX, tenantID, agreementCode 
 		}
 		if _, err := q.ExecContext(ctx, `
 			INSERT INTO lnm_repay_plans (id, tenant_id, contract_code, agreement_code, plan_no, term_no,
-				from_date, to_date, interest_rate, plan_principal_amt_minor, plan_interest_amt_minor, coln_principal_amt_minor, coln_interest_amt_minor, is_active)
-			VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,$11,$12,$13,TRUE)`,
+				from_date, to_date, interest_rate, plan_principal_amt_minor, plan_interest_amt_minor,
+				coln_principal_amt_minor, coln_interest_amt_minor, is_active, lifecycle_status)
+			VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9,$10,$11,$12,$13,TRUE,'ACTIVE')`,
 			p.ID, tenantID, p.ContractCode, p.AgreementCode, p.PlanNo, p.TermNo,
 			p.FromDate, p.ToDate, p.InterestRate, p.PlanPrincipalAmt, p.PlanInterestAmt,
 			p.ColnPrincipalAmt, p.ColnInterestAmt); err != nil {
@@ -1565,17 +1589,20 @@ func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id strin
 	return &d, nil
 }
 
-func (r *LoanRepository) SetDisbursementStatus(ctx context.Context, tenantID, id, status, updatedBy string) error {
-	if status == domain.DisbursementApproved || status == domain.DisbursementRejected || status == domain.DisbursementCancelled || status == "FAILED" {
+func (r *LoanRepository) SetDisbursementStatus(ctx context.Context, tenantID, id, from, to, updatedBy, reason string) error {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(from), domain.Status(to), reason); err != nil {
+		return err
+	}
+	if to == domain.DisbursementApproved || to == domain.DisbursementRejected || to == domain.DisbursementCancelled || to == "FAILED" {
 		tx, err := r.db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
 		defer tx.Rollback()
-		if err := setDisbursementStatus(ctx, tx, tenantID, id, status, updatedBy); err != nil {
+		if err := setDisbursementStatus(ctx, tx, tenantID, id, from, to, updatedBy); err != nil {
 			return err
 		}
-		if status == domain.DisbursementRejected || status == domain.DisbursementCancelled {
+		if to == domain.DisbursementRejected || to == domain.DisbursementCancelled {
 			if _, err := tx.ExecContext(ctx, `
 			UPDATE lnm_contract_reservations SET status = 'RELEASED'
 			WHERE tenant_id = $1 AND source_type = 'DISBURSEMENT' AND source_id = $2 AND status = 'HELD'`, tenantID, id); err != nil {
@@ -1586,20 +1613,20 @@ func (r *LoanRepository) SetDisbursementStatus(ctx context.Context, tenantID, id
 		if err := tx.QueryRowContext(ctx, `SELECT contract_code, created_by, COALESCE(updated_by, '') FROM lnm_disbursements WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&contractCode, &createdBy, &storedUpdatedBy); err != nil {
 			return err
 		}
-		if err := enqueueDisbursementEvent(ctx, tx, tenantID, id, status, contractCode, createdBy, storedUpdatedBy); err != nil {
+		if err := enqueueDisbursementEvent(ctx, tx, tenantID, id, to, contractCode, createdBy, storedUpdatedBy); err != nil {
 			return err
 		}
 		return tx.Commit()
 	}
-	return setDisbursementStatus(ctx, r.db, tenantID, id, status, updatedBy)
+	return setDisbursementStatus(ctx, r.db, tenantID, id, from, to, updatedBy)
 }
 
-func setDisbursementStatus(ctx context.Context, q repoTX, tenantID, id, status, updatedBy string) error {
+func setDisbursementStatus(ctx context.Context, q repoTX, tenantID, id, from, to, updatedBy string) error {
 	expected := domain.DataVersionFromContext(ctx)
 	res, err := q.ExecContext(ctx, `
 		UPDATE lnm_disbursements SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2
-		  AND ($5 = 0 OR version = $5)`, tenantID, id, status, updatedBy, expected)
+		WHERE tenant_id = $1 AND id = $2 AND status = $5
+		  AND ($6 = 0 OR version = $6)`, tenantID, id, to, updatedBy, from, expected)
 	if err != nil {
 		return err
 	}
@@ -1607,7 +1634,15 @@ func setDisbursementStatus(ctx context.Context, q repoTX, tenantID, id, status, 
 		if staleVersion(ctx, q, "lnm_disbursements", tenantID, id, expected) {
 			return ErrStaleVersion
 		}
-		return fmt.Errorf("%w", ErrNotFound)
+		var current string
+		lookupErr := q.QueryRowContext(ctx, `SELECT status FROM lnm_disbursements WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&current)
+		if errors.Is(lookupErr, sql.ErrNoRows) {
+			return fmt.Errorf("%w", ErrNotFound)
+		}
+		if lookupErr != nil {
+			return lookupErr
+		}
+		return fmt.Errorf("%w: disbursement is %s, expected %s", domain.ErrInvalidTransition, current, from)
 	}
 	return nil
 }
@@ -1626,7 +1661,6 @@ func (r *LoanRepository) SettleRegisterDisbursement(ctx context.Context, tenantI
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_agreements
 		SET outstanding_amt_minor = outstanding_amt_minor + $3,
-		    status = CASE WHEN status = 'PENDING' THEN 'ACTIVE' ELSE status END,
 		    updated_at = now()
 		WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode, amountMinor)
 	return err
@@ -1648,10 +1682,10 @@ func (r *LoanRepository) SettleCompleteDisbursement(ctx context.Context, tenantI
 		return fmt.Errorf("agreement %s does not have enough pending amount to complete", agreementCode)
 	}
 	_, err = r.db.ExecContext(ctx, `
-		UPDATE lnm_contracts c SET status = 'ACTIVE', updated_at = now()
+		UPDATE lnm_contracts c SET status = 'DISBURSED', updated_at = now()
 		WHERE c.tenant_id = $1
 		  AND c.contract_code = $2
-		  AND c.status IN ('DRAFT', 'PENDING')
+		  AND c.status = 'APPROVED'
 		  AND EXISTS (
 		        SELECT 1 FROM lnm_disbursements d
 		        WHERE d.tenant_id = $1 AND d.contract_code = c.contract_code
@@ -1665,6 +1699,12 @@ func (r *LoanRepository) SettleCompleteDisbursement(ctx context.Context, tenantI
 // PENDING → ACTIVE). Returns false when the disbursement was already settled,
 // keeping worker retries idempotent instead of double-counting the drawdown.
 func (r *LoanRepository) SettleDisbursementRegister(ctx context.Context, tenantID, id, agreementCode string, amountMinor int64, journalEntryID, updatedBy string) (bool, error) {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.StatusApproved, domain.StatusPosted, ""); err != nil {
+		return false, err
+	}
+	if err := domain.CanTransition(domain.ContractMachine, domain.StatusApproved, domain.StatusDisbursed, ""); err != nil {
+		return false, err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -1675,8 +1715,7 @@ func (r *LoanRepository) SettleDisbursementRegister(ctx context.Context, tenantI
 	res, err := tx.ExecContext(ctx, `
 		UPDATE lnm_disbursements
 		SET status = 'POSTED', journal_entry_id = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2
-		  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')
+		WHERE tenant_id = $1 AND id = $2 AND status = 'APPROVED'
 		  AND ($5 = 0 OR version = $5)`,
 		tenantID, id, nullText(journalEntryID), updatedBy, expected)
 	if err != nil {
@@ -1692,7 +1731,6 @@ func (r *LoanRepository) SettleDisbursementRegister(ctx context.Context, tenantI
 	res, err = tx.ExecContext(ctx, `
 		UPDATE lnm_agreements
 		SET pending_disburse_amt_minor = pending_disburse_amt_minor + $3,
-		    status = CASE WHEN status = 'PENDING' THEN 'ACTIVE' ELSE status END,
 		    updated_at = now()
 		WHERE tenant_id = $1 AND agreement_code = $2`,
 		tenantID, agreementCode, amountMinor)
@@ -1701,6 +1739,12 @@ func (r *LoanRepository) SettleDisbursementRegister(ctx context.Context, tenantI
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
 		return false, fmt.Errorf("agreement %s not found while settling disbursement", agreementCode)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE lnm_contracts c SET status = 'DISBURSED', updated_at = now()
+		WHERE c.tenant_id = $1 AND c.status = 'APPROVED'
+		  AND c.contract_code = (SELECT d.contract_code FROM lnm_disbursements d WHERE d.tenant_id = $1 AND d.id = $2)`, tenantID, id); err != nil {
+		return false, err
 	}
 	reservation, err := tx.ExecContext(ctx, `
 		UPDATE lnm_contract_reservations SET status = 'CONSUMED'
@@ -1722,6 +1766,12 @@ func (r *LoanRepository) SettleDisbursementRegister(ctx context.Context, tenantI
 // in-transit pending and activates the contract once a completed drawdown
 // exists. Returns false on idempotent replay.
 func (r *LoanRepository) SettleDisbursementComplete(ctx context.Context, tenantID, id, contractCode, agreementCode string, amountMinor int64, journalEntryID, updatedBy string) (bool, error) {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.StatusApproved, domain.StatusPosted, ""); err != nil {
+		return false, err
+	}
+	if err := domain.CanTransition(domain.ContractMachine, domain.StatusApproved, domain.StatusDisbursed, ""); err != nil {
+		return false, err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -1732,8 +1782,7 @@ func (r *LoanRepository) SettleDisbursementComplete(ctx context.Context, tenantI
 	res, err := tx.ExecContext(ctx, `
 		UPDATE lnm_disbursements
 		SET status = 'POSTED', journal_entry_id = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2
-		  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')
+		WHERE tenant_id = $1 AND id = $2 AND status = 'APPROVED'
 		  AND ($5 = 0 OR version = $5)`,
 		tenantID, id, nullText(journalEntryID), updatedBy, expected)
 	if err != nil {
@@ -1760,10 +1809,10 @@ func (r *LoanRepository) SettleDisbursementComplete(ctx context.Context, tenantI
 		return false, fmt.Errorf("agreement %s does not have enough pending amount to complete", agreementCode)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE lnm_contracts c SET status = 'ACTIVE', updated_at = now()
+		UPDATE lnm_contracts c SET status = 'DISBURSED', updated_at = now()
 		WHERE c.tenant_id = $1
 		  AND c.contract_code = $2
-		  AND c.status IN ('DRAFT', 'PENDING')
+		  AND c.status = 'APPROVED'
 		  AND EXISTS (
 		        SELECT 1 FROM lnm_disbursements d
 		        WHERE d.tenant_id = $1 AND d.contract_code = c.contract_code
@@ -1778,14 +1827,14 @@ func (r *LoanRepository) SettleDisbursementComplete(ctx context.Context, tenantI
 }
 
 // SumCompleteForSource totals the COMPLETE drawdowns already booked against
-// one REGISTER source — in-flight cases (SUBMITTED/APPROVED) count too, so
+// one REGISTER source — in-flight cases (PENDING_APPROVAL/APPROVED) count too, so
 // concurrent completes cannot overshoot the register (complete remainder guard).
 func (r *LoanRepository) SumCompleteForSource(ctx context.Context, tenantID, sourceRegisterID string) (int64, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(disburse_amt_minor), 0)
 		FROM lnm_disbursements
 		WHERE tenant_id = $1 AND source_register_id = $2 AND flow_type = 'COMPLETE'
-		  AND status IN ('SUBMITTED', 'APPROVED', 'POSTED')`, tenantID, sourceRegisterID)
+		  AND status IN ('PENDING_APPROVAL', 'APPROVED', 'POSTED')`, tenantID, sourceRegisterID)
 	var total int64
 	return total, row.Scan(&total)
 }
@@ -1932,12 +1981,15 @@ func (r *LoanRepository) GetCollection(ctx context.Context, tenantID, id string)
 	return &c, nil
 }
 
-func (r *LoanRepository) SetCollectionStatus(ctx context.Context, tenantID, id, status, updatedBy string) error {
+func (r *LoanRepository) SetCollectionStatus(ctx context.Context, tenantID, id, from, to, updatedBy, reason string) error {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(from), domain.Status(to), reason); err != nil {
+		return err
+	}
 	expected := domain.DataVersionFromContext(ctx)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE lnm_collections SET status = $3, updated_by = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2
-		  AND ($5 = 0 OR version = $5)`, tenantID, id, status, updatedBy, expected)
+		WHERE tenant_id = $1 AND id = $2 AND status = $5
+		  AND ($6 = 0 OR version = $6)`, tenantID, id, to, updatedBy, from, expected)
 	if err != nil {
 		return err
 	}
@@ -1945,7 +1997,15 @@ func (r *LoanRepository) SetCollectionStatus(ctx context.Context, tenantID, id, 
 		if staleVersion(ctx, r.db, "lnm_collections", tenantID, id, expected) {
 			return ErrStaleVersion
 		}
-		return fmt.Errorf("%w", ErrNotFound)
+		var current string
+		lookupErr := r.db.QueryRowContext(ctx, `SELECT status FROM lnm_collections WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&current)
+		if errors.Is(lookupErr, sql.ErrNoRows) {
+			return fmt.Errorf("%w", ErrNotFound)
+		}
+		if lookupErr != nil {
+			return lookupErr
+		}
+		return fmt.Errorf("%w: collection is %s, expected %s", domain.ErrInvalidTransition, current, from)
 	}
 	return nil
 }
@@ -1961,6 +2021,12 @@ func (r *LoanRepository) SetCollectionCaseAndJournal(ctx context.Context, tenant
 // agreement side effects. A previously posted row with a journal entry is an
 // idempotent replay; any other non-approved state is rejected.
 func (r *LoanRepository) SettleCollectionTx(ctx context.Context, tenantID, id, journalEntryID, updatedBy string) (bool, error) {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.StatusApproved, domain.StatusPosted, ""); err != nil {
+		return false, err
+	}
+	if err := domain.CanTransition(domain.AgreementMachine, domain.StatusActive, domain.StatusClosed, ""); err != nil {
+		return false, err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err

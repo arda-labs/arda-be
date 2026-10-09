@@ -17,9 +17,9 @@ import (
 // three service tasks need workers:
 //
 //   - lnm.loan.formation.validate: loan-service checks the contract sits in
-//     the submitted PENDING state; a failure throws the BPMN
+//     the submitted PENDING_APPROVAL state; a failure throws the BPMN
 //     VALIDATION_FAILED boundary error so the case loops back to the maker.
-//   - lnm.loan.formation.execute: approve — the contract goes ACTIVE.
+//   - lnm.loan.formation.execute: approve — the contract goes APPROVED.
 //   - lnm.loan.formation.cancel:  reject — the contract goes REJECTED.
 //
 // EPAS posts no money at formation (the contract is just created; cash only
@@ -80,8 +80,8 @@ func (w *FormationWorkers) validate() worker.JobHandler {
 	}
 }
 
-// execute activates the credit contract (DRAFT → PENDING at submit → ACTIVE
-// on approval). UpdateContractStatus is the domain command; no journal entry
+// execute approves the credit contract (DRAFT → PENDING_APPROVAL at submit →
+// APPROVED on approval). UpdateContractStatus is the domain command; no journal entry
 // is produced here.
 func (w *FormationWorkers) execute() worker.JobHandler {
 	return func(client worker.JobClient, job entities.Job) {
@@ -92,18 +92,18 @@ func (w *FormationWorkers) execute() worker.JobHandler {
 			_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).Send(ctx)
 			return
 		}
-		if err := w.loanClient.UpdateContractStatus(crmJobContext(job), id, "ACTIVE"); err != nil {
+		if err := w.loanClient.UpdateContractStatus(crmJobContext(job), id, "APPROVED", ""); err != nil {
 			w.failJob(client, job, "Loan Error: "+err.Error())
 			return
 		}
 		if err := w.complete(ctx, client, job, map[string]any{
 			"approvalStatus": "APPROVED",
-			"contractStatus": "ACTIVE",
+			"contractStatus": "APPROVED",
 		}); err != nil {
 			return
 		}
 		w.projection.FinishCase(ctx, job.GetProcessInstanceKey(), repository.CaseStatusCompleted)
-		slog.Info("loan formation executed", "id", id, "status", "ACTIVE")
+		slog.Info("loan formation approved", "id", id, "status", "APPROVED")
 	}
 }
 
@@ -120,7 +120,7 @@ func (w *FormationWorkers) cancel() worker.JobHandler {
 			_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).Send(ctx)
 			return
 		}
-		if err := w.loanClient.UpdateContractStatus(crmJobContext(job), id, "REJECTED"); err != nil {
+		if err := w.loanClient.UpdateContractStatus(crmJobContext(job), id, "REJECTED", "Rejected by checker"); err != nil {
 			w.failJob(client, job, "Loan Error: "+err.Error())
 			return
 		}

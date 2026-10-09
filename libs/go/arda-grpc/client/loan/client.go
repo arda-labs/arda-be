@@ -99,7 +99,7 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Client) UpdateContractStatus(ctx context.Context, contractID, status string) error {
+func (c *Client) UpdateContractStatus(ctx context.Context, contractID, status, reason string) error {
 	if c == nil {
 		return errors.New("loan client is nil")
 	}
@@ -108,6 +108,7 @@ func (c *Client) UpdateContractStatus(ctx context.Context, contractID, status st
 	_, err := c.api.UpdateContractStatus(callCtx, &loanv1.UpdateContractStatusRequest{
 		ContractId: contractID,
 		Status:     status,
+		Reason:     reason,
 	})
 	return err
 }

@@ -21,7 +21,7 @@ import (
 // LNM.300.02 shape — REGISTER create → submit (fake workflow capture) → check
 // → posting detail → SettleRegister (pending bump), then
 // COMPLETE create(source=register) → submit → SettleComplete (pending moves to outstanding,
-// contract ACTIVE on first completion) — plus the two guards (register
+// contract DISBURSED on first posting) — plus the two guards (register
 // over-limit, complete exceeding source remainder). Skipped when
 // ARDA_TEST_DSN unset.
 //
@@ -73,7 +73,7 @@ func TestDisbursementSmoke(t *testing.T) {
 		TermUnit:     "MONTH",
 		ContractDate: "2026-09-08",
 		MaturityDate: "2027-09-08",
-		Status:       domain.ContractDraft,
+		Status:       domain.ContractApproved,
 		CreatedBy:    "smoke",
 	})
 	if err != nil {
@@ -89,7 +89,7 @@ func TestDisbursementSmoke(t *testing.T) {
 		LoanTerm:      12,
 		TermUnit:      "MONTH",
 		MaturityDate:  "2027-09-08",
-		Status:        "PENDING",
+		Status:        domain.AgreementActive,
 		CreatedBy:     "smoke",
 	}); err != nil {
 		t.Fatalf("seed agreement: %v", err)
@@ -189,9 +189,9 @@ func TestDisbursementSmoke(t *testing.T) {
 	if reservationStatus != "CONSUMED" {
 		t.Fatalf("register reservation status = %q, want CONSUMED", reservationStatus)
 	}
-	// Register settle must NOT flip the contract — that is the COMPLETE leg's job.
-	if status := contractStatus(); status != domain.ContractDraft {
-		t.Fatalf("contract status after register settle = %q, want DRAFT", status)
+	// The first posted disbursement advances the approved contract to DISBURSED.
+	if status := contractStatus(); status != domain.ContractDisbursed {
+		t.Fatalf("contract status after register settle = %q, want DISBURSED", status)
 	}
 
 	// ── COMPLETE flow: create(source=register) → submit → settle ──
@@ -244,9 +244,9 @@ func TestDisbursementSmoke(t *testing.T) {
 	if pending := agreementPending(); pending != wantPending {
 		t.Fatalf("pending after complete settle = %d, want %d", pending, wantPending)
 	}
-	// First COMPLETE for the contract flips it ACTIVE (EPAS first-disbursement).
-	if status := contractStatus(); status != domain.ContractActive {
-		t.Fatalf("contract status after complete settle = %q, want ACTIVE", status)
+	// COMPLETE preserves the already-disbursed contract state.
+	if status := contractStatus(); status != domain.ContractDisbursed {
+		t.Fatalf("contract status after complete settle = %q, want DISBURSED", status)
 	}
 
 	// ── Guards ──

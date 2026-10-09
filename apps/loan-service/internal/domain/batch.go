@@ -8,7 +8,7 @@ import (
 // — same lifecycle as the per-row tables).
 const (
 	BatchDraft     = "DRAFT"
-	BatchSubmitted = "SUBMITTED"
+	BatchSubmitted = "PENDING_APPROVAL"
 	BatchApproved  = "APPROVED"
 	BatchRejected  = "REJECTED"
 	BatchCancelled = "CANCELLED"

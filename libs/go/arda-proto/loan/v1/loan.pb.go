@@ -137,6 +137,7 @@ type UpdateContractStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ContractId    string                 `protobuf:"bytes,1,opt,name=contract_id,json=contractId,proto3" json:"contract_id,omitempty"`
 	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -181,6 +182,13 @@ func (x *UpdateContractStatusRequest) GetContractId() string {
 func (x *UpdateContractStatusRequest) GetStatus() string {
 	if x != nil {
 		return x.Status
+	}
+	return ""
+}
+
+func (x *UpdateContractStatusRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
 	}
 	return ""
 }
@@ -2840,11 +2848,12 @@ const file_arda_loan_v1_loan_proto_rawDesc = "" +
 	"\ato_date\x18\x03 \x01(\tR\x06toDate\"\x81\x01\n" +
 	"\x1bGetOperationMetricsResponse\x126\n" +
 	"\x17collection_volume_minor\x18\x01 \x01(\x03R\x15collectionVolumeMinor\x12*\n" +
-	"\x11npl_balance_minor\x18\x02 \x01(\x03R\x0fnplBalanceMinor\"V\n" +
+	"\x11npl_balance_minor\x18\x02 \x01(\x03R\x0fnplBalanceMinor\"n\n" +
 	"\x1bUpdateContractStatusRequest\x12\x1f\n" +
 	"\vcontract_id\x18\x01 \x01(\tR\n" +
 	"contractId\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\".\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\".\n" +
 	"\x1cUpdateContractStatusResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"5\n" +
 	"\x12GetContractRequest\x12\x1f\n" +

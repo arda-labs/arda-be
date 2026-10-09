@@ -25,9 +25,9 @@ func TestContractEditableStatus(t *testing.T) {
 		wantAllowed bool
 	}{
 		{domain.ContractDraft, true},
-		{domain.ContractPending, true},
-		{domain.ContractActive, false},
-		{domain.ContractRejected, false},
+		{domain.ContractPendingApproval, true},
+		{domain.ContractDisbursed, false},
+		{domain.ContractRejected, true},
 		{domain.ContractClosed, false},
 		{"", false},
 	}
@@ -70,7 +70,7 @@ func TestValidateContractUpdateAcceptsOptionalDates(t *testing.T) {
 
 // GATE smoke (maker revise, DB half): requires the loan Postgres. Seeds a
 // DRAFT contract, updates the whitelist fields, then verifies the status
-// guard freezes the contract once it leaves DRAFT/PENDING.
+// guard freezes the contract once it leaves DRAFT/PENDING_APPROVAL/REJECTED.
 func TestContractUpdateSmoke(t *testing.T) {
 	const tenantID = "00000000-0000-0000-0000-000000000010"
 
@@ -128,12 +128,18 @@ func TestContractUpdateSmoke(t *testing.T) {
 		t.Fatalf("identity/status fields leaked into update: %+v", updated)
 	}
 
-	// Guard: once ACTIVE the contract is frozen.
-	if err := repo.UpdateContractStatus(ctx, tenantID, created.ID, domain.ContractActive); err != nil {
-		t.Fatalf("activate: %v", err)
+	// Guard: once DISBURSED the contract is frozen.
+	if err := repo.UpdateContractStatus(ctx, tenantID, created.ID, domain.ContractDraft, domain.ContractPendingApproval); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if err := repo.UpdateContractStatus(ctx, tenantID, created.ID, domain.ContractPendingApproval, domain.ContractApproved); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if err := repo.UpdateContractStatus(ctx, tenantID, created.ID, domain.ContractApproved, domain.ContractDisbursed); err != nil {
+		t.Fatalf("disburse: %v", err)
 	}
 	if _, err := repo.UpdateContract(ctx, tenantID, created.ID, &patch); !errors.Is(err, repository.ErrContractNotEditable) {
-		t.Fatalf("expected ErrContractNotEditable on ACTIVE contract, got %v", err)
+		 t.Fatalf("expected ErrContractNotEditable on DISBURSED contract, got %v", err)
 	}
 
 	// Not-found contract maps to ErrNotFound, not not-editable.
@@ -145,7 +151,7 @@ func TestContractUpdateSmoke(t *testing.T) {
 // Service-level guard: the non-editable status is rejected with the
 // contract_not_editable message before any repo write happens.
 func TestUpdateContractGuardMessage(t *testing.T) {
-	err := ardaerrors.New(ardaerrors.CodeInvalidInput, "contract_not_editable: only DRAFT or PENDING contracts can be revised")
+	err := ardaerrors.New(ardaerrors.CodeInvalidInput, "contract_not_editable: only DRAFT, PENDING_APPROVAL, or REJECTED contracts can be revised")
 	if err.Code != ardaerrors.CodeInvalidInput || err.Message[:21] != "contract_not_editable" {
 		t.Fatalf("unexpected guard error shape: %+v", err)
 	}
