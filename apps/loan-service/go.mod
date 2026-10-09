@@ -7,6 +7,7 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-money v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-params v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-time v0.0.0
@@ -45,6 +46,8 @@ replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-erro
 replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
 
 replace github.com/arda-labs/arda/libs/go/arda-money => ../../libs/go/arda-money
+
+replace github.com/arda-labs/arda/libs/go/arda-params => ../../libs/go/arda-params
 
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
 

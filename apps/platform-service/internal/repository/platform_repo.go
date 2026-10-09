@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
 )
@@ -61,7 +62,8 @@ func (r *PlatformRepository) ListParameters(ctx context.Context, tenantID, scope
 		return nil, err
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, tenant_id, key, value, value_type, scope_type, scope_id, description, is_secret, created_at, updated_at
+		SELECT id, tenant_id, module, key, value, value_type, unit, scope_type, scope_id,
+		       effective_from, effective_to, description, is_secret, created_at, updated_at
 		FROM plt_system_parameters
 		WHERE ($1 = '' OR COALESCE(tenant_id, '') = $1)
 		  AND ($2 = '' OR scope_type = $2)
@@ -75,7 +77,7 @@ func (r *PlatformRepository) ListParameters(ctx context.Context, tenantID, scope
 	items := make([]domain.Parameter, 0)
 	for rows.Next() {
 		var item domain.Parameter
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.Key, &item.Value, &item.ValueType, &item.ScopeType, &item.ScopeID, &item.Description, &item.IsSecret, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.Module, &item.Key, &item.Value, &item.ValueType, &item.Unit, &item.ScopeType, &item.ScopeID, &item.EffectiveFrom, &item.EffectiveTo, &item.Description, &item.IsSecret, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if item.IsSecret {
@@ -96,15 +98,22 @@ func (r *PlatformRepository) UpsertParameter(ctx context.Context, item domain.Pa
 	if item.ScopeType == "" {
 		item.ScopeType = domain.ScopeGlobal
 	}
+	if item.Module == "" {
+		return domain.Parameter{}, errors.New("parameter module is required")
+	}
+	if item.EffectiveFrom.IsZero() {
+		item.EffectiveFrom = time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC)
+	}
 	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO plt_system_parameters (id, tenant_id, key, value, value_type, scope_type, scope_id, description, is_secret)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (key, scope_type, COALESCE(scope_id, ''), COALESCE(tenant_id, ''))
-		DO UPDATE SET value = EXCLUDED.value, value_type = EXCLUDED.value_type, description = EXCLUDED.description,
+		INSERT INTO plt_system_parameters (id, tenant_id, module, key, value, value_type, unit, scope_type, scope_id, effective_from, effective_to, description, is_secret)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7,''), $8, $9, $10, $11, $12, $13)
+		ON CONFLICT (module, key, scope_type, (COALESCE(scope_id, '')), (COALESCE(tenant_id, '')), effective_from)
+		DO UPDATE SET value = EXCLUDED.value, value_type = EXCLUDED.value_type, unit = EXCLUDED.unit,
+			effective_to = EXCLUDED.effective_to, description = EXCLUDED.description,
 			is_secret = EXCLUDED.is_secret, updated_at = now()
-		RETURNING id, tenant_id, key, value, value_type, scope_type, scope_id, description, is_secret, created_at, updated_at`,
-		item.ID, item.TenantID, item.Key, item.Value, item.ValueType, item.ScopeType, item.ScopeID, item.Description, item.IsSecret,
-	).Scan(&item.ID, &item.TenantID, &item.Key, &item.Value, &item.ValueType, &item.ScopeType, &item.ScopeID, &item.Description, &item.IsSecret, &item.CreatedAt, &item.UpdatedAt)
+		RETURNING id, tenant_id, module, key, value, value_type, unit, scope_type, scope_id, effective_from, effective_to, description, is_secret, created_at, updated_at`,
+		item.ID, item.TenantID, item.Module, item.Key, item.Value, item.ValueType, item.Unit, item.ScopeType, item.ScopeID, item.EffectiveFrom, item.EffectiveTo, item.Description, item.IsSecret,
+	).Scan(&item.ID, &item.TenantID, &item.Module, &item.Key, &item.Value, &item.ValueType, &item.Unit, &item.ScopeType, &item.ScopeID, &item.EffectiveFrom, &item.EffectiveTo, &item.Description, &item.IsSecret, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return domain.Parameter{}, err
 	}
@@ -114,20 +123,23 @@ func (r *PlatformRepository) UpsertParameter(ctx context.Context, item domain.Pa
 	return item, nil
 }
 
-func (r *PlatformRepository) GetParameter(ctx context.Context, tenantID, key, scopeType, scopeID string) (domain.Parameter, error) {
-	if err := requireTenantID(tenantID); err != nil {
-		return domain.Parameter{}, err
+func (r *PlatformRepository) GetParameter(ctx context.Context, tenantID, module, key, scopeType, scopeID string, effectiveDate time.Time) (domain.Parameter, error) {
+	if scopeType != domain.ScopeGlobal {
+		if err := requireTenantID(tenantID); err != nil {
+			return domain.Parameter{}, err
+		}
 	}
 	var item domain.Parameter
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, key, value, value_type, scope_type, scope_id, description, is_secret, created_at, updated_at
+		SELECT id, tenant_id, module, key, value, value_type, unit, scope_type, scope_id, effective_from, effective_to, description, is_secret, created_at, updated_at
 		FROM plt_system_parameters
-		WHERE key = $1
-		  AND ($2 = '' OR COALESCE(tenant_id, '') = $2)
-		  AND scope_type = $3
-		  AND COALESCE(scope_id, '') = $4
-		LIMIT 1`, key, tenantID, scopeType, scopeID).
-		Scan(&item.ID, &item.TenantID, &item.Key, &item.Value, &item.ValueType, &item.ScopeType, &item.ScopeID, &item.Description, &item.IsSecret, &item.CreatedAt, &item.UpdatedAt)
+		WHERE module = $1 AND key = $2
+		  AND scope_type = $3 AND COALESCE(scope_id, '') = $4
+		  AND effective_from <= $5::date AND (effective_to IS NULL OR effective_to >= $5::date)
+		  AND ((scope_type = 'global' AND tenant_id IS NULL) OR tenant_id = $6)
+		ORDER BY effective_from DESC
+		LIMIT 1`, module, key, scopeType, scopeID, effectiveDate.Format("2006-01-02"), tenantID).
+		Scan(&item.ID, &item.TenantID, &item.Module, &item.Key, &item.Value, &item.ValueType, &item.Unit, &item.ScopeType, &item.ScopeID, &item.EffectiveFrom, &item.EffectiveTo, &item.Description, &item.IsSecret, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return domain.Parameter{}, err
 	}
@@ -144,14 +156,14 @@ func (r *PlatformRepository) GetParameter(ctx context.Context, tenantID, key, sc
 func (r *PlatformRepository) GetGlobalParameter(ctx context.Context, key string) (domain.Parameter, error) {
 	var item domain.Parameter
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, key, value, value_type, scope_type, scope_id, description, is_secret, created_at, updated_at
+		SELECT id, tenant_id, module, key, value, value_type, unit, scope_type, scope_id, effective_from, effective_to, description, is_secret, created_at, updated_at
 		FROM plt_system_parameters
 		WHERE key = $1
 		  AND scope_type = $2
 		  AND scope_id IS NULL
 		  AND tenant_id IS NULL
 		LIMIT 1`, key, domain.ScopeGlobal).
-		Scan(&item.ID, &item.TenantID, &item.Key, &item.Value, &item.ValueType, &item.ScopeType, &item.ScopeID, &item.Description, &item.IsSecret, &item.CreatedAt, &item.UpdatedAt)
+		Scan(&item.ID, &item.TenantID, &item.Module, &item.Key, &item.Value, &item.ValueType, &item.Unit, &item.ScopeType, &item.ScopeID, &item.EffectiveFrom, &item.EffectiveTo, &item.Description, &item.IsSecret, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return domain.Parameter{}, err
 	}

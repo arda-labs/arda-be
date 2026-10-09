@@ -51,7 +51,7 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 		addr,
 		grpc.WithTransportCredentials(transportCreds),
 		// Only read-only RPCs are retried; ResolveParameter reads a setting.
-		retry.ReadOnly("arda.platform.v1.PlatformService", "ResolveParameter"),
+		retry.ReadOnly("arda.platform.v1.PlatformService", "ResolveParameter", "ListLookupValues"),
 		grpc.WithChainUnaryInterceptor(
 			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
 			interceptors.UnaryClientServiceAuth(secret, sourceService, "platform-service"),
@@ -82,26 +82,73 @@ func (c *Client) ResolveString(ctx context.Context, tenantID, key string) (strin
 }
 
 func (c *Client) ResolveStringWithScopes(ctx context.Context, tenantID, key string, scopes ...Scope) (string, error) {
-	if c == nil {
-		return "", errors.New("platform client is nil")
-	}
-	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
-	req := &platformv1.ResolveParameterRequest{
-		TenantId: tenantID,
-		Key:      key,
-		Scopes:   make([]*platformv1.ScopeSelector, 0, len(scopes)),
-	}
-	for _, scope := range scopes {
-		req.Scopes = append(req.Scopes, &platformv1.ScopeSelector{
-			TenantId:  scope.TenantID,
-			ScopeType: scope.ScopeType,
-			ScopeId:   scope.ScopeID,
-		})
-	}
-	resp, err := c.api.ResolveParameter(callCtx, req)
+	response, err := c.ResolveParameter(ctx, &platformv1.ResolveParameterRequest{
+		TenantId:      tenantID,
+		Module:        moduleForKey(key),
+		Key:           key,
+		EffectiveDate: time.Now().UTC().Format("2006-01-02"),
+		Scopes:        scopeSelectors(scopes),
+	})
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(resp.GetValue()), nil
+	return strings.TrimSpace(response.GetValue()), nil
+}
+
+func (c *Client) ResolveParameter(ctx context.Context, request *platformv1.ResolveParameterRequest) (*platformv1.Parameter, error) {
+	if c == nil {
+		return nil, errors.New("platform client is nil")
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	if request == nil {
+		return nil, errors.New("platform parameter resolve request is nil")
+	}
+	resp, err := c.api.ResolveParameter(callCtx, request)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (c *Client) ListLookupValues(ctx context.Context, tenantID, categoryCode string) (*platformv1.ListLookupValuesResponse, error) {
+	if c == nil {
+		return nil, errors.New("platform client is nil")
+	}
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(categoryCode) == "" {
+		return nil, errors.New("platform lookup tenant and category are required")
+	}
+	outgoing := ardametadata.FromOutgoing(ctx)
+	if outgoing.TenantID != "" && outgoing.TenantID != tenantID {
+		return nil, errors.New("platform lookup tenant is outside outgoing context scope")
+	}
+	if outgoing.TenantID == "" {
+		ctx = ardametadata.AppendToOutgoing(ctx, ardametadata.Context{TenantID: tenantID})
+	}
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	return c.api.ListLookupValues(callCtx, &platformv1.ListLookupValuesRequest{CategoryCode: categoryCode})
+}
+
+func scopeSelectors(scopes []Scope) []*platformv1.ScopeSelector {
+	selectors := make([]*platformv1.ScopeSelector, 0, len(scopes))
+	for _, scope := range scopes {
+		selectors = append(selectors, &platformv1.ScopeSelector{
+			TenantId: scope.TenantID, ScopeType: scope.ScopeType, ScopeId: scope.ScopeID,
+		})
+	}
+	return selectors
+}
+
+func moduleForKey(key string) string {
+	for _, prefix := range []struct{ keyPrefix, module string }{
+		{"LNM_", "loan"}, {"DPM_", "deposit"}, {"FIN_", "finance"},
+		{"CAP_", "capital"}, {"CRM_", "crm"}, {"IAM_", "iam"},
+		{"PLT_", "platform"}, {"PLATFORM_", "platform"},
+	} {
+		if strings.HasPrefix(key, prefix.keyPrefix) {
+			return prefix.module
+		}
+	}
+	return "platform"
 }

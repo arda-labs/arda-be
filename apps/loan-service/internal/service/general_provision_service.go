@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	ardaParams "github.com/arda-labs/arda/libs/go/arda-params"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	"github.com/shopspring/decimal"
 )
@@ -44,10 +46,11 @@ type GeneralProvisionService struct {
 	repo     *repository.LoanRepository
 	workflow AdjustmentSubmitter
 	finance  *financeclient.Client
+	params   *ardaParams.Registry
 }
 
-func NewGeneralProvisionService(repo *repository.LoanRepository, workflow AdjustmentSubmitter, finance *financeclient.Client) *GeneralProvisionService {
-	return &GeneralProvisionService{repo: repo, workflow: workflow, finance: finance}
+func NewGeneralProvisionService(repo *repository.LoanRepository, workflow AdjustmentSubmitter, finance *financeclient.Client, registry *ardaParams.Registry) *GeneralProvisionService {
+	return &GeneralProvisionService{repo: repo, workflow: workflow, finance: finance, params: registry}
 }
 
 // Calculate computes the period figures without persisting anything.
@@ -56,7 +59,11 @@ func (s *GeneralProvisionService) Calculate(ctx context.Context, tenantID, orgCo
 	if !isValidISODate(asOf) {
 		return GeneralProvisionPreview{}, ardaerrors.New(ardaerrors.CodeInvalidInput, "provision_date must be YYYY-MM-DD")
 	}
-	rate, err := s.repo.GeneralProvisionRate(ctx, orgCodeOrDefault(orgCode))
+	if s.params == nil {
+		return GeneralProvisionPreview{}, ardaerrors.New(ardaerrors.CodeInternal, "parameter registry is not configured")
+	}
+	effectiveDate, _ := time.Parse("2006-01-02", asOf)
+	rate, err := ardaParams.Get[float64](ctx, s.params, "loan", "LNM_GENERAL_PROVISION_RATE", ardaParams.ScopeKey{TenantID: tenantID, OrgCode: orgCode, EffectiveDate: effectiveDate})
 	if err != nil {
 		return GeneralProvisionPreview{}, mapRepoError(err)
 	}

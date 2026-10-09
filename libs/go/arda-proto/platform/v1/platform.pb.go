@@ -95,6 +95,10 @@ type Parameter struct {
 	IsSecret      bool                   `protobuf:"varint,9,opt,name=is_secret,json=isSecret,proto3" json:"is_secret,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Module        string                 `protobuf:"bytes,12,opt,name=module,proto3" json:"module,omitempty"`
+	Unit          string                 `protobuf:"bytes,13,opt,name=unit,proto3" json:"unit,omitempty"`
+	EffectiveFrom string                 `protobuf:"bytes,14,opt,name=effective_from,json=effectiveFrom,proto3" json:"effective_from,omitempty"`
+	EffectiveTo   string                 `protobuf:"bytes,15,opt,name=effective_to,json=effectiveTo,proto3" json:"effective_to,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -204,6 +208,34 @@ func (x *Parameter) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Parameter) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
+}
+
+func (x *Parameter) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *Parameter) GetEffectiveFrom() string {
+	if x != nil {
+		return x.EffectiveFrom
+	}
+	return ""
+}
+
+func (x *Parameter) GetEffectiveTo() string {
+	if x != nil {
+		return x.EffectiveTo
+	}
+	return ""
 }
 
 type ListParametersRequest struct {
@@ -352,6 +384,8 @@ type ResolveParameterRequest struct {
 	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
 	Scopes        []*ScopeSelector       `protobuf:"bytes,3,rep,name=scopes,proto3" json:"scopes,omitempty"`
 	Locale        string                 `protobuf:"bytes,4,opt,name=locale,proto3" json:"locale,omitempty"`
+	Module        string                 `protobuf:"bytes,5,opt,name=module,proto3" json:"module,omitempty"`
+	EffectiveDate string                 `protobuf:"bytes,6,opt,name=effective_date,json=effectiveDate,proto3" json:"effective_date,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -410,6 +444,20 @@ func (x *ResolveParameterRequest) GetScopes() []*ScopeSelector {
 func (x *ResolveParameterRequest) GetLocale() string {
 	if x != nil {
 		return x.Locale
+	}
+	return ""
+}
+
+func (x *ResolveParameterRequest) GetModule() string {
+	if x != nil {
+		return x.Module
+	}
+	return ""
+}
+
+func (x *ResolveParameterRequest) GetEffectiveDate() string {
+	if x != nil {
+		return x.EffectiveDate
 	}
 	return ""
 }
@@ -1495,7 +1543,7 @@ const file_arda_platform_v1_platform_proto_rawDesc = "" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x1d\n" +
 	"\n" +
 	"scope_type\x18\x02 \x01(\tR\tscopeType\x12\x19\n" +
-	"\bscope_id\x18\x03 \x01(\tR\ascopeId\"\xee\x02\n" +
+	"\bscope_id\x18\x03 \x01(\tR\ascopeId\"\xe4\x03\n" +
 	"\tParameter\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x10\n" +
@@ -1512,7 +1560,11 @@ const file_arda_platform_v1_platform_proto_rawDesc = "" +
 	"created_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"f\n" +
+	"updated_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x16\n" +
+	"\x06module\x18\f \x01(\tR\x06module\x12\x12\n" +
+	"\x04unit\x18\r \x01(\tR\x04unit\x12%\n" +
+	"\x0eeffective_from\x18\x0e \x01(\tR\reffectiveFrom\x12!\n" +
+	"\feffective_to\x18\x0f \x01(\tR\veffectiveTo\"f\n" +
 	"\x15ListParametersRequest\x125\n" +
 	"\x05scope\x18\x01 \x01(\v2\x1f.arda.platform.v1.ScopeSelectorR\x05scope\x12\x16\n" +
 	"\x06locale\x18\x02 \x01(\tR\x06locale\"U\n" +
@@ -1521,12 +1573,14 @@ const file_arda_platform_v1_platform_proto_rawDesc = "" +
 	"parameters\x18\x01 \x03(\v2\x1b.arda.platform.v1.ParameterR\n" +
 	"parameters\"S\n" +
 	"\x16UpsertParameterRequest\x129\n" +
-	"\tparameter\x18\x01 \x01(\v2\x1b.arda.platform.v1.ParameterR\tparameter\"\x99\x01\n" +
+	"\tparameter\x18\x01 \x01(\v2\x1b.arda.platform.v1.ParameterR\tparameter\"\xd8\x01\n" +
 	"\x17ResolveParameterRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x127\n" +
 	"\x06scopes\x18\x03 \x03(\v2\x1f.arda.platform.v1.ScopeSelectorR\x06scopes\x12\x16\n" +
-	"\x06locale\x18\x04 \x01(\tR\x06locale\"\xd4\x02\n" +
+	"\x06locale\x18\x04 \x01(\tR\x06locale\x12\x16\n" +
+	"\x06module\x18\x05 \x01(\tR\x06module\x12%\n" +
+	"\x0eeffective_date\x18\x06 \x01(\tR\reffectiveDate\"\xd4\x02\n" +
 	"\x0eLookupCategory\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x12\n" +
