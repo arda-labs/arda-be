@@ -13,10 +13,22 @@ import (
 // only in endpoint conventions and required request metadata.
 type ProviderType string
 
-// Jev uses System One typed decisions, not chat-completions.
+// decisionModelPrefixes identify System One decision models (Jev and any
+// future TypeSafe release). They answer typed questions over /systemone, never
+// chat, so chat profiles must refuse them whichever provider serves them.
+var decisionModelPrefixes = []string{"jev-"}
+
+// IsDecisionModelID reports whether a model ID (optionally namespaced as
+// vendor/model) belongs to a System One decision model.
 func IsDecisionModelID(id string) bool {
 	parts := strings.Split(strings.ToLower(strings.TrimSpace(id)), "/")
-	return strings.HasPrefix(parts[len(parts)-1], "jev-")
+	name := parts[len(parts)-1]
+	for _, prefix := range decisionModelPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 const (

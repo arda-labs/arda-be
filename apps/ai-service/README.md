@@ -71,9 +71,36 @@ AI Settings stores a server-owned provider preset alongside each profile:
 not allow arbitrary custom headers. In particular, `opencode-go` uses
 `https://opencode.ai/zen/go/v1` for chat-completions models and the service
 adds an opaque, stable `x-opencode-session` plus its own User-Agent for every
-conversation. Anthropic Messages and OpenAI Responses models need their own
-wire adapters and are intentionally not selectable as chat-completions
-profiles yet. Model configuration is tenant-owned (AI Settings UI): each
+conversation. Each profile also chooses an **API format**, independent of the
+preset: `chat_completions` (`{base}/chat/completions`, default),
+`anthropic_messages` (`{base}/v1/messages`, `/v1` is not repeated when the base
+URL has it), `openai_responses` (`{base}/responses`, stateless with
+`store:false`) or `google_gemini`
+(`{base}/models/{model}:streamGenerateContent`, key in `x-goog-api-key`,
+function-call thought signatures replayed). A model may override the profile's
+format (`PATCH /api/ai/settings/profiles/{id}/models/{modelId}`), so one
+gateway key can serve Claude, GPT-5.x, Gemini and DeepSeek from one profile;
+`GET …/available-models` lists what the endpoint advertises, each with a
+`suggestedApiFormat` derived from the model ID (a hint, never applied
+automatically). A gateway such as OpenCode Zen serves all three on different
+paths, so the format must match the model (Claude on messages, GPT-5.x/Grok on
+responses, DeepSeek/GLM/Kimi/MiniMax on chat completions). An optional
+**reasoning effort** (`low`/`medium`/`high`) is sent only when chosen:
+`reasoning_effort` (chat completions), `reasoning.effort` (responses) or a
+thinking budget (messages, Gemini). `reasoningBudgetTokens` (0 or 1024–64000)
+overrides the effort mapping where a budget applies. The served model version
+reported by the provider (aliases such as `jev-latest` resolve server-side)
+is what `ai_runs.model_id` records. Thinking blocks and reasoning items are replayed
+within a run so tool loops keep working; inline `<think>…</think>` and the
+`reasoning`/`reasoning_content`/`reasoning_details` fields are shown as
+reasoning, not answer. RAG query rewriting never uses the reasoning effort.
+
+Decision models (Jev, System One) are configured separately under *Model
+quyết định* and are refused by chat profiles. The decision provider is
+`opencode-zen` (`https://opencode.ai/zen/v1`, IDs `jev-1.13`, `jev-1.13-free`)
+or `typesafe` (`https://api.typesafe.ai/v1`, IDs `jev-latest`, `jev-1.13.0`);
+both use `POST /systemone`. Pin a versioned ID rather than an alias when
+confidence thresholds were tuned against one release. Model configuration is tenant-owned (AI Settings UI): each
 tenant stores one applied profile/model, while the deployment supplies the
 shared AI Gateway token and an optional base-URL allowlist. Repeated upstream
 failures are circuit-broken. The agent loop

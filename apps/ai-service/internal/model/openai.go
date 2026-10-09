@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +23,12 @@ type Message struct {
 	Reasoning  string     `json:"reasoning_content,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+	// ProviderState is opaque, provider-specific reasoning that must be sent
+	// back with the assistant turn for the next request in the same run
+	// (Anthropic thinking blocks with signatures, Responses reasoning items).
+	// It is never persisted across runs and never reaches chat-completions
+	// providers.
+	ProviderState json.RawMessage `json:"-"`
 }
 
 type ToolCall struct {
@@ -121,15 +125,21 @@ type Prober interface {
 	Probe(context.Context) error
 }
 
-var _ Provider = (*Client)(nil)
+var _ Backend = (*Client)(nil)
 
 type Client struct {
 	baseURL      string
 	apiKey       string
 	model        string
 	providerType ProviderType
+	effort       ReasoningEffort
 	gatewayToken string
 	http         *http.Client
+}
+
+func (c *Client) withEffort(effort ReasoningEffort) *Client {
+	c.effort = effort
+	return c
 }
 
 func (c *Client) ProviderType() ProviderType {
@@ -152,25 +162,14 @@ func (c *Client) ProviderName() string {
 	if c == nil {
 		return ""
 	}
-	u, err := url.Parse(c.baseURL)
-	if err != nil || u.Hostname() == "" {
-		return "unknown"
-	}
-	return u.Hostname()
+	return hostName(c.baseURL)
 }
 
 func (c *Client) Validate() error {
-	if c == nil || c.baseURL == "" || c.model == "" {
+	if c == nil {
 		return fmt.Errorf("model client is not configured")
 	}
-	if IsDecisionModelID(c.model) {
-		return fmt.Errorf("decision models cannot be used for chat generation")
-	}
-	u, err := url.Parse(c.baseURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
-		return fmt.Errorf("model base URL must be an http or https URL")
-	}
-	return nil
+	return validateEndpoint(c.baseURL, c.model)
 }
 
 func (c *Client) Probe(ctx context.Context) error {
@@ -200,7 +199,7 @@ func (c *Client) Probe(ctx context.Context) error {
 // WithGatewayToken sets an AI Gateway credential sent as the
 // cf-aig-authorization header, separate from the upstream provider key in
 // Authorization (Cloudflare AI Gateway authentication mode).
-func (c *Client) WithGatewayToken(token string) *Client {
+func (c *Client) WithGatewayToken(token string) Backend {
 	c.gatewayToken = strings.TrimSpace(token)
 	return c
 }
@@ -209,15 +208,7 @@ func (c *Client) applyHeaders(req *http.Request) {
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
-	if c.gatewayToken != "" {
-		req.Header.Set("cf-aig-authorization", "Bearer "+c.gatewayToken)
-	}
-	if c.providerType == ProviderOpenCodeGo {
-		req.Header.Set("User-Agent", "arda-ai-service/1.0")
-		if sessionID := sessionIDFromContext(req.Context()); sessionID != "" {
-			req.Header.Set("x-opencode-session", sessionID)
-		}
-	}
+	applyGatewayHeaders(req, c.providerType, c.gatewayToken)
 }
 
 // ChatProbe verifies credentials and reachability with a minimal
@@ -284,8 +275,9 @@ type streamRequest struct {
 	// MaxTokens and MaxCompletionTokens are mutually exclusive: OpenAI's own
 	// reasoning models reject max_tokens, while most compatible servers only
 	// understand it.
-	MaxTokens           int `json:"max_tokens,omitempty"`
-	MaxCompletionTokens int `json:"max_completion_tokens,omitempty"`
+	MaxTokens           int    `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int    `json:"max_completion_tokens,omitempty"`
+	ReasoningEffort     string `json:"reasoning_effort,omitempty"`
 	StreamOptions       *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
@@ -309,6 +301,14 @@ type StreamCallbacks struct {
 	// OnReasoningDelta surfaces provider chain-of-thought deltas
 	// (e.g. deepseek reasoning_content) for reasoning-aware clients.
 	OnReasoningDelta func(delta string)
+	// OnServedModel reports, once per stream, the exact model ID the provider
+	// says answered. Aliases resolve to versioned IDs (jev-latest to
+	// jev-1.13.0, claude-sonnet-5-5 to a dated release), so this is what an
+	// audit trail should record.
+	OnServedModel func(model string)
+	// OnProviderState receives the opaque reasoning state of a finished turn
+	// (see Message.ProviderState). Only formats that need replay call it.
+	OnProviderState func(state json.RawMessage)
 }
 
 // StreamChat sends a chat completion request and consumes the SSE stream.
@@ -331,6 +331,7 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 	} else {
 		request.MaxTokens = DefaultMaxCompletionTokens
 	}
+	request.ReasoningEffort = string(c.effort)
 	for _, tool := range tools {
 		parameters := tool.Parameters
 		if len(parameters) == 0 {
@@ -363,6 +364,16 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 	finishReason := ""
 	var usage Usage
 	pending := newPendingToolCalls()
+	var think thinkFilter
+	servedReported := false
+	emitText := func(text, reasoning string) {
+		if reasoning != "" && callbacks.OnReasoningDelta != nil {
+			callbacks.OnReasoningDelta(reasoning)
+		}
+		if text != "" && callbacks.OnTextDelta != nil {
+			callbacks.OnTextDelta(text)
+		}
+	}
 
 	scanner := bufio.NewScanner(response.Body)
 	scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
@@ -379,6 +390,12 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
+		if chunk.Model != "" && !servedReported {
+			servedReported = true
+			if callbacks.OnServedModel != nil {
+				callbacks.OnServedModel(chunk.Model)
+			}
+		}
 		// Gateways report mid-stream failures as an `error` object in a data
 		// frame. Skipping it would end the run as a "success" with a truncated
 		// or empty answer.
@@ -390,11 +407,11 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 		}
 		for _, choice := range chunk.Choices {
 			delta := choice.Delta
-			if delta.Content != "" && callbacks.OnTextDelta != nil {
-				callbacks.OnTextDelta(delta.Content)
+			if delta.Content != "" {
+				emitText(think.feed(delta.Content))
 			}
-			if delta.Reasoning != "" && callbacks.OnReasoningDelta != nil {
-				callbacks.OnReasoningDelta(delta.Reasoning)
+			if reasoning := delta.reasoningText(); reasoning != "" && callbacks.OnReasoningDelta != nil {
+				callbacks.OnReasoningDelta(reasoning)
 			}
 			for _, raw := range delta.ToolCalls {
 				call, complete := pending.add(raw)
@@ -410,6 +427,7 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 	if err := scanner.Err(); err != nil {
 		return finishReason, usage, fmt.Errorf("read model stream: %w", err)
 	}
+	emitText(think.flush())
 	if callbacks.OnFinish != nil {
 		callbacks.OnFinish(finishReason, usage)
 	}
@@ -419,54 +437,16 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 const maxProviderAttempts = 3
 
 func (c *Client) doWithRetry(ctx context.Context, payload []byte) (*http.Response, error) {
-	var lastErr error
-	for attempt := 1; attempt <= maxProviderAttempts; attempt++ {
-		var retryAfter time.Duration
+	return retrySend(ctx, c.http, func() (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
 		if err != nil {
-			return nil, fmt.Errorf("create model request: %w", err)
+			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "text/event-stream")
 		c.applyHeaders(req)
-		response, err := c.http.Do(req)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			lastErr = fmt.Errorf("model request failed: %w", err)
-		} else if response.StatusCode == http.StatusOK {
-			return response, nil
-		} else {
-			retryAfter = parseRetryAfter(response.Header.Get("Retry-After"))
-			body, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
-			response.Body.Close()
-			lastErr = &ProviderStatusError{StatusCode: response.StatusCode, Body: strings.TrimSpace(string(body))}
-			if !retryableProviderStatus(response.StatusCode) {
-				return nil, lastErr
-			}
-		}
-		if attempt < maxProviderAttempts {
-			backoff := time.Duration(1<<(attempt-1)) * 250 * time.Millisecond
-			if retryAfter > backoff {
-				backoff = retryAfter
-			}
-			if backoff > maxRetryAfter {
-				backoff = maxRetryAfter
-			}
-			// Full jitter over the lower half keeps retries from synchronizing.
-			half := backoff / 2
-			backoff = half + time.Duration(rand.Int64N(int64(half)+1))
-			timer := time.NewTimer(backoff)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return nil, ctx.Err()
-			case <-timer.C:
-			}
-		}
-	}
-	return nil, lastErr
+		return req, nil
+	})
 }
 
 const maxRetryAfter = 10 * time.Second
@@ -493,17 +473,46 @@ func parseRetryAfter(value string) time.Duration {
 
 func retryableProviderStatus(status int) bool {
 	return status == http.StatusTooManyRequests || status == http.StatusBadGateway ||
-		status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
+		status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout ||
+		status == 529 // Anthropic "overloaded"
+}
+
+// streamDelta carries the reasoning under whichever field the provider uses:
+// reasoning_content (DeepSeek, Kimi, GLM, Qwen, vLLM), reasoning (OpenRouter,
+// newer vLLM, Ollama) or reasoning_details (OpenRouter's structured form).
+type streamDelta struct {
+	Content          string         `json:"content"`
+	Reasoning        string         `json:"reasoning_content"`
+	ReasoningAlias   string         `json:"reasoning"`
+	ReasoningDetails []reasoningRef `json:"reasoning_details"`
+	ToolCalls        []toolCallWire `json:"tool_calls"`
+}
+
+type reasoningRef struct {
+	Text    string `json:"text"`
+	Summary string `json:"summary"`
+}
+
+func (d streamDelta) reasoningText() string {
+	if d.Reasoning != "" {
+		return d.Reasoning
+	}
+	if d.ReasoningAlias != "" {
+		return d.ReasoningAlias
+	}
+	var b strings.Builder
+	for _, ref := range d.ReasoningDetails {
+		b.WriteString(ref.Text)
+		b.WriteString(ref.Summary)
+	}
+	return b.String()
 }
 
 type streamChunk struct {
+	Model   string `json:"model"`
 	Choices []struct {
-		Delta struct {
-			Content   string         `json:"content"`
-			Reasoning string         `json:"reasoning_content"`
-			ToolCalls []toolCallWire `json:"tool_calls"`
-		} `json:"delta"`
-		FinishReason string `json:"finish_reason"`
+		Delta        streamDelta `json:"delta"`
+		FinishReason string      `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *Usage          `json:"usage"`
 	Error json.RawMessage `json:"error,omitempty"`

@@ -221,14 +221,18 @@ func selectModelProvider(ctx context.Context, store runStore, scope tools.Contex
 	if settings.BaseURL == "" || settings.ModelID == "" || !baseURLAllowed(options.ModelBaseURLAllowlist, settings.BaseURL) {
 		return nil
 	}
-	if options.ModelPool != nil {
-		return options.ModelPool.GetProvider(scope.TenantID, settings.ProviderType, settings.BaseURL, settings.APIKey, settings.ModelID)
+	cfg := model.Config{
+		ProviderType: settings.ProviderType, APIFormat: settings.APIFormat,
+		ReasoningEffort: settings.ReasoningEffort, ReasoningBudget: settings.ReasoningBudget,
 	}
-	kind, ok := model.NormalizeProviderType(settings.ProviderType)
+	if options.ModelPool != nil {
+		return options.ModelPool.GetProvider(scope.TenantID, cfg, settings.BaseURL, settings.APIKey, settings.ModelID)
+	}
+	clientOptions, ok := cfg.Resolve()
 	if !ok {
 		return nil
 	}
-	return model.NewCircuitBreakerProvider(model.NewProviderClient(kind, settings.BaseURL, settings.APIKey, settings.ModelID, nil), 3, 30*time.Second)
+	return model.NewCircuitBreakerProvider(model.NewBackend(clientOptions, settings.BaseURL, settings.APIKey, settings.ModelID, nil), 3, 30*time.Second)
 }
 
 // modelErrorCode maps a model stream failure to a stable, actionable code so
@@ -381,6 +385,8 @@ func agentStepsLoop(
 		var turnText strings.Builder
 		var turnReasoning strings.Builder
 		var collected []model.ToolCall
+		var providerState json.RawMessage
+		servedModel := ""
 		modelTimer := startModelStreamTimer()
 		recordPromptSize(messages)
 		finishReason, usage, err := modelProvider.StreamChat(ctx, messages, turnDefs, model.StreamCallbacks{
@@ -398,6 +404,12 @@ func agentStepsLoop(
 				collected = append(collected, call)
 			},
 			OnFinish: func(_ string, _ model.Usage) {},
+			// The versioned model that actually answered (aliases such as
+			// *-latest resolve server-side), recorded for the audit trail.
+			OnServedModel: func(served string) { servedModel = served },
+			// Reasoning that must accompany this turn when it is sent back
+			// after tool results (Anthropic thinking blocks, Responses items).
+			OnProviderState: func(state json.RawMessage) { providerState = state },
 			OnReasoningDelta: func(delta string) {
 				modelTimer.firstDelta()
 				// Chain-of-thought streams to reasoning-aware clients and is
@@ -463,7 +475,11 @@ func agentStepsLoop(
 			ModelID() string
 		}); ok {
 			if modelStore, ok := store.(repository.ModelSetter); ok {
-				_ = modelStore.SetModel(ctx, scopeRun, descriptor.ProviderName(), descriptor.ModelID())
+				recorded := descriptor.ModelID()
+				if servedModel != "" {
+					recorded = servedModel
+				}
+				_ = modelStore.SetModel(ctx, scopeRun, descriptor.ProviderName(), recorded)
 			}
 		}
 		if usage.TotalTokens > 0 {
@@ -540,10 +556,11 @@ func agentStepsLoop(
 		}
 
 		messages = append(messages, model.Message{
-			Role:      "assistant",
-			Content:   turnText.String(),
-			Reasoning: turnReasoning.String(),
-			ToolCalls: collected,
+			Role:          "assistant",
+			Content:       turnText.String(),
+			Reasoning:     turnReasoning.String(),
+			ToolCalls:     collected,
+			ProviderState: providerState,
 		})
 
 		// Independent read-only tool calls run concurrently; any call that

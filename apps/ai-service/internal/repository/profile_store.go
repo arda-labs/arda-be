@@ -25,23 +25,31 @@ var (
 // tenant. Each profile holds many model IDs; exactly one profile and one of
 // its models are applied (is_active) and used by the runtime.
 type AIModelProfile struct {
-	ID           string                `json:"id"`
-	TenantID     string                `json:"tenantId"`
-	Name         string                `json:"name"`
-	BaseURL      string                `json:"baseUrl"`
-	ProviderType string                `json:"providerType"`
-	APIKey       string                `json:"apiKey"`
-	IsActive     bool                  `json:"isActive"`
-	Models       []AIModelProfileModel `json:"models"`
-	CreatedAt    time.Time             `json:"createdAt"`
-	UpdatedAt    time.Time             `json:"updatedAt"`
+	ID           string `json:"id"`
+	TenantID     string `json:"tenantId"`
+	Name         string `json:"name"`
+	BaseURL      string `json:"baseUrl"`
+	ProviderType string `json:"providerType"`
+	// APIFormat is the wire protocol (chat_completions, anthropic_messages,
+	// openai_responses); ReasoningEffort is "", low, medium or high.
+	APIFormat       string `json:"apiFormat"`
+	ReasoningEffort string `json:"reasoningEffort"`
+	// ReasoningBudget is an explicit thinking-token budget; 0 uses the effort.
+	ReasoningBudget int                   `json:"reasoningBudgetTokens"`
+	APIKey          string                `json:"apiKey"`
+	IsActive        bool                  `json:"isActive"`
+	Models          []AIModelProfileModel `json:"models"`
+	CreatedAt       time.Time             `json:"createdAt"`
+	UpdatedAt       time.Time             `json:"updatedAt"`
 }
 
 type AIModelProfileModel struct {
-	ID        string `json:"id"`
-	ModelID   string `json:"modelId"`
-	Label     string `json:"label,omitempty"`
-	IsActive  bool   `json:"isActive"`
+	ID       string `json:"id"`
+	ModelID  string `json:"modelId"`
+	Label    string `json:"label,omitempty"`
+	IsActive bool   `json:"isActive"`
+	// APIFormat overrides the profile's format for this model; empty inherits.
+	APIFormat string `json:"apiFormat,omitempty"`
 	SortOrder int    `json:"sortOrder"`
 }
 
@@ -50,12 +58,26 @@ type AIModelProfileModel struct {
 // profile + active model.
 type ModelProfileStore interface {
 	ListProfiles(ctx context.Context, tenantID string) ([]AIModelProfile, error)
-	CreateProfile(ctx context.Context, tenantID, name, providerType, baseURL, apiKey string, models []string) (*AIModelProfile, error)
-	UpdateProfile(ctx context.Context, tenantID, profileID, name, providerType, baseURL, apiKey string) (*AIModelProfile, error)
+	CreateProfile(ctx context.Context, tenantID, name, providerType, baseURL, apiKey string, models []string, opts ProfileOptions) (*AIModelProfile, error)
+	UpdateProfile(ctx context.Context, tenantID, profileID, name, providerType, baseURL, apiKey string, opts ProfileOptions) (*AIModelProfile, error)
 	DeleteProfile(ctx context.Context, tenantID, profileID string) error
 	AddProfileModels(ctx context.Context, tenantID, profileID string, models []string) (*AIModelProfile, error)
 	DeleteProfileModel(ctx context.Context, tenantID, profileID, modelID string) error
 	ApplyProfileModel(ctx context.Context, tenantID, profileID, modelID string) (*AIModelProfile, error)
+	// SetProfileModelFormat overrides the API format of one model; an empty
+	// format clears the override so the model inherits the profile again.
+	SetProfileModelFormat(ctx context.Context, tenantID, profileID, modelID, apiFormat string) (*AIModelProfile, error)
+}
+
+// ProfileOptions carries the per-profile client settings. Values are already
+// validated by the handler. On update an empty APIFormat or a nil
+// ReasoningEffort keeps the stored value; a pointer to "" resets the effort to
+// the provider default.
+type ProfileOptions struct {
+	APIFormat       string
+	ReasoningEffort *string
+	// ReasoningBudget: nil keeps the stored value, 0 clears it.
+	ReasoningBudget *int
 }
 
 func newAIID(prefix string) string {
@@ -84,10 +106,10 @@ func (s *SQLRunStore) profileByID(ctx context.Context, tenantID, profileID strin
 	var p AIModelProfile
 	var rawAPIKey string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, tenant_id, name, provider_type, base_url, api_key, is_active, created_at, updated_at
+		SELECT id, tenant_id, name, provider_type, api_format, reasoning_effort, reasoning_budget_tokens, base_url, api_key, is_active, created_at, updated_at
 		FROM public.ai_model_profiles
 		WHERE id = $1 AND tenant_id = $2
-	`, profileID, tenantID).Scan(&p.ID, &p.TenantID, &p.Name, &p.ProviderType, &p.BaseURL, &rawAPIKey, &p.IsActive, &p.CreatedAt, &p.UpdatedAt)
+	`, profileID, tenantID).Scan(&p.ID, &p.TenantID, &p.Name, &p.ProviderType, &p.APIFormat, &p.ReasoningEffort, &p.ReasoningBudget, &p.BaseURL, &rawAPIKey, &p.IsActive, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrModelProfileNotFound
@@ -110,7 +132,7 @@ func (s *SQLRunStore) profileByID(ctx context.Context, tenantID, profileID strin
 
 func (s *SQLRunStore) profileModels(ctx context.Context, profileID string) ([]AIModelProfileModel, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, model_id, COALESCE(label, ''), is_active, sort_order
+		SELECT id, model_id, COALESCE(label, ''), is_active, COALESCE(api_format, ''), sort_order
 		FROM public.ai_profile_models
 		WHERE profile_id = $1
 		ORDER BY sort_order, model_id
@@ -123,7 +145,7 @@ func (s *SQLRunStore) profileModels(ctx context.Context, profileID string) ([]AI
 	models := []AIModelProfileModel{}
 	for rows.Next() {
 		var m AIModelProfileModel
-		if err := rows.Scan(&m.ID, &m.ModelID, &m.Label, &m.IsActive, &m.SortOrder); err != nil {
+		if err := rows.Scan(&m.ID, &m.ModelID, &m.Label, &m.IsActive, &m.APIFormat, &m.SortOrder); err != nil {
 			return nil, err
 		}
 		models = append(models, m)
@@ -136,7 +158,7 @@ func (s *SQLRunStore) ListProfiles(ctx context.Context, tenantID string) ([]AIMo
 		return nil, errors.New("database not available")
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, tenant_id, name, provider_type, base_url, api_key, is_active, created_at, updated_at
+		SELECT id, tenant_id, name, provider_type, api_format, reasoning_effort, reasoning_budget_tokens, base_url, api_key, is_active, created_at, updated_at
 		FROM public.ai_model_profiles
 		WHERE tenant_id = $1
 		ORDER BY is_active DESC, name
@@ -150,7 +172,7 @@ func (s *SQLRunStore) ListProfiles(ctx context.Context, tenantID string) ([]AIMo
 	for rows.Next() {
 		var p AIModelProfile
 		var rawAPIKey string
-		if err := rows.Scan(&p.ID, &p.TenantID, &p.Name, &p.ProviderType, &p.BaseURL, &rawAPIKey, &p.IsActive, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.Name, &p.ProviderType, &p.APIFormat, &p.ReasoningEffort, &p.ReasoningBudget, &p.BaseURL, &rawAPIKey, &p.IsActive, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		apiKey, decryptErr := s.decryptSecret(rawAPIKey)
@@ -174,7 +196,7 @@ func (s *SQLRunStore) ListProfiles(ctx context.Context, tenantID string) ([]AIMo
 	return profiles, nil
 }
 
-func (s *SQLRunStore) CreateProfile(ctx context.Context, tenantID, name, providerType, baseURL, apiKey string, models []string) (*AIModelProfile, error) {
+func (s *SQLRunStore) CreateProfile(ctx context.Context, tenantID, name, providerType, baseURL, apiKey string, models []string, opts ProfileOptions) (*AIModelProfile, error) {
 	if s == nil || s.db == nil {
 		return nil, errors.New("database not available")
 	}
@@ -190,6 +212,19 @@ func (s *SQLRunStore) CreateProfile(ctx context.Context, tenantID, name, provide
 		return nil, err
 	}
 
+	apiFormat := strings.TrimSpace(opts.APIFormat)
+	if apiFormat == "" {
+		apiFormat = "chat_completions"
+	}
+	effort := ""
+	if opts.ReasoningEffort != nil {
+		effort = strings.TrimSpace(*opts.ReasoningEffort)
+	}
+	budget := 0
+	if opts.ReasoningBudget != nil {
+		budget = *opts.ReasoningBudget
+	}
+
 	id := newAIID("aip")
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -198,9 +233,9 @@ func (s *SQLRunStore) CreateProfile(ctx context.Context, tenantID, name, provide
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO public.ai_model_profiles (id, tenant_id, name, provider_type, base_url, api_key, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, false, now(), now())
-	`, id, tenantID, name, providerType, baseURL, encrypted); err != nil {
+		INSERT INTO public.ai_model_profiles (id, tenant_id, name, provider_type, api_format, reasoning_effort, reasoning_budget_tokens, base_url, api_key, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $7, $8, $9, $5, $6, false, now(), now())
+	`, id, tenantID, name, providerType, baseURL, encrypted, apiFormat, effort, budget); err != nil {
 		if isUniqueViolation(err) {
 			return nil, ErrModelProfileNameTaken
 		}
@@ -216,7 +251,7 @@ func (s *SQLRunStore) CreateProfile(ctx context.Context, tenantID, name, provide
 	return s.profileByID(ctx, tenantID, id)
 }
 
-func (s *SQLRunStore) UpdateProfile(ctx context.Context, tenantID, profileID, name, providerType, baseURL, apiKey string) (*AIModelProfile, error) {
+func (s *SQLRunStore) UpdateProfile(ctx context.Context, tenantID, profileID, name, providerType, baseURL, apiKey string, opts ProfileOptions) (*AIModelProfile, error) {
 	if s == nil || s.db == nil {
 		return nil, errors.New("database not available")
 	}
@@ -237,6 +272,18 @@ func (s *SQLRunStore) UpdateProfile(ctx context.Context, tenantID, profileID, na
 	if providerType == "" {
 		providerType = existing.ProviderType
 	}
+	apiFormat := strings.TrimSpace(opts.APIFormat)
+	if apiFormat == "" {
+		apiFormat = existing.APIFormat
+	}
+	effort := existing.ReasoningEffort
+	if opts.ReasoningEffort != nil {
+		effort = strings.TrimSpace(*opts.ReasoningEffort)
+	}
+	budget := existing.ReasoningBudget
+	if opts.ReasoningBudget != nil {
+		budget = *opts.ReasoningBudget
+	}
 	encrypted, err := s.encryptSecret(apiKey)
 	if err != nil {
 		return nil, err
@@ -250,9 +297,10 @@ func (s *SQLRunStore) UpdateProfile(ctx context.Context, tenantID, profileID, na
 
 	if _, err := s.db.ExecContext(ctx, `
 		UPDATE public.ai_model_profiles
-		SET name = $3, provider_type = $4, base_url = $5, api_key = $6, updated_at = now()
+		SET name = $3, provider_type = $4, base_url = $5, api_key = $6,
+		    api_format = $7, reasoning_effort = $8, reasoning_budget_tokens = $9, updated_at = now()
 		WHERE id = $1 AND tenant_id = $2
-	`, profileID, tenantID, name, providerType, baseURL, encrypted); err != nil {
+	`, profileID, tenantID, name, providerType, baseURL, encrypted, apiFormat, effort, budget); err != nil {
 		if isUniqueViolation(err) {
 			return nil, ErrModelProfileNameTaken
 		}
@@ -434,4 +482,27 @@ func isUniqueViolation(err error) bool {
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "duplicate key") ||
 		strings.Contains(strings.ToLower(err.Error()), "unique constraint")
+}
+
+func (s *SQLRunStore) SetProfileModelFormat(ctx context.Context, tenantID, profileID, modelID, apiFormat string) (*AIModelProfile, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("database not available")
+	}
+	if _, err := s.profileByID(ctx, tenantID, profileID); err != nil {
+		return nil, err
+	}
+	var format any
+	if trimmed := strings.TrimSpace(apiFormat); trimmed != "" {
+		format = trimmed
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE public.ai_profile_models SET api_format = $3 WHERE profile_id = $1 AND model_id = $2
+	`, profileID, strings.TrimSpace(modelID), format)
+	if err != nil {
+		return nil, fmt.Errorf("set model api format: %w", err)
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return nil, ErrModelNotFound
+	}
+	return s.profileByID(ctx, tenantID, profileID)
 }

@@ -36,9 +36,9 @@ func (s *SQLRunStore) RecordDecision(ctx context.Context, run RunContext, result
 func (s *SQLRunStore) GetDecisionSettings(ctx context.Context, tenantID string) (decision.Settings, error) {
 	item := decision.Defaults()
 	var encrypted string
-	err := s.db.QueryRowContext(ctx, `SELECT enabled, model_id, min_confidence, api_key
+	err := s.db.QueryRowContext(ctx, `SELECT enabled, provider, model_id, min_confidence, api_key
 		FROM public.ai_decision_settings WHERE tenant_id = $1`, tenantID).
-		Scan(&item.Enabled, &item.ModelID, &item.MinConfidence, &encrypted)
+		Scan(&item.Enabled, &item.Provider, &item.ModelID, &item.MinConfidence, &encrypted)
 	if errors.Is(err, sql.ErrNoRows) {
 		return item, nil
 	}
@@ -54,6 +54,7 @@ func (s *SQLRunStore) SaveDecisionSettings(ctx context.Context, tenantID string,
 	if strings.TrimSpace(tenantID) == "" || !item.Valid() {
 		return errors.New("invalid decision settings")
 	}
+	provider, _ := decision.NormalizeProvider(item.Provider)
 	var encrypted any
 	if key != nil {
 		value := strings.TrimSpace(*key)
@@ -70,12 +71,13 @@ func (s *SQLRunStore) SaveDecisionSettings(ctx context.Context, tenantID string,
 		encrypted = value
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO public.ai_decision_settings
-		(tenant_id, enabled, model_id, min_confidence, api_key)
-		VALUES ($1::varchar(64), $2, $3, $4, COALESCE($5::text,
+		(tenant_id, enabled, provider, model_id, min_confidence, api_key)
+		VALUES ($1::varchar(64), $2, $6, $3, $4, COALESCE($5::text,
 		    (SELECT api_key FROM public.ai_decision_settings WHERE tenant_id = $1::varchar(64)), ''))
 		ON CONFLICT (tenant_id) DO UPDATE SET enabled = EXCLUDED.enabled,
+		provider = EXCLUDED.provider,
 		model_id = EXCLUDED.model_id, min_confidence = EXCLUDED.min_confidence,
 		api_key = COALESCE($5::text, ai_decision_settings.api_key), updated_at = now()`,
-		tenantID, item.Enabled, item.ModelID, item.MinConfidence, encrypted)
+		tenantID, item.Enabled, item.ModelID, item.MinConfidence, encrypted, provider)
 	return err
 }

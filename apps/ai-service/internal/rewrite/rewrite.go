@@ -40,7 +40,10 @@ func (s *Service) Rewrite(ctx context.Context, tenantID, query string) ([]string
 		return nil, err
 	}
 
-	provider := s.pool.GetProvider(tenantID, settings.ProviderType, settings.BaseURL, settings.APIKey, settings.ModelID)
+	// Query rewriting runs under a 3s budget and needs no deliberation, so the
+	// tenant's reasoning effort is deliberately not applied here.
+	provider := s.pool.GetProvider(tenantID, model.Config{ProviderType: settings.ProviderType, APIFormat: settings.APIFormat},
+		settings.BaseURL, settings.APIKey, settings.ModelID)
 	if provider == nil {
 		return nil, nil
 	}

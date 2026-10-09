@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,8 +15,37 @@ const (
 	defaultPoolTTL        = 15 * time.Minute
 )
 
+// Config is the raw, user-supplied part of a profile that selects the client:
+// strings as stored, normalized by Resolve.
+type Config struct {
+	ProviderType    string
+	APIFormat       string
+	ReasoningEffort string
+	ReasoningBudget int
+}
+
+// Resolve validates the raw values and returns the client options.
+func (c Config) Resolve() (Options, bool) {
+	kind, ok := NormalizeProviderType(c.ProviderType)
+	if !ok {
+		return Options{}, false
+	}
+	format, ok := NormalizeAPIFormat(c.APIFormat)
+	if !ok {
+		return Options{}, false
+	}
+	effort, ok := NormalizeReasoningEffort(c.ReasoningEffort)
+	if !ok {
+		return Options{}, false
+	}
+	if !ValidReasoningBudget(c.ReasoningBudget) {
+		return Options{}, false
+	}
+	return Options{ProviderType: kind, APIFormat: format, ReasoningEffort: effort, ReasoningBudget: c.ReasoningBudget}, true
+}
+
 type poolEntry struct {
-	client    *Client
+	client    Backend
 	lastUsed  time.Time
 	configKey string
 }
@@ -48,16 +78,16 @@ func NewClientPool(httpClient *http.Client) *ClientPool {
 
 // GetProvider returns a pooled client wrapped in a circuit breaker whose
 // state follows the tenant/configuration key across requests.
-func (p *ClientPool) GetProvider(tenantID, providerType, baseURL, apiKey, modelID string) Provider {
-	kind, ok := NormalizeProviderType(providerType)
+func (p *ClientPool) GetProvider(tenantID string, cfg Config, baseURL, apiKey, modelID string) Provider {
+	opts, ok := cfg.Resolve()
 	if !ok {
 		return nil
 	}
 	if p == nil {
-		return NewCircuitBreakerProvider(NewProviderClient(kind, baseURL, apiKey, modelID, nil), 3, 30*time.Second)
+		return NewCircuitBreakerProvider(NewBackend(opts, baseURL, apiKey, modelID, nil), 3, 30*time.Second)
 	}
-	client := p.GetClient(tenantID, string(kind), baseURL, apiKey, modelID)
-	key := tenantID + "\x00" + hashConfig(string(kind), baseURL, apiKey, modelID)
+	client := p.GetClient(tenantID, cfg, baseURL, apiKey, modelID)
+	key := tenantID + "\x00" + hashConfig(opts, baseURL, apiKey, modelID)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.evictExpiredGuardsLocked(time.Now())
@@ -80,16 +110,16 @@ func (p *ClientPool) SetGatewayToken(token string) {
 	p.gatewayToken = strings.TrimSpace(token)
 }
 
-func (p *ClientPool) GetClient(tenantID, providerType, baseURL, apiKey, modelID string) *Client {
-	kind, ok := NormalizeProviderType(providerType)
+func (p *ClientPool) GetClient(tenantID string, cfg Config, baseURL, apiKey, modelID string) Backend {
+	opts, ok := cfg.Resolve()
 	if !ok {
 		return nil
 	}
 	if p == nil {
-		return NewProviderClient(kind, baseURL, apiKey, modelID, nil)
+		return NewBackend(opts, baseURL, apiKey, modelID, nil)
 	}
 
-	configHash := hashConfig(string(kind), baseURL, apiKey, modelID)
+	configHash := hashConfig(opts, baseURL, apiKey, modelID)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -113,9 +143,9 @@ func (p *ClientPool) GetClient(tenantID, providerType, baseURL, apiKey, modelID 
 		p.evictOldestLocked()
 	}
 
-	client := NewProviderClient(kind, baseURL, apiKey, modelID, p.httpClient)
+	client := NewBackend(opts, baseURL, apiKey, modelID, p.httpClient)
 	if p.gatewayToken != "" {
-		client.WithGatewayToken(p.gatewayToken)
+		client = client.WithGatewayToken(p.gatewayToken)
 	}
 	p.entries[tenantID] = &poolEntry{
 		client:    client,
@@ -179,14 +209,11 @@ func (p *ClientPool) evictExpiredGuardsLocked(now time.Time) {
 	}
 }
 
-func hashConfig(providerType, baseURL, apiKey, modelID string) string {
+func hashConfig(opts Options, baseURL, apiKey, modelID string) string {
 	h := sha256.New()
-	h.Write([]byte(providerType))
-	h.Write([]byte("|"))
-	h.Write([]byte(baseURL))
-	h.Write([]byte("|"))
-	h.Write([]byte(apiKey))
-	h.Write([]byte("|"))
-	h.Write([]byte(modelID))
+	for _, part := range []string{string(opts.ProviderType), string(opts.APIFormat), string(opts.ReasoningEffort), strconv.Itoa(opts.ReasoningBudget), baseURL, apiKey, modelID} {
+		h.Write([]byte(part))
+		h.Write([]byte("|"))
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }

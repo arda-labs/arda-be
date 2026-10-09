@@ -18,21 +18,67 @@ import (
 	"time"
 )
 
+// Providers that serve System One models over the same POST /systemone wire
+// protocol. Jev is made by TypeSafe AI, which serves it directly and through
+// the OpenCode Zen gateway; model IDs differ per provider (Zen: jev-1.13,
+// jev-1.13-free; TypeSafe: jev-1.13.0, jev-latest, jev-preview).
+const (
+	ProviderOpenCodeZen = "opencode-zen"
+	ProviderTypeSafe    = "typesafe"
+)
+
+// BaseURL is the OpenCode Zen endpoint, the default provider.
 const BaseURL = "https://opencode.ai/zen/v1"
 const DefaultModel = "jev-1.13-free"
 const Timeout = 3 * time.Second
+
+var providers = map[string]struct{ baseURL, defaultModel string }{
+	ProviderOpenCodeZen: {BaseURL, DefaultModel},
+	ProviderTypeSafe:    {"https://api.typesafe.ai/v1", "jev-latest"},
+}
+
+// NormalizeProvider maps stored or submitted input to a known provider. Empty
+// selects the default so rows saved before the column existed keep working.
+func NormalizeProvider(raw string) (string, bool) {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	if raw == "" {
+		return ProviderOpenCodeZen, true
+	}
+	_, ok := providers[raw]
+	return raw, ok
+}
+
+// BaseURLFor returns the System One base URL of a provider (default when the
+// provider is empty or unknown).
+func BaseURLFor(provider string) string {
+	if normalized, ok := NormalizeProvider(provider); ok {
+		return providers[normalized].baseURL
+	}
+	return BaseURL
+}
+
+// DefaultModelFor returns the recommended model ID of a provider.
+func DefaultModelFor(provider string) string {
+	if normalized, ok := NormalizeProvider(provider); ok {
+		return providers[normalized].defaultModel
+	}
+	return DefaultModel
+}
 
 var ErrInvalidResponse = errors.New("invalid decision response")
 
 // Settings is tenant-owned. Credentials are never serialized to clients or logs.
 type Settings struct {
 	Enabled       bool    `json:"enabled"`
+	Provider      string  `json:"provider"`
 	ModelID       string  `json:"model_id"`
 	MinConfidence float64 `json:"min_confidence"`
 	APIKey        string  `json:"-"`
 }
 
-func Defaults() Settings { return Settings{ModelID: DefaultModel, MinConfidence: 0.8} }
+func Defaults() Settings {
+	return Settings{Provider: ProviderOpenCodeZen, ModelID: DefaultModel, MinConfidence: 0.8}
+}
 
 // modelIDPattern bounds decision model identifiers. The set of available
 // models is provider-owned and changes over time, so validation checks the
@@ -41,6 +87,9 @@ func Defaults() Settings { return Settings{ModelID: DefaultModel, MinConfidence:
 var modelIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/_-]{0,127}$`)
 
 func (s Settings) Valid() bool {
+	if _, ok := NormalizeProvider(s.Provider); !ok {
+		return false
+	}
 	return modelIDPattern.MatchString(strings.TrimSpace(s.ModelID)) &&
 		!math.IsNaN(s.MinConfidence) && s.MinConfidence >= 0.5 && s.MinConfidence <= 1
 }
@@ -84,6 +133,7 @@ type Answer struct {
 	Type   string
 	Choice Choice
 	Noul   float64
+	Score  Score
 }
 
 // ChoiceAnswer builds a choice answer. Used by callers that construct results
@@ -133,6 +183,7 @@ func (r *Result) Noul(id string) (float64, bool) {
 
 // wireAnswer is the flat provider payload; both answer shapes share it.
 type wireAnswer struct {
+	Score         *float64           `json:"score"`
 	Type          string             `json:"type"`
 	Choice        string             `json:"choice"`
 	Probabilities map[string]float64 `json:"probabilities"`
@@ -184,7 +235,16 @@ func NewClient(client *http.Client) *Client {
 	copy.Timeout = Timeout
 	// Never forward the credential to redirects, even on the same host.
 	copy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &Client{http: &copy, baseURL: BaseURL}
+	// baseURL stays empty in production: the endpoint follows the tenant's
+	// provider. Tests set it to point at a local server.
+	return &Client{http: &copy}
+}
+
+func (c *Client) endpoint(settings Settings) string {
+	if c.baseURL != "" {
+		return c.baseURL
+	}
+	return BaseURLFor(settings.Provider)
 }
 
 // Evaluate runs the fixed routing questions. Kept as the routing entry point so
@@ -215,7 +275,7 @@ func (c *Client) EvaluateQuestions(ctx context.Context, settings Settings, state
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/systemone", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint(settings)+"/systemone", bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -274,6 +334,8 @@ func decodeAnswer(question Question, raw wireAnswer) (Answer, error) {
 			return Answer{}, ErrInvalidResponse
 		}
 		return answer, nil
+	case "score":
+		return decodeScore(question, raw)
 	case "noul":
 		if raw.Noul == nil || math.IsNaN(*raw.Noul) || *raw.Noul < 0 || *raw.Noul > 1 {
 			return Answer{}, ErrInvalidResponse
