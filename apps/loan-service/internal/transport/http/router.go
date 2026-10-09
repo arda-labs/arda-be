@@ -136,6 +136,7 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 		}
 	})
 	mux.HandleFunc("/api/loan/disbursement-batches/{id}/submit", method("POST", b.SubmitDisbursementBatch))
+	mux.HandleFunc("/api/loan/disbursement-batches/{id}/preview", method("POST", b.PreviewDisbursementBatch))
 	mux.HandleFunc("/api/loan/disbursement-batches/{id}/cancel", method("POST", b.CancelDisbursementDraft))
 	mux.HandleFunc("/api/loan/collection-batches", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

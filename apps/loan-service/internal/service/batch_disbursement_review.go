@@ -234,6 +234,66 @@ func (s *BatchDisbursementService) BatchPostingDetail(ctx context.Context, tenan
 	return detail, nil
 }
 
+// DisbursementBatchHeadroom reports contract-level exposure before and after
+// this batch. Pending batches already have HELD reservations; drafts do not.
+// Using the same exposure query as submit keeps the checker view consistent
+// with the server's authoritative limit calculation.
+type DisbursementBatchHeadroom struct {
+	ContractCode    string `json:"contract_code"`
+	AvailableBefore int64  `json:"available_before_minor"`
+	RemainingAfter  int64  `json:"remaining_after_minor"`
+}
+
+func (s *BatchDisbursementService) BatchHeadroom(ctx context.Context, tenantID, batchID string) ([]DisbursementBatchHeadroom, error) {
+	batch, err := s.repo.GetDisbursementBatch(ctx, tenantID, batchID)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	rows, err := s.repo.GetBatchRows(ctx, tenantID, batchID)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	exposures := make(map[string]domain.ContractExposure, len(rows))
+	for _, row := range rows {
+		if _, exists := exposures[row.ContractCode]; exists {
+			continue
+		}
+		exposure, err := s.repo.GetContractExposure(ctx, tenantID, row.ContractCode)
+		if err != nil {
+			return nil, mapRepoError(err)
+		}
+		exposures[row.ContractCode] = exposure
+	}
+	return calculateBatchHeadroom(batch.Status, rows, exposures), nil
+}
+
+func calculateBatchHeadroom(status string, rows []domain.Disbursement, exposures map[string]domain.ContractExposure) []DisbursementBatchHeadroom {
+	totals := make(map[string]int64, len(rows))
+	order := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if _, exists := totals[row.ContractCode]; !exists {
+			order = append(order, row.ContractCode)
+		}
+		totals[row.ContractCode] += row.DisburseAmtMinor
+	}
+	result := make([]DisbursementBatchHeadroom, 0, len(order))
+	for _, contractCode := range order {
+		remaining := exposures[contractCode].HeadroomMinor()
+		available := remaining
+		if status == domain.BatchDraft {
+			remaining -= totals[contractCode]
+		} else if status == domain.BatchSubmitted {
+			available += totals[contractCode]
+		}
+		result = append(result, DisbursementBatchHeadroom{
+			ContractCode:    contractCode,
+			AvailableBefore: available,
+			RemainingAfter:  remaining,
+		})
+	}
+	return result
+}
+
 func batchTypeOfDisb(flowType string) string {
 	if flowType == domain.FlowComplete {
 		return domain.BatchTypeDisbComplete
