@@ -41,6 +41,10 @@ const (
 	PostingErrorCode_POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_CURRENT_DATE  PostingErrorCode = 12
 	PostingErrorCode_POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_BACKDATE      PostingErrorCode = 13
 	PostingErrorCode_POSTING_ERROR_CODE_POSTING_DATE_BEFORE_CLOSING_LOCK   PostingErrorCode = 14
+	PostingErrorCode_POSTING_ERROR_CODE_NO_LINES                           PostingErrorCode = 15
+	PostingErrorCode_POSTING_ERROR_CODE_INVALID_DIRECTION                  PostingErrorCode = 16
+	PostingErrorCode_POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED            PostingErrorCode = 17
+	PostingErrorCode_POSTING_ERROR_CODE_UNKNOWN_DIMENSION                  PostingErrorCode = 18
 )
 
 // Enum value maps for PostingErrorCode.
@@ -61,6 +65,10 @@ var (
 		12: "POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_CURRENT_DATE",
 		13: "POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_BACKDATE",
 		14: "POSTING_ERROR_CODE_POSTING_DATE_BEFORE_CLOSING_LOCK",
+		15: "POSTING_ERROR_CODE_NO_LINES",
+		16: "POSTING_ERROR_CODE_INVALID_DIRECTION",
+		17: "POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED",
+		18: "POSTING_ERROR_CODE_UNKNOWN_DIMENSION",
 	}
 	PostingErrorCode_value = map[string]int32{
 		"POSTING_ERROR_CODE_UNSPECIFIED":                        0,
@@ -78,6 +86,10 @@ var (
 		"POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_CURRENT_DATE":  12,
 		"POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_BACKDATE":      13,
 		"POSTING_ERROR_CODE_POSTING_DATE_BEFORE_CLOSING_LOCK":   14,
+		"POSTING_ERROR_CODE_NO_LINES":                           15,
+		"POSTING_ERROR_CODE_INVALID_DIRECTION":                  16,
+		"POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED":            17,
+		"POSTING_ERROR_CODE_UNKNOWN_DIMENSION":                  18,
 	}
 )
 
@@ -106,6 +118,58 @@ func (x PostingErrorCode) Number() protoreflect.EnumNumber {
 // Deprecated: Use PostingErrorCode.Descriptor instead.
 func (PostingErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{0}
+}
+
+type PostingStrategy int32
+
+const (
+	PostingStrategy_POSTING_STRATEGY_UNSPECIFIED        PostingStrategy = 0
+	PostingStrategy_POSTING_STRATEGY_SIMPLE             PostingStrategy = 1
+	PostingStrategy_POSTING_STRATEGY_BAL_TYPE_SPLIT     PostingStrategy = 2
+	PostingStrategy_POSTING_STRATEGY_DEBT_GROUP_RECLASS PostingStrategy = 3
+)
+
+// Enum value maps for PostingStrategy.
+var (
+	PostingStrategy_name = map[int32]string{
+		0: "POSTING_STRATEGY_UNSPECIFIED",
+		1: "POSTING_STRATEGY_SIMPLE",
+		2: "POSTING_STRATEGY_BAL_TYPE_SPLIT",
+		3: "POSTING_STRATEGY_DEBT_GROUP_RECLASS",
+	}
+	PostingStrategy_value = map[string]int32{
+		"POSTING_STRATEGY_UNSPECIFIED":        0,
+		"POSTING_STRATEGY_SIMPLE":             1,
+		"POSTING_STRATEGY_BAL_TYPE_SPLIT":     2,
+		"POSTING_STRATEGY_DEBT_GROUP_RECLASS": 3,
+	}
+)
+
+func (x PostingStrategy) Enum() *PostingStrategy {
+	p := new(PostingStrategy)
+	*p = x
+	return p
+}
+
+func (x PostingStrategy) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PostingStrategy) Descriptor() protoreflect.EnumDescriptor {
+	return file_arda_finance_v1_posting_proto_enumTypes[1].Descriptor()
+}
+
+func (PostingStrategy) Type() protoreflect.EnumType {
+	return &file_arda_finance_v1_posting_proto_enumTypes[1]
+}
+
+func (x PostingStrategy) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PostingStrategy.Descriptor instead.
+func (PostingStrategy) EnumDescriptor() ([]byte, []int) {
+	return file_arda_finance_v1_posting_proto_rawDescGZIP(), []int{1}
 }
 
 type ListPostingRulesRequest struct {
@@ -166,11 +230,12 @@ type PostingRule struct {
 	Direction string                 `protobuf:"bytes,2,opt,name=direction,proto3" json:"direction,omitempty"` // DEBIT | CREDIT
 	// resolution_type selects which side applies: CLASS_MAP uses
 	// acc_classification, FIXED_CODE uses account_ref directly.
-	ResolutionType      string   `protobuf:"bytes,3,opt,name=resolution_type,json=resolutionType,proto3" json:"resolution_type,omitempty"`
-	AccountRef          string   `protobuf:"bytes,4,opt,name=account_ref,json=accountRef,proto3" json:"account_ref,omitempty"`                      // fixed COA code when resolution_type = FIXED_CODE
-	AccClassification   string   `protobuf:"bytes,5,opt,name=acc_classification,json=accClassification,proto3" json:"acc_classification,omitempty"` // analytics classification when CLASS_MAP
-	RequiredDimensions  []string `protobuf:"bytes,6,rep,name=required_dimensions,json=requiredDimensions,proto3" json:"required_dimensions,omitempty"`
-	DescriptionTemplate string   `protobuf:"bytes,7,opt,name=description_template,json=descriptionTemplate,proto3" json:"description_template,omitempty"`
+	ResolutionType      string          `protobuf:"bytes,3,opt,name=resolution_type,json=resolutionType,proto3" json:"resolution_type,omitempty"`
+	AccountRef          string          `protobuf:"bytes,4,opt,name=account_ref,json=accountRef,proto3" json:"account_ref,omitempty"`                      // fixed COA code when resolution_type = FIXED_CODE
+	AccClassification   string          `protobuf:"bytes,5,opt,name=acc_classification,json=accClassification,proto3" json:"acc_classification,omitempty"` // analytics classification when CLASS_MAP
+	RequiredDimensions  []string        `protobuf:"bytes,6,rep,name=required_dimensions,json=requiredDimensions,proto3" json:"required_dimensions,omitempty"`
+	DescriptionTemplate string          `protobuf:"bytes,7,opt,name=description_template,json=descriptionTemplate,proto3" json:"description_template,omitempty"`
+	PostingStrategy     PostingStrategy `protobuf:"varint,8,opt,name=posting_strategy,json=postingStrategy,proto3,enum=arda.finance.v1.PostingStrategy" json:"posting_strategy,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -252,6 +317,13 @@ func (x *PostingRule) GetDescriptionTemplate() string {
 		return x.DescriptionTemplate
 	}
 	return ""
+}
+
+func (x *PostingRule) GetPostingStrategy() PostingStrategy {
+	if x != nil {
+		return x.PostingStrategy
+	}
+	return PostingStrategy_POSTING_STRATEGY_UNSPECIFIED
 }
 
 type ListPostingRulesResponse struct {
@@ -1471,7 +1543,7 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\x1darda/finance/v1/posting.proto\x12\x0farda.finance.v1\"[\n" +
 	"\x17ListPostingRulesRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12#\n" +
-	"\rdocument_type\x18\x02 \x01(\tR\fdocumentType\"\xa1\x02\n" +
+	"\rdocument_type\x18\x02 \x01(\tR\fdocumentType\"\xee\x02\n" +
 	"\vPostingRule\x12\x17\n" +
 	"\aline_no\x18\x01 \x01(\x05R\x06lineNo\x12\x1c\n" +
 	"\tdirection\x18\x02 \x01(\tR\tdirection\x12'\n" +
@@ -1480,7 +1552,8 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"accountRef\x12-\n" +
 	"\x12acc_classification\x18\x05 \x01(\tR\x11accClassification\x12/\n" +
 	"\x13required_dimensions\x18\x06 \x03(\tR\x12requiredDimensions\x121\n" +
-	"\x14description_template\x18\a \x01(\tR\x13descriptionTemplate\"N\n" +
+	"\x14description_template\x18\a \x01(\tR\x13descriptionTemplate\x12K\n" +
+	"\x10posting_strategy\x18\b \x01(\x0e2 .arda.finance.v1.PostingStrategyR\x0fpostingStrategy\"N\n" +
 	"\x18ListPostingRulesResponse\x122\n" +
 	"\x05rules\x18\x01 \x03(\v2\x1c.arda.finance.v1.PostingRuleR\x05rules\"\xaf\x01\n" +
 	"\x11BusinessReference\x12\x16\n" +
@@ -1607,7 +1680,7 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\fdata_version\x18\x11 \x01(\x03R\vdataVersion\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xb9\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xde\x06\n" +
 	"\x10PostingErrorCode\x12\"\n" +
 	"\x1ePOSTING_ERROR_CODE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dPOSTING_ERROR_CODE_UNBALANCED\x10\x01\x12$\n" +
@@ -1624,7 +1697,16 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"*POSTING_ERROR_CODE_CONCURRENT_MODIFICATION\x10\v\x128\n" +
 	"4POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_CURRENT_DATE\x10\f\x124\n" +
 	"0POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_BACKDATE\x10\r\x127\n" +
-	"3POSTING_ERROR_CODE_POSTING_DATE_BEFORE_CLOSING_LOCK\x10\x0e2\x8a\x05\n" +
+	"3POSTING_ERROR_CODE_POSTING_DATE_BEFORE_CLOSING_LOCK\x10\x0e\x12\x1f\n" +
+	"\x1bPOSTING_ERROR_CODE_NO_LINES\x10\x0f\x12(\n" +
+	"$POSTING_ERROR_CODE_INVALID_DIRECTION\x10\x10\x12.\n" +
+	"*POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED\x10\x11\x12(\n" +
+	"$POSTING_ERROR_CODE_UNKNOWN_DIMENSION\x10\x12*\x9e\x01\n" +
+	"\x0fPostingStrategy\x12 \n" +
+	"\x1cPOSTING_STRATEGY_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17POSTING_STRATEGY_SIMPLE\x10\x01\x12#\n" +
+	"\x1fPOSTING_STRATEGY_BAL_TYPE_SPLIT\x10\x02\x12'\n" +
+	"#POSTING_STRATEGY_DEBT_GROUP_RECLASS\x10\x032\x8a\x05\n" +
 	"\x0ePostingService\x12U\n" +
 	"\x0fValidatePosting\x12\x1f.arda.finance.v1.PostingRequest\x1a!.arda.finance.v1.ValidationResult\x12T\n" +
 	"\x0fPostTransaction\x12\x1f.arda.finance.v1.PostingRequest\x1a .arda.finance.v1.PostingResponse\x12S\n" +
@@ -1646,61 +1728,63 @@ func file_arda_finance_v1_posting_proto_rawDescGZIP() []byte {
 	return file_arda_finance_v1_posting_proto_rawDescData
 }
 
-var file_arda_finance_v1_posting_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_arda_finance_v1_posting_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_arda_finance_v1_posting_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_arda_finance_v1_posting_proto_goTypes = []any{
 	(PostingErrorCode)(0),            // 0: arda.finance.v1.PostingErrorCode
-	(*ListPostingRulesRequest)(nil),  // 1: arda.finance.v1.ListPostingRulesRequest
-	(*PostingRule)(nil),              // 2: arda.finance.v1.PostingRule
-	(*ListPostingRulesResponse)(nil), // 3: arda.finance.v1.ListPostingRulesResponse
-	(*BusinessReference)(nil),        // 4: arda.finance.v1.BusinessReference
-	(*Analytics)(nil),                // 5: arda.finance.v1.Analytics
-	(*PostingLine)(nil),              // 6: arda.finance.v1.PostingLine
-	(*PostingRequest)(nil),           // 7: arda.finance.v1.PostingRequest
-	(*PostingResponse)(nil),          // 8: arda.finance.v1.PostingResponse
-	(*ReleaseRequest)(nil),           // 9: arda.finance.v1.ReleaseRequest
-	(*ValidationLine)(nil),           // 10: arda.finance.v1.ValidationLine
-	(*ValidationResult)(nil),         // 11: arda.finance.v1.ValidationResult
-	(*ReverseRequest)(nil),           // 12: arda.finance.v1.ReverseRequest
-	(*GetJournalEntryRequest)(nil),   // 13: arda.finance.v1.GetJournalEntryRequest
-	(*JournalEntryDetailLine)(nil),   // 14: arda.finance.v1.JournalEntryDetailLine
-	(*JournalEntryDetail)(nil),       // 15: arda.finance.v1.JournalEntryDetail
-	nil,                              // 16: arda.finance.v1.Analytics.DimensionsEntry
-	nil,                              // 17: arda.finance.v1.PostingRequest.MetadataEntry
-	nil,                              // 18: arda.finance.v1.ReverseRequest.MetadataEntry
-	nil,                              // 19: arda.finance.v1.JournalEntryDetail.MetadataEntry
+	(PostingStrategy)(0),             // 1: arda.finance.v1.PostingStrategy
+	(*ListPostingRulesRequest)(nil),  // 2: arda.finance.v1.ListPostingRulesRequest
+	(*PostingRule)(nil),              // 3: arda.finance.v1.PostingRule
+	(*ListPostingRulesResponse)(nil), // 4: arda.finance.v1.ListPostingRulesResponse
+	(*BusinessReference)(nil),        // 5: arda.finance.v1.BusinessReference
+	(*Analytics)(nil),                // 6: arda.finance.v1.Analytics
+	(*PostingLine)(nil),              // 7: arda.finance.v1.PostingLine
+	(*PostingRequest)(nil),           // 8: arda.finance.v1.PostingRequest
+	(*PostingResponse)(nil),          // 9: arda.finance.v1.PostingResponse
+	(*ReleaseRequest)(nil),           // 10: arda.finance.v1.ReleaseRequest
+	(*ValidationLine)(nil),           // 11: arda.finance.v1.ValidationLine
+	(*ValidationResult)(nil),         // 12: arda.finance.v1.ValidationResult
+	(*ReverseRequest)(nil),           // 13: arda.finance.v1.ReverseRequest
+	(*GetJournalEntryRequest)(nil),   // 14: arda.finance.v1.GetJournalEntryRequest
+	(*JournalEntryDetailLine)(nil),   // 15: arda.finance.v1.JournalEntryDetailLine
+	(*JournalEntryDetail)(nil),       // 16: arda.finance.v1.JournalEntryDetail
+	nil,                              // 17: arda.finance.v1.Analytics.DimensionsEntry
+	nil,                              // 18: arda.finance.v1.PostingRequest.MetadataEntry
+	nil,                              // 19: arda.finance.v1.ReverseRequest.MetadataEntry
+	nil,                              // 20: arda.finance.v1.JournalEntryDetail.MetadataEntry
 }
 var file_arda_finance_v1_posting_proto_depIdxs = []int32{
-	2,  // 0: arda.finance.v1.ListPostingRulesResponse.rules:type_name -> arda.finance.v1.PostingRule
-	16, // 1: arda.finance.v1.Analytics.dimensions:type_name -> arda.finance.v1.Analytics.DimensionsEntry
-	5,  // 2: arda.finance.v1.PostingLine.analytics:type_name -> arda.finance.v1.Analytics
-	4,  // 3: arda.finance.v1.PostingRequest.business_reference:type_name -> arda.finance.v1.BusinessReference
-	6,  // 4: arda.finance.v1.PostingRequest.lines:type_name -> arda.finance.v1.PostingLine
-	17, // 5: arda.finance.v1.PostingRequest.metadata:type_name -> arda.finance.v1.PostingRequest.MetadataEntry
-	5,  // 6: arda.finance.v1.ValidationLine.resolved_analytics:type_name -> arda.finance.v1.Analytics
-	10, // 7: arda.finance.v1.ValidationResult.lines:type_name -> arda.finance.v1.ValidationLine
-	18, // 8: arda.finance.v1.ReverseRequest.metadata:type_name -> arda.finance.v1.ReverseRequest.MetadataEntry
-	14, // 9: arda.finance.v1.JournalEntryDetail.lines:type_name -> arda.finance.v1.JournalEntryDetailLine
-	19, // 10: arda.finance.v1.JournalEntryDetail.metadata:type_name -> arda.finance.v1.JournalEntryDetail.MetadataEntry
-	7,  // 11: arda.finance.v1.PostingService.ValidatePosting:input_type -> arda.finance.v1.PostingRequest
-	7,  // 12: arda.finance.v1.PostingService.PostTransaction:input_type -> arda.finance.v1.PostingRequest
-	7,  // 13: arda.finance.v1.PostingService.ReservePosting:input_type -> arda.finance.v1.PostingRequest
-	9,  // 14: arda.finance.v1.PostingService.ReleasePosting:input_type -> arda.finance.v1.ReleaseRequest
-	12, // 15: arda.finance.v1.PostingService.ReverseTransaction:input_type -> arda.finance.v1.ReverseRequest
-	13, // 16: arda.finance.v1.PostingService.GetJournalEntry:input_type -> arda.finance.v1.GetJournalEntryRequest
-	1,  // 17: arda.finance.v1.PostingService.ListPostingRules:input_type -> arda.finance.v1.ListPostingRulesRequest
-	11, // 18: arda.finance.v1.PostingService.ValidatePosting:output_type -> arda.finance.v1.ValidationResult
-	8,  // 19: arda.finance.v1.PostingService.PostTransaction:output_type -> arda.finance.v1.PostingResponse
-	8,  // 20: arda.finance.v1.PostingService.ReservePosting:output_type -> arda.finance.v1.PostingResponse
-	8,  // 21: arda.finance.v1.PostingService.ReleasePosting:output_type -> arda.finance.v1.PostingResponse
-	8,  // 22: arda.finance.v1.PostingService.ReverseTransaction:output_type -> arda.finance.v1.PostingResponse
-	15, // 23: arda.finance.v1.PostingService.GetJournalEntry:output_type -> arda.finance.v1.JournalEntryDetail
-	3,  // 24: arda.finance.v1.PostingService.ListPostingRules:output_type -> arda.finance.v1.ListPostingRulesResponse
-	18, // [18:25] is the sub-list for method output_type
-	11, // [11:18] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	1,  // 0: arda.finance.v1.PostingRule.posting_strategy:type_name -> arda.finance.v1.PostingStrategy
+	3,  // 1: arda.finance.v1.ListPostingRulesResponse.rules:type_name -> arda.finance.v1.PostingRule
+	17, // 2: arda.finance.v1.Analytics.dimensions:type_name -> arda.finance.v1.Analytics.DimensionsEntry
+	6,  // 3: arda.finance.v1.PostingLine.analytics:type_name -> arda.finance.v1.Analytics
+	5,  // 4: arda.finance.v1.PostingRequest.business_reference:type_name -> arda.finance.v1.BusinessReference
+	7,  // 5: arda.finance.v1.PostingRequest.lines:type_name -> arda.finance.v1.PostingLine
+	18, // 6: arda.finance.v1.PostingRequest.metadata:type_name -> arda.finance.v1.PostingRequest.MetadataEntry
+	6,  // 7: arda.finance.v1.ValidationLine.resolved_analytics:type_name -> arda.finance.v1.Analytics
+	11, // 8: arda.finance.v1.ValidationResult.lines:type_name -> arda.finance.v1.ValidationLine
+	19, // 9: arda.finance.v1.ReverseRequest.metadata:type_name -> arda.finance.v1.ReverseRequest.MetadataEntry
+	15, // 10: arda.finance.v1.JournalEntryDetail.lines:type_name -> arda.finance.v1.JournalEntryDetailLine
+	20, // 11: arda.finance.v1.JournalEntryDetail.metadata:type_name -> arda.finance.v1.JournalEntryDetail.MetadataEntry
+	8,  // 12: arda.finance.v1.PostingService.ValidatePosting:input_type -> arda.finance.v1.PostingRequest
+	8,  // 13: arda.finance.v1.PostingService.PostTransaction:input_type -> arda.finance.v1.PostingRequest
+	8,  // 14: arda.finance.v1.PostingService.ReservePosting:input_type -> arda.finance.v1.PostingRequest
+	10, // 15: arda.finance.v1.PostingService.ReleasePosting:input_type -> arda.finance.v1.ReleaseRequest
+	13, // 16: arda.finance.v1.PostingService.ReverseTransaction:input_type -> arda.finance.v1.ReverseRequest
+	14, // 17: arda.finance.v1.PostingService.GetJournalEntry:input_type -> arda.finance.v1.GetJournalEntryRequest
+	2,  // 18: arda.finance.v1.PostingService.ListPostingRules:input_type -> arda.finance.v1.ListPostingRulesRequest
+	12, // 19: arda.finance.v1.PostingService.ValidatePosting:output_type -> arda.finance.v1.ValidationResult
+	9,  // 20: arda.finance.v1.PostingService.PostTransaction:output_type -> arda.finance.v1.PostingResponse
+	9,  // 21: arda.finance.v1.PostingService.ReservePosting:output_type -> arda.finance.v1.PostingResponse
+	9,  // 22: arda.finance.v1.PostingService.ReleasePosting:output_type -> arda.finance.v1.PostingResponse
+	9,  // 23: arda.finance.v1.PostingService.ReverseTransaction:output_type -> arda.finance.v1.PostingResponse
+	16, // 24: arda.finance.v1.PostingService.GetJournalEntry:output_type -> arda.finance.v1.JournalEntryDetail
+	4,  // 25: arda.finance.v1.PostingService.ListPostingRules:output_type -> arda.finance.v1.ListPostingRulesResponse
+	19, // [19:26] is the sub-list for method output_type
+	12, // [12:19] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_arda_finance_v1_posting_proto_init() }
@@ -1713,7 +1797,7 @@ func file_arda_finance_v1_posting_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_finance_v1_posting_proto_rawDesc), len(file_arda_finance_v1_posting_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,

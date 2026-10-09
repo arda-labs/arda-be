@@ -111,8 +111,7 @@ func (s *SettlementService) Open(ctx context.Context, tenantID string, in *OpenS
 	// Posting: DR cash settlement, CR customer deposit liability.
 	if s.finance != nil {
 		entryID, err := s.post(ctx, tenantID, "DPM_OPEN", "DPM_OPEN", idempotencyKey("dpm-open", in.SavingsCode),
-			savings.SavingsCode, savings.CustomerCode, openDate, currency, in.PrincipalMinor,
-			"CASH_SETTLEMENT_ACCOUNT", "DPM_DEPOSIT_LIABILITY")
+			savings.SavingsCode, savings.CustomerCode, openDate, currency, in.PrincipalMinor)
 		if err != nil {
 			return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "deposit posting failed", err)
 		}
@@ -196,8 +195,7 @@ func (s *SettlementService) Settle(ctx context.Context, tenantID, savingsCode, a
 			entryID, err = s.postSettlementV3(ctx, tenantID, savings)
 		} else {
 			entryID, err = s.post(ctx, tenantID, "DPM_SETTLEMENT", "DPM_SETTLEMENT", settlementIdempotencyKey(savingsCode),
-				savings.SavingsCode, savings.CustomerCode, todayDep(ctx), savings.CurrencyCode, payoutMinor,
-				"DPM_DEPOSIT_LIABILITY", "CASH_SETTLEMENT_ACCOUNT")
+				savings.SavingsCode, savings.CustomerCode, todayDep(ctx), savings.CurrencyCode, payoutMinor)
 		}
 		if err != nil {
 			return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "settlement posting failed", err)
@@ -229,6 +227,14 @@ func (s *SettlementService) postSettlementV3(ctx context.Context, tenantID strin
 		}
 	}
 	payout := savings.PrincipalMinor + savings.AccruedMinor
+	lines, err := financeclient.BuildPostingLines(ctx, s.finance, "DPM_SETTLEMENT_V3", []financeclient.PostingLeg{
+		{CardLine: 1, Direction: "DEBIT", AmountMinor: savings.PrincipalMinor, Analytics: analytics()},
+		{CardLine: 2, Direction: "DEBIT", AmountMinor: savings.AccruedMinor, Analytics: analytics()},
+		{CardLine: 3, Direction: "CREDIT", AmountMinor: payout, Analytics: analytics()},
+	}, savings.CurrencyCode)
+	if err != nil {
+		return "", err
+	}
 	resp, err := s.finance.Post(ctx, &financev1.PostingRequest{
 		IdempotencyKey: settlementIdempotencyKey(savings.SavingsCode),
 		AccountingDate: todayDep(ctx),
@@ -239,15 +245,7 @@ func (s *SettlementService) postSettlementV3(ctx context.Context, tenantID strin
 			DocumentType: "DPM_SETTLEMENT_V3",
 			DocumentCode: savings.SavingsCode,
 		},
-		Lines: financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(ctx, s.finance, "DPM_SETTLEMENT_V3"),
-			[]financeclient.PostingLeg{
-				{CardLine: 1, Fallback: "DPM_DEPOSIT_LIABILITY", Direction: "DEBIT", AmountMinor: savings.PrincipalMinor, Analytics: analytics()},
-				{CardLine: 2, Fallback: "DPM_INTEREST_PAYABLE", Direction: "DEBIT", AmountMinor: savings.AccruedMinor, Analytics: analytics()},
-				{CardLine: 3, Fallback: "CASH_SETTLEMENT_ACCOUNT", Direction: "CREDIT", AmountMinor: payout, Analytics: analytics()},
-			},
-			savings.CurrencyCode,
-		),
+		Lines: lines,
 	})
 	if err != nil {
 		return "", err
@@ -255,14 +253,20 @@ func (s *SettlementService) postSettlementV3(ctx context.Context, tenantID strin
 	return resp.GetJournalEntryId(), nil
 }
 
-// post builds and posts one two-leg movement. The rule card (cardType) is
-// fetched first; fallback classifications keep unseeded environments working.
-func (s *SettlementService) post(ctx context.Context, tenantID, refType, cardType, idemKey, savingsCode, customerCode, accountingDate, currency string, amountMinor int64, debitFallback, creditFallback string) (string, error) {
+// post builds and posts one two-leg movement from its required rule card.
+func (s *SettlementService) post(ctx context.Context, tenantID, refType, cardType, idemKey, savingsCode, customerCode, accountingDate, currency string, amountMinor int64) (string, error) {
 	analytics := func() *financev1.Analytics {
 		return &financev1.Analytics{
 			CustomerCode: customerCode,
 			Dimensions:   map[string]string{"savings_code": savingsCode},
 		}
+	}
+	lines, err := financeclient.BuildPostingLines(ctx, s.finance, cardType, []financeclient.PostingLeg{
+		{CardLine: 1, Direction: "DEBIT", AmountMinor: amountMinor, Analytics: analytics()},
+		{CardLine: 2, Direction: "CREDIT", AmountMinor: amountMinor, Analytics: analytics()},
+	}, currency)
+	if err != nil {
+		return "", err
 	}
 	postReq := &financev1.PostingRequest{
 		IdempotencyKey: idemKey,
@@ -274,14 +278,7 @@ func (s *SettlementService) post(ctx context.Context, tenantID, refType, cardTyp
 			DocumentType: refType,
 			DocumentCode: savingsCode,
 		},
-		Lines: financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(ctx, s.finance, cardType),
-			[]financeclient.PostingLeg{
-				{CardLine: 1, Fallback: debitFallback, Direction: "DEBIT", AmountMinor: amountMinor, Analytics: analytics()},
-				{CardLine: 2, Fallback: creditFallback, Direction: "CREDIT", AmountMinor: amountMinor, Analytics: analytics()},
-			},
-			currency,
-		),
+		Lines: lines,
 	}
 	resp, err := s.finance.Post(ctx, postReq)
 	if err != nil {
