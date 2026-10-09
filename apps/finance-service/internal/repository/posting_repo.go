@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
@@ -343,7 +344,7 @@ func (r *PostingRepository) FindEntryByEntryNo(ctx context.Context, tenantID str
 func (r *PostingRepository) InsertOutbox(ctx context.Context, tx *sql.Tx, tenantID, entryID string, payload []byte) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO fin_outbox (tenant_id, event_type, aggregate_id, payload)
-		VALUES ($1, 'arda.finance.journal.posted.v1', $2, $3)`, tenantID, entryID, payload)
+		VALUES ($1, $2, $3, $4)`, tenantID, ardaevents.EventFinanceTransactionPosted, entryID, payload)
 	return err
 }
 

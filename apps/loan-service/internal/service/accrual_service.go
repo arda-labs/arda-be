@@ -23,11 +23,15 @@ import (
 type AccrualService struct {
 	repo    *repository.LoanRepository
 	db      *sql.DB
-	finance *financeclient.Client
+	finance batchPostingFinance
 }
 
 func NewAccrualService(repo *repository.LoanRepository, db *sql.DB, finance *financeclient.Client) *AccrualService {
-	return &AccrualService{repo: repo, db: db, finance: finance}
+	var batchFinance batchPostingFinance
+	if finance != nil {
+		batchFinance = finance
+	}
+	return &AccrualService{repo: repo, db: db, finance: batchFinance}
 }
 
 // RunResult summarizes one accrual batch.
@@ -57,9 +61,32 @@ func (s *AccrualService) RunDaily(ctx context.Context, tenantID, toDate, actor s
 	}
 	result := &RunResult{ToDate: toDate}
 	for _, a := range agreements {
+		pendingRows, err := s.pendingAccruals(ctx, tenantID, a.AgreementCode, toDate)
+		if err != nil {
+			result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": load pending accrual: "+err.Error())
+			continue
+		}
+		pendingFailed := false
+		for _, pending := range pendingRows {
+			entryID, err := s.completeAccrual(ctx, tenantID, a, pending)
+			if err != nil {
+				result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": "+err.Error())
+				slog.Error("accrual retry failed", "agreement", a.AgreementCode, "err", err)
+				pendingFailed = true
+				break
+			}
+			result.Processed++
+			result.TotalMinor += pending.interestMinor
+			result.EntryIDs = append(result.EntryIDs, entryID)
+		}
+		if pendingFailed {
+			continue
+		}
+
 		lastDate, err := s.lastAccrualDate(ctx, tenantID, a.AgreementCode)
 		if err != nil {
-			return nil, err
+			result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": load last accrual date: "+err.Error())
+			continue
 		}
 		fromDate := lastDate
 		if fromDate == "" {
@@ -67,6 +94,10 @@ func (s *AccrualService) RunDaily(ctx context.Context, tenantID, toDate, actor s
 		}
 		days, err := daysBetween(fromDate, toDate)
 		if err != nil || days <= 0 {
+			if err != nil {
+				result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": "+err.Error())
+				continue
+			}
 			result.Skipped++
 			continue
 		}
@@ -88,76 +119,131 @@ func (s *AccrualService) RunDaily(ctx context.Context, tenantID, toDate, actor s
 		}
 		interestMinor, err := ardamoney.ToMinor(interest, currency)
 		if err != nil {
-			return nil, err
+			result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": convert interest: "+err.Error())
+			continue
 		}
-
-		// Rule-card line build (iteration 12): the LNM_ACCRUAL card
-		// (seeded 20260907090200, lines 1-2) drives the classification; the
-		// pre-rules hardcoded strings stay as the per-leg fallback so an
-		// unseeded/unreachable card never breaks the batch. Analytics per
-		// leg keep the accrual scope (debt group / org / contract /
-		// agreement) and the classification is stamped from the card.
-		lines := financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(ctx, s.finance, "LNM_ACCRUAL"),
-			[]financeclient.PostingLeg{
-				{
-					CardLine:    1,
-					Fallback:    "LNM_INTEREST_RECEIVABLE",
-					Direction:   "DEBIT",
-					AmountMinor: interestMinor,
-					Analytics: &financev1.Analytics{
-						DebtGroupCode: a.DebtGroupCode,
-						OrgUnitCode:   a.AccClassification,
-						ContractCode:  a.ContractCode,
-						Dimensions:    map[string]string{"agreement_code": a.AgreementCode},
-					},
-					Description: "Phải thu lãi cho vay",
-				},
-				{
-					CardLine:    2,
-					Fallback:    "LNM_INTEREST_INCOME",
-					Direction:   "CREDIT",
-					AmountMinor: interestMinor,
-					Analytics: &financev1.Analytics{
-						OrgUnitCode:  a.AccClassification,
-						ContractCode: a.ContractCode,
-						Dimensions:   map[string]string{"agreement_code": a.AgreementCode},
-					},
-					Description: "Doanh thu lãi cho vay",
-				},
-			},
-			currency,
-		)
-		postReq := &financev1.PostingRequest{
-			IdempotencyKey: fmt.Sprintf("lnm-accrual-%s-%s", a.AgreementCode, toDate),
-			AccountingDate: toDate,
-			CurrencyCode:   currency,
-			Description:    fmt.Sprintf("Tính lãi %s %s→%s", a.AgreementCode, fromDate, toDate),
-			BusinessReference: &financev1.BusinessReference{
-				Domain:       "lnm",
-				DocumentType: "LNM_ACCRUAL",
-				DocumentId:   a.ID,
-				DocumentCode: a.AgreementCode,
-			},
-			Lines: lines,
+		pending, created, err := s.createPendingAccrual(ctx, tenantID, a.AgreementCode, fromDate, toDate, interestMinor, currency, actor)
+		if err != nil {
+			result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": stage accrual: "+err.Error())
+			continue
 		}
-		posted, err := s.finance.Post(ctx, postReq)
+		if !created {
+			result.Skipped++
+			continue
+		}
+		entryID, err := s.completeAccrual(ctx, tenantID, a, pending)
 		if err != nil {
 			result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": "+err.Error())
 			slog.Error("accrual post failed", "agreement", a.AgreementCode, "err", err)
 			continue
 		}
-		if _, err := s.db.ExecContext(ctx, `
-			INSERT INTO lnm_accruals (tenant_id, agreement_code, from_date, to_date, interest_minor, currency_code, journal_entry_id, created_by)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-			tenantID, a.AgreementCode, fromDate, toDate, interestMinor, currency, posted.GetJournalEntryId(), actor); err != nil {
-			return nil, fmt.Errorf("record accrual %s: %w", a.AgreementCode, err)
-		}
 		result.Processed++
 		result.TotalMinor += interestMinor
-		result.EntryIDs = append(result.EntryIDs, posted.GetJournalEntryId())
+		result.EntryIDs = append(result.EntryIDs, entryID)
 	}
 	return result, nil
+}
+
+type pendingAccrual struct {
+	id             string
+	fromDate       string
+	toDate         string
+	interestMinor  int64
+	currency       string
+	journalEntryID sql.NullString
+}
+
+func (s *AccrualService) pendingAccruals(ctx context.Context, tenantID, agreementCode, toDate string) ([]pendingAccrual, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id::text, from_date::text, to_date::text, interest_minor, currency_code, journal_entry_id::text
+		FROM lnm_accruals
+		WHERE tenant_id = $1 AND agreement_code = $2 AND status = 'PENDING' AND to_date <= $3::date
+		ORDER BY to_date, created_at`, tenantID, agreementCode, toDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pending []pendingAccrual
+	for rows.Next() {
+		var item pendingAccrual
+		if err := rows.Scan(&item.id, &item.fromDate, &item.toDate, &item.interestMinor, &item.currency, &item.journalEntryID); err != nil {
+			return nil, err
+		}
+		pending = append(pending, item)
+	}
+	return pending, rows.Err()
+}
+
+func (s *AccrualService) createPendingAccrual(ctx context.Context, tenantID, agreementCode, fromDate, toDate string, amount int64, currency, actor string) (pendingAccrual, bool, error) {
+	var item pendingAccrual
+	err := s.db.QueryRowContext(ctx, `
+		INSERT INTO lnm_accruals (tenant_id, agreement_code, from_date, to_date, interest_minor, currency_code, created_by, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,'PENDING')
+		ON CONFLICT (tenant_id, agreement_code, to_date) DO NOTHING
+		RETURNING id::text, from_date::text, to_date::text, interest_minor, currency_code, journal_entry_id::text`,
+		tenantID, agreementCode, fromDate, toDate, amount, currency, actor).
+		Scan(&item.id, &item.fromDate, &item.toDate, &item.interestMinor, &item.currency, &item.journalEntryID)
+	if err == sql.ErrNoRows {
+		return pendingAccrual{}, false, nil
+	}
+	if err != nil {
+		return pendingAccrual{}, false, err
+	}
+	return item, true, nil
+}
+
+func (s *AccrualService) completeAccrual(ctx context.Context, tenantID string, agreement repository.AccruableAgreement, pending pendingAccrual) (string, error) {
+	entryID := pending.journalEntryID.String
+	if !pending.journalEntryID.Valid || entryID == "" {
+		currency := pending.currency
+		if currency == "" {
+			currency = "VND"
+		}
+		lines := financeclient.PostingLinesFromRules(
+			batchPostingRules(ctx, s.finance, "LNM_ACCRUAL"),
+			[]financeclient.PostingLeg{
+				{CardLine: 1, Fallback: "LNM_INTEREST_RECEIVABLE", Direction: "DEBIT", AmountMinor: pending.interestMinor,
+					Analytics: &financev1.Analytics{DebtGroupCode: agreement.DebtGroupCode, OrgUnitCode: agreement.AccClassification, ContractCode: agreement.ContractCode, Dimensions: map[string]string{"agreement_code": agreement.AgreementCode}}, Description: "Phải thu lãi cho vay"},
+				{CardLine: 2, Fallback: "LNM_INTEREST_INCOME", Direction: "CREDIT", AmountMinor: pending.interestMinor,
+					Analytics: &financev1.Analytics{OrgUnitCode: agreement.AccClassification, ContractCode: agreement.ContractCode, Dimensions: map[string]string{"agreement_code": agreement.AgreementCode}}, Description: "Doanh thu lãi cho vay"},
+			}, currency)
+		postReq := &financev1.PostingRequest{
+			IdempotencyKey:    fmt.Sprintf("lnm-accrual-%s", pending.id),
+			AccountingDate:    pending.toDate,
+			CurrencyCode:      currency,
+			Description:       fmt.Sprintf("Tính lãi %s %s→%s", agreement.AgreementCode, pending.fromDate, pending.toDate),
+			BusinessReference: &financev1.BusinessReference{Domain: "lnm", DocumentType: "LNM_ACCRUAL", DocumentId: agreement.ID, DocumentCode: agreement.AgreementCode},
+			Lines:             lines,
+		}
+		posted, err := s.finance.Post(ctx, postReq)
+		if err != nil {
+			return "", err
+		}
+		entryID = posted.GetJournalEntryId()
+		if entryID == "" {
+			return "", fmt.Errorf("finance returned an empty journal entry id")
+		}
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE lnm_accruals SET status = 'POSTED', journal_entry_id = $3
+		WHERE tenant_id = $1 AND id = $2 AND status = 'PENDING'`, tenantID, pending.id, entryID)
+	if err != nil {
+		return "", fmt.Errorf("complete accrual %s: %w", agreement.AgreementCode, err)
+	}
+	changed, err := res.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if changed == 0 {
+		var status string
+		if err := s.db.QueryRowContext(ctx, `SELECT status FROM lnm_accruals WHERE tenant_id = $1 AND id = $2`, tenantID, pending.id).Scan(&status); err != nil {
+			return "", err
+		}
+		if status != "POSTED" {
+			return "", fmt.Errorf("accrual %s is %s after finance post", agreement.AgreementCode, status)
+		}
+	}
+	return entryID, nil
 }
 
 // lastAccrualDate returns the latest accrual to_date for the agreement.
@@ -165,7 +251,7 @@ func (s *AccrualService) lastAccrualDate(ctx context.Context, tenantID, agreemen
 	var last sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT MAX(to_date::text) FROM lnm_accruals
-		WHERE tenant_id = $1 AND agreement_code = $2`, tenantID, agreementCode).Scan(&last)
+		WHERE tenant_id = $1 AND agreement_code = $2 AND status = 'POSTED'`, tenantID, agreementCode).Scan(&last)
 	if err != nil {
 		return "", err
 	}
