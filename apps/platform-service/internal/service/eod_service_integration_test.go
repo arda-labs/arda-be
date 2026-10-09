@@ -77,6 +77,7 @@ func TestRunSystemExecutesSeededStepsInOrderAndAdvancesDate(t *testing.T) {
 		"/internal/jobs/accrual-daily",
 		"/internal/jobs/deposit-accrual-daily",
 		"/internal/jobs/provision-daily",
+		"/internal/jobs/agreement-daily-snapshot",
 		"/internal/jobs/trial-balance-daily",
 		"/internal/jobs/report-extract-daily",
 		"/internal/jobs/reconcile-accounting",
