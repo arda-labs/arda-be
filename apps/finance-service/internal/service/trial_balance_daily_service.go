@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
@@ -51,12 +52,12 @@ func (s *TrialBalanceDailyService) RiskExceptions(ctx context.Context, tenantID,
 		SELECT account_code, currency_code, coa_version, close_debit_minor, close_credit_minor,
 		       'BILATERAL_BALANCE' AS reason
 		FROM fin_trial_balance_daily tbd
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND bal_type_code = $3
 		  AND business_date = (
 		      SELECT max(business_date) FROM fin_trial_balance_daily
-		      WHERE tenant_id = $1 AND ($2 = '' OR business_date <= $2::date))
+		      WHERE tenant_id = $1 AND bal_type_code = $3 AND ($2 = '' OR business_date <= $2::date))
 		  AND close_debit_minor > 0 AND close_credit_minor > 0
-		ORDER BY account_code LIMIT 500`, tenantID, asOf)
+		ORDER BY account_code LIMIT 500`, tenantID, asOf, repository.BalanceTypeActual)
 	if err != nil {
 		return nil, fmt.Errorf("risk exceptions: %w", err)
 	}
@@ -109,7 +110,7 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO fin_trial_balance_daily
-		    (tenant_id, business_date, org_code, coa_version, account_code, currency_code,
+		    (tenant_id, business_date, org_code, bal_type_code, coa_version, account_code, currency_code,
 		     open_debit_minor, open_credit_minor, incr_debit_minor, incr_credit_minor,
 		     close_debit_minor, close_credit_minor, created_by)
 		WITH prev_max AS (
@@ -117,14 +118,15 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 			WHERE tenant_id = $1 AND business_date < $2::date
 		),
 		move AS (
-			SELECT l.coa_version, l.account_code, l.currency_code,
+			SELECT l.bal_type_code, l.coa_version, l.account_code, l.currency_code,
 			       COALESCE(NULLIF(e.metadata->>'org_code', ''), '') AS org_code,
 			       COALESCE(SUM(l.amount_minor) FILTER (WHERE l.direction = 'DEBIT'), 0)  AS d,
 			       COALESCE(SUM(l.amount_minor) FILTER (WHERE l.direction = 'CREDIT'), 0) AS c
 			FROM fin_journal_lines l
 			JOIN fin_journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id
-			WHERE l.tenant_id = $1 AND e.accounting_date = $2::date AND e.status IN ('POSTED', 'REVERSED')
-			GROUP BY 1, 2, 3, 4
+			WHERE l.tenant_id = $1 AND l.bal_type_code = $4
+			  AND e.accounting_date = $2::date AND e.status IN ('POSTED', 'REVERSED')
+			GROUP BY 1, 2, 3, 4, 5
 		),
 		openings AS (
 			SELECT tenant_id, ''::varchar AS org_code, coa_version, account_code, currency_code,
@@ -136,19 +138,19 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 			GROUP BY 1, 2, 3, 4, 5
 		),
 		prev AS (
-			SELECT DISTINCT ON (org_code, coa_version, account_code, currency_code)
-			       org_code, coa_version, account_code, currency_code,
+			SELECT DISTINCT ON (org_code, bal_type_code, coa_version, account_code, currency_code)
+			       org_code, bal_type_code, coa_version, account_code, currency_code,
 			       close_debit_minor, close_credit_minor
 			FROM fin_trial_balance_daily
-			WHERE tenant_id = $1 AND business_date <= (SELECT d FROM prev_max)
-			ORDER BY org_code, coa_version, account_code, currency_code, business_date DESC
+			WHERE tenant_id = $1 AND bal_type_code = $4 AND business_date <= (SELECT d FROM prev_max)
+			ORDER BY org_code, bal_type_code, coa_version, account_code, currency_code, business_date DESC
 		),
 		keys AS (
-			SELECT org_code, coa_version, account_code, currency_code FROM move
-			UNION SELECT org_code, coa_version, account_code, currency_code FROM openings
-			UNION SELECT org_code, coa_version, account_code, currency_code FROM prev
+			SELECT org_code, bal_type_code, coa_version, account_code, currency_code FROM move
+			UNION SELECT org_code, $4::text, coa_version, account_code, currency_code FROM openings
+			UNION SELECT org_code, bal_type_code, coa_version, account_code, currency_code FROM prev
 		)
-		SELECT $1, $2::date, k.org_code, k.coa_version, k.account_code, k.currency_code,
+		SELECT $1, $2::date, k.org_code, k.bal_type_code, k.coa_version, k.account_code, k.currency_code,
 		       -- opening: latest prior close + opening-balance rows not yet
 		       -- covered by the rebuilt chain; debit-positive split into the
 		       -- two signed sides so close = open ± incr stays additive.
@@ -163,7 +165,7 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 		       COALESCE(p.close_credit_minor, 0) + GREATEST(-COALESCE(o.signed_minor, 0), 0) + COALESCE(m.c, 0),
 		       $3
 		FROM keys k
-		LEFT JOIN move m ON m.org_code = k.org_code
+		LEFT JOIN move m ON m.org_code = k.org_code AND m.bal_type_code = k.bal_type_code
 		                AND m.coa_version = k.coa_version
 		                AND m.account_code = k.account_code
 		                AND m.currency_code = k.currency_code
@@ -171,14 +173,14 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 		                    AND o.coa_version = k.coa_version
 		                    AND o.account_code = k.account_code
 		                    AND o.currency_code = k.currency_code
-		LEFT JOIN prev p ON p.org_code = k.org_code
+		LEFT JOIN prev p ON p.org_code = k.org_code AND p.bal_type_code = k.bal_type_code
 		                AND p.coa_version = k.coa_version
 		                AND p.account_code = k.account_code
 		                AND p.currency_code = k.currency_code
 		WHERE m.d IS NOT NULL OR m.c IS NOT NULL
 		   OR COALESCE(o.signed_minor, 0) <> 0
 		   OR COALESCE(p.close_debit_minor, 0) <> 0 OR COALESCE(p.close_credit_minor, 0) <> 0`,
-		tenantID, toDate, actor)
+		tenantID, toDate, actor, repository.BalanceTypeActual)
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +195,7 @@ func (s *TrialBalanceDailyService) RebuildDaily(ctx context.Context, tenantID, t
 // DailyBalanceEntry is one row of the daily trial balance read API.
 type DailyBalanceEntry struct {
 	OrgCode          string `json:"org_code"`
+	BalTypeCode      string `json:"bal_type_code"`
 	CoaVersion       string `json:"coa_version"`
 	AccountCode      string `json:"account_code"`
 	AccountName      string `json:"account_name"`
@@ -211,7 +214,7 @@ func (s *TrialBalanceDailyService) ListDaily(ctx context.Context, tenantID, asOf
 		asOf = ardatime.TodayCtx(ctx)
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT tbd.org_code, tbd.coa_version, tbd.account_code, COALESCE(a.name, ''), tbd.currency_code,
+		SELECT tbd.org_code, tbd.bal_type_code, tbd.coa_version, tbd.account_code, COALESCE(a.name, ''), tbd.currency_code,
 		       tbd.open_debit_minor, tbd.open_credit_minor,
 		       tbd.incr_debit_minor, tbd.incr_credit_minor,
 		       tbd.close_debit_minor, tbd.close_credit_minor
@@ -220,8 +223,8 @@ func (s *TrialBalanceDailyService) ListDaily(ctx context.Context, tenantID, asOf
 		       ON a.tenant_id = tbd.tenant_id
 		      AND a.version_code = tbd.coa_version
 		      AND a.acc_code = tbd.account_code
-		WHERE tbd.tenant_id = $1 AND tbd.business_date = $2::date
-		ORDER BY tbd.account_code, tbd.currency_code, tbd.org_code`, tenantID, asOf)
+		WHERE tbd.tenant_id = $1 AND tbd.business_date = $2::date AND tbd.bal_type_code = $3
+		ORDER BY tbd.account_code, tbd.currency_code, tbd.org_code`, tenantID, asOf, repository.BalanceTypeActual)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +233,7 @@ func (s *TrialBalanceDailyService) ListDaily(ctx context.Context, tenantID, asOf
 	entries := []DailyBalanceEntry{}
 	for rows.Next() {
 		var e DailyBalanceEntry
-		if err := rows.Scan(&e.OrgCode, &e.CoaVersion, &e.AccountCode, &e.AccountName, &e.CurrencyCode,
+		if err := rows.Scan(&e.OrgCode, &e.BalTypeCode, &e.CoaVersion, &e.AccountCode, &e.AccountName, &e.CurrencyCode,
 			&e.OpenDebitMinor, &e.OpenCreditMinor,
 			&e.IncrDebitMinor, &e.IncrCreditMinor,
 			&e.CloseDebitMinor, &e.CloseCreditMinor); err != nil {

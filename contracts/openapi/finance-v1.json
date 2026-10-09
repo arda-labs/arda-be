@@ -1,0 +1,64 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Arda Finance API", "version": "1.0.0" },
+  "servers": [{ "url": "https://api.arda.io.vn" }],
+  "security": [{ "ardaSession": [] }],
+  "paths": {
+    "/api/finance/document-numbers/renumber-requests": {
+      "post": {
+        "operationId": "requestDocumentRenumber",
+        "summary": "Request a document display-number change",
+        "description": "Requires doc.renumber. The requester cannot approve their own request.",
+        "x-required-permission": "doc.renumber",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RequestRenumber" } } } },
+        "responses": {
+          "201": { "description": "Renumber request created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RenumberRequestSuccess" } } } },
+          "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }, "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }, "500": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/finance/document-numbers/renumber-requests/approve": {
+      "post": {
+        "operationId": "approveDocumentRenumber",
+        "summary": "Approve a document display-number change in an open period",
+        "x-required-permission": "doc.renumber",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApproveRenumber" } } } },
+        "responses": {
+          "200": { "description": "Renumber request approved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RenumberRequestSuccess" } } } },
+          "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }, "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }, "500": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/finance/document-numbers/renumber-requests/approve-closed": {
+      "post": {
+        "operationId": "approveClosedPeriodDocumentRenumber",
+        "summary": "Approve a document display-number change in a closed period",
+        "description": "Requires doc.renumber.locked and a non-empty reason.",
+        "x-required-permission": "doc.renumber.locked",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApproveRenumber" } } } },
+        "responses": {
+          "200": { "description": "Renumber request approved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RenumberRequestSuccess" } } } },
+          "400": { "$ref": "#/components/responses/Problem" }, "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }, "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" }, "500": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "ardaSession": { "type": "apiKey", "in": "cookie", "name": "arda_session", "x-browser-credentials": "include" } },
+    "schemas": {
+      "ResponseMeta": { "type": "object", "properties": { "request_id": { "type": "string" } } },
+      "Problem": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" }, "request_id": { "type": "string" } } },
+      "RequestRenumber": { "type": "object", "required": ["document_id", "display_no", "reason"], "properties": { "document_id": { "type": "string", "minLength": 1 }, "display_no": { "type": "string", "minLength": 1 }, "reason": { "type": "string", "minLength": 1 } } },
+      "ApproveRenumber": { "type": "object", "required": ["request_id"], "properties": { "request_id": { "type": "string", "format": "uuid" } } },
+      "RenumberRequest": { "type": "object", "required": ["id", "document_id", "previous_display_no", "requested_display_no", "reason", "status"], "properties": { "id": { "type": "string", "format": "uuid" }, "document_id": { "type": "string" }, "previous_display_no": { "type": "string" }, "requested_display_no": { "type": "string" }, "reason": { "type": "string" }, "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] } } },
+      "RenumberRequestSuccess": { "type": "object", "required": ["data", "meta"], "properties": { "data": { "$ref": "#/components/schemas/RenumberRequest" }, "meta": { "$ref": "#/components/schemas/ResponseMeta" } } }
+    },
+    "responses": { "Problem": { "description": "Problem details", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } } }
+  }
+}

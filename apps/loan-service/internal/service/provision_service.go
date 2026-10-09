@@ -208,13 +208,17 @@ func (s *ProvisionService) createPendingProvision(ctx context.Context, tenantID 
 func (s *ProvisionService) completeProvision(ctx context.Context, tenantID string, agreement repository.AccruableAgreement, pending pendingProvision) (string, error) {
 	entryID := pending.journalEntry.String
 	if !pending.journalEntry.Valid || entryID == "" {
+		lines, err := s.provisionLines(ctx, agreement, pending.deltaMinor)
+		if err != nil {
+			return "", err
+		}
 		postReq := &financev1.PostingRequest{
 			IdempotencyKey:    fmt.Sprintf("lnm-provision-%s", pending.id),
 			AccountingDate:    pending.provisionDate,
 			CurrencyCode:      "VND",
 			Description:       fmt.Sprintf("Trích lập dự phòng %s (nhóm %s)", agreement.AgreementCode, pending.debtGroupCode),
 			BusinessReference: &financev1.BusinessReference{Domain: "lnm", DocumentType: "LNM_PROVISION", DocumentId: agreement.ID, DocumentCode: agreement.AgreementCode},
-			Lines:             s.provisionLines(ctx, agreement, pending.deltaMinor),
+			Lines:             lines,
 		}
 		posted, err := s.finance.Post(ctx, postReq)
 		if err != nil {
@@ -273,14 +277,13 @@ func (s *ProvisionService) accumulatedProvision(ctx context.Context, tenantID, a
 // liability, card lines 1-2) hoặc hoàn giảm (DR liability / CR release
 // income, card lines 3-4). Rule-card driven (iteration 12): the LNM_PROVISION
 // card seeded by 20260909100000 drives the classification; the pre-rules
-// hardcoded strings stay as the per-leg fallback so an unseeded/unreachable
-// card never breaks the batch. Analytics per leg keep the provision scope.
-func (s *ProvisionService) provisionLines(ctx context.Context, a repository.AccruableAgreement, delta int64) []*financev1.PostingLine {
+// Analytics per leg keep the provision scope.
+func (s *ProvisionService) provisionLines(ctx context.Context, a repository.AccruableAgreement, delta int64) ([]*financev1.PostingLine, error) {
 	amount := delta
-	cardLine, debitFallback, creditFallback := int32(1), "LNM_PROVISION_EXPENSE", "LNM_PROVISION_LIABILITY"
+	cardLine := int32(1)
 	if delta < 0 {
 		amount = -delta
-		cardLine, debitFallback, creditFallback = 3, "LNM_PROVISION_LIABILITY", "LNM_PROVISION_RELEASE"
+		cardLine = 3
 	}
 	analytics := func() *financev1.Analytics {
 		return &financev1.Analytics{
@@ -290,11 +293,10 @@ func (s *ProvisionService) provisionLines(ctx context.Context, a repository.Accr
 			Dimensions:    map[string]string{"agreement_code": a.AgreementCode},
 		}
 	}
-	return financeclient.PostingLinesFromRules(
-		batchPostingRules(ctx, s.finance, "LNM_PROVISION"),
+	return financeclient.BuildPostingLines(ctx, s.finance, "LNM_PROVISION",
 		[]financeclient.PostingLeg{
-			{CardLine: cardLine, Fallback: debitFallback, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics()},
-			{CardLine: cardLine + 1, Fallback: creditFallback, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics()},
+			{CardLine: cardLine, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics()},
+			{CardLine: cardLine + 1, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics()},
 		},
 		"VND",
 	)

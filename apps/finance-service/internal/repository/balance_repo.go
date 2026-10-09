@@ -7,9 +7,12 @@ import (
 	"sort"
 )
 
+const BalanceTypeActual = "ACTUAL"
+
 // BalanceKey identifies one fin_account_balances counter row (tenant_id is
-// uniform per call and part of the table primary key).
+// uniform per call; the remaining fields form the table primary key).
 type BalanceKey struct {
+	BalTypeCode  string
 	CoaVersion   string
 	AccountCode  string
 	CurrencyCode string
@@ -46,14 +49,17 @@ func (r *PostingRepository) EnsureAndLockBalances(ctx context.Context, tx *sql.T
 		if sorted[i].AccountCode != sorted[j].AccountCode {
 			return sorted[i].AccountCode < sorted[j].AccountCode
 		}
-		return sorted[i].CurrencyCode < sorted[j].CurrencyCode
+		if sorted[i].CurrencyCode != sorted[j].CurrencyCode {
+			return sorted[i].CurrencyCode < sorted[j].CurrencyCode
+		}
+		return sorted[i].BalTypeCode < sorted[j].BalTypeCode
 	})
 	for _, k := range sorted {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO fin_account_balances (tenant_id, coa_version, account_code, currency_code)
-			VALUES ($1,$2,$3,$4)
-			ON CONFLICT (tenant_id, coa_version, account_code, currency_code) DO NOTHING`,
-			tenantID, k.CoaVersion, k.AccountCode, k.CurrencyCode); err != nil {
+			INSERT INTO fin_account_balances (tenant_id, coa_version, account_code, currency_code, bal_type_code)
+			VALUES ($1,$2,$3,$4,$5)
+			ON CONFLICT (tenant_id, coa_version, account_code, currency_code, bal_type_code) DO NOTHING`,
+			tenantID, k.CoaVersion, k.AccountCode, k.CurrencyCode, k.BalTypeCode); err != nil {
 			return nil, fmt.Errorf("ensure balance row: %w", err)
 		}
 	}
@@ -64,9 +70,10 @@ func (r *PostingRepository) EnsureAndLockBalances(ctx context.Context, tx *sql.T
 		err := tx.QueryRowContext(ctx, `
 			SELECT posted_debit_minor, posted_credit_minor, reserved_debit_minor, reserved_credit_minor
 			FROM fin_account_balances
-			WHERE tenant_id = $1 AND coa_version = $2 AND account_code = $3 AND currency_code = $4
+			WHERE tenant_id = $1 AND coa_version = $2 AND account_code = $3 AND currency_code = $4 AND bal_type_code = $5
+			ORDER BY tenant_id, coa_version, account_code, currency_code, bal_type_code
 			FOR UPDATE`,
-			tenantID, k.CoaVersion, k.AccountCode, k.CurrencyCode,
+			tenantID, k.CoaVersion, k.AccountCode, k.CurrencyCode, k.BalTypeCode,
 		).Scan(&row.PostedDebitMinor, &row.PostedCreditMinor, &row.ReservedDebitMinor, &row.ReservedCreditMinor)
 		if err != nil {
 			return nil, fmt.Errorf("lock balance row %s/%s/%s: %w", k.CoaVersion, k.AccountCode, k.CurrencyCode, err)
@@ -84,9 +91,10 @@ func (r *PostingRepository) SaveBalance(ctx context.Context, tx *sql.Tx, tenantI
 		SET posted_debit_minor = $5, posted_credit_minor = $6,
 		    reserved_debit_minor = $7, reserved_credit_minor = $8,
 		    updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND coa_version = $2 AND account_code = $3 AND currency_code = $4`,
+		WHERE tenant_id = $1 AND coa_version = $2 AND account_code = $3 AND currency_code = $4 AND bal_type_code = $9`,
 		tenantID, row.Key.CoaVersion, row.Key.AccountCode, row.Key.CurrencyCode,
-		row.PostedDebitMinor, row.PostedCreditMinor, row.ReservedDebitMinor, row.ReservedCreditMinor)
+		row.PostedDebitMinor, row.PostedCreditMinor, row.ReservedDebitMinor, row.ReservedCreditMinor,
+		row.Key.BalTypeCode)
 	return err
 }
 
@@ -145,7 +153,7 @@ func (r *PostingRepository) LoadOpeningSides(ctx context.Context, tenantID strin
 // ListEntryLines loads the stored lines of one entry.
 func (r *PostingRepository) ListEntryLines(ctx context.Context, tenantID, entryID string) ([]JournalLineRow, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT line_no, direction, coa_version, account_code, COALESCE(account_name,''),
+		SELECT line_no, direction, bal_type_code, coa_version, account_code, COALESCE(account_name,''),
 		       amount_minor, currency_code, counterparty_code, counterparty_name, description, analytics
 		FROM fin_journal_lines WHERE tenant_id = $1 AND entry_id = $2 ORDER BY line_no`,
 		tenantID, entryID)
@@ -156,7 +164,7 @@ func (r *PostingRepository) ListEntryLines(ctx context.Context, tenantID, entryI
 	var out []JournalLineRow
 	for rows.Next() {
 		var l JournalLineRow
-		if err := rows.Scan(&l.LineNo, &l.Direction, &l.CoaVersion, &l.AccountCode, &l.AccountName,
+		if err := rows.Scan(&l.LineNo, &l.Direction, &l.BalTypeCode, &l.CoaVersion, &l.AccountCode, &l.AccountName,
 			&l.AmountMinor, &l.Currency, &l.CounterpartyCode, &l.CounterpartyName, &l.Description, &l.Analytics); err != nil {
 			return nil, err
 		}
