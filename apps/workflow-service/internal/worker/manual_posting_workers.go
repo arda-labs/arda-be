@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -93,9 +92,16 @@ func isPostingPolicyError(err error) bool {
 // flow jobs, mirroring DisbursementWorkers but sourcing the posting request
 // from case variables (the FE-submitted accountant-picked lines) instead of
 // a loan-service lookup.
+type manualPostingFinance interface {
+	Validate(context.Context, *financev1.PostingRequest) (*financev1.ValidationResult, error)
+	Reserve(context.Context, *financev1.PostingRequest) (*financev1.PostingResponse, error)
+	Post(context.Context, *financev1.PostingRequest) (*financev1.PostingResponse, error)
+	Release(context.Context, *financev1.ReleaseRequest) (*financev1.PostingResponse, error)
+}
+
 type ManualPostingWorkers struct {
 	flow          ManualPostingFlow
-	financeClient *financeclient.Client
+	financeClient manualPostingFinance
 	projection    *CaseProjection
 }
 
@@ -223,6 +229,19 @@ func (w *ManualPostingWorkers) failPostingError(client worker.JobClient, job ent
 }
 
 func (w *ManualPostingWorkers) handlePostingError(client worker.JobClient, job entities.Job, err error, journalEntryID string) {
+	w.routePostingOutcome(client, job, journalEntryID, func(release func() error, business func(financev1.PostingErrorCode, string), transient func(error)) {
+		routePostingFailure(err, journalEntryID, release, business, transient)
+	})
+}
+
+func (w *ManualPostingWorkers) handleInvalidValidation(client worker.JobClient, job entities.Job, result *financev1.ValidationResult, journalEntryID string) {
+	w.routePostingOutcome(client, job, journalEntryID, func(release func() error, business func(financev1.PostingErrorCode, string), transient func(error)) {
+		routeInvalidValidation(result, journalEntryID, release, business, transient)
+	})
+}
+
+func (w *ManualPostingWorkers) routePostingOutcome(client worker.JobClient, job entities.Job, journalEntryID string,
+	route func(func() error, func(financev1.PostingErrorCode, string), func(error))) {
 	ctx := context.Background()
 	vars, _ := job.GetVariablesAsMap()
 	actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
@@ -237,8 +256,12 @@ func (w *ManualPostingWorkers) handlePostingError(client worker.JobClient, job e
 			return releaseErr
 		}
 	}
-	routePostingFailure(err, journalEntryID, release,
+	route(release,
 		func(code financev1.PostingErrorCode, message string) {
+			if code == financev1.PostingErrorCode_POSTING_ERROR_CODE_UNSPECIFIED {
+				throwValidationError(client, job, message)
+				return
+			}
 			throwPostingValidationError(ctx, client, job, w.projection, code, message)
 		},
 		func(failure error) { w.failJob(client, job, "Posting Error: "+failure.Error()) })
@@ -289,7 +312,7 @@ func (w *ManualPostingWorkers) validate() worker.JobHandler {
 			return
 		}
 		if !result.GetValid() {
-			w.handlePostingError(client, job, errors.New(validationErrorsMessage(result)), stringVariable(vars, "journalEntryId"))
+			w.handleInvalidValidation(client, job, result, stringVariable(vars, "journalEntryId"))
 			return
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)

@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/ai-service
 
-go 1.27.1
+go 1.27.2
 
 replace github.com/arda-labs/arda/libs/go/arda-crypto => ../../libs/go/arda-crypto
 

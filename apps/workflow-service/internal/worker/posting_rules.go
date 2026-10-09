@@ -22,7 +22,7 @@ type postingLeg = financeclient.PostingLeg
 
 // postingLinesFromRules requires the finance rule card and returns typed
 // RULE_NOT_FOUND / ACCOUNT_UNRESOLVED errors. There is no built-in fallback.
-func postingLinesFromRules(ctx context.Context, client *financeclient.Client, documentType string, legs []postingLeg, currencyCode string) ([]*financev1.PostingLine, error) {
+func postingLinesFromRules(ctx context.Context, client financeclient.PostingRuleLister, documentType string, legs []postingLeg, currencyCode string) ([]*financev1.PostingLine, error) {
 	return financeclient.BuildPostingLines(ctx, client, documentType, legs, currencyCode)
 }
 
