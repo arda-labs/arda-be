@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/finance-service
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -22,7 +22,7 @@ require (
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
@@ -39,6 +39,7 @@ replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-docno v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-money v0.0.0-20260908084620-c4d6c146e0ff
@@ -54,6 +55,8 @@ require (
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/arda-labs/arda/libs/go/arda-docno => ../../libs/go/arda-docno
 
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 

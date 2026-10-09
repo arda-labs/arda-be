@@ -8,8 +8,9 @@ models, but presentation code must not duplicate the wire contract.
 
 The current pilots are `iam-v1.json` for the admin permissions
 list/create/delete surface, `auth-v1.json` for the canonical browser session
-user read, and `media-v1.json` for multipart upload and binary/redirect
-download profiles. Internal media attachment is a versioned gRPC command,
+user read, `media-v1.json` for multipart upload and binary/redirect download
+profiles, and `finance-v1.json` for document-number renumber requests and
+maker-checker approval. Internal media attachment is a versioned gRPC command,
 not a browser REST operation. They intentionally describe only the
 migrated operations; provider-native OAuth/Kratos, SSE, and internal gRPC
 retain their protocol-specific contracts.

@@ -29,6 +29,29 @@ routes:
 	}
 }
 
+func TestDocumentRenumberPoliciesOverrideBroadFinanceWrite(t *testing.T) {
+	pol, err := Load(filepath.Join("..", "..", "configs", "policy.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		path, permission string
+	}{
+		{"/api/finance/document-numbers/renumber-requests", "doc.renumber"},
+		{"/api/finance/document-numbers/renumber-requests/approve", "doc.renumber"},
+		{"/api/finance/document-numbers/renumber-requests/approve-closed", "doc.renumber.locked"},
+	}
+	for _, tc := range cases {
+		matched, err := pol.Match(tc.path, "POST")
+		if err != nil {
+			t.Fatalf("Match(%s): %v", tc.path, err)
+		}
+		if len(matched.Route.Permissions) != 1 || matched.Route.Permissions[0] != tc.permission {
+			t.Errorf("Match(%s) permissions=%v, want [%s]", tc.path, matched.Route.Permissions, tc.permission)
+		}
+	}
+}
+
 func TestLoadRejectsInvalidRisk(t *testing.T) {
 	path := writePolicy(t, `
 routes:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
@@ -48,7 +49,8 @@ func (s *TrialBalanceService) TrialBalance(ctx context.Context, tenantID, asOf s
 			       SUM(CASE WHEN l.direction = 'CREDIT' THEN l.amount_minor ELSE 0 END) AS credit_minor
 			FROM fin_journal_lines l
 			JOIN fin_journal_entries e ON e.id = l.entry_id AND e.tenant_id = l.tenant_id
-			WHERE l.tenant_id = $1 AND e.accounting_date <= $2::date AND e.status IN ('POSTED', 'REVERSED')
+			WHERE l.tenant_id = $1 AND l.bal_type_code = $3
+			  AND e.accounting_date <= $2::date AND e.status IN ('POSTED', 'REVERSED')
 			GROUP BY 1, 2, 3, 4
 		), openings AS (
 			SELECT tenant_id, coa_version, account_code, currency_code,
@@ -74,7 +76,7 @@ func (s *TrialBalanceService) TrialBalance(ctx context.Context, tenantID, asOf s
 		 AND a.version_code = COALESCE(l.coa_version, o.coa_version)
 		 AND a.acc_code = COALESCE(l.account_code, o.account_code)
 		ORDER BY 2, 4`,
-		tenantID, asOf)
+		tenantID, asOf, repository.BalanceTypeActual)
 	if err != nil {
 		return nil, err
 	}

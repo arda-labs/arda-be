@@ -3,6 +3,8 @@ package push
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -10,6 +12,8 @@ import (
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
+
+var ErrSubscriptionExpired = errors.New("web push subscription expired")
 
 // sendTimeout bounds one web push HTTP request. The library falls back to
 // &http.Client{} (no timeout) when Options.HTTPClient is nil, so a slow or
@@ -60,10 +64,8 @@ func (s *Sender) PublicKey() string {
 }
 
 type Payload struct {
-	Title string `json:"title"`
-	Body  string `json:"body,omitempty"`
-	Href  string `json:"href,omitempty"`
-	Tag   string `json:"tag,omitempty"`
+	ID   string `json:"id"`
+	Href string `json:"href,omitempty"`
 }
 
 func (s *Sender) Send(ctx context.Context, sub Subscription, payload Payload) error {
@@ -101,6 +103,19 @@ func (s *Sender) Send(ctx context.Context, sub Subscription, payload Payload) er
 			"status", resp.StatusCode,
 			"endpoint", truncate(sub.Endpoint, 80),
 		)
+	}
+	if err := statusError(resp.StatusCode); err != nil {
+		return err
+	}
+	return nil
+}
+
+func statusError(status int) error {
+	if status == http.StatusNotFound || status == http.StatusGone {
+		return fmt.Errorf("push service returned %d: %w", status, ErrSubscriptionExpired)
+	}
+	if status >= 400 {
+		return fmt.Errorf("push service returned status %d", status)
 	}
 	return nil
 }

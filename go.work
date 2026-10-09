@@ -1,4 +1,4 @@
-go 1.27.1
+go 1.27.2
 
 use (
 	./apps/ai-service
@@ -20,6 +20,7 @@ use (
 	./libs/go/arda-businessdate
 	./libs/go/arda-crypto
 	./libs/go/arda-doc
+	./libs/go/arda-docno
 	./libs/go/arda-errors
 	./libs/go/arda-events
 	./libs/go/arda-export

@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
 )
 
 // StatementService evaluates fin_statement_formula rows against
@@ -404,7 +406,7 @@ func (s *StatementService) ListStatements(ctx context.Context, tenantID string) 
 func (s *StatementService) latestRebuiltDate(ctx context.Context, tenantID string) (string, error) {
 	var d sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT max(business_date)::text FROM fin_trial_balance_daily WHERE tenant_id = $1`, tenantID).Scan(&d)
+		SELECT max(business_date)::text FROM fin_trial_balance_daily WHERE tenant_id = $1 AND bal_type_code = $2`, tenantID, repository.BalanceTypeActual).Scan(&d)
 	if err != nil {
 		return "", err
 	}
@@ -420,20 +422,25 @@ func (s *StatementService) latestRebuiltDate(ctx context.Context, tenantID strin
 // side (EPAS N/C tokens). Because the COB rebuilds every day contiguously,
 // taking each account's latest close ≤ asOf is the correct standing balance.
 func (s *StatementService) accountBalances(ctx context.Context, tenantID, asOf, coaVersion string) (map[string]accountValue, error) {
+	return s.accountBalancesAt(ctx, tenantID, asOf, coaVersion, true)
+}
+
+func (s *StatementService) accountBalancesAt(ctx context.Context, tenantID, asOf, coaVersion string, inclusive bool) (map[string]accountValue, error) {
+	comparison := "<"
+	if inclusive {
+		comparison = "<="
+	}
+	bal := map[string]accountValue{}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT DISTINCT ON (tbd.coa_version, tbd.account_code, tbd.currency_code)
-		       tbd.coa_version, tbd.account_code,
-		       tbd.close_debit_minor, tbd.close_credit_minor
+		SELECT DISTINCT ON (tbd.org_code, tbd.coa_version, tbd.account_code, tbd.currency_code)
+		       tbd.coa_version, tbd.account_code, tbd.close_debit_minor, tbd.close_credit_minor
 		FROM fin_trial_balance_daily tbd
-		WHERE tbd.tenant_id = $1 AND tbd.business_date <= $2::date
-		ORDER BY tbd.coa_version, tbd.account_code, tbd.currency_code, tbd.business_date DESC`,
-		tenantID, asOf)
+		WHERE tbd.tenant_id = $1 AND tbd.bal_type_code = $3 AND tbd.business_date `+comparison+` $2::date
+		ORDER BY tbd.org_code, tbd.coa_version, tbd.account_code, tbd.currency_code, tbd.business_date DESC`,
+		tenantID, asOf, repository.BalanceTypeActual)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	bal := map[string]accountValue{}
 	for rows.Next() {
 		var v, code string
 		var debit, credit int64
@@ -445,6 +452,93 @@ func (s *StatementService) accountBalances(ctx context.Context, tenantID, asOf, 
 		}
 		cur := bal[code]
 		bal[code] = accountValue{Debit: cur.Debit + debit, Credit: cur.Credit + credit}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	// A snapshot may predate a later posting or a backdated entry. Add only
+	// movements not represented by the latest snapshot for that account/org.
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT l.coa_version, l.account_code,
+		       SUM(l.amount_minor) FILTER (WHERE l.direction = 'DEBIT'),
+		       SUM(l.amount_minor) FILTER (WHERE l.direction = 'CREDIT')
+		FROM fin_journal_lines l
+		JOIN fin_journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id
+		LEFT JOIN LATERAL (
+			SELECT business_date, rebuilt_at
+			FROM fin_trial_balance_daily tbd
+			WHERE tbd.tenant_id = l.tenant_id
+			  AND tbd.org_code = COALESCE(NULLIF(e.metadata->>'org_code', ''), '')
+			  AND tbd.bal_type_code = l.bal_type_code
+			  AND tbd.coa_version = l.coa_version AND tbd.account_code = l.account_code
+			  AND tbd.currency_code = l.currency_code AND tbd.business_date `+comparison+` $2::date
+			ORDER BY tbd.business_date DESC LIMIT 1
+		) snapshot ON true
+		WHERE l.tenant_id = $1 AND l.bal_type_code = $3
+		  AND e.status IN ('POSTED', 'REVERSED')
+		  AND e.accounting_date `+comparison+` $2::date
+		  AND (snapshot.business_date IS NULL OR e.accounting_date > snapshot.business_date
+		       OR COALESCE(e.posted_at, e.created_at) > snapshot.rebuilt_at)
+		GROUP BY l.coa_version, l.account_code`, tenantID, asOf, repository.BalanceTypeActual)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var version, code string
+		var debit, credit sql.NullInt64
+		if err := rows.Scan(&version, &code, &debit, &credit); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if coaVersion != "" && version != coaVersion {
+			continue
+		}
+		cur := bal[code]
+		bal[code] = accountValue{Debit: cur.Debit + debit.Int64, Credit: cur.Credit + credit.Int64}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	// Opening rows added after a snapshot are the other source of dated balance
+	// changes. Existing rows are already represented by the latest snapshot.
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT o.coa_version, o.account_code,
+		       SUM(o.amount_minor) FILTER (WHERE o.direction = 'DEBIT'),
+		       SUM(o.amount_minor) FILTER (WHERE o.direction = 'CREDIT')
+		FROM fin_opening_balances o
+		LEFT JOIN LATERAL (
+			SELECT business_date, rebuilt_at
+			FROM fin_trial_balance_daily tbd
+			WHERE tbd.tenant_id = o.tenant_id AND tbd.org_code = ''
+			  AND tbd.bal_type_code = $3 AND tbd.coa_version = o.coa_version
+			  AND tbd.account_code = o.account_code AND tbd.currency_code = o.currency_code
+			  AND tbd.business_date `+comparison+` $2::date
+			ORDER BY tbd.business_date DESC LIMIT 1
+		) snapshot ON true
+		WHERE o.tenant_id = $1 AND o.accounting_date `+comparison+` $2::date
+		  AND (snapshot.business_date IS NULL OR o.accounting_date > snapshot.business_date OR o.created_at > snapshot.rebuilt_at)
+		GROUP BY o.coa_version, o.account_code`, tenantID, asOf, repository.BalanceTypeActual)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var version, code string
+		var debit, credit sql.NullInt64
+		if err := rows.Scan(&version, &code, &debit, &credit); err != nil {
+			return nil, err
+		}
+		if coaVersion != "" && version != coaVersion {
+			continue
+		}
+		cur := bal[code]
+		bal[code] = accountValue{Debit: cur.Debit + debit.Int64, Credit: cur.Credit + credit.Int64}
 	}
 	return bal, rows.Err()
 }
@@ -452,33 +546,7 @@ func (s *StatementService) accountBalances(ctx context.Context, tenantID, asOf, 
 // accountOpeningBalances returns the standing balance immediately before
 // fromDate (business_date < from_date) — the opening balance of a period.
 func (s *StatementService) accountOpeningBalances(ctx context.Context, tenantID, fromDate, coaVersion string) (map[string]accountValue, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT DISTINCT ON (tbd.coa_version, tbd.account_code, tbd.currency_code)
-		       tbd.coa_version, tbd.account_code,
-		       tbd.close_debit_minor, tbd.close_credit_minor
-		FROM fin_trial_balance_daily tbd
-		WHERE tbd.tenant_id = $1 AND tbd.business_date < $2::date
-		ORDER BY tbd.coa_version, tbd.account_code, tbd.currency_code, tbd.business_date DESC`,
-		tenantID, fromDate)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	bal := map[string]accountValue{}
-	for rows.Next() {
-		var v, code string
-		var debit, credit int64
-		if err := rows.Scan(&v, &code, &debit, &credit); err != nil {
-			return nil, err
-		}
-		if coaVersion != "" && v != coaVersion {
-			continue
-		}
-		cur := bal[code]
-		bal[code] = accountValue{Debit: cur.Debit + debit, Credit: cur.Credit + credit}
-	}
-	return bal, rows.Err()
+	return s.accountBalancesAt(ctx, tenantID, fromDate, coaVersion, false)
 }
 
 // accountMovements sums period movement per account_code over [fromDate, asOf]
@@ -490,10 +558,11 @@ func (s *StatementService) accountMovements(ctx context.Context, tenantID, fromD
 		       SUM(tbd.incr_debit_minor), SUM(tbd.incr_credit_minor)
 		FROM fin_trial_balance_daily tbd
 		WHERE tbd.tenant_id = $1
+		  AND tbd.bal_type_code = $5
 		  AND tbd.business_date >= $2::date AND tbd.business_date <= $3::date
 		  AND ($4 = '' OR tbd.coa_version = $4)
 		GROUP BY tbd.coa_version, tbd.account_code`,
-		tenantID, fromDate, asOf, coaVersion)
+		tenantID, fromDate, asOf, coaVersion, repository.BalanceTypeActual)
 	if err != nil {
 		return nil, err
 	}
