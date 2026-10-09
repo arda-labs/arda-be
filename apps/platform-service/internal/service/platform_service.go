@@ -3,6 +3,10 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
 	"github.com/arda-labs/arda/apps/platform-service/internal/repository"
@@ -31,12 +35,26 @@ func (s *PlatformService) UpsertParameter(ctx context.Context, item domain.Param
 	return s.repo.UpsertParameter(ctx, item)
 }
 
-func (s *PlatformService) ResolveParameter(ctx context.Context, tenantID, key string, scopes []ScopeSelector) (domain.Parameter, error) {
-	for _, scope := range scopes {
-		if scope.TenantID == "" {
-			scope.TenantID = tenantID
+func (s *PlatformService) ResolveParameter(ctx context.Context, tenantID, module, key string, scopes []ScopeSelector, effectiveDate time.Time) (domain.Parameter, error) {
+	if strings.TrimSpace(module) == "" || strings.TrimSpace(key) == "" || effectiveDate.IsZero() {
+		return domain.Parameter{}, fmt.Errorf("module, key, and effective date are required")
+	}
+	ordered := append([]ScopeSelector(nil), scopes...)
+	priority := map[string]int{domain.ScopeOrg: 0, domain.ScopeTenant: 1, domain.ScopeGlobal: 2}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return priority[ordered[i].ScopeType] < priority[ordered[j].ScopeType]
+	})
+	for _, scope := range ordered {
+		if _, ok := priority[scope.ScopeType]; !ok {
+			return domain.Parameter{}, fmt.Errorf("unsupported parameter scope %q", scope.ScopeType)
 		}
-		item, err := s.repo.GetParameter(ctx, scope.TenantID, key, scope.ScopeType, scope.ScopeID)
+		if scope.TenantID != "" && scope.TenantID != tenantID {
+			return domain.Parameter{}, fmt.Errorf("parameter scope tenant does not match verified tenant")
+		}
+		if scope.ScopeType == domain.ScopeGlobal {
+			continue
+		}
+		item, err := s.repo.GetParameter(ctx, tenantID, module, key, scope.ScopeType, scope.ScopeID, effectiveDate)
 		if err == nil {
 			return item, nil
 		}
@@ -44,7 +62,7 @@ func (s *PlatformService) ResolveParameter(ctx context.Context, tenantID, key st
 			return domain.Parameter{}, err
 		}
 	}
-	return s.repo.GetParameter(ctx, tenantID, key, domain.ScopeGlobal, "")
+	return s.repo.GetParameter(ctx, tenantID, module, key, domain.ScopeGlobal, "", effectiveDate)
 }
 
 func (s *PlatformService) GetGlobalParameter(ctx context.Context, key string) (domain.Parameter, error) {
