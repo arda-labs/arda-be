@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/crm-service
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
@@ -26,7 +26,7 @@ require (
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
