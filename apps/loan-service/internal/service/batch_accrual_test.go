@@ -53,7 +53,12 @@ func (f *batchFinanceFake) Post(_ context.Context, req *financev1.PostingRequest
 }
 
 func (f *batchFinanceFake) ListPostingRules(context.Context, string) ([]*financev1.PostingRule, error) {
-	return nil, nil
+	return []*financev1.PostingRule{
+		{LineNo: 1, Direction: "DEBIT", ResolutionType: "CLASS_MAP", AccClassification: "TEST_DEBIT"},
+		{LineNo: 2, Direction: "CREDIT", ResolutionType: "CLASS_MAP", AccClassification: "TEST_CREDIT"},
+		{LineNo: 3, Direction: "DEBIT", ResolutionType: "CLASS_MAP", AccClassification: "TEST_DEBIT"},
+		{LineNo: 4, Direction: "CREDIT", ResolutionType: "CLASS_MAP", AccClassification: "TEST_CREDIT"},
+	}, nil
 }
 
 func (f *batchFinanceFake) uniquePosts() int {
