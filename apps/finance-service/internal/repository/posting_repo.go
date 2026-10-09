@@ -133,16 +133,22 @@ type AccountingRule struct {
 	LineNo      int32
 	Direction   string
 	ResType     string
+	Strategy    string
 	AccountRef  sql.NullString
 	ClassCode   sql.NullString
 	Dimensions  []string
 	Description sql.NullString
 }
 
+type DebtGroupTransition struct {
+	FromGroupCode string
+	ToGroupCode   string
+}
+
 // ListRules returns the active rule lines for a document type.
 func (r *PostingRepository) ListRules(ctx context.Context, tenantID, documentType string) ([]AccountingRule, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT line_no, direction, resolution_type, account_ref, acc_classification, required_dimensions, description_template
+		SELECT line_no, direction, resolution_type, posting_strategy, account_ref, acc_classification, required_dimensions, description_template
 		FROM fin_accounting_rules
 		WHERE tenant_id = $1 AND document_type = $2 AND is_active
 		ORDER BY line_no`, tenantID, documentType)
@@ -154,13 +160,38 @@ func (r *PostingRepository) ListRules(ctx context.Context, tenantID, documentTyp
 	for rows.Next() {
 		var rule AccountingRule
 		var dims []byte
-		if err := rows.Scan(&rule.LineNo, &rule.Direction, &rule.ResType, &rule.AccountRef, &rule.ClassCode, &dims, &rule.Description); err != nil {
+		if err := rows.Scan(&rule.LineNo, &rule.Direction, &rule.ResType, &rule.Strategy, &rule.AccountRef, &rule.ClassCode, &dims, &rule.Description); err != nil {
 			return nil, err
 		}
 		rule.Dimensions = parseTextArray(string(dims))
 		out = append(out, rule)
 	}
 	return out, rows.Err()
+}
+
+// ListDebtGroupTransitions returns the configured directed matrix for one
+// tenant and business date. Missing rows are an empty matrix, not a default.
+func (r *PostingRepository) ListDebtGroupTransitions(ctx context.Context, tenantID, effectiveDate string) ([]DebtGroupTransition, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT from_group_code, to_group_code
+		FROM fin_debt_group_transitions
+		WHERE tenant_id = $1 AND is_active AND is_deleted = false
+		  AND effective_from <= $2::date
+		  AND (effective_to IS NULL OR effective_to >= $2::date)
+		ORDER BY from_group_code, to_group_code`, tenantID, effectiveDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	transitions := make([]DebtGroupTransition, 0)
+	for rows.Next() {
+		var transition DebtGroupTransition
+		if err := rows.Scan(&transition.FromGroupCode, &transition.ToGroupCode); err != nil {
+			return nil, err
+		}
+		transitions = append(transitions, transition)
+	}
+	return transitions, rows.Err()
 }
 
 // EnsurePeriodOpen returns an error when accounting_date falls in a closed

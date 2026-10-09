@@ -2,9 +2,12 @@ package worker
 
 import (
 	"context"
+	"fmt"
 
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
+	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
+	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 )
 
 // Rule-card line build (iteration 11 wave 2; moved verbatim to
@@ -17,16 +20,20 @@ import (
 // resolution.
 type postingLeg = financeclient.PostingLeg
 
-// fetchPostingRules loads the rule card for a document type. Any failure
-// degrades to nil — the built-in fallback classifications take over.
-func fetchPostingRules(ctx context.Context, financeClient *financeclient.Client, documentType string) []*financev1.PostingRule {
-	return financeclient.FetchPostingRules(ctx, financeClient, documentType)
+// postingLinesFromRules requires the finance rule card and returns typed
+// RULE_NOT_FOUND / ACCOUNT_UNRESOLVED errors. There is no built-in fallback.
+func postingLinesFromRules(ctx context.Context, client financeclient.PostingRuleLister, documentType string, legs []postingLeg, currencyCode string) ([]*financev1.PostingLine, error) {
+	return financeclient.BuildPostingLines(ctx, client, documentType, legs, currencyCode)
 }
 
-// postingLinesFromRules builds the numbered PostingLine list from legs,
-// resolving each leg's classification from its card line (CLASS_MAP stamps
-// analytics.acc_classification; FIXED_CODE resolves against the COA). A leg
-// whose card row is missing, inactive, or unclassified keeps its fallback.
-func postingLinesFromRules(rules []*financev1.PostingRule, legs []postingLeg, currencyCode string) []*financev1.PostingLine {
-	return financeclient.PostingLinesFromRules(rules, legs, currencyCode)
+func handlePostingBuildFailure(ctx context.Context, client worker.JobClient, job entities.Job, projection *CaseProjection, err error, retry func(error)) {
+	if err == nil {
+		return
+	}
+	code, business := classifyPostingError(err)
+	if business {
+		throwPostingValidationError(ctx, client, job, projection, code, err.Error())
+		return
+	}
+	retry(fmt.Errorf("build posting request: %w", err))
 }

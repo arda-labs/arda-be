@@ -28,6 +28,62 @@ func NewEmployeeServer(db *sql.DB) *EmployeeServer {
 	return &EmployeeServer{db: db}
 }
 
+func (s *EmployeeServer) ListIAMUsersByOrgUnit(ctx context.Context, req *hrmv1.ListIAMUsersByOrgUnitRequest) (*hrmv1.ListIAMUsersByOrgUnitResponse, error) {
+	tenantID, err := tenantFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "tenant scope is required")
+	}
+	orgUnitID := strings.TrimSpace(req.GetOrgUnitId())
+	if orgUnitID == "" {
+		return nil, status.Error(codes.InvalidArgument, "org_unit_id is required")
+	}
+	query := `
+		WITH RECURSIVE selected_units(id) AS (
+			SELECT id FROM hrm_org_units
+			WHERE tenant_id = $1 AND id = $2 AND LOWER(status) = 'active'
+			UNION
+			SELECT child.id FROM hrm_org_units child
+			JOIN selected_units parent ON child.parent_id = parent.id
+			WHERE child.tenant_id = $1 AND LOWER(child.status) = 'active'
+		)
+		SELECT DISTINCT NULLIF(BTRIM(employee.iam_user_id), '')
+		FROM hrm_employees employee
+		JOIN selected_units unit ON unit.id = employee.org_unit_id
+		WHERE employee.tenant_id = $1 AND LOWER(employee.status) = 'active'
+		  AND NULLIF(BTRIM(employee.iam_user_id), '') IS NOT NULL
+	`
+	if !req.GetIncludeDescendants() {
+		query = `
+			SELECT DISTINCT NULLIF(BTRIM(employee.iam_user_id), '')
+			FROM hrm_employees employee
+			JOIN hrm_org_units unit ON unit.id = employee.org_unit_id
+			WHERE employee.tenant_id = $1 AND unit.tenant_id = $1
+			  AND unit.id = $2 AND LOWER(unit.status) = 'active'
+			  AND LOWER(employee.status) = 'active'
+			  AND NULLIF(BTRIM(employee.iam_user_id), '') IS NOT NULL
+		`
+	}
+	rows, err := s.db.QueryContext(ctx, query, tenantID, orgUnitID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "list HRM users by org unit failed")
+	}
+	defer rows.Close()
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id sql.NullString
+		if err := rows.Scan(&id); err != nil {
+			return nil, status.Error(codes.Internal, "list HRM users by org unit failed")
+		}
+		if id.Valid && id.String != "" {
+			ids = append(ids, id.String)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, status.Error(codes.Internal, "list HRM users by org unit failed")
+	}
+	return &hrmv1.ListIAMUsersByOrgUnitResponse{IamUserIds: ids}, nil
+}
+
 func tenantFromContext(ctx context.Context) (string, error) {
 	md := ardametadata.FromIncoming(ctx)
 	tenantID := strings.TrimSpace(md.TenantID)

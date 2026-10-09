@@ -234,7 +234,7 @@ func TestTwoPhaseBalanceSmoke(t *testing.T) {
 				AccountCode: "091",
 				Analytics:   &financev1.Analytics{OrgUnitCode: "HO"}},
 			{LineNo: 2, Direction: "CREDIT", AmountMinor: 77_000,
-				AccountCode: "091",
+				AccountCode: "092", // nature B — off-balance memo source
 				Analytics:   &financev1.Analytics{OrgUnitCode: "HO"}},
 		},
 	}

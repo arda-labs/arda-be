@@ -28,6 +28,38 @@ func (c *captureConnector) Connect(context.Context) (driver.Conn, error) {
 	return &captureConn{c: c}, nil
 }
 
+func TestDeliveryRuleUsesUserPreferenceAndDefaultsEnabled(t *testing.T) {
+	connector := &captureConnector{row: []driver.Value{false, nil}}
+	db := sql.OpenDB(connector)
+	defer db.Close()
+	repo := NewNotificationRepository(db)
+	enabled, scheduled, err := repo.DeliveryRule(context.Background(), "tenant-a", "user-a", "workflow.task", "email")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enabled {
+		t.Fatal("explicitly disabled channel was enabled")
+	}
+	if scheduled != nil {
+		t.Fatalf("disabled channel got schedule %v", scheduled)
+	}
+	if !strings.Contains(connector.queries[0], "tenant_id=$1 AND user_id=$2") {
+		t.Fatalf("query is not user/tenant scoped: %s", connector.queries[0])
+	}
+
+	connector.row = []driver.Value{true, nil}
+	enabled, scheduled, err = repo.DeliveryRule(context.Background(), "tenant-a", "user-a", "workflow.task", "email")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enabled {
+		t.Fatal("missing preference must preserve the enabled default")
+	}
+	if scheduled != nil {
+		t.Fatalf("missing preference got schedule %v", scheduled)
+	}
+}
+
 func (c *captureConnector) Driver() driver.Driver { return captureDriver{} }
 
 type captureDriver struct{}
@@ -74,7 +106,12 @@ type captureRows struct {
 	done   bool
 }
 
-func (r *captureRows) Columns() []string { return []string{"id"} }
+func (r *captureRows) Columns() []string {
+	if len(r.values) > 1 {
+		return []string{"enabled", "schedule"}
+	}
+	return []string{"id"}
+}
 
 func (r *captureRows) Close() error { return nil }
 

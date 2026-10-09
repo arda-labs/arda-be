@@ -30,6 +30,12 @@ type PostingError struct {
 	Cause error
 }
 
+// NewPostingError creates a typed finance business error at the client-side
+// rule-resolution boundary, before a PostingService RPC is sent.
+func NewPostingError(code financev1.PostingErrorCode, cause error) *PostingError {
+	return &PostingError{Code: code, Cause: cause}
+}
+
 func (e *PostingError) Error() string {
 	if e == nil || e.Cause == nil {
 		return "finance posting error"

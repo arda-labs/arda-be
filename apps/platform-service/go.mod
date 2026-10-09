@@ -10,7 +10,6 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-media v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
-	github.com/arda-labs/arda/libs/go/arda-time v0.0.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/pressly/goose/v3 v3.27.1
 	google.golang.org/grpc v1.84.0
@@ -19,6 +18,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-time v0.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect

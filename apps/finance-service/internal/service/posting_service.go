@@ -1083,10 +1083,15 @@ func (s *PostingService) ListPostingRules(ctx context.Context, tenantID, documen
 	}
 	rules := make([]*financev1.PostingRule, 0, len(rows))
 	for _, r := range rows {
+		strategy, err := postingStrategyProto(r.Strategy)
+		if err != nil {
+			return nil, err
+		}
 		rule := &financev1.PostingRule{
-			LineNo:         r.LineNo,
-			Direction:      r.Direction,
-			ResolutionType: r.ResType,
+			LineNo:          r.LineNo,
+			Direction:       r.Direction,
+			ResolutionType:  r.ResType,
+			PostingStrategy: strategy,
 		}
 		if r.AccountRef.Valid {
 			rule.AccountRef = r.AccountRef.String
@@ -1101,6 +1106,19 @@ func (s *PostingService) ListPostingRules(ctx context.Context, tenantID, documen
 		rules = append(rules, rule)
 	}
 	return rules, nil
+}
+
+func postingStrategyProto(value string) (financev1.PostingStrategy, error) {
+	switch value {
+	case "SIMPLE":
+		return financev1.PostingStrategy_POSTING_STRATEGY_SIMPLE, nil
+	case "BAL_TYPE_SPLIT":
+		return financev1.PostingStrategy_POSTING_STRATEGY_BAL_TYPE_SPLIT, nil
+	case "DEBT_GROUP_RECLASS":
+		return financev1.PostingStrategy_POSTING_STRATEGY_DEBT_GROUP_RECLASS, nil
+	default:
+		return financev1.PostingStrategy_POSTING_STRATEGY_UNSPECIFIED, fmt.Errorf("unknown posting strategy %q", value)
+	}
 }
 
 func (s *PostingService) getJournalEntryBy(ctx context.Context, tenantID, column string, value any) (*financev1.JournalEntryDetail, error) {
