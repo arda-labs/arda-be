@@ -1566,7 +1566,7 @@ func (r *LoanRepository) GetDisbursement(ctx context.Context, tenantID, id strin
 }
 
 func (r *LoanRepository) SetDisbursementStatus(ctx context.Context, tenantID, id, status, updatedBy string) error {
-	if status == domain.DisbursementRejected || status == domain.DisbursementCancelled {
+	if status == domain.DisbursementApproved || status == domain.DisbursementRejected || status == domain.DisbursementCancelled || status == "FAILED" {
 		tx, err := r.db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
@@ -1575,9 +1575,18 @@ func (r *LoanRepository) SetDisbursementStatus(ctx context.Context, tenantID, id
 		if err := setDisbursementStatus(ctx, tx, tenantID, id, status, updatedBy); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `
+		if status == domain.DisbursementRejected || status == domain.DisbursementCancelled {
+			if _, err := tx.ExecContext(ctx, `
 			UPDATE lnm_contract_reservations SET status = 'RELEASED'
 			WHERE tenant_id = $1 AND source_type = 'DISBURSEMENT' AND source_id = $2 AND status = 'HELD'`, tenantID, id); err != nil {
+				return err
+			}
+		}
+		var contractCode, createdBy, storedUpdatedBy string
+		if err := tx.QueryRowContext(ctx, `SELECT contract_code, created_by, COALESCE(updated_by, '') FROM lnm_disbursements WHERE tenant_id = $1 AND id = $2`, tenantID, id).Scan(&contractCode, &createdBy, &storedUpdatedBy); err != nil {
+			return err
+		}
+		if err := enqueueDisbursementEvent(ctx, tx, tenantID, id, status, contractCode, createdBy, storedUpdatedBy); err != nil {
 			return err
 		}
 		return tx.Commit()
