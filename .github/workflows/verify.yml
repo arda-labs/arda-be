@@ -121,5 +121,9 @@ jobs:
         env:
           ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
         run: go test ./apps/platform-service/internal/service -run '^TestRunSystem' -count=1 -v
+      - name: Verify finance balance snapshots and lock ordering on disposable PostgreSQL 18
+        env:
+          ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
+        run: go test ./apps/finance-service/internal/service -run '^(TestBalanceSnapshotIncludesBackdatedPostingAfterRebuild|TestOverlappingBalanceLocksUseDeterministicOrder)$' -count=1 -v
       - name: Check patch hygiene
         run: git diff --check

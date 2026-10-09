@@ -216,6 +216,7 @@ message JournalEntryDetailLine {
   int64 amount_minor = 5;
   string currency_code = 6;
   string description = 7;
+  string bal_type_code = 8;
 }
 
 message JournalEntryDetail {

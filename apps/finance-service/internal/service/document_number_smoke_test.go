@@ -102,7 +102,7 @@ func TestDocumentNumberIssueConcurrencyRollbackAndRenumber(t *testing.T) {
 		no            int
 		side, account string
 	}{{1, "DEBIT", "1001"}, {2, "CREDIT", "2001"}} {
-		if _, err = db.ExecContext(ctx, `INSERT INTO fin_journal_lines (tenant_id,entry_id,line_no,direction,coa_version,account_code,amount_minor,currency_code) VALUES ($1,$2,$3,$4,'V1',$5,1000,'VND')`, tenantID, entryID, line.no, line.side, line.account); err != nil {
+		if _, err = db.ExecContext(ctx, `INSERT INTO fin_journal_lines (tenant_id,entry_id,line_no,direction,bal_type_code,coa_version,account_code,amount_minor,currency_code) VALUES ($1,$2,$3,$4,'ACTUAL','V1',$5,1000,'VND')`, tenantID, entryID, line.no, line.side, line.account); err != nil {
 			t.Fatal(err)
 		}
 	}

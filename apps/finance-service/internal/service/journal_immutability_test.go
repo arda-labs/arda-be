@@ -29,8 +29,8 @@ func TestJournalImmutabilityTriggers(t *testing.T) {
 		t.Helper()
 		if _, err := db.Exec(`
 			INSERT INTO fin_journal_lines
-				(tenant_id, entry_id, line_no, direction, coa_version, account_code, amount_minor, currency_code)
-			VALUES ($1, $2, 1, 'DEBIT', 'V1', '1000', 100, 'VND')`, tenantID, entryID); err != nil {
+				(tenant_id, entry_id, line_no, direction, bal_type_code, coa_version, account_code, amount_minor, currency_code)
+			VALUES ($1, $2, 1, 'DEBIT', 'ACTUAL', 'V1', '1000', 100, 'VND')`, tenantID, entryID); err != nil {
 			t.Fatalf("insert journal line: %v", err)
 		}
 	}
