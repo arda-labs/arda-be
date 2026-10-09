@@ -18,11 +18,9 @@ type mockCalendarRepo struct {
 	claimErr     error
 	releaseErr   error
 	isHolidayErr error
-	updateErr    error
 
 	claimCalls   int
 	releaseCalls int
-	updateCalls  int
 }
 
 func (m *mockCalendarRepo) GetSystemDate(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
@@ -67,15 +65,6 @@ func (m *mockCalendarRepo) ReleaseEOD(ctx context.Context, branchCode string) er
 	if m.systemDate != nil && m.systemDate.Status == domain.SystemDateEODProcessing {
 		m.systemDate.Status = domain.SystemDateOpen
 	}
-	return nil
-}
-
-func (m *mockCalendarRepo) UpdateSystemDate(ctx context.Context, sd *domain.SystemDate) error {
-	m.updateCalls++
-	if m.updateErr != nil {
-		return m.updateErr
-	}
-	m.systemDate = sd
 	return nil
 }
 

@@ -190,6 +190,25 @@ func (r *TenantRepository) ListForUser(ctx context.Context, userID string) ([]do
 	return memberships, rows.Err()
 }
 
+// ListActiveTenantIDs returns only identifiers needed by system-wide jobs.
+func (r *TenantRepository) ListActiveTenantIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM iam_tenants WHERE status = 'ACTIVE' ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list active tenant IDs: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (r *TenantRepository) ListMembers(ctx context.Context, tenantID string) ([]domain.TenantMember, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT u.id, u.username, u.email, u.display_name, tm.status, tm.is_default

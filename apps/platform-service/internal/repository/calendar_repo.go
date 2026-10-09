@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
@@ -29,13 +30,9 @@ func (r *CalendarRepository) GetSystemDate(ctx context.Context, branchCode strin
 	return sd, err
 }
 
-// ClaimEOD atomically moves the SYSTEM date into EOD_PROCESSING and returns the
-// claimed row. The conditional UPDATE plus RowsAffected is the concurrency
-// gate: only one caller can transition a row out of a non-processing status,
-// so two parallel triggers can never both pass and advance the business date
-// twice (the previous GetSystemDate -> check -> UpdateSystemDate sequence
-// could). A rejected claim reports whether the row is missing or already
-// processing.
+// ClaimEOD moves the SYSTEM row into EOD_PROCESSING and returns it. The
+// orchestrator's session advisory lock is the runner concurrency gate; allowing
+// an already-processing row lets a new runner resume after a crashed process.
 func (r *CalendarRepository) ClaimEOD(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
 	if branchCode != "HEAD_OFFICE" {
 		return nil, domain.ErrSystemDateNotFound
@@ -45,7 +42,7 @@ func (r *CalendarRepository) ClaimEOD(ctx context.Context, branchCode string) (*
 		return nil, err
 	}
 	defer tx.Rollback()
-	res, err := tx.ExecContext(ctx, "UPDATE plt_business_dates SET status=$1, updated_at=now() WHERE tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL AND status=$2", domain.SystemDateEODProcessing, domain.SystemDateOpen)
+	res, err := tx.ExecContext(ctx, "UPDATE plt_business_dates SET status=$1, updated_at=now() WHERE tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL AND status IN ($2,$3)", domain.SystemDateEODProcessing, domain.SystemDateOpen, domain.SystemDateEODProcessing)
 	if err != nil {
 		return nil, err
 	}
@@ -97,29 +94,49 @@ func (r *CalendarRepository) ReleaseEOD(ctx context.Context, branchCode string) 
 	return tx.Commit()
 }
 
-func (r *CalendarRepository) UpdateSystemDate(ctx context.Context, sd *domain.SystemDate) error {
+func (r *CalendarRepository) CompleteEOD(ctx context.Context, expectedDate string, newCurrent, newNext time.Time) (*domain.SystemDate, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
-	var lastEOD any
-	if sd.LastEODAt != nil {
-		lastEOD = *sd.LastEODAt
-	}
-	canonical, err := tx.ExecContext(ctx, "UPDATE plt_business_dates SET business_date=$2, prev_business_date=$3, next_business_date=$4, status=$5, last_eod_at=$6, updated_at=now() WHERE id=$1 AND tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL",
-		sd.ID, sd.CurrentBusinessDate, sd.PreviousBusinessDate, sd.NextBusinessDate, sd.Status, lastEOD)
+
+	var item domain.SystemDate
+	var lastEOD sql.NullTime
+	err = tx.QueryRowContext(ctx, `SELECT id, business_date, prev_business_date, next_business_date, status, last_eod_at, updated_at
+		FROM plt_business_dates WHERE tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL FOR UPDATE`).
+		Scan(&item.ID, &item.CurrentBusinessDate, &item.PreviousBusinessDate, &item.NextBusinessDate, &item.Status, &lastEOD, &item.UpdatedAt)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	rows, err := canonical.RowsAffected()
+	if item.Status != domain.SystemDateEODProcessing || item.CurrentBusinessDate.Format("2006-01-02") != expectedDate {
+		return nil, fmt.Errorf("SYSTEM business date is not locked for EOD date %s", expectedDate)
+	}
+	if newCurrent.IsZero() || newNext.IsZero() || !newNext.After(newCurrent) {
+		return nil, fmt.Errorf("invalid next SYSTEM business date")
+	}
+	last := time.Now().UTC()
+	_, err = tx.ExecContext(ctx, `UPDATE plt_business_dates
+		SET prev_business_date=business_date, business_date=$2, next_business_date=$3, status=$4, last_eod_at=$5, updated_at=now()
+		WHERE id=$1`, item.ID, newCurrent, newNext, domain.SystemDateOpen, last)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if rows != 1 {
-		return domain.ErrSystemDateNotFound
+	res, err := tx.ExecContext(ctx, `UPDATE plt_eod_runs SET status='SUCCEEDED',finished_at=now(),error=NULL
+		WHERE eod_date=$1::date AND status='RUNNING'`, expectedDate)
+	if err != nil {
+		return nil, err
 	}
-	return tx.Commit()
+	if affected, rowsErr := res.RowsAffected(); rowsErr != nil || affected != 1 {
+		if rowsErr != nil {
+			return nil, rowsErr
+		}
+		return nil, fmt.Errorf("SYSTEM EOD run is not RUNNING for date %s", expectedDate)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return r.BusinessDateForScope(ctx, ardaBusinessDate.Scope{Type: ardaBusinessDate.ScopeSystem})
 }
 
 func (r *CalendarRepository) IsHoliday(ctx context.Context, date time.Time) (bool, error) {

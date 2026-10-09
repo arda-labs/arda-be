@@ -20,6 +20,7 @@ import (
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
 	grpcserver "github.com/arda-labs/arda/apps/platform-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/platform-service/internal/transport/http"
+	grpciam "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
@@ -72,16 +73,26 @@ func main() {
 	}
 	defer mediaClient.Close()
 	platformHandler := handler.NewPlatformHandler(platformSvc, mediaClient)
-	calendarHandler := handler.NewCalendarHandler(calendarSvc)
 	menuHandler := handler.NewMenuHandler(menuSvc)
-	eodSvc := service.NewEODService(db, logger)
+	iamAddr := os.Getenv("IAM_GRPC_ADDR")
+	if iamAddr == "" {
+		iamAddr = "iam-service:9090"
+	}
+	iamClient, err := grpciam.Dial(context.Background(), iamAddr, "platform-service")
+	if err != nil {
+		logger.Error("iam grpc client is required for EOD tenant discovery", "err", err)
+		os.Exit(1)
+	}
+	defer iamClient.Close()
+	eodSvc := service.NewEODService(db, logger, calendarSvc, iamClient)
+	calendarHandler := handler.NewCalendarHandler(calendarSvc, eodSvc)
 	eodHandler := handler.NewEODHandler(eodSvc)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
 		Handler:      ardahttp.HandlerChain(cfg.AppName, nil, ardahttp.UserTimezoneMiddleware(transport.NewRouter(platformHandler, calendarHandler, menuHandler, eodHandler))),
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		WriteTimeout: 6 * time.Minute,
 		IdleTimeout:  60 * time.Second,
 		// 16KiB is generous for a JSON API. net/http defaults to 1MiB of headers
 		// per connection, which is a cheap way to occupy a worker.

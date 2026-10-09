@@ -6,7 +6,14 @@ option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/iam/v1;iamv1";
 
 service UserService {
   rpc GetUserBatch(GetUserBatchRequest) returns (GetUserBatchResponse);
+  rpc ListActiveTenants(ListActiveTenantsRequest) returns (ListActiveTenantsResponse);
   rpc ResolveNotificationRecipients(ResolveNotificationRecipientsRequest) returns (ResolveNotificationRecipientsResponse);
+}
+
+message ListActiveTenantsRequest {}
+
+message ListActiveTenantsResponse {
+  repeated string tenant_ids = 1;
 }
 
 // ResolveNotificationRecipients expands direct users, active group membership,
