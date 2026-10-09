@@ -128,29 +128,9 @@ func (r *LoanRepository) SetAdjustmentWorkflowCase(ctx context.Context, table, t
 // resolveDecisionStatus maps a workflow decision onto the adjustment's
 // target status — one source of truth for the guarded transition and the
 // idempotent-replay check.
-func resolveDecisionStatus(decision string) (string, error) {
-	switch strings.ToUpper(decision) {
-	case "APPROVE":
-		return domain.AdjustmentActive, nil
-	case "REJECT":
-		return domain.AdjustmentRejected, nil
-	case "CANCEL":
-		return domain.AdjustmentCancelled, nil
-	default:
-		return "", fmt.Errorf("unknown decision %q", decision)
-	}
-}
-
 // replayOutcome interprets a guarded-resolve miss (no PENDING row matched):
 // the same decision already committed is an idempotent no-op; any other
 // status is a conflict that needs an operator, not a retry.
-func replayOutcome(currentStatus, targetStatus string) error {
-	if currentStatus == targetStatus {
-		return nil
-	}
-	return fmt.Errorf("%w (status=%s)", ErrAdjustmentNotPending, currentStatus)
-}
-
 // ResolveAdjustment applies a workflow decision as a guarded PENDING →
 // terminal transition. The state change and every side effect (debt-group /
 // rate update, schedule version swap, waiver, writeoff, recovery) run in one
@@ -170,10 +150,11 @@ func replayOutcome(currentStatus, targetStatus string) error {
 // outside this change — do not add postings here without wiring the finance
 // posting rules and the worker settle step.
 func (r *LoanRepository) ResolveAdjustment(ctx context.Context, table, tenantID, id, decision, decidedBy, note string) (domain.Adjustment, error) {
-	status, err := resolveDecisionStatus(decision)
+	decisionStatus, err := domain.AdjustmentDecisionStatus(decision)
 	if err != nil {
 		return domain.Adjustment{}, err
 	}
+	status := string(decisionStatus)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.Adjustment{}, err
@@ -193,7 +174,7 @@ func (r *LoanRepository) ResolveAdjustment(ctx context.Context, table, tenantID,
 		if getErr != nil {
 			return domain.Adjustment{}, getErr
 		}
-		if err := replayOutcome(current.Status, status); err != nil {
+		if err := domain.CheckAdjustmentReplay(current.Status, status); err != nil {
 			return domain.Adjustment{}, err
 		}
 		// Idempotent replay of the same decision: transition and side effect

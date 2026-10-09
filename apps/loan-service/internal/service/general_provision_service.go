@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	ardaParams "github.com/arda-labs/arda/libs/go/arda-params"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
-	"github.com/shopspring/decimal"
 )
 
 // LNM.307.01 general provision (per org): required = outstanding × rate,
@@ -75,8 +75,8 @@ func (s *GeneralProvisionService) Calculate(ctx context.Context, tenantID, orgCo
 	if err != nil {
 		return GeneralProvisionPreview{}, mapRepoError(err)
 	}
-	required := requiredGeneralProvision(outstanding, rate)
-	alloc, reverse := generalProvisionDelta(required, accum)
+	required := domain.RequiredGeneralProvision(outstanding, rate)
+	alloc, reverse := domain.GeneralProvisionDelta(required, accum)
 	return GeneralProvisionPreview{
 		OrgCode:                orgCode,
 		ProvisionDate:          asOf,
@@ -242,29 +242,6 @@ func (s *GeneralProvisionService) postingRequest(ctx context.Context, row *repos
 		},
 		Lines: lines,
 	}, nil
-}
-
-// requiredGeneralProvision = outstanding × rate / 100, HALF_UP to đồng (minor).
-func requiredGeneralProvision(outstandingMinor int64, ratePercent float64) int64 {
-	if outstandingMinor <= 0 || ratePercent <= 0 {
-		return 0
-	}
-	required := decimal.NewFromInt(outstandingMinor).
-		Mul(decimal.NewFromFloat(ratePercent)).
-		Div(decimal.NewFromInt(100)).
-		Round(0)
-	return required.IntPart()
-}
-
-func generalProvisionDelta(required, accum int64) (alloc, reverse int64) {
-	switch {
-	case required > accum:
-		return required - accum, 0
-	case accum > required:
-		return 0, accum - required
-	default:
-		return 0, 0
-	}
 }
 
 func orgCodeOrDefault(orgCode string) string {

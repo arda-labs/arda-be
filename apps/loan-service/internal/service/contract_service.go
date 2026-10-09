@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"math"
 	"strings"
-	"time"
 )
 
 func (s *LoanService) ListContracts(ctx context.Context, tenantID, status, q string) ([]domain.Contract, error) {
@@ -121,37 +120,6 @@ func (s *LoanService) SetContractStatus(ctx context.Context, tenantID, id, statu
 	return mapRepoError(s.repo.UpdateContractStatus(ctx, tenantID, id, contract.Status, status))
 }
 
-// contractEditableStatus reports whether a contract in this status can still
-// be revised by the maker (mirror of the DRAFT/PENDING_APPROVAL/REJECTED WHERE clause in
-// UpdateContract — the SQL guard stays as the race backstop).
-func contractEditableStatus(status string) bool {
-	return status == domain.ContractDraft || status == domain.ContractPendingApproval || status == domain.ContractRejected
-}
-
-// validateContractUpdate checks the editable payload of the maker revise
-// (mirror CreateContract's amount/rate/term rules; dates are optional but
-// must be a real ISO calendar date when present).
-func validateContractUpdate(in *domain.Contract) error {
-	if in.LoanAmt <= 0 {
-		return ardaerrors.New(ardaerrors.CodeInvalidInput, "loan_amt must be positive")
-	}
-	if in.InterestRate <= 0 {
-		return ardaerrors.New(ardaerrors.CodeInvalidInput, "interest_rate must be positive")
-	}
-	if in.LoanTerm <= 0 {
-		return ardaerrors.New(ardaerrors.CodeInvalidInput, "loan_term must be positive")
-	}
-	for field, date := range map[string]string{"contract_date": in.ContractDate, "maturity_date": in.MaturityDate} {
-		if date == "" {
-			continue
-		}
-		if _, err := time.Parse("2006-01-02", date); err != nil {
-			return ardaerrors.New(ardaerrors.CodeInvalidInput, field+" must be a valid YYYY-MM-DD date")
-		}
-	}
-	return nil
-}
-
 // UpdateContract is the maker revise on the formation screen: only the
 // editable whitelist fields are taken from the payload and only while the
 // contract is still DRAFT, PENDING_APPROVAL, or REJECTED. A rejected edit
@@ -160,14 +128,14 @@ func (s *LoanService) UpdateContract(ctx context.Context, tenantID, id string, i
 	if in == nil {
 		return nil, ardaerrors.New(ardaerrors.CodeRequired, "request body is required")
 	}
-	if err := validateContractUpdate(in); err != nil {
-		return nil, err
+	if err := domain.ValidateContractUpdate(in); err != nil {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
 	}
 	current, err := s.repo.GetContract(ctx, tenantID, id)
 	if err = mapRepoError(err); err != nil {
 		return nil, err
 	}
-	if !contractEditableStatus(current.Status) {
+	if !domain.ContractEditable(current.Status) {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "contract_not_editable: only DRAFT, PENDING_APPROVAL, or REJECTED contracts can be revised")
 	}
 	patch := domain.Contract{

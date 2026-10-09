@@ -36,6 +36,7 @@ const (
 )
 
 var ErrInvalidTransition = errors.New("invalid status transition")
+var ErrAdjustmentNotPending = errors.New("lnm: adjustment is not pending")
 
 type transition struct {
 	from Status
@@ -102,4 +103,27 @@ func HasTransitionPath(machine StateMachine, status Status) bool {
 		}
 	}
 	return false
+}
+
+// AdjustmentDecisionStatus maps a workflow decision to its terminal target.
+func AdjustmentDecisionStatus(decision string) (Status, error) {
+	switch strings.ToUpper(decision) {
+	case "APPROVE":
+		return AdjustmentActive, nil
+	case "REJECT":
+		return AdjustmentRejected, nil
+	case "CANCEL":
+		return AdjustmentCancelled, nil
+	default:
+		return "", fmt.Errorf("unknown decision %q", decision)
+	}
+}
+
+// CheckAdjustmentReplay accepts only a replay that already reached the same
+// target status; other misses indicate a conflicting or incomplete decision.
+func CheckAdjustmentReplay(currentStatus, targetStatus string) error {
+	if currentStatus == targetStatus {
+		return nil
+	}
+	return fmt.Errorf("%w (status=%s)", ErrAdjustmentNotPending, currentStatus)
 }

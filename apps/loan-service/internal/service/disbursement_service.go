@@ -95,7 +95,7 @@ func (s *DisbursementService) Create(ctx context.Context, tenantID, createdBy st
 		if err != nil {
 			return nil, mapRepoError(err)
 		}
-		if err := checkCompleteRemainder(source.DisburseAmtMinor, completed, in.DisburseAmtMinor); err != nil {
+		if err := domain.CheckCompleteRemainder(source.DisburseAmtMinor, completed, in.DisburseAmtMinor); err != nil {
 			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
 		}
 		in.SourceRegisterID = source.ID
@@ -144,29 +144,6 @@ func (s *DisbursementService) validateCompleteSource(ctx context.Context, tenant
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "source register is not POSTED yet")
 	}
 	return source, nil
-}
-
-// checkCompleteRemainder guards the COMPLETE flow: completions of one source
-// register may never exceed the register amount (in-flight cases count).
-func checkCompleteRemainder(sourceRegisterAmtMinor, completedAmtMinor, disburseAmtMinor int64) error {
-	if disburseAmtMinor > sourceRegisterAmtMinor-completedAmtMinor {
-		return fmt.Errorf("disburse_amt_minor %d exceeds source remainder %d (register %d - completed %d)",
-			disburseAmtMinor, sourceRegisterAmtMinor-completedAmtMinor, sourceRegisterAmtMinor, completedAmtMinor)
-	}
-	return nil
-}
-
-// checkRegisterLimit is retained for pure unit callers and delegates the
-// calculation to the canonical domain exposure model.
-func checkRegisterLimit(contractLoanAmtMinor, contractOutstandingMinor, disburseAmtMinor int64) error {
-	exposure := domain.ContractExposure{
-		LoanAmountMinor:  contractLoanAmtMinor,
-		OutstandingMinor: contractOutstandingMinor,
-	}
-	if !exposure.Allows(disburseAmtMinor) {
-		return fmt.Errorf("disburse_amt_minor %d exceeds contract headroom %d", disburseAmtMinor, exposure.HeadroomMinor())
-	}
-	return nil
 }
 
 // Submit pushes the DRAFT disbursement into its flow's case (register or

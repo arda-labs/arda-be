@@ -5,15 +5,12 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
-	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
-	"github.com/shopspring/decimal"
 )
 
 // AccrualService computes and posts monthly interest accruals as an EOD
@@ -92,7 +89,7 @@ func (s *AccrualService) RunDaily(ctx context.Context, tenantID, toDate, actor s
 		if fromDate == "" {
 			fromDate = a.DisburseDate
 		}
-		days, err := daysBetween(fromDate, toDate)
+		days, err := domain.DaysBetween(fromDate, toDate)
 		if err != nil || days <= 0 {
 			if err != nil {
 				result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": "+err.Error())
@@ -105,21 +102,13 @@ func (s *AccrualService) RunDaily(ctx context.Context, tenantID, toDate, actor s
 		if currency == "" {
 			currency = "VND"
 		}
-		// Daily-prorated monthly interest: principal * rate/100 * days/30,
-		// rounded to the currency minor unit by ardamoney.
-		proratedRate := decimal.NewFromFloat(a.InterestRate * float64(days) / 30.0)
-		interest := ardamoney.MonthlyInterest(
-			ardamoney.FromMinor(a.OutstandingAmt, currency),
-			proratedRate,
-			currency,
-		)
-		if interest.IsZero() {
-			result.Skipped++
-			continue
-		}
-		interestMinor, err := ardamoney.ToMinor(interest, currency)
+		interestMinor, err := domain.AccruedInterestMinor(a.OutstandingAmt, a.InterestRate, days, currency)
 		if err != nil {
 			result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": convert interest: "+err.Error())
+			continue
+		}
+		if interestMinor == 0 {
+			result.Skipped++
 			continue
 		}
 		pending, created, err := s.createPendingAccrual(ctx, tenantID, a.AgreementCode, fromDate, toDate, interestMinor, currency, actor)
@@ -315,17 +304,4 @@ func (s *AccrualService) ListAccruals(ctx context.Context, tenantID, q, sort, or
 		return nil, 0, err
 	}
 	return out, total, nil
-}
-
-// daysBetween counts whole days from a to b (both YYYY-MM-DD).
-func daysBetween(fromDate, toDate string) (int, error) {
-	from, err := time.Parse("2006-01-02", fromDate)
-	if err != nil {
-		return 0, fmt.Errorf("invalid from_date %q: %w", fromDate, err)
-	}
-	to, err := time.Parse("2006-01-02", toDate)
-	if err != nil {
-		return 0, fmt.Errorf("invalid to_date %q: %w", toDate, err)
-	}
-	return int(to.Sub(from).Hours() / 24), nil
 }

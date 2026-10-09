@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
-	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	"github.com/shopspring/decimal"
 )
@@ -30,15 +30,6 @@ func NewProvisionService(repo *repository.LoanRepository, db *sql.DB, finance *f
 		batchFinance = finance
 	}
 	return &ProvisionService{repo: repo, db: db, finance: batchFinance}
-}
-
-// debtGroupRate is the CM130 evidence rate table (TT 02/2023).
-var debtGroupRate = map[string]string{
-	"GROUP_1": "0",
-	"GROUP_2": "5",
-	"GROUP_3": "20",
-	"GROUP_4": "50",
-	"GROUP_5": "100",
 }
 
 // RunResult summarizes one provision batch.
@@ -97,15 +88,12 @@ func (s *ProvisionService) Run(ctx context.Context, tenantID, toDate, actor stri
 			result.Skipped++
 			continue
 		}
-		rateStr, ok := debtGroupRate[a.DebtGroupCode]
+		rate, ok := domain.DebtGroupProvisionRate(a.DebtGroupCode)
 		if !ok {
 			result.Skipped++
 			continue
 		}
-		rate := decimal.RequireFromString(rateStr)
-		outstanding := ardamoney.FromMinor(a.OutstandingAmt, "VND")
-		required := outstanding.Mul(rate).Div(decimal.NewFromInt(100)).Round(0)
-		requiredMinor, err := ardamoney.ToMinor(required, "VND")
+		requiredMinor, err := domain.RequiredProvisionMinor(a.OutstandingAmt, rate, "VND")
 		if err != nil {
 			result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": convert required provision: "+err.Error())
 			continue
@@ -115,7 +103,7 @@ func (s *ProvisionService) Run(ctx context.Context, tenantID, toDate, actor stri
 			result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": load accumulated provision: "+err.Error())
 			continue
 		}
-		delta := requiredMinor - accumulated
+		delta := domain.ProvisionDelta(requiredMinor, accumulated)
 		if delta == 0 {
 			result.Skipped++
 			continue
