@@ -41,7 +41,10 @@ func TestBusinessDateMigrationMapsHeadOfficeToSystem(t *testing.T) {
 	if err := goose.SetDialect("postgres"); err != nil {
 		t.Fatal(err)
 	}
-	if err := goose.Down(db, ".", goose.WithAllowMissing()); err != nil {
+	// Roll back to the version just before the replacement migration so later
+	// migrations do not shift which step this test undoes.
+	const beforeLegacyReplacement = 20261008190000
+	if err := goose.DownTo(db, ".", beforeLegacyReplacement, goose.WithAllowMissing()); err != nil {
 		t.Fatalf("roll back legacy-table replacement migration: %v", err)
 	}
 	if err := db.QueryRow("SELECT to_regclass('public.plt_system_dates')::text, to_regclass('public.plt_holiday_calendars')::text").Scan(&legacyDates, &legacyCalendars); err != nil {
