@@ -103,6 +103,10 @@ func (w *DisbursementWorkers) buildPostingRequest(ctx context.Context, job entit
 	if err != nil {
 		return nil, err
 	}
+	lines, err := postingLinesFromRules(ctx, w.financeClient, w.flow.DocumentType, disbursementLegs(detail), detail.GetCurrencyCode())
+	if err != nil {
+		return nil, err
+	}
 	return &financev1.PostingRequest{
 		IdempotencyKey: fmt.Sprintf("%s-%s", w.flow.IdempotencyPrefix, detail.GetDisbursementId()),
 		AccountingDate: detail.GetDisburseDate(),
@@ -115,7 +119,7 @@ func (w *DisbursementWorkers) buildPostingRequest(ctx context.Context, job entit
 			DocumentCode: detail.GetDisbursementCode(),
 			CaseId:       detail.GetWorkflowCaseId(),
 		},
-		Lines: postingLinesFromRules(fetchPostingRules(ctx, w.financeClient, w.flow.DocumentType), disbursementLegs(w.flow, detail), detail.GetCurrencyCode()),
+		Lines: lines,
 	}, nil
 }
 
@@ -124,17 +128,11 @@ func (w *DisbursementWorkers) buildPostingRequest(ctx context.Context, job entit
 // card lines 1-2 of LNM_DISB_REGISTER). COMPLETE: DEBIT
 // FUND_DISBURSEMENT_IN_TRANSIT / CREDIT CASH_SETTLEMENT_ACCOUNT (LNM.300.02
 // seq 2 — reverses the in-transit leg into cash; card lines 1-2 of
-// LNM_DISB_COMPLETE). Classifications come from the finance rule card; the
-// constants here are only the fallback when a card row is missing.
-func disbursementLegs(flow DisbursementFlow, detail *loanv1.DisbursementPostingDetail) []postingLeg {
-	debitClassification, creditClassification := "LNM_LOAN_PRINCIPAL", "FUND_DISBURSEMENT_IN_TRANSIT"
-	if flow.Flow == "COMPLETE" {
-		debitClassification, creditClassification = "FUND_DISBURSEMENT_IN_TRANSIT", "CASH_SETTLEMENT_ACCOUNT"
-	}
+// LNM_DISB_COMPLETE. The document type selects the rule card.
+func disbursementLegs(detail *loanv1.DisbursementPostingDetail) []postingLeg {
 	return []postingLeg{
 		{
 			CardLine:    1,
-			Fallback:    debitClassification,
 			Direction:   "DEBIT",
 			AmountMinor: detail.GetDisburseAmtMinor(),
 			Analytics: &financev1.Analytics{
@@ -149,7 +147,6 @@ func disbursementLegs(flow DisbursementFlow, detail *loanv1.DisbursementPostingD
 		},
 		{
 			CardLine:    2,
-			Fallback:    creditClassification,
 			Direction:   "CREDIT",
 			AmountMinor: detail.GetDisburseAmtMinor(),
 			Analytics: &financev1.Analytics{
@@ -182,7 +179,9 @@ func (w *DisbursementWorkers) init() worker.JobHandler {
 		}
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
@@ -222,7 +221,9 @@ func (w *DisbursementWorkers) validate() worker.JobHandler {
 		}
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
@@ -260,7 +261,9 @@ func (w *DisbursementWorkers) execute() worker.JobHandler {
 
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		posted, err := w.financeClient.Post(ctx, req)

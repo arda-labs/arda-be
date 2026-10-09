@@ -188,14 +188,16 @@ func (s *AccrualService) completeAccrual(ctx context.Context, tenantID string, a
 		if currency == "" {
 			currency = "VND"
 		}
-		lines := financeclient.PostingLinesFromRules(
-			batchPostingRules(ctx, s.finance, "LNM_ACCRUAL"),
+		lines, err := financeclient.BuildPostingLines(ctx, s.finance, "LNM_ACCRUAL",
 			[]financeclient.PostingLeg{
-				{CardLine: 1, Fallback: "LNM_INTEREST_RECEIVABLE", Direction: "DEBIT", AmountMinor: pending.interestMinor,
+				{CardLine: 1, Direction: "DEBIT", AmountMinor: pending.interestMinor,
 					Analytics: &financev1.Analytics{DebtGroupCode: agreement.DebtGroupCode, OrgUnitCode: agreement.AccClassification, ContractCode: agreement.ContractCode, Dimensions: map[string]string{"agreement_code": agreement.AgreementCode}}, Description: "Phải thu lãi cho vay"},
-				{CardLine: 2, Fallback: "LNM_INTEREST_INCOME", Direction: "CREDIT", AmountMinor: pending.interestMinor,
+				{CardLine: 2, Direction: "CREDIT", AmountMinor: pending.interestMinor,
 					Analytics: &financev1.Analytics{OrgUnitCode: agreement.AccClassification, ContractCode: agreement.ContractCode, Dimensions: map[string]string{"agreement_code": agreement.AgreementCode}}, Description: "Doanh thu lãi cho vay"},
 			}, currency)
+		if err != nil {
+			return "", err
+		}
 		postReq := &financev1.PostingRequest{
 			IdempotencyKey:    fmt.Sprintf("lnm-accrual-%s", pending.id),
 			AccountingDate:    pending.toDate,

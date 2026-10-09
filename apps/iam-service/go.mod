@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/iam-service
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
@@ -37,7 +37,7 @@ require (
 	github.com/xuri/excelize/v2 v2.11.0 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

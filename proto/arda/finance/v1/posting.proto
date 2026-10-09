@@ -66,11 +66,22 @@ enum PostingErrorCode {
   POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_CURRENT_DATE = 12;
   POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_BACKDATE = 13;
   POSTING_ERROR_CODE_POSTING_DATE_BEFORE_CLOSING_LOCK = 14;
+  POSTING_ERROR_CODE_NO_LINES = 15;
+  POSTING_ERROR_CODE_INVALID_DIRECTION = 16;
+  POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED = 17;
+  POSTING_ERROR_CODE_UNKNOWN_DIMENSION = 18;
 }
 
 message ListPostingRulesRequest {
   string tenant_id = 1;        // resolved from metadata in-process
   string document_type = 2;    // LNM_DISB_REGISTER | LNM_DISB_COMPLETE | LNM_COLLECTION | ...
+}
+
+enum PostingStrategy {
+  POSTING_STRATEGY_UNSPECIFIED = 0;
+  POSTING_STRATEGY_SIMPLE = 1;
+  POSTING_STRATEGY_BAL_TYPE_SPLIT = 2;
+  POSTING_STRATEGY_DEBT_GROUP_RECLASS = 3;
 }
 
 message PostingRule {
@@ -83,6 +94,7 @@ message PostingRule {
   string acc_classification = 5; // analytics classification when CLASS_MAP
   repeated string required_dimensions = 6;
   string description_template = 7;
+  PostingStrategy posting_strategy = 8;
 }
 
 message ListPostingRulesResponse {
@@ -204,6 +216,7 @@ message JournalEntryDetailLine {
   int64 amount_minor = 5;
   string currency_code = 6;
   string description = 7;
+  string bal_type_code = 8;
 }
 
 message JournalEntryDetail {

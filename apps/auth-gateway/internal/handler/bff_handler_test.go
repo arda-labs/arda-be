@@ -196,6 +196,23 @@ func TestIsEventStreamRequest(t *testing.T) {
 	}
 }
 
+func TestEventStreamExpiresWithSession(t *testing.T) {
+	expiresAt := time.Now().Add(10 * time.Minute)
+	req := httptest.NewRequest(http.MethodGet, "/api/notifications/stream", nil)
+	limited, cancel := withSessionStreamDeadline(req, true, &session.Session{ExpiresAt: expiresAt})
+	defer cancel()
+	deadline, ok := limited.Context().Deadline()
+	if !ok || !deadline.Equal(expiresAt) {
+		t.Fatalf("deadline = %v, want %v", deadline, expiresAt)
+	}
+
+	unlimited, cancel := withSessionStreamDeadline(req, false, &session.Session{ExpiresAt: expiresAt})
+	defer cancel()
+	if _, ok := unlimited.Context().Deadline(); ok {
+		t.Fatal("non-stream request unexpectedly has a session deadline")
+	}
+}
+
 func TestIAMLookupIDsOnlyReturnsUniqueUUIDs(t *testing.T) {
 	uuid := "00000000-0000-0000-0000-000000000002"
 	got := iamLookupIDs(&session.UserInfo{UserID: uuid, Subject: "super-admin"})

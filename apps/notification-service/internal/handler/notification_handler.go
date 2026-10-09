@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
@@ -109,6 +112,30 @@ func (h *NotificationHandler) MarkAllRead(w http.ResponseWriter, r *http.Request
 	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (h *NotificationHandler) ListPreferences(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID := requestUser(r)
+	items, err := h.svc.ListPreferences(r.Context(), tenantID, userID)
+	if err != nil {
+		writeNotificationError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *NotificationHandler) SavePreference(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID := requestUser(r)
+	var p domain.NotificationPreference
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.svc.SavePreference(r.Context(), tenantID, userID, p); err != nil {
+		writeNotificationError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (h *NotificationHandler) publishInboxChanged(tenantID, userID string) {
 	if h.publishInboxChange != nil {
 		_ = h.publishInboxChange(tenantID, userID)
@@ -164,13 +191,37 @@ func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusServiceUnavailable, "notification stream is not configured")
 		return
 	}
-	events, unsubscribe := h.streamHub.Subscribe(tenantID, userID)
-	defer unsubscribe()
-	count, err := h.svc.UnreadCount(r.Context(), tenantID, userID)
+	lastSeq, hasLastSeq, err := parseLastEventID(r.Header.Get("Last-Event-ID"))
 	if err != nil {
-		writeNotificationError(w, r, err)
+		writeError(w, r, http.StatusBadRequest, "invalid Last-Event-ID")
 		return
 	}
+	leaseID, err := h.svc.AcquireStreamLease(r.Context(), tenantID, userID, maxStreamsPerUser, streamLeaseTTL)
+	if errors.Is(err, service.ErrStreamLeaseLimit) {
+		w.Header().Set("Retry-After", "15")
+		writeError(w, r, http.StatusTooManyRequests, "notification stream limit reached")
+		return
+	}
+	if err != nil {
+		writeError(w, r, http.StatusServiceUnavailable, "notification stream lease is unavailable")
+		return
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = h.svc.ReleaseStreamLease(cleanupCtx, tenantID, userID, leaseID)
+	}()
+	events, unsubscribe, err := h.streamHub.Subscribe(tenantID, userID)
+	if errors.Is(err, ErrStreamLimit) {
+		w.Header().Set("Retry-After", "15")
+		writeError(w, r, http.StatusTooManyRequests, "notification stream limit reached")
+		return
+	}
+	if err != nil {
+		writeError(w, r, http.StatusServiceUnavailable, "notification stream is not configured")
+		return
+	}
+	defer unsubscribe()
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, r, http.StatusInternalServerError, "streaming is not supported")
@@ -180,12 +231,40 @@ func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	writeSSE(w, "unread_count", map[string]int{"count": count})
+	cursor := lastSeq
+	latest, err := h.svc.LatestInboxEventSeq(r.Context(), tenantID, userID)
+	if err != nil {
+		return
+	}
+	if !hasLastSeq || cursor > latest {
+		cursor = latest
+	}
+	if hasLastSeq {
+		var keep bool
+		cursor, keep = h.writeCatchup(w, flusher, r, tenantID, userID, cursor)
+		if !keep {
+			return
+		}
+		if latest < cursor {
+			latest = cursor
+		}
+	}
+	count, err := h.svc.UnreadCount(r.Context(), tenantID, userID)
+	if err != nil {
+		return
+	}
+	if latest < cursor {
+		latest = cursor
+	}
+	if !writeSSE(w, flusher, latest, "unread_count", map[string]int{"count": count}) {
+		return
+	}
 	flusher.Flush()
 
-	heartbeat := time.NewTicker(30 * time.Second)
+	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 
 	for {
@@ -193,22 +272,116 @@ func (h *NotificationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-heartbeat.C:
+			if err := h.svc.RenewStreamLease(r.Context(), tenantID, userID, leaseID, streamLeaseTTL); err != nil {
+				return
+			}
 			_, _ = w.Write([]byte(": heartbeat\n\n"))
 			flusher.Flush()
-		case eventID := <-events:
-			writeSSE(w, "inbox_changed", map[string]string{"id": eventID})
-			flusher.Flush()
+		case signal := <-events:
+			switch signal.Type {
+			case "resolved":
+				latest, err := h.svc.LatestInboxEventSeq(r.Context(), tenantID, userID)
+				if err != nil {
+					return
+				}
+				if latest < cursor {
+					latest = cursor
+				}
+				payload := map[string]string{"event_id": signal.EventID, "entity_type": signal.EntityType, "entity_id": signal.EntityID}
+				if !writeSSE(w, flusher, latest, "resolved", payload) {
+					return
+				}
+			case "state_changed":
+				latest, err := h.svc.LatestInboxEventSeq(r.Context(), tenantID, userID)
+				if err != nil {
+					return
+				}
+				count, err := h.svc.UnreadCount(r.Context(), tenantID, userID)
+				if err != nil {
+					return
+				}
+				if latest < cursor {
+					latest = cursor
+				}
+				if !writeSSE(w, flusher, latest, "unread_count", map[string]int{"count": count}) {
+					return
+				}
+			default:
+				var keep bool
+				cursor, keep = h.writeCatchup(w, flusher, r, tenantID, userID, cursor)
+				if !keep {
+					return
+				}
+			}
 		}
 	}
 }
 
-func writeSSE(w http.ResponseWriter, event string, v any) {
+func (h *NotificationHandler) writeCatchup(w http.ResponseWriter, flusher http.Flusher, r *http.Request, tenantID, userID string, after int64) (int64, bool) {
+	items, err := h.svc.ListInboxAfter(r.Context(), tenantID, userID, after, 101)
+	if err != nil {
+		return after, false
+	}
+	more := len(items) > 100
+	if more {
+		items = items[:100]
+	}
+	cursor, ok := writeCatchupItems(w, flusher, items, after)
+	if !ok {
+		return cursor, false
+	}
+	if more {
+		latest, err := h.svc.LatestInboxEventSeq(r.Context(), tenantID, userID)
+		if err != nil {
+			return cursor, false
+		}
+		if latest < cursor {
+			latest = cursor
+		}
+		payload := map[string]string{"reason": "catchup_limit", "action": "fetch_rest_inbox"}
+		if !writeSSE(w, flusher, latest, "resync_required", payload) {
+			return cursor, false
+		}
+		cursor = latest
+	}
+	return cursor, true
+}
+
+func writeCatchupItems(w http.ResponseWriter, flusher http.Flusher, items []domain.InboxItem, after int64) (int64, bool) {
+	cursor := after
+	for _, item := range items {
+		if !writeSSE(w, flusher, item.EventSeq, "inbox_changed", inboxItemJSON(item)) {
+			return cursor, false
+		}
+		if item.EventSeq > cursor {
+			cursor = item.EventSeq
+		}
+	}
+	return cursor, true
+}
+
+func parseLastEventID(raw string) (int64, bool, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false, nil
+	}
+	seq, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || seq < 0 {
+		return 0, true, fmt.Errorf("invalid event sequence")
+	}
+	return seq, true, nil
+}
+
+func writeSSE(w http.ResponseWriter, flusher http.Flusher, eventSeq int64, event string, v any) bool {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return
+		return false
 	}
-	_, _ = w.Write([]byte("event: " + event + "\n"))
-	_, _ = w.Write([]byte("data: " + string(b) + "\n\n"))
+	if _, err := fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", eventSeq, event, b); err != nil {
+		return false
+	}
+	flusher.Flush()
+	return true
 }
 
 func requestUser(r *http.Request) (string, string) {
@@ -256,14 +429,23 @@ func inboxItemJSON(item domain.InboxItem) map[string]any {
 		params = map[string]any{}
 	}
 	out := map[string]any{
-		"id":        item.PublicID,
-		"type":      item.Type,
-		"titleKey":  item.TitleKey,
-		"bodyKey":   item.BodyKey,
-		"params":    params,
-		"href":      item.Href,
-		"readAt":    nil,
-		"createdAt": item.CreatedAt,
+		"id":             item.PublicID,
+		"type":           item.Type,
+		"titleKey":       item.TitleKey,
+		"bodyKey":        item.BodyKey,
+		"params":         params,
+		"href":           item.Href,
+		"readAt":         nil,
+		"createdAt":      item.CreatedAt,
+		"entityType":     item.EntityType,
+		"entityId":       item.EntityID,
+		"resolvedAt":     item.ResolvedAt,
+		"resolvedReason": item.ResolvedReason,
+		"supersededAt":   item.SupersededAt,
+		"expiresAt":      item.ExpiresAt,
+		"locale":         item.Locale,
+		"priority":       item.Priority,
+		"eventSeq":       item.EventSeq,
 	}
 	if item.ReadAt != nil {
 		out["readAt"] = item.ReadAt

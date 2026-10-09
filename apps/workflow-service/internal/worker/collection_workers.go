@@ -29,9 +29,23 @@ import (
 //     cash DR interest / CR interest receivable) — then settle side effects
 //   - cancel:   release the hold (when one exists), reject the receipt
 type CollectionWorkers struct {
-	loanClient    *loanclient.Client
-	financeClient *financeclient.Client
+	loanClient    collectionLoanClient
+	financeClient collectionFinanceClient
 	projection    *CaseProjection
+}
+
+type collectionLoanClient interface {
+	GetCollectionPostingDetail(context.Context, string) (*loanv1.CollectionPostingDetail, error)
+	CheckCollection(context.Context, string) (bool, string, error)
+	SettleCollection(context.Context, string, string, string, int64) error
+	ResolveCollection(context.Context, string, string, string, string, int64) error
+}
+
+type collectionFinanceClient interface {
+	financeclient.PostingRuleLister
+	Reserve(context.Context, *financev1.PostingRequest) (*financev1.PostingResponse, error)
+	Post(context.Context, *financev1.PostingRequest) (*financev1.PostingResponse, error)
+	Release(context.Context, *financev1.ReleaseRequest) (*financev1.PostingResponse, error)
 }
 
 func NewCollectionWorkers(loanClient *loanclient.Client, financeClient *financeclient.Client, caseRepo *repository.CaseRepository) *CollectionWorkers {
@@ -71,6 +85,10 @@ func (w *CollectionWorkers) buildPostingRequest(ctx context.Context, job entitie
 	if err != nil {
 		return nil, err
 	}
+	lines, err := postingLinesFromRules(ctx, w.financeClient, "LNM_COLLECTION", collectionLegs(detail), detail.GetCurrencyCode())
+	if err != nil {
+		return nil, err
+	}
 	return &financev1.PostingRequest{
 		IdempotencyKey: fmt.Sprintf("lnm-collection-%s", detail.GetCollectionId()), AccountingDate: detail.GetCollectionDate(),
 		CurrencyCode: detail.GetCurrencyCode(),
@@ -81,7 +99,7 @@ func (w *CollectionWorkers) buildPostingRequest(ctx context.Context, job entitie
 			DocumentId:   detail.GetCollectionId(),
 			CaseId:       detail.GetWorkflowCaseId(),
 		},
-		Lines: postingLinesFromRules(fetchPostingRules(ctx, w.financeClient, "LNM_COLLECTION"), collectionLegs(detail), detail.GetCurrencyCode()),
+		Lines: lines,
 	}, nil
 }
 
@@ -96,7 +114,6 @@ func collectionLegs(detail *loanv1.CollectionPostingDetail) []postingLeg {
 		legs = append(legs,
 			postingLeg{
 				CardLine:    1,
-				Fallback:    "CASH_SETTLEMENT_ACCOUNT",
 				Direction:   "DEBIT",
 				AmountMinor: detail.GetPrincipalMinor(),
 				Analytics: &financev1.Analytics{
@@ -107,7 +124,6 @@ func collectionLegs(detail *loanv1.CollectionPostingDetail) []postingLeg {
 			},
 			postingLeg{
 				CardLine:    2,
-				Fallback:    "LNM_LOAN_PRINCIPAL",
 				Direction:   "CREDIT",
 				AmountMinor: detail.GetPrincipalMinor(),
 				Analytics: &financev1.Analytics{
@@ -122,7 +138,6 @@ func collectionLegs(detail *loanv1.CollectionPostingDetail) []postingLeg {
 		legs = append(legs,
 			postingLeg{
 				CardLine:    3,
-				Fallback:    "CASH_SETTLEMENT_ACCOUNT",
 				Direction:   "DEBIT",
 				AmountMinor: detail.GetInterestMinor(),
 				Analytics: &financev1.Analytics{
@@ -133,7 +148,6 @@ func collectionLegs(detail *loanv1.CollectionPostingDetail) []postingLeg {
 			},
 			postingLeg{
 				CardLine:    4,
-				Fallback:    "LNM_INTEREST_RECEIVABLE",
 				Direction:   "CREDIT",
 				AmountMinor: detail.GetInterestMinor(),
 				Analytics: &financev1.Analytics{
@@ -146,8 +160,32 @@ func collectionLegs(detail *loanv1.CollectionPostingDetail) []postingLeg {
 	return legs
 }
 
+// handlePostingError releases a known PENDING hold before returning business
+// failures to the maker; unknown errors and release failures retain retries.
+func (w *CollectionWorkers) handlePostingError(client worker.JobClient, job entities.Job, err error) {
+	ctx := crmJobContext(job)
+	vars := mustJobVars(job)
+	journalEntryID := stringVariable(vars, "journalEntryId")
+	actor := stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by")
+	var release func() error
+	if journalEntryID != "" {
+		release = func() error {
+			_, releaseErr := w.financeClient.Release(ctx, &financev1.ReleaseRequest{
+				JournalEntryId: journalEntryID,
+				Actor:          actor,
+				Reason:         "Automatic release after a business collection posting failure",
+			})
+			return releaseErr
+		}
+	}
+	routePostingFailure(err, journalEntryID, release,
+		func(code financev1.PostingErrorCode, message string) {
+			throwPostingValidationError(ctx, client, job, w.projection, code, message)
+		}, func(failure error) { w.failJob(client, job, "Posting Error: "+failure.Error()) })
+}
+
 // init reserves the posting right after submission — the cash hold exists
-// from the moment the case starts (the cash setlement account's available
+// from the moment the case starts (the cash settlement account's available
 // balance drops during the approval window). Safe on retries and after maker
 // edits: Reserve rebuilds or replays under the same idempotency key.
 func (w *CollectionWorkers) init() worker.JobHandler {
@@ -161,12 +199,14 @@ func (w *CollectionWorkers) init() worker.JobHandler {
 		}
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
 		if err != nil {
-			w.failJob(client, job, "Posting Error: "+err.Error())
+			w.handlePostingError(client, job, err)
 			return
 		}
 		if err := w.complete(ctx, client, job, map[string]any{
@@ -200,12 +240,14 @@ func (w *CollectionWorkers) validate() worker.JobHandler {
 		}
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
 		if err != nil {
-			w.failJob(client, job, "Posting Error: "+err.Error())
+			w.handlePostingError(client, job, err)
 			return
 		}
 		if err := w.complete(ctx, client, job, map[string]any{
@@ -231,12 +273,14 @@ func (w *CollectionWorkers) execute() worker.JobHandler {
 
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		posted, err := w.financeClient.Post(ctx, req)
 		if err != nil {
-			w.failJob(client, job, "Posting Error: "+err.Error())
+			w.handlePostingError(client, job, err)
 			return
 		}
 		if err := w.loanClient.SettleCollection(crmJobContext(job), id, posted.GetJournalEntryId(), actor, dataVersionFromVars(mustJobVars(job))); err != nil {
