@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
+	ardaBusinessDate "github.com/arda-labs/arda/libs/go/arda-businessdate"
 )
 
 type CalendarRepository struct {
@@ -18,31 +19,17 @@ func NewCalendarRepository(db *sql.DB) *CalendarRepository {
 }
 
 func (r *CalendarRepository) GetSystemDate(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
-	query := `
-		SELECT id, branch_code, current_business_date, previous_business_date, next_business_date, status, last_eod_at, updated_at
-		FROM plt_system_dates
-		WHERE branch_code = $1
-	`
-	row := r.db.QueryRowContext(ctx, query, branchCode)
-
-	var sd domain.SystemDate
-	var lastEOD sql.NullTime
-	err := row.Scan(&sd.ID, &sd.BranchCode, &sd.CurrentBusinessDate, &sd.PreviousBusinessDate, &sd.NextBusinessDate, &sd.Status, &lastEOD, &sd.UpdatedAt)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
+	if branchCode != "HEAD_OFFICE" {
+		return nil, domain.ErrSystemDateNotFound
 	}
-
-	if lastEOD.Valid {
-		sd.LastEODAt = &lastEOD.Time
+	sd, err := r.BusinessDateForScope(ctx, ardaBusinessDate.Scope{Type: ardaBusinessDate.ScopeSystem})
+	if errors.Is(err, domain.ErrSystemDateNotFound) {
+		return nil, nil
 	}
-
-	return &sd, nil
+	return sd, err
 }
 
-// ClaimEOD atomically moves a branch into EOD_PROCESSING and returns the
+// ClaimEOD atomically moves the SYSTEM date into EOD_PROCESSING and returns the
 // claimed row. The conditional UPDATE plus RowsAffected is the concurrency
 // gate: only one caller can transition a row out of a non-processing status,
 // so two parallel triggers can never both pass and advance the business date
@@ -50,12 +37,15 @@ func (r *CalendarRepository) GetSystemDate(ctx context.Context, branchCode strin
 // could). A rejected claim reports whether the row is missing or already
 // processing.
 func (r *CalendarRepository) ClaimEOD(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
-	res, err := r.db.ExecContext(ctx, `
-		UPDATE plt_system_dates
-		SET status = $2,
-		    updated_at = now()
-		WHERE branch_code = $1
-		  AND status <> $2`, branchCode, domain.SystemDateEODProcessing)
+	if branchCode != "HEAD_OFFICE" {
+		return nil, domain.ErrSystemDateNotFound
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, "UPDATE plt_business_dates SET status=$1, updated_at=now() WHERE tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL AND status=$2", domain.SystemDateEODProcessing, domain.SystemDateOpen)
 	if err != nil {
 		return nil, err
 	}
@@ -66,14 +56,17 @@ func (r *CalendarRepository) ClaimEOD(ctx context.Context, branchCode string) (*
 	if affected == 0 {
 		// No row matched: either the branch has no system date row or another
 		// EOD run already claimed it. Read once to tell the caller which one.
-		current, getErr := r.GetSystemDate(ctx, branchCode)
-		if getErr != nil {
+		var exists bool
+		if getErr := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM plt_business_dates WHERE tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL)").Scan(&exists); getErr != nil {
 			return nil, getErr
 		}
-		if current == nil {
+		if !exists {
 			return nil, domain.ErrSystemDateNotFound
 		}
 		return nil, domain.ErrEODInProgress
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	sd, err := r.GetSystemDate(ctx, branchCode)
 	if err != nil {
@@ -90,85 +83,77 @@ func (r *CalendarRepository) ClaimEOD(ctx context.Context, branchCode string) (*
 // EOD_PROCESSING. The status predicate keeps the release idempotent and
 // harmless when the final transition already committed.
 func (r *CalendarRepository) ReleaseEOD(ctx context.Context, branchCode string) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE plt_system_dates
-		SET status = $2,
-		    updated_at = now()
-		WHERE branch_code = $1
-		  AND status = $3`, branchCode, domain.SystemDateOpen, domain.SystemDateEODProcessing)
-	return err
+	if branchCode != "HEAD_OFFICE" {
+		return domain.ErrSystemDateNotFound
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, "UPDATE plt_business_dates SET status=$1, updated_at=now() WHERE tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL AND status=$2", domain.SystemDateOpen, domain.SystemDateEODProcessing); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *CalendarRepository) UpdateSystemDate(ctx context.Context, sd *domain.SystemDate) error {
-	query := `
-		UPDATE plt_system_dates
-		SET current_business_date = $2,
-		    previous_business_date = $3,
-		    next_business_date = $4,
-		    status = $5,
-		    last_eod_at = $6,
-		    updated_at = now()
-		WHERE id = $1
-	`
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	var lastEOD any
 	if sd.LastEODAt != nil {
 		lastEOD = *sd.LastEODAt
 	}
-
-	_, err := r.db.ExecContext(ctx, query,
-		sd.ID,
-		sd.CurrentBusinessDate,
-		sd.PreviousBusinessDate,
-		sd.NextBusinessDate,
-		sd.Status,
-		lastEOD,
-	)
-	return err
+	canonical, err := tx.ExecContext(ctx, "UPDATE plt_business_dates SET business_date=$2, prev_business_date=$3, next_business_date=$4, status=$5, last_eod_at=$6, updated_at=now() WHERE id=$1 AND tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL",
+		sd.ID, sd.CurrentBusinessDate, sd.PreviousBusinessDate, sd.NextBusinessDate, sd.Status, lastEOD)
+	if err != nil {
+		return err
+	}
+	rows, err := canonical.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return domain.ErrSystemDateNotFound
+	}
+	return tx.Commit()
 }
 
 func (r *CalendarRepository) IsHoliday(ctx context.Context, date time.Time) (bool, error) {
-	targetDate := date.Format("2006-01-02")
-	parsedDate, err := time.Parse("2006-01-02", targetDate)
-	if err != nil {
-		return false, err
-	}
-
-	query := `
-		SELECT EXISTS (
-			SELECT 1 FROM plt_holiday_calendars
-			WHERE (holiday_date = $1 AND is_recurring = FALSE)
-			   OR (is_recurring = TRUE AND EXTRACT(MONTH FROM holiday_date) = $2 AND EXTRACT(DAY FROM holiday_date) = $3)
-		)
-	`
-	var exists bool
-	err = r.db.QueryRowContext(ctx, query, parsedDate, parsedDate.Month(), parsedDate.Day()).Scan(&exists)
-	if err != nil {
-		return false, err
-	}
-	return exists, nil
+	return r.IsHolidayForScope(ctx, ardaBusinessDate.Scope{Type: ardaBusinessDate.ScopeSystem}, date)
 }
 
 func (r *CalendarRepository) AddHoliday(ctx context.Context, holiday *domain.HolidayCalendar) error {
+	if holiday == nil {
+		return errors.New("holiday is required")
+	}
 	if holiday.ID == "" {
 		holiday.ID = NewID("holiday")
 	}
 
-	query := `
-		INSERT INTO plt_holiday_calendars (id, holiday_date, description, is_recurring, holiday_year)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING created_at
-	`
-	var yearVal any
-	if holiday.HolidayYear != nil {
-		yearVal = *holiday.HolidayYear
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
-
-	return r.db.QueryRowContext(ctx, query, holiday.ID, holiday.HolidayDate, holiday.Description, holiday.IsRecurring, yearVal).
-		Scan(&holiday.CreatedAt)
+	defer tx.Rollback()
+	if err := addVersionedHolidayTx(ctx, tx, holiday); err != nil {
+		return err
+	}
+	if err := tx.QueryRowContext(ctx, "SELECT created_at FROM plt_working_calendar_versions WHERE tenant_id IS NULL AND scope_type='SYSTEM' AND org_code IS NULL AND is_active").Scan(&holiday.CreatedAt); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *CalendarRepository) ListHolidays(ctx context.Context) ([]domain.HolidayCalendar, error) {
-	query := `SELECT id, holiday_date, description, is_recurring, holiday_year, created_at FROM plt_holiday_calendars ORDER BY holiday_date ASC`
+	query := `SELECT h.id, h.holiday_date, h.description, h.is_recurring, h.holiday_year, v.created_at
+		FROM plt_working_calendar_holidays h
+		JOIN plt_working_calendar_versions v ON v.id=h.calendar_version_id
+		WHERE v.tenant_id IS NULL AND v.scope_type='SYSTEM' AND v.org_code IS NULL AND v.is_active
+		ORDER BY h.holiday_date ASC`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err

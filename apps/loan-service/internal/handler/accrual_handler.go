@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/service"
+	ardaBusinessDate "github.com/arda-labs/arda/libs/go/arda-businessdate"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
@@ -13,11 +16,27 @@ import (
 // engine / platform jobs with a service identity) and the accrual read API
 // for the loan remote.
 type AccrualHandler struct {
-	svc *service.AccrualService
+	svc      *service.AccrualService
+	calendar ardaBusinessDate.Calendar
 }
 
-func NewAccrualHandler(svc *service.AccrualService) *AccrualHandler {
-	return &AccrualHandler{svc: svc}
+func NewAccrualHandler(svc *service.AccrualService, calendars ...ardaBusinessDate.Calendar) *AccrualHandler {
+	handler := &AccrualHandler{svc: svc}
+	if len(calendars) > 0 {
+		handler.calendar = calendars[0]
+	}
+	return handler
+}
+
+func resolveAccrualToDate(ctx context.Context, calendar ardaBusinessDate.Calendar, tenantID, requested string) (string, error) {
+	if strings.TrimSpace(requested) != "" {
+		return strings.TrimSpace(requested), nil
+	}
+	date, err := ardaBusinessDate.BusinessDate(ctx, calendar, ardaBusinessDate.Scope{TenantID: tenantID, Type: ardaBusinessDate.ScopeSystem})
+	if err != nil {
+		return "", fmt.Errorf("default accrual date from Platform: %w", err)
+	}
+	return date.Format("2006-01-02"), nil
 }
 
 // RunDailyAccrual handles POST /internal/jobs/accrual-daily?to_date=YYYY-MM-DD.
@@ -32,7 +51,11 @@ func (h *AccrualHandler) RunDailyAccrual(w http.ResponseWriter, r *http.Request)
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	toDate := r.URL.Query().Get("to_date")
+	toDate, err := resolveAccrualToDate(r.Context(), h.calendar, tenantID, r.URL.Query().Get("to_date"))
+	if err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, err.Error()))
+		return
+	}
 	actor := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	if actor == "" {
 		actor = "eod-job"

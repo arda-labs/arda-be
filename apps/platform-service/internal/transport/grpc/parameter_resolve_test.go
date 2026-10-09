@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func TestLoanCanResolveOnlyGlobalParametersWithoutTenant(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := NewPlatformServer(service.NewPlatformService(repository.NewPlatformRepository(db)))
-	secret := "service-test-secret"
+	secret := strings.Repeat("s", 32)
 	interceptor := interceptors.UnaryServerServiceAuthMethodSources(secret, "platform-service", map[string]struct{}{}, map[string]map[string]struct{}{
 		"/arda.platform.v1.PlatformService/ResolveParameter": {"loan-service": {}},
 	})

@@ -41,7 +41,7 @@ func (h *CalendarHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CalendarHandler) TriggerEOD(w http.ResponseWriter, r *http.Request) {
-	// EOD shifts the business date in plt_system_dates, which is global (one
+	// EOD shifts the SYSTEM business date, which is global (one
 	// row per branch code, default HEAD_OFFICE) and therefore affects every
 	// tenant. The gateway only grants platform.manage per route, so the
 	// in-service global-admin check is the tenant/global boundary here.

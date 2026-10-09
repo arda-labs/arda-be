@@ -53,6 +53,8 @@ func TestUnaryServerServiceAuthMethodSourceOverride(t *testing.T) {
 		map[string]map[string]struct{}{
 			"/arda.platform.v1.PlatformService/ResolveParameter": {"loan-service": {}},
 			"/arda.platform.v1.PlatformService/ListLookupValues": {"loan-service": {}},
+			"/arda.platform.v1.PlatformService/GetBusinessDate": {"loan-service": {}},
+			"/arda.platform.v1.PlatformService/IsWorkingDay": {"loan-service": {}},
 		},
 	)
 	invoke := func(source, method string) error {
@@ -69,6 +71,9 @@ func TestUnaryServerServiceAuthMethodSourceOverride(t *testing.T) {
 	}
 	if err := invoke("loan-service", "/arda.platform.v1.PlatformService/ListLookupValues"); err != nil {
 		t.Fatalf("loan catalog read rejected: %v", err)
+	}
+	for _, method := range []string{"GetBusinessDate", "IsWorkingDay"} {
+		if err := invoke("loan-service", "/arda.platform.v1.PlatformService/"+method); err != nil { t.Fatalf("loan %s rejected: %v", method, err) }
 	}
 	if status.Code(invoke("loan-service", "/arda.platform.v1.PlatformService/UpsertParameter")) != codes.PermissionDenied {
 		t.Fatal("loan-service must not call parameter mutation")

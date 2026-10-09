@@ -1,0 +1,12 @@
+{
+  "entries": [
+    {
+      "location": "apps/finance-service/internal/service/posting_case_service.go:529",
+      "reason": "Technical fallback identifier entropy; not used as a financial date."
+    },
+    {
+      "location": "apps/finance-service/internal/service/posting_service.go:373",
+      "reason": "PostedAt is an audit timestamp; business posting date is supplied separately."
+    }
+  ]
+}
