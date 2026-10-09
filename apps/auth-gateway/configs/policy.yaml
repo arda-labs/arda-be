@@ -480,6 +480,30 @@ routes:
     permissions:
       - finance.read
 
+  - id: finance-document-renumber-request
+    path: /api/finance/document-numbers/renumber-requests
+    methods: [POST]
+    auth: true
+    risk: high
+    permissions:
+      - doc.renumber
+
+  - id: finance-document-renumber-approve
+    path: /api/finance/document-numbers/renumber-requests/approve
+    methods: [POST]
+    auth: true
+    risk: high
+    permissions:
+      - doc.renumber
+
+  - id: finance-document-renumber-approve-closed
+    path: /api/finance/document-numbers/renumber-requests/approve-closed
+    methods: [POST]
+    auth: true
+    risk: high
+    permissions:
+      - doc.renumber.locked
+
   - id: finance-write
     path: /api/finance/**
     methods: [POST, PUT, PATCH, DELETE]
