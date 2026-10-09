@@ -6,12 +6,14 @@
 ALTER TABLE fin_journal_lines
     ADD COLUMN bal_type_code TEXT;
 UPDATE fin_journal_lines SET bal_type_code = 'ACTUAL' WHERE bal_type_code IS NULL;
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM fin_journal_lines WHERE bal_type_code IS NULL OR btrim(bal_type_code) = '') THEN
         RAISE EXCEPTION 'T3.1 cannot backfill fin_journal_lines.bal_type_code';
     END IF;
 END $$;
+-- +goose StatementEnd
 ALTER TABLE fin_journal_lines
     ALTER COLUMN bal_type_code SET NOT NULL,
     ADD CONSTRAINT fin_journal_lines_bal_type_nonempty CHECK (btrim(bal_type_code) <> '');
@@ -21,12 +23,14 @@ CREATE INDEX idx_fin_line_balance_key
 ALTER TABLE fin_account_balances
     ADD COLUMN bal_type_code TEXT;
 UPDATE fin_account_balances SET bal_type_code = 'ACTUAL' WHERE bal_type_code IS NULL;
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM fin_account_balances WHERE bal_type_code IS NULL OR btrim(bal_type_code) = '') THEN
         RAISE EXCEPTION 'T3.1 cannot backfill fin_account_balances.bal_type_code';
     END IF;
 END $$;
+-- +goose StatementEnd
 ALTER TABLE fin_account_balances
     ALTER COLUMN bal_type_code SET NOT NULL,
     DROP CONSTRAINT fin_account_balances_pkey,
@@ -36,12 +40,14 @@ ALTER TABLE fin_account_balances
 ALTER TABLE fin_trial_balance_daily
     ADD COLUMN bal_type_code TEXT;
 UPDATE fin_trial_balance_daily SET bal_type_code = 'ACTUAL' WHERE bal_type_code IS NULL;
+-- +goose StatementBegin
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM fin_trial_balance_daily WHERE bal_type_code IS NULL OR btrim(bal_type_code) = '') THEN
         RAISE EXCEPTION 'T3.1 cannot backfill fin_trial_balance_daily.bal_type_code';
     END IF;
 END $$;
+-- +goose StatementEnd
 ALTER TABLE fin_trial_balance_daily
     ALTER COLUMN bal_type_code SET NOT NULL,
     DROP CONSTRAINT fin_trial_balance_daily_pkey,
