@@ -39,8 +39,11 @@ type PostingLeg struct {
 // degrades to nil — the built-in fallback classifications take over. The
 // caller context must carry the tenant scope: without it the finance service
 // rejects the lookup and every flow silently falls back to hardcoded legs.
-func FetchPostingRules(ctx context.Context, client *Client, documentType string) []*financev1.PostingRule {
+func FetchPostingRules(ctx context.Context, client PostingRulesClient, documentType string) []*financev1.PostingRule {
 	if client == nil {
+		return nil
+	}
+	if grpcClient, ok := client.(*Client); ok && grpcClient == nil {
 		return nil
 	}
 	rules, err := client.ListPostingRules(ctx, documentType)
@@ -49,6 +52,11 @@ func FetchPostingRules(ctx context.Context, client *Client, documentType string)
 		return nil
 	}
 	return rules
+}
+
+// PostingRulesClient is the read-only rule lookup used by posting builders.
+type PostingRulesClient interface {
+	ListPostingRules(context.Context, string) ([]*financev1.PostingRule, error)
 }
 
 // PostingLinesFromRules builds the numbered PostingLine list from legs,
