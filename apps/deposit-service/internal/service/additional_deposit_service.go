@@ -117,8 +117,7 @@ func (s *AdditionalDepositService) Settle(ctx context.Context, tenantID, actor, 
 		idemKey = idempotencyKey("dpm-additional", savingsCode)
 	}
 	entryID, err := s.settlement.post(ctx, tenantID, "DPM_ADDITIONAL", "DPM_OPEN", idemKey,
-		savings.SavingsCode, savings.CustomerCode, txnDate, savings.CurrencyCode, amountMinor,
-		"CASH_SETTLEMENT_ACCOUNT", "DPM_DEPOSIT_LIABILITY")
+		savings.SavingsCode, savings.CustomerCode, txnDate, savings.CurrencyCode, amountMinor)
 	if err != nil {
 		return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "additional deposit posting failed", err)
 	}

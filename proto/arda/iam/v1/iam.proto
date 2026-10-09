@@ -6,6 +6,19 @@ option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/iam/v1;iamv1";
 
 service UserService {
   rpc GetUserBatch(GetUserBatchRequest) returns (GetUserBatchResponse);
+  rpc ResolveNotificationRecipients(ResolveNotificationRecipientsRequest) returns (ResolveNotificationRecipientsResponse);
+}
+
+// ResolveNotificationRecipients expands direct users, active group membership,
+// and active role assignments within the tenant in the authenticated metadata.
+message ResolveNotificationRecipientsRequest {
+  repeated string user_ids = 1;
+  repeated string group_ids = 2;
+  repeated string role_codes = 3;
+}
+
+message ResolveNotificationRecipientsResponse {
+  repeated string user_ids = 1;
 }
 
 message GetUserBatchRequest {

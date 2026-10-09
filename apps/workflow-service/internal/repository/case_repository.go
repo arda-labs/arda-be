@@ -720,12 +720,18 @@ func (r *CaseRepository) FinishCase(ctx context.Context, processInstanceKey int6
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx, `
+	var caseID, tenantID, caseType, caseCode, assignedTo, createdBy string
+	res := tx.QueryRowContext(ctx, `
 		UPDATE business_cases
 		SET status = $2, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 		WHERE process_instance_key = $1 AND completed_at IS NULL
-	`, processInstanceKey, finalStatus); err != nil {
-		return err
+		RETURNING id, tenant_id, case_type, case_code, assigned_to, created_by
+	`, processInstanceKey, finalStatus).Scan(&caseID, &tenantID, &caseType, &caseCode, &assignedTo, &createdBy)
+	if errors.Is(res, sql.ErrNoRows) {
+		return tx.Commit()
+	}
+	if res != nil {
+		return res
 	}
 	// A finished case has no live human task left.
 	if _, err := tx.ExecContext(ctx, `
@@ -743,6 +749,34 @@ func (r *CaseRepository) FinishCase(ctx context.Context, processInstanceKey int6
 		WHERE process_instance_key = $1 AND status = 'RECORDED' AND decision IN ('APPROVE', 'REJECT')
 	`, processInstanceKey); err != nil {
 		return err
+	}
+	var subject, eventCode string
+	switch strings.ToUpper(finalStatus) {
+	case CaseStatusCompleted:
+		subject, eventCode = "arda.workflow.case.approved.v1", "workflow.case.approved"
+	case CaseStatusRejected:
+		subject, eventCode = "arda.workflow.case.rejected.v1", "workflow.case.rejected"
+	case "FAILED":
+		subject, eventCode = "arda.workflow.case.failed.v1", "workflow.case.failed"
+	}
+	if subject != "" {
+		dedupe := "case:" + caseID + ":" + strings.ToLower(finalStatus)
+		users := []string{}
+		if assignedTo != "" {
+			users = append(users, assignedTo)
+		}
+		if createdBy != "" && createdBy != assignedTo {
+			users = append(users, createdBy)
+		}
+		payload := map[string]any{
+			"event_id": dedupe, "tenant_id": tenantID, "case_id": caseID,
+			"case_type": caseType, "case_code": caseCode, "status": finalStatus,
+			"href": "/workflow/cases/" + caseID, "locale": "vi-VN", "user_ids": users,
+			"group_ids": []string{}, "role_codes": []string{}, "org_unit_ids": []string{}, "include_descendants": false,
+		}
+		if err := enqueueWorkflowEvent(ctx, tx, subject, eventCode, dedupe, payload); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

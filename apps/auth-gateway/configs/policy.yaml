@@ -676,6 +676,30 @@ routes:
     permissions:
       - notification.read
 
+  - id: notifications-read-mark
+    path: /api/notifications/read-all
+    methods: [POST]
+    auth: true
+    risk: low
+    permissions:
+      - notification.read-mark
+
+  - id: notifications-item-read-mark
+    path: /api/notifications/inbox/**
+    methods: [POST]
+    auth: true
+    risk: low
+    permissions:
+      - notification.read-mark
+
+  - id: notifications-preferences-write
+    path: /api/notifications/preferences
+    methods: [PUT]
+    auth: true
+    risk: low
+    permissions:
+      - notification.preferences.manage
+
   - id: notifications-write
     path: /api/notifications/**
     methods: [POST, PUT, PATCH, DELETE]
