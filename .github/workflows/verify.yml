@@ -60,6 +60,10 @@ jobs:
         run: node scripts/check-ai-catalog.mjs
       - name: Validate migration conventions
         run: node scripts/check-migrations.mjs
+      - name: Validate journal immutability writes
+        run: node scripts/check-journal-invariants.mjs
+      - name: Test journal mutation invariant
+        run: node --test scripts/check-journal-invariants.test.mjs
       - name: Validate workflow BPMN invariants
         run: node scripts/check-bpmn.mjs
       - name: Validate RLS feasibility pilot
@@ -78,6 +82,8 @@ jobs:
         run: node scripts/check-body-limit.mjs
       - name: Validate the vulnerability allowlist
         run: node scripts/check-vuln.test.mjs
+      - name: Validate patched Go toolchain and network dependency baseline
+        run: node scripts/check-go-security-baseline.mjs
       - name: Validate reference service layering
         run: node scripts/check-layering.mjs
       - name: Validate generated protobuf contracts
