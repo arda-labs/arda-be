@@ -7,12 +7,13 @@ import (
 // Batch statuses (shared by lnm_disbursement_batches / lnm_collection_batches
 // — same lifecycle as the per-row tables).
 const (
-	BatchDraft     = "DRAFT"
-	BatchSubmitted = "PENDING_APPROVAL"
-	BatchApproved  = "APPROVED"
-	BatchRejected  = "REJECTED"
-	BatchCancelled = "CANCELLED"
-	BatchPosted    = "POSTED"
+	BatchDraft        = "DRAFT"
+	BatchSubmitted    = "PENDING_APPROVAL"
+	BatchSubmitFailed = "SUBMIT_FAILED"
+	BatchApproved     = "APPROVED"
+	BatchRejected     = "REJECTED"
+	BatchCancelled    = "CANCELLED"
+	BatchPosted       = "POSTED"
 )
 
 // Batch types dispatched by the gRPC surface and the workflow workers.
@@ -48,8 +49,19 @@ type DisbursementBatch struct {
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
 	// DataVersion is the row version the checker saw (lnm_disbursement_batches.version).
-	DataVersion int64          `json:"data_version"`
-	Rows        []Disbursement `json:"rows,omitempty"`
+	DataVersion int64                    `json:"data_version"`
+	Rows        []Disbursement           `json:"rows,omitempty"`
+	History     []DisbursementBatchEvent `json:"history,omitempty"`
+}
+
+// DisbursementBatchEvent is an append-only workflow and maker audit entry.
+type DisbursementBatchEvent struct {
+	EventType  string    `json:"event_type"`
+	FromStatus string    `json:"from_status,omitempty"`
+	ToStatus   string    `json:"to_status,omitempty"`
+	Detail     string    `json:"detail,omitempty"`
+	Actor      string    `json:"actor,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // CollectionBatch is one batch receipt dossier (1 hồ sơ thu nợ — N hợp đồng,

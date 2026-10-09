@@ -21,6 +21,7 @@ const (
 const (
 	StatusDraft           Status = "DRAFT"
 	StatusPendingApproval Status = "PENDING_APPROVAL"
+	StatusSubmitFailed    Status = "SUBMIT_FAILED"
 	StatusApproved        Status = "APPROVED"
 	StatusRejected        Status = "REJECTED"
 	StatusPosted          Status = "POSTED"
@@ -47,6 +48,8 @@ var allowedTransitions = map[StateMachine][]transition{
 	WorkflowMachine: {
 		{StatusDraft, StatusPendingApproval},
 		{StatusDraft, StatusCancelled},
+		{StatusPendingApproval, StatusSubmitFailed},
+		{StatusSubmitFailed, StatusPendingApproval},
 		{StatusPendingApproval, StatusApproved},
 		{StatusPendingApproval, StatusRejected},
 		{StatusPendingApproval, StatusCancelled},

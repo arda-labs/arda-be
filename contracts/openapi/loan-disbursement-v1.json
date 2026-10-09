@@ -1,0 +1,72 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Arda Loan Disbursement Batches", "version": "1.0.0" },
+  "servers": [{ "url": "https://api.arda.io.vn" }],
+  "security": [{ "ardaSession": [] }],
+  "paths": {
+    "/api/loan/disbursement-batches": {
+      "get": {
+        "operationId": "listDisbursementBatches",
+        "summary": "List tenant disbursement batches",
+        "responses": { "200": { "description": "Paged batch list" }, "401": { "$ref": "#/components/responses/Problem" } }
+      },
+      "post": {
+        "operationId": "createDisbursementBatchDraft",
+        "summary": "Create a DRAFT disbursement batch without starting a workflow",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BatchInput" } } } },
+        "responses": { "201": { "description": "Draft created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Batch" } } } }, "400": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/loan/disbursement-batches/complete": {
+      "post": {
+        "operationId": "createDisbursementCompleteDraft",
+        "summary": "Create a DRAFT complete-disbursement batch",
+        "responses": { "201": { "description": "Draft created" }, "400": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/loan/disbursement-batches/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/BatchId" }],
+      "get": {
+        "operationId": "getDisbursementBatch",
+        "summary": "Read batch rows, workflow case status, and audit history",
+        "responses": { "200": { "description": "Batch detail" }, "404": { "$ref": "#/components/responses/Problem" } }
+      },
+      "put": {
+        "operationId": "updateDisbursementBatchDraft",
+        "summary": "Replace a DRAFT batch using optimistic data_version",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BatchInput" } } } },
+        "responses": { "200": { "description": "Draft updated" }, "409": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/loan/disbursement-batches/{id}/submit": {
+      "parameters": [{ "$ref": "#/components/parameters/BatchId" }],
+      "post": {
+        "operationId": "submitDisbursementBatch",
+        "summary": "Atomically validate, reserve contract headroom, and enqueue workflow submission",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["data_version"], "properties": { "data_version": { "type": "integer", "minimum": 1 } } } } } },
+        "responses": { "202": { "description": "Workflow submission queued", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SubmitAccepted" } } } }, "409": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/loan/disbursement-batches/{id}/cancel": {
+      "parameters": [{ "$ref": "#/components/parameters/BatchId" }],
+      "post": {
+        "operationId": "cancelDisbursementBatchDraft",
+        "summary": "Cancel a DRAFT batch using optimistic data_version",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["data_version"], "properties": { "data_version": { "type": "integer", "minimum": 1 } } } } } },
+        "responses": { "200": { "description": "Draft cancelled" }, "409": { "$ref": "#/components/responses/Problem" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "ardaSession": { "type": "apiKey", "in": "cookie", "name": "arda_session", "x-browser-credentials": "include" } },
+    "parameters": { "BatchId": { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } } },
+    "responses": { "Problem": { "description": "Problem details", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } } },
+    "schemas": {
+      "ResponseMeta": { "type": "object", "properties": { "request_id": { "type": "string" }, "trace_id": { "type": "string" }, "timestamp": { "type": "string", "format": "date-time" } } },
+      "Problem": { "type": "object", "required": ["type", "title", "status"], "properties": { "type": { "type": "string" }, "title": { "type": "string" }, "status": { "type": "integer" }, "detail": { "type": "string" }, "instance": { "type": "string" } } },
+      "BatchInput": { "type": "object", "required": ["txn_date", "rows"], "properties": { "data_version": { "type": "integer", "minimum": 1 }, "txn_date": { "type": "string", "format": "date" }, "payment_method": { "type": "string", "enum": ["CASH", "TRANSFER"] }, "account_code": { "type": "string" }, "description": { "type": "string" }, "rows": { "type": "array", "minItems": 0, "items": { "type": "object", "required": ["contract_code", "agreement_code", "amount_minor"], "properties": { "contract_code": { "type": "string" }, "agreement_code": { "type": "string" }, "amount_minor": { "type": "integer", "minimum": 0 }, "is_closed": { "type": "boolean" } } } } } },
+      "Batch": { "type": "object", "properties": { "id": { "type": "string", "format": "uuid" }, "status": { "type": "string", "enum": ["DRAFT", "PENDING_APPROVAL", "SUBMIT_FAILED", "APPROVED", "REJECTED", "CANCELLED", "POSTED"] }, "data_version": { "type": "integer" }, "rows": { "type": "array", "items": { "type": "object" } }, "history": { "type": "array", "items": { "type": "object" } }, "workflow_case_id": { "type": "string" }, "workflow_case_code": { "type": "string" } } },
+      "SubmitAccepted": { "type": "object", "required": ["batch_id", "reference_no", "status"], "properties": { "batch_id": { "type": "string", "format": "uuid" }, "reference_no": { "type": "string" }, "status": { "const": "PENDING_APPROVAL" }, "data_version": { "type": "integer" } } }
+    }
+  }
+}

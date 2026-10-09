@@ -7,16 +7,15 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
-	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	"strings"
 )
 
 // CreateBatchRegister creates a DRAFT batch REGISTER dossier and its rows in
-// one tx, then opens the LNM_DISB_BATCH_REGISTER_V2 case (PENDING_APPROVAL). Contract
-// headroom validation and reservations happen together under contract locks.
+// one tx. Workflow submission and contract reservations happen only when the
+// maker explicitly submits the saved draft.
 func (s *BatchDisbursementService) CreateBatchRegister(ctx context.Context, tenantID, actor, orgCode string, in *CreateBatchInput) (*domain.DisbursementBatch, error) {
-	if in == nil || len(in.Rows) == 0 {
-		return nil, ardaerrors.New(ardaerrors.CodeRequired, "rows must not be empty")
+	if in == nil {
+		return nil, ardaerrors.New(ardaerrors.CodeRequired, "batch input is required")
 	}
 	if !isValidISODate(in.TxnDate) {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "txn_date must be YYYY-MM-DD")
@@ -87,9 +86,6 @@ func (s *BatchDisbursementService) CreateBatchRegister(ctx context.Context, tena
 			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
 		}
 		return nil, mapRepoError(err)
-	}
-	if err := s.submitBatchCase(ctx, tenantID, actor, batch, BatchDisbRegisterCaseType, "Đăng ký giải ngân theo hồ sơ", "lnm-disb-batch-register", batchRowVarsList(batch.Rows, in.Rows)); err != nil {
-		return nil, err
 	}
 	return batch, nil
 }
@@ -204,9 +200,6 @@ func (s *BatchDisbursementService) CreateBatchComplete(ctx context.Context, tena
 	if err := s.repo.CreateDisbursementBatch(ctx, batch); err != nil {
 		return nil, mapRepoError(err)
 	}
-	if err := s.submitBatchCase(ctx, tenantID, actor, batch, BatchDisbCompleteCaseType, "Hoàn tất giải ngân theo hồ sơ", "lnm-disb-batch-complete", batchRowVarsList(batch.Rows, in.Rows)); err != nil {
-		return nil, err
-	}
 	return batch, nil
 }
 
@@ -228,50 +221,6 @@ func batchRowVarsList(rows []domain.Disbursement, inputs []BatchRowInput) []batc
 		out = append(out, v)
 	}
 	return out
-}
-
-// submitBatchCase opens + submits the batch's workflow case, stamps the case
-// on the batch header and flips it PENDING_APPROVAL.
-func (s *BatchDisbursementService) submitBatchCase(ctx context.Context, tenantID, actor string, batch *domain.DisbursementBatch, caseType, titlePrefix, idempotencyPrefix string, rows []batchRowVars) error {
-	if s.workflow == nil {
-		return ardaerrors.New(ardaerrors.CodeInternal, "workflow client is not configured")
-	}
-	caseCreated, err := s.workflow.CreateCase(ctx, workflowclient.CaseCreate{
-		TenantID:          tenantID,
-		CaseType:          caseType,
-		CaseCode:          "",
-		Title:             titlePrefix + " — " + batch.ID + " (" + batch.TxnDate + ")",
-		PrimaryObjectType: "lnm.disbursement_batch",
-		PrimaryObjectID:   batch.ID,
-		DomainService:     "loan-service",
-		Priority:          "NORMAL",
-		CreatedBy:         actor,
-		IdempotencyKey:    fmt.Sprintf("%s-%s", idempotencyPrefix, batch.ID),
-	})
-	if err != nil {
-		return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
-	}
-	vars := map[string]any{
-		"batchId":               batch.ID,
-		"batchType":             batchTypeOf(caseType),
-		"postingIdempotencyKey": fmt.Sprintf("lnm-disb-batch-%s", batch.ID),
-		"disbursementBatch":     disbursementBatchVars(batch, rows),
-	}
-	if _, err = s.workflow.SubmitCase(ctx, caseCreated.Id, actor, vars, fmt.Sprintf("%s-%s-submit", idempotencyPrefix, batch.ID)); err != nil {
-		return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
-	}
-	if err := s.repo.SetDisbursementBatchCase(ctx, tenantID, batch.ID, caseCreated.Id, caseCreated.GetCaseCode()); err != nil {
-		return mapRepoError(err)
-	}
-	if err := s.repo.SetDisbursementBatchStatus(ctx, tenantID, batch.ID, batch.Status, domain.BatchSubmitted, ""); err != nil {
-		return mapRepoError(err)
-	}
-	batch.Status = domain.BatchSubmitted
-	caseID := caseCreated.Id
-	caseCode := caseCreated.GetCaseCode()
-	batch.WorkflowCaseID = &caseID
-	batch.WorkflowCaseCode = caseCode
-	return nil
 }
 
 func batchTypeOf(caseType string) string {

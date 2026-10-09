@@ -143,6 +143,8 @@ func main() {
 	disbBatchSvc := service.NewBatchDisbursementService(repo, workflow)
 	colBatchSvc := service.NewBatchCollectionService(repo, workflow)
 	batchHandler := handler.NewBatchHandler(disbBatchSvc, colBatchSvc, financeClient)
+	workflowOutboxCtx, stopWorkflowOutbox := context.WithCancel(context.Background())
+	go disbBatchSvc.RunWorkflowOutbox(workflowOutboxCtx, time.Second)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
@@ -204,6 +206,7 @@ func main() {
 	<-quit
 
 	logger.Info("shutting down", "name", cfg.AppName)
+	stopWorkflowOutbox()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {

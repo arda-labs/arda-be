@@ -6,6 +6,7 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
+	"strings"
 )
 
 // List returns one page of the disbursement batch ledger.
@@ -31,7 +32,83 @@ func (s *BatchDisbursementService) Get(ctx context.Context, tenantID, id string)
 		return nil, mapRepoError(err)
 	}
 	batch.Rows = rows
+	history, err := s.repo.GetDisbursementBatchHistory(ctx, tenantID, id)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	batch.History = history
 	return batch, nil
+}
+
+// UpdateDraft replaces a saved DRAFT header and rows under a version guard.
+func (s *BatchDisbursementService) UpdateDraft(ctx context.Context, tenantID, actor, id string, in *CreateBatchInput) (*domain.DisbursementBatch, error) {
+	if in == nil || in.DataVersion <= 0 {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "data_version is required")
+	}
+	current, err := s.repo.GetDisbursementBatch(ctx, tenantID, id)
+	if err != nil {
+		return nil, mapRepoError(err)
+	}
+	if current.Status != domain.BatchDraft {
+		return nil, ardaerrors.New(ardaerrors.CodeConflict, "only DRAFT batches can be edited")
+	}
+	if !isValidISODate(in.TxnDate) {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "txn_date must be YYYY-MM-DD")
+	}
+	method := strings.ToUpper(strings.TrimSpace(in.PaymentMethod))
+	if method == "" {
+		method = "TRANSFER"
+	}
+	if method != "CASH" && method != "TRANSFER" {
+		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "payment_method must be one of: CASH, TRANSFER")
+	}
+	rows := make([]domain.Disbursement, 0, len(in.Rows))
+	var total int64
+	if current.FlowType == domain.FlowRegister {
+		for i, row := range in.Rows {
+			row.ContractCode, row.AgreementCode = strings.TrimSpace(row.ContractCode), strings.TrimSpace(row.AgreementCode)
+			if row.ContractCode == "" || row.AgreementCode == "" || row.AmountMinor <= 0 {
+				return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, fmt.Sprintf("rows[%d]: contract, agreement and positive amount are required", i))
+			}
+			a, err := s.repo.GetAgreementByCode(ctx, tenantID, row.AgreementCode)
+			if err != nil || a.ContractCode != row.ContractCode {
+				return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, fmt.Sprintf("rows[%d]: agreement does not belong to contract", i))
+			}
+			if _, err := s.repo.GetContractByCode(ctx, tenantID, row.ContractCode); err != nil {
+				return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, fmt.Sprintf("rows[%d]: contract not found", i))
+			}
+			rows = append(rows, domain.Disbursement{TenantID: tenantID, ContractCode: row.ContractCode, AgreementCode: row.AgreementCode, DisburseDate: in.TxnDate, DisburseAmtMinor: row.AmountMinor, CurrencyCode: current.CurrencyCode, FlowType: current.FlowType, OrgCode: current.OrgCode, CreatedBy: actor, Status: domain.DisbursementDraft})
+			total += row.AmountMinor
+		}
+	} else {
+		sourceRows, err := s.repo.GetBatchRows(ctx, tenantID, current.SourceBatchID)
+		if err != nil {
+			return nil, mapRepoError(err)
+		}
+		sourceByAgreement := make(map[string]domain.Disbursement, len(sourceRows))
+		for _, row := range sourceRows {
+			sourceByAgreement[row.AgreementCode] = row
+		}
+		for i, row := range in.Rows {
+			source, ok := sourceByAgreement[strings.TrimSpace(row.AgreementCode)]
+			if !ok || row.AmountMinor < 0 {
+				return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, fmt.Sprintf("rows[%d]: invalid source agreement or amount", i))
+			}
+			if row.IsClosed {
+				row.AmountMinor = 0
+			}
+			if row.ContractCode != "" && row.ContractCode != source.ContractCode {
+				return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, fmt.Sprintf("rows[%d]: contract does not match source agreement", i))
+			}
+			rows = append(rows, domain.Disbursement{TenantID: tenantID, ContractCode: source.ContractCode, AgreementCode: source.AgreementCode, DisburseDate: in.TxnDate, DisburseAmtMinor: row.AmountMinor, CurrencyCode: current.CurrencyCode, FlowType: current.FlowType, SourceRegisterID: source.ID, IsClosed: row.IsClosed, OrgCode: current.OrgCode, CreatedBy: actor, Status: domain.DisbursementDraft})
+			total += row.AmountMinor
+		}
+	}
+	updated := &domain.DisbursementBatch{TxnDate: in.TxnDate, PaymentMethod: method, AccountCode: in.AccountCode, Description: in.Description, Trader: in.Trader, TotalAmtMinor: total, Rows: rows}
+	if err := s.repo.UpdateDraftDisbursementBatch(ctx, tenantID, id, actor, in.DataVersion, updated); err != nil {
+		return nil, mapRepoError(err)
+	}
+	return s.Get(ctx, tenantID, id)
 }
 
 // Check validates the batch is actionable (BPMN validate job): PENDING_APPROVAL and

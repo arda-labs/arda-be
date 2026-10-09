@@ -512,6 +512,22 @@ routes:
     permissions:
       - finance.manage
 
+  - id: loan-disbursement-batch-read
+    path: /api/loan/disbursement-batches/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - loan.read
+
+  - id: loan-disbursement-batch-write
+    path: /api/loan/disbursement-batches/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - loan.manage
+
   - id: loan-read
     path: /api/loan/**
     methods: [GET]
