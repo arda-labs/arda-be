@@ -118,18 +118,18 @@ func (r *PostingRepository) ClosingCandidateAccounts(ctx context.Context, tenant
 		WITH latest AS (
 			SELECT MAX(business_date) AS d
 			FROM fin_trial_balance_daily
-			WHERE tenant_id = $1 AND business_date <= $2::date
+			WHERE tenant_id = $1 AND bal_type_code = $3 AND business_date <= $2::date
 		)
 		SELECT d.coa_version, d.account_code, COALESCE(a.name, ''), a.acc_purpose, a.acc_nature,
 		       d.currency_code, `+natural+` AS balance_minor
 		FROM fin_trial_balance_daily d
 		JOIN fin_coa_accounts a
 		  ON a.tenant_id = d.tenant_id AND a.version_code = d.coa_version AND a.acc_code = d.account_code
-		WHERE d.tenant_id = $1
+		WHERE d.tenant_id = $1 AND d.bal_type_code = $3
 		  AND d.business_date = (SELECT l.d FROM latest l)
 		  AND a.acc_purpose IN ('INC', 'EXP')
 		  AND `+natural+` > 0
-		ORDER BY d.account_code, d.currency_code`, tenantID, onDate)
+		ORDER BY d.account_code, d.currency_code`, tenantID, onDate, BalanceTypeActual)
 	if err != nil {
 		return nil, fmt.Errorf("list closing candidates (daily): %w", err)
 	}
@@ -150,10 +150,10 @@ func (r *PostingRepository) ClosingCandidateAccounts(ctx context.Context, tenant
 		FROM fin_account_balances b
 		JOIN fin_coa_accounts a
 		  ON a.tenant_id = b.tenant_id AND a.version_code = b.coa_version AND a.acc_code = b.account_code
-		WHERE b.tenant_id = $1
+		WHERE b.tenant_id = $1 AND b.bal_type_code = $2
 		  AND a.acc_purpose IN ('INC', 'EXP')
 		  AND `+live+` > 0
-		ORDER BY b.account_code, b.currency_code`, tenantID)
+		ORDER BY b.account_code, b.currency_code`, tenantID, BalanceTypeActual)
 	if err != nil {
 		return nil, fmt.Errorf("list closing candidates (live): %w", err)
 	}

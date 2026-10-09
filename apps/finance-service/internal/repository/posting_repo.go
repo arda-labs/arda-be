@@ -245,10 +245,10 @@ func (r *PostingRepository) InsertLines(ctx context.Context, tx *sql.Tx, tenantI
 		analytics := encodeAnalytics(l.ResolvedAnalytics)
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO fin_journal_lines
-				(tenant_id, entry_id, line_no, direction, coa_version, account_code, account_name,
+			(tenant_id, entry_id, line_no, direction, bal_type_code, coa_version, account_code, account_name,
 				 amount_minor, currency_code, counterparty_code, counterparty_name, description, analytics)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-			tenantID, entryID, l.LineNo, l.Direction, l.GetCoaVersion(), l.AccountCode, l.AccountName,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+			tenantID, entryID, l.LineNo, l.Direction, BalanceTypeActual, l.GetCoaVersion(), l.AccountCode, l.AccountName,
 			l.AmountMinor, l.CurrencyCode, nullText(l.GetResolvedAnalytics().GetCustomerCode()), "", l.Description, analytics)
 		if err != nil {
 			return err
@@ -285,7 +285,7 @@ func (r *PostingRepository) GetEntryForReversal(ctx context.Context, tenantID, e
 		return nil, fmt.Errorf("entry status %s cannot be reversed", e.Status)
 	}
 	lines, err := r.db.QueryContext(ctx, `
-		SELECT line_no, direction, coa_version, account_code, account_name, amount_minor, currency_code, counterparty_code, counterparty_name, description, analytics
+		SELECT line_no, direction, bal_type_code, coa_version, account_code, account_name, amount_minor, currency_code, counterparty_code, counterparty_name, description, analytics
 		FROM fin_journal_lines WHERE tenant_id = $1 AND entry_id = $2 ORDER BY line_no`, tenantID, entryID)
 	if err != nil {
 		return nil, err
@@ -293,7 +293,7 @@ func (r *PostingRepository) GetEntryForReversal(ctx context.Context, tenantID, e
 	defer lines.Close()
 	for lines.Next() {
 		var l JournalLineRow
-		if err := lines.Scan(&l.LineNo, &l.Direction, &l.CoaVersion, &l.AccountCode, &l.AccountName, &l.AmountMinor, &l.Currency, &l.CounterpartyCode, &l.CounterpartyName, &l.Description, &l.Analytics); err != nil {
+		if err := lines.Scan(&l.LineNo, &l.Direction, &l.BalTypeCode, &l.CoaVersion, &l.AccountCode, &l.AccountName, &l.AmountMinor, &l.Currency, &l.CounterpartyCode, &l.CounterpartyName, &l.Description, &l.Analytics); err != nil {
 			return nil, err
 		}
 		e.Lines = append(e.Lines, l)
@@ -363,6 +363,7 @@ type EntryForReversal struct {
 type JournalLineRow struct {
 	LineNo           int32
 	Direction        string
+	BalTypeCode      string
 	CoaVersion       string
 	AccountCode      string
 	AccountName      string
@@ -475,8 +476,8 @@ func (r *PostingRepository) Ledger(ctx context.Context, tenantID, accountCode, f
 		SELECT COALESCE(SUM(CASE WHEN l.direction = 'DEBIT' THEN l.amount_minor ELSE -l.amount_minor END), 0)
 		FROM fin_journal_lines l
 		JOIN fin_journal_entries e ON e.id = l.entry_id
-		WHERE l.tenant_id = $1 AND l.account_code = $2 AND e.status IN ('POSTED', 'REVERSED')
-		  AND e.accounting_date < $3::date`, tenantID, accountCode, fromDate).Scan(&opening); err != nil {
+		WHERE l.tenant_id = $1 AND l.account_code = $2 AND l.bal_type_code = $3 AND e.status IN ('POSTED', 'REVERSED')
+		  AND e.accounting_date < $4::date`, tenantID, accountCode, BalanceTypeActual, fromDate).Scan(&opening); err != nil {
 		return 0, nil, err
 	}
 	rows, err := r.db.QueryContext(ctx, `
@@ -486,9 +487,9 @@ func (r *PostingRepository) Ledger(ctx context.Context, tenantID, accountCode, f
 		       e.id::text
 		FROM fin_journal_lines l
 		JOIN fin_journal_entries e ON e.id = l.entry_id
-		WHERE l.tenant_id = $1 AND l.account_code = $2 AND e.status IN ('POSTED', 'REVERSED')
-		  AND e.accounting_date >= $3::date AND e.accounting_date <= $4::date
-		ORDER BY e.accounting_date, e.entry_no, l.line_no`, tenantID, accountCode, fromDate, toDate)
+		WHERE l.tenant_id = $1 AND l.account_code = $2 AND l.bal_type_code = $3 AND e.status IN ('POSTED', 'REVERSED')
+		  AND e.accounting_date >= $4::date AND e.accounting_date <= $5::date
+		ORDER BY e.accounting_date, e.entry_no, l.line_no`, tenantID, accountCode, BalanceTypeActual, fromDate, toDate)
 	if err != nil {
 		return 0, nil, err
 	}

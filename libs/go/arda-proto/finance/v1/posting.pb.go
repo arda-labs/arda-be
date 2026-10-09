@@ -1206,6 +1206,7 @@ type JournalEntryDetailLine struct {
 	AmountMinor   int64                  `protobuf:"varint,5,opt,name=amount_minor,json=amountMinor,proto3" json:"amount_minor,omitempty"`
 	CurrencyCode  string                 `protobuf:"bytes,6,opt,name=currency_code,json=currencyCode,proto3" json:"currency_code,omitempty"`
 	Description   string                 `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
+	BalTypeCode   string                 `protobuf:"bytes,8,opt,name=bal_type_code,json=balTypeCode,proto3" json:"bal_type_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1285,6 +1286,13 @@ func (x *JournalEntryDetailLine) GetCurrencyCode() string {
 func (x *JournalEntryDetailLine) GetDescription() string {
 	if x != nil {
 		return x.Description
+	}
+	return ""
+}
+
+func (x *JournalEntryDetailLine) GetBalTypeCode() string {
+	if x != nil {
+		return x.BalTypeCode
 	}
 	return ""
 }
@@ -1575,7 +1583,7 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\x16GetJournalEntryRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x19\n" +
 	"\bentry_no\x18\x02 \x01(\tR\aentryNo\x12\x19\n" +
-	"\bentry_id\x18\x03 \x01(\tR\aentryId\"\xff\x01\n" +
+	"\bentry_id\x18\x03 \x01(\tR\aentryId\"\xa3\x02\n" +
 	"\x16JournalEntryDetailLine\x12\x17\n" +
 	"\aline_no\x18\x01 \x01(\x05R\x06lineNo\x12\x1c\n" +
 	"\tdirection\x18\x02 \x01(\tR\tdirection\x12!\n" +
@@ -1583,7 +1591,8 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\faccount_name\x18\x04 \x01(\tR\vaccountName\x12!\n" +
 	"\famount_minor\x18\x05 \x01(\x03R\vamountMinor\x12#\n" +
 	"\rcurrency_code\x18\x06 \x01(\tR\fcurrencyCode\x12 \n" +
-	"\vdescription\x18\a \x01(\tR\vdescription\"\x82\x06\n" +
+	"\vdescription\x18\a \x01(\tR\vdescription\x12\"\n" +
+	"\rbal_type_code\x18\b \x01(\tR\vbalTypeCode\"\x82\x06\n" +
 	"\x12JournalEntryDetail\x12(\n" +
 	"\x10journal_entry_id\x18\x01 \x01(\tR\x0ejournalEntryId\x12\x19\n" +
 	"\bentry_no\x18\x02 \x01(\x03R\aentryNo\x12'\n" +
