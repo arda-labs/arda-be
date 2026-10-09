@@ -26,14 +26,20 @@ func TestResolveMakerCheckerHandlersRejectsUnknownKind(t *testing.T) {
 }
 
 func TestValidateMakerCheckerDependenciesFailsClosed(t *testing.T) {
-	if err := ValidateMakerCheckerDependencies([]string{"lnm.recovery"}, false); err == nil {
+	if err := ValidateMakerCheckerDependencies([]string{"lnm.recovery"}, false, false); err == nil {
 		t.Fatal("active maker-checker worker kind must fail startup without loan-service")
 	}
-	if err := ValidateMakerCheckerDependencies(nil, false); err != nil {
+	if err := ValidateMakerCheckerDependencies(nil, false, false); err != nil {
 		t.Fatalf("no shared worker kinds should not require loan-service: %v", err)
 	}
-	if err := ValidateMakerCheckerDependencies([]string{"lnm.recovery"}, true); err != nil {
+	if err := ValidateMakerCheckerDependencies([]string{"lnm.recovery"}, true, false); err != nil {
 		t.Fatalf("available loan-service should satisfy worker dependency: %v", err)
+	}
+	if err := ValidateMakerCheckerDependencies([]string{"lnm.disb-batch-register"}, true, false); err == nil {
+		t.Fatal("active batch disbursement kind must fail startup without finance-service")
+	}
+	if err := ValidateMakerCheckerDependencies([]string{"lnm.disb-batch-register"}, true, true); err != nil {
+		t.Fatalf("available loan and finance services should satisfy batch dependency: %v", err)
 	}
 }
 
@@ -78,5 +84,22 @@ func TestMakerCheckerRegistersSupportedKindsBeforeAnyOperationIsConfigured(t *te
 		if registration.Handler == nil {
 			t.Fatalf("topic %q has no handler", registration.Topic)
 		}
+	}
+}
+
+func TestMakerCheckerWorkersAcceptsBatchFlowHandlers(t *testing.T) {
+	noop := func(worker.JobClient, entities.Job) {}
+	workers, err := NewMakerCheckerWorkersWithAdditional(nil,
+		[]string{"lnm.disb-batch-register"}, nil,
+		map[string]MakerCheckerHandlers{
+			"lnm.disb-batch-register": {Validate: noop, Execute: noop, Cancel: noop},
+		},
+	)
+	if err != nil {
+		t.Fatalf("construct batch maker-checker workers: %v", err)
+	}
+	got, ok := resolveMakerCheckerHandlers("lnm.disb-batch-register", workers.handlers)
+	if !ok || got.validate == nil || got.execute == nil || got.cancel == nil {
+		t.Fatalf("batch handlers = %+v, %v; want validate/execute/cancel", got, ok)
 	}
 }

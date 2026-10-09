@@ -4,8 +4,14 @@
 
   <bpmn:process id="common-maker-checker" name="Maker-checker dùng chung" isExecutable="true">
     <bpmn:startEvent id="Start_Submitted" name="Đã khởi tạo">
-      <bpmn:outgoing>Flow_Start_Maker</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Start_Entry</bpmn:outgoing>
     </bpmn:startEvent>
+
+    <bpmn:exclusiveGateway id="GW_Entry" name="Hồ sơ đã nhập" default="Flow_Entry_Maker">
+      <bpmn:incoming>Flow_Start_Entry</bpmn:incoming>
+      <bpmn:outgoing>Flow_Entry_Maker</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Entry_Validate</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
 
     <bpmn:userTask id="UT_MakerInput" name="Nhập hồ sơ thu hồi nợ">
       <bpmn:extensionElements>
@@ -15,8 +21,8 @@
           <zeebe:header key="stepCode" value="maker_input" />
         </zeebe:taskHeaders>
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_Start_Maker</bpmn:incoming>
-      <bpmn:incoming>Flow_ValidateError_Maker</bpmn:incoming>
+      <bpmn:incoming>Flow_Entry_Maker</bpmn:incoming>
+      <bpmn:incoming>Flow_ValidationError_Maker</bpmn:incoming>
       <bpmn:incoming>Flow_Decision_Supplement</bpmn:incoming>
       <bpmn:outgoing>Flow_Maker_Validate</bpmn:outgoing>
     </bpmn:userTask>
@@ -26,12 +32,19 @@
         <zeebe:taskDefinition type="mc.validate" retries="3" />
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_Maker_Validate</bpmn:incoming>
+      <bpmn:incoming>Flow_Entry_Validate</bpmn:incoming>
       <bpmn:outgoing>Flow_Validate_Checker</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:boundaryEvent id="Err_Validate" attachedToRef="ST_Validate">
-      <bpmn:outgoing>Flow_ValidateError_Maker</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ValidationError_Start</bpmn:outgoing>
       <bpmn:errorEventDefinition errorRef="Error_ValidationFailed" />
     </bpmn:boundaryEvent>
+
+    <bpmn:exclusiveGateway id="GW_ValidationFailure" name="Có thể bổ sung hồ sơ?" default="Flow_ValidationError_Maker">
+      <bpmn:incoming>Flow_ValidationError_Start</bpmn:incoming>
+      <bpmn:outgoing>Flow_ValidationError_Maker</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ValidationError_Cancel</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
 
     <bpmn:userTask id="UT_CheckerReview" name="Phê duyệt thu hồi nợ">
       <bpmn:extensionElements>
@@ -65,6 +78,7 @@
         <zeebe:taskDefinition type="mc.cancel" retries="3" />
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_Decision_Reject</bpmn:incoming>
+      <bpmn:incoming>Flow_ValidationError_Cancel</bpmn:incoming>
       <bpmn:outgoing>Flow_Cancel_End</bpmn:outgoing>
     </bpmn:serviceTask>
 
@@ -75,9 +89,17 @@
       <bpmn:incoming>Flow_Cancel_End</bpmn:incoming>
     </bpmn:endEvent>
 
-    <bpmn:sequenceFlow id="Flow_Start_Maker" sourceRef="Start_Submitted" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_Start_Entry" sourceRef="Start_Submitted" targetRef="GW_Entry" />
+    <bpmn:sequenceFlow id="Flow_Entry_Maker" sourceRef="GW_Entry" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_Entry_Validate" sourceRef="GW_Entry" targetRef="ST_Validate">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=mcSkipMakerInput = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_Maker_Validate" sourceRef="UT_MakerInput" targetRef="ST_Validate" />
-    <bpmn:sequenceFlow id="Flow_ValidateError_Maker" sourceRef="Err_Validate" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_ValidationError_Start" sourceRef="Err_Validate" targetRef="GW_ValidationFailure" />
+    <bpmn:sequenceFlow id="Flow_ValidationError_Maker" sourceRef="GW_ValidationFailure" targetRef="UT_MakerInput" />
+    <bpmn:sequenceFlow id="Flow_ValidationError_Cancel" sourceRef="GW_ValidationFailure" targetRef="ST_Cancel">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=mcSkipMakerInput = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_Validate_Checker" sourceRef="ST_Validate" targetRef="UT_CheckerReview" />
     <bpmn:sequenceFlow id="Flow_Checker_Decision" sourceRef="UT_CheckerReview" targetRef="GW_Decision" />
     <bpmn:sequenceFlow id="Flow_Decision_Approve" sourceRef="GW_Decision" targetRef="ST_Execute">
@@ -94,6 +116,7 @@
   <bpmndi:BPMNDiagram id="BPMNDiagram_Definitions_CommonMakerChecker">
     <bpmndi:BPMNPlane id="BPMNPlane_Definitions_CommonMakerChecker" bpmnElement="common-maker-checker">
       <bpmndi:BPMNShape id="Shape_Start_Submitted" bpmnElement="Start_Submitted"><dc:Bounds x="120" y="180" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_GW_Entry" bpmnElement="GW_Entry" isMarkerVisible="true"><dc:Bounds x="165" y="173" width="50" height="50" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_UT_MakerInput" bpmnElement="UT_MakerInput"><dc:Bounds x="200" y="320" width="160" height="80" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_ST_Validate" bpmnElement="ST_Validate"><dc:Bounds x="210" y="158" width="140" height="80" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_UT_CheckerReview" bpmnElement="UT_CheckerReview"><dc:Bounds x="400" y="158" width="170" height="80" /></bpmndi:BPMNShape>
@@ -103,9 +126,14 @@
       <bpmndi:BPMNShape id="Shape_End_Approved" bpmnElement="End_Approved"><dc:Bounds x="950" y="180" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_End_Rejected" bpmnElement="End_Rejected"><dc:Bounds x="950" y="52" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Err_Validate" bpmnElement="Err_Validate"><dc:Bounds x="292" y="120" width="36" height="36" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Edge_Flow_Start_Maker" bpmnElement="Flow_Start_Maker"><di:waypoint x="156" y="198" /><di:waypoint x="156" y="360" /><di:waypoint x="200" y="360" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_GW_ValidationFailure" bpmnElement="GW_ValidationFailure" isMarkerVisible="true"><dc:Bounds x="350" y="120" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_Start_Entry" bpmnElement="Flow_Start_Entry"><di:waypoint x="156" y="198" /><di:waypoint x="165" y="198" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Entry_Maker" bpmnElement="Flow_Entry_Maker"><di:waypoint x="190" y="223" /><di:waypoint x="190" y="360" /><di:waypoint x="200" y="360" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_Entry_Validate" bpmnElement="Flow_Entry_Validate"><di:waypoint x="215" y="198" /><di:waypoint x="210" y="198" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Maker_Validate" bpmnElement="Flow_Maker_Validate"><di:waypoint x="280" y="320" /><di:waypoint x="280" y="238" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_ValidateError_Maker" bpmnElement="Flow_ValidateError_Maker"><di:waypoint x="310" y="156" /><di:waypoint x="310" y="280" /><di:waypoint x="280" y="280" /><di:waypoint x="280" y="320" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ValidationError_Start" bpmnElement="Flow_ValidationError_Start"><di:waypoint x="328" y="138" /><di:waypoint x="350" y="145" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ValidationError_Maker" bpmnElement="Flow_ValidationError_Maker"><di:waypoint x="375" y="170" /><di:waypoint x="375" y="280" /><di:waypoint x="280" y="280" /><di:waypoint x="280" y="320" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_ValidationError_Cancel" bpmnElement="Flow_ValidationError_Cancel"><di:waypoint x="400" y="145" /><di:waypoint x="730" y="70" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Validate_Checker" bpmnElement="Flow_Validate_Checker"><di:waypoint x="350" y="198" /><di:waypoint x="400" y="198" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Checker_Decision" bpmnElement="Flow_Checker_Decision"><di:waypoint x="570" y="198" /><di:waypoint x="620" y="198" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_Decision_Approve" bpmnElement="Flow_Decision_Approve"><di:waypoint x="670" y="198" /><di:waypoint x="730" y="198" /></bpmndi:BPMNEdge>

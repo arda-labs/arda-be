@@ -172,10 +172,6 @@ func main() {
 		logger.Error("failed to list active maker-checker worker kinds", "err", err)
 		os.Exit(1)
 	}
-	if err := worker.ValidateMakerCheckerDependencies(makerCheckerKinds, loanErr == nil); err != nil {
-		logger.Error("maker-checker workers cannot be registered", "err", err)
-		os.Exit(1)
-	}
 
 	iamClient, err := iamclient.Dial(context.Background(), cfg.IAMGRPCAddr, cfg.AppName)
 	if err != nil {
@@ -318,10 +314,24 @@ func main() {
 		defer financeClient.Close()
 		logger.Info("finance grpc configured", "addr", cfg.FinanceGRPCAddr)
 	}
+	if err := worker.ValidateMakerCheckerDependencies(makerCheckerKinds, loanErr == nil, financeErr == nil); err != nil {
+		logger.Error("maker-checker workers cannot be registered", "err", err)
+		os.Exit(1)
+	}
 
 	if loanErr == nil {
 		loanWorkers := worker.NewLoanWorkers(loanClient, caseRepo)
-		makerCheckerWorkers, err := worker.NewMakerCheckerWorkers(loanWorkers, makerCheckerKinds, loanclient.Kinds)
+		var additionalMakerCheckerHandlers map[string]worker.MakerCheckerHandlers
+		var batchRegister, batchComplete *worker.BatchWorkers
+		if financeErr == nil {
+			batchRegister = worker.NewBatchWorkers(worker.BatchDisbRegisterFlow, loanClient, financeClient, caseRepo)
+			batchComplete = worker.NewBatchWorkers(worker.BatchDisbCompleteFlow, loanClient, financeClient, caseRepo)
+			additionalMakerCheckerHandlers = map[string]worker.MakerCheckerHandlers{
+				"lnm.disb-batch-register": batchRegister.MakerCheckerHandlers(),
+				"lnm.disb-batch-complete": batchComplete.MakerCheckerHandlers(),
+			}
+		}
+		makerCheckerWorkers, err := worker.NewMakerCheckerWorkersWithAdditional(loanWorkers, makerCheckerKinds, loanclient.Kinds, additionalMakerCheckerHandlers)
 		if err != nil {
 			logger.Error("invalid maker-checker worker configuration", "err", err)
 			os.Exit(1)
@@ -424,7 +434,6 @@ func main() {
 			// Reserve → Validate → Post / Release lifecycle, one N-line
 			// posting per batch, settle loops the per-row semantics in
 			// loan-service.
-			batchRegister := worker.NewBatchWorkers(worker.BatchDisbRegisterFlow, loanClient, financeClient, caseRepo)
 			bri, brv, bre, brc := batchRegister.Handlers()
 			briw := zeebeSvc.NewJobWorker("lnm.disb-batch-register.init", bri)
 			brvw := zeebeSvc.NewJobWorker("lnm.disb-batch-register.validate", brv)
@@ -435,7 +444,6 @@ func main() {
 			defer brew.Close()
 			defer brcw.Close()
 
-			batchComplete := worker.NewBatchWorkers(worker.BatchDisbCompleteFlow, loanClient, financeClient, caseRepo)
 			bci, bcv, bce, bcc := batchComplete.Handlers()
 			bciw := zeebeSvc.NewJobWorker("lnm.disb-batch-complete.init", bci)
 			bcvw := zeebeSvc.NewJobWorker("lnm.disb-batch-complete.validate", bcv)

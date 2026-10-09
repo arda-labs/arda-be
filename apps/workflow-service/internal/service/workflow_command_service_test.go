@@ -35,6 +35,16 @@ func TestBuildCaseVariablesIncludesAuthoritativeMakerCheckerConfig(t *testing.T)
 	}
 }
 
+func TestBuildCaseVariablesStartsSubmittedDisbursementAtValidation(t *testing.T) {
+	bc := testCaseForSubmitVariables()
+	bc.CaseType = "LNM_DISB_BATCH_REGISTER_V2"
+	bc.WorkerKind = "lnm.disb-batch-register"
+	variables := buildCaseVariables(bc, "maker-1", nil)
+	if variables["mcSkipMakerInput"] != true {
+		t.Fatalf("mcSkipMakerInput = %#v, want true for submitted batch", variables["mcSkipMakerInput"])
+	}
+}
+
 func TestBuildCaseVariablesIgnoresClientSystemKeys(t *testing.T) {
 	bc := testCaseForSubmitVariables()
 	client := map[string]any{
@@ -50,6 +60,7 @@ func TestBuildCaseVariablesIgnoresClientSystemKeys(t *testing.T) {
 		"actor_user_id":     "victim-1",
 		"createdBy":         "victim-1",
 		"created_by":        "victim-1",
+		"mcSkipMakerInput":  true,
 		"amount":            float64(1500),
 		"note":              "ok",
 	}
@@ -75,6 +86,9 @@ func TestBuildCaseVariablesIgnoresClientSystemKeys(t *testing.T) {
 	}
 	if got["amount"] != float64(1500) || got["note"] != "ok" {
 		t.Fatalf("non-reserved client variables were dropped: %v", got)
+	}
+	if got["mcSkipMakerInput"] != false {
+		t.Fatalf("client input must not skip the maker step: mcSkipMakerInput=%v", got["mcSkipMakerInput"])
 	}
 	if client["tenantId"] != "tenant-attacker" || client["caseId"] != "case-attacker" {
 		t.Fatalf("buildCaseVariables mutated the client map: %v", client)
