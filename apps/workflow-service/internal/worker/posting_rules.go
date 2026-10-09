@@ -19,7 +19,7 @@ type postingLeg = financeclient.PostingLeg
 
 // fetchPostingRules loads the rule card for a document type. Any failure
 // degrades to nil — the built-in fallback classifications take over.
-func fetchPostingRules(ctx context.Context, financeClient *financeclient.Client, documentType string) []*financev1.PostingRule {
+func fetchPostingRules(ctx context.Context, financeClient financeclient.PostingRulesClient, documentType string) []*financev1.PostingRule {
 	return financeclient.FetchPostingRules(ctx, financeClient, documentType)
 }
 

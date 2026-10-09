@@ -15,6 +15,14 @@ func ClassifyPostingError(err error) financev1.PostingErrorCode {
 	}
 	message := strings.ToUpper(err.Error())
 	switch {
+	case strings.Contains(message, "NO_LINES"):
+		return financev1.PostingErrorCode_POSTING_ERROR_CODE_NO_LINES
+	case strings.Contains(message, "INVALID_DIRECTION"):
+		return financev1.PostingErrorCode_POSTING_ERROR_CODE_INVALID_DIRECTION
+	case strings.Contains(message, "CLASSIFICATION_REQUIRED"):
+		return financev1.PostingErrorCode_POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED
+	case strings.Contains(message, "UNKNOWN_DIMENSION"):
+		return financev1.PostingErrorCode_POSTING_ERROR_CODE_UNKNOWN_DIMENSION
 	case strings.Contains(message, "UNBALANCED"):
 		return financev1.PostingErrorCode_POSTING_ERROR_CODE_UNBALANCED
 	case strings.Contains(message, "PERIOD_CLOSED"):

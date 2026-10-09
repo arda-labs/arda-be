@@ -67,11 +67,28 @@ func isBusinessPostingErrorCode(code financev1.PostingErrorCode) bool {
 		financev1.PostingErrorCode_POSTING_ERROR_CODE_CURRENCY_MISMATCH,
 		financev1.PostingErrorCode_POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_CURRENT_DATE,
 		financev1.PostingErrorCode_POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_BACKDATE,
-		financev1.PostingErrorCode_POSTING_ERROR_CODE_POSTING_DATE_BEFORE_CLOSING_LOCK:
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_POSTING_DATE_BEFORE_CLOSING_LOCK,
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_NO_LINES,
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_INVALID_DIRECTION,
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED,
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_UNKNOWN_DIMENSION:
 		return true
 	default:
 		return false
 	}
+}
+
+// A successful Validate RPC with Valid=false is always a business rejection,
+// including new or free-text validation messages unknown to this worker.
+func routeInvalidValidation(result *financev1.ValidationResult, journalEntryID string, release func() error,
+	onBusiness func(financev1.PostingErrorCode, string), onTransient func(error)) {
+	if journalEntryID != "" && release != nil {
+		if err := release(); err != nil {
+			onTransient(fmt.Errorf("releasing invalid posting hold failed: %w", err))
+			return
+		}
+	}
+	onBusiness(financev1.PostingErrorCode_POSTING_ERROR_CODE_UNSPECIFIED, validationErrorsMessage(result))
 }
 
 // routePostingFailure releases any existing PENDING hold before returning a
