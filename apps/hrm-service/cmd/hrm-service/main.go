@@ -81,7 +81,7 @@ func main() {
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
 			interceptors.UnaryServerRecovery(logger),
-			interceptors.UnaryServerServiceAuth(serviceSecret, "hrm-service", map[string]struct{}{"workflow-service": {}}),
+			interceptors.UnaryServerServiceAuth(serviceSecret, "hrm-service", map[string]struct{}{"workflow-service": {}, "notification-service": {}}),
 			interceptors.UnaryServerLogging(logger),
 		),
 	)

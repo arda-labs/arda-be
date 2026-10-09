@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -184,12 +185,13 @@ type StepResult struct {
 // SeedJobs upserts the default COB sequence (loan accrual -> provision).
 func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
 	jobs := []EODStepDefinition{
-		{Code: "LNM_ACCRUAL_DAILY", Name: "Tính lãi cho vay (EOD)", Module: "loan", Order: 10, Endpoint: "http://loan-service:8080/internal/jobs/accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
-		{Code: "DPM_ACCRUAL_DAILY", Name: "Dự chi lãi tiền gửi (EOD)", Module: "deposit", Order: 15, Endpoint: "http://deposit-service:8080/internal/jobs/deposit-accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+		{Code: "LNM_ACCRUAL_DAILY", Name: "Tính lãi cho vay (EOD)", Module: "loan", Order: 10, DependsOn: []string{}, Endpoint: "http://loan-service:8080/internal/jobs/accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+		{Code: "DPM_ACCRUAL_DAILY", Name: "Dự chi lãi tiền gửi (EOD)", Module: "deposit", Order: 15, DependsOn: []string{}, Endpoint: "http://deposit-service:8080/internal/jobs/deposit-accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
 		{Code: "LNM_PROVISION_DAILY", Name: "Trích lập dự phòng (EOD)", Module: "loan", Order: 20, DependsOn: []string{"LNM_ACCRUAL_DAILY"}, Endpoint: "http://loan-service:8080/internal/jobs/provision-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+		{Code: "LNM_AGREEMENT_DAILY_SNAPSHOT", Name: "Chụp số dư khế ước (EOD)", Module: "loan", Order: 25, DependsOn: []string{"LNM_PROVISION_DAILY"}, Endpoint: "http://loan-service:8080/internal/jobs/agreement-daily-snapshot", Mandatory: true, StopOnFail: true, Retryable: true},
 		// P3a reporting foundation: rebuild fin_trial_balance_daily after
 		// the loan steps so statements see the day's accrual/provision posts.
-		{Code: "FIN_TRIAL_BALANCE_DAILY", Name: "Tổng hợp số dư hằng ngày (EOD)", Module: "finance", Order: 30, DependsOn: []string{"LNM_ACCRUAL_DAILY", "DPM_ACCRUAL_DAILY", "LNM_PROVISION_DAILY"}, Endpoint: "http://finance-service:8080/internal/jobs/trial-balance-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+		{Code: "FIN_TRIAL_BALANCE_DAILY", Name: "Tổng hợp số dư hằng ngày (EOD)", Module: "finance", Order: 30, DependsOn: []string{"LNM_ACCRUAL_DAILY", "DPM_ACCRUAL_DAILY", "LNM_PROVISION_DAILY", "LNM_AGREEMENT_DAILY_SNAPSHOT"}, Endpoint: "http://finance-service:8080/internal/jobs/trial-balance-daily", Mandatory: true, StopOnFail: true, Retryable: true},
 		// Reporting data layer: materialise the fact read model from the
 		// domain services after the day's posts so period reports see the
 		// as-of snapshot (arda-be/docs/reporting-data-layer.md).
@@ -203,6 +205,10 @@ func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
 		{Code: "RPT_EVALUATE_RULES", Name: "Đánh giá ngưỡng cảnh báo chỉ tiêu (EOD)", Module: "statistical", Order: 40, DependsOn: []string{"RPT_RECONCILE_ACCOUNTING"}, Endpoint: "http://statistical-service:8080/internal/jobs/evaluate-rules", Mandatory: true, StopOnFail: true, Retryable: true},
 	}
 	for _, j := range jobs {
+		dependsOn := j.DependsOn
+		if dependsOn == nil {
+			dependsOn = []string{}
+		}
 		if _, err := s.db.ExecContext(ctx, `
 			INSERT INTO plt_job_definitions (tenant_id, code, name, sequence, endpoint, is_enabled, created_by, module, depends_on, mandatory, stop_on_fail, retryable)
 			VALUES ($1,$2,$3,$4,$5,true,'seed',$6,$7,$8,$9,$10)
@@ -211,7 +217,7 @@ func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
 				mandatory=EXCLUDED.mandatory, stop_on_fail=EXCLUDED.stop_on_fail,
 				retryable=EXCLUDED.retryable, updated_at = now()
 			WHERE plt_job_definitions.created_by = 'seed'`,
-			tenantID, j.Code, j.Name, j.Order, j.Endpoint, j.Module, j.DependsOn, j.Mandatory, j.StopOnFail, j.Retryable); err != nil {
+			tenantID, j.Code, j.Name, j.Order, j.Endpoint, j.Module, dependsOn, j.Mandatory, j.StopOnFail, j.Retryable); err != nil {
 			return err
 		}
 	}
@@ -376,7 +382,7 @@ func (s *EODService) RunSystem(ctx context.Context, requestedDate string) (*RunR
 }
 
 func (s *EODService) listEODSteps(ctx context.Context, tenantID string) ([]EODStepDefinition, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT code, name, module, sequence, depends_on, mandatory, stop_on_fail, retryable, endpoint
+	rows, err := s.db.QueryContext(ctx, `SELECT code, name, module, sequence, to_json(depends_on)::text, mandatory, stop_on_fail, retryable, endpoint
 		FROM plt_job_definitions WHERE tenant_id=$1 AND is_enabled ORDER BY sequence,code`, tenantID)
 	if err != nil {
 		return nil, err
@@ -385,8 +391,12 @@ func (s *EODService) listEODSteps(ctx context.Context, tenantID string) ([]EODSt
 	steps := make([]EODStepDefinition, 0)
 	for rows.Next() {
 		var item EODStepDefinition
-		if err := rows.Scan(&item.Code, &item.Name, &item.Module, &item.Order, &item.DependsOn, &item.Mandatory, &item.StopOnFail, &item.Retryable, &item.Endpoint); err != nil {
+		var dependencies string
+		if err := rows.Scan(&item.Code, &item.Name, &item.Module, &item.Order, &dependencies, &item.Mandatory, &item.StopOnFail, &item.Retryable, &item.Endpoint); err != nil {
 			return nil, err
+		}
+		if err := json.Unmarshal([]byte(dependencies), &item.DependsOn); err != nil {
+			return nil, fmt.Errorf("decode EOD step %s dependencies: %w", item.Code, err)
 		}
 		steps = append(steps, item)
 	}

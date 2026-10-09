@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -30,6 +32,7 @@ import (
 	transport "github.com/arda-labs/arda/apps/notification-service/internal/transport/http"
 	"github.com/arda-labs/arda/apps/notification-service/internal/worker"
 	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
+	hrmmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/hrm"
 	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
@@ -80,6 +83,7 @@ func main() {
 	// Resolve recipient emails for the email channel through iam. Optional: when
 	// unset, email deliveries require an explicit recipient address.
 	var emailResolver service.EmailResolver
+	var recipientIAM *iamclient.Client
 	if addr := strings.TrimSpace(cfg.IAMGRPCAddr); addr != "" {
 		iamClient, dialErr := iamclient.Dial(context.Background(), addr, "notification-service")
 		if dialErr != nil {
@@ -87,12 +91,26 @@ func main() {
 			os.Exit(1)
 		}
 		defer iamClient.Close()
+		recipientIAM = iamClient
 		emailResolver = &iamEmailResolver{client: iamClient}
 		logger.Info("iam email resolver configured", "addr", addr)
 	} else {
 		logger.Warn("IAM_GRPC_ADDR not set — email deliveries need an explicit recipient address")
 	}
+	var recipientHRM *hrmmclient.Client
+	if addr := strings.TrimSpace(cfg.HRMGRPCAddr); addr != "" {
+		hrmClient, dialErr := hrmmclient.Dial(context.Background(), addr, "notification-service", logger)
+		if dialErr != nil {
+			logger.Error("hrm grpc dial failed", "addr", addr, "err", dialErr)
+			os.Exit(1)
+		}
+		defer hrmClient.Close()
+		recipientHRM = hrmClient
+	} else {
+		logger.Warn("HRM_GRPC_ADDR not set — org-unit notification selectors are unavailable")
+	}
 	notificationService := service.NewNotificationService(notificationRepo, pushSender, emailResolver)
+	notificationService.SetDefaultLocale(cfg.DefaultLocale)
 	serviceSecret, err := identity.SecretFromEnv()
 	if err != nil {
 		logger.Error("service identity unavailable", "err", err)
@@ -163,11 +181,7 @@ func main() {
 	}
 	notificationHandler.SetStreamHub(streamHub)
 	notificationHandler.SetInboxChangePublisher(func(tenantID, userID string) error {
-		payload, err := json.Marshal(map[string]string{"tenant_id": tenantID, "user_id": userID})
-		if err != nil {
-			return err
-		}
-		return nc.Publish(handler.UserInboxChangedSubject, payload)
+		return publishUserInboxChange(nc, userInboxChange{TenantID: tenantID, UserID: userID, Type: "state_changed"})
 	})
 	logger.Info("Notification SSE event subscription started", "subject", ardaevents.SubjectNotificationInboxCreated)
 	publisher, publisherErr := appevents.NewNATSPublisher(nc)
@@ -246,6 +260,31 @@ func main() {
 	}()
 	logger.Info("Statistical breach consumer started", "subject", appevents.StatisticalBreachSubject)
 
+	var directory appevents.RecipientDirectory
+	if recipientIAM != nil {
+		directory = notificationRecipientDirectory{iam: recipientIAM, hrm: recipientHRM}
+	}
+	if directory == nil {
+		logger.Warn("IAM recipient resolver unavailable; workflow and loan notification events will be retried")
+	}
+	for _, subject := range domainNotificationSubjects {
+		consumer, consumerErr := appevents.NewConsumer(nc, subject, domainDurableName(subject))
+		if consumerErr != nil {
+			logger.Error("domain notification consumer setup failed", "subject", subject, "err", consumerErr)
+			os.Exit(1)
+		}
+		go func(subject string, consumer *appevents.Consumer) {
+			runErr := consumer.Run(workerCtx, func(ctx context.Context, msg *nats.Msg) error {
+				return handleDomainNotificationEvent(ctx, msg, subject, notificationRepo, notificationService, directory, cfg.ManagementGroup, cfg.DefaultLocale, logger,
+					func(change userInboxChange) error { return publishUserInboxChange(nc, change) })
+			})
+			if runErr != nil && workerCtx.Err() == nil {
+				logger.Error("domain notification consumer stopped", "subject", subject, "err", runErr)
+			}
+		}(subject, consumer)
+		logger.Info("domain notification consumer started", "subject", subject)
+	}
+
 	// Keep SSE streams open (inbox poll). Read header timeout only.
 	srv := &http.Server{
 		Addr:        cfg.HTTPAddr,
@@ -311,4 +350,210 @@ func (r *iamEmailResolver) ResolveEmails(ctx context.Context, userIDs []string) 
 		}
 	}
 	return out, nil
+}
+
+var domainNotificationSubjects = []string{
+	appevents.WorkflowTaskAssignedSubject,
+	appevents.WorkflowTaskOverdueSubject,
+	appevents.WorkflowTaskCompletedSubject,
+	appevents.WorkflowTaskReassignedSubject,
+	appevents.WorkflowTaskSLAWarningSubject,
+	"arda.workflow.case.approved.v1",
+	"arda.workflow.case.rejected.v1",
+	"arda.workflow.case.failed.v1",
+	"arda.loan.disbursement.approved.v1",
+	"arda.loan.disbursement.rejected.v1",
+	"arda.loan.disbursement.failed.v1",
+}
+
+type notificationRecipientDirectory struct {
+	iam *iamclient.Client
+	hrm *hrmmclient.Client
+}
+
+func (d notificationRecipientDirectory) ResolveNotificationRecipients(ctx context.Context, tenant string, users, groups, roles []string) ([]string, error) {
+	if d.iam == nil {
+		return nil, errors.New("IAM recipient resolver is unavailable")
+	}
+	return d.iam.ResolveNotificationRecipients(ctx, tenant, users, groups, roles)
+}
+
+func (d notificationRecipientDirectory) ListIAMUsersByOrgUnit(ctx context.Context, tenant, unit string, descendants bool) ([]string, error) {
+	if d.hrm == nil {
+		return nil, errors.New("HRM org-unit recipient resolver is unavailable")
+	}
+	return d.hrm.ListIAMUsersByOrgUnit(ctx, tenant, unit, descendants)
+}
+
+func domainDurableName(subject string) string {
+	return "notification-" + strings.NewReplacer(".", "-", "_", "-").Replace(strings.TrimPrefix(subject, "arda.")) + "-cg"
+}
+
+type userInboxChange struct {
+	TenantID   string `json:"tenant_id"`
+	UserID     string `json:"user_id"`
+	Type       string `json:"type,omitempty"`
+	EventID    string `json:"event_id,omitempty"`
+	EntityType string `json:"entity_type,omitempty"`
+	EntityID   string `json:"entity_id,omitempty"`
+}
+
+func publishUserInboxChange(conn *nats.Conn, change userInboxChange) error {
+	payload, err := json.Marshal(change)
+	if err != nil {
+		return err
+	}
+	return conn.Publish(handler.UserInboxChangedSubject, payload)
+}
+
+func publishEntityResolved(ctx context.Context, repo *repository.NotificationRepository, tenantID, entityType, entityID, eventID string, publish func(userInboxChange) error) error {
+	if publish == nil {
+		return nil
+	}
+	users, err := repo.ListEntityUserIDs(ctx, tenantID, entityType, entityID)
+	if err != nil {
+		return err
+	}
+	for _, userID := range users {
+		if err := publish(userInboxChange{TenantID: tenantID, UserID: userID, Type: "resolved", EventID: eventID, EntityType: entityType, EntityID: entityID}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func handleDomainNotificationEvent(ctx context.Context, msg *nats.Msg, subject string, repo *repository.NotificationRepository, svc *service.NotificationService, directory appevents.RecipientDirectory, managementGroup, defaultLocale string, logger *slog.Logger, publishUserChange func(userInboxChange) error) error {
+	eventID := strings.TrimSpace(msg.Header.Get(nats.MsgIdHdr))
+	if eventID == "" {
+		sum := sha256.Sum256(msg.Data)
+		eventID = hex.EncodeToString(sum[:])
+	}
+	var tenantID, entityID, entityType string
+	var input service.AcceptInput
+	var recipients []string
+	var err error
+	switch {
+	case strings.Contains(subject, "workflow.task."):
+		var event appevents.WorkflowTaskEvent
+		if err = json.Unmarshal(msg.Data, &event); err != nil {
+			return err
+		}
+		if event.EventID != "" {
+			eventID = event.EventID
+		}
+		tenantID, entityID, entityType = event.TenantID, event.TaskID, "task"
+		if subject != appevents.WorkflowTaskCompletedSubject {
+			recipients, err = appevents.ResolveRecipients(ctx, directory, tenantID, appevents.RecipientSelectors{UserIDs: event.UserIDs, GroupIDs: event.GroupIDs, RoleCodes: event.RoleCodes, OrgUnitIDs: event.OrgUnitIDs, IncludeDescendants: event.IncludeDescendants}, managementGroup)
+			if err != nil {
+				return recipientResolutionResult(ctx, repo, tenantID, eventID, entityType, entityID, err, logger)
+			}
+			if len(recipients) == 0 && subject != appevents.WorkflowTaskReassignedSubject {
+				return recipientResolutionResult(ctx, repo, tenantID, eventID, entityType, entityID, errors.New("notification.recipient_unresolved: recipient set is empty"), logger)
+			}
+			if len(recipients) == 0 && subject == appevents.WorkflowTaskReassignedSubject {
+				if err := repo.ProcessEventOnce(ctx, "notification-domain:"+subject, eventID, subject, tenantID, func(_ context.Context, tx *sql.Tx) error {
+					return repo.ResolveEntity(ctx, tx, tenantID, entityType, entityID, "reassigned", eventID)
+				}); err != nil {
+					return err
+				}
+				if err := publishEntityResolved(ctx, repo, tenantID, entityType, entityID, eventID, publishUserChange); err != nil {
+					return err
+				}
+				return recipientResolutionResult(ctx, repo, tenantID, eventID, entityType, entityID, errors.New("notification.recipient_unresolved: reassignment recipient set is empty"), logger)
+			}
+			event.EventID, event.UserIDs = eventID, recipients
+			payload, _ := json.Marshal(event)
+			input, err = appevents.WorkflowTaskInput(payload, subject, recipients, defaultLocale)
+			if err != nil {
+				return err
+			}
+		}
+	case strings.Contains(subject, "workflow.case."):
+		var event appevents.WorkflowCaseEvent
+		if err = json.Unmarshal(msg.Data, &event); err != nil {
+			return err
+		}
+		if event.EventID != "" {
+			eventID = event.EventID
+		}
+		tenantID, entityID, entityType = event.TenantID, event.CaseID, "case"
+		recipients, err = appevents.ResolveRecipients(ctx, directory, tenantID, appevents.RecipientSelectors{UserIDs: event.UserIDs, GroupIDs: event.GroupIDs, RoleCodes: event.RoleCodes, OrgUnitIDs: event.OrgUnitIDs, IncludeDescendants: event.IncludeDescendants}, managementGroup)
+		if err != nil {
+			return recipientResolutionResult(ctx, repo, tenantID, eventID, entityType, entityID, err, logger)
+		}
+		if len(recipients) == 0 {
+			return recipientResolutionResult(ctx, repo, tenantID, eventID, entityType, entityID, errors.New("notification.recipient_unresolved: recipient set is empty"), logger)
+		}
+		event.EventID, event.UserIDs = eventID, recipients
+		payload, _ := json.Marshal(event)
+		input, err = appevents.WorkflowCaseInput(payload, subject, defaultLocale)
+		if err != nil {
+			return err
+		}
+	case strings.Contains(subject, "loan.disbursement."):
+		var event appevents.LoanDisbursementEvent
+		if err = json.Unmarshal(msg.Data, &event); err != nil {
+			return err
+		}
+		if event.EventID != "" {
+			eventID = event.EventID
+		}
+		tenantID, entityID, entityType = event.TenantID, event.DisbursementID, "disbursement"
+		recipients, err = appevents.ResolveRecipients(ctx, directory, tenantID, appevents.RecipientSelectors{UserIDs: event.UserIDs, GroupIDs: event.GroupIDs, RoleCodes: event.RoleCodes, OrgUnitIDs: event.OrgUnitIDs, IncludeDescendants: event.IncludeDescendants}, managementGroup)
+		if err != nil {
+			return recipientResolutionResult(ctx, repo, tenantID, eventID, entityType, entityID, err, logger)
+		}
+		if len(recipients) == 0 {
+			return recipientResolutionResult(ctx, repo, tenantID, eventID, entityType, entityID, errors.New("notification.recipient_unresolved: recipient set is empty"), logger)
+		}
+		event.EventID, event.UserIDs = eventID, recipients
+		payload, _ := json.Marshal(event)
+		input, err = appevents.LoanDisbursementInput(payload, subject, defaultLocale)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported notification event subject %q", subject)
+	}
+	if err != nil {
+		return err
+	}
+	if entityType == "" {
+		return errors.New("event entity reference is required")
+	}
+	if strings.Contains(subject, "workflow.task.") && subject == appevents.WorkflowTaskCompletedSubject {
+		if err := repo.ProcessEventOnce(ctx, "notification-domain:"+subject, eventID, subject, tenantID, func(_ context.Context, tx *sql.Tx) error {
+			return repo.ResolveEntity(ctx, tx, tenantID, entityType, entityID, "completed", eventID)
+		}); err != nil {
+			return err
+		}
+		return publishEntityResolved(ctx, repo, tenantID, entityType, entityID, eventID, publishUserChange)
+	}
+	if err := repo.ProcessEventOnce(ctx, "notification-domain:"+subject, eventID, subject, tenantID, func(_ context.Context, tx *sql.Tx) error {
+		if subject == appevents.WorkflowTaskReassignedSubject {
+			if err := repo.ResolveEntity(ctx, tx, tenantID, entityType, entityID, "reassigned", eventID); err != nil {
+				return err
+			}
+		}
+		_, err := svc.Accept(ctx, input)
+		return err
+	}); err != nil {
+		return err
+	}
+	if subject == appevents.WorkflowTaskReassignedSubject {
+		return publishEntityResolved(ctx, repo, tenantID, entityType, entityID, eventID, publishUserChange)
+	}
+	return nil
+}
+
+func recipientResolutionResult(ctx context.Context, repo *repository.NotificationRepository, tenantID, eventID, entityType, entityID string, cause error, logger *slog.Logger) error {
+	message := cause.Error()
+	if strings.Contains(message, "notification.recipient_unresolved") || strings.Contains(message, "notification.recipient_overflow") {
+		if err := repo.RecordRecipientWarning(ctx, tenantID, eventID, entityType, entityID, message); err != nil {
+			return err
+		}
+		logger.Warn("notification recipients unresolved", "tenant_id", tenantID, "event_id", eventID, "entity_type", entityType, "entity_id", entityID, "reason", message)
+		return nil
+	}
+	return cause
 }

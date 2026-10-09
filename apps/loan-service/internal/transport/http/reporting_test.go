@@ -55,7 +55,7 @@ func reportingTestRouter() http.Handler {
 		OutstandingAmtMinor: 420000000,
 		ProvisionAmtMinor:   8400000,
 	}}}
-	return NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, handler.NewInternalReportingHandler(source), nil)
+	return NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, handler.NewInternalReportingHandler(source), nil, nil)
 }
 
 func reportingSignedRequest(t *testing.T, router http.Handler, path, tenantID, token string) *httptest.ResponseRecorder {
