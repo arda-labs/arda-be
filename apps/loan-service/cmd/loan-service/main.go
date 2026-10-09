@@ -125,6 +125,8 @@ func main() {
 	colHandler := handler.NewCollectionHandler(colSvc)
 	accrualSvc := service.NewAccrualService(repo, db, financeClient)
 	accrualHandler := handler.NewAccrualHandler(accrualSvc, platform)
+	agreementSnapshotSvc := service.NewAgreementDailySnapshotService(repo)
+	agreementSnapshotHandler := handler.NewAgreementDailySnapshotHandler(agreementSnapshotSvc)
 	provisionSvc := service.NewProvisionService(repo, db, financeClient)
 	provisionHandler := handler.NewProvisionHandler(provisionSvc)
 	generalProvSvc := service.NewGeneralProvisionService(repo, workflow, financeClient, parameterRegistry)
@@ -144,7 +146,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.HandlerChain(cfg.AppName, nil, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, specificProvHandler, internalAIHandler, internalReportingHandler, loangrpc.Kinds))),
+		Handler:      ardahttp.HandlerChain(cfg.AppName, nil, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, specificProvHandler, internalAIHandler, internalReportingHandler, agreementSnapshotHandler, loangrpc.Kinds))),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
