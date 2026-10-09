@@ -313,7 +313,8 @@ func (r *LoanRepository) SetDisbursementBatchCase(ctx context.Context, tenantID,
 	return err
 }
 
-// SetDisbursementBatchStatus transitions the batch status.
+// SetDisbursementBatchStatus transitions the batch status and, in the same
+// transaction, moves its rows and enqueues the row-level outbox events.
 func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantID, id, from, to, reason string) error {
 	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(from), domain.Status(to), reason); err != nil {
 		return err
@@ -326,12 +327,44 @@ func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantI
 	if err := setDisbursementBatchStatus(ctx, tx, tenantID, id, from, to); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE lnm_disbursements SET status = $4, updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND batch_id = $2 AND status = $3`, tenantID, id, from, to); err != nil {
-		return err
+	terminal := to == domain.BatchRejected || to == domain.BatchCancelled
+	var eventRows []disbursementEventRow
+	switch {
+	case terminal:
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE lnm_disbursements
+			SET status = $3, updated_at = now(), version = version + 1
+			WHERE tenant_id = $1 AND batch_id = $2
+			  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')`, tenantID, id, to); err != nil {
+			return err
+		}
+		if to == domain.BatchRejected {
+			if eventRows, err = selectDisbursementEventRows(ctx, tx, tenantID, id, to); err != nil {
+				return err
+			}
+		}
+	default:
+		if to == domain.BatchApproved {
+			if eventRows, err = selectDisbursementEventRows(ctx, tx, tenantID, id, from); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE lnm_disbursements SET status = $4, updated_at = now(), version = version + 1
+			WHERE tenant_id = $1 AND batch_id = $2 AND status = $3`, tenantID, id, from, to); err != nil {
+			return err
+		}
 	}
-	if to == domain.BatchRejected || to == domain.BatchCancelled {
+	eventStatus := domain.DisbursementApproved
+	if to == domain.BatchRejected {
+		eventStatus = domain.DisbursementRejected
+	}
+	for _, row := range eventRows {
+		if err := enqueueDisbursementEvent(ctx, tx, tenantID, row.id, eventStatus, row.contractCode, row.createdBy, row.updatedBy); err != nil {
+			return err
+		}
+	}
+	if terminal {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE lnm_contract_reservations r SET status = 'RELEASED'
 			WHERE r.tenant_id = $1 AND r.source_type = 'DISBURSEMENT' AND r.status = 'HELD'
@@ -341,6 +374,25 @@ func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantI
 		}
 	}
 	return tx.Commit()
+}
+
+type disbursementEventRow struct{ id, contractCode, createdBy, updatedBy string }
+
+func selectDisbursementEventRows(ctx context.Context, tx repoTX, tenantID, batchID, status string) ([]disbursementEventRow, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, contract_code, created_by, COALESCE(updated_by, '') FROM lnm_disbursements WHERE tenant_id = $1 AND batch_id = $2 AND status = $3`, tenantID, batchID, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []disbursementEventRow
+	for rows.Next() {
+		var row disbursementEventRow
+		if err := rows.Scan(&row.id, &row.contractCode, &row.createdBy, &row.updatedBy); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
 }
 
 func setDisbursementBatchStatus(ctx context.Context, q repoTX, tenantID, id, from, to string) error {

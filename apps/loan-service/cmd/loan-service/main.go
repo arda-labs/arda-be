@@ -12,6 +12,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -88,6 +89,20 @@ func main() {
 		logger.Error("verify parameter registry", "err", err)
 		os.Exit(1)
 	}
+	if cfg.NATSURL != "" {
+		if conn, err := nats.Connect(cfg.NATSURL); err != nil {
+			logger.Warn("loan outbox relay disabled: nats unavailable", "err", err)
+		} else {
+			defer conn.Close()
+			relayCtx, relayCancel := context.WithCancel(context.Background())
+			defer relayCancel()
+			if relay := service.NewDisbursementOutboxRelay(db, conn, logger); relay != nil {
+				go relay.Run(relayCtx)
+			}
+		}
+	} else {
+		logger.Warn("loan outbox relay disabled: NATS_URL is empty")
+	}
 	loanSvc := service.NewLoanService(repo, workflow)
 	adjSvc := service.NewAdjustmentService(repo, workflow)
 	loanHandler := handler.NewLoanHandler(loanSvc, adjSvc)
@@ -110,6 +125,8 @@ func main() {
 	colHandler := handler.NewCollectionHandler(colSvc)
 	accrualSvc := service.NewAccrualService(repo, db, financeClient)
 	accrualHandler := handler.NewAccrualHandler(accrualSvc, platform)
+	agreementSnapshotSvc := service.NewAgreementDailySnapshotService(repo)
+	agreementSnapshotHandler := handler.NewAgreementDailySnapshotHandler(agreementSnapshotSvc)
 	provisionSvc := service.NewProvisionService(repo, db, financeClient)
 	provisionHandler := handler.NewProvisionHandler(provisionSvc)
 	generalProvSvc := service.NewGeneralProvisionService(repo, workflow, financeClient, parameterRegistry)
@@ -131,7 +148,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.HandlerChain(cfg.AppName, nil, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, specificProvHandler, internalAIHandler, internalReportingHandler, loangrpc.Kinds))),
+		Handler:      ardahttp.HandlerChain(cfg.AppName, nil, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, specificProvHandler, internalAIHandler, internalReportingHandler, agreementSnapshotHandler, loangrpc.Kinds))),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

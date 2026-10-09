@@ -43,8 +43,13 @@ var TxnCancelFlow = CancellationFlow{
 // document type.
 type CancellationWorkers struct {
 	flow          CancellationFlow
-	financeClient *financeclient.Client
+	financeClient cancellationFinanceClient
 	projection    *CaseProjection
+}
+
+type cancellationFinanceClient interface {
+	GetJournalEntry(context.Context, *financev1.GetJournalEntryRequest) (*financev1.JournalEntryDetail, error)
+	Reverse(context.Context, *financev1.ReverseRequest) (*financev1.PostingResponse, error)
 }
 
 // NewCancellationWorkers builds the worker set for the cancellation flow.
@@ -211,7 +216,12 @@ func (w *CancellationWorkers) execute() worker.JobHandler {
 			Metadata:             traderStampFromVars(vars),
 		})
 		if err != nil {
-			w.failJob(client, job, "Posting Error: "+grpcMessage(err))
+			// Cancellation references a POSTED original, not a PENDING hold.
+			// Return business failures to the maker without releasing the original.
+			routePostingFailure(err, "", nil,
+				func(code financev1.PostingErrorCode, message string) {
+					throwPostingValidationError(ctx, client, job, w.projection, code, message)
+				}, func(failure error) { w.failJob(client, job, "Posting Error: "+grpcMessage(failure)) })
 			return
 		}
 		if err := w.complete(ctx, client, job, map[string]any{
