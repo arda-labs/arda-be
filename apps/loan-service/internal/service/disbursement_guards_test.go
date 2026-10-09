@@ -1,6 +1,10 @@
 package service
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
+)
 
 // Pure guard tests for the two-flow disbursement limits — the DB-backed
 // versions live in TestDisbursementSmoke (ARDA_TEST_DSN gated).
@@ -21,7 +25,7 @@ func TestCheckRegisterLimit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checkRegisterLimit(tt.contractLoan, tt.outstanding, tt.disburse)
+			err := domain.CheckRegisterLimit(tt.contractLoan, tt.outstanding, tt.disburse)
 			if got := err != nil; got != tt.wantOverLimit {
 				t.Fatalf("checkRegisterLimit(%d, %d, %d) err = %v, wantOverLimit %v",
 					tt.contractLoan, tt.outstanding, tt.disburse, err, tt.wantOverLimit)
@@ -46,7 +50,7 @@ func TestCheckCompleteRemainder(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checkCompleteRemainder(tt.registerAmt, tt.completed, tt.disburse)
+			err := domain.CheckCompleteRemainder(tt.registerAmt, tt.completed, tt.disburse)
 			if got := err != nil; got != tt.wantReject {
 				t.Fatalf("checkCompleteRemainder(%d, %d, %d) err = %v, wantReject %v",
 					tt.registerAmt, tt.completed, tt.disburse, err, tt.wantReject)

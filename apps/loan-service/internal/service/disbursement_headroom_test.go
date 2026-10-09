@@ -55,7 +55,7 @@ func openHeadroomFixture(t *testing.T) (*sql.DB, *repository.LoanRepository, str
 	if _, err := repo.CreateAgreement(ctx, &domain.Agreement{
 		ID: repository.NewID("agr"), TenantID: headroomTenantID, ContractCode: contractCode,
 		AgreementCode: agreementCode, DisburseDate: "2026-10-01", LoanTerm: 12,
-		TermUnit: "MONTH", MaturityDate: "2027-10-01", Status: "PENDING", CreatedBy: "test",
+		TermUnit: "MONTH", MaturityDate: "2027-10-01", Status: domain.AgreementActive, CreatedBy: "test",
 	}); err != nil {
 		t.Fatalf("seed agreement: %v", err)
 	}
@@ -83,6 +83,32 @@ func TestBatchRegisterHeadroom_NotDoubleCounted(t *testing.T) {
 	}
 }
 
+func TestCreateBatchRegisterStaysDraftWithoutWorkflowOrReservation(t *testing.T) {
+	db, repo, contractCode, agreementCode := openHeadroomFixture(t)
+	wf := &headroomWorkflow{}
+	svc := NewBatchDisbursementService(repo, wf)
+	batch, err := svc.CreateBatchRegister(context.Background(), headroomTenantID, "maker", "", batchRegisterInput(contractCode, agreementCode, 100))
+	if err != nil {
+		t.Fatalf("CreateBatchRegister: %v", err)
+	}
+	if batch.Status != domain.BatchDraft {
+		t.Fatalf("created batch status = %q, want %q", batch.Status, domain.BatchDraft)
+	}
+	wf.mu.Lock()
+	workflowCalls := wf.nextID
+	wf.mu.Unlock()
+	if workflowCalls != 0 {
+		t.Fatalf("create draft opened %d workflow cases, want none", workflowCalls)
+	}
+	var held int
+	if err := db.QueryRow(`SELECT count(*) FROM lnm_contract_reservations WHERE tenant_id = $1 AND source_type = 'DISBURSEMENT' AND status = 'HELD'`, headroomTenantID).Scan(&held); err != nil {
+		t.Fatalf("count held reservations: %v", err)
+	}
+	if held != 0 {
+		t.Fatalf("draft holds %d contract reservations, want none", held)
+	}
+}
+
 func TestLegacyRegisterExposureMigration_NormalizesPending(t *testing.T) {
 	db := testdb.Open(t, func(db *sql.DB) error {
 		goose.SetBaseFS(migrations.FS)
@@ -99,7 +125,7 @@ func TestLegacyRegisterExposureMigration_NormalizesPending(t *testing.T) {
 	if _, err := repo.CreateContract(ctx, &domain.Contract{
 		ID: repository.NewID("ctrt"), TenantID: headroomTenantID, ContractCode: contractCode,
 		CustomerCode: "HR-CUST", LoanAmt: 1_000, LoanTerm: 12, TermUnit: "MONTH",
-		ContractDate: "2026-10-01", MaturityDate: "2027-10-01", Status: domain.ContractDraft, CreatedBy: "test",
+		ContractDate: "2026-10-01", MaturityDate: "2027-10-01", Status: "PENDING", CreatedBy: "test",
 	}); err != nil {
 		t.Fatalf("seed contract: %v", err)
 	}
@@ -130,6 +156,19 @@ func TestLegacyRegisterExposureMigration_NormalizesPending(t *testing.T) {
 	}
 	if err := migration.Run(db, "postgres"); err != nil {
 		t.Fatalf("apply exposure normalization migration: %v", err)
+	}
+	var contractStatus, agreementStatus string
+	if err := db.QueryRow(`SELECT status FROM lnm_contracts WHERE tenant_id = $1 AND contract_code = $2`, headroomTenantID, contractCode).Scan(&contractStatus); err != nil {
+		t.Fatalf("read normalized contract status: %v", err)
+	}
+	if contractStatus != domain.ContractPendingApproval {
+		t.Fatalf("normalized contract status = %s, want PENDING_APPROVAL", contractStatus)
+	}
+	if err := db.QueryRow(`SELECT status FROM lnm_agreements WHERE tenant_id = $1 AND agreement_code = $2`, headroomTenantID, agreementCode).Scan(&agreementStatus); err != nil {
+		t.Fatalf("read normalized agreement status: %v", err)
+	}
+	if agreementStatus != domain.AgreementActive {
+		t.Fatalf("normalized agreement status = %s, want ACTIVE", agreementStatus)
 	}
 	var outstanding, pending int64
 	if err := db.QueryRow(`SELECT outstanding_amt_minor, pending_disburse_amt_minor
@@ -172,14 +211,18 @@ func TestHeadroom_SameForSingleAndBatch(t *testing.T) {
 		t.Fatal("single path accepted 401 after 600 was reserved")
 	}
 	batch := NewBatchDisbursementService(repo, &headroomWorkflow{})
-	if _, err := batch.CreateBatchRegister(context.Background(), headroomTenantID, "test", "", batchRegisterInput(contractCode, agreementCode, 401)); err == nil {
+	item, err := batch.CreateBatchRegister(context.Background(), headroomTenantID, "test", "", batchRegisterInput(contractCode, agreementCode, 401))
+	if err != nil {
+		t.Fatalf("create draft should not reserve headroom: %v", err)
+	}
+	if _, err := batch.Submit(context.Background(), headroomTenantID, "test", item.ID, item.DataVersion); err == nil {
 		t.Fatal("batch path accepted 401 after 600 was reserved by single path")
 	}
 }
 
 func TestRegisterReservationReleasedOnReject(t *testing.T) {
 	db, repo, contractCode, agreementCode := openHeadroomFixture(t)
-	svc := NewDisbursementService(repo, nil)
+	svc := NewDisbursementService(repo, &fakeWorkflow{})
 	item, err := svc.Create(context.Background(), headroomTenantID, "test", &domain.Disbursement{
 		ContractCode: contractCode, AgreementCode: agreementCode, DisburseDate: "2026-10-01",
 		DisburseAmtMinor: 600, FlowType: domain.FlowRegister,
@@ -187,7 +230,10 @@ func TestRegisterReservationReleasedOnReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create register: %v", err)
 	}
-	if err := svc.Resolve(context.Background(), headroomTenantID, item.ID, "REJECT", "checker", ""); err != nil {
+	if _, err := svc.Submit(context.Background(), headroomTenantID, "test", item.ID); err != nil {
+		t.Fatalf("submit register: %v", err)
+	}
+	if err := svc.Resolve(context.Background(), headroomTenantID, item.ID, "REJECT", "checker", "rejected by checker"); err != nil {
 		t.Fatalf("reject register: %v", err)
 	}
 	var held, released int
@@ -208,7 +254,10 @@ func TestBatchRegisterReservationReleasedOnReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create batch register: %v", err)
 	}
-	if err := svc.Resolve(context.Background(), headroomTenantID, batch.ID, "CANCEL"); err != nil {
+	if _, err := svc.Submit(context.Background(), headroomTenantID, "test", batch.ID, batch.DataVersion); err != nil {
+		t.Fatalf("submit batch: %v", err)
+	}
+	if err := svc.Resolve(context.Background(), headroomTenantID, batch.ID, "CANCEL", "cancelled by maker"); err != nil {
 		t.Fatalf("cancel batch: %v", err)
 	}
 	resolved, err := svc.Get(context.Background(), headroomTenantID, batch.ID)
@@ -236,10 +285,14 @@ func TestTwoBatchesConcurrent_DoNotExceedLoanAmt(t *testing.T) {
 	svc := NewBatchDisbursementService(repo, wf)
 	start := make(chan struct{})
 	results := make(chan error, 2)
+	batches := make(chan *domain.DisbursementBatch, 2)
 	for range 2 {
 		go func() {
 			<-start
-			_, err := svc.CreateBatchRegister(context.Background(), headroomTenantID, "test", "", batchRegisterInput(contractCode, agreementCode, 600))
+			batch, err := svc.CreateBatchRegister(context.Background(), headroomTenantID, "test", "", batchRegisterInput(contractCode, agreementCode, 600))
+			if err == nil {
+				batches <- batch
+			}
 			results <- err
 		}()
 	}
@@ -248,11 +301,33 @@ func TestTwoBatchesConcurrent_DoNotExceedLoanAmt(t *testing.T) {
 	for range 2 {
 		if err := <-results; err == nil {
 			successes++
-		} else if !strings.Contains(strings.ToLower(err.Error()), "headroom") {
+		} else {
 			t.Errorf("unexpected batch create error: %v", err)
 		}
 	}
+	if successes != 2 {
+		t.Fatalf("created drafts = %d, want two", successes)
+	}
+	first, second := <-batches, <-batches
+	start = make(chan struct{})
+	results = make(chan error, 2)
+	for _, batch := range []*domain.DisbursementBatch{first, second} {
+		go func(batch *domain.DisbursementBatch) {
+			<-start
+			_, err := svc.Submit(context.Background(), headroomTenantID, "test", batch.ID, batch.DataVersion)
+			results <- err
+		}(batch)
+	}
+	close(start)
+	successes = 0
+	for range 2 {
+		if err := <-results; err == nil {
+			successes++
+		} else if !strings.Contains(strings.ToLower(err.Error()), "headroom") {
+			t.Errorf("unexpected batch submit error: %v", err)
+		}
+	}
 	if successes != 1 {
-		t.Fatalf("successful 600 batches = %d, want exactly 1", successes)
+		t.Fatalf("successful 600 submissions = %d, want exactly 1", successes)
 	}
 }

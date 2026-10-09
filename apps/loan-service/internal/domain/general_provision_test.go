@@ -1,4 +1,4 @@
-package service
+package domain
 
 import "testing"
 
@@ -16,8 +16,8 @@ func TestRequiredGeneralProvision(t *testing.T) {
 		{"five percent", 1_000_000_000, 5, 50_000_000},
 	}
 	for _, tc := range cases {
-		if got := requiredGeneralProvision(tc.outstanding, tc.rate); got != tc.want {
-			t.Fatalf("%s: requiredGeneralProvision(%d, %v) = %d, want %d",
+		if got := RequiredGeneralProvision(tc.outstanding, tc.rate); got != tc.want {
+			t.Fatalf("%s: RequiredGeneralProvision(%d, %v) = %d, want %d",
 				tc.name, tc.outstanding, tc.rate, got, tc.want)
 		}
 	}
@@ -33,7 +33,7 @@ func TestGeneralProvisionDelta(t *testing.T) {
 		{0, 0, 0, 0},
 	}
 	for _, tc := range cases {
-		alloc, reverse := generalProvisionDelta(tc.required, tc.accum)
+		alloc, reverse := GeneralProvisionDelta(tc.required, tc.accum)
 		if alloc != tc.alloc || reverse != tc.reverse {
 			t.Fatalf("delta(%d, %d) = (%d, %d), want (%d, %d)",
 				tc.required, tc.accum, alloc, reverse, tc.alloc, tc.reverse)

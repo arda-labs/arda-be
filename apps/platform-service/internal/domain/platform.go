@@ -11,17 +11,21 @@ const (
 )
 
 type Parameter struct {
-	ID          string    `json:"id"`
-	TenantID    *string   `json:"tenant_id,omitempty"`
-	Key         string    `json:"key"`
-	Value       string    `json:"value"`
-	ValueType   string    `json:"value_type"`
-	ScopeType   string    `json:"scope_type"`
-	ScopeID     *string   `json:"scope_id,omitempty"`
-	Description *string   `json:"description,omitempty"`
-	IsSecret    bool      `json:"is_secret"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID            string     `json:"id"`
+	TenantID      *string    `json:"tenant_id,omitempty"`
+	Module        string     `json:"module"`
+	Key           string     `json:"key"`
+	Value         string     `json:"value"`
+	ValueType     string     `json:"value_type"`
+	Unit          string     `json:"unit,omitempty"`
+	ScopeType     string     `json:"scope_type"`
+	ScopeID       *string    `json:"scope_id,omitempty"`
+	EffectiveFrom time.Time  `json:"effective_from"`
+	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
+	Description   *string    `json:"description,omitempty"`
+	IsSecret      bool       `json:"is_secret"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type LookupCategory struct {

@@ -15,18 +15,6 @@ var (
 	ErrAgreementClosedForProvision = errors.New("lnm: closed agreement cannot be provisioned")
 )
 
-// SpecificProvisionDelta returns the positive ADD and REVERSAL journal values.
-func SpecificProvisionDelta(required, current int64) (add, reversal int64) {
-	switch {
-	case required > current:
-		return required - current, 0
-	case current > required:
-		return 0, current - required
-	default:
-		return 0, 0
-	}
-}
-
 // SpecificProvisionRow is one LNM.306 per-agreement provision request (W7).
 type SpecificProvisionRow struct {
 	ID               string  `json:"id"`
@@ -160,7 +148,7 @@ func (r *LoanRepository) SettleSpecificProvision(ctx context.Context, tenantID, 
 	if expected != 0 && version != expected {
 		return ErrStaleVersion
 	}
-	add, reversal := SpecificProvisionDelta(required, current)
+	add, reversal := domain.SpecificProvisionDelta(required, current)
 	delta := add - reversal
 	journalEntryID := ""
 	if delta != 0 && post == nil {

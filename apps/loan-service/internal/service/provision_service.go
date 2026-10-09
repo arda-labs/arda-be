@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
-	ardamoney "github.com/arda-labs/arda/libs/go/arda-money"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 	"github.com/shopspring/decimal"
 )
@@ -30,15 +30,6 @@ func NewProvisionService(repo *repository.LoanRepository, db *sql.DB, finance *f
 		batchFinance = finance
 	}
 	return &ProvisionService{repo: repo, db: db, finance: batchFinance}
-}
-
-// debtGroupRate is the CM130 evidence rate table (TT 02/2023).
-var debtGroupRate = map[string]string{
-	"GROUP_1": "0",
-	"GROUP_2": "5",
-	"GROUP_3": "20",
-	"GROUP_4": "50",
-	"GROUP_5": "100",
 }
 
 // RunResult summarizes one provision batch.
@@ -97,15 +88,12 @@ func (s *ProvisionService) Run(ctx context.Context, tenantID, toDate, actor stri
 			result.Skipped++
 			continue
 		}
-		rateStr, ok := debtGroupRate[a.DebtGroupCode]
+		rate, ok := domain.DebtGroupProvisionRate(a.DebtGroupCode)
 		if !ok {
 			result.Skipped++
 			continue
 		}
-		rate := decimal.RequireFromString(rateStr)
-		outstanding := ardamoney.FromMinor(a.OutstandingAmt, "VND")
-		required := outstanding.Mul(rate).Div(decimal.NewFromInt(100)).Round(0)
-		requiredMinor, err := ardamoney.ToMinor(required, "VND")
+		requiredMinor, err := domain.RequiredProvisionMinor(a.OutstandingAmt, rate, "VND")
 		if err != nil {
 			result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": convert required provision: "+err.Error())
 			continue
@@ -115,7 +103,7 @@ func (s *ProvisionService) Run(ctx context.Context, tenantID, toDate, actor stri
 			result.FailedAgmt = append(result.FailedAgmt, a.AgreementCode+": load accumulated provision: "+err.Error())
 			continue
 		}
-		delta := requiredMinor - accumulated
+		delta := domain.ProvisionDelta(requiredMinor, accumulated)
 		if delta == 0 {
 			result.Skipped++
 			continue
@@ -208,13 +196,17 @@ func (s *ProvisionService) createPendingProvision(ctx context.Context, tenantID 
 func (s *ProvisionService) completeProvision(ctx context.Context, tenantID string, agreement repository.AccruableAgreement, pending pendingProvision) (string, error) {
 	entryID := pending.journalEntry.String
 	if !pending.journalEntry.Valid || entryID == "" {
+		lines, err := s.provisionLines(ctx, agreement, pending.deltaMinor)
+		if err != nil {
+			return "", err
+		}
 		postReq := &financev1.PostingRequest{
 			IdempotencyKey:    fmt.Sprintf("lnm-provision-%s", pending.id),
 			AccountingDate:    pending.provisionDate,
 			CurrencyCode:      "VND",
 			Description:       fmt.Sprintf("Trích lập dự phòng %s (nhóm %s)", agreement.AgreementCode, pending.debtGroupCode),
 			BusinessReference: &financev1.BusinessReference{Domain: "lnm", DocumentType: "LNM_PROVISION", DocumentId: agreement.ID, DocumentCode: agreement.AgreementCode},
-			Lines:             s.provisionLines(ctx, agreement, pending.deltaMinor),
+			Lines:             lines,
 		}
 		posted, err := s.finance.Post(ctx, postReq)
 		if err != nil {
@@ -273,14 +265,13 @@ func (s *ProvisionService) accumulatedProvision(ctx context.Context, tenantID, a
 // liability, card lines 1-2) hoặc hoàn giảm (DR liability / CR release
 // income, card lines 3-4). Rule-card driven (iteration 12): the LNM_PROVISION
 // card seeded by 20260909100000 drives the classification; the pre-rules
-// hardcoded strings stay as the per-leg fallback so an unseeded/unreachable
-// card never breaks the batch. Analytics per leg keep the provision scope.
-func (s *ProvisionService) provisionLines(ctx context.Context, a repository.AccruableAgreement, delta int64) []*financev1.PostingLine {
+// Analytics per leg keep the provision scope.
+func (s *ProvisionService) provisionLines(ctx context.Context, a repository.AccruableAgreement, delta int64) ([]*financev1.PostingLine, error) {
 	amount := delta
-	cardLine, debitFallback, creditFallback := int32(1), "LNM_PROVISION_EXPENSE", "LNM_PROVISION_LIABILITY"
+	cardLine := int32(1)
 	if delta < 0 {
 		amount = -delta
-		cardLine, debitFallback, creditFallback = 3, "LNM_PROVISION_LIABILITY", "LNM_PROVISION_RELEASE"
+		cardLine = 3
 	}
 	analytics := func() *financev1.Analytics {
 		return &financev1.Analytics{
@@ -290,11 +281,10 @@ func (s *ProvisionService) provisionLines(ctx context.Context, a repository.Accr
 			Dimensions:    map[string]string{"agreement_code": a.AgreementCode},
 		}
 	}
-	return financeclient.PostingLinesFromRules(
-		batchPostingRules(ctx, s.finance, "LNM_PROVISION"),
+	return financeclient.BuildPostingLines(ctx, s.finance, "LNM_PROVISION",
 		[]financeclient.PostingLeg{
-			{CardLine: cardLine, Fallback: debitFallback, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics()},
-			{CardLine: cardLine + 1, Fallback: creditFallback, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics()},
+			{CardLine: cardLine, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics()},
+			{CardLine: cardLine + 1, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics()},
 		},
 		"VND",
 	)

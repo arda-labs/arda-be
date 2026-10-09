@@ -8,7 +8,7 @@ import (
 // Disbursement statuses.
 const (
 	DisbursementDraft     = "DRAFT"
-	DisbursementSubmitted = "SUBMITTED"
+	DisbursementSubmitted = "PENDING_APPROVAL"
 	DisbursementApproved  = "APPROVED"
 	DisbursementRejected  = "REJECTED"
 	DisbursementCancelled = "CANCELLED"

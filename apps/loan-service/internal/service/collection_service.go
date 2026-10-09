@@ -116,7 +116,10 @@ func (s *CollectionService) Submit(ctx context.Context, tenantID, actor, id stri
 	if err := s.repo.SetCollectionCaseAndJournal(ctx, tenantID, item.ID, caseCreated.Id, caseCreated.GetCaseCode(), ""); err != nil {
 		return domain.Collection{}, mapRepoError(err)
 	}
-	if err := s.repo.SetCollectionStatus(ctx, tenantID, item.ID, domain.CollectionSubmitted, actor); err != nil {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(item.Status), domain.Status(domain.CollectionSubmitted), ""); err != nil {
+		return domain.Collection{}, mapRepoError(err)
+	}
+	if err := s.repo.SetCollectionStatus(ctx, tenantID, item.ID, item.Status, domain.CollectionSubmitted, actor, ""); err != nil {
 		return domain.Collection{}, mapRepoError(err)
 	}
 	updated, err := s.repo.GetCollection(ctx, tenantID, item.ID)
@@ -140,11 +143,23 @@ func (s *CollectionService) Check(ctx context.Context, tenantID, id string) (boo
 
 // Resolve applies the workflow decision without posting.
 func (s *CollectionService) Resolve(ctx context.Context, tenantID, id, decision, decidedBy, note string) error {
-	status := domain.CollectionRejected
-	if decision == "APPROVE" {
-		status = domain.CollectionApproved
+	item, err := s.repo.GetCollection(ctx, tenantID, id)
+	if err != nil {
+		return mapRepoError(err)
 	}
-	if err := s.repo.SetCollectionStatus(ctx, tenantID, id, status, decidedBy); err != nil {
+	var status string
+	switch decision {
+	case "APPROVE":
+		status = domain.CollectionApproved
+	case "REJECT":
+		status = domain.CollectionRejected
+	default:
+		return ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown decision "+decision)
+	}
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(item.Status), domain.Status(status), note); err != nil {
+		return mapRepoError(err)
+	}
+	if err := s.repo.SetCollectionStatus(ctx, tenantID, id, item.Status, status, decidedBy, note); err != nil {
 		return mapRepoError(err)
 	}
 	return nil
@@ -153,7 +168,16 @@ func (s *CollectionService) Resolve(ctx context.Context, tenantID, id, decision,
 // Settle marks POSTED with the journal entry and applies side effects —
 // executed by the workflow worker after a successful PostTransaction.
 func (s *CollectionService) Settle(ctx context.Context, tenantID, id, journalEntryID, actor string) error {
-	_, err := s.repo.SettleCollectionTx(ctx, tenantID, id, journalEntryID, actor)
+	item, err := s.repo.GetCollection(ctx, tenantID, id)
+	if err != nil {
+		return mapRepoError(err)
+	}
+	if item.Status == domain.CollectionSubmitted {
+		if err := s.repo.SetCollectionStatus(ctx, tenantID, id, item.Status, domain.CollectionApproved, actor, ""); err != nil {
+			return mapRepoError(err)
+		}
+	}
+	_, err = s.repo.SettleCollectionTx(ctx, tenantID, id, journalEntryID, actor)
 	return mapRepoError(err)
 }
 

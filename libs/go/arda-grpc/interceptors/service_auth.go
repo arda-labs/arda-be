@@ -30,6 +30,12 @@ func UnaryClientServiceAuth(secret, sourceService, audience string) grpc.UnaryCl
 // UnaryServerServiceAuth authenticates a workload and optionally restricts
 // which source services may call this destination.
 func UnaryServerServiceAuth(secret, audience string, allowedSources map[string]struct{}) grpc.UnaryServerInterceptor {
+	return UnaryServerServiceAuthMethodSources(secret, audience, allowedSources, nil)
+}
+
+// UnaryServerServiceAuthMethodSources permits a narrow per-method source list
+// while retaining the default source list for every other method.
+func UnaryServerServiceAuthMethodSources(secret, audience string, defaultSources map[string]struct{}, methodSources map[string]map[string]struct{}) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		incoming, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
@@ -42,6 +48,10 @@ func UnaryServerServiceAuth(secret, audience string, allowedSources map[string]s
 		claims, err := identity.Verify(values[0], secret, audience, time.Now())
 		if err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid service identity")
+		}
+		allowedSources := defaultSources
+		if methodAllowed, exists := methodSources[info.FullMethod]; exists {
+			allowedSources = methodAllowed
 		}
 		if len(allowedSources) > 0 {
 			if _, allowed := allowedSources[claims.Source]; !allowed {

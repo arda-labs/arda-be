@@ -51,7 +51,7 @@ func (s *LoanServer) UpdateContractStatus(ctx context.Context, req *loanv1.Updat
 	if req.GetContractId() == "" || req.GetStatus() == "" {
 		return nil, status.Error(codes.InvalidArgument, "contract_id and status are required")
 	}
-	if err := s.contracts.SetContractStatus(ctx, tenantID, req.GetContractId(), req.GetStatus()); err != nil {
+	if err := s.contracts.SetContractStatus(ctx, tenantID, req.GetContractId(), req.GetStatus(), req.GetReason()); err != nil {
 		slog.Warn("loan grpc: update contract status failed", "contractId", req.GetContractId(), "err", err)
 		return &loanv1.UpdateContractStatusResponse{Ok: false}, nil
 	}
@@ -82,7 +82,7 @@ func (s *LoanServer) GetContract(ctx context.Context, req *loanv1.GetContractReq
 
 // CheckFormation validates the contract is actionable for the
 // LOAN_FORMATION_V2 workflow (BPMN validate job): it must exist and sit in
-// the submitted-but-not-approved PENDING state.
+// the submitted-but-not-approved PENDING_APPROVAL state.
 func (s *LoanServer) CheckFormation(ctx context.Context, req *loanv1.CheckFormationRequest) (*loanv1.CheckFormationResponse, error) {
 	tenantID, err := tenantFromContext(ctx)
 	if err != nil {
@@ -92,7 +92,7 @@ func (s *LoanServer) CheckFormation(ctx context.Context, req *loanv1.CheckFormat
 	if err != nil {
 		return &loanv1.CheckFormationResponse{Ok: false, Message: err.Error()}, nil
 	}
-	if contract.Status != domain.ContractPending {
+	if contract.Status != domain.ContractPendingApproval {
 		return &loanv1.CheckFormationResponse{
 			Ok:      false,
 			Message: fmt.Sprintf("status %s is not actionable", contract.Status),
@@ -336,13 +336,13 @@ func (s *LoanServer) ResolveBatch(ctx context.Context, req *loanv1.ResolveBatchR
 	}
 	ctx = domain.WithDataVersion(ctx, req.GetDataVersion())
 	if isCollectionBatchType(req.GetBatchType()) {
-		if err := s.batchColSvc().Resolve(ctx, tenantID, req.GetBatchId(), req.GetDecision()); err != nil {
+		if err := s.batchColSvc().Resolve(ctx, tenantID, req.GetBatchId(), req.GetDecision(), req.GetNote()); err != nil {
 			slog.Warn("loan grpc: resolve collection batch failed", "id", req.GetBatchId(), "err", err)
 			return nil, resolveError(err)
 		}
 		return &loanv1.ResolveBatchResponse{Ok: true}, nil
 	}
-	if err := s.batchDisbSvc().Resolve(ctx, tenantID, req.GetBatchId(), req.GetDecision()); err != nil {
+	if err := s.batchDisbSvc().Resolve(ctx, tenantID, req.GetBatchId(), req.GetDecision(), req.GetNote()); err != nil {
 		slog.Warn("loan grpc: resolve disbursement batch failed", "id", req.GetBatchId(), "err", err)
 		return nil, resolveError(err)
 	}

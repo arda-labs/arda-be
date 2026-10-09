@@ -194,19 +194,20 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 	defer func() { _ = tx.Rollback() }()
 
 	var (
-		existingID     string
-		existingStatus string
-		existingJobKey sql.NullInt64
-		activationNo   int
+		existingID         string
+		existingStatus     string
+		existingAssignedTo string
+		existingJobKey     sql.NullInt64
+		activationNo       int
 	)
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, status, job_key, activation_no
+		SELECT id, status, job_key, activation_no, assigned_to
 		FROM workflow_tasks
 		WHERE case_id = $1 AND step_code = $2
 		ORDER BY activation_no DESC
 		LIMIT 1
 		FOR UPDATE
-	`, seed.CaseID, seed.StepCode).Scan(&existingID, &existingStatus, &existingJobKey, &activationNo)
+	`, seed.CaseID, seed.StepCode).Scan(&existingID, &existingStatus, &existingJobKey, &activationNo, &existingAssignedTo)
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -225,6 +226,18 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 			ardapg.Driver.NotNil(seed.CandidateUsers), seed.CandidateGroupID,
 			seed.CandidateOrgUnitID, seed.SLADueAt); err != nil {
 			return nil, err
+		}
+		if seed.JobKey != nil {
+			dedupe := fmt.Sprintf("task:%s:assigned:%d", id, *seed.JobKey)
+			var tenantID string
+			if err := tx.QueryRowContext(ctx, `SELECT tenant_id FROM business_cases WHERE id = $1`, seed.CaseID).Scan(&tenantID); err != nil {
+				return nil, err
+			}
+			payload := taskEventPayload(dedupe, tenantID, id, seed.TaskType, seed.Title, "/workflow/tasks/"+id, seed.CandidateUsers,
+				optionalString(seed.CandidateGroupID), optionalString(seed.CandidateRole), optionalString(seed.CandidateOrgUnitID))
+			if err := enqueueWorkflowEvent(ctx, tx, "arda.workflow.task.assigned.v1", "workflow.task.assigned", dedupe, payload); err != nil {
+				return nil, err
+			}
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, err
@@ -264,6 +277,21 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 			seed.CandidateOrgUnitID, seed.SLADueAt, activationNo+1); err != nil {
 			return nil, err
 		}
+		dedupe := fmt.Sprintf("task:%s:assigned:%d", id, *seed.JobKey)
+		var tenantID string
+		if err := tx.QueryRowContext(ctx, `SELECT tenant_id FROM business_cases WHERE id = $1`, seed.CaseID).Scan(&tenantID); err != nil {
+			return nil, err
+		}
+		payload := taskEventPayload(dedupe, tenantID, id, seed.TaskType, seed.Title, "/workflow/tasks/"+id, seed.CandidateUsers,
+			optionalString(seed.CandidateGroupID), optionalString(seed.CandidateRole), optionalString(seed.CandidateOrgUnitID))
+		subject, eventCode := "arda.workflow.task.assigned.v1", "workflow.task.assigned"
+		if existingAssignedTo != "" {
+			subject, eventCode = "arda.workflow.task.reassigned.v1", "workflow.task.reassigned"
+			payload["previous_user_id"] = existingAssignedTo
+		}
+		if err := enqueueWorkflowEvent(ctx, tx, subject, eventCode, dedupe, payload); err != nil {
+			return nil, err
+		}
 		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
@@ -297,6 +325,18 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 		seed.CandidateRole, ardapg.Driver.NotNil(seed.CandidateUsers), seed.CandidateGroupID,
 		seed.CandidateOrgUnitID, newStatus, seed.SLADueAt); err != nil {
 		return nil, err
+	}
+	if bindPlaceholder {
+		dedupe := fmt.Sprintf("task:%s:assigned:%d", existingID, *seed.JobKey)
+		var tenantID string
+		if err := tx.QueryRowContext(ctx, `SELECT tenant_id FROM business_cases WHERE id = $1`, seed.CaseID).Scan(&tenantID); err != nil {
+			return nil, err
+		}
+		payload := taskEventPayload(dedupe, tenantID, existingID, seed.TaskType, seed.Title, "/workflow/tasks/"+existingID, seed.CandidateUsers,
+			optionalString(seed.CandidateGroupID), optionalString(seed.CandidateRole), optionalString(seed.CandidateOrgUnitID))
+		if err := enqueueWorkflowEvent(ctx, tx, "arda.workflow.task.assigned.v1", "workflow.task.assigned", dedupe, payload); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -716,6 +756,19 @@ func (r *CaseRepository) ClaimWorkItem(ctx context.Context, id string, actor str
 	if err != nil {
 		return nil, err
 	}
+	var taskType, title, taskTenant string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT wt.task_type, wt.title, bc.tenant_id
+		FROM workflow_tasks wt JOIN business_cases bc ON bc.id = wt.case_id
+		WHERE wt.id = $1 AND bc.tenant_id = $2
+	`, id, tenantID).Scan(&taskType, &title, &taskTenant); err != nil {
+		return nil, err
+	}
+	dedupe := "task:" + id + ":claimed:" + actor
+	if err := enqueueWorkflowEvent(ctx, tx, "arda.workflow.task.assigned.v1", "workflow.task.assigned", dedupe,
+		taskEventPayload(dedupe, taskTenant, id, taskType, title, "/workflow/tasks/"+id, []string{actor}, nil, nil, nil)); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -726,13 +779,32 @@ func (r *CaseRepository) CompleteWorkItemByJob(ctx context.Context, jobKey int64
 	if jobKey == 0 {
 		return nil
 	}
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE workflow_tasks
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var id, tenantID, taskType, title string
+	err = tx.QueryRowContext(ctx, `
+		UPDATE workflow_tasks wt
 		SET status = $2, engine_state = 'COMPLETED', engine_checked_at = CURRENT_TIMESTAMP,
 		    updated_at = CURRENT_TIMESTAMP
-		WHERE job_key = $1 AND status <> $2
-	`, jobKey, TaskStatusCompleted)
-	return err
+		FROM business_cases bc
+		WHERE wt.case_id = bc.id AND wt.job_key = $1 AND wt.status <> $2
+		RETURNING wt.id, bc.tenant_id, wt.task_type, wt.title
+	`, jobKey, TaskStatusCompleted).Scan(&id, &tenantID, &taskType, &title)
+	if errors.Is(err, sql.ErrNoRows) {
+		return tx.Commit()
+	}
+	if err != nil {
+		return err
+	}
+	dedupe := "task:" + id + ":completed"
+	payload := taskEventPayload(dedupe, tenantID, id, taskType, title, "/workflow/tasks/"+id, nil, nil, nil, nil)
+	if err := enqueueWorkflowEvent(ctx, tx, "arda.workflow.task.completed.v1", "workflow.task.completed", dedupe, payload); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // CancelOpenWorkItemsByProcessKey closes every open task of a case that just

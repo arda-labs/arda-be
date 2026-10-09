@@ -14,10 +14,15 @@ import (
 
 type CalendarHandler struct {
 	service *service.CalendarService
+	eod     *service.EODService
 }
 
-func NewCalendarHandler(svc *service.CalendarService) *CalendarHandler {
-	return &CalendarHandler{service: svc}
+func NewCalendarHandler(svc *service.CalendarService, eod ...*service.EODService) *CalendarHandler {
+	h := &CalendarHandler{service: svc}
+	if len(eod) > 0 {
+		h.eod = eod[0]
+	}
+	return h
 }
 
 func (h *CalendarHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
@@ -41,21 +46,32 @@ func (h *CalendarHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CalendarHandler) TriggerEOD(w http.ResponseWriter, r *http.Request) {
-	// EOD shifts the business date in plt_system_dates, which is global (one
+	// EOD shifts the SYSTEM business date, which is global (one
 	// row per branch code, default HEAD_OFFICE) and therefore affects every
 	// tenant. The gateway only grants platform.manage per route, so the
 	// in-service global-admin check is the tenant/global boundary here.
 	if !requireGlobalAdmin(w, r) {
 		return
 	}
-	branchCode := r.URL.Query().Get("branchCode")
-	if branchCode == "" {
-		branchCode = "HEAD_OFFICE"
+	if h.eod == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, "calendar.error.eod_unavailable", "EOD orchestrator is unavailable")
+		return
 	}
-
-	sd, err := h.service.RunEOD(r.Context(), branchCode)
+	result, err := h.eod.RunSystem(r.Context(), r.URL.Query().Get("business_date"))
 	if err != nil {
 		if errors.Is(err, domain.ErrEODInProgress) {
+			ardahttp.WriteProblem(w, r, http.StatusConflict, ardaerrors.New(ardaerrors.CodeConflict, err.Error()))
+			return
+		}
+		if errors.Is(err, service.ErrEODBusinessDateUnavailable) {
+			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeBadGateway, err.Error()))
+			return
+		}
+		if errors.Is(err, service.ErrEODInvalidBusinessDate) {
+			ardahttp.WriteProblem(w, r, http.StatusBadRequest, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error()))
+			return
+		}
+		if errors.Is(err, service.ErrEODRunInProgress) {
 			ardahttp.WriteProblem(w, r, http.StatusConflict, ardaerrors.New(ardaerrors.CodeConflict, err.Error()))
 			return
 		}
@@ -65,7 +81,7 @@ func (h *CalendarHandler) TriggerEOD(w http.ResponseWriter, r *http.Request) {
 
 	writeResultWithRequest(w, r, map[string]any{
 		"message": "EOD completed successfully",
-		"data":    sd,
+		"data":    result.BusinessDateState,
 	}, nil)
 }
 

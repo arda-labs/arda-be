@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	ardaParams "github.com/arda-labs/arda/libs/go/arda-params"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
-	"github.com/shopspring/decimal"
 )
 
 // LNM.307.01 general provision (per org): required = outstanding × rate,
@@ -44,10 +46,11 @@ type GeneralProvisionService struct {
 	repo     *repository.LoanRepository
 	workflow AdjustmentSubmitter
 	finance  *financeclient.Client
+	params   *ardaParams.Registry
 }
 
-func NewGeneralProvisionService(repo *repository.LoanRepository, workflow AdjustmentSubmitter, finance *financeclient.Client) *GeneralProvisionService {
-	return &GeneralProvisionService{repo: repo, workflow: workflow, finance: finance}
+func NewGeneralProvisionService(repo *repository.LoanRepository, workflow AdjustmentSubmitter, finance *financeclient.Client, registry *ardaParams.Registry) *GeneralProvisionService {
+	return &GeneralProvisionService{repo: repo, workflow: workflow, finance: finance, params: registry}
 }
 
 // Calculate computes the period figures without persisting anything.
@@ -56,7 +59,11 @@ func (s *GeneralProvisionService) Calculate(ctx context.Context, tenantID, orgCo
 	if !isValidISODate(asOf) {
 		return GeneralProvisionPreview{}, ardaerrors.New(ardaerrors.CodeInvalidInput, "provision_date must be YYYY-MM-DD")
 	}
-	rate, err := s.repo.GeneralProvisionRate(ctx, orgCodeOrDefault(orgCode))
+	if s.params == nil {
+		return GeneralProvisionPreview{}, ardaerrors.New(ardaerrors.CodeInternal, "parameter registry is not configured")
+	}
+	effectiveDate, _ := time.Parse("2006-01-02", asOf)
+	rate, err := ardaParams.Get[float64](ctx, s.params, "loan", "LNM_GENERAL_PROVISION_RATE", ardaParams.ScopeKey{TenantID: tenantID, OrgCode: orgCode, EffectiveDate: effectiveDate})
 	if err != nil {
 		return GeneralProvisionPreview{}, mapRepoError(err)
 	}
@@ -68,8 +75,8 @@ func (s *GeneralProvisionService) Calculate(ctx context.Context, tenantID, orgCo
 	if err != nil {
 		return GeneralProvisionPreview{}, mapRepoError(err)
 	}
-	required := requiredGeneralProvision(outstanding, rate)
-	alloc, reverse := generalProvisionDelta(required, accum)
+	required := domain.RequiredGeneralProvision(outstanding, rate)
+	alloc, reverse := domain.GeneralProvisionDelta(required, accum)
 	return GeneralProvisionPreview{
 		OrgCode:                orgCode,
 		ProvisionDate:          asOf,
@@ -187,7 +194,11 @@ func (s *GeneralProvisionService) Resolve(ctx context.Context, tenantID, id, dec
 	}
 	journalEntryID := ""
 	if preview.AllocMinor > 0 || preview.ReverseMinor > 0 {
-		posted, err := s.finance.Post(ctx, s.postingRequest(ctx, row, preview))
+		request, err := s.postingRequest(ctx, row, preview)
+		if err != nil {
+			return err
+		}
+		posted, err := s.finance.Post(ctx, request)
 		if err != nil {
 			return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "provision posting failed", err)
 		}
@@ -199,20 +210,24 @@ func (s *GeneralProvisionService) Resolve(ctx context.Context, tenantID, id, dec
 		journalEntryID, decidedBy))
 }
 
-func (s *GeneralProvisionService) postingRequest(ctx context.Context, row *repository.GeneralProvisionRow, preview GeneralProvisionPreview) *financev1.PostingRequest {
+func (s *GeneralProvisionService) postingRequest(ctx context.Context, row *repository.GeneralProvisionRow, preview GeneralProvisionPreview) (*financev1.PostingRequest, error) {
 	analytics := &financev1.Analytics{OrgUnitCode: row.OrgCode}
 	legs := []financeclient.PostingLeg{}
 	if preview.AllocMinor > 0 {
 		legs = append(legs,
-			financeclient.PostingLeg{CardLine: 1, Fallback: "LNM_PROVISION_EXPENSE", Direction: "DEBIT", AmountMinor: preview.AllocMinor, Analytics: analytics},
-			financeclient.PostingLeg{CardLine: 2, Fallback: "LNM_PROVISION_LIABILITY", Direction: "CREDIT", AmountMinor: preview.AllocMinor, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 1, Direction: "DEBIT", AmountMinor: preview.AllocMinor, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 2, Direction: "CREDIT", AmountMinor: preview.AllocMinor, Analytics: analytics},
 		)
 	}
 	if preview.ReverseMinor > 0 {
 		legs = append(legs,
-			financeclient.PostingLeg{CardLine: 3, Fallback: "LNM_PROVISION_LIABILITY", Direction: "DEBIT", AmountMinor: preview.ReverseMinor, Analytics: analytics},
-			financeclient.PostingLeg{CardLine: 4, Fallback: "LNM_PROVISION_RELEASE", Direction: "CREDIT", AmountMinor: preview.ReverseMinor, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 3, Direction: "DEBIT", AmountMinor: preview.ReverseMinor, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 4, Direction: "CREDIT", AmountMinor: preview.ReverseMinor, Analytics: analytics},
 		)
+	}
+	lines, err := financeclient.BuildPostingLines(ctx, s.finance, generalProvisionDocumentType, legs, generalProvisionDefaultCurrency)
+	if err != nil {
+		return nil, err
 	}
 	return &financev1.PostingRequest{
 		IdempotencyKey: fmt.Sprintf("lnm-general-provision-%s-%s", row.OrgCode, row.ProvisionDate),
@@ -225,33 +240,8 @@ func (s *GeneralProvisionService) postingRequest(ctx context.Context, row *repos
 			DocumentId:   row.ID,
 			DocumentCode: row.OrgCode + "/" + row.ProvisionDate,
 		},
-		Lines: financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(ctx, s.finance, generalProvisionDocumentType),
-			legs, generalProvisionDefaultCurrency),
-	}
-}
-
-// requiredGeneralProvision = outstanding × rate / 100, HALF_UP to đồng (minor).
-func requiredGeneralProvision(outstandingMinor int64, ratePercent float64) int64 {
-	if outstandingMinor <= 0 || ratePercent <= 0 {
-		return 0
-	}
-	required := decimal.NewFromInt(outstandingMinor).
-		Mul(decimal.NewFromFloat(ratePercent)).
-		Div(decimal.NewFromInt(100)).
-		Round(0)
-	return required.IntPart()
-}
-
-func generalProvisionDelta(required, accum int64) (alloc, reverse int64) {
-	switch {
-	case required > accum:
-		return required - accum, 0
-	case accum > required:
-		return 0, accum - required
-	default:
-		return 0, 0
-	}
+		Lines: lines,
+	}, nil
 }
 
 func orgCodeOrDefault(orgCode string) string {

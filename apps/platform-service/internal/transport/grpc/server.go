@@ -2,11 +2,16 @@ package grpc
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
 	"github.com/arda-labs/arda/apps/platform-service/internal/repository"
 	"github.com/arda-labs/arda/apps/platform-service/internal/service"
+	ardaBusinessDate "github.com/arda-labs/arda/libs/go/arda-businessdate"
+	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	platformv1 "github.com/arda-labs/arda/libs/go/arda-proto/platform/v1"
 	"google.golang.org/grpc/codes"
@@ -16,11 +21,82 @@ import (
 
 type PlatformServer struct {
 	platformv1.UnimplementedPlatformServiceServer
-	svc *service.PlatformService
+	svc      *service.PlatformService
+	calendar *service.CalendarService
 }
 
-func NewPlatformServer(svc *service.PlatformService) *PlatformServer {
-	return &PlatformServer{svc: svc}
+func NewPlatformServer(svc *service.PlatformService, calendars ...*service.CalendarService) *PlatformServer {
+	server := &PlatformServer{svc: svc}
+	if len(calendars) > 0 {
+		server.calendar = calendars[0]
+	}
+	return server
+}
+
+func (s *PlatformServer) GetBusinessDate(ctx context.Context, req *platformv1.GetBusinessDateRequest) (*platformv1.BusinessDate, error) {
+	if s.calendar == nil {
+		return nil, status.Error(codes.Unavailable, "business-date calendar is unavailable")
+	}
+	scope := req.GetScope()
+	tenantID, err := verifiedTenant(ctx, scope.GetTenantId())
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := businessDateScope(tenantID, scope)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	item, err := s.calendar.BusinessDateForScope(ctx, resolved)
+	if err != nil {
+		if errors.Is(err, domain.ErrSystemDateNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		if errors.Is(err, domain.ErrBusinessDateScopeMappingRequired) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &platformv1.BusinessDate{
+		PreviousBusinessDate: item.PreviousBusinessDate.Format("2006-01-02"),
+		BusinessDate:         item.CurrentBusinessDate.Format("2006-01-02"),
+		NextBusinessDate:     item.NextBusinessDate.Format("2006-01-02"),
+		Status:               item.Status,
+	}, nil
+}
+
+func (s *PlatformServer) IsWorkingDay(ctx context.Context, req *platformv1.IsWorkingDayRequest) (*platformv1.IsWorkingDayResponse, error) {
+	if s.calendar == nil {
+		return nil, status.Error(codes.Unavailable, "business-date calendar is unavailable")
+	}
+	scope := req.GetScope()
+	tenantID, err := verifiedTenant(ctx, scope.GetTenantId())
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := businessDateScope(tenantID, scope)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	date, err := time.Parse("2006-01-02", req.GetDate())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "date must use YYYY-MM-DD")
+	}
+	working, err := ardaBusinessDate.IsWorkingDay(ctx, s.calendar, resolved, date)
+	if err != nil {
+		if errors.Is(err, domain.ErrBusinessDateScopeMappingRequired) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &platformv1.IsWorkingDayResponse{IsWorkingDay: working}, nil
+}
+
+func businessDateScope(tenantID string, scope *platformv1.ScopeSelector) (ardaBusinessDate.Scope, error) {
+	result := ardaBusinessDate.Scope{TenantID: tenantID, Type: ardaBusinessDate.ScopeType(strings.ToUpper(strings.TrimSpace(scope.GetScopeType()))), OrgCode: strings.TrimSpace(scope.GetScopeId())}
+	if err := ardaBusinessDate.ValidateScope(result); err != nil {
+		return ardaBusinessDate.Scope{}, err
+	}
+	return result, nil
 }
 
 func verifiedTenant(ctx context.Context, requested string) (string, error) {
@@ -59,7 +135,10 @@ func (s *PlatformServer) UpsertParameter(ctx context.Context, req *platformv1.Up
 	if err != nil {
 		return nil, err
 	}
-	item := parameterFromProto(req.GetParameter())
+	item, err := parameterFromProto(req.GetParameter())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	item.TenantID = &tenantID
 	item, err = s.svc.UpsertParameter(ctx, item)
 	if err != nil {
@@ -69,12 +148,26 @@ func (s *PlatformServer) UpsertParameter(ctx context.Context, req *platformv1.Up
 }
 
 func (s *PlatformServer) ResolveParameter(ctx context.Context, req *platformv1.ResolveParameterRequest) (*platformv1.Parameter, error) {
-	if req.GetKey() == "" {
-		return nil, status.Error(codes.InvalidArgument, "key is required")
+	if req.GetModule() == "" || req.GetKey() == "" || req.GetEffectiveDate() == "" {
+		return nil, status.Error(codes.InvalidArgument, "module, key, and effective_date are required")
 	}
-	tenantID, err := verifiedTenant(ctx, req.GetTenantId())
+	effectiveDate, err := time.Parse("2006-01-02", req.GetEffectiveDate())
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.InvalidArgument, "effective_date must use YYYY-MM-DD")
+	}
+	tenantID := strings.TrimSpace(ardametadata.FromIncoming(ctx).TenantID)
+	if tenantID == "" {
+		claims, authenticated := interceptors.ServiceClaims(ctx)
+		if !authenticated || claims.Source != "loan-service" || strings.TrimSpace(req.GetTenantId()) != "" {
+			return nil, status.Error(codes.InvalidArgument, "verified tenant scope is required")
+		}
+		for _, scope := range req.GetScopes() {
+			if strings.ToLower(scope.GetScopeType()) != domain.ScopeGlobal || scope.GetTenantId() != "" || scope.GetScopeId() != "" {
+				return nil, status.Error(codes.PermissionDenied, "loan-service may resolve only global parameters without a tenant")
+			}
+		}
+	} else if req.GetTenantId() != "" && strings.TrimSpace(req.GetTenantId()) != tenantID {
+		return nil, status.Error(codes.PermissionDenied, "requested tenant is outside verified scope")
 	}
 	scopes := make([]service.ScopeSelector, 0, len(req.GetScopes()))
 	for _, scope := range req.GetScopes() {
@@ -83,13 +176,16 @@ func (s *PlatformServer) ResolveParameter(ctx context.Context, req *platformv1.R
 		}
 		scopes = append(scopes, service.ScopeSelector{
 			TenantID:  tenantID,
-			ScopeType: scope.GetScopeType(),
+			ScopeType: strings.ToLower(scope.GetScopeType()),
 			ScopeID:   scope.GetScopeId(),
 		})
 	}
-	item, err := s.svc.ResolveParameter(ctx, tenantID, req.GetKey(), scopes)
+	item, err := s.svc.ResolveParameter(ctx, tenantID, req.GetModule(), req.GetKey(), scopes, effectiveDate)
 	if err != nil {
-		return nil, status.Error(codes.NotFound, err.Error())
+		if err == sql.ErrNoRows {
+			return nil, status.Error(codes.NotFound, "parameter not found for requested scope and effective date")
+		}
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return parameterToProto(item), nil
 }
@@ -224,32 +320,63 @@ func (s *PlatformServer) UpsertAdminUnit(ctx context.Context, req *platformv1.Up
 
 func parameterToProto(item domain.Parameter) *platformv1.Parameter {
 	return &platformv1.Parameter{
-		Id:          item.ID,
-		TenantId:    deref(item.TenantID),
-		Key:         item.Key,
-		Value:       item.Value,
-		ValueType:   item.ValueType,
-		ScopeType:   item.ScopeType,
-		ScopeId:     deref(item.ScopeID),
-		Description: deref(item.Description),
-		IsSecret:    item.IsSecret,
-		CreatedAt:   timestamppb.New(item.CreatedAt),
-		UpdatedAt:   timestamppb.New(item.UpdatedAt),
+		Id:            item.ID,
+		TenantId:      deref(item.TenantID),
+		Module:        item.Module,
+		Key:           item.Key,
+		Value:         item.Value,
+		ValueType:     item.ValueType,
+		Unit:          item.Unit,
+		ScopeType:     item.ScopeType,
+		ScopeId:       deref(item.ScopeID),
+		EffectiveFrom: item.EffectiveFrom.Format("2006-01-02"),
+		EffectiveTo:   formatDate(item.EffectiveTo),
+		Description:   deref(item.Description),
+		IsSecret:      item.IsSecret,
+		CreatedAt:     timestamppb.New(item.CreatedAt),
+		UpdatedAt:     timestamppb.New(item.UpdatedAt),
 	}
 }
 
-func parameterFromProto(item *platformv1.Parameter) domain.Parameter {
-	return domain.Parameter{
-		ID:          item.GetId(),
-		TenantID:    ptr(item.GetTenantId()),
-		Key:         item.GetKey(),
-		Value:       item.GetValue(),
-		ValueType:   item.GetValueType(),
-		ScopeType:   item.GetScopeType(),
-		ScopeID:     ptr(item.GetScopeId()),
-		Description: ptr(item.GetDescription()),
-		IsSecret:    item.GetIsSecret(),
+func parameterFromProto(item *platformv1.Parameter) (domain.Parameter, error) {
+	var from time.Time
+	if item.GetEffectiveFrom() != "" {
+		var err error
+		from, err = time.Parse("2006-01-02", item.GetEffectiveFrom())
+		if err != nil {
+			return domain.Parameter{}, status.Error(codes.InvalidArgument, "effective_from must use YYYY-MM-DD")
+		}
 	}
+	var effectiveTo *time.Time
+	if item.GetEffectiveTo() != "" {
+		to, err := time.Parse("2006-01-02", item.GetEffectiveTo())
+		if err != nil {
+			return domain.Parameter{}, status.Error(codes.InvalidArgument, "effective_to must use YYYY-MM-DD")
+		}
+		effectiveTo = &to
+	}
+	return domain.Parameter{
+		ID:            item.GetId(),
+		TenantID:      ptr(item.GetTenantId()),
+		Module:        item.GetModule(),
+		Key:           item.GetKey(),
+		Value:         item.GetValue(),
+		ValueType:     item.GetValueType(),
+		Unit:          item.GetUnit(),
+		ScopeType:     item.GetScopeType(),
+		ScopeID:       ptr(item.GetScopeId()),
+		EffectiveFrom: from,
+		EffectiveTo:   effectiveTo,
+		Description:   ptr(item.GetDescription()),
+		IsSecret:      item.GetIsSecret(),
+	}, nil
+}
+
+func formatDate(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.Format("2006-01-02")
 }
 
 func lookupCategoryToProto(item domain.LookupCategory) *platformv1.LookupCategory {

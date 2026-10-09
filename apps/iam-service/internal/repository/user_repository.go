@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -727,6 +728,81 @@ func (r *UserRepository) GetUsersByIDs(ctx context.Context, ids []string) ([]dom
 		out = append(out, u)
 	}
 	return out, rows.Err()
+}
+
+// ResolveNotificationRecipientIDs expands explicit users, groups and role
+// assignments for one tenant. It returns active users only and intentionally
+// caps the result at 1001 so the notification service can apply its 1000-user
+// delivery limit without silently truncating a recipient set.
+func (r *UserRepository) ResolveNotificationRecipientIDs(ctx context.Context, tenantID string, userIDs, groupIDs, roleCodes []string) ([]string, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, errors.New("tenant scope is required")
+	}
+	if len(userIDs) == 0 && len(groupIDs) == 0 && len(roleCodes) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT u.id::text
+		FROM iam_users u
+		WHERE u.tenant_id = $1 AND UPPER(u.status) = 'ACTIVE'
+		  AND (
+		    u.id::text = ANY($2::text[])
+		    OR EXISTS (
+		      SELECT 1 FROM iam_group_members gm
+		      JOIN iam_groups g ON g.id = gm.group_id
+		      WHERE gm.user_id = u.id AND g.tenant_id = $1
+		        AND UPPER(g.status) = 'ACTIVE'
+		        AND (g.id::text = ANY($3::text[]) OR g.code = ANY($3::text[]))
+		    )
+		    OR EXISTS (
+		      SELECT 1 FROM iam_user_roles ur
+		      JOIN iam_roles r ON r.id = ur.role_id
+		      WHERE ur.user_id = u.id AND r.tenant_id = $1
+		        AND UPPER(r.status) = 'ACTIVE' AND r.code = ANY($4::text[])
+		    )
+		    OR EXISTS (
+		      SELECT 1 FROM iam_role_assignments ra
+		      JOIN iam_roles r ON r.id = ra.role_id
+		      WHERE ra.principal_type = 'USER' AND ra.principal_id = u.id
+		        AND ra.status = 'ACTIVE' AND r.tenant_id = $1
+		        AND UPPER(r.status) = 'ACTIVE' AND r.code = ANY($4::text[])
+		        AND (ra.effective_from IS NULL OR ra.effective_from <= now())
+		        AND (ra.effective_to IS NULL OR ra.effective_to > now())
+		        AND ((ra.scope_type = 'global' AND ra.scope_id IS NULL)
+		          OR (ra.scope_type = 'tenant' AND ra.scope_id = $1))
+		    )
+		    OR EXISTS (
+		      SELECT 1 FROM iam_group_members gm
+		      JOIN iam_groups g ON g.id = gm.group_id
+		      JOIN iam_role_assignments ra ON ra.principal_type = 'GROUP' AND ra.principal_id = g.id
+		      JOIN iam_roles r ON r.id = ra.role_id
+		      WHERE gm.user_id = u.id AND g.tenant_id = $1
+		        AND UPPER(g.status) = 'ACTIVE' AND ra.status = 'ACTIVE'
+		        AND r.tenant_id = $1 AND UPPER(r.status) = 'ACTIVE'
+		        AND r.code = ANY($4::text[])
+		        AND (ra.effective_from IS NULL OR ra.effective_from <= now())
+		        AND (ra.effective_to IS NULL OR ra.effective_to > now())
+		        AND ((ra.scope_type = 'global' AND ra.scope_id IS NULL)
+		          OR (ra.scope_type = 'tenant' AND ra.scope_id = $1))
+		    )
+		  )
+		ORDER BY u.id
+		LIMIT 1001
+	`, tenantID, ardapg.Driver.NotNil(userIDs), ardapg.Driver.NotNil(groupIDs), ardapg.Driver.NotNil(roleCodes))
+	if err != nil {
+		return nil, fmt.Errorf("resolve notification recipients: %w", err)
+	}
+	defer rows.Close()
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (r *UserRepository) GetUserByKratosIdentityID(ctx context.Context, identityID string) (*domain.User, error) {

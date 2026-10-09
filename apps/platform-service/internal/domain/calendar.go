@@ -16,10 +16,13 @@ const (
 // (conditional UPDATE + rows-affected) and the HTTP layer can classify the
 // same failure without importing each other.
 var (
-	// ErrSystemDateNotFound means plt_system_dates has no row for the branch.
+	// ErrSystemDateNotFound means no canonical SYSTEM business-date row exists.
 	ErrSystemDateNotFound = errors.New("system date config not found")
 	// ErrEODInProgress means another EOD run already holds EOD_PROCESSING.
 	ErrEODInProgress = errors.New("EOD process is already in progress")
+	// ErrBusinessDateScopeMappingRequired means a requested ORG scope has not
+	// been explicitly mapped to a tenant in the canonical calendar.
+	ErrBusinessDateScopeMappingRequired = errors.New("business-date scope mapping is required")
 )
 
 // SystemDate tracks the business calendar state.

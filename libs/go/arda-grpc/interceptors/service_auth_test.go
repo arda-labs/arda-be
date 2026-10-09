@@ -8,6 +8,7 @@ import (
 
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -42,5 +43,42 @@ func TestUnaryServerServiceAuthRejectsUnknownSource(t *testing.T) {
 	_, err = interceptor(ctx, nil, &grpc.UnaryServerInfo{}, func(context.Context, any) (any, error) { return nil, nil })
 	if status.Code(err) != 7 { // PermissionDenied
 		t.Fatalf("code = %v, want permission denied", status.Code(err))
+	}
+}
+
+func TestUnaryServerServiceAuthMethodSourceOverride(t *testing.T) {
+	secret := strings.Repeat("t", 32)
+	interceptor := UnaryServerServiceAuthMethodSources(secret, "platform-service",
+		map[string]struct{}{"finance-service": {}},
+		map[string]map[string]struct{}{
+			"/arda.platform.v1.PlatformService/ResolveParameter": {"loan-service": {}},
+			"/arda.platform.v1.PlatformService/ListLookupValues": {"loan-service": {}},
+			"/arda.platform.v1.PlatformService/GetBusinessDate": {"loan-service": {}},
+			"/arda.platform.v1.PlatformService/IsWorkingDay": {"loan-service": {}},
+		},
+	)
+	invoke := func(source, method string) error {
+		token, err := identity.Issue(secret, source, "platform-service", time.Now(), time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(identity.MetadataKey, token))
+		_, err = interceptor(ctx, nil, &grpc.UnaryServerInfo{FullMethod: method}, func(context.Context, any) (any, error) { return "ok", nil })
+		return err
+	}
+	if err := invoke("loan-service", "/arda.platform.v1.PlatformService/ResolveParameter"); err != nil {
+		t.Fatalf("loan resolver call rejected: %v", err)
+	}
+	if err := invoke("loan-service", "/arda.platform.v1.PlatformService/ListLookupValues"); err != nil {
+		t.Fatalf("loan catalog read rejected: %v", err)
+	}
+	for _, method := range []string{"GetBusinessDate", "IsWorkingDay"} {
+		if err := invoke("loan-service", "/arda.platform.v1.PlatformService/"+method); err != nil { t.Fatalf("loan %s rejected: %v", method, err) }
+	}
+	if status.Code(invoke("loan-service", "/arda.platform.v1.PlatformService/UpsertParameter")) != codes.PermissionDenied {
+		t.Fatal("loan-service must not call parameter mutation")
+	}
+	if err := invoke("finance-service", "/arda.platform.v1.PlatformService/UpsertParameter"); err != nil {
+		t.Fatalf("default finance access changed: %v", err)
 	}
 }

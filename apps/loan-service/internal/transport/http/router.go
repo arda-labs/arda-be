@@ -11,7 +11,7 @@ import (
 
 // NewRouter wires the loan-service HTTP surface. Adjustment routes are
 // generated from the shared kind list so adding a flow never touches here.
-func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, rp *handler.ReportHandler, pl *handler.PlanHandler, sp *handler.SpecificProvisionHandler, ai *handler.InternalAIHandler, rep *handler.InternalReportingHandler, kinds []string) http.Handler {
+func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handler.CollectionHandler, a *handler.AccrualHandler, p *handler.ProvisionHandler, b *handler.BatchHandler, gp *handler.GeneralProvisionHandler, rp *handler.ReportHandler, pl *handler.PlanHandler, sp *handler.SpecificProvisionHandler, ai *handler.InternalAIHandler, rep *handler.InternalReportingHandler, snapshot *handler.AgreementDailySnapshotHandler, kinds []string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -67,6 +67,7 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 	// Accruals (P1b.4b): EOD job trigger + read API
 	mux.HandleFunc("/internal/jobs/accrual-daily", a.RunDailyAccrual)
 	mux.HandleFunc("/internal/jobs/provision-daily", p.RunProvision)
+	mux.HandleFunc("/internal/jobs/agreement-daily-snapshot", snapshot.RunDaily)
 	mux.HandleFunc("/api/loan/accruals", method("GET", a.ListAccruals))
 
 	// General provision (LNM.307.01): preview, submit, list.
@@ -124,7 +125,19 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 		}
 	})
 	mux.HandleFunc("/api/loan/disbursement-batches/complete", method("POST", b.CreateBatchComplete))
-	mux.HandleFunc("/api/loan/disbursement-batches/{id}", method("GET", b.GetDisbursementBatch))
+	mux.HandleFunc("/api/loan/disbursement-batches/{id}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			b.GetDisbursementBatch(w, r)
+		case http.MethodPut:
+			b.UpdateDisbursementDraft(w, r)
+		default:
+			methodNotAllowed(w, r)
+		}
+	})
+	mux.HandleFunc("/api/loan/disbursement-batches/{id}/submit", method("POST", b.SubmitDisbursementBatch))
+	mux.HandleFunc("/api/loan/disbursement-batches/{id}/preview", method("POST", b.PreviewDisbursementBatch))
+	mux.HandleFunc("/api/loan/disbursement-batches/{id}/cancel", method("POST", b.CancelDisbursementDraft))
 	mux.HandleFunc("/api/loan/collection-batches", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

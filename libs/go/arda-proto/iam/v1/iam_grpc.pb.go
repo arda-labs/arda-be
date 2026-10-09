@@ -19,7 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UserService_GetUserBatch_FullMethodName = "/arda.iam.v1.UserService/GetUserBatch"
+	UserService_GetUserBatch_FullMethodName                  = "/arda.iam.v1.UserService/GetUserBatch"
+	UserService_ListActiveTenants_FullMethodName             = "/arda.iam.v1.UserService/ListActiveTenants"
+	UserService_ResolveNotificationRecipients_FullMethodName = "/arda.iam.v1.UserService/ResolveNotificationRecipients"
 )
 
 // UserServiceClient is the client API for UserService service.
@@ -27,6 +29,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type UserServiceClient interface {
 	GetUserBatch(ctx context.Context, in *GetUserBatchRequest, opts ...grpc.CallOption) (*GetUserBatchResponse, error)
+	ListActiveTenants(ctx context.Context, in *ListActiveTenantsRequest, opts ...grpc.CallOption) (*ListActiveTenantsResponse, error)
+	ResolveNotificationRecipients(ctx context.Context, in *ResolveNotificationRecipientsRequest, opts ...grpc.CallOption) (*ResolveNotificationRecipientsResponse, error)
 }
 
 type userServiceClient struct {
@@ -47,11 +51,33 @@ func (c *userServiceClient) GetUserBatch(ctx context.Context, in *GetUserBatchRe
 	return out, nil
 }
 
+func (c *userServiceClient) ListActiveTenants(ctx context.Context, in *ListActiveTenantsRequest, opts ...grpc.CallOption) (*ListActiveTenantsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListActiveTenantsResponse)
+	err := c.cc.Invoke(ctx, UserService_ListActiveTenants_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userServiceClient) ResolveNotificationRecipients(ctx context.Context, in *ResolveNotificationRecipientsRequest, opts ...grpc.CallOption) (*ResolveNotificationRecipientsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveNotificationRecipientsResponse)
+	err := c.cc.Invoke(ctx, UserService_ResolveNotificationRecipients_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UserServiceServer is the server API for UserService service.
 // All implementations must embed UnimplementedUserServiceServer
 // for forward compatibility.
 type UserServiceServer interface {
 	GetUserBatch(context.Context, *GetUserBatchRequest) (*GetUserBatchResponse, error)
+	ListActiveTenants(context.Context, *ListActiveTenantsRequest) (*ListActiveTenantsResponse, error)
+	ResolveNotificationRecipients(context.Context, *ResolveNotificationRecipientsRequest) (*ResolveNotificationRecipientsResponse, error)
 	mustEmbedUnimplementedUserServiceServer()
 }
 
@@ -64,6 +90,12 @@ type UnimplementedUserServiceServer struct{}
 
 func (UnimplementedUserServiceServer) GetUserBatch(context.Context, *GetUserBatchRequest) (*GetUserBatchResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetUserBatch not implemented")
+}
+func (UnimplementedUserServiceServer) ListActiveTenants(context.Context, *ListActiveTenantsRequest) (*ListActiveTenantsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListActiveTenants not implemented")
+}
+func (UnimplementedUserServiceServer) ResolveNotificationRecipients(context.Context, *ResolveNotificationRecipientsRequest) (*ResolveNotificationRecipientsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveNotificationRecipients not implemented")
 }
 func (UnimplementedUserServiceServer) mustEmbedUnimplementedUserServiceServer() {}
 func (UnimplementedUserServiceServer) testEmbeddedByValue()                     {}
@@ -104,6 +136,42 @@ func _UserService_GetUserBatch_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserService_ListActiveTenants_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListActiveTenantsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).ListActiveTenants(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_ListActiveTenants_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).ListActiveTenants(ctx, req.(*ListActiveTenantsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserService_ResolveNotificationRecipients_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveNotificationRecipientsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).ResolveNotificationRecipients(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_ResolveNotificationRecipients_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).ResolveNotificationRecipients(ctx, req.(*ResolveNotificationRecipientsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // UserService_ServiceDesc is the grpc.ServiceDesc for UserService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -114,6 +182,14 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetUserBatch",
 			Handler:    _UserService_GetUserBatch_Handler,
+		},
+		{
+			MethodName: "ListActiveTenants",
+			Handler:    _UserService_ListActiveTenants_Handler,
+		},
+		{
+			MethodName: "ResolveNotificationRecipients",
+			Handler:    _UserService_ResolveNotificationRecipients_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

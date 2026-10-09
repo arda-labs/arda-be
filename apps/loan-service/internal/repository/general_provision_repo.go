@@ -155,29 +155,6 @@ func (r *LoanRepository) ResolveGeneralProvision(ctx context.Context, tenantID, 
 	return nil
 }
 
-// GeneralProvisionRate returns the effective rate for an org ('%' fallback).
-func (r *LoanRepository) GeneralProvisionRate(ctx context.Context, orgCode string) (float64, error) {
-	var rate float64
-	err := r.db.QueryRowContext(ctx, `
-		SELECT rate_percent::float8 FROM lnm_general_provision_rates
-		WHERE org_code = $1`, orgCode).Scan(&rate)
-	if err == nil {
-		return rate, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return 0, err
-	}
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT rate_percent::float8 FROM lnm_general_provision_rates
-		WHERE org_code = '%'`).Scan(&rate); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	return rate, nil
-}
-
 // LatestPostedRequired is the cumulative provision for the org as of a date.
 func (r *LoanRepository) LatestPostedRequired(ctx context.Context, tenantID, orgCode, asOf string) (int64, error) {
 	var value sql.NullInt64

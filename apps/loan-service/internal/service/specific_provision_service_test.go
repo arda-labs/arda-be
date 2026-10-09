@@ -36,7 +36,7 @@ func openSpecificProvisionFixture(t *testing.T, debtGroup, contractStatus string
 		ID: repository.NewID("agr"), TenantID: specificProvisionTenantID, ContractCode: contractCode,
 		AgreementCode: agreementCode, DisburseDate: "2026-10-01", LoanTerm: 12,
 		TermUnit: "MONTH", MaturityDate: "2027-10-01", DebtGroupCode: debtGroup,
-		Status: "ACTIVE", CreatedBy: "test",
+		Status: domain.AgreementActive, CreatedBy: "test",
 	}); err != nil {
 		t.Fatalf("seed agreement: %v", err)
 	}
@@ -47,7 +47,7 @@ func openSpecificProvisionFixture(t *testing.T, debtGroup, contractStatus string
 }
 
 func TestSpecificProvisionMissingRateHasExplicitError(t *testing.T) {
-	db, repo, _, agreementCode := openSpecificProvisionFixture(t, "GROUP_UNCONFIRMED", "ACTIVE")
+	db, repo, _, agreementCode := openSpecificProvisionFixture(t, "GROUP_UNCONFIRMED", domain.ContractDisbursed)
 	svc := NewSpecificProvisionService(repo, nil, nil)
 	_, err := svc.Calculate(context.Background(), specificProvisionTenantID, agreementCode, "2026-10-08")
 	var appErr *ardaerrors.Error
@@ -58,7 +58,7 @@ func TestSpecificProvisionMissingRateHasExplicitError(t *testing.T) {
 }
 
 func TestSpecificProvisionClosedContractRejected(t *testing.T) {
-	_, repo, _, agreementCode := openSpecificProvisionFixture(t, "GROUP_3", "CLOSED")
+	_, repo, _, agreementCode := openSpecificProvisionFixture(t, "GROUP_3", domain.ContractClosed)
 	svc := NewSpecificProvisionService(repo, nil, nil)
 	_, err := svc.Calculate(context.Background(), specificProvisionTenantID, agreementCode, "2026-10-08")
 	if err == nil {
@@ -67,7 +67,7 @@ func TestSpecificProvisionClosedContractRejected(t *testing.T) {
 }
 
 func TestSpecificProvisionResolveReplayDoesNotApplyTwice(t *testing.T) {
-	db, repo, contractCode, agreementCode := openSpecificProvisionFixture(t, "GROUP_3", "ACTIVE")
+	db, repo, contractCode, agreementCode := openSpecificProvisionFixture(t, "GROUP_3", domain.ContractDisbursed)
 	ctx := context.Background()
 	// outstanding 100000 × 20% = 20000, already provisioned; approval has no posting delta.
 	row := repository.SpecificProvisionRow{
@@ -98,7 +98,7 @@ func TestSpecificProvisionResolveReplayDoesNotApplyTwice(t *testing.T) {
 func TestSpecificProvisionSettlePersistsNewAgreementBalance(t *testing.T) {
 	for _, required := range []int64{35000, 5000} {
 		t.Run(fmt.Sprint(required), func(t *testing.T) {
-			db, repo, contractCode, agreementCode := openSpecificProvisionFixture(t, "GROUP_3", "ACTIVE")
+			db, repo, contractCode, agreementCode := openSpecificProvisionFixture(t, "GROUP_3", domain.ContractDisbursed)
 			ctx := context.Background()
 			row := repository.SpecificProvisionRow{
 				ID: repository.NewID("sp"), TenantID: specificProvisionTenantID, ContractCode: contractCode,
@@ -141,7 +141,7 @@ func TestCreateCollateralRequiresExplicitDeductionRatio(t *testing.T) {
 }
 
 func TestSpecificProvisionDeductionRatioIsPercentage(t *testing.T) {
-	db, repo, contractCode, agreementCode := openSpecificProvisionFixture(t, "GROUP_3", "ACTIVE")
+	db, repo, contractCode, agreementCode := openSpecificProvisionFixture(t, "GROUP_3", domain.ContractDisbursed)
 	collateralCode := "SP-COLL-" + fmt.Sprint(time.Now().UnixNano())
 	if _, err := db.Exec(`
 		INSERT INTO lnm_collaterals (id, tenant_id, coll_code, coll_name, coll_type_code, coll_value_minor, deduction_ratio)

@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
-	"github.com/shopspring/decimal"
 )
 
 const specificProvisionRateMissingCode = "PROVISION_RATE_MISSING"
@@ -88,7 +88,7 @@ func (s *SpecificProvisionService) Calculate(ctx context.Context, tenantID, agre
 		OutstandingMinor: outstanding,
 		DeductionMinor:   deduction,
 		BaseMinor:        base,
-		AmountMinor:      requiredSpecificProvision(base, rate),
+		AmountMinor:      domain.RequiredSpecificProvision(base, rate),
 	}, nil
 }
 
@@ -193,7 +193,11 @@ func (s *SpecificProvisionService) Resolve(ctx context.Context, tenantID, id, de
 		if s.finance == nil {
 			return "", ardaerrors.New(ardaerrors.CodeInternal, "finance client is not configured")
 		}
-		posted, err := s.finance.Post(ctx, s.postingRequest(ctx, row, delta))
+		request, err := s.postingRequest(ctx, row, delta)
+		if err != nil {
+			return "", err
+		}
+		posted, err := s.finance.Post(ctx, request)
 		if err != nil {
 			return "", ardaerrors.Wrap(ardaerrors.CodeBadGateway, "specific provision posting failed", err)
 		}
@@ -201,12 +205,16 @@ func (s *SpecificProvisionService) Resolve(ctx context.Context, tenantID, id, de
 	}))
 }
 
-func (s *SpecificProvisionService) postingRequest(ctx context.Context, row *repository.SpecificProvisionRow, delta int64) *financev1.PostingRequest {
+func (s *SpecificProvisionService) postingRequest(ctx context.Context, row *repository.SpecificProvisionRow, delta int64) (*financev1.PostingRequest, error) {
 	analytics := &financev1.Analytics{
 		ContractCode:  row.ContractCode,
 		DebtGroupCode: row.DebtGroupCode,
 	}
 	legs := specificProvisionPostingLegs(delta, analytics)
+	lines, err := financeclient.BuildPostingLines(ctx, s.finance, specificProvisionDocumentType, legs, "VND")
+	if err != nil {
+		return nil, err
+	}
 	return &financev1.PostingRequest{
 		IdempotencyKey: fmt.Sprintf("lnm-specific-provision-%s", row.ID),
 		AccountingDate: row.ProvisionDate,
@@ -218,10 +226,8 @@ func (s *SpecificProvisionService) postingRequest(ctx context.Context, row *repo
 			DocumentId:   row.ID,
 			DocumentCode: row.AgreementCode,
 		},
-		Lines: financeclient.PostingLinesFromRules(
-			financeclient.FetchPostingRules(ctx, s.finance, specificProvisionDocumentType),
-			legs, "VND"),
-	}
+		Lines: lines,
+	}, nil
 }
 
 func specificProvisionPostingLegs(delta int64, analytics *financev1.Analytics) []financeclient.PostingLeg {
@@ -233,26 +239,14 @@ func specificProvisionPostingLegs(delta int64, analytics *financev1.Analytics) [
 	if amount < 0 {
 		amount = -amount
 		legs = append(legs,
-			financeclient.PostingLeg{CardLine: 3, Fallback: "LNM_PROVISION_LIABILITY", Direction: "DEBIT", AmountMinor: amount, Analytics: analytics},
-			financeclient.PostingLeg{CardLine: 4, Fallback: "LNM_PROVISION_RELEASE", Direction: "CREDIT", AmountMinor: amount, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 3, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 4, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics},
 		)
 	} else {
 		legs = append(legs,
-			financeclient.PostingLeg{CardLine: 1, Fallback: "LNM_PROVISION_EXPENSE", Direction: "DEBIT", AmountMinor: amount, Analytics: analytics},
-			financeclient.PostingLeg{CardLine: 2, Fallback: "LNM_PROVISION_LIABILITY", Direction: "CREDIT", AmountMinor: amount, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 1, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 2, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics},
 		)
 	}
 	return legs
-}
-
-// requiredSpecificProvision = base × rate / 100, HALF_UP to đồng.
-func requiredSpecificProvision(baseMinor int64, ratePercent float64) int64 {
-	if baseMinor <= 0 || ratePercent <= 0 {
-		return 0
-	}
-	required := decimal.NewFromInt(baseMinor).
-		Mul(decimal.NewFromFloat(ratePercent)).
-		Div(decimal.NewFromInt(100)).
-		Round(0)
-	return required.IntPart()
 }

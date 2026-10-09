@@ -3,15 +3,20 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/nats-io/nats.go"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/bootstrap"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/config"
@@ -49,6 +54,29 @@ import (
 var bodyLimits = []ardahttp.BodyLimitOverride{
 	// BPMN import parses a 10MiB multipart form.
 	{Prefix: "/api/workflow/process-definitions", MaxBytes: ardahttp.MaxWorkflowBodyBytes},
+}
+
+func parseSLAMilestones(raw string) ([]int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return []int{50, 90, 100}, nil
+	}
+	seen := map[int]bool{}
+	var out []int
+	for _, part := range strings.Split(raw, ",") {
+		value, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || value < 1 || value > 100 {
+			return nil, fmt.Errorf("milestone %q must be an integer from 1 to 100", part)
+		}
+		if !seen[value] {
+			out = append(out, value)
+			seen[value] = true
+		}
+	}
+	if !seen[100] {
+		return nil, fmt.Errorf("milestones must include 100 for overdue notification")
+	}
+	sort.Ints(out)
+	return out, nil
 }
 
 func main() {
@@ -208,6 +236,37 @@ func main() {
 
 	syncCtx, syncCancel := context.WithCancel(context.Background())
 	defer syncCancel()
+	if cfg.NATSURL != "" {
+		if conn, err := nats.Connect(cfg.NATSURL); err != nil {
+			logger.Warn("workflow outbox relay disabled: nats unavailable", "err", err)
+		} else {
+			defer conn.Close()
+			if relay := service.NewWorkflowOutboxRelay(db, conn, logger); relay != nil {
+				go relay.Run(syncCtx)
+			}
+		}
+	} else {
+		logger.Warn("workflow outbox relay disabled: NATS_URL is empty")
+	}
+	go func() {
+		thresholds, err := parseSLAMilestones(cfg.SLAMilestones)
+		if err != nil {
+			logger.Error("invalid workflow SLA milestones; using defaults", "err", err)
+			thresholds = []int{50, 90, 100}
+		}
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			if err := caseRepo.EmitSLANotifications(syncCtx, thresholds); err != nil && syncCtx.Err() == nil {
+				logger.Error("workflow SLA outbox scan failed", "err", err)
+			}
+			select {
+			case <-syncCtx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 	assignmentResolver := service.NewAssignmentResolver(caseRepo)
 	if projector := worker.NewUserTaskProjector(zeebeRest, caseRepo, assignmentResolver); projector != nil {
 		go projector.Run(syncCtx)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -19,16 +20,19 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/config"
 	"github.com/arda-labs/arda/apps/loan-service/internal/handler"
 	"github.com/arda-labs/arda/apps/loan-service/internal/migration"
+	"github.com/arda-labs/arda/apps/loan-service/internal/paramspec"
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	"github.com/arda-labs/arda/apps/loan-service/internal/service"
 	grpcserver "github.com/arda-labs/arda/apps/loan-service/internal/transport/grpc"
 	transport "github.com/arda-labs/arda/apps/loan-service/internal/transport/http"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	loangrpc "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
+	platformclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/platform"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	ardaParams "github.com/arda-labs/arda/libs/go/arda-params"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	loanv1 "github.com/arda-labs/arda/libs/go/arda-proto/loan/v1"
 )
@@ -70,6 +74,35 @@ func main() {
 	logger.Info("migrations applied")
 
 	repo := repository.NewLoanRepository(db)
+	platform, err := platformclient.Dial(context.Background(), cfg.PlatformGRPCAddr, "loan-service", logger)
+	if err != nil {
+		logger.Error("platform grpc dial failed", "err", err)
+		os.Exit(1)
+	}
+	defer platform.Close()
+	parameterRegistry := ardaParams.NewRegistry(platform)
+	if err := parameterRegistry.Declare(paramspec.LoanModule()); err != nil {
+		logger.Error("declare parameter registry", "err", err)
+		os.Exit(1)
+	}
+	if err := parameterRegistry.Verify(context.Background()); err != nil {
+		logger.Error("verify parameter registry", "err", err)
+		os.Exit(1)
+	}
+	if cfg.NATSURL != "" {
+		if conn, err := nats.Connect(cfg.NATSURL); err != nil {
+			logger.Warn("loan outbox relay disabled: nats unavailable", "err", err)
+		} else {
+			defer conn.Close()
+			relayCtx, relayCancel := context.WithCancel(context.Background())
+			defer relayCancel()
+			if relay := service.NewDisbursementOutboxRelay(db, conn, logger); relay != nil {
+				go relay.Run(relayCtx)
+			}
+		}
+	} else {
+		logger.Warn("loan outbox relay disabled: NATS_URL is empty")
+	}
 	loanSvc := service.NewLoanService(repo, workflow)
 	adjSvc := service.NewAdjustmentService(repo, workflow)
 	loanHandler := handler.NewLoanHandler(loanSvc, adjSvc)
@@ -91,10 +124,12 @@ func main() {
 	colSvc := service.NewCollectionService(repo, workflow)
 	colHandler := handler.NewCollectionHandler(colSvc)
 	accrualSvc := service.NewAccrualService(repo, db, financeClient)
-	accrualHandler := handler.NewAccrualHandler(accrualSvc)
+	accrualHandler := handler.NewAccrualHandler(accrualSvc, platform)
+	agreementSnapshotSvc := service.NewAgreementDailySnapshotService(repo)
+	agreementSnapshotHandler := handler.NewAgreementDailySnapshotHandler(agreementSnapshotSvc)
 	provisionSvc := service.NewProvisionService(repo, db, financeClient)
 	provisionHandler := handler.NewProvisionHandler(provisionSvc)
-	generalProvSvc := service.NewGeneralProvisionService(repo, workflow, financeClient)
+	generalProvSvc := service.NewGeneralProvisionService(repo, workflow, financeClient, parameterRegistry)
 	generalProvHandler := handler.NewGeneralProvisionHandler(generalProvSvc)
 	reportSvc := service.NewLoanReportService(repo)
 	reportHandler := handler.NewReportHandler(reportSvc)
@@ -108,10 +143,12 @@ func main() {
 	disbBatchSvc := service.NewBatchDisbursementService(repo, workflow)
 	colBatchSvc := service.NewBatchCollectionService(repo, workflow)
 	batchHandler := handler.NewBatchHandler(disbBatchSvc, colBatchSvc, financeClient)
+	workflowOutboxCtx, stopWorkflowOutbox := context.WithCancel(context.Background())
+	go disbBatchSvc.RunWorkflowOutbox(workflowOutboxCtx, time.Second)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.HandlerChain(cfg.AppName, nil, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, specificProvHandler, internalAIHandler, internalReportingHandler, loangrpc.Kinds))),
+		Handler:      ardahttp.HandlerChain(cfg.AppName, nil, ardahttp.UserTimezoneMiddleware(transport.NewRouter(loanHandler, disbHandler, colHandler, accrualHandler, provisionHandler, batchHandler, generalProvHandler, reportHandler, planHandler, specificProvHandler, internalAIHandler, internalReportingHandler, agreementSnapshotHandler, loangrpc.Kinds))),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -169,6 +206,7 @@ func main() {
 	<-quit
 
 	logger.Info("shutting down", "name", cfg.AppName)
+	stopWorkflowOutbox()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {

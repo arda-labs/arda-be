@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
+	ardaBusinessDate "github.com/arda-labs/arda/libs/go/arda-businessdate"
 )
 
 type mockCalendarRepo struct {
@@ -17,15 +18,26 @@ type mockCalendarRepo struct {
 	claimErr     error
 	releaseErr   error
 	isHolidayErr error
-	updateErr    error
 
 	claimCalls   int
 	releaseCalls int
-	updateCalls  int
 }
 
 func (m *mockCalendarRepo) GetSystemDate(ctx context.Context, branchCode string) (*domain.SystemDate, error) {
 	return m.systemDate, nil
+}
+
+func (m *mockCalendarRepo) BusinessDateForScope(ctx context.Context, scope ardaBusinessDate.Scope) (*domain.SystemDate, error) {
+	return m.systemDate, nil
+}
+func (m *mockCalendarRepo) CurrentBusinessDate(ctx context.Context, scope ardaBusinessDate.Scope) (time.Time, error) {
+	if m.systemDate == nil {
+		return time.Time{}, domain.ErrSystemDateNotFound
+	}
+	return m.systemDate.CurrentBusinessDate, nil
+}
+func (m *mockCalendarRepo) IsHolidayForScope(ctx context.Context, scope ardaBusinessDate.Scope, date time.Time) (bool, error) {
+	return m.IsHoliday(ctx, date)
 }
 
 // ClaimEOD mimics the repository's conditional UPDATE: a claim is only granted
@@ -53,15 +65,6 @@ func (m *mockCalendarRepo) ReleaseEOD(ctx context.Context, branchCode string) er
 	if m.systemDate != nil && m.systemDate.Status == domain.SystemDateEODProcessing {
 		m.systemDate.Status = domain.SystemDateOpen
 	}
-	return nil
-}
-
-func (m *mockCalendarRepo) UpdateSystemDate(ctx context.Context, sd *domain.SystemDate) error {
-	m.updateCalls++
-	if m.updateErr != nil {
-		return m.updateErr
-	}
-	m.systemDate = sd
 	return nil
 }
 

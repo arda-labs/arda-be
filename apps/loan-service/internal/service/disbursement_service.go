@@ -95,7 +95,7 @@ func (s *DisbursementService) Create(ctx context.Context, tenantID, createdBy st
 		if err != nil {
 			return nil, mapRepoError(err)
 		}
-		if err := checkCompleteRemainder(source.DisburseAmtMinor, completed, in.DisburseAmtMinor); err != nil {
+		if err := domain.CheckCompleteRemainder(source.DisburseAmtMinor, completed, in.DisburseAmtMinor); err != nil {
 			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
 		}
 		in.SourceRegisterID = source.ID
@@ -146,29 +146,6 @@ func (s *DisbursementService) validateCompleteSource(ctx context.Context, tenant
 	return source, nil
 }
 
-// checkCompleteRemainder guards the COMPLETE flow: completions of one source
-// register may never exceed the register amount (in-flight cases count).
-func checkCompleteRemainder(sourceRegisterAmtMinor, completedAmtMinor, disburseAmtMinor int64) error {
-	if disburseAmtMinor > sourceRegisterAmtMinor-completedAmtMinor {
-		return fmt.Errorf("disburse_amt_minor %d exceeds source remainder %d (register %d - completed %d)",
-			disburseAmtMinor, sourceRegisterAmtMinor-completedAmtMinor, sourceRegisterAmtMinor, completedAmtMinor)
-	}
-	return nil
-}
-
-// checkRegisterLimit is retained for pure unit callers and delegates the
-// calculation to the canonical domain exposure model.
-func checkRegisterLimit(contractLoanAmtMinor, contractOutstandingMinor, disburseAmtMinor int64) error {
-	exposure := domain.ContractExposure{
-		LoanAmountMinor:  contractLoanAmtMinor,
-		OutstandingMinor: contractOutstandingMinor,
-	}
-	if !exposure.Allows(disburseAmtMinor) {
-		return fmt.Errorf("disburse_amt_minor %d exceeds contract headroom %d", disburseAmtMinor, exposure.HeadroomMinor())
-	}
-	return nil
-}
-
 // Submit pushes the DRAFT disbursement into its flow's case (register or
 // complete, by flow_type).
 func (s *DisbursementService) Submit(ctx context.Context, tenantID, actor, id string) (domain.Disbursement, error) {
@@ -176,11 +153,11 @@ func (s *DisbursementService) Submit(ctx context.Context, tenantID, actor, id st
 	if err != nil {
 		return domain.Disbursement{}, mapRepoError(err)
 	}
-	if item.Status != domain.DisbursementDraft {
-		return domain.Disbursement{}, ardaerrors.New(ardaerrors.CodeInvalidInput, "only DRAFT disbursements can be submitted")
-	}
 	if item.BatchID != "" {
 		return domain.Disbursement{}, ardaerrors.New(ardaerrors.CodeConflict, "disbursement belongs to a batch and cannot be submitted separately")
+	}
+	if item.Status != domain.DisbursementDraft {
+		return domain.Disbursement{}, ardaerrors.New(ardaerrors.CodeInvalidInput, "only DRAFT disbursements can be submitted")
 	}
 	if s.workflow == nil {
 		return domain.Disbursement{}, ardaerrors.New(ardaerrors.CodeInternal, "workflow client is not configured")
@@ -228,7 +205,10 @@ func (s *DisbursementService) Submit(ctx context.Context, tenantID, actor, id st
 	if err := s.repo.SetDisbursementCaseAndJournal(ctx, tenantID, item.ID, caseCreated.Id, caseCreated.GetCaseCode(), ""); err != nil {
 		return domain.Disbursement{}, mapRepoError(err)
 	}
-	if err := s.repo.SetDisbursementStatus(ctx, tenantID, item.ID, domain.DisbursementSubmitted, actor); err != nil {
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(item.Status), domain.Status(domain.DisbursementSubmitted), ""); err != nil {
+		return domain.Disbursement{}, mapRepoError(err)
+	}
+	if err := s.repo.SetDisbursementStatus(ctx, tenantID, item.ID, item.Status, domain.DisbursementSubmitted, actor, ""); err != nil {
 		return domain.Disbursement{}, mapRepoError(err)
 	}
 	updated, err := s.repo.GetDisbursement(ctx, tenantID, item.ID)
@@ -253,23 +233,25 @@ func (s *DisbursementService) Check(ctx context.Context, tenantID, id string) (b
 // Resolve applies the workflow decision. REJECT/CANCEL are terminal without
 // posting — the finance hold release is the workflow cancel worker's job.
 func (s *DisbursementService) Resolve(ctx context.Context, tenantID, id, decision, decidedBy, note string) error {
+	item, err := s.repo.GetDisbursement(ctx, tenantID, id)
+	if err != nil {
+		return mapRepoError(err)
+	}
+	var target string
 	switch decision {
 	case "APPROVE":
-		if err := s.repo.SetDisbursementStatus(ctx, tenantID, id, domain.DisbursementApproved, decidedBy); err != nil {
-			return mapRepoError(err)
-		}
+		target = domain.DisbursementApproved
 	case "REJECT":
-		if err := s.repo.SetDisbursementStatus(ctx, tenantID, id, domain.DisbursementRejected, decidedBy); err != nil {
-			return mapRepoError(err)
-		}
+		target = domain.DisbursementRejected
 	case "CANCEL":
-		if err := s.repo.SetDisbursementStatus(ctx, tenantID, id, domain.DisbursementCancelled, decidedBy); err != nil {
-			return mapRepoError(err)
-		}
+		target = domain.DisbursementCancelled
 	default:
 		return ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown decision "+decision)
 	}
-	return nil
+	if err := domain.CanTransition(domain.WorkflowMachine, domain.Status(item.Status), domain.Status(target), note); err != nil {
+		return mapRepoError(err)
+	}
+	return mapRepoError(s.repo.SetDisbursementStatus(ctx, tenantID, id, item.Status, target, decidedBy, note))
 }
 
 // Settle marks POSTED with the journal entry id and applies the flow side
@@ -292,14 +274,19 @@ func (s *DisbursementService) Settle(ctx context.Context, tenantID, id, journalE
 
 // SettleRegister marks the REGISTER leg POSTED and settles the agreement:
 // outstanding + pending (in-transit) both bump by the drawdown amount, and a
-// PENDING agreement goes ACTIVE. Contract status is deliberately left to the
-// COMPLETE settle (EPAS first-completion semantics). The status transition and
+// PENDING agreement goes ACTIVE. The first posted drawdown moves an approved
+// contract to DISBURSED. The status transition and
 // the agreement side effect run in one transaction, and a retry of an already
 // settled drawdown is a no-op.
 func (s *DisbursementService) SettleRegister(ctx context.Context, tenantID, id, journalEntryID, actor string) error {
 	item, err := s.repo.GetDisbursement(ctx, tenantID, id)
 	if err != nil {
 		return mapRepoError(err)
+	}
+	if item.Status == domain.DisbursementSubmitted {
+		if err := s.repo.SetDisbursementStatus(ctx, tenantID, id, item.Status, domain.DisbursementApproved, actor, ""); err != nil {
+			return mapRepoError(err)
+		}
 	}
 	if _, err := s.repo.SettleDisbursementRegister(ctx, tenantID, item.ID, item.AgreementCode, item.DisburseAmtMinor, journalEntryID, actor); err != nil {
 		return mapRepoError(err)
@@ -308,12 +295,17 @@ func (s *DisbursementService) SettleRegister(ctx context.Context, tenantID, id, 
 }
 
 // SettleComplete marks the COMPLETE leg POSTED and unwinds the in-transit
-// pending on the agreement (guarded not below zero). The first completed
-// drawdown statuses the contract ACTIVE. Idempotent on retry.
+// pending on the agreement (guarded not below zero). The first posted
+// drawdown has already moved the contract to DISBURSED. Idempotent on retry.
 func (s *DisbursementService) SettleComplete(ctx context.Context, tenantID, id, journalEntryID, actor string) error {
 	item, err := s.repo.GetDisbursement(ctx, tenantID, id)
 	if err != nil {
 		return mapRepoError(err)
+	}
+	if item.Status == domain.DisbursementSubmitted {
+		if err := s.repo.SetDisbursementStatus(ctx, tenantID, id, item.Status, domain.DisbursementApproved, actor, ""); err != nil {
+			return mapRepoError(err)
+		}
 	}
 	if _, err := s.repo.SettleDisbursementComplete(ctx, tenantID, item.ID, item.ContractCode, item.AgreementCode, item.DisburseAmtMinor, journalEntryID, actor); err != nil {
 		return mapRepoError(err)

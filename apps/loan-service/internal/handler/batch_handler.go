@@ -1,13 +1,16 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 	"github.com/arda-labs/arda/apps/loan-service/internal/service"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
+	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 )
 
 // BatchHandler exposes the iteration-13 batch flows (1 hồ sơ — N hợp đồng)
@@ -34,15 +37,15 @@ var batchListSpec = ardahttp.ListSpec{
 
 // batchStatuses is the whitelisted status filter set.
 var batchStatuses = map[string]bool{
-	"DRAFT": true, "SUBMITTED": true, "APPROVED": true,
-	"REJECTED": true, "CANCELLED": true, "POSTED": true,
+	"DRAFT": true, "PENDING_APPROVAL": true, "APPROVED": true,
+	"SUBMIT_FAILED": true, "REJECTED": true, "CANCELLED": true, "POSTED": true,
 }
 
 func batchStatusFilter(w http.ResponseWriter, raw string) (string, bool) {
 	status := strings.ToUpper(strings.TrimSpace(raw))
 	if status != "" && !batchStatuses[status] {
 		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput,
-			"status must be one of: DRAFT, SUBMITTED, APPROVED, REJECTED, CANCELLED, POSTED")
+			"status must be one of: DRAFT, PENDING_APPROVAL, APPROVED, REJECTED, CANCELLED, POSTED")
 		return "", false
 	}
 	return status, true
@@ -91,7 +94,64 @@ func (h *BatchHandler) CreateBatchRegister(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	created, err := h.disb.CreateBatchRegister(r.Context(), tenantID, actorOf(r), orgScopeFromRequest(r).ActiveOrg(), &req)
-	writeResult(w, r, created, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, draftCreatedResponse(created))
+}
+
+// SubmitDisbursementBatch queues workflow work and returns without waiting for Zeebe.
+func (h *BatchHandler) SubmitDisbursementBatch(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		DataVersion int64 `json:"data_version"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.disb.Submit(r.Context(), tenantID, actorOf(r), r.PathValue("id"), req.DataVersion)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusAccepted, map[string]any{"batch_id": item.ID, "reference_no": item.ID, "status": item.Status, "data_version": item.DataVersion})
+}
+
+// UpdateDisbursementDraft updates a DRAFT batch with optimistic concurrency.
+func (h *BatchHandler) UpdateDisbursementDraft(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req service.CreateBatchInput
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	item, err := h.disb.UpdateDraft(r.Context(), tenantID, actorOf(r), r.PathValue("id"), &req)
+	writeResult(w, r, item, err)
+}
+
+// CancelDisbursementDraft cancels a saved draft with an optimistic version guard.
+func (h *BatchHandler) CancelDisbursementDraft(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		DataVersion int64 `json:"data_version"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if err := h.disb.CancelDraft(r.Context(), tenantID, actorOf(r), r.PathValue("id"), req.DataVersion); err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{"batch_id": r.PathValue("id"), "status": "CANCELLED"})
 }
 
 // CreateBatchComplete handles POST /api/loan/disbursement-batches/complete.
@@ -109,7 +169,15 @@ func (h *BatchHandler) CreateBatchComplete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	created, err := h.disb.CreateBatchComplete(r.Context(), tenantID, actorOf(r), orgScopeFromRequest(r).ActiveOrg(), req.SourceBatchID, &req.CreateBatchInput)
-	writeResult(w, r, created, err)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, draftCreatedResponse(created))
+}
+
+func draftCreatedResponse(batch *domain.DisbursementBatch) map[string]any {
+	return map[string]any{"id": batch.ID, "batch_id": batch.ID, "status": batch.Status, "data_version": batch.DataVersion}
 }
 
 // GetDisbursementBatch handles GET /api/loan/disbursement-batches/{id}
@@ -121,6 +189,96 @@ func (h *BatchHandler) GetDisbursementBatch(w http.ResponseWriter, r *http.Reque
 	}
 	item, err := h.disb.Get(r.Context(), tenantID, r.PathValue("id"))
 	writeResult(w, r, item, err)
+}
+
+// PreviewDisbursementBatch resolves the accounting rules and COA for a saved
+// REGISTER draft. Finance Validate is read-only; this endpoint never reserves
+// or posts a journal entry.
+func (h *BatchHandler) PreviewDisbursementBatch(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+	if h.fin == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, ardaerrors.CodeBadGateway, "finance preview is unavailable")
+		return
+	}
+	batch, err := h.disb.Get(r.Context(), tenantID, r.PathValue("id"))
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	if batch.FlowType != domain.FlowRegister || (batch.Status != domain.BatchDraft && batch.Status != domain.BatchSubmitted) {
+		writeErrorCode(w, http.StatusConflict, ardaerrors.CodeInvalidInput, "posting preview is only available for REGISTER drafts and pending approvals")
+		return
+	}
+	detail, err := h.disb.BatchPostingDetail(r.Context(), tenantID, r.PathValue("id"))
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	if detail.GetBatchType() != "DISB_REGISTER" {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "posting preview is only available for REGISTER batches")
+		return
+	}
+	if len(detail.GetRows()) == 0 {
+		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "batch has no rows")
+		return
+	}
+	legs := make([]financeclient.PostingLeg, 0, len(detail.GetRows())*2)
+	for _, row := range detail.GetRows() {
+		if row.GetAmountMinor() <= 0 {
+			writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, fmt.Sprintf("agreement %s must have a positive amount", row.GetAgreementCode()))
+			return
+		}
+		description := fmt.Sprintf("HĐ %s — %s", row.GetContractCode(), row.GetAgreementCode())
+		if row.GetPlanCode() != "" {
+			description += " — " + row.GetPlanCode()
+		}
+		legs = append(legs,
+			financeclient.PostingLeg{
+				CardLine: 1, Direction: "DEBIT",
+				AmountMinor: row.GetAmountMinor(), Description: description,
+				Analytics: &financev1.Analytics{DebtGroupCode: row.GetDebtGroupCode(), OrgUnitCode: row.GetOrgUnitCode(), CustomerCode: row.GetCustomerCode(), ContractCode: row.GetContractCode(), Dimensions: map[string]string{"agreement_code": row.GetAgreementCode(), "batch_id": detail.GetBatchId()}},
+			},
+			financeclient.PostingLeg{
+				CardLine: 2, Direction: "CREDIT",
+				AmountMinor: row.GetAmountMinor(), Description: description,
+				Analytics: &financev1.Analytics{OrgUnitCode: row.GetOrgUnitCode(), ContractCode: row.GetContractCode(), Dimensions: map[string]string{"batch_id": detail.GetBatchId()}},
+			},
+		)
+	}
+	lines, err := financeclient.BuildPostingLines(r.Context(), h.fin, "LNM_DISB_REGISTER", legs, detail.GetCurrencyCode())
+	if err != nil {
+		if _, business := financeclient.AsPostingError(err); business {
+			writeErrorCode(w, http.StatusUnprocessableEntity, ardaerrors.CodeInvalidInput, err.Error())
+			return
+		}
+		writeServiceError(w, r, err)
+		return
+	}
+	request := &financev1.PostingRequest{
+		IdempotencyKey:    "preview-lnm-disb-register-" + detail.GetBatchId(),
+		AccountingDate:    detail.GetTxnDate(),
+		CurrencyCode:      detail.GetCurrencyCode(),
+		Description:       detail.GetDescription(),
+		BusinessReference: &financev1.BusinessReference{Domain: "lnm", DocumentType: "LNM_DISB_REGISTER", DocumentId: detail.GetBatchId(), DocumentCode: detail.GetBatchCode()},
+		Lines:             lines,
+		Metadata:          map[string]string{"org_code": detail.GetOrgUnitCode()},
+	}
+	result, err := h.fin.Validate(r.Context(), request)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	headroom, err := h.disb.BatchHeadroom(r.Context(), tenantID, batch.ID)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{
+		"valid": result.GetValid(), "coa_version_id": result.GetCoaVersionId(), "global_errors": result.GetGlobalErrors(), "lines": result.GetLines(), "headroom": headroom,
+	})
 }
 
 // ListCollectionBatches handles GET /api/loan/collection-batches.

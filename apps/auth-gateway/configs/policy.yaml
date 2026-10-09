@@ -480,6 +480,30 @@ routes:
     permissions:
       - finance.read
 
+  - id: finance-document-renumber-request
+    path: /api/finance/document-numbers/renumber-requests
+    methods: [POST]
+    auth: true
+    risk: high
+    permissions:
+      - doc.renumber
+
+  - id: finance-document-renumber-approve
+    path: /api/finance/document-numbers/renumber-requests/approve
+    methods: [POST]
+    auth: true
+    risk: high
+    permissions:
+      - doc.renumber
+
+  - id: finance-document-renumber-approve-closed
+    path: /api/finance/document-numbers/renumber-requests/approve-closed
+    methods: [POST]
+    auth: true
+    risk: high
+    permissions:
+      - doc.renumber.locked
+
   - id: finance-write
     path: /api/finance/**
     methods: [POST, PUT, PATCH, DELETE]
@@ -487,6 +511,22 @@ routes:
     risk: high
     permissions:
       - finance.manage
+
+  - id: loan-disbursement-batch-read
+    path: /api/loan/disbursement-batches/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - loan.read
+
+  - id: loan-disbursement-batch-write
+    path: /api/loan/disbursement-batches/**
+    methods: [POST, PUT, PATCH, DELETE]
+    auth: true
+    risk: high
+    permissions:
+      - loan.manage
 
   - id: loan-read
     path: /api/loan/**
@@ -651,6 +691,30 @@ routes:
     risk: low
     permissions:
       - notification.read
+
+  - id: notifications-read-mark
+    path: /api/notifications/read-all
+    methods: [POST]
+    auth: true
+    risk: low
+    permissions:
+      - notification.read-mark
+
+  - id: notifications-item-read-mark
+    path: /api/notifications/inbox/**
+    methods: [POST]
+    auth: true
+    risk: low
+    permissions:
+      - notification.read-mark
+
+  - id: notifications-preferences-write
+    path: /api/notifications/preferences
+    methods: [PUT]
+    auth: true
+    risk: low
+    permissions:
+      - notification.preferences.manage
 
   - id: notifications-write
     path: /api/notifications/**
