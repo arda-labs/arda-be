@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
 	"github.com/arda-labs/arda/apps/notification-service/internal/netguard"
@@ -27,6 +28,7 @@ type NotificationService struct {
 	repo          *repository.NotificationRepository
 	pushSender    *push.Sender
 	emailResolver EmailResolver
+	defaultLocale string
 }
 
 var (
@@ -34,6 +36,7 @@ var (
 	ErrTenantMigrationRequired = errors.New("tenant migration is required")
 	ErrUserContextRequired     = errors.New("authenticated user context is required")
 	ErrPushEndpointOwned       = errors.New("push endpoint is already registered to another account")
+	ErrStreamLeaseLimit        = repository.ErrStreamLeaseLimit
 )
 
 func NewNotificationService(repo *repository.NotificationRepository, pushSender *push.Sender, resolvers ...EmailResolver) *NotificationService {
@@ -41,7 +44,12 @@ func NewNotificationService(repo *repository.NotificationRepository, pushSender 
 	if len(resolvers) > 0 {
 		svc.emailResolver = resolvers[0]
 	}
+	svc.defaultLocale = ""
 	return svc
+}
+
+func (s *NotificationService) SetDefaultLocale(locale string) {
+	s.defaultLocale = strings.TrimSpace(locale)
 }
 
 type AcceptInput struct {
@@ -61,6 +69,10 @@ type AcceptInput struct {
 	BodyKey        string             `json:"body_key"`
 	Href           string             `json:"href"`
 	Params         map[string]any     `json:"params"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       string             `json:"entity_id"`
+	DedupeKey      string             `json:"dedupe_key"`
+	Locale         string             `json:"locale"`
 }
 
 type PushSubscribeInput struct {
@@ -136,19 +148,47 @@ func (s *NotificationService) Accept(ctx context.Context, in AcceptInput) (*doma
 	for _, ch := range in.Channels {
 		ch = strings.TrimSpace(ch)
 		for _, r := range in.Recipients {
+			userID := strings.TrimSpace(r.UserID)
+			locale := strings.TrimSpace(in.Locale)
+			var scheduleAt *time.Time
+			if userID != "" {
+				enabled, scheduledAt, prefErr := s.repo.DeliveryRule(ctx, n.TenantID, userID, notificationEventGroup(n.EventType), ch)
+				if prefErr != nil {
+					return nil, prefErr
+				}
+				if !enabled {
+					continue
+				}
+				scheduleAt = scheduledAt
+				if ch == domain.ChannelInApp {
+					preferred, localeErr := s.repo.PreferredLocale(ctx, n.TenantID, userID)
+					if localeErr != nil {
+						return nil, localeErr
+					}
+					locale, localeErr = resolveNotificationLocale(preferred, locale, s.defaultLocale)
+					if localeErr != nil {
+						return nil, localeErr
+					}
+				}
+			}
 			if ch == domain.ChannelInApp {
-				if strings.TrimSpace(r.UserID) == "" {
+				if userID == "" {
 					continue
 				}
 				inboxItems = append(inboxItems, domain.InboxItem{
-					PublicID: newInboxPublicID(),
-					TenantID: n.TenantID,
-					UserID:   strings.TrimSpace(r.UserID),
-					Type:     notificationType(in.Type),
-					TitleKey: notificationKey(in.TitleKey, n.TemplateKey, "title"),
-					BodyKey:  notificationKey(in.BodyKey, n.TemplateKey, "body"),
-					Params:   paramsJSON,
-					Href:     strings.TrimSpace(in.Href),
+					PublicID:   newInboxPublicID(),
+					TenantID:   n.TenantID,
+					UserID:     strings.TrimSpace(r.UserID),
+					Type:       notificationType(in.Type),
+					TitleKey:   notificationKey(in.TitleKey, n.TemplateKey, "title"),
+					BodyKey:    notificationKey(in.BodyKey, n.TemplateKey, "body"),
+					Params:     paramsJSON,
+					Href:       strings.TrimSpace(in.Href),
+					EntityType: strings.TrimSpace(in.EntityType),
+					EntityID:   strings.TrimSpace(in.EntityID),
+					DedupeKey:  strings.TrimSpace(in.DedupeKey),
+					Locale:     locale,
+					Priority:   in.Priority,
 				})
 				continue
 			}
@@ -171,6 +211,7 @@ func (s *NotificationService) Accept(ctx context.Context, in AcceptInput) (*doma
 				Channel:     ch,
 				Destination: destination,
 				MaxAttempts: 6,
+				ScheduleAt:  scheduleAt,
 			})
 		}
 	}
@@ -184,6 +225,75 @@ func (s *NotificationService) Accept(ctx context.Context, in AcceptInput) (*doma
 	go s.dispatchWebPush(context.WithoutCancel(ctx), in, inboxItems)
 
 	return created, nil
+}
+
+func resolveNotificationLocale(preference, envelope, fallback string) (string, error) {
+	for _, locale := range []string{preference, envelope, fallback} {
+		locale = strings.TrimSpace(locale)
+		if locale == "vi-VN" || locale == "en-US" {
+			return locale, nil
+		}
+	}
+	return "", errors.New("notification.locale_unavailable: no supported user, event, or configured locale")
+}
+
+func notificationEventGroup(eventType string) string {
+	parts := strings.Split(strings.Trim(strings.TrimSpace(eventType), "."), ".")
+	if len(parts) >= 2 {
+		return strings.Join(parts[:2], ".")
+	}
+	return strings.TrimSpace(eventType)
+}
+
+func (s *NotificationService) ListPreferences(ctx context.Context, tenantID, userID string) ([]domain.NotificationPreference, error) {
+	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return nil, err
+	}
+	return s.repo.ListPreferences(ctx, tenantID, userID)
+}
+
+func (s *NotificationService) SavePreference(ctx context.Context, tenantID, userID string, p domain.NotificationPreference) error {
+	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(p.EventGroup) == "" || !validPreferenceChannel(p.Channel) {
+		return errors.New("notification.preference_invalid: event group and supported channel are required")
+	}
+	if p.DigestMode != "" && p.DigestMode != "NONE" && p.DigestMode != "HOURLY" && p.DigestMode != "DAILY" {
+		return errors.New("notification.preference_invalid: unsupported digest mode")
+	}
+	if p.QuietStart != nil || p.QuietEnd != nil {
+		if p.QuietStart == nil || p.QuietEnd == nil || !validClockTime(*p.QuietStart) || !validClockTime(*p.QuietEnd) {
+			return errors.New("notification.preference_invalid: quiet hours must be a valid start and end time")
+		}
+	}
+	if _, err := time.LoadLocation(defaultValue(p.Timezone, "UTC")); err != nil {
+		return errors.New("notification.preference_invalid: timezone is not recognized")
+	}
+	return s.repo.SavePreference(ctx, tenantID, userID, p)
+}
+
+func validPreferenceChannel(channel string) bool {
+	switch strings.TrimSpace(channel) {
+	case domain.ChannelEmail, domain.ChannelPush, domain.ChannelInApp, domain.ChannelSMS:
+		return true
+	default:
+		return false
+	}
+}
+
+func validClockTime(value string) bool {
+	_, err := time.Parse("15:04", strings.TrimSpace(value))
+	return err == nil
+}
+
+func defaultValue(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func resolvesEmail(channels []string) bool {
@@ -236,72 +346,37 @@ func (s *NotificationService) dispatchWebPush(ctx context.Context, in AcceptInpu
 		return
 	}
 	for _, item := range inboxItems {
+		pushEnabled, scheduledAt, err := s.repo.DeliveryRule(ctx, item.TenantID, item.UserID, notificationEventGroup(in.EventType), domain.ChannelPush)
+		if err != nil {
+			slog.Warn("read push preference failed", "user_id", item.UserID, "err", err)
+			continue
+		}
+		if !pushEnabled || scheduledAt != nil {
+			continue
+		}
 		subs, err := s.repo.ListPushSubscriptions(ctx, item.TenantID, item.UserID)
 		if err != nil {
 			slog.Warn("list push subscriptions failed", "userId", item.UserID, "err", err)
 			continue
 		}
-		title := renderPushText(item.TitleKey, in.Params)
-		body := renderPushText(item.BodyKey, in.Params)
 		for _, sub := range subs {
 			err := s.pushSender.Send(ctx, push.Subscription{
 				Endpoint: sub.Endpoint,
 				P256dh:   sub.P256dh,
 				Auth:     sub.Auth,
 			}, push.Payload{
-				Title: title,
-				Body:  body,
-				Href:  item.Href,
-				Tag:   item.PublicID,
+				ID:   item.PublicID,
+				Href: item.Href,
 			})
 			if err != nil {
 				slog.Warn("web push send failed", "userId", item.UserID, "err", err)
-				_ = s.repo.DeletePushSubscriptionByEndpoint(ctx, item.TenantID, item.UserID, sub.Endpoint)
+				if errors.Is(err, push.ErrSubscriptionExpired) {
+					if deleteErr := s.repo.DeletePushSubscriptionByEndpoint(ctx, item.TenantID, item.UserID, sub.Endpoint); deleteErr != nil {
+						slog.Warn("delete expired web push subscription failed", "userId", item.UserID, "err", deleteErr)
+					}
+				}
 			}
 		}
-	}
-}
-
-func renderPushText(key string, params map[string]any) string {
-	key = strings.TrimSpace(key)
-	caseCode, _ := params["caseCode"].(string)
-	comment, _ := params["comment"].(string)
-	switch {
-	case strings.Contains(key, "request_changes.title"):
-		return "Hồ sơ cần chỉnh sửa"
-	case strings.Contains(key, "request_changes.body"):
-		if caseCode != "" && comment != "" {
-			return fmt.Sprintf("%s: %s", caseCode, comment)
-		}
-		if comment != "" {
-			return comment
-		}
-		return "Vui lòng bổ sung hồ sơ"
-	case strings.Contains(key, "rejected.title"):
-		return "Đăng ký khách hàng bị từ chối"
-	case strings.Contains(key, "rejected.body"):
-		if caseCode != "" && comment != "" {
-			return fmt.Sprintf("%s: %s", caseCode, comment)
-		}
-		if comment != "" {
-			return comment
-		}
-		return "Hồ sơ đã bị từ chối"
-	case strings.Contains(key, "approved.title"):
-		return "Đăng ký khách hàng đã được duyệt"
-	case strings.Contains(key, "approved.body"):
-		if caseCode != "" {
-			return caseCode + " đã kích hoạt"
-		}
-		return "Hồ sơ đã được kích hoạt"
-	default:
-		if comment != "" {
-			return comment
-		}
-		if caseCode != "" {
-			return caseCode
-		}
-		return "Thông báo Arda"
 	}
 }
 
@@ -369,6 +444,58 @@ func (s *NotificationService) ListInbox(ctx context.Context, tenantID, userID st
 		limit = 20
 	}
 	return s.repo.ListInbox(ctx, tenantID, userID, limit)
+}
+
+func (s *NotificationService) ListInboxAfter(ctx context.Context, tenantID, userID string, afterSeq int64, limit int) ([]domain.InboxItem, error) {
+	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return nil, err
+	}
+	if afterSeq < 0 {
+		return nil, errors.New("event sequence must be non-negative")
+	}
+	if limit <= 0 || limit > 101 {
+		limit = 101
+	}
+	return s.repo.ListInboxAfter(ctx, tenantID, userID, afterSeq, limit)
+}
+
+func (s *NotificationService) LatestInboxEventSeq(ctx context.Context, tenantID, userID string) (int64, error) {
+	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return 0, err
+	}
+	return s.repo.LatestInboxEventSeq(ctx, tenantID, userID)
+}
+
+func (s *NotificationService) AcquireStreamLease(ctx context.Context, tenantID, userID string, limit int, ttl time.Duration) (string, error) {
+	tenantID, userID = strings.TrimSpace(tenantID), strings.TrimSpace(userID)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return "", err
+	}
+	return s.repo.AcquireStreamLease(ctx, tenantID, userID, limit, ttl)
+}
+
+func (s *NotificationService) RenewStreamLease(ctx context.Context, tenantID, userID, token string, ttl time.Duration) error {
+	tenantID, userID, token = strings.TrimSpace(tenantID), strings.TrimSpace(userID), strings.TrimSpace(token)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return err
+	}
+	if token == "" {
+		return errors.New("stream lease token is required")
+	}
+	return s.repo.RenewStreamLease(ctx, tenantID, userID, token, ttl)
+}
+
+func (s *NotificationService) ReleaseStreamLease(ctx context.Context, tenantID, userID, token string) error {
+	tenantID, userID, token = strings.TrimSpace(tenantID), strings.TrimSpace(userID), strings.TrimSpace(token)
+	if err := validateUserContext(tenantID, userID); err != nil {
+		return err
+	}
+	if token == "" {
+		return errors.New("stream lease token is required")
+	}
+	return s.repo.ReleaseStreamLease(ctx, tenantID, userID, token)
 }
 
 func (s *NotificationService) UnreadCount(ctx context.Context, tenantID, userID string) (int, error) {

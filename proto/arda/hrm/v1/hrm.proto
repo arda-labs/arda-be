@@ -11,6 +11,16 @@ service EmployeeCommandService {
   rpc CheckRegistration(CheckRegistrationRequest) returns (CheckRegistrationResponse);
   rpc SettleRegistration(SettleRegistrationRequest) returns (SettleRegistrationResponse);
   rpc RejectRegistration(RejectRegistrationRequest) returns (RejectRegistrationResponse);
+  rpc ListIAMUsersByOrgUnit(ListIAMUsersByOrgUnitRequest) returns (ListIAMUsersByOrgUnitResponse);
+}
+
+message ListIAMUsersByOrgUnitRequest {
+  string org_unit_id = 1;
+  bool include_descendants = 2;
+}
+
+message ListIAMUsersByOrgUnitResponse {
+  repeated string iam_user_ids = 1;
 }
 
 message CheckRegistrationRequest {

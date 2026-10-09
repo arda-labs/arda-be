@@ -16,6 +16,9 @@ jobs:
         image: postgres:18
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
         ports:
           - 5432:5432
         options: >-
@@ -29,6 +32,13 @@ jobs:
         with:
           go-version-file: go.work
           cache: true
+      - name: Test document number migration and transaction behavior on PostgreSQL 18
+        env:
+          ARDA_TEST_USER: postgres
+          ARDA_TEST_PASSWORD: postgres
+        run: |
+          export ARDA_TEST_DSN="postgres://${ARDA_TEST_USER}:${ARDA_TEST_PASSWORD}@localhost:5432/postgres?sslmode=disable"
+          go test ./apps/finance-service/internal/service -run '^TestDocumentNumberIssueConcurrencyRollbackAndRenumber$' -count=1 -v
       - uses: actions/setup-node@v4
         with:
           node-version: 22
