@@ -225,11 +225,6 @@ func (h *BatchHandler) PreviewDisbursementBatch(w http.ResponseWriter, r *http.R
 		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, "batch has no rows")
 		return
 	}
-	rules, err := h.fin.ListPostingRules(r.Context(), "LNM_DISB_REGISTER")
-	if err != nil {
-		writeServiceError(w, r, err)
-		return
-	}
 	legs := make([]financeclient.PostingLeg, 0, len(detail.GetRows())*2)
 	for _, row := range detail.GetRows() {
 		if row.GetAmountMinor() <= 0 {
@@ -242,16 +237,25 @@ func (h *BatchHandler) PreviewDisbursementBatch(w http.ResponseWriter, r *http.R
 		}
 		legs = append(legs,
 			financeclient.PostingLeg{
-				CardLine: 1, Fallback: "LNM_LOAN_PRINCIPAL", Direction: "DEBIT",
+				CardLine: 1, Direction: "DEBIT",
 				AmountMinor: row.GetAmountMinor(), Description: description,
 				Analytics: &financev1.Analytics{DebtGroupCode: row.GetDebtGroupCode(), OrgUnitCode: row.GetOrgUnitCode(), CustomerCode: row.GetCustomerCode(), ContractCode: row.GetContractCode(), Dimensions: map[string]string{"agreement_code": row.GetAgreementCode(), "batch_id": detail.GetBatchId()}},
 			},
 			financeclient.PostingLeg{
-				CardLine: 2, Fallback: "FUND_DISBURSEMENT_IN_TRANSIT", Direction: "CREDIT",
+				CardLine: 2, Direction: "CREDIT",
 				AmountMinor: row.GetAmountMinor(), Description: description,
 				Analytics: &financev1.Analytics{OrgUnitCode: row.GetOrgUnitCode(), ContractCode: row.GetContractCode(), Dimensions: map[string]string{"batch_id": detail.GetBatchId()}},
 			},
 		)
+	}
+	lines, err := financeclient.BuildPostingLines(r.Context(), h.fin, "LNM_DISB_REGISTER", legs, detail.GetCurrencyCode())
+	if err != nil {
+		if _, business := financeclient.AsPostingError(err); business {
+			writeErrorCode(w, http.StatusUnprocessableEntity, ardaerrors.CodeInvalidInput, err.Error())
+			return
+		}
+		writeServiceError(w, r, err)
+		return
 	}
 	request := &financev1.PostingRequest{
 		IdempotencyKey:    "preview-lnm-disb-register-" + detail.GetBatchId(),
@@ -259,7 +263,7 @@ func (h *BatchHandler) PreviewDisbursementBatch(w http.ResponseWriter, r *http.R
 		CurrencyCode:      detail.GetCurrencyCode(),
 		Description:       detail.GetDescription(),
 		BusinessReference: &financev1.BusinessReference{Domain: "lnm", DocumentType: "LNM_DISB_REGISTER", DocumentId: detail.GetBatchId(), DocumentCode: detail.GetBatchCode()},
-		Lines:             financeclient.PostingLinesFromRules(rules, legs, detail.GetCurrencyCode()),
+		Lines:             lines,
 		Metadata:          map[string]string{"org_code": detail.GetOrgUnitCode()},
 	}
 	result, err := h.fin.Validate(r.Context(), request)
