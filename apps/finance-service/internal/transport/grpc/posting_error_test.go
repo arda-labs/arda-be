@@ -40,3 +40,23 @@ func TestPostingErrorStatusLeavesUnknownErrorUntyped(t *testing.T) {
 		t.Fatal("unknown error should not gain a business posting detail")
 	}
 }
+
+func TestValidationCodesCrossGRPCBoundary(t *testing.T) {
+	for _, code := range []financev1.PostingErrorCode{
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_NO_LINES,
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_INVALID_DIRECTION,
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED,
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_UNKNOWN_DIMENSION,
+	} {
+		t.Run(code.String(), func(t *testing.T) {
+			message := code.String()[len("POSTING_ERROR_CODE_"):]
+			err := postingErrorStatus(errors.New("posting rejected: " + message))
+			for _, detail := range status.Convert(err).Details() {
+				if info, ok := detail.(*errdetails.ErrorInfo); ok && info.GetMetadata()["posting_error_code"] == code.String() {
+					return
+				}
+			}
+			t.Fatalf("missing typed validation code %s in %v", code, err)
+		})
+	}
+}

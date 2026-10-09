@@ -12,6 +12,10 @@ func TestClassifyPostingError(t *testing.T) {
 		message string
 		want    financev1.PostingErrorCode
 	}{
+		{"NO_LINES", financev1.PostingErrorCode_POSTING_ERROR_CODE_NO_LINES},
+		{"line 1: INVALID_DIRECTION", financev1.PostingErrorCode_POSTING_ERROR_CODE_INVALID_DIRECTION},
+		{"line 1: CLASSIFICATION_REQUIRED", financev1.PostingErrorCode_POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED},
+		{"line 1: UNKNOWN_DIMENSION:branch", financev1.PostingErrorCode_POSTING_ERROR_CODE_UNKNOWN_DIMENSION},
 		{"posting rejected: UNBALANCED:VND", financev1.PostingErrorCode_POSTING_ERROR_CODE_UNBALANCED},
 		{"PERIOD_CLOSED: period closed", financev1.PostingErrorCode_POSTING_ERROR_CODE_PERIOD_CLOSED},
 		{"BACKDATE_NOT_ALLOWED: policy", financev1.PostingErrorCode_POSTING_ERROR_CODE_BACKDATE_NOT_ALLOWED},
