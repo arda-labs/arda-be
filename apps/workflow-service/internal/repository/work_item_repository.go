@@ -310,7 +310,7 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 			description = COALESCE(NULLIF($6, ''), description),
 			candidate_role = COALESCE(NULLIF($7, ''), candidate_role),
 			candidate_users = CASE
-				WHEN cardinality($8) > 0 THEN $8
+				WHEN cardinality($8::text[]) > 0 THEN $8::text[]
 				ELSE candidate_users
 			END,
 			candidate_group_id = COALESCE(NULLIF($9, ''), candidate_group_id),

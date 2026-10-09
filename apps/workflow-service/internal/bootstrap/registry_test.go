@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -49,6 +50,46 @@ func TestLoanFormationReviewStepsHaveNoRejectBranch(t *testing.T) {
 	for _, element := range []string{"UT_GDReview", "UT_BoardReview"} {
 		if !contains(byElement[element], ActionReject) {
 			t.Fatalf("%s must expose REJECT: %v", element, byElement[element])
+		}
+	}
+}
+
+func TestCommonMakerCheckerRegistryStepsAreCaseTypeSpecific(t *testing.T) {
+	var content []byte
+	for _, process := range BuiltInProcesses() {
+		if process.ProcessCode == "COMMON_MAKER_CHECKER" {
+			content = process.Content
+			break
+		}
+	}
+	if len(content) == 0 {
+		t.Fatal("common maker-checker process not registered")
+	}
+	steps, err := DeriveRegistrySteps("common-maker-checker", content)
+	if err != nil {
+		t.Fatalf("derive shared process steps: %v", err)
+	}
+	if len(steps) != 2 {
+		t.Fatalf("common maker-checker steps = %d, want maker + checker", len(steps))
+	}
+	want := []struct {
+		element string
+		code    string
+		kind    StepKind
+	}{
+		{"UT_MakerInput", "UT_MakerInput", StepKindInput},
+		{"UT_CheckerReview", "UT_CheckerReview", StepKindChecker},
+	}
+	for i, step := range steps {
+		if step.ElementID != want[i].element || step.StepCode != want[i].code || step.Kind != want[i].kind {
+			t.Fatalf("step %d = %+v, want %+v", i, step, want[i])
+		}
+		wantFormKey := "lnm_recovery_v2." + strings.ToLower(step.ElementID)
+		if got := FormKey("LNM_RECOVERY_V2", step.StepCode); got != wantFormKey {
+			t.Fatalf("recovery form key = %q, want %q", got, wantFormKey)
+		}
+		if FormKey("LNM_RECOVERY_V2", step.StepCode) == FormKey("LNM_WAIVER_V2", step.StepCode) {
+			t.Fatalf("shared step form key must remain case-type specific: %s", step.StepCode)
 		}
 	}
 }

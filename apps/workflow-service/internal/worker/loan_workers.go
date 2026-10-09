@@ -86,7 +86,7 @@ func (w *LoanWorkers) executeHandler(kind string) worker.JobHandler {
 		}); err != nil {
 			return
 		}
-		w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), repository.CaseStatusCompleted)
+		w.finishCase(job, repository.CaseStatusCompleted)
 	}
 }
 
@@ -113,8 +113,18 @@ func (w *LoanWorkers) cancelHandler(kind string) worker.JobHandler {
 		}); err != nil {
 			return
 		}
-		w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), repository.CaseStatusRejected)
+		w.finishCase(job, repository.CaseStatusRejected)
 	}
+}
+
+func (w *LoanWorkers) finishCase(job entities.Job, status string) {
+	if vars, err := job.GetVariablesAsMap(); err == nil {
+		if caseID, _ := vars["caseId"].(string); caseID != "" {
+			w.projection.FinishCaseByCaseID(context.Background(), caseID, status)
+			return
+		}
+	}
+	w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), status)
 }
 
 func (w *LoanWorkers) completeJob(client worker.JobClient, job entities.Job, result map[string]any) error {

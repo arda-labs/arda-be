@@ -167,6 +167,16 @@ func main() {
 		logger.Info("loan grpc configured", "addr", cfg.LoanGRPCAddr)
 	}
 
+	makerCheckerKinds, err := caseRepo.ListActiveMakerCheckerWorkerKinds(context.Background())
+	if err != nil {
+		logger.Error("failed to list active maker-checker worker kinds", "err", err)
+		os.Exit(1)
+	}
+	if err := worker.ValidateMakerCheckerDependencies(makerCheckerKinds, loanErr == nil); err != nil {
+		logger.Error("maker-checker workers cannot be registered", "err", err)
+		os.Exit(1)
+	}
+
 	iamClient, err := iamclient.Dial(context.Background(), cfg.IAMGRPCAddr, cfg.AppName)
 	if err != nil {
 		logger.Error("iam grpc unavailable", "addr", cfg.IAMGRPCAddr, "err", err)
@@ -311,6 +321,16 @@ func main() {
 
 	if loanErr == nil {
 		loanWorkers := worker.NewLoanWorkers(loanClient, caseRepo)
+		makerCheckerWorkers, err := worker.NewMakerCheckerWorkers(loanWorkers, makerCheckerKinds, loanclient.Kinds)
+		if err != nil {
+			logger.Error("invalid maker-checker worker configuration", "err", err)
+			os.Exit(1)
+		}
+		for _, registration := range makerCheckerWorkers.Registrations() {
+			jobWorker := zeebeSvc.NewJobWorker(registration.Topic, registration.Handler)
+			defer jobWorker.Close()
+		}
+		logger.Info("workflow maker-checker workers registered", "kinds", len(loanclient.Kinds))
 		for _, kind := range loanclient.Kinds {
 			validateH, executeH, cancelH := loanWorkers.Handlers(kind)
 			v := zeebeSvc.NewJobWorker("lnm."+kind+".validate", validateH)

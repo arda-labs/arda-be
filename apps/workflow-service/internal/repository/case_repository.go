@@ -82,6 +82,9 @@ type BusinessCase struct {
 	ProcessInstanceKey     *int64     `json:"processInstanceKey,omitempty"`
 	BpmnProcessID          *string    `json:"bpmnProcessId,omitempty"`
 	BpmnVersion            *int       `json:"bpmnVersion,omitempty"`
+	WorkerKind             string     `json:"-"`
+	MakerRole              string     `json:"-"`
+	CheckerRole            string     `json:"-"`
 	CreatedAt              time.Time  `json:"createdAt"`
 	UpdatedAt              time.Time  `json:"updatedAt"`
 	CompletedAt            *time.Time `json:"completedAt,omitempty"`
@@ -777,6 +780,57 @@ func (r *CaseRepository) FinishCase(ctx context.Context, processInstanceKey int6
 		if err := enqueueWorkflowEvent(ctx, tx, subject, eventCode, dedupe, payload); err != nil {
 			return err
 		}
+	}
+	return tx.Commit()
+}
+
+// FinishCaseByCaseID finalizes a case using the service-owned caseId workflow
+// variable. This keeps terminal projection independent of the process-instance
+// key (which differs for a called child process) while applying the same task
+// and decision cleanup as FinishCase.
+func (r *CaseRepository) FinishCaseByCaseID(ctx context.Context, caseID, finalStatus string) error {
+	if strings.TrimSpace(caseID) == "" {
+		return nil
+	}
+	if finalStatus == "" {
+		finalStatus = CaseStatusCompleted
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var processInstanceKey sql.NullInt64
+	err = tx.QueryRowContext(ctx, `
+		UPDATE business_cases
+		SET status = $2, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND completed_at IS NULL
+		RETURNING process_instance_key
+	`, caseID, finalStatus).Scan(&processInstanceKey)
+	if errors.Is(err, sql.ErrNoRows) {
+		return tx.Commit()
+	}
+	if err != nil {
+		return err
+	}
+	if !processInstanceKey.Valid || processInstanceKey.Int64 == 0 {
+		return tx.Commit()
+	}
+	key := processInstanceKey.Int64
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE workflow_tasks
+		SET status = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE process_instance_key = $1 AND status IN ($3, $4, $5)
+	`, key, TaskStatusCancelled, TaskStatusRouting, TaskStatusReady, TaskStatusClaimed); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE workflow_task_decisions
+		SET status = 'APPLIED', applied_at = CURRENT_TIMESTAMP, last_error = NULL
+		WHERE process_instance_key = $1 AND status = 'RECORDED' AND decision IN ('APPROVE', 'REJECT')
+	`, key); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

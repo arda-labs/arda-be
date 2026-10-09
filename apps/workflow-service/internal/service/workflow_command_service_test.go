@@ -1,6 +1,7 @@
 package service
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
@@ -16,6 +17,21 @@ func testCaseForSubmitVariables() *repository.BusinessCase {
 		PrimaryObjectID:   "cus-1",
 		DomainService:     "crm-service",
 		CreatedBy:         "maker-1",
+		WorkerKind:        "lnm.recovery",
+		MakerRole:         "LNM_MAKER",
+		CheckerRole:       "LNM_CHECKER",
+	}
+}
+
+func TestBuildCaseVariablesIncludesAuthoritativeMakerCheckerConfig(t *testing.T) {
+	bc := testCaseForSubmitVariables()
+	variables := buildCaseVariables(bc, "maker-1", map[string]any{
+		"mcKind":        "lnm.attacker",
+		"mcMakerRole":   "ADMIN",
+		"mcCheckerRole": "ADMIN",
+	})
+	if variables["mcKind"] != "lnm.recovery" || variables["mcMakerRole"] != "LNM_MAKER" || variables["mcCheckerRole"] != "LNM_CHECKER" {
+		t.Fatalf("maker-checker variables = %#v, want authoritative operation config", variables)
 	}
 }
 
@@ -91,6 +107,23 @@ func TestDropReservedCaseVariables(t *testing.T) {
 	}
 	if client["amount"] != float64(10) {
 		t.Fatal("non-reserved client variable was stripped")
+	}
+}
+
+func TestDropReservedMakerCheckerConfiguration(t *testing.T) {
+	client := map[string]any{
+		"mcKind":        "lnm.attacker",
+		"mcMakerRole":   "ADMIN",
+		"mcCheckerRole": "ADMIN",
+		"description":   "allowed client input",
+	}
+	dropped := dropReservedCaseVariables(client)
+	want := []string{"mcCheckerRole", "mcKind", "mcMakerRole"}
+	if !reflect.DeepEqual(dropped, want) {
+		t.Fatalf("dropped reserved maker-checker keys = %v, want %v", dropped, want)
+	}
+	if client["description"] != "allowed client input" || len(client) != 1 {
+		t.Fatalf("sanitized client variables = %v, want only description", client)
 	}
 }
 

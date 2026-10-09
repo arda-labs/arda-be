@@ -16,6 +16,10 @@ var RegisteredJobTopics = []string{
 	"crm.customer.register.validate",
 	"crm.customer.register.execute",
 	"crm.customer.register.cancel",
+	// Shared maker-checker (LNM_RECOVERY_V2 canary).
+	JobMakerCheckerValidate,
+	JobMakerCheckerExecute,
+	JobMakerCheckerCancel,
 	// Disbursement two-flow (lnm-disbursement-register-v2.bpmn +
 	// lnm-disbursement-complete-v2.bpmn)
 	"lnm.disb-register.init",

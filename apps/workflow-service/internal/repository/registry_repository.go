@@ -37,6 +37,44 @@ type OperationTypeRef struct {
 	Status          string
 }
 
+type MakerCheckerRuntimeConfig struct {
+	WorkerKind  string
+	MakerRole   string
+	CheckerRole string
+}
+
+func (r *CaseRepository) MakerCheckerRuntimeConfig(ctx context.Context, caseType string) (MakerCheckerRuntimeConfig, error) {
+	var config MakerCheckerRuntimeConfig
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(worker_kind, ''), maker_role, checker_role
+		FROM business_operation_types
+		WHERE case_type = $1 AND status = 'ACTIVE'
+	`, caseType).Scan(&config.WorkerKind, &config.MakerRole, &config.CheckerRole)
+	return config, err
+}
+
+func (r *CaseRepository) ListActiveMakerCheckerWorkerKinds(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT worker_kind
+		FROM business_operation_types
+		WHERE status = 'ACTIVE' AND NULLIF(BTRIM(worker_kind), '') IS NOT NULL
+		ORDER BY worker_kind
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	kinds := make([]string, 0)
+	for rows.Next() {
+		var kind string
+		if err := rows.Scan(&kind); err != nil {
+			return nil, err
+		}
+		kinds = append(kinds, kind)
+	}
+	return kinds, rows.Err()
+}
+
 func (r *CaseRepository) ListActiveOperationTypes(ctx context.Context) ([]OperationTypeRef, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT case_type, bpmn_process_id, registry_version, owner_service, status
