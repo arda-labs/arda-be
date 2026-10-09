@@ -36,6 +36,16 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+// bodyLimits raises the request-body budget only for the routes that legitimately
+// carry a large upload. Everything else stays at ardahttp.DefaultMaxBodyBytes,
+// which is what stops an unbounded json.Decode from buffering whatever the
+// client sends.
+var bodyLimits = []ardahttp.BodyLimitOverride{
+	// Media uploads are the largest legitimate body here: upload_max_size_mb
+	// (100) plus the 1MiB of slack MaxUploadBytes() adds.
+	{Prefix: "/api/media", MaxBytes: ardahttp.MaxUploadBodyBytes},
+}
+
 func main() {
 	cfg := config.Load()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -170,7 +180,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
-		Handler: ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(mediaHandler)),
+		Handler: ardahttp.HandlerChain(cfg.AppName, bodyLimits, transport.NewRouter(mediaHandler)),
 		// Headers are small and fast; bodies are bounded by MaxBytesReader
 		// (upload_max_size_mb), so only the header read is time-boxed.
 		ReadHeaderTimeout: 10 * time.Second,
@@ -179,6 +189,9 @@ func main() {
 		// write deadline must cover a full conversion plus transfer.
 		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  60 * time.Second,
+		// 16KiB is generous for a JSON API. net/http defaults to 1MiB of headers
+		// per connection, which is a cheap way to occupy a worker.
+		MaxHeaderBytes: 16 << 10,
 	}
 
 	go func() {

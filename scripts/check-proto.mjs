@@ -47,6 +47,7 @@ if (generationError) {
 
 const generatedFiles = await walk(tempRoot, (path) => path.endsWith(".pb.go") || path.endsWith("_grpc.pb.go")).catch(() => [])
 const normalize = (path) => path.replaceAll("\\\\", "/")
+const normalizeText = (text) => text.replace(/\r\n/g, "\n")
 const expected = new Set(generatedFiles.map((path) => normalize(relative(tempRoot, path))))
 const actual = new Set((await walk(generatedRoot, (path) => path.endsWith(".pb.go") || path.endsWith("_grpc.pb.go"))).map((path) => normalize(relative(generatedRoot, path))))
 const missing = [...expected].filter((path) => !actual.has(path))
@@ -58,7 +59,7 @@ for (const path of expected) {
     readFile(join(tempRoot, path), "utf8"),
     readFile(join(generatedRoot, path), "utf8"),
   ])
-  if (want !== got) mismatched.push(path)
+  if (normalizeText(want) !== normalizeText(got)) mismatched.push(path)
 }
 
 if (missing.length || extra.length || mismatched.length) {

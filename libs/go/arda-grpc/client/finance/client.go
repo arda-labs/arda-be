@@ -16,10 +16,72 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/status"
 )
 
 const defaultTimeout = 10 * time.Second
+
+// PostingError is a typed business/policy error returned by finance-service.
+// Cause retains the original gRPC status for callers that also inspect it.
+type PostingError struct {
+	Code  financev1.PostingErrorCode
+	Cause error
+}
+
+func (e *PostingError) Error() string {
+	if e == nil || e.Cause == nil {
+		return "finance posting error"
+	}
+	if st, ok := status.FromError(e.Cause); ok {
+		return st.Message()
+	}
+	return e.Cause.Error()
+}
+
+func (e *PostingError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
+// AsPostingError returns the finance error code when the server sent a
+// recognized PostingError detail. Errors from older servers remain ordinary
+// gRPC errors and can still be handled by their status/message.
+func AsPostingError(err error) (*PostingError, bool) {
+	var postingErr *PostingError
+	if errors.As(err, &postingErr) {
+		return postingErr, true
+	}
+	if err == nil {
+		return nil, false
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return nil, false
+	}
+	for _, detail := range st.Details() {
+		info, ok := detail.(*errdetails.ErrorInfo)
+		if !ok || info.GetReason() != "POSTING_ERROR" {
+			continue
+		}
+		codeValue, found := financev1.PostingErrorCode_value[info.GetMetadata()["posting_error_code"]]
+		if !found || codeValue == int32(financev1.PostingErrorCode_POSTING_ERROR_CODE_UNSPECIFIED) {
+			continue
+		}
+		return &PostingError{Code: financev1.PostingErrorCode(codeValue), Cause: err}, true
+	}
+	return nil, false
+}
+
+func typedPostingError(err error) error {
+	if typed, ok := AsPostingError(err); ok {
+		return typed
+	}
+	return err
+}
 
 type Client struct {
 	conn    *grpc.ClientConn
@@ -81,7 +143,8 @@ func (c *Client) Validate(ctx context.Context, req *financev1.PostingRequest) (*
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	return c.api.ValidatePosting(callCtx, req)
+	result, err := c.api.ValidatePosting(callCtx, req)
+	return result, typedPostingError(err)
 }
 
 // Post writes one balanced journal entry. Idempotent per idempotency_key.
@@ -93,7 +156,8 @@ func (c *Client) Post(ctx context.Context, req *financev1.PostingRequest) (*fina
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	return c.api.PostTransaction(callCtx, req)
+	resp, err := c.api.PostTransaction(callCtx, req)
+	return resp, typedPostingError(err)
 }
 
 // Reserve creates the PENDING entry and holds its amounts on the account
@@ -106,7 +170,8 @@ func (c *Client) Reserve(ctx context.Context, req *financev1.PostingRequest) (*f
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	return c.api.ReservePosting(callCtx, req)
+	resp, err := c.api.ReservePosting(callCtx, req)
+	return resp, typedPostingError(err)
 }
 
 // Release frees the reserved amounts of a PENDING entry and stamps it VOID
@@ -117,7 +182,8 @@ func (c *Client) Release(ctx context.Context, req *financev1.ReleaseRequest) (*f
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	return c.api.ReleasePosting(callCtx, req)
+	resp, err := c.api.ReleasePosting(callCtx, req)
+	return resp, typedPostingError(err)
 }
 
 // Reverse creates the reversal entry for a posted journal entry.
@@ -127,7 +193,8 @@ func (c *Client) Reverse(ctx context.Context, req *financev1.ReverseRequest) (*f
 	}
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	return c.api.ReverseTransaction(callCtx, req)
+	resp, err := c.api.ReverseTransaction(callCtx, req)
+	return resp, typedPostingError(err)
 }
 
 // GetJournalEntry reads one entry (header + lines) by entry_no — the

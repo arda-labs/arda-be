@@ -3,7 +3,7 @@ package service
 import "testing"
 
 // Pure guard tests for the two-flow disbursement limits — the DB-backed
-// versions live in TestDisbursementSmoke (LOAN_SMOKE_DSN gated).
+// versions live in TestDisbursementSmoke (ARDA_TEST_DSN gated).
 
 func TestCheckRegisterLimit(t *testing.T) {
 	tests := []struct {

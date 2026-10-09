@@ -35,6 +35,15 @@ import (
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 )
 
+// bodyLimits raises the request-body budget only for the routes that legitimately
+// carry a large upload. Everything else stays at ardahttp.DefaultMaxBodyBytes,
+// which is what stops an unbounded json.Decode from buffering whatever the
+// client sends.
+var bodyLimits = []ardahttp.BodyLimitOverride{
+	// The posting-sheet import parses an 8MiB XLSX multipart form.
+	{Prefix: "/api/finance/posting-cases/import", MaxBytes: ardahttp.MaxPostingSheetBodyBytes},
+}
+
 // loanMetricsAdapter adapts the loan gRPC client to service.ExternalMetricsProvider.
 type loanMetricsAdapter struct {
 	client *loanclient.Client
@@ -171,10 +180,13 @@ func main() {
 	// ── HTTP server ──
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(financeHandler, coaHandler, postingHandler, cashHandler, postingCaseHandler, reportingHandler, counterpartyHandler))),
+		Handler:      ardahttp.HandlerChain(cfg.AppName, bodyLimits, ardahttp.UserTimezoneMiddleware(transport.NewRouter(financeHandler, coaHandler, postingHandler, cashHandler, postingCaseHandler, reportingHandler, counterpartyHandler))),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
+		// 16KiB is generous for a JSON API. net/http defaults to 1MiB of headers
+		// per connection, which is a cheap way to occupy a worker.
+		MaxHeaderBytes: 16 << 10,
 	}
 
 	go func() {

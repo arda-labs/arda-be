@@ -4,40 +4,25 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
-	"os"
 	"testing"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
-
 	"github.com/arda-labs/arda/apps/finance-service/internal/migration"
 	"github.com/arda-labs/arda/apps/finance-service/internal/repository"
+	"github.com/arda-labs/arda/libs/go/arda-postgres/testdb"
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 )
 
 // GATE smoke (P1a): requires a disposable Postgres. Runs finance migrations,
 // seeds COA + class maps + period, then drives PostTransaction → idempotent
-// replay → outbox → ReverseTransaction. Skipped when FINANCE_SMOKE_DSN unset.
+// replay → outbox → ReverseTransaction. Skipped when ARDA_TEST_DSN is unset.
 //
-//	local: docker run -d --name arda-finance-smoke -e POSTGRES_PASSWORD=smoke \
-//	         -p 55432:5432 postgres:16-alpine
-//	   FINANCE_SMOKE_DSN=<dsn-from-secret> \
-//	         go test ./internal/service -run TestPostingSmoke -v
+// See docs/postgres-integration-tests.md for a PostgreSQL 18 test setup.
 func TestPostingSmoke(t *testing.T) {
-	dsn := os.Getenv("FINANCE_SMOKE_DSN")
-	if dsn == "" {
-		t.Skip("FINANCE_SMOKE_DSN not set")
-	}
 	const tenantID = "00000000-0000-0000-0000-000000000010"
 
-	db, err := sql.Open("pgx/v5", dsn)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
 	defer db.Close()
-	if err := migration.Run(db, "postgres"); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
 
 	// Seed: COA version + accounts + class maps + open period.
 	for _, stmt := range []string{
@@ -68,7 +53,7 @@ func TestPostingSmoke(t *testing.T) {
 	ctx := context.Background()
 	svc := NewPostingService(repository.NewPostingRepository(db), db)
 
-	// Unique-per-run idempotency keys so the smoke can re-run on a live DB.
+	// Unique-per-run idempotency keys make the fixture safe to repeat.
 	runKey := "smoke-" + time.Now().UTC().Format("20060102T150405.000000000")
 
 	req := &financev1.PostingRequest{

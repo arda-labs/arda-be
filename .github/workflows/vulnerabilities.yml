@@ -1,0 +1,63 @@
+name: vulnerabilities
+
+# Dependency vulnerabilities are the one class of finding that arrives without a
+# code change: a new advisory can start failing this build on a commit that
+# touched nothing but a lockfile. That is why this runs on a schedule as well as
+# on push, and why it is a required check rather than a report nobody reads.
+#
+# The audit that motivated it found four reachable CVEs that had been shipping
+# for months behind twenty custom invariant scripts, none of which looked at the
+# build graph.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, Monday 06:23 UTC. Off the hour on purpose: every scheduled workflow
+    # in the world fires at :00 and GitHub queues the backlog.
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The Go toolchain download, govulncheck fetching the advisory database and a
+# 34-module scan do not fit comfortably in a short job.
+concurrency:
+  group: vulnerabilities-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  govulncheck:
+    name: Reachable Go advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.work
+          cache: true
+
+      # Fails on any reachable advisory absent from .github/vuln-allowlist.json.
+      # An accepted entry past its reviewBy also fails, so an exception cannot
+      # quietly become permanent.
+      - name: Scan for reachable vulnerabilities
+        run: node scripts/check-vuln.mjs
+
+      - name: Show what is still accepted
+        if: always()
+        run: |
+          if [ -f .github/vuln-allowlist.json ]; then
+            echo "Accepted reachable advisories:"
+            node -e '
+              const a = require("./.github/vuln-allowlist.json");
+              for (const e of a.accepted ?? []) {
+                console.log(`  ${e.id}  ${e.module}  reviewBy=${e.reviewBy}`);
+                console.log(`    ${e.title}`);
+                console.log(`    impact: ${e.impact}`);
+                console.log(`    revisit: ${e.revisitWhen}`);
+              }
+            '
+          fi

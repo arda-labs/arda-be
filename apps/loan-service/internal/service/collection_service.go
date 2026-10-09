@@ -153,17 +153,8 @@ func (s *CollectionService) Resolve(ctx context.Context, tenantID, id, decision,
 // Settle marks POSTED with the journal entry and applies side effects —
 // executed by the workflow worker after a successful PostTransaction.
 func (s *CollectionService) Settle(ctx context.Context, tenantID, id, journalEntryID, actor string) error {
-	if err := s.repo.SetCollectionCaseAndJournal(ctx, tenantID, id, "", "", journalEntryID); err != nil {
-		return mapRepoError(err)
-	}
-	item, err := s.repo.GetCollection(ctx, tenantID, id)
-	if err != nil {
-		return mapRepoError(err)
-	}
-	if err := s.repo.SetCollectionStatus(ctx, tenantID, id, domain.CollectionPosted, actor); err != nil {
-		return mapRepoError(err)
-	}
-	return s.repo.ApplyCollection(ctx, tenantID, item.AgreementCode, item.PrincipalMinor, item.InterestMinor)
+	_, err := s.repo.SettleCollectionTx(ctx, tenantID, id, journalEntryID, actor)
+	return mapRepoError(err)
 }
 
 // PostingDetail is everything the workflow worker needs for the 4-line

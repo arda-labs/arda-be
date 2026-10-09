@@ -1,0 +1,54 @@
+{
+  "$comment": [
+    "Reachable (symbol-level) advisories that are knowingly accepted.",
+    "",
+    "scripts/check-vuln.mjs runs govulncheck per module and fails on any",
+    "reachable advisory that is not listed here. Adding an entry is a security",
+    "decision that needs the compensating control and a review date, not a way to",
+    "make a red build go green.",
+    "",
+    "`scope: reachable` means the module's own code calls the vulnerable symbol,",
+    "not merely that the module is in the build graph.",
+    "",
+    "The gate refuses an entry that does not declare module, title, scope, impact,",
+    "compensatingControls, reviewed and revisitWhen, so an exception cannot be a",
+    "bare id that nobody re-reads."
+  ],
+  "accepted": [
+    {
+      "id": "GO-2026-6443",
+      "module": "google.golang.org/grpc",
+      "title": "Server panic via missing authority or Host headers",
+      "scope": "reachable",
+      "affects": "every module that runs a gRPC server",
+      "status": "no stable fix published",
+      "detail": [
+        "The advisory was revised during the remediation. Its fix landed in",
+        "google.golang.org/grpc v1.85.0-dev.0.20260825072537-93e31b48545e, a",
+        "pre-release pseudo-version. v1.84.0 is the newest stable release and is",
+        "still reported as affected, so there is no stable version to move to.",
+        "Pulling an unreleased build into a financial production image is a worse",
+        "trade than the bounded availability risk below, so the dependency stays",
+        "on the latest stable and the exposure is reduced at the edges instead.",
+        "",
+        "This entry replaced three advisories that the same upgrade did close:",
+        "GO-2026-6348 (heap exhaustion via HTTP/2 DATA frame fragmentation),",
+        "GO-2026-6061 (HTTP/2 transport) and, in golang.org/x/text, GO-2026-5970",
+        "(infinite loop on invalid input, reachable through the Kratos password",
+        "update path)."
+      ],
+      "impact": "availability only: no code execution and no data access",
+      "blastRadius": "one gRPC server process exits and is restarted by its Deployment; the trace runs through grpc.Server.Serve, so the panic is in the transport and is not covered by the per-RPC recovery interceptor",
+      "compensatingControls": [
+        "k8s/network-policies/arda-app grants ingress to gRPC port 9090 only from pods in the arda-app namespace, never from the Traefik edge controller or any other namespace",
+        "every gRPC-serving Deployment runs 3 replicas, so a single crash-loop is not an outage",
+        "the plaintext 9090 listener is cluster-internal; cross-service identity uses the mTLS listener, which fails closed when a client certificate is absent",
+        "Gatus asserts /health/ready on every service, so a crash-looping gRPC server raises an alert rather than sitting silent",
+        "pod memory and CPU limits are set, so the same class of memory-pressure bug is contained to one pod"
+      ],
+      "revisitWhen": "google.golang.org/grpc publishes a stable release containing commit 93e31b48545e; bump the dependency and delete this entry",
+      "reviewed": "2026-09-26",
+      "reviewBy": "2026-10-26"
+    }
+  ]
+}

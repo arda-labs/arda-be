@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/libs/go/arda-export
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-time v0.0.0-00010101000000-000000000000
@@ -15,9 +15,9 @@ require (
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-time => ../arda-time

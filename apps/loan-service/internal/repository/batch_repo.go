@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/arda-labs/arda/apps/loan-service/internal/domain"
 )
@@ -78,6 +79,25 @@ func (r *LoanRepository) CreateDisbursementBatch(ctx context.Context, b *domain.
 		return err
 	}
 	defer tx.Rollback()
+	if b.FlowType == domain.FlowRegister {
+		contractCodes := make([]string, 0, len(b.Rows))
+		seenContracts := make(map[string]struct{}, len(b.Rows))
+		for _, row := range b.Rows {
+			if _, seen := seenContracts[row.ContractCode]; !seen {
+				seenContracts[row.ContractCode] = struct{}{}
+				contractCodes = append(contractCodes, row.ContractCode)
+			}
+		}
+		sort.Strings(contractCodes)
+		for _, contractCode := range contractCodes {
+			var lockedCode string
+			if err := tx.QueryRowContext(ctx, `
+				SELECT contract_code FROM lnm_contracts
+				WHERE tenant_id = $1 AND contract_code = $2 FOR UPDATE`, b.TenantID, contractCode).Scan(&lockedCode); err != nil {
+				return mapNoRows(err)
+			}
+		}
+	}
 	trader, err := json.Marshal(b.Trader)
 	if err != nil {
 		return err
@@ -91,27 +111,34 @@ func (r *LoanRepository) CreateDisbursementBatch(ctx context.Context, b *domain.
 	}
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO lnm_disbursement_batches
-			(id, tenant_id, org_code, flow_type, source_batch_id, txn_date, payment_method, account_code,
+			(tenant_id, org_code, flow_type, source_batch_id, txn_date, payment_method, account_code,
 			 currency_code, total_amt_minor, description, trader, status, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6::date,$7,$8,$9,$10,$11,$12::jsonb,$13,$14)
-		RETURNING created_at, updated_at`,
-		b.ID, b.TenantID, b.OrgCode, b.FlowType, sourceID, b.TxnDate, b.PaymentMethod, b.AccountCode,
+		VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11::jsonb,$12,$13)
+		RETURNING id::text, created_at, updated_at`,
+		b.TenantID, b.OrgCode, b.FlowType, sourceID, b.TxnDate, b.PaymentMethod, b.AccountCode,
 		b.CurrencyCode, b.TotalAmtMinor, b.Description, string(trader), b.Status, b.CreatedBy).
-		Scan(&b.CreatedAt, &b.UpdatedAt)
+		Scan(&b.ID, &b.CreatedAt, &b.UpdatedAt)
 	if err != nil {
 		return err
 	}
 	for i := range b.Rows {
 		row := &b.Rows[i]
-		if _, err := tx.ExecContext(ctx, `
+		row.BatchID = b.ID
+		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO lnm_disbursements
 				(tenant_id, contract_code, agreement_code, disburse_date, disburse_amt_minor,
 				 currency_code, flow_type, source_register_id, batch_id, is_closed, status, org_code, created_by)
-			VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10,'DRAFT',$11,$12)`,
+			VALUES ($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10,'DRAFT',$11,$12)
+			RETURNING id::text`,
 			row.TenantID, row.ContractCode, row.AgreementCode, row.DisburseDate, row.DisburseAmtMinor,
 			row.CurrencyCode, row.FlowType, nullText(row.SourceRegisterID), row.BatchID, row.IsClosed,
-			row.OrgCode, row.CreatedBy); err != nil {
+			row.OrgCode, row.CreatedBy).Scan(&row.ID); err != nil {
 			return err
+		}
+		if b.FlowType == domain.FlowRegister && row.DisburseAmtMinor > 0 {
+			if err := reserveContractAmount(ctx, tx, b.TenantID, row.ContractCode, "DISBURSEMENT", row.ID, row.DisburseAmtMinor); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()
@@ -369,8 +396,41 @@ func (r *LoanRepository) SetDisbursementBatchCase(ctx context.Context, tenantID,
 
 // SetDisbursementBatchStatus transitions the batch status.
 func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantID, id, status string) error {
+	if status == domain.BatchRejected || status == domain.BatchCancelled {
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if err := setDisbursementBatchStatus(ctx, tx, tenantID, id, status); err != nil {
+			return err
+		}
+		rowStatus := domain.DisbursementRejected
+		if status == domain.BatchCancelled {
+			rowStatus = domain.DisbursementCancelled
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE lnm_disbursements
+			SET status = $3, updated_at = now(), version = version + 1
+			WHERE tenant_id = $1 AND batch_id = $2
+			  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')`, tenantID, id, rowStatus); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE lnm_contract_reservations r SET status = 'RELEASED'
+			WHERE r.tenant_id = $1 AND r.source_type = 'DISBURSEMENT' AND r.status = 'HELD'
+			  AND r.source_id IN (SELECT d.id FROM lnm_disbursements d
+			                      WHERE d.tenant_id = $1 AND d.batch_id = $2)`, tenantID, id); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+	return setDisbursementBatchStatus(ctx, r.db, tenantID, id, status)
+}
+
+func setDisbursementBatchStatus(ctx context.Context, q repoTX, tenantID, id, status string) error {
 	expected := domain.DataVersionFromContext(ctx)
-	res, err := r.db.ExecContext(ctx, `
+	res, err := q.ExecContext(ctx, `
 		UPDATE lnm_disbursement_batches SET status = $3, updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2
 		  AND ($4 = 0 OR version = $4)`, tenantID, id, status, expected)
@@ -378,7 +438,7 @@ func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantI
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		if staleVersion(ctx, r.db, "lnm_disbursement_batches", tenantID, id, expected) {
+		if staleVersion(ctx, q, "lnm_disbursement_batches", tenantID, id, expected) {
 			return ErrStaleVersion
 		}
 		return fmt.Errorf("%w", ErrNotFound)
@@ -452,16 +512,6 @@ func (r *LoanRepository) SetCollectionBatchPosted(ctx context.Context, tenantID,
 		return fmt.Errorf("%w", ErrNotFound)
 	}
 	return nil
-}
-
-// SumOutstandingAndPendingByContract totals one contract's settled
-// outstanding plus in-transit pending across its agreements — the consumed
-// headroom for the batch register guard (both SUMs in one round trip).
-func (r *LoanRepository) SumOutstandingAndPendingByContract(ctx context.Context, tenantID, contractCode string) (outstanding, pending int64, err error) {
-	row := r.db.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(outstanding_amt_minor), 0), COALESCE(SUM(COALESCE(pending_disburse_amt_minor, 0)), 0)
-		FROM lnm_agreements WHERE tenant_id = $1 AND contract_code = $2`, tenantID, contractCode)
-	return outstanding, pending, row.Scan(&outstanding, &pending)
 }
 
 // SumCompleteForAgreement totals the COMPLETE drawdowns already booked

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
@@ -13,11 +12,11 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/arda-labs/arda/libs/go/arda-postgres/testdb"
 )
 
 // Pure guard tests for the maker revise (PUT /api/loan/contracts/{id}) —
-// the DB-backed happy path lives in TestContractUpdateSmoke (LOAN_SMOKE_DSN
+// the DB-backed happy path lives in TestContractUpdateSmoke (ARDA_TEST_DSN
 // gated), mirroring the disbursement guard/smoke split.
 
 func TestContractEditableStatus(t *testing.T) {
@@ -73,21 +72,11 @@ func TestValidateContractUpdateAcceptsOptionalDates(t *testing.T) {
 // DRAFT contract, updates the whitelist fields, then verifies the status
 // guard freezes the contract once it leaves DRAFT/PENDING.
 func TestContractUpdateSmoke(t *testing.T) {
-	dsn := os.Getenv("LOAN_SMOKE_DSN")
-	if dsn == "" {
-		t.Skip("LOAN_SMOKE_DSN not set")
-	}
 	const tenantID = "00000000-0000-0000-0000-000000000010"
 
-	db, err := sql.Open("pgx/v5", dsn)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
 	defer db.Close()
 	ctx := context.Background()
-	if err := migration.Run(db, "postgres"); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
 	repo := repository.NewLoanRepository(db)
 	run := time.Now().UTC().Format("20060102T150405.000000000")
 

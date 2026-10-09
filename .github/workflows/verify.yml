@@ -62,6 +62,12 @@ jobs:
         run: node scripts/check-observability-contract.mjs
       - name: Validate fail-closed security invariants
         run: node scripts/check-security-invariants.mjs
+      - name: Validate request body limits
+        run: node scripts/check-body-limit.mjs
+      - name: Validate the vulnerability allowlist
+        run: node scripts/check-vuln.test.mjs
+      - name: Validate patched Go toolchain and network dependency baseline
+        run: node scripts/check-go-security-baseline.mjs
       - name: Validate reference service layering
         run: node scripts/check-layering.mjs
       - name: Validate generated protobuf contracts

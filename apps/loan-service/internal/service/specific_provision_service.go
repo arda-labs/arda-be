@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,8 +14,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const specificProvisionRateMissingCode = "PROVISION_RATE_MISSING"
+
 // LNM.306 specific provision (per-loan): required = max(outstanding −
-// Σ(collateral value × deduction_ratio), 0) × debt-group rate. APPROVE posts
+// Σ(collateral value × deduction_ratio / 100), 0) × debt-group rate. APPROVE posts
 // the LNM_PROVISION_306 card through the finance PostingService.
 const (
 	SpecificProvisionStatusPending  = "SUBMITTED"
@@ -63,6 +66,9 @@ func (s *SpecificProvisionService) Calculate(ctx context.Context, tenantID, agre
 	}
 	rate, err := s.repo.DebtGroupProvisionRate(ctx, debtGroup)
 	if err != nil {
+		if errors.Is(err, repository.ErrProvisionRateMissing) {
+			return SpecificProvisionPreview{}, ardaerrors.New(specificProvisionRateMissingCode, err.Error())
+		}
 		return SpecificProvisionPreview{}, mapRepoError(err)
 	}
 	deduction, err := s.repo.CollateralDeduction(ctx, tenantID, contractCode)
@@ -183,31 +189,26 @@ func (s *SpecificProvisionService) Resolve(ctx context.Context, tenantID, id, de
 	if err != nil {
 		return err
 	}
-	journalEntryID := ""
-	if preview.AmountMinor > 0 {
+	return mapRepoError(s.repo.SettleSpecificProvision(ctx, tenantID, id, preview.AmountMinor, decidedBy, func(delta int64) (string, error) {
 		if s.finance == nil {
-			return ardaerrors.New(ardaerrors.CodeInternal, "finance client is not configured")
+			return "", ardaerrors.New(ardaerrors.CodeInternal, "finance client is not configured")
 		}
-		posted, err := s.finance.Post(ctx, s.postingRequest(ctx, row, preview))
+		posted, err := s.finance.Post(ctx, s.postingRequest(ctx, row, delta))
 		if err != nil {
-			return ardaerrors.Wrap(ardaerrors.CodeBadGateway, "specific provision posting failed", err)
+			return "", ardaerrors.Wrap(ardaerrors.CodeBadGateway, "specific provision posting failed", err)
 		}
-		journalEntryID = posted.GetJournalEntryId()
-	}
-	return mapRepoError(s.repo.SettleSpecificProvision(ctx, tenantID, id, preview.AmountMinor, journalEntryID, decidedBy))
+		return posted.GetJournalEntryId(), nil
+	}))
 }
 
-func (s *SpecificProvisionService) postingRequest(ctx context.Context, row *repository.SpecificProvisionRow, preview SpecificProvisionPreview) *financev1.PostingRequest {
+func (s *SpecificProvisionService) postingRequest(ctx context.Context, row *repository.SpecificProvisionRow, delta int64) *financev1.PostingRequest {
 	analytics := &financev1.Analytics{
 		ContractCode:  row.ContractCode,
 		DebtGroupCode: row.DebtGroupCode,
 	}
-	legs := []financeclient.PostingLeg{
-		{CardLine: 1, Fallback: "LNM_PROVISION_EXPENSE", Direction: "DEBIT", AmountMinor: preview.AmountMinor, Analytics: analytics},
-		{CardLine: 2, Fallback: "LNM_PROVISION_LIABILITY", Direction: "CREDIT", AmountMinor: preview.AmountMinor, Analytics: analytics},
-	}
+	legs := specificProvisionPostingLegs(delta, analytics)
 	return &financev1.PostingRequest{
-		IdempotencyKey: fmt.Sprintf("lnm-specific-provision-%s-%s", row.AgreementCode, row.ProvisionDate),
+		IdempotencyKey: fmt.Sprintf("lnm-specific-provision-%s", row.ID),
 		AccountingDate: row.ProvisionDate,
 		CurrencyCode:   "VND",
 		Description:    fmt.Sprintf("Trích lập dự phòng cụ thể %s kỳ %s", row.AgreementCode, row.ProvisionDate),
@@ -221,6 +222,27 @@ func (s *SpecificProvisionService) postingRequest(ctx context.Context, row *repo
 			financeclient.FetchPostingRules(ctx, s.finance, specificProvisionDocumentType),
 			legs, "VND"),
 	}
+}
+
+func specificProvisionPostingLegs(delta int64, analytics *financev1.Analytics) []financeclient.PostingLeg {
+	if delta == 0 {
+		return nil
+	}
+	legs := []financeclient.PostingLeg{}
+	amount := delta
+	if amount < 0 {
+		amount = -amount
+		legs = append(legs,
+			financeclient.PostingLeg{CardLine: 3, Fallback: "LNM_PROVISION_LIABILITY", Direction: "DEBIT", AmountMinor: amount, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 4, Fallback: "LNM_PROVISION_RELEASE", Direction: "CREDIT", AmountMinor: amount, Analytics: analytics},
+		)
+	} else {
+		legs = append(legs,
+			financeclient.PostingLeg{CardLine: 1, Fallback: "LNM_PROVISION_EXPENSE", Direction: "DEBIT", AmountMinor: amount, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 2, Fallback: "LNM_PROVISION_LIABILITY", Direction: "CREDIT", AmountMinor: amount, Analytics: analytics},
+		)
+	}
+	return legs
 }
 
 // requiredSpecificProvision = base × rate / 100, HALF_UP to đồng.

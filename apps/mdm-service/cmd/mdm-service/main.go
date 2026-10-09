@@ -60,10 +60,13 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, transport.NewRouter(catalogHandler, rateHandler, internalAIHandler, service.CatalogNames())),
+		Handler:      ardahttp.HandlerChain(cfg.AppName, nil, transport.NewRouter(catalogHandler, rateHandler, internalAIHandler, service.CatalogNames())),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
+		// 16KiB is generous for a JSON API. net/http defaults to 1MiB of headers
+		// per connection, which is a cheap way to occupy a worker.
+		MaxHeaderBytes: 16 << 10,
 	}
 
 	go func() {

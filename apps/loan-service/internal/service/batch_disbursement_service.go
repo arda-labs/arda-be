@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -71,10 +72,8 @@ type batchRowVars struct {
 }
 
 // CreateBatchRegister creates a DRAFT batch REGISTER dossier and its rows in
-// one tx, then opens the LNM_DISB_BATCH_REGISTER_V2 case (SUBMITTED). Guard
-// per row: agreement exists + belongs to the contract, amount > 0, and the
-// contract headroom (loan amount − Σoutstanding − Σpending) still covers the
-// amount with the batch's earlier rows already deducted (running sum).
+// one tx, then opens the LNM_DISB_BATCH_REGISTER_V2 case (SUBMITTED). Contract
+// headroom validation and reservations happen together under contract locks.
 func (s *BatchDisbursementService) CreateBatchRegister(ctx context.Context, tenantID, actor, orgCode string, in *CreateBatchInput) (*domain.DisbursementBatch, error) {
 	if in == nil || len(in.Rows) == 0 {
 		return nil, ardaerrors.New(ardaerrors.CodeRequired, "rows must not be empty")
@@ -90,7 +89,6 @@ func (s *BatchDisbursementService) CreateBatchRegister(ctx context.Context, tena
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "payment_method must be one of: CASH, TRANSFER")
 	}
 	batch := &domain.DisbursementBatch{
-		ID:            repository.NewID("disbbatch"),
 		TenantID:      tenantID,
 		OrgCode:       orgCode,
 		FlowType:      domain.FlowRegister,
@@ -107,9 +105,6 @@ func (s *BatchDisbursementService) CreateBatchRegister(ctx context.Context, tena
 	if batch.Trader == nil {
 		batch.Trader = map[string]string{}
 	}
-	// Headroom is per contract: the running sum tracks this batch's own
-	// earlier rows so N rows of the same contract cannot jointly overshoot.
-	runningUsed := map[string]int64{}
 	total := int64(0)
 	for i := range in.Rows {
 		row := &in.Rows[i]
@@ -128,21 +123,9 @@ func (s *BatchDisbursementService) CreateBatchRegister(ctx context.Context, tena
 		if agreement.ContractCode != row.ContractCode {
 			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, fmt.Sprintf("rows[%d]: agreement %s does not belong to contract %s", i, row.AgreementCode, row.ContractCode))
 		}
-		contract, err := s.repo.GetContractByCode(ctx, tenantID, row.ContractCode)
-		if err != nil {
+		if _, err := s.repo.GetContractByCode(ctx, tenantID, row.ContractCode); err != nil {
 			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, fmt.Sprintf("rows[%d]: contract_code not found: %s", i, row.ContractCode))
 		}
-		outstanding, pending, err := s.repo.SumOutstandingAndPendingByContract(ctx, tenantID, row.ContractCode)
-		if err != nil {
-			return nil, mapRepoError(err)
-		}
-		headroom := contract.LoanAmt - outstanding - pending - runningUsed[row.ContractCode]
-		if row.AmountMinor > headroom {
-			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, fmt.Sprintf(
-				"rows[%d]: amount_minor %d exceeds contract %s headroom %d (loan_amt_minor %d - outstanding %d - pending %d - batch rows %d)",
-				i, row.AmountMinor, row.ContractCode, headroom, contract.LoanAmt, outstanding, pending, runningUsed[row.ContractCode]))
-		}
-		runningUsed[row.ContractCode] += row.AmountMinor
 		total += row.AmountMinor
 		batch.Rows = append(batch.Rows, domain.Disbursement{
 			TenantID:         tenantID,
@@ -160,6 +143,9 @@ func (s *BatchDisbursementService) CreateBatchRegister(ctx context.Context, tena
 	}
 	batch.TotalAmtMinor = total
 	if err := s.repo.CreateDisbursementBatch(ctx, batch); err != nil {
+		if errors.Is(err, repository.ErrHeadroomExceeded) {
+			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, err.Error())
+		}
 		return nil, mapRepoError(err)
 	}
 	if err := s.submitBatchCase(ctx, tenantID, actor, batch, BatchDisbRegisterCaseType, "Đăng ký giải ngân theo hồ sơ", "lnm-disb-batch-register", batchRowVarsList(batch.Rows, in.Rows)); err != nil {
@@ -209,7 +195,6 @@ func (s *BatchDisbursementService) CreateBatchComplete(ctx context.Context, tena
 		sourceByAgreement[sr.AgreementCode] = sr
 	}
 	batch := &domain.DisbursementBatch{
-		ID:            repository.NewID("disbbatch"),
 		TenantID:      tenantID,
 		OrgCode:       orgCode,
 		FlowType:      domain.FlowComplete,
@@ -417,7 +402,6 @@ func (s *BatchDisbursementService) Check(ctx context.Context, tenantID, id strin
 	if err != nil {
 		return false, mapRepoError(err).Error(), nil
 	}
-	runningUsed := map[string]int64{}
 	for i, row := range rows {
 		if row.FlowType == domain.FlowComplete {
 			if row.IsClosed || row.DisburseAmtMinor == 0 {
@@ -436,19 +420,13 @@ func (s *BatchDisbursementService) Check(ctx context.Context, tenantID, id strin
 			}
 			continue
 		}
-		contract, err := s.repo.GetContractByCode(ctx, tenantID, row.ContractCode)
-		if err != nil {
-			return false, fmt.Sprintf("rows[%d]: contract %s not found", i, row.ContractCode), nil
-		}
-		outstanding, pending, err := s.repo.SumOutstandingAndPendingByContract(ctx, tenantID, row.ContractCode)
+		exposure, err := s.repo.GetContractExposure(ctx, tenantID, row.ContractCode)
 		if err != nil {
 			return false, mapRepoError(err).Error(), nil
 		}
-		headroom := contract.LoanAmt - outstanding - pending - runningUsed[row.ContractCode]
-		if row.DisburseAmtMinor > headroom {
-			return false, fmt.Sprintf("rows[%d]: amount exceeds contract %s headroom", i, row.ContractCode), nil
+		if exposure.HeadroomMinor() < 0 {
+			return false, fmt.Sprintf("rows[%d]: contract %s exposure exceeds its loan amount", i, row.ContractCode), nil
 		}
-		runningUsed[row.ContractCode] += row.DisburseAmtMinor
 	}
 	return true, "", nil
 }
@@ -456,9 +434,16 @@ func (s *BatchDisbursementService) Check(ctx context.Context, tenantID, id strin
 // Resolve applies the workflow decision. REJECT/CANCEL are terminal without
 // posting — the finance hold release is the batch cancel worker's job.
 func (s *BatchDisbursementService) Resolve(ctx context.Context, tenantID, id, decision string) error {
-	status := domain.BatchRejected
-	if decision == "APPROVE" {
+	var status string
+	switch decision {
+	case "APPROVE":
 		status = domain.BatchApproved
+	case "REJECT":
+		status = domain.BatchRejected
+	case "CANCEL":
+		status = domain.BatchCancelled
+	default:
+		return ardaerrors.New(ardaerrors.CodeInvalidInput, "unknown decision "+decision)
 	}
 	if err := s.repo.SetDisbursementBatchStatus(ctx, tenantID, id, status); err != nil {
 		return mapRepoError(err)

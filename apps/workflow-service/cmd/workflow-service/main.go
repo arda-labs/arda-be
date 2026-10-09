@@ -42,6 +42,15 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+// bodyLimits raises the request-body budget only for the routes that legitimately
+// carry a large upload. Everything else stays at ardahttp.DefaultMaxBodyBytes,
+// which is what stops an unbounded json.Decode from buffering whatever the
+// client sends.
+var bodyLimits = []ardahttp.BodyLimitOverride{
+	// BPMN import parses a 10MiB multipart form.
+	{Prefix: "/api/workflow/process-definitions", MaxBytes: ardahttp.MaxWorkflowBodyBytes},
+}
+
 func main() {
 	cfg := config.Load()
 
@@ -634,10 +643,13 @@ func main() {
 	// Router and HTTP Server
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.MetricsMiddleware(cfg.AppName, ardahttp.UserTimezoneMiddleware(transport.NewRouter(wfHandler))),
+		Handler:      ardahttp.HandlerChain(cfg.AppName, bodyLimits, ardahttp.UserTimezoneMiddleware(transport.NewRouter(wfHandler))),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 45 * time.Second,
 		IdleTimeout:  60 * time.Second,
+		// 16KiB is generous for a JSON API. net/http defaults to 1MiB of headers
+		// per connection, which is a cheap way to occupy a worker.
+		MaxHeaderBytes: 16 << 10,
 	}
 
 	go func() {
