@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/statistical-service
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-doc v0.0.0-20260924093952-c3c96299f064
@@ -38,7 +38,7 @@ require (
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

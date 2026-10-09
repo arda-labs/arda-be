@@ -416,6 +416,28 @@ func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantI
 			  AND status NOT IN ('POSTED', 'REJECTED', 'CANCELLED')`, tenantID, id, rowStatus); err != nil {
 			return err
 		}
+		if status == domain.BatchRejected {
+			rows, err := tx.QueryContext(ctx, `SELECT id, contract_code, created_by, COALESCE(updated_by, '') FROM lnm_disbursements WHERE tenant_id = $1 AND batch_id = $2 AND status = $3`, tenantID, id, rowStatus)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				var itemID, contractCode, createdBy, updatedBy string
+				if err := rows.Scan(&itemID, &contractCode, &createdBy, &updatedBy); err != nil {
+					rows.Close()
+					return err
+				}
+				if err := enqueueDisbursementEvent(ctx, tx, tenantID, itemID, domain.DisbursementRejected, contractCode, createdBy, updatedBy); err != nil {
+					rows.Close()
+					return err
+				}
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return err
+			}
+			rows.Close()
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE lnm_contract_reservations r SET status = 'RELEASED'
 			WHERE r.tenant_id = $1 AND r.source_type = 'DISBURSEMENT' AND r.status = 'HELD'
@@ -423,6 +445,37 @@ func (r *LoanRepository) SetDisbursementBatchStatus(ctx context.Context, tenantI
 			                      WHERE d.tenant_id = $1 AND d.batch_id = $2)`, tenantID, id); err != nil {
 			return err
 		}
+		return tx.Commit()
+	}
+	if status == domain.BatchApproved {
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if err := setDisbursementBatchStatus(ctx, tx, tenantID, id, status); err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT id, contract_code, created_by, COALESCE(updated_by, '') FROM lnm_disbursements WHERE tenant_id = $1 AND batch_id = $2 AND status = $3`, tenantID, id, domain.DisbursementSubmitted)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var itemID, contractCode, createdBy, updatedBy string
+			if err := rows.Scan(&itemID, &contractCode, &createdBy, &updatedBy); err != nil {
+				rows.Close()
+				return err
+			}
+			if err := enqueueDisbursementEvent(ctx, tx, tenantID, itemID, domain.DisbursementApproved, contractCode, createdBy, updatedBy); err != nil {
+				rows.Close()
+				return err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
 		return tx.Commit()
 	}
 	return setDisbursementBatchStatus(ctx, r.db, tenantID, id, status)

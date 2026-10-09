@@ -1,6 +1,7 @@
 package ardacrypto
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -60,9 +61,16 @@ func TestAES256GCM_TamperedCiphertext(t *testing.T) {
 	secret := "secret-key"
 	encrypted, _ := Encrypt("hello world", secret)
 
-	// Tamper one byte in the base64 ciphertext
-	tampered := encrypted[:len(encrypted)-2] + "AA"
-	_, err := Decrypt(tampered, secret)
+	// Change one decoded byte so the test cannot accidentally modify only
+	// unused trailing bits in the raw Base64 encoding.
+	encoded := strings.TrimPrefix(encrypted, VersionPrefix)
+	data, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("decode encrypted payload: %v", err)
+	}
+	data[len(data)-1] ^= 0x01
+	tampered := VersionPrefix + base64.RawURLEncoding.EncodeToString(data)
+	_, err = Decrypt(tampered, secret)
 
 	if err == nil {
 		t.Fatal("expected tamper detection to reject corrupted ciphertext")

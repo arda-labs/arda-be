@@ -43,7 +43,7 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 		addr,
 		grpc.WithTransportCredentials(transportCreds),
 		// Only read-only RPCs are retried; Settle/Reject writes are never replayed.
-		retry.ReadOnly("arda.hrm.v1.EmployeeCommandService", "CheckRegistration"),
+		retry.ReadOnly("arda.hrm.v1.EmployeeCommandService", "CheckRegistration", "ListIAMUsersByOrgUnit"),
 		grpc.WithChainUnaryInterceptor(
 			interceptors.UnaryClientMetadata(sourceService, ardametadata.Context{}),
 			interceptors.UnaryClientServiceAuth(secret, sourceService, "hrm-service"),
@@ -55,6 +55,25 @@ func Dial(ctx context.Context, addr, sourceService string, logger *slog.Logger) 
 	client := &Client{conn: conn, api: hrmv1.NewEmployeeCommandServiceClient(conn), timeout: defaultTimeout}
 	conn.Connect()
 	return client, nil
+}
+
+// ListIAMUsersByOrgUnit returns IDs for active employees linked to IAM users.
+func (c *Client) ListIAMUsersByOrgUnit(ctx context.Context, tenantID, orgUnitID string, includeDescendants bool) ([]string, error) {
+	if c == nil {
+		return nil, errors.New("hrm client is nil")
+	}
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(orgUnitID) == "" {
+		return nil, errors.New("tenant id and org unit id are required")
+	}
+	callCtx, cancel := context.WithTimeout(ardametadata.AppendToOutgoing(ctx, ardametadata.Context{TenantID: tenantID}), c.timeout)
+	defer cancel()
+	resp, err := c.api.ListIAMUsersByOrgUnit(callCtx, &hrmv1.ListIAMUsersByOrgUnitRequest{
+		OrgUnitId: orgUnitID, IncludeDescendants: includeDescendants,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetIamUserIds(), nil
 }
 
 func (c *Client) Close() error {

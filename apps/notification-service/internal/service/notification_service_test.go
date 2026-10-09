@@ -3,12 +3,34 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
 	"github.com/arda-labs/arda/apps/notification-service/internal/push"
 	"github.com/arda-labs/arda/apps/notification-service/internal/repository"
 )
+
+func TestResolveNotificationLocalePreferenceEnvelopeDefault(t *testing.T) {
+	for _, tc := range []struct{ pref, event, fallback, want string }{
+		{"vi-VN", "en-US", "en-US", "vi-VN"}, {"", "en-US", "vi-VN", "en-US"}, {"", "", "vi-VN", "vi-VN"},
+	} {
+		got, err := resolveNotificationLocale(tc.pref, tc.event, tc.fallback)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tc.want {
+			t.Fatalf("locale=%q want %q", got, tc.want)
+		}
+	}
+}
+
+func TestResolveNotificationLocaleReturnsCodedErrorWhenMissing(t *testing.T) {
+	_, err := resolveNotificationLocale("", "", "")
+	if err == nil || !strings.Contains(err.Error(), "notification.locale_unavailable") {
+		t.Fatalf("error = %v, want coded locale error", err)
+	}
+}
 
 func TestValidateAcceptRequiresUserIDForInApp(t *testing.T) {
 	err := validateAccept(AcceptInput{

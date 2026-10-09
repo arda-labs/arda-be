@@ -101,8 +101,8 @@ func TestTwoPhaseBalanceSmoke(t *testing.T) {
 	}
 	counters := func() (postedDr, postedCr, resvDr, resvCr int64) {
 		err := db.QueryRow(`SELECT posted_debit_minor, posted_credit_minor, reserved_debit_minor, reserved_credit_minor
-			FROM fin_account_balances WHERE tenant_id=$1 AND coa_version='V1' AND account_code='1131' AND currency_code='VND'`,
-			tenantID).Scan(&postedDr, &postedCr, &resvDr, &resvCr)
+			FROM fin_account_balances WHERE tenant_id=$1 AND coa_version='V1' AND account_code='1131' AND currency_code='VND' AND bal_type_code=$2`,
+			tenantID, repository.BalanceTypeActual).Scan(&postedDr, &postedCr, &resvDr, &resvCr)
 		if err != nil {
 			t.Fatalf("balance counters: %v", err)
 		}
@@ -234,7 +234,7 @@ func TestTwoPhaseBalanceSmoke(t *testing.T) {
 				AccountCode: "091",
 				Analytics:   &financev1.Analytics{OrgUnitCode: "HO"}},
 			{LineNo: 2, Direction: "CREDIT", AmountMinor: 77_000,
-				AccountCode: "091",
+				AccountCode: "092", // nature B — off-balance memo source
 				Analytics:   &financev1.Analytics{OrgUnitCode: "HO"}},
 		},
 	}

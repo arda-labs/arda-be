@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/auth-gateway
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-auth v0.0.0
@@ -20,7 +20,7 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect

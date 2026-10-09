@@ -16,6 +16,17 @@ const (
 	SubjectFinanceTransactionPosted = "arda.finance.transaction.posted"
 	SubjectIAMUserChanged           = "arda.iam.user.changed"
 	SubjectNotificationInboxCreated = "arda.notification.inbox.created.v1"
+	SubjectWorkflowTaskAssigned = "arda.workflow.task.assigned.v1"
+	SubjectWorkflowTaskCompleted = "arda.workflow.task.completed.v1"
+	SubjectWorkflowTaskReassigned = "arda.workflow.task.reassigned.v1"
+	SubjectWorkflowTaskOverdue = "arda.workflow.task.overdue.v1"
+	SubjectWorkflowTaskSLAWarning = "arda.workflow.task.sla_warning.v1"
+	SubjectWorkflowCaseApproved = "arda.workflow.case.approved.v1"
+	SubjectWorkflowCaseRejected = "arda.workflow.case.rejected.v1"
+	SubjectWorkflowCaseFailed = "arda.workflow.case.failed.v1"
+	SubjectLoanDisbursementApproved = "arda.loan.disbursement.approved.v1"
+	SubjectLoanDisbursementRejected = "arda.loan.disbursement.rejected.v1"
+	SubjectLoanDisbursementFailed = "arda.loan.disbursement.failed.v1"
 )
 
 const (
@@ -24,6 +35,17 @@ const (
 	EventFinanceTransactionPosted = "finance.transaction.posted"
 	EventIAMUserChanged           = "iam.user.changed"
 	EventNotificationInboxCreated = "notification.inbox.created"
+	EventWorkflowTaskAssigned = "workflow.task.assigned"
+	EventWorkflowTaskCompleted = "workflow.task.completed"
+	EventWorkflowTaskReassigned = "workflow.task.reassigned"
+	EventWorkflowTaskOverdue = "workflow.task.overdue"
+	EventWorkflowTaskSLAWarning = "workflow.task.sla_warning"
+	EventWorkflowCaseApproved = "workflow.case.approved"
+	EventWorkflowCaseRejected = "workflow.case.rejected"
+	EventWorkflowCaseFailed = "workflow.case.failed"
+	EventLoanDisbursementApproved = "loan.disbursement.approved"
+	EventLoanDisbursementRejected = "loan.disbursement.rejected"
+	EventLoanDisbursementFailed = "loan.disbursement.failed"
 )
 
 type Actor struct {
