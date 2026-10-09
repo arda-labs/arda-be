@@ -1,0 +1,64 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Arda Notifications API", "version": "1.0.0" },
+  "servers": [{ "url": "https://api.arda.io.vn" }],
+  "security": [{ "ardaSession": [] }],
+  "paths": {
+    "/api/notifications/preferences": {
+      "get": {
+        "operationId": "listNotificationPreferences",
+        "summary": "List the authenticated user's notification preferences",
+        "responses": {
+          "200": { "description": "Preference list", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PreferenceListSuccess" } } } },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      },
+      "put": {
+        "operationId": "saveNotificationPreference",
+        "summary": "Create or update one of the authenticated user's notification preferences",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotificationPreference" } } } },
+        "responses": {
+          "200": { "description": "Preference saved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusSuccess" } } } },
+          "400": { "$ref": "#/components/responses/Problem" },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/notifications/read-all": {
+      "post": {
+        "operationId": "markAllNotificationsRead",
+        "summary": "Mark the authenticated user's inbox items as read",
+        "responses": {
+          "200": { "description": "Inbox marked read", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusSuccess" } } } },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/notifications/inbox/{id}/read": {
+      "post": {
+        "operationId": "markNotificationRead",
+        "summary": "Mark one of the authenticated user's inbox items as read",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Inbox item marked read", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusSuccess" } } } },
+          "401": { "$ref": "#/components/responses/Problem" },
+          "403": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "ardaSession": { "type": "apiKey", "in": "cookie", "name": "arda_session", "x-browser-credentials": "include" } },
+    "schemas": {
+      "ResponseMeta": { "type": "object", "required": ["request_id"], "properties": { "request_id": { "type": "string" }, "trace_id": { "type": "string" }, "timestamp": { "type": "string", "format": "date-time" } } },
+      "Problem": { "type": "object", "required": ["type", "title", "status", "code", "message"], "properties": { "type": { "type": "string" }, "title": { "type": "string" }, "status": { "type": "integer" }, "code": { "type": "string" }, "message": { "type": "string" }, "request_id": { "type": "string" }, "trace_id": { "type": "string" } } },
+      "NotificationPreference": { "type": "object", "required": ["event_group", "channel", "enabled", "timezone", "digest_mode", "locale"], "properties": { "event_group": { "type": "string", "minLength": 1 }, "channel": { "type": "string", "enum": ["email", "push", "in_app", "sms"] }, "enabled": { "type": "boolean" }, "quiet_start": { "type": ["string", "null"], "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" }, "quiet_end": { "type": ["string", "null"], "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" }, "timezone": { "type": "string" }, "digest_mode": { "type": "string", "enum": ["NONE", "HOURLY", "DAILY"] }, "locale": { "type": "string", "enum": ["", "vi-VN", "en-US"] } } },
+      "PreferenceListSuccess": { "type": "object", "required": ["success", "result", "meta"], "properties": { "success": { "type": "boolean" }, "result": { "type": "object", "required": ["items"], "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/NotificationPreference" } } } }, "meta": { "$ref": "#/components/schemas/ResponseMeta" } } },
+      "StatusSuccess": { "type": "object", "required": ["success", "result", "meta"], "properties": { "success": { "type": "boolean" }, "result": { "type": "object", "required": ["ok"], "properties": { "ok": { "type": "boolean" } } }, "meta": { "$ref": "#/components/schemas/ResponseMeta" } } }
+    },
+    "responses": { "Problem": { "description": "RFC-style problem response", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } } }
+  }
+}

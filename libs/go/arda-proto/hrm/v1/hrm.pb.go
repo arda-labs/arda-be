@@ -21,6 +21,102 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ListIAMUsersByOrgUnitRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	OrgUnitId          string                 `protobuf:"bytes,1,opt,name=org_unit_id,json=orgUnitId,proto3" json:"org_unit_id,omitempty"`
+	IncludeDescendants bool                   `protobuf:"varint,2,opt,name=include_descendants,json=includeDescendants,proto3" json:"include_descendants,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListIAMUsersByOrgUnitRequest) Reset() {
+	*x = ListIAMUsersByOrgUnitRequest{}
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListIAMUsersByOrgUnitRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListIAMUsersByOrgUnitRequest) ProtoMessage() {}
+
+func (x *ListIAMUsersByOrgUnitRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListIAMUsersByOrgUnitRequest.ProtoReflect.Descriptor instead.
+func (*ListIAMUsersByOrgUnitRequest) Descriptor() ([]byte, []int) {
+	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ListIAMUsersByOrgUnitRequest) GetOrgUnitId() string {
+	if x != nil {
+		return x.OrgUnitId
+	}
+	return ""
+}
+
+func (x *ListIAMUsersByOrgUnitRequest) GetIncludeDescendants() bool {
+	if x != nil {
+		return x.IncludeDescendants
+	}
+	return false
+}
+
+type ListIAMUsersByOrgUnitResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IamUserIds    []string               `protobuf:"bytes,1,rep,name=iam_user_ids,json=iamUserIds,proto3" json:"iam_user_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListIAMUsersByOrgUnitResponse) Reset() {
+	*x = ListIAMUsersByOrgUnitResponse{}
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListIAMUsersByOrgUnitResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListIAMUsersByOrgUnitResponse) ProtoMessage() {}
+
+func (x *ListIAMUsersByOrgUnitResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListIAMUsersByOrgUnitResponse.ProtoReflect.Descriptor instead.
+func (*ListIAMUsersByOrgUnitResponse) Descriptor() ([]byte, []int) {
+	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ListIAMUsersByOrgUnitResponse) GetIamUserIds() []string {
+	if x != nil {
+		return x.IamUserIds
+	}
+	return nil
+}
+
 type CheckRegistrationRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	RegistrationId string                 `protobuf:"bytes,1,opt,name=registration_id,json=registrationId,proto3" json:"registration_id,omitempty"`
@@ -30,7 +126,7 @@ type CheckRegistrationRequest struct {
 
 func (x *CheckRegistrationRequest) Reset() {
 	*x = CheckRegistrationRequest{}
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[0]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -42,7 +138,7 @@ func (x *CheckRegistrationRequest) String() string {
 func (*CheckRegistrationRequest) ProtoMessage() {}
 
 func (x *CheckRegistrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[0]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -55,7 +151,7 @@ func (x *CheckRegistrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckRegistrationRequest.ProtoReflect.Descriptor instead.
 func (*CheckRegistrationRequest) Descriptor() ([]byte, []int) {
-	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{0}
+	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CheckRegistrationRequest) GetRegistrationId() string {
@@ -75,7 +171,7 @@ type CheckRegistrationResponse struct {
 
 func (x *CheckRegistrationResponse) Reset() {
 	*x = CheckRegistrationResponse{}
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[1]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -87,7 +183,7 @@ func (x *CheckRegistrationResponse) String() string {
 func (*CheckRegistrationResponse) ProtoMessage() {}
 
 func (x *CheckRegistrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[1]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -100,7 +196,7 @@ func (x *CheckRegistrationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckRegistrationResponse.ProtoReflect.Descriptor instead.
 func (*CheckRegistrationResponse) Descriptor() ([]byte, []int) {
-	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{1}
+	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CheckRegistrationResponse) GetOk() bool {
@@ -127,7 +223,7 @@ type SettleRegistrationRequest struct {
 
 func (x *SettleRegistrationRequest) Reset() {
 	*x = SettleRegistrationRequest{}
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[2]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -139,7 +235,7 @@ func (x *SettleRegistrationRequest) String() string {
 func (*SettleRegistrationRequest) ProtoMessage() {}
 
 func (x *SettleRegistrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[2]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -152,7 +248,7 @@ func (x *SettleRegistrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettleRegistrationRequest.ProtoReflect.Descriptor instead.
 func (*SettleRegistrationRequest) Descriptor() ([]byte, []int) {
-	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{2}
+	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SettleRegistrationRequest) GetRegistrationId() string {
@@ -179,7 +275,7 @@ type SettleRegistrationResponse struct {
 
 func (x *SettleRegistrationResponse) Reset() {
 	*x = SettleRegistrationResponse{}
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[3]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -191,7 +287,7 @@ func (x *SettleRegistrationResponse) String() string {
 func (*SettleRegistrationResponse) ProtoMessage() {}
 
 func (x *SettleRegistrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[3]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -204,7 +300,7 @@ func (x *SettleRegistrationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettleRegistrationResponse.ProtoReflect.Descriptor instead.
 func (*SettleRegistrationResponse) Descriptor() ([]byte, []int) {
-	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{3}
+	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SettleRegistrationResponse) GetOk() bool {
@@ -232,7 +328,7 @@ type RejectRegistrationRequest struct {
 
 func (x *RejectRegistrationRequest) Reset() {
 	*x = RejectRegistrationRequest{}
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[4]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -244,7 +340,7 @@ func (x *RejectRegistrationRequest) String() string {
 func (*RejectRegistrationRequest) ProtoMessage() {}
 
 func (x *RejectRegistrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[4]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -257,7 +353,7 @@ func (x *RejectRegistrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RejectRegistrationRequest.ProtoReflect.Descriptor instead.
 func (*RejectRegistrationRequest) Descriptor() ([]byte, []int) {
-	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{4}
+	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RejectRegistrationRequest) GetRegistrationId() string {
@@ -290,7 +386,7 @@ type RejectRegistrationResponse struct {
 
 func (x *RejectRegistrationResponse) Reset() {
 	*x = RejectRegistrationResponse{}
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[5]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -302,7 +398,7 @@ func (x *RejectRegistrationResponse) String() string {
 func (*RejectRegistrationResponse) ProtoMessage() {}
 
 func (x *RejectRegistrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[5]
+	mi := &file_arda_hrm_v1_hrm_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -315,7 +411,7 @@ func (x *RejectRegistrationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RejectRegistrationResponse.ProtoReflect.Descriptor instead.
 func (*RejectRegistrationResponse) Descriptor() ([]byte, []int) {
-	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{5}
+	return file_arda_hrm_v1_hrm_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RejectRegistrationResponse) GetOk() bool {
@@ -329,7 +425,13 @@ var File_arda_hrm_v1_hrm_proto protoreflect.FileDescriptor
 
 const file_arda_hrm_v1_hrm_proto_rawDesc = "" +
 	"\n" +
-	"\x15arda/hrm/v1/hrm.proto\x12\varda.hrm.v1\"C\n" +
+	"\x15arda/hrm/v1/hrm.proto\x12\varda.hrm.v1\"o\n" +
+	"\x1cListIAMUsersByOrgUnitRequest\x12\x1e\n" +
+	"\vorg_unit_id\x18\x01 \x01(\tR\torgUnitId\x12/\n" +
+	"\x13include_descendants\x18\x02 \x01(\bR\x12includeDescendants\"A\n" +
+	"\x1dListIAMUsersByOrgUnitResponse\x12 \n" +
+	"\fiam_user_ids\x18\x01 \x03(\tR\n" +
+	"iamUserIds\"C\n" +
 	"\x18CheckRegistrationRequest\x12'\n" +
 	"\x0fregistration_id\x18\x01 \x01(\tR\x0eregistrationId\"E\n" +
 	"\x19CheckRegistrationResponse\x12\x0e\n" +
@@ -349,11 +451,12 @@ const file_arda_hrm_v1_hrm_proto_rawDesc = "" +
 	"decided_by\x18\x02 \x01(\tR\tdecidedBy\x12\x12\n" +
 	"\x04note\x18\x03 \x01(\tR\x04note\",\n" +
 	"\x1aRejectRegistrationResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xca\x02\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\xba\x03\n" +
 	"\x16EmployeeCommandService\x12b\n" +
 	"\x11CheckRegistration\x12%.arda.hrm.v1.CheckRegistrationRequest\x1a&.arda.hrm.v1.CheckRegistrationResponse\x12e\n" +
 	"\x12SettleRegistration\x12&.arda.hrm.v1.SettleRegistrationRequest\x1a'.arda.hrm.v1.SettleRegistrationResponse\x12e\n" +
-	"\x12RejectRegistration\x12&.arda.hrm.v1.RejectRegistrationRequest\x1a'.arda.hrm.v1.RejectRegistrationResponseB;Z9github.com/arda-labs/arda/libs/go/arda-proto/hrm/v1;hrmv1b\x06proto3"
+	"\x12RejectRegistration\x12&.arda.hrm.v1.RejectRegistrationRequest\x1a'.arda.hrm.v1.RejectRegistrationResponse\x12n\n" +
+	"\x15ListIAMUsersByOrgUnit\x12).arda.hrm.v1.ListIAMUsersByOrgUnitRequest\x1a*.arda.hrm.v1.ListIAMUsersByOrgUnitResponseB;Z9github.com/arda-labs/arda/libs/go/arda-proto/hrm/v1;hrmv1b\x06proto3"
 
 var (
 	file_arda_hrm_v1_hrm_proto_rawDescOnce sync.Once
@@ -367,24 +470,28 @@ func file_arda_hrm_v1_hrm_proto_rawDescGZIP() []byte {
 	return file_arda_hrm_v1_hrm_proto_rawDescData
 }
 
-var file_arda_hrm_v1_hrm_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_arda_hrm_v1_hrm_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_arda_hrm_v1_hrm_proto_goTypes = []any{
-	(*CheckRegistrationRequest)(nil),   // 0: arda.hrm.v1.CheckRegistrationRequest
-	(*CheckRegistrationResponse)(nil),  // 1: arda.hrm.v1.CheckRegistrationResponse
-	(*SettleRegistrationRequest)(nil),  // 2: arda.hrm.v1.SettleRegistrationRequest
-	(*SettleRegistrationResponse)(nil), // 3: arda.hrm.v1.SettleRegistrationResponse
-	(*RejectRegistrationRequest)(nil),  // 4: arda.hrm.v1.RejectRegistrationRequest
-	(*RejectRegistrationResponse)(nil), // 5: arda.hrm.v1.RejectRegistrationResponse
+	(*ListIAMUsersByOrgUnitRequest)(nil),  // 0: arda.hrm.v1.ListIAMUsersByOrgUnitRequest
+	(*ListIAMUsersByOrgUnitResponse)(nil), // 1: arda.hrm.v1.ListIAMUsersByOrgUnitResponse
+	(*CheckRegistrationRequest)(nil),      // 2: arda.hrm.v1.CheckRegistrationRequest
+	(*CheckRegistrationResponse)(nil),     // 3: arda.hrm.v1.CheckRegistrationResponse
+	(*SettleRegistrationRequest)(nil),     // 4: arda.hrm.v1.SettleRegistrationRequest
+	(*SettleRegistrationResponse)(nil),    // 5: arda.hrm.v1.SettleRegistrationResponse
+	(*RejectRegistrationRequest)(nil),     // 6: arda.hrm.v1.RejectRegistrationRequest
+	(*RejectRegistrationResponse)(nil),    // 7: arda.hrm.v1.RejectRegistrationResponse
 }
 var file_arda_hrm_v1_hrm_proto_depIdxs = []int32{
-	0, // 0: arda.hrm.v1.EmployeeCommandService.CheckRegistration:input_type -> arda.hrm.v1.CheckRegistrationRequest
-	2, // 1: arda.hrm.v1.EmployeeCommandService.SettleRegistration:input_type -> arda.hrm.v1.SettleRegistrationRequest
-	4, // 2: arda.hrm.v1.EmployeeCommandService.RejectRegistration:input_type -> arda.hrm.v1.RejectRegistrationRequest
-	1, // 3: arda.hrm.v1.EmployeeCommandService.CheckRegistration:output_type -> arda.hrm.v1.CheckRegistrationResponse
-	3, // 4: arda.hrm.v1.EmployeeCommandService.SettleRegistration:output_type -> arda.hrm.v1.SettleRegistrationResponse
-	5, // 5: arda.hrm.v1.EmployeeCommandService.RejectRegistration:output_type -> arda.hrm.v1.RejectRegistrationResponse
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
+	2, // 0: arda.hrm.v1.EmployeeCommandService.CheckRegistration:input_type -> arda.hrm.v1.CheckRegistrationRequest
+	4, // 1: arda.hrm.v1.EmployeeCommandService.SettleRegistration:input_type -> arda.hrm.v1.SettleRegistrationRequest
+	6, // 2: arda.hrm.v1.EmployeeCommandService.RejectRegistration:input_type -> arda.hrm.v1.RejectRegistrationRequest
+	0, // 3: arda.hrm.v1.EmployeeCommandService.ListIAMUsersByOrgUnit:input_type -> arda.hrm.v1.ListIAMUsersByOrgUnitRequest
+	3, // 4: arda.hrm.v1.EmployeeCommandService.CheckRegistration:output_type -> arda.hrm.v1.CheckRegistrationResponse
+	5, // 5: arda.hrm.v1.EmployeeCommandService.SettleRegistration:output_type -> arda.hrm.v1.SettleRegistrationResponse
+	7, // 6: arda.hrm.v1.EmployeeCommandService.RejectRegistration:output_type -> arda.hrm.v1.RejectRegistrationResponse
+	1, // 7: arda.hrm.v1.EmployeeCommandService.ListIAMUsersByOrgUnit:output_type -> arda.hrm.v1.ListIAMUsersByOrgUnitResponse
+	4, // [4:8] is the sub-list for method output_type
+	0, // [0:4] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -401,7 +508,7 @@ func file_arda_hrm_v1_hrm_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_hrm_v1_hrm_proto_rawDesc), len(file_arda_hrm_v1_hrm_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
