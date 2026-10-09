@@ -42,7 +42,7 @@ type collectionLoanClient interface {
 }
 
 type collectionFinanceClient interface {
-	financeclient.PostingRulesClient
+	financeclient.PostingRuleLister
 	Reserve(context.Context, *financev1.PostingRequest) (*financev1.PostingResponse, error)
 	Post(context.Context, *financev1.PostingRequest) (*financev1.PostingResponse, error)
 	Release(context.Context, *financev1.ReleaseRequest) (*financev1.PostingResponse, error)
@@ -85,6 +85,10 @@ func (w *CollectionWorkers) buildPostingRequest(ctx context.Context, job entitie
 	if err != nil {
 		return nil, err
 	}
+	lines, err := postingLinesFromRules(ctx, w.financeClient, "LNM_COLLECTION", collectionLegs(detail), detail.GetCurrencyCode())
+	if err != nil {
+		return nil, err
+	}
 	return &financev1.PostingRequest{
 		IdempotencyKey: fmt.Sprintf("lnm-collection-%s", detail.GetCollectionId()), AccountingDate: detail.GetCollectionDate(),
 		CurrencyCode: detail.GetCurrencyCode(),
@@ -95,7 +99,7 @@ func (w *CollectionWorkers) buildPostingRequest(ctx context.Context, job entitie
 			DocumentId:   detail.GetCollectionId(),
 			CaseId:       detail.GetWorkflowCaseId(),
 		},
-		Lines: postingLinesFromRules(fetchPostingRules(ctx, w.financeClient, "LNM_COLLECTION"), collectionLegs(detail), detail.GetCurrencyCode()),
+		Lines: lines,
 	}, nil
 }
 
@@ -110,7 +114,6 @@ func collectionLegs(detail *loanv1.CollectionPostingDetail) []postingLeg {
 		legs = append(legs,
 			postingLeg{
 				CardLine:    1,
-				Fallback:    "CASH_SETTLEMENT_ACCOUNT",
 				Direction:   "DEBIT",
 				AmountMinor: detail.GetPrincipalMinor(),
 				Analytics: &financev1.Analytics{
@@ -121,7 +124,6 @@ func collectionLegs(detail *loanv1.CollectionPostingDetail) []postingLeg {
 			},
 			postingLeg{
 				CardLine:    2,
-				Fallback:    "LNM_LOAN_PRINCIPAL",
 				Direction:   "CREDIT",
 				AmountMinor: detail.GetPrincipalMinor(),
 				Analytics: &financev1.Analytics{
@@ -136,7 +138,6 @@ func collectionLegs(detail *loanv1.CollectionPostingDetail) []postingLeg {
 		legs = append(legs,
 			postingLeg{
 				CardLine:    3,
-				Fallback:    "CASH_SETTLEMENT_ACCOUNT",
 				Direction:   "DEBIT",
 				AmountMinor: detail.GetInterestMinor(),
 				Analytics: &financev1.Analytics{
@@ -147,7 +148,6 @@ func collectionLegs(detail *loanv1.CollectionPostingDetail) []postingLeg {
 			},
 			postingLeg{
 				CardLine:    4,
-				Fallback:    "LNM_INTEREST_RECEIVABLE",
 				Direction:   "CREDIT",
 				AmountMinor: detail.GetInterestMinor(),
 				Analytics: &financev1.Analytics{
@@ -199,7 +199,9 @@ func (w *CollectionWorkers) init() worker.JobHandler {
 		}
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
@@ -238,7 +240,9 @@ func (w *CollectionWorkers) validate() worker.JobHandler {
 		}
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
@@ -269,7 +273,9 @@ func (w *CollectionWorkers) execute() worker.JobHandler {
 
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		posted, err := w.financeClient.Post(ctx, req)

@@ -41,8 +41,8 @@ func (f *collectionFailureFinance) Release(_ context.Context, req *financev1.Rel
 }
 func (*collectionFailureFinance) ListPostingRules(context.Context, string) ([]*financev1.PostingRule, error) {
 	return []*financev1.PostingRule{
-		{LineNo: 1, ResolutionType: "CLASS_MAP", AccClassification: "CASH_SETTLEMENT_ACCOUNT"},
-		{LineNo: 2, ResolutionType: "CLASS_MAP", AccClassification: "LNM_LOAN_PRINCIPAL"},
+		{LineNo: 1, Direction: "DEBIT", ResolutionType: "CLASS_MAP", AccClassification: "CASH_SETTLEMENT_ACCOUNT"},
+		{LineNo: 2, Direction: "CREDIT", ResolutionType: "CLASS_MAP", AccClassification: "LNM_LOAN_PRINCIPAL"},
 	}, nil
 }
 

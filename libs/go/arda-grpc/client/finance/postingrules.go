@@ -2,98 +2,99 @@ package finance
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 
 	financev1 "github.com/arda-labs/arda/libs/go/arda-proto/finance/v1"
 )
 
-// Rule-card line build (iteration 11 wave 2, moved to libs in iteration 12 so
-// loan-service shares it). Domain flows used to hardcode their classification
-// strings per leg; they now fetch the seeded fin_accounting_rules card via
-// finance ListPostingRules and only fall back to the built-in classifications
-// when the card has no row for the leg — a rule lookup failure must never
-// break a flow that was already working.
+// PostingRuleLister is the narrow finance API needed to load one accounting card.
+type PostingRuleLister interface {
+	ListPostingRules(context.Context, string) ([]*financev1.PostingRule, error)
+}
 
 // PostingLeg is one caller-side posting leg awaiting rule resolution.
 type PostingLeg struct {
-	// CardLine is the fin_accounting_rules line_no this leg resolves its
-	// classification from. Explicit (not positional) so conditional legs —
-	// collection posts its interest pair only when interest > 0 — keep
-	// pointing at their own card rows.
+	// CardLine is the fin_accounting_rules line_no this leg resolves against.
 	CardLine int32
-	// Fallback is the pre-rules hardcoded classification, used when the
-	// card has no usable row for this leg.
-	Fallback string
-	// Direction is the posting side (DEBIT | CREDIT) for the built line.
+	// Direction is the posting side (DEBIT | CREDIT).
 	Direction string
-	// AmountMinor must be > 0; callers skip zero legs before building.
+	// AmountMinor must be positive. Zero legs are omitted before card lookup.
 	AmountMinor int64
-	// Analytics carries the line's org/debt/customer/contract scope; the
-	// classification is stamped by PostingLinesFromRules.
+	// Analytics carries the line's org/debt/customer/contract scope.
 	Analytics *financev1.Analytics
 	// Description is the optional per-line description.
 	Description string
 }
 
-// FetchPostingRules loads the rule card for a document type. Any failure
-// degrades to nil — the built-in fallback classifications take over. The
-// caller context must carry the tenant scope: without it the finance service
-// rejects the lookup and every flow silently falls back to hardcoded legs.
-func FetchPostingRules(ctx context.Context, client PostingRulesClient, documentType string) []*financev1.PostingRule {
+// FetchPostingRules returns a card or a typed business error. Transport errors
+// remain ordinary errors so callers can retry them instead of treating an
+// unavailable finance service as a missing configuration row.
+func FetchPostingRules(ctx context.Context, client PostingRuleLister, documentType string) ([]*financev1.PostingRule, error) {
 	if client == nil {
-		return nil
+		return nil, NewPostingError(financev1.PostingErrorCode_POSTING_ERROR_CODE_RULE_NOT_FOUND,
+			fmt.Errorf("finance client is not configured for document type %s", documentType))
 	}
 	if grpcClient, ok := client.(*Client); ok && grpcClient == nil {
-		return nil
+		return nil, NewPostingError(financev1.PostingErrorCode_POSTING_ERROR_CODE_RULE_NOT_FOUND,
+			fmt.Errorf("finance client is not configured for document type %s", documentType))
 	}
 	rules, err := client.ListPostingRules(ctx, documentType)
 	if err != nil {
-		slog.Warn("posting rule lookup failed — falling back to built-in legs", "documentType", documentType, "err", err)
-		return nil
+		return nil, fmt.Errorf("list posting rules for %s: %w", documentType, err)
 	}
-	return rules
+	if len(rules) == 0 {
+		return nil, NewPostingError(financev1.PostingErrorCode_POSTING_ERROR_CODE_RULE_NOT_FOUND,
+			fmt.Errorf("RULE_NOT_FOUND: no active posting rules for %s", documentType))
+	}
+	return rules, nil
 }
 
-// PostingRulesClient is the read-only rule lookup used by posting builders.
-type PostingRulesClient interface {
-	ListPostingRules(context.Context, string) ([]*financev1.PostingRule, error)
+// BuildPostingLines resolves every non-zero leg from its declared card line.
+// There is deliberately no hardcoded classification fallback.
+func BuildPostingLines(ctx context.Context, client PostingRuleLister, documentType string, legs []PostingLeg, currencyCode string) ([]*financev1.PostingLine, error) {
+	active := false
+	for _, leg := range legs {
+		if leg.AmountMinor < 0 {
+			return nil, fmt.Errorf("posting amount for %s line %d must not be negative", documentType, leg.CardLine)
+		}
+		active = active || leg.AmountMinor > 0
+	}
+	if !active {
+		return nil, nil
+	}
+	rules, err := FetchPostingRules(ctx, client, documentType)
+	if err != nil {
+		return nil, err
+	}
+	return PostingLinesFromRules(documentType, rules, legs, currencyCode)
 }
 
-// PostingLinesFromRules builds the numbered PostingLine list from legs,
-// resolving each leg's classification from its card line. CLASS_MAP rows
-// stamp analytics.acc_classification; FIXED_CODE rows resolve the line
-// directly against the COA (account_code). A leg whose card row is missing,
-// inactive, or unclassified keeps its fallback classification with a warn.
-func PostingLinesFromRules(rules []*financev1.PostingRule, legs []PostingLeg, currencyCode string) []*financev1.PostingLine {
+// PostingLinesFromRules builds numbered PostingLine values from the matching
+// active card rows. Missing rows or unresolved account mappings are typed errors.
+func PostingLinesFromRules(documentType string, rules []*financev1.PostingRule, legs []PostingLeg, currencyCode string) ([]*financev1.PostingLine, error) {
 	byLine := make(map[int32]*financev1.PostingRule, len(rules))
 	for _, rule := range rules {
+		if rule == nil || rule.GetLineNo() <= 0 {
+			return nil, fmt.Errorf("posting card %s contains an invalid line", documentType)
+		}
+		if _, exists := byLine[rule.GetLineNo()]; exists {
+			return nil, fmt.Errorf("posting card %s contains duplicate line %d", documentType, rule.GetLineNo())
+		}
 		byLine[rule.GetLineNo()] = rule
 	}
 	lines := make([]*financev1.PostingLine, 0, len(legs))
 	for _, leg := range legs {
-		if leg.AmountMinor <= 0 {
+		if leg.AmountMinor == 0 {
 			continue
 		}
-		classification := leg.Fallback
-		warnReason := ""
 		rule, ok := byLine[leg.CardLine]
-		switch {
-		case !ok:
-			warnReason = "rule row missing"
-		case rule.GetResolutionType() == "FIXED_CODE" && rule.GetAccountRef() == "":
-			warnReason = "FIXED_CODE rule without account_ref"
-		case rule.GetResolutionType() != "FIXED_CODE" && rule.GetAccClassification() == "":
-			warnReason = "CLASS_MAP rule without acc_classification"
+		if !ok {
+			return nil, NewPostingError(financev1.PostingErrorCode_POSTING_ERROR_CODE_RULE_NOT_FOUND,
+				fmt.Errorf("RULE_NOT_FOUND: %s line %d", documentType, leg.CardLine))
 		}
-		if warnReason == "" {
-			if rule.GetResolutionType() == "FIXED_CODE" {
-				classification = ""
-			} else {
-				classification = rule.GetAccClassification()
-			}
-		} else {
-			slog.Warn("posting rule card row unusable — using built-in classification",
-				"cardLine", leg.CardLine, "reason", warnReason, "fallback", leg.Fallback)
+		if rule.GetDirection() != leg.Direction {
+			return nil, NewPostingError(financev1.PostingErrorCode_POSTING_ERROR_CODE_ACCOUNT_UNRESOLVED,
+				fmt.Errorf("ACCOUNT_UNRESOLVED: %s line %d direction is %s, want %s", documentType, leg.CardLine, rule.GetDirection(), leg.Direction))
 		}
 		line := &financev1.PostingLine{
 			LineNo:       int32(len(lines) + 1),
@@ -102,22 +103,54 @@ func PostingLinesFromRules(rules []*financev1.PostingRule, legs []PostingLeg, cu
 			CurrencyCode: currencyCode,
 			Description:  leg.Description,
 		}
-		if rule != nil && warnReason == "" && rule.GetResolutionType() == "FIXED_CODE" {
+		switch rule.GetResolutionType() {
+		case "CLASS_MAP":
+			if rule.GetAccClassification() == "" {
+				return nil, unresolvedRule(documentType, leg.CardLine, "CLASS_MAP has no acc_classification")
+			}
+			line.Analytics = WithClassification(leg.Analytics, rule.GetAccClassification())
+		case "FIXED_CODE":
+			if rule.GetAccountRef() == "" {
+				return nil, unresolvedRule(documentType, leg.CardLine, "FIXED_CODE has no account_ref")
+			}
 			line.AccountCode = rule.GetAccountRef()
-		} else {
-			line.Analytics = WithClassification(leg.Analytics, classification)
+		default:
+			return nil, unresolvedRule(documentType, leg.CardLine, "unsupported resolution_type "+rule.GetResolutionType())
 		}
 		lines = append(lines, line)
 	}
-	return lines
+	return lines, nil
 }
 
-// WithClassification stamps acc_classification onto the analytics (or creates
-// one), preserving whatever the caller already set.
+func unresolvedRule(documentType string, line int32, reason string) error {
+	return NewPostingError(financev1.PostingErrorCode_POSTING_ERROR_CODE_ACCOUNT_UNRESOLVED,
+		fmt.Errorf("ACCOUNT_UNRESOLVED: %s line %d: %s", documentType, line, reason))
+}
+
+// WithClassification stamps acc_classification onto analytics, preserving all
+// other caller-supplied dimensions.
 func WithClassification(analytics *financev1.Analytics, classification string) *financev1.Analytics {
 	if analytics == nil {
 		return &financev1.Analytics{AccClassification: classification}
 	}
-	analytics.AccClassification = classification
-	return analytics
+	return &financev1.Analytics{
+		AccClassification: classification,
+		DebtGroupCode:     analytics.GetDebtGroupCode(),
+		OrgUnitCode:       analytics.GetOrgUnitCode(),
+		FundSourceCode:    analytics.GetFundSourceCode(),
+		CustomerCode:      analytics.GetCustomerCode(),
+		ContractCode:      analytics.GetContractCode(),
+		Dimensions:        cloneDimensions(analytics.GetDimensions()),
+	}
+}
+
+func cloneDimensions(dimensions map[string]string) map[string]string {
+	if len(dimensions) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(dimensions))
+	for key, value := range dimensions {
+		cloned[key] = value
+	}
+	return cloned
 }
