@@ -193,6 +193,7 @@ func executeApprovedTool(w http.ResponseWriter, r *http.Request, store runStore,
 	stopHeartbeat := startSSEHeartbeat(sse)
 	defer stopHeartbeat()
 	if terminateAgentRunOnContext(ctx, store, exec.Run, resumeInput, sse, "") {
+		finalizeQuotaReservation(ctx, store, exec.Run, 0)
 		return
 	}
 
@@ -399,6 +400,7 @@ func runAgentResume(w http.ResponseWriter, r *http.Request, store runStore, reso
 	stopHeartbeat := startSSEHeartbeat(sse)
 	defer stopHeartbeat()
 	if terminateAgentRunOnContext(ctx, store, run, resumeInput, sse, "") {
+		finalizeQuotaReservation(ctx, store, run, 0)
 		return
 	}
 

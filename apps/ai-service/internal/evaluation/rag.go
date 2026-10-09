@@ -70,6 +70,7 @@ func Run(ctx context.Context, set Set, query QueryFunc) Report {
 	started := time.Now()
 	report := Report{Version: set.Version, Cases: make([]CaseResult, 0, len(set.Cases))}
 	var recallSum float64
+	recallCases := 0
 	for _, c := range set.Cases {
 		result := CaseResult{ID: c.ID}
 		res, err := query(ctx, c)
@@ -96,6 +97,7 @@ func Run(ctx context.Context, set Set, query QueryFunc) Report {
 		if len(c.Expected.SourceKeys) > 0 {
 			result.Recall = float64(matched) / float64(len(c.Expected.SourceKeys))
 			recallSum += result.Recall
+			recallCases++
 		}
 		if c.Expected.AllowNoAnswer {
 			result.Passed = len(res.Hits) == 0
@@ -118,7 +120,11 @@ func Run(ctx context.Context, set Set, query QueryFunc) Report {
 		report.Cases = append(report.Cases, result)
 	}
 	if len(set.Cases) > 0 {
-		report.RecallAtK = recallSum / float64(len(set.Cases))
+		// Only cases that name expected sources have a recall; no-answer cases
+		// would otherwise drag the average down by counting as zero.
+		if recallCases > 0 {
+			report.RecallAtK = recallSum / float64(recallCases)
+		}
 		report.CitationCoverage /= float64(len(set.Cases))
 	}
 	report.DurationMs = time.Since(started).Milliseconds()

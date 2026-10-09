@@ -202,3 +202,25 @@ func TestRAGHandlerParsePreview(t *testing.T) {
 		t.Errorf("unexpected chunks: %+v", res.Chunks)
 	}
 }
+
+func TestIsSelfReview(t *testing.T) {
+	str := func(v string) *string { return &v }
+	cases := []struct {
+		name    string
+		actor   string
+		src     knowledge.Source
+		version knowledge.Version
+		want    bool
+	}{
+		{"version author", "u1", knowledge.Source{}, knowledge.Version{CreatedBy: str("u1")}, true},
+		{"source creator with empty owner", "u1", knowledge.Source{CreatedBy: str("u1")}, knowledge.Version{CreatedBy: str("u2")}, true},
+		{"declared owner", "u1", knowledge.Source{OwnerID: str("u1"), CreatedBy: str("u2")}, knowledge.Version{CreatedBy: str("u2")}, true},
+		{"independent reviewer", "u3", knowledge.Source{OwnerID: str("u1"), CreatedBy: str("u2")}, knowledge.Version{CreatedBy: str("u2")}, false},
+		{"missing actor", "", knowledge.Source{}, knowledge.Version{}, true},
+	}
+	for _, tc := range cases {
+		if got := isSelfReview(tc.actor, &tc.src, &tc.version); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

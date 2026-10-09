@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -190,5 +191,50 @@ func TestClientProbeReportsUpstreamFailure(t *testing.T) {
 	defer server.Close()
 	if err := NewClient(server.URL, "key", "model", server.Client()).Probe(context.Background()); err == nil || !strings.Contains(err.Error(), "HTTP 401") {
 		t.Fatalf("expected probe status error, got %v", err)
+	}
+}
+
+func TestStreamChatSurfacesInStreamError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"một phần\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"error\":{\"message\":\"upstream overloaded\"}}\n\n"))
+	}))
+	defer server.Close()
+
+	_, _, err := NewClient(server.URL, "k", "m", server.Client()).StreamChat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, StreamCallbacks{})
+	var statusErr *ProviderStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("expected a provider error for an in-stream error frame, got %v", err)
+	}
+}
+
+func TestStreamChatBoundsCompletionTokens(t *testing.T) {
+	cases := map[ProviderType]string{
+		ProviderOpenAI:           "max_completion_tokens",
+		ProviderOpenAICompatible: "max_tokens",
+	}
+	for kind, wantField := range cases {
+		var body map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		}))
+		_, _, err := NewProviderClient(kind, server.URL, "k", "m", server.Client()).StreamChat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, StreamCallbacks{})
+		server.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if got, _ := body[wantField].(float64); int(got) != DefaultMaxCompletionTokens {
+			t.Errorf("%s: %s = %v, want %d", kind, wantField, body[wantField], DefaultMaxCompletionTokens)
+		}
+		other := "max_tokens"
+		if wantField == "max_tokens" {
+			other = "max_completion_tokens"
+		}
+		if _, present := body[other]; present {
+			t.Errorf("%s: %s must not be sent together with %s", kind, other, wantField)
+		}
 	}
 }

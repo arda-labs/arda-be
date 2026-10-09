@@ -81,8 +81,11 @@ func runAgentStream(
 		}
 	}
 	if err := store.Start(ctx, scopeRun, sanitizeTranscript(latestUserMessage(input.Messages))); err != nil {
-		if quota, ok := store.(repository.QuotaGate); ok {
-			_ = quota.FinalizeQuota(context.WithoutCancel(ctx), scopeRun.TenantID, scopeRun.ExternalRun, 0)
+		// A replayed run id shares the original run's reservation: finalizing it
+		// here would refund the allowance while the original run still consumes
+		// tokens. Only release a reservation this request created.
+		if !errors.Is(err, repository.ErrRunAlreadyExists) {
+			finalizeQuotaReservation(ctx, store, scopeRun, 0)
 		}
 		if errors.Is(err, repository.ErrRunAlreadyExists) {
 			problem(w, http.StatusConflict, "ai.run_replay")
@@ -101,6 +104,7 @@ func runAgentStream(
 	stopHeartbeat := startSSEHeartbeat(sse)
 	defer stopHeartbeat()
 	if terminateAgentRunOnContext(ctx, store, scopeRun, input, sse, "") {
+		finalizeQuotaReservation(ctx, store, scopeRun, 0)
 		return
 	}
 
@@ -217,14 +221,18 @@ func selectModelProvider(ctx context.Context, store runStore, scope tools.Contex
 	if settings.BaseURL == "" || settings.ModelID == "" || !baseURLAllowed(options.ModelBaseURLAllowlist, settings.BaseURL) {
 		return nil
 	}
-	if options.ModelPool != nil {
-		return options.ModelPool.GetProvider(scope.TenantID, settings.ProviderType, settings.BaseURL, settings.APIKey, settings.ModelID)
+	cfg := model.Config{
+		ProviderType: settings.ProviderType, APIFormat: settings.APIFormat,
+		ReasoningEffort: settings.ReasoningEffort, ReasoningBudget: settings.ReasoningBudget,
 	}
-	kind, ok := model.NormalizeProviderType(settings.ProviderType)
+	if options.ModelPool != nil {
+		return options.ModelPool.GetProvider(scope.TenantID, cfg, settings.BaseURL, settings.APIKey, settings.ModelID)
+	}
+	clientOptions, ok := cfg.Resolve()
 	if !ok {
 		return nil
 	}
-	return model.NewCircuitBreakerProvider(model.NewProviderClient(kind, settings.BaseURL, settings.APIKey, settings.ModelID, nil), 3, 30*time.Second)
+	return model.NewCircuitBreakerProvider(model.NewBackend(clientOptions, settings.BaseURL, settings.APIKey, settings.ModelID, nil), 3, 30*time.Second)
 }
 
 // modelErrorCode maps a model stream failure to a stable, actionable code so
@@ -367,14 +375,18 @@ func agentStepsLoop(
 	executedCalls := make(map[callKey]int)
 	for step := 0; step < maxSteps && !awaitingApproval; step++ {
 		turnDefs := defs
-		if options.decisionSkill != "" && step == maxSteps-1 {
-			// Reserve a synthesis turn instead of spending every round on tools.
+		if maxSteps > 1 && step == maxSteps-1 {
+			// Reserve a synthesis turn instead of spending every round on tools,
+			// so evidence already gathered becomes an answer rather than a
+			// failed run.
 			turnDefs = nil
 			messages = append(messages, model.Message{Role: "system", Content: "Tool budget reached. Write the final answer now using only verified evidence already collected. If data or parameters are missing, state precisely what is missing. Do not claim the analysis is complete unless the evidence supports it."})
 		}
 		var turnText strings.Builder
 		var turnReasoning strings.Builder
 		var collected []model.ToolCall
+		var providerState json.RawMessage
+		servedModel := ""
 		modelTimer := startModelStreamTimer()
 		recordPromptSize(messages)
 		finishReason, usage, err := modelProvider.StreamChat(ctx, messages, turnDefs, model.StreamCallbacks{
@@ -392,6 +404,12 @@ func agentStepsLoop(
 				collected = append(collected, call)
 			},
 			OnFinish: func(_ string, _ model.Usage) {},
+			// The versioned model that actually answered (aliases such as
+			// *-latest resolve server-side), recorded for the audit trail.
+			OnServedModel: func(served string) { servedModel = served },
+			// Reasoning that must accompany this turn when it is sent back
+			// after tool results (Anthropic thinking blocks, Responses items).
+			OnProviderState: func(state json.RawMessage) { providerState = state },
 			OnReasoningDelta: func(delta string) {
 				modelTimer.firstDelta()
 				// Chain-of-thought streams to reasoning-aware clients and is
@@ -457,7 +475,11 @@ func agentStepsLoop(
 			ModelID() string
 		}); ok {
 			if modelStore, ok := store.(repository.ModelSetter); ok {
-				_ = modelStore.SetModel(ctx, scopeRun, descriptor.ProviderName(), descriptor.ModelID())
+				recorded := descriptor.ModelID()
+				if servedModel != "" {
+					recorded = servedModel
+				}
+				_ = modelStore.SetModel(ctx, scopeRun, descriptor.ProviderName(), recorded)
 			}
 		}
 		if usage.TotalTokens > 0 {
@@ -476,6 +498,14 @@ func agentStepsLoop(
 				reply = "Tôi chưa có câu trả lời cho yêu cầu này."
 				startText()
 				sse.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: reply})
+			}
+			if finishReason == "length" {
+				// The provider stopped at the completion-token cap; say so
+				// instead of presenting a cut-off answer as complete.
+				note := "\n\n[Câu trả lời bị cắt vì đạt giới hạn độ dài. Hãy yêu cầu tiếp tục hoặc hỏi cụ thể hơn.]"
+				startText()
+				sse.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: note})
+				reply += note
 			}
 			reply, invented := sanitizeInventedCitations(reply, knowledgeCitations)
 			recordInventedCitations(invented)
@@ -526,10 +556,11 @@ func agentStepsLoop(
 		}
 
 		messages = append(messages, model.Message{
-			Role:      "assistant",
-			Content:   turnText.String(),
-			Reasoning: turnReasoning.String(),
-			ToolCalls: collected,
+			Role:          "assistant",
+			Content:       turnText.String(),
+			Reasoning:     turnReasoning.String(),
+			ToolCalls:     collected,
+			ProviderState: providerState,
 		})
 
 		// Independent read-only tool calls run concurrently; any call that
@@ -564,6 +595,14 @@ func agentStepsLoop(
 					defer wg.Done()
 					sem <- struct{}{}
 					defer func() { <-sem }()
+					// This goroutine is outside the HTTP recovery middleware: a
+					// panic in one tool would crash the process for every tenant.
+					defer func() {
+						if rec := recover(); rec != nil {
+							slog.Error("AI tool call panicked", "tool", c.Name, "panic", fmt.Sprint(rec), "run_id", input.RunID)
+							outcomes[index] = toolOutcome{message: `{"error":"ai.tool_execution_failed"}`}
+						}
+					}()
 					outcomes[index] = executeCall(c)
 				}(index, call)
 			}
@@ -600,6 +639,12 @@ func agentStepsLoop(
 			messages = append(messages, model.Message{Role: "tool", ToolCallID: call.ID, Content: toolMessage})
 			if isKnowledgeSearchTool(call.Name) || len(extractCitationLabels(toolMessage)) > 0 {
 				knowledgeCitations = appendUniqueCitations(knowledgeCitations, extractCitationLabels(toolMessage))
+			}
+			if len(knowledgeCitations) > 0 && scope.AutoApproveRisk != "" {
+				// Retrieved documents are untrusted text. After the run has
+				// read any, a mutation must go through a human even in act
+				// mode, so injected instructions cannot act on their own.
+				scope.AutoApproveRisk = ""
 			}
 			if pending {
 				awaitingApproval = true
@@ -689,7 +734,10 @@ func terminateAgentRunOnContext(
 		})
 	}
 	recordRunOutcome(status)
-	finalizeQuotaReservation(ctx, store, run, 0)
+	// Quota is deliberately not finalized here: the model loop's deferred
+	// finalize owns it and knows the tokens already consumed. Finalizing with
+	// zero would refund usage on every cancelled or timed-out run. Callers that
+	// terminate before any model call finalize with zero themselves.
 	if store != nil {
 		persistAgentRunTerminal(ctx, store, run, message, status)
 	}

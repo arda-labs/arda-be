@@ -22,8 +22,13 @@ type TenantSettings struct {
 	TenantID     string `json:"tenantId"`
 	BaseURL      string `json:"baseUrl"`
 	ProviderType string `json:"providerType"`
-	APIKey       string `json:"apiKey"`
-	ModelID      string `json:"modelId"`
+	// APIFormat and ReasoningEffort select the wire protocol and reasoning
+	// level of the applied profile (see AIModelProfile).
+	APIFormat       string `json:"apiFormat"`
+	ReasoningEffort string `json:"reasoningEffort"`
+	ReasoningBudget int    `json:"reasoningBudgetTokens"`
+	APIKey          string `json:"apiKey"`
+	ModelID         string `json:"modelId"`
 }
 
 // TenantSettingsStore is the read surface the agent loop and the RAG query
@@ -44,12 +49,12 @@ func (s *SQLRunStore) GetTenantSettings(ctx context.Context, tenantID string) (*
 	var rawAPIKey string
 	// Single source of truth: the applied profile + applied model.
 	err := s.db.QueryRowContext(ctx, `
-		SELECT p.tenant_id, p.base_url, p.provider_type, p.api_key, m.model_id
+		SELECT p.tenant_id, p.base_url, p.provider_type, COALESCE(m.api_format, p.api_format), p.reasoning_effort, p.reasoning_budget_tokens, p.api_key, m.model_id
 		FROM public.ai_model_profiles p
 		JOIN public.ai_profile_models m ON m.profile_id = p.id
 		WHERE p.tenant_id = $1 AND p.is_active = true AND m.is_active = true
 		LIMIT 1
-	`, tenantID).Scan(&item.TenantID, &item.BaseURL, &item.ProviderType, &rawAPIKey, &item.ModelID)
+	`, tenantID).Scan(&item.TenantID, &item.BaseURL, &item.ProviderType, &item.APIFormat, &item.ReasoningEffort, &item.ReasoningBudget, &rawAPIKey, &item.ModelID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrTenantSettingsNotFound

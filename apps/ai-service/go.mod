@@ -13,7 +13,7 @@ replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-erro
 require (
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
+	github.com/dlclark/regexp2/v2 v2.5.2
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

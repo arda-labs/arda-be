@@ -27,6 +27,10 @@ const PROTOCOL_ALLOWLIST = new Map([
     "AG-UI SSE envelope (protocol)",
   ],
   [
+    "apps/ai-service/internal/model/gemini.go#",
+    "Google Gemini generateContent wire format (provider-owned)",
+  ],
+  [
     "apps/ai-service/internal/handler/router.go#runInput",
     "AG-UI RunAgentInput (protocol)",
   ],
@@ -66,6 +70,8 @@ const PROTOCOL_ALLOWLIST = new Map([
 
 // Historical structs. Remove an entry in the same PR that renames its tags.
 const LEGACY_BASELINE = new Map([
+  ["apps/ai-service/internal/handler/profiles.go#availableModelDTO", "Q2-2027"],
+  ["apps/ai-service/internal/handler/profiles.go#modelFormatRequest", "Q2-2027"],
   ["apps/ai-service/internal/handler/profiles.go#applyModelRequest", "Q2-2027"],
   ["apps/ai-service/internal/handler/profiles.go#profileDTO", "Q2-2027"],
   ["apps/ai-service/internal/handler/profiles.go#profileModelDTO", "Q2-2027"],

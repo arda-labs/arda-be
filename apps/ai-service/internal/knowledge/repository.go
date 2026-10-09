@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
@@ -309,15 +311,11 @@ func (r *Repository) PublishVersion(ctx context.Context, sourceID, versionID int
 		return nil, fmt.Errorf("update version status: %w", err)
 	}
 
-	// 3. Set active_version_id on source
-	_, err = tx.ExecContext(ctx, `
-		UPDATE public.ai_knowledge_sources
-		   SET active_version_id = $1, updated_at = now()
-		 WHERE id = $2 AND (tenant_id = $3 OR tenant_id IS NULL)
-	`, versionID, sourceID, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("update source active version: %w", err)
-	}
+	// active_version_id is deliberately NOT set here. Retrieval only returns
+	// chunks of the active version, and chunks exist only after the ingestion
+	// job completes; the worker activates the version in the same transaction
+	// that stores its chunks. Switching earlier would hide the previous
+	// version's content until (or unless) indexing finishes.
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -522,7 +520,7 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 	var ftsRanks []rankedID
 	ftsSimilarity := `0::float8 AS similarity`
 	ftsFloor := ""
-	ftsArgs := []any{tID, queryText, topK * 2}
+	ftsArgs := []any{tID, buildFTSQuery(queryText), topK * 2}
 	if len(queryVector) > 0 {
 		// Same cosine expression as the vector leg, so both legs report the
 		// same similarity for the same chunk.
@@ -537,8 +535,8 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 		  FROM public.ai_knowledge_chunks c
 		  JOIN public.ai_knowledge_source_versions v ON v.id = c.source_version_id
 		  JOIN public.ai_knowledge_sources s ON s.id = v.source_id
-		 WHERE (to_tsvector('simple', c.content) @@ plainto_tsquery('simple', $2)
-		        OR to_tsvector('simple', s.title || ' ' || COALESCE(c.heading, '')) @@ plainto_tsquery('simple', $2))
+		 WHERE (to_tsvector('simple', c.content) @@ to_tsquery('simple', $2)
+		        OR to_tsvector('simple', s.title || ' ' || COALESCE(c.heading, '')) @@ to_tsquery('simple', $2))
 		   AND (s.tenant_id IS NOT DISTINCT FROM $1 OR s.tenant_id IS NULL)
 		   AND s.scope IN ('tenant', 'global')
 		   AND s.active_version_id = v.id
@@ -546,6 +544,10 @@ func (r *Repository) HybridSearch(ctx context.Context, queryText string, queryVe
 		   AND (s.effective_from IS NULL OR s.effective_from <= now())
 		   AND (s.effective_to IS NULL OR s.effective_to > now())
 		   AND s.deleted_at IS NULL` + ftsFloor + `
+		 ORDER BY GREATEST(
+		          ts_rank(to_tsvector('simple', c.content), to_tsquery('simple', $2)),
+		          ts_rank(to_tsvector('simple', s.title || ' ' || COALESCE(c.heading, '')), to_tsquery('simple', $2))) DESC,
+		          c.chunk_id
 		 LIMIT $3`
 	rows, err := r.db.QueryContext(ctx, ftsQuery, ftsArgs...)
 	if err != nil {
@@ -609,4 +611,36 @@ func floatVectorToString(vec []float32) string {
 	}
 	sb.WriteString("]")
 	return sb.String()
+}
+
+// maxFTSTerms bounds the OR-query so a pasted paragraph cannot build a huge
+// tsquery.
+const maxFTSTerms = 12
+
+// buildFTSQuery turns free text into a to_tsquery('simple', ...) expression
+// that ORs the distinct terms. plainto_tsquery ANDs every word, so a natural
+// question almost never matched; OR plus ts_rank ordering ranks chunks by how
+// many terms they contain. Only letters and digits survive, which also makes
+// the result safe to hand to to_tsquery (no operator characters). An empty
+// result matches nothing.
+func buildFTSQuery(text string) string {
+	fields := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	seen := make(map[string]struct{}, len(fields))
+	terms := make([]string, 0, maxFTSTerms)
+	for _, field := range fields {
+		if utf8.RuneCountInString(field) < 2 {
+			continue
+		}
+		if _, dup := seen[field]; dup {
+			continue
+		}
+		seen[field] = struct{}{}
+		terms = append(terms, field)
+		if len(terms) == maxFTSTerms {
+			break
+		}
+	}
+	return strings.Join(terms, " | ")
 }

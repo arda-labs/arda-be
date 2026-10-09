@@ -26,7 +26,10 @@ type decisionSettingsDTO struct {
 }
 
 type decisionSettingsRequest struct {
-	Enabled       bool    `json:"enabled"`
+	Enabled bool `json:"enabled"`
+	// Provider selects who serves the System One model (opencode-zen or
+	// typesafe). Omitted keeps the saved provider.
+	Provider      string  `json:"provider"`
 	ModelID       string  `json:"model_id"`
 	MinConfidence float64 `json:"min_confidence"`
 	// Omitted preserves the saved credential; empty explicitly clears it.
@@ -43,7 +46,8 @@ type decisionTestResponse struct {
 }
 
 func decisionDTO(s decision.Settings) decisionSettingsDTO {
-	return decisionSettingsDTO{s.Enabled, s.ModelID, s.MinConfidence, s.APIKey != "", "opencode-zen", "decision"}
+	provider, _ := decision.NormalizeProvider(s.Provider)
+	return decisionSettingsDTO{s.Enabled, s.ModelID, s.MinConfidence, s.APIKey != "", provider, "decision"}
 }
 
 func decisionClient(options RouterOptions) decisionEvaluator {
@@ -84,7 +88,14 @@ func handleDecisionSettings(w http.ResponseWriter, r *http.Request, store runSto
 		problem(w, http.StatusBadRequest, "ai.invalid_request_body")
 		return
 	}
-	next := decision.Settings{Enabled: input.Enabled, ModelID: strings.TrimSpace(input.ModelID), MinConfidence: input.MinConfidence, APIKey: saved.APIKey}
+	provider := strings.TrimSpace(input.Provider)
+	if provider == "" {
+		provider = saved.Provider
+	}
+	next := decision.Settings{Enabled: input.Enabled, Provider: provider, ModelID: strings.TrimSpace(input.ModelID), MinConfidence: input.MinConfidence, APIKey: saved.APIKey}
+	if normalized, ok := decision.NormalizeProvider(next.Provider); ok {
+		next.Provider = normalized
+	}
 	if input.APIKey != nil {
 		key := strings.TrimSpace(*input.APIKey)
 		if len(key) > 4096 || strings.ContainsAny(key, "\r\n") || strings.HasPrefix(key, "enc:v1:") || isMaskedSecret(key) {
@@ -98,7 +109,7 @@ func handleDecisionSettings(w http.ResponseWriter, r *http.Request, store runSto
 		problem(w, http.StatusBadRequest, "ai.decision_settings_invalid")
 		return
 	}
-	if (next.Enabled || probe) && !baseURLAllowed(options.ModelBaseURLAllowlist, decision.BaseURL) {
+	if (next.Enabled || probe) && !baseURLAllowed(options.ModelBaseURLAllowlist, decision.BaseURLFor(next.Provider)) {
 		problem(w, http.StatusBadRequest, "ai.base_url_not_allowed")
 		return
 	}

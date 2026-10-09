@@ -117,7 +117,6 @@ func main() {
 		if cfg.RAGRerankerBaseURL != "" {
 			knowledgeSvc.SetReranker(knowledge.NewCohereReranker(cfg.RAGRerankerBaseURL, cfg.RAGRerankerAPIKey, cfg.RAGRerankerModel, nil))
 		}
-		go knowledgeSvc.StartWorker(context.Background())
 		inProcessRAG = knowledge.NewInProcessRAGAdapter(knowledgeSvc)
 	}
 
@@ -290,6 +289,11 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if knowledgeSvc != nil {
+		// Tied to the shutdown context so an in-flight ingestion job is handed
+		// back to the queue instead of waiting out its lease.
+		go knowledgeSvc.StartWorker(ctx)
+	}
 	if store != nil {
 		go runConversationRetention(ctx, store, logger)
 	}

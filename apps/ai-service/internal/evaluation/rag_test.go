@@ -162,3 +162,22 @@ func TestHTTPQueryCookiePropagation(t *testing.T) {
 		}
 	})
 }
+
+// A no-answer case has no expected sources, so it must not count as a zero in
+// the recall average.
+func TestRecallAtKIgnoresCasesWithoutExpectedSources(t *testing.T) {
+	set := Set{Cases: []Case{
+		{ID: "found", Query: "q1", Expected: Expected{SourceKeys: []string{"1"}}},
+		{ID: "no-answer", Query: "q2", Expected: Expected{AllowNoAnswer: true}},
+	}}
+	query := func(_ context.Context, c Case) (knowledge.QueryResponse, error) {
+		if c.ID == "found" {
+			return knowledge.QueryResponse{Hits: []knowledge.QueryHit{{SourceKey: "1"}}}, nil
+		}
+		return knowledge.QueryResponse{}, nil
+	}
+	report := Run(context.Background(), set, query)
+	if report.RecallAtK != 1 {
+		t.Fatalf("recall@k = %v, want 1", report.RecallAtK)
+	}
+}

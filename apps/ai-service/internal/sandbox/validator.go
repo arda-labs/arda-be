@@ -75,6 +75,15 @@ func ValidateScript(code string) error {
 		return ErrInvalidEncoding
 	}
 
+	// Check code, not data: a quoted word such as "process" in a search query
+	// is a legitimate string, not an identifier. Dynamic access built from
+	// strings (x["con"+"structor"]) is closed at runtime instead, by removing
+	// the function constructors (see hardenFunctionConstructors).
+	if match := forbiddenBracketKeyPattern.FindString(code); match != "" {
+		return fmt.Errorf("%w: '%s'", ErrForbiddenIdentifier, match)
+	}
+	code = blankStringsAndComments(code)
+
 	// Normalize spaces for token matching
 	normalized := strings.ReplaceAll(code, "\t", " ")
 

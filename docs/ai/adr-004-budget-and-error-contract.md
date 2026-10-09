@@ -108,6 +108,8 @@ Current inventory (representative; the full list is owned by
 | `ai.sandbox_busy` | sandbox | yes (backoff) | yes | concurrency caps |
 | `ai.sandbox_budget_exceeded` | sandbox | no | yes | 50/20-call budgets |
 | `ai.sandbox_output_too_large` | sandbox | no | yes | 64 KiB limit |
+| `ai.sandbox_memory_exceeded` | sandbox | no | yes | heap growth watchdog (256 MiB) |
+| `ai.sandbox_internal_error` | sandbox | yes (retry) | yes | recovered Go panic or limits setup failure |
 | `ai.tool_execution_failed` | tool | no | yes | generic mapping (`tools.ErrorCode`) |
 | `ai.tool_invalid_arguments` | tool | no | yes | invalid model-supplied args |
 | `ai.tool_forbidden` / `ai.tool_disabled` | tool | no | yes | authorization / governance |

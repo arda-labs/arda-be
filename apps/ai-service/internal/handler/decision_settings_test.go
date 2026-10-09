@@ -95,3 +95,37 @@ func TestChatProfilesRejectDecisionModel(t *testing.T) {
 		t.Fatalf("expected purpose mismatch, got %d: %s", res.Code, res.Body.String())
 	}
 }
+
+func putDecisionSettings(t *testing.T, store *fakeDecisionStore, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	router := NewRouterWithOptions(store, nil, RouterOptions{})
+	req := httptest.NewRequest(http.MethodPut, "/api/ai/settings/decision", strings.NewReader(body))
+	gatewayHeaders(req)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	return res
+}
+
+func TestDecisionSettingsSavesProvider(t *testing.T) {
+	store := &fakeDecisionStore{settings: decision.Defaults()}
+	res := putDecisionSettings(t, store, `{"enabled":true,"provider":"typesafe","model_id":"jev-latest","min_confidence":0.8,"api_key":"key"}`)
+	if res.Code != http.StatusOK || store.settings.Provider != decision.ProviderTypeSafe || !strings.Contains(res.Body.String(), `"provider":"typesafe"`) {
+		t.Fatalf("provider not saved: %d %s (stored %q)", res.Code, res.Body.String(), store.settings.Provider)
+	}
+}
+
+func TestDecisionSettingsOmittedProviderKeepsSavedOne(t *testing.T) {
+	store := &fakeDecisionStore{settings: decision.Settings{Provider: decision.ProviderTypeSafe, ModelID: "jev-latest", MinConfidence: 0.8, APIKey: "key"}}
+	res := putDecisionSettings(t, store, `{"enabled":true,"model_id":"jev-latest","min_confidence":0.8}`)
+	if res.Code != http.StatusOK || store.settings.Provider != decision.ProviderTypeSafe {
+		t.Fatalf("saved provider must be kept: %d %s (stored %q)", res.Code, res.Body.String(), store.settings.Provider)
+	}
+}
+
+func TestDecisionSettingsRejectUnknownProvider(t *testing.T) {
+	store := &fakeDecisionStore{settings: decision.Defaults()}
+	res := putDecisionSettings(t, store, `{"enabled":true,"provider":"openai","model_id":"jev-latest","min_confidence":0.8,"api_key":"key"}`)
+	if res.Code != http.StatusBadRequest || store.saved {
+		t.Fatalf("unknown provider must be rejected: %d %s", res.Code, res.Body.String())
+	}
+}
