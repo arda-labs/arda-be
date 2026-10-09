@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/libs/go/arda-grpc
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-businessdate v0.0.0
@@ -15,7 +15,7 @@ replace github.com/arda-labs/arda/libs/go/arda-proto => ../arda-proto
 replace github.com/arda-labs/arda/libs/go/arda-businessdate => ../arda-businessdate
 
 require (
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 )
