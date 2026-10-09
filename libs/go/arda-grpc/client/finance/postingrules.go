@@ -34,6 +34,10 @@ func FetchPostingRules(ctx context.Context, client PostingRuleLister, documentTy
 		return nil, NewPostingError(financev1.PostingErrorCode_POSTING_ERROR_CODE_RULE_NOT_FOUND,
 			fmt.Errorf("finance client is not configured for document type %s", documentType))
 	}
+	if grpcClient, ok := client.(*Client); ok && grpcClient == nil {
+		return nil, NewPostingError(financev1.PostingErrorCode_POSTING_ERROR_CODE_RULE_NOT_FOUND,
+			fmt.Errorf("finance client is not configured for document type %s", documentType))
+	}
 	rules, err := client.ListPostingRules(ctx, documentType)
 	if err != nil {
 		return nil, fmt.Errorf("list posting rules for %s: %w", documentType, err)
