@@ -109,6 +109,30 @@ func (h *NotificationHandler) MarkAllRead(w http.ResponseWriter, r *http.Request
 	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (h *NotificationHandler) ListPreferences(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID := requestUser(r)
+	items, err := h.svc.ListPreferences(r.Context(), tenantID, userID)
+	if err != nil {
+		writeNotificationError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *NotificationHandler) SavePreference(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID := requestUser(r)
+	var p domain.NotificationPreference
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.svc.SavePreference(r.Context(), tenantID, userID, p); err != nil {
+		writeNotificationError(w, r, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (h *NotificationHandler) publishInboxChanged(tenantID, userID string) {
 	if h.publishInboxChange != nil {
 		_ = h.publishInboxChange(tenantID, userID)
@@ -256,14 +280,23 @@ func inboxItemJSON(item domain.InboxItem) map[string]any {
 		params = map[string]any{}
 	}
 	out := map[string]any{
-		"id":        item.PublicID,
-		"type":      item.Type,
-		"titleKey":  item.TitleKey,
-		"bodyKey":   item.BodyKey,
-		"params":    params,
-		"href":      item.Href,
-		"readAt":    nil,
-		"createdAt": item.CreatedAt,
+		"id":             item.PublicID,
+		"type":           item.Type,
+		"titleKey":       item.TitleKey,
+		"bodyKey":        item.BodyKey,
+		"params":         params,
+		"href":           item.Href,
+		"readAt":         nil,
+		"createdAt":      item.CreatedAt,
+		"entityType":     item.EntityType,
+		"entityId":       item.EntityID,
+		"resolvedAt":     item.ResolvedAt,
+		"resolvedReason": item.ResolvedReason,
+		"supersededAt":   item.SupersededAt,
+		"expiresAt":      item.ExpiresAt,
+		"locale":         item.Locale,
+		"priority":       item.Priority,
+		"eventSeq":       item.EventSeq,
 	}
 	if item.ReadAt != nil {
 		out["readAt"] = item.ReadAt

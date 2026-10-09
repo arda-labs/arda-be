@@ -159,22 +159,51 @@ func (r *NotificationRepository) CreateNotification(ctx context.Context, n *doma
 	for _, d := range deliveries {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO noti_deliveries (
-				notification_id, tenant_id, channel, destination, provider, status, max_attempts
-			) VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7)`,
-			created.ID, created.TenantID, d.Channel, string(d.Destination), d.Provider, domain.DeliveryStatusQueued, d.MaxAttempts,
+				notification_id, tenant_id, channel, destination, provider, status, max_attempts, next_attempt_at
+			) VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,COALESCE($8,now()))`,
+			created.ID, created.TenantID, d.Channel, string(d.Destination), d.Provider, domain.DeliveryStatusQueued, d.MaxAttempts, d.ScheduleAt,
 		); err != nil {
 			return nil, err
 		}
 	}
 
 	for _, item := range inboxItems {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO noti_inbox (
-				public_id, notification_id, tenant_id, user_id, type, title_key, body_key, params, href
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
-			item.PublicID, created.ID, created.TenantID, item.UserID, item.Type, item.TitleKey, item.BodyKey, string(item.Params), item.Href,
-		); err != nil {
+		if item.DedupeKey == "" {
+			item.DedupeKey = item.PublicID
+		}
+		var eventSeq int64
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO noti_user_seq (tenant_id, user_id, last_event_seq) VALUES ($1,$2,1)
+			ON CONFLICT (tenant_id, user_id) DO UPDATE SET last_event_seq = noti_user_seq.last_event_seq + 1
+			RETURNING last_event_seq`, created.TenantID, item.UserID).Scan(&eventSeq); err != nil {
 			return nil, err
+		}
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO noti_inbox (
+				public_id, notification_id, tenant_id, user_id, type, title_key, body_key, params, href,
+				entity_type, entity_id, dedupe_key, locale, priority, event_seq
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15)
+			ON CONFLICT (tenant_id, user_id, dedupe_key) DO NOTHING`,
+			item.PublicID, created.ID, created.TenantID, item.UserID, item.Type, item.TitleKey, item.BodyKey, string(item.Params), item.Href,
+			item.EntityType, item.EntityID, item.DedupeKey, item.Locale, item.Priority, eventSeq,
+		)
+		if err != nil {
+			return nil, err
+		}
+		inserted, err := result.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if inserted == 0 {
+			continue
+		}
+		if item.EntityType != "" && item.EntityID != "" {
+			if _, err := tx.ExecContext(ctx, `UPDATE noti_inbox i SET resolved_at=r.resolved_at, resolved_reason=r.resolved_reason
+				FROM noti_entity_resolutions r WHERE i.tenant_id=$1 AND i.user_id=$2 AND i.dedupe_key=$3
+				AND r.tenant_id=i.tenant_id AND r.entity_type=i.entity_type AND r.entity_id=i.entity_id`,
+				created.TenantID, item.UserID, item.DedupeKey); err != nil {
+				return nil, err
+			}
 		}
 		if err := insertOutbox(ctx, tx, ardaevents.SubjectNotificationInboxCreated, ardaevents.EventNotificationInboxCreated, "noti_inbox", item.PublicID, created.TenantID, item.UserID, map[string]any{
 			"notification_id": created.PublicID,
@@ -186,6 +215,9 @@ func (r *NotificationRepository) CreateNotification(ctx context.Context, n *doma
 			"body_key":        item.BodyKey,
 			"params":          json.RawMessage(item.Params),
 			"href":            item.Href,
+			"entity_type":     item.EntityType,
+			"entity_id":       item.EntityID,
+			"event_seq":       eventSeq,
 		}); err != nil {
 			return nil, err
 		}
@@ -336,10 +368,11 @@ func (r *NotificationRepository) ReplayOutboxDLQ(ctx context.Context, id, operat
 
 func (r *NotificationRepository) ListInbox(ctx context.Context, tenantID, userID string, limit int) ([]domain.InboxItem, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id::text, public_id, tenant_id, user_id, type, title_key, body_key, params, href, read_at, created_at
+		SELECT id::text, public_id, tenant_id, user_id, type, title_key, body_key, params, href, read_at,
+			entity_type, entity_id, dedupe_key, resolved_at, resolved_reason, superseded_at, expires_at, locale, priority, event_seq, created_at
 		FROM noti_inbox
 		WHERE tenant_id = $1 AND user_id = $2
-		ORDER BY created_at DESC
+		ORDER BY event_seq DESC
 		LIMIT $3`, tenantID, userID, limit)
 	if err != nil {
 		return nil, err
@@ -350,7 +383,8 @@ func (r *NotificationRepository) ListInbox(ctx context.Context, tenantID, userID
 	for rows.Next() {
 		var item domain.InboxItem
 		if err := rows.Scan(&item.ID, &item.PublicID, &item.TenantID, &item.UserID, &item.Type,
-			&item.TitleKey, &item.BodyKey, &item.Params, &item.Href, &item.ReadAt, &item.CreatedAt); err != nil {
+			&item.TitleKey, &item.BodyKey, &item.Params, &item.Href, &item.ReadAt,
+			&item.EntityType, &item.EntityID, &item.DedupeKey, &item.ResolvedAt, &item.ResolvedReason, &item.SupersededAt, &item.ExpiresAt, &item.Locale, &item.Priority, &item.EventSeq, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -358,12 +392,107 @@ func (r *NotificationRepository) ListInbox(ctx context.Context, tenantID, userID
 	return items, rows.Err()
 }
 
+func (r *NotificationRepository) ListPreferences(ctx context.Context, tenantID, userID string) ([]domain.NotificationPreference, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT event_group, channel, enabled,
+		CASE WHEN quiet_start IS NULL THEN NULL ELSE to_char(quiet_start, 'HH24:MI') END,
+		CASE WHEN quiet_end IS NULL THEN NULL ELSE to_char(quiet_end, 'HH24:MI') END,
+		tz, digest_mode, locale FROM noti_preferences WHERE tenant_id=$1 AND user_id=$2 ORDER BY event_group, channel`, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.NotificationPreference{}
+	for rows.Next() {
+		var p domain.NotificationPreference
+		if err := rows.Scan(&p.EventGroup, &p.Channel, &p.Enabled, &p.QuietStart, &p.QuietEnd, &p.Timezone, &p.DigestMode, &p.Locale); err != nil {
+			return nil, err
+		}
+		items = append(items, p)
+	}
+	return items, rows.Err()
+}
+
+func (r *NotificationRepository) SavePreference(ctx context.Context, tenantID, userID string, p domain.NotificationPreference) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO noti_preferences (tenant_id,user_id,event_group,channel,enabled,quiet_start,quiet_end,tz,digest_mode,locale)
+		VALUES ($1,$2,$3,$4,$5,NULLIF($6,'')::time,NULLIF($7,'')::time,$8,$9,$10)
+		ON CONFLICT (tenant_id,user_id,event_group,channel) DO UPDATE SET enabled=EXCLUDED.enabled, quiet_start=EXCLUDED.quiet_start, quiet_end=EXCLUDED.quiet_end, tz=EXCLUDED.tz, digest_mode=EXCLUDED.digest_mode, locale=EXCLUDED.locale, updated_at=now()`,
+		tenantID, userID, strings.TrimSpace(p.EventGroup), strings.TrimSpace(p.Channel), p.Enabled, nullableString(p.QuietStart), nullableString(p.QuietEnd), defaultValue(p.Timezone, "UTC"), defaultValue(strings.ToUpper(p.DigestMode), "NONE"), strings.TrimSpace(p.Locale))
+	return err
+}
+
+// DeliveryRule honors a channel preference and computes the next quiet-hours
+// boundary from database time so queued delivery does not rely on host clocks.
+func (r *NotificationRepository) DeliveryRule(ctx context.Context, tenantID, userID, eventGroup, channel string) (bool, *time.Time, error) {
+	var enabled bool
+	var scheduled sql.NullTime
+	err := r.db.QueryRowContext(ctx, `WITH preference AS (
+		SELECT enabled, quiet_start, quiet_end, tz FROM noti_preferences
+		WHERE tenant_id=$1 AND user_id=$2 AND channel=$4 AND event_group IN ($3,'*')
+		ORDER BY CASE WHEN event_group=$3 THEN 0 ELSE 1 END LIMIT 1
+	)
+	SELECT COALESCE(p.enabled,TRUE), CASE WHEN p.quiet_start IS NULL OR $4='in_app' THEN NULL ELSE
+		CASE WHEN p.quiet_start=p.quiet_end
+			OR (p.quiet_start<p.quiet_end AND (now() AT TIME ZONE p.tz)::time >= p.quiet_start AND (now() AT TIME ZONE p.tz)::time < p.quiet_end)
+			OR (p.quiet_start>p.quiet_end AND ((now() AT TIME ZONE p.tz)::time >= p.quiet_start OR (now() AT TIME ZONE p.tz)::time < p.quiet_end))
+		THEN (((now() AT TIME ZONE p.tz)::date + CASE WHEN p.quiet_start>=p.quiet_end AND (now() AT TIME ZONE p.tz)::time>=p.quiet_start THEN 1 ELSE 0 END) + p.quiet_end) AT TIME ZONE p.tz
+		ELSE NULL END END
+	FROM (SELECT 1) seed LEFT JOIN preference p ON TRUE`, tenantID, userID, eventGroup, channel).Scan(&enabled, &scheduled)
+	if err != nil {
+		return false, nil, err
+	}
+	if !scheduled.Valid {
+		return enabled, nil, nil
+	}
+	return enabled, &scheduled.Time, nil
+}
+
+func (r *NotificationRepository) PreferredLocale(ctx context.Context, tenantID, userID string) (string, error) {
+	var locale string
+	err := r.db.QueryRowContext(ctx, `SELECT locale FROM noti_preferences WHERE tenant_id=$1 AND user_id=$2 AND locale<>'' ORDER BY updated_at DESC LIMIT 1`, tenantID, userID).Scan(&locale)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return locale, err
+}
+
+func nullableString(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return strings.TrimSpace(*v)
+}
+func defaultValue(v, fallback string) string {
+	if strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	return v
+}
+
+// ResolveEntity persists a tombstone before resolving existing inbox rows, closing the
+// race where a completion arrives before its corresponding assignment.
+func (r *NotificationRepository) ResolveEntity(ctx context.Context, tx *sql.Tx, tenantID, entityType, entityID, reason, eventID string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO noti_entity_resolutions (tenant_id,entity_type,entity_id,resolved_reason,source_event_id)
+		VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant_id,entity_type,entity_id) DO UPDATE SET resolved_at=now(),resolved_reason=EXCLUDED.resolved_reason,source_event_id=EXCLUDED.source_event_id`, tenantID, entityType, entityID, reason, eventID)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE noti_inbox SET resolved_at=COALESCE(resolved_at,now()), resolved_reason=$4 WHERE tenant_id=$1 AND entity_type=$2 AND entity_id=$3 AND resolved_at IS NULL`, tenantID, entityType, entityID, reason)
+	return err
+}
+
+func (r *NotificationRepository) RecordRecipientWarning(ctx context.Context, tenantID, eventID, entityType, entityID, reason string) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO noti_recipient_warnings (tenant_id,event_id,entity_type,entity_id,reason)
+		VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant_id,event_id) DO UPDATE SET reason=EXCLUDED.reason,created_at=now()`,
+		strings.TrimSpace(tenantID), strings.TrimSpace(eventID), strings.TrimSpace(entityType), strings.TrimSpace(entityID), strings.TrimSpace(reason))
+	return err
+}
+
 func (r *NotificationRepository) UnreadCount(ctx context.Context, tenantID, userID string) (int, error) {
 	var count int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT count(*)
 		FROM noti_inbox
-		WHERE tenant_id = $1 AND user_id = $2 AND read_at IS NULL`, tenantID, userID).Scan(&count)
+		WHERE tenant_id = $1 AND user_id = $2 AND read_at IS NULL AND resolved_at IS NULL AND superseded_at IS NULL`, tenantID, userID).Scan(&count)
 	return count, err
 }
 

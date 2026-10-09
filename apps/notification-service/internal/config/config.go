@@ -15,6 +15,9 @@ type Config struct {
 	DatabaseDSN     string `yaml:"database_dsn"`
 	NATSURL         string `yaml:"nats_url"`
 	IAMGRPCAddr     string `yaml:"iam_grpc_addr"`
+	HRMGRPCAddr     string `yaml:"hrm_grpc_addr"`
+	DefaultLocale   string `yaml:"default_locale"`
+	ManagementGroup string `yaml:"notification_management_group"`
 	VAPIDPublicKey  string `yaml:"vapid_public_key"`
 	VAPIDPrivateKey string `yaml:"vapid_private_key"`
 	VAPIDSubject    string `yaml:"vapid_subject"`
@@ -22,13 +25,14 @@ type Config struct {
 
 func Load() Config {
 	cfg := Config{
-		AppName:      "notification-service",
-		HTTPAddr:     "0.0.0.0:8095",
-		GRPCAddr:     "0.0.0.0:9090",
-		LogLevel:     "info",
-		DatabaseDSN:  "",
-		NATSURL:      "",
-		VAPIDSubject: "mailto:ops@arda.io.vn",
+		AppName:       "notification-service",
+		HTTPAddr:      "0.0.0.0:8095",
+		GRPCAddr:      "0.0.0.0:9090",
+		LogLevel:      "info",
+		DatabaseDSN:   "",
+		NATSURL:       "",
+		VAPIDSubject:  "mailto:ops@arda.io.vn",
+		DefaultLocale: "vi-VN",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
@@ -49,6 +53,9 @@ func Load() Config {
 	envStr("NATS_URL", &cfg.NATSURL)
 	envStr("NOTIFICATION_NATS_URL", &cfg.NATSURL)
 	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
+	envStr("HRM_GRPC_ADDR", &cfg.HRMGRPCAddr)
+	envStr("NOTIFICATION_DEFAULT_LOCALE", &cfg.DefaultLocale)
+	envStr("NOTIFICATION_MANAGEMENT_GROUP", &cfg.ManagementGroup)
 	envStr("VAPID_PUBLIC_KEY", &cfg.VAPIDPublicKey)
 	envStr("VAPID_PRIVATE_KEY", &cfg.VAPIDPrivateKey)
 	envStr("VAPID_SUBJECT", &cfg.VAPIDSubject)
@@ -78,6 +85,9 @@ func (c *Config) loadYAML(path string) bool {
 	set("database_dsn", &c.DatabaseDSN)
 	set("nats_url", &c.NATSURL)
 	set("iam_grpc_addr", &c.IAMGRPCAddr)
+	set("hrm_grpc_addr", &c.HRMGRPCAddr)
+	set("default_locale", &c.DefaultLocale)
+	set("notification_management_group", &c.ManagementGroup)
 	set("vapid_public_key", &c.VAPIDPublicKey)
 	set("vapid_private_key", &c.VAPIDPrivateKey)
 	set("vapid_subject", &c.VAPIDSubject)

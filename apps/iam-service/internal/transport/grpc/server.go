@@ -6,10 +6,14 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strings"
 
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 	iamv1 "github.com/arda-labs/arda/libs/go/arda-proto/iam/v1"
@@ -57,6 +61,21 @@ func (s *UserServiceServer) GetUserBatch(ctx context.Context, req *iamv1.GetUser
 	return &iamv1.GetUserBatchResponse{Users: infos}, nil
 }
 
+func (s *UserServiceServer) ResolveNotificationRecipients(ctx context.Context, req *iamv1.ResolveNotificationRecipientsRequest) (*iamv1.ResolveNotificationRecipientsResponse, error) {
+	tenantID := strings.TrimSpace(ardametadata.FromIncoming(ctx).TenantID)
+	if tenantID == "" {
+		return nil, status.Error(codes.InvalidArgument, "tenant scope is required")
+	}
+	if len(req.GetUserIds()) > 200 || len(req.GetGroupIds()) > 200 || len(req.GetRoleCodes()) > 200 {
+		return nil, status.Error(codes.InvalidArgument, "recipient selectors are limited to 200 values per type")
+	}
+	ids, err := s.userRepo.ResolveNotificationRecipientIDs(ctx, tenantID, req.GetUserIds(), req.GetGroupIds(), req.GetRoleCodes())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "resolve notification recipients failed")
+	}
+	return &iamv1.ResolveNotificationRecipientsResponse{UserIds: ids}, nil
+}
+
 func ListenAndServe(grpcAddr string, userRepo *repository.UserRepository) (*grpc.Server, error) {
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
@@ -74,7 +93,7 @@ func ListenAndServe(grpcAddr string, userRepo *repository.UserRepository) (*grpc
 		grpc.Creds(transportCreds),
 		grpc.ChainUnaryInterceptor(
 			interceptors.UnaryServerRecovery(slog.Default()),
-			interceptors.UnaryServerServiceAuth(serviceSecret, "iam-service", map[string]struct{}{"workflow-service": {}}),
+		interceptors.UnaryServerServiceAuth(serviceSecret, "iam-service", map[string]struct{}{"workflow-service": {}, "notification-service": {}}),
 		),
 	)
 	iamv1.RegisterUserServiceServer(srv, NewUserServiceServer(userRepo))
