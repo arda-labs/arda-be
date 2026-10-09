@@ -13,6 +13,8 @@ type Config struct {
 	GRPCAddr             string `yaml:"grpc_addr"`
 	LogLevel             string `yaml:"log_level"`
 	DatabaseDSN          string `yaml:"database_dsn"`
+	NATSURL              string `yaml:"nats_url"`
+	SLAMilestones        string `yaml:"sla_milestones"`
 	ZeebeAddr            string `yaml:"zeebe_addr"`
 	ZeebeRestAddr        string `yaml:"zeebe_rest_addr"`
 	ZeebeTasklistAddr    string `yaml:"zeebe_tasklist_addr"`
@@ -35,6 +37,7 @@ func Load() Config {
 		GRPCAddr:             "0.0.0.0:9090",
 		LogLevel:             "info",
 		DatabaseDSN:          "",
+		SLAMilestones:        "50,90,100",
 		ZeebeAddr:            "192.168.10.201:30650",
 		CRMGRPCAddr:          "localhost:9090",
 		LoanGRPCAddr:         "localhost:9090",
@@ -59,6 +62,8 @@ func Load() Config {
 	envStr("GRPC_ADDR", &cfg.GRPCAddr)
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
+	envStr("NATS_URL", &cfg.NATSURL)
+	envStr("WORKFLOW_SLA_MILESTONES", &cfg.SLAMilestones)
 	envStr("ZEEBE_ADDR", &cfg.ZeebeAddr)
 	envStr("ZEEBE_REST_ADDR", &cfg.ZeebeRestAddr)
 	envStr("ZEEBE_TASKLIST_ADDR", &cfg.ZeebeTasklistAddr)
@@ -96,6 +101,8 @@ func (c *Config) loadYAML(path string) bool {
 	set("grpc_addr", &c.GRPCAddr)
 	set("log_level", &c.LogLevel)
 	set("database_dsn", &c.DatabaseDSN)
+	set("nats_url", &c.NATSURL)
+	set("sla_milestones", &c.SLAMilestones)
 	set("zeebe_addr", &c.ZeebeAddr)
 	set("zeebe_rest_addr", &c.ZeebeRestAddr)
 	set("zeebe_tasklist_addr", &c.ZeebeTasklistAddr)

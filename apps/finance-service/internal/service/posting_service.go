@@ -123,10 +123,10 @@ func (s *PostingService) PostTransaction(ctx context.Context, tenantID string, r
 	for _, l := range resolved {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO fin_journal_lines
-				(tenant_id, entry_id, line_no, direction, coa_version, account_code, account_name,
+			(tenant_id, entry_id, line_no, direction, bal_type_code, coa_version, account_code, account_name,
 				 amount_minor, currency_code, counterparty_code, counterparty_name, description, analytics)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-			tenantID, entryID, l.GetLineNo(), l.GetDirection(),
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+			tenantID, entryID, l.GetLineNo(), l.GetDirection(), repository.BalanceTypeActual,
 			l.GetCoaVersion(), l.GetAccountCode(), l.GetAccountName(), l.GetAmountMinor(),
 			l.GetCurrencyCode(), nullText(l.GetResolvedAnalytics().GetCustomerCode()), "",
 			l.GetDescription(), analyticsJSON(l.GetResolvedAnalytics())); err != nil {
@@ -224,10 +224,10 @@ func (s *PostingService) ReservePosting(ctx context.Context, tenantID string, re
 	for _, l := range resolved {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO fin_journal_lines
-				(tenant_id, entry_id, line_no, direction, coa_version, account_code, account_name,
+			(tenant_id, entry_id, line_no, direction, bal_type_code, coa_version, account_code, account_name,
 				 amount_minor, currency_code, counterparty_code, counterparty_name, description, analytics)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-			tenantID, entryID, l.GetLineNo(), l.GetDirection(),
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+			tenantID, entryID, l.GetLineNo(), l.GetDirection(), repository.BalanceTypeActual,
 			l.GetCoaVersion(), l.GetAccountCode(), l.GetAccountName(), l.GetAmountMinor(),
 			l.GetCurrencyCode(), nullText(l.GetResolvedAnalytics().GetCustomerCode()), "",
 			l.GetDescription(), analyticsJSON(l.GetResolvedAnalytics())); err != nil {
@@ -315,7 +315,7 @@ func (s *PostingService) postPendingEntry(ctx context.Context, tenantID, entryID
 	var createdAt string
 	err = tx.QueryRowContext(ctx, `
 		SELECT entry_no, accounting_date::text, currency_code, status, COALESCE(void_reason,''), created_at::text
-		FROM fin_journal_entries WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+		FROM fin_journal_entries WHERE tenant_id = $1 AND id = $2 ORDER BY id FOR UPDATE`,
 		tenantID, entryID).Scan(&entryNo, &accountingDate, &currency, &status, &voidReason, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("journal entry not found")
@@ -389,7 +389,7 @@ func (s *PostingService) releasePendingEntry(ctx context.Context, tenantID, entr
 	var entryNo int64
 	err = tx.QueryRowContext(ctx, `
 		SELECT entry_no, status, created_at::text
-		FROM fin_journal_entries WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+		FROM fin_journal_entries WHERE tenant_id = $1 AND id = $2 ORDER BY id FOR UPDATE`,
 		tenantID, entryID).Scan(&entryNo, &status, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("journal entry not found")
@@ -422,7 +422,7 @@ func (s *PostingService) releasePendingEntry(ctx context.Context, tenantID, entr
 		}
 		byKey := balanceIndex(balances)
 		for _, l := range lines {
-			row := byKey[repository.BalanceKey{CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}]
+			row := byKey[repository.BalanceKey{BalTypeCode: l.BalTypeCode, CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}]
 			applyRelease(row, l.Direction, l.AmountMinor)
 		}
 		for _, row := range byKey {
@@ -472,7 +472,7 @@ func (s *PostingService) reserveLines(ctx context.Context, tx *sql.Tx, tenantID 
 		return err
 	}
 	for _, l := range lines {
-		k := repository.BalanceKey{CoaVersion: l.GetCoaVersion(), AccountCode: l.GetAccountCode(), CurrencyCode: l.GetCurrencyCode()}
+		k := repository.BalanceKey{BalTypeCode: repository.BalanceTypeActual, CoaVersion: l.GetCoaVersion(), AccountCode: l.GetAccountCode(), CurrencyCode: l.GetCurrencyCode()}
 		row := byKey[k]
 		nature := natures[k]
 		opening := naturalSignedOpening(openings[k], nature)
@@ -508,7 +508,7 @@ func (s *PostingService) moveLinesToPosted(ctx context.Context, tx *sql.Tx, tena
 		return err
 	}
 	for _, l := range lines {
-		k := repository.BalanceKey{CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}
+		k := repository.BalanceKey{BalTypeCode: l.BalTypeCode, CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}
 		row := byKey[k]
 		nature := natures[k]
 		opening := naturalSignedOpening(openings[k], nature)
@@ -538,7 +538,7 @@ func (s *PostingService) postLinesToBalances(ctx context.Context, tx *sql.Tx, te
 	}
 	byKey := balanceIndex(balances)
 	for _, l := range lines {
-		k := repository.BalanceKey{CoaVersion: l.GetCoaVersion(), AccountCode: l.GetAccountCode(), CurrencyCode: l.GetCurrencyCode()}
+		k := repository.BalanceKey{BalTypeCode: repository.BalanceTypeActual, CoaVersion: l.GetCoaVersion(), AccountCode: l.GetAccountCode(), CurrencyCode: l.GetCurrencyCode()}
 		applyDirectPost(byKey[k], l.GetDirection(), l.GetAmountMinor())
 	}
 	for _, row := range byKey {
@@ -553,7 +553,7 @@ func balanceKeysFromLines(lines []*financev1.ValidationLine) []repository.Balanc
 	seen := map[repository.BalanceKey]struct{}{}
 	out := make([]repository.BalanceKey, 0, len(lines))
 	for _, l := range lines {
-		k := repository.BalanceKey{CoaVersion: l.GetCoaVersion(), AccountCode: l.GetAccountCode(), CurrencyCode: l.GetCurrencyCode()}
+		k := repository.BalanceKey{BalTypeCode: repository.BalanceTypeActual, CoaVersion: l.GetCoaVersion(), AccountCode: l.GetAccountCode(), CurrencyCode: l.GetCurrencyCode()}
 		if _, ok := seen[k]; ok {
 			continue
 		}
@@ -567,7 +567,7 @@ func balanceKeysFromRows(rows []repository.JournalLineRow) []repository.BalanceK
 	seen := map[repository.BalanceKey]struct{}{}
 	out := make([]repository.BalanceKey, 0, len(rows))
 	for _, l := range rows {
-		k := repository.BalanceKey{CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}
+		k := repository.BalanceKey{BalTypeCode: l.BalTypeCode, CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}
 		if _, ok := seen[k]; ok {
 			continue
 		}
@@ -752,6 +752,7 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 		SELECT status, reversed_by_entry_id
 		FROM fin_journal_entries
 		WHERE tenant_id = $1 AND id = $2
+		ORDER BY id
 		FOR UPDATE`, tenantID, req.GetJournalEntryId()).Scan(&lockedStatus, &lockedReversed); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("journal entry not found")
@@ -787,10 +788,10 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO fin_journal_lines
-				(tenant_id, entry_id, line_no, direction, coa_version, account_code, account_name,
+			(tenant_id, entry_id, line_no, direction, bal_type_code, coa_version, account_code, account_name,
 				 amount_minor, currency_code, counterparty_code, counterparty_name, description, analytics)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-			tenantID, entryID, i+1, flipped, l.CoaVersion, l.AccountCode, l.AccountName,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+			tenantID, entryID, i+1, flipped, l.BalTypeCode, l.CoaVersion, l.AccountCode, l.AccountName,
 			l.AmountMinor, original.Currency, l.CounterpartyCode, l.CounterpartyName,
 			"REVERSAL", l.Analytics); err != nil {
 			return nil, fmt.Errorf("insert reversal line %d: %w", i+1, err)
@@ -810,7 +811,7 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 		if l.Direction == "CREDIT" {
 			flipped = "DEBIT"
 		}
-		k := repository.BalanceKey{CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}
+		k := repository.BalanceKey{BalTypeCode: l.BalTypeCode, CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}
 		applyDirectPost(reversalIndex[k], flipped, l.AmountMinor)
 	}
 	for _, row := range reversalIndex {
@@ -1033,7 +1034,7 @@ const journalEntryDetailSelect = `
 	       COALESCE(reversed_by_entry_id::text,''), COALESCE(created_by,''),
 	       created_at::text,
 	       (SELECT COALESCE(SUM(amount_minor),0) FROM fin_journal_lines l
-	          WHERE l.tenant_id = e.tenant_id AND l.entry_id = e.id AND l.direction = 'DEBIT'),
+	          WHERE l.tenant_id = e.tenant_id AND l.entry_id = e.id AND l.bal_type_code = 'ACTUAL' AND l.direction = 'DEBIT'),
 	       COALESCE(metadata, '{}'::jsonb), e.version
 	FROM fin_journal_entries e`
 
@@ -1082,10 +1083,15 @@ func (s *PostingService) ListPostingRules(ctx context.Context, tenantID, documen
 	}
 	rules := make([]*financev1.PostingRule, 0, len(rows))
 	for _, r := range rows {
+		strategy, err := postingStrategyProto(r.Strategy)
+		if err != nil {
+			return nil, err
+		}
 		rule := &financev1.PostingRule{
-			LineNo:         r.LineNo,
-			Direction:      r.Direction,
-			ResolutionType: r.ResType,
+			LineNo:          r.LineNo,
+			Direction:       r.Direction,
+			ResolutionType:  r.ResType,
+			PostingStrategy: strategy,
 		}
 		if r.AccountRef.Valid {
 			rule.AccountRef = r.AccountRef.String
@@ -1100,6 +1106,19 @@ func (s *PostingService) ListPostingRules(ctx context.Context, tenantID, documen
 		rules = append(rules, rule)
 	}
 	return rules, nil
+}
+
+func postingStrategyProto(value string) (financev1.PostingStrategy, error) {
+	switch value {
+	case "SIMPLE":
+		return financev1.PostingStrategy_POSTING_STRATEGY_SIMPLE, nil
+	case "BAL_TYPE_SPLIT":
+		return financev1.PostingStrategy_POSTING_STRATEGY_BAL_TYPE_SPLIT, nil
+	case "DEBT_GROUP_RECLASS":
+		return financev1.PostingStrategy_POSTING_STRATEGY_DEBT_GROUP_RECLASS, nil
+	default:
+		return financev1.PostingStrategy_POSTING_STRATEGY_UNSPECIFIED, fmt.Errorf("unknown posting strategy %q", value)
+	}
 }
 
 func (s *PostingService) getJournalEntryBy(ctx context.Context, tenantID, column string, value any) (*financev1.JournalEntryDetail, error) {
@@ -1140,7 +1159,7 @@ func (s *PostingService) getJournalEntryBy(ctx context.Context, tenantID, column
 // loadEntryLines returns the lines of one entry in line_no order.
 func (s *PostingService) loadEntryLines(ctx context.Context, tenantID, entryID string) ([]*financev1.JournalEntryDetailLine, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT line_no, direction, account_code, account_name, amount_minor, currency_code, COALESCE(description,'')
+		SELECT line_no, direction, bal_type_code, account_code, account_name, amount_minor, currency_code, COALESCE(description,'')
 		FROM fin_journal_lines
 		WHERE tenant_id = $1 AND entry_id = $2
 		ORDER BY line_no`, tenantID, entryID)
@@ -1151,7 +1170,7 @@ func (s *PostingService) loadEntryLines(ctx context.Context, tenantID, entryID s
 	lines := []*financev1.JournalEntryDetailLine{}
 	for rows.Next() {
 		l := &financev1.JournalEntryDetailLine{}
-		if err := rows.Scan(&l.LineNo, &l.Direction, &l.AccountCode, &l.AccountName,
+		if err := rows.Scan(&l.LineNo, &l.Direction, &l.BalTypeCode, &l.AccountCode, &l.AccountName,
 			&l.AmountMinor, &l.CurrencyCode, &l.Description); err != nil {
 			return nil, err
 		}
@@ -1328,7 +1347,7 @@ func (s *PostingService) ListJournal(ctx context.Context, tenantID string, f Jou
 		       COALESCE(description,''), business_domain, business_doc_type,
 		       COALESCE(business_doc_code,''), COALESCE(case_id::text,''), created_at::text,
 		       (SELECT COALESCE(SUM(amount_minor),0) FROM fin_journal_lines l
-		          WHERE l.tenant_id = fje.tenant_id AND l.entry_id = fje.id AND l.direction = 'DEBIT')
+		          WHERE l.tenant_id = fje.tenant_id AND l.entry_id = fje.id AND l.bal_type_code = 'ACTUAL' AND l.direction = 'DEBIT')
 		FROM fin_journal_entries fje
 		WHERE fje.tenant_id = $1
 		  AND ($2 = '' OR fje.accounting_date >= $2::date)
@@ -1425,7 +1444,7 @@ func (s *PostingService) ListJournalPaged(ctx context.Context, tenantID string, 
 		       COALESCE(description,''), business_domain, business_doc_type,
 		       COALESCE(business_doc_code,''), COALESCE(case_id::text,''), created_at::text,
 		       (SELECT COALESCE(SUM(amount_minor),0) FROM fin_journal_lines l
-		          WHERE l.tenant_id = fje.tenant_id AND l.entry_id = fje.id AND l.direction = 'DEBIT')
+		          WHERE l.tenant_id = fje.tenant_id AND l.entry_id = fje.id AND l.bal_type_code = 'ACTUAL' AND l.direction = 'DEBIT')
 		FROM fin_journal_entries fje
 		WHERE %s
 		ORDER BY %s

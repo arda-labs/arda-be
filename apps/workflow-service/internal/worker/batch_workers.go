@@ -113,7 +113,10 @@ func (w *BatchWorkers) buildPostingRequest(ctx context.Context, job entities.Job
 	if idempotencyKey == "" {
 		idempotencyKey = fmt.Sprintf("%s-%s", w.flow.TopicPrefix, detail.GetBatchId())
 	}
-	lines := w.batchLines(ctx, detail)
+	lines, err := w.batchLines(ctx, detail)
+	if err != nil {
+		return nil, err
+	}
 	if len(lines) == 0 {
 		return nil, fmt.Errorf("batch %s has no positive-amount rows to post", detail.GetBatchId())
 	}
@@ -147,28 +150,24 @@ func (w *BatchWorkers) buildPostingRequest(ctx context.Context, job entities.Job
 // LNM_DISB_COMPLETE lines 1-2, LNM_COLLECTION lines 1-4), skipping zero
 // amounts (closed rows carry amount 0). Classifications come from the
 // finance rule card; the constants are only the fallback.
-func (w *BatchWorkers) batchLines(ctx context.Context, detail *loanv1.BatchPostingDetail) []*financev1.PostingLine {
+func (w *BatchWorkers) batchLines(ctx context.Context, detail *loanv1.BatchPostingDetail) ([]*financev1.PostingLine, error) {
 	var legs []financeclient.PostingLeg
 	for _, row := range detail.GetRows() {
 		switch w.flow.BatchType {
 		case "COLLECTION":
 			legs = append(legs, collectionBatchLegs(detail, row)...)
 		case "DISB_COMPLETE":
-			legs = append(legs, disbursementBatchLegs("COMPLETE", detail, row)...)
+			legs = append(legs, disbursementBatchLegs(detail, row)...)
 		default:
-			legs = append(legs, disbursementBatchLegs("REGISTER", detail, row)...)
+			legs = append(legs, disbursementBatchLegs(detail, row)...)
 		}
 	}
-	return postingLinesFromRules(fetchPostingRules(ctx, w.financeClient, w.flow.DocumentType), legs, detail.GetCurrencyCode())
+	return postingLinesFromRules(ctx, w.financeClient, w.flow.DocumentType, legs, detail.GetCurrencyCode())
 }
 
 // disbursementBatchLegs builds one row's register/complete pair with the row
 // context (contract, agreement dimension, debt group, org unit, customer).
-func disbursementBatchLegs(flow string, detail *loanv1.BatchPostingDetail, row *loanv1.BatchRowDetail) []financeclient.PostingLeg {
-	debitClassification, creditClassification := "LNM_LOAN_PRINCIPAL", "FUND_DISBURSEMENT_IN_TRANSIT"
-	if flow == "COMPLETE" {
-		debitClassification, creditClassification = "FUND_DISBURSEMENT_IN_TRANSIT", "CASH_SETTLEMENT_ACCOUNT"
-	}
+func disbursementBatchLegs(detail *loanv1.BatchPostingDetail, row *loanv1.BatchRowDetail) []financeclient.PostingLeg {
 	planDescription := fmt.Sprintf("HĐ %s — %s", row.GetContractCode(), row.GetAgreementCode())
 	if row.GetPlanCode() != "" {
 		planDescription = fmt.Sprintf("HĐ %s — %s — %s", row.GetContractCode(), row.GetAgreementCode(), row.GetPlanCode())
@@ -176,7 +175,6 @@ func disbursementBatchLegs(flow string, detail *loanv1.BatchPostingDetail, row *
 	return []financeclient.PostingLeg{
 		{
 			CardLine:    1,
-			Fallback:    debitClassification,
 			Direction:   "DEBIT",
 			AmountMinor: row.GetAmountMinor(),
 			Description: planDescription,
@@ -193,7 +191,6 @@ func disbursementBatchLegs(flow string, detail *loanv1.BatchPostingDetail, row *
 		},
 		{
 			CardLine:    2,
-			Fallback:    creditClassification,
 			Direction:   "CREDIT",
 			AmountMinor: row.GetAmountMinor(),
 			Description: planDescription,
@@ -225,7 +222,6 @@ func collectionBatchLegs(detail *loanv1.BatchPostingDetail, row *loanv1.BatchRow
 		legs = append(legs,
 			financeclient.PostingLeg{
 				CardLine:    1,
-				Fallback:    "CASH_SETTLEMENT_ACCOUNT",
 				Direction:   "DEBIT",
 				AmountMinor: row.GetPrincipalMinor(),
 				Description: planDescription,
@@ -238,7 +234,6 @@ func collectionBatchLegs(detail *loanv1.BatchPostingDetail, row *loanv1.BatchRow
 			},
 			financeclient.PostingLeg{
 				CardLine:    2,
-				Fallback:    "LNM_LOAN_PRINCIPAL",
 				Direction:   "CREDIT",
 				AmountMinor: row.GetPrincipalMinor(),
 				Description: planDescription,
@@ -257,7 +252,6 @@ func collectionBatchLegs(detail *loanv1.BatchPostingDetail, row *loanv1.BatchRow
 		legs = append(legs,
 			financeclient.PostingLeg{
 				CardLine:    3,
-				Fallback:    "CASH_SETTLEMENT_ACCOUNT",
 				Direction:   "DEBIT",
 				AmountMinor: interest,
 				Description: planDescription,
@@ -270,7 +264,6 @@ func collectionBatchLegs(detail *loanv1.BatchPostingDetail, row *loanv1.BatchRow
 			},
 			financeclient.PostingLeg{
 				CardLine:    4,
-				Fallback:    "LNM_INTEREST_RECEIVABLE",
 				Direction:   "CREDIT",
 				AmountMinor: interest,
 				Description: planDescription,
@@ -325,7 +318,9 @@ func (w *BatchWorkers) init() worker.JobHandler {
 		}
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
@@ -364,7 +359,9 @@ func (w *BatchWorkers) validate() worker.JobHandler {
 		}
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		reserved, err := w.financeClient.Reserve(ctx, req)
@@ -395,7 +392,9 @@ func (w *BatchWorkers) execute() worker.JobHandler {
 
 		req, err := w.buildPostingRequest(ctx, job, id)
 		if err != nil {
-			w.failJob(client, job, "Loan Error: "+err.Error())
+			handlePostingBuildFailure(ctx, client, job, w.projection, err, func(err error) {
+				w.failJob(client, job, "Loan Error: "+err.Error())
+			})
 			return
 		}
 		posted, err := w.financeClient.Post(ctx, req)

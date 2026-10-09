@@ -56,6 +56,7 @@ type Delivery struct {
 	AttemptCount     int
 	MaxAttempts      int
 	NextAttemptAt    time.Time
+	ScheduleAt       *time.Time
 	LastErrorCode    string
 	LastErrorMessage string
 	CreatedAt        time.Time
@@ -63,17 +64,38 @@ type Delivery struct {
 }
 
 type InboxItem struct {
-	ID        string
-	PublicID  string
-	TenantID  string
-	UserID    string
-	Type      string
-	TitleKey  string
-	BodyKey   string
-	Params    []byte
-	Href      string
-	ReadAt    *time.Time
-	CreatedAt time.Time
+	ID             string
+	PublicID       string
+	TenantID       string
+	UserID         string
+	Type           string
+	TitleKey       string
+	BodyKey        string
+	Params         []byte
+	Href           string
+	ReadAt         *time.Time
+	EntityType     string
+	EntityID       string
+	DedupeKey      string
+	ResolvedAt     *time.Time
+	ResolvedReason string
+	SupersededAt   *time.Time
+	ExpiresAt      *time.Time
+	Locale         string
+	Priority       int
+	EventSeq       int64
+	CreatedAt      time.Time
+}
+
+type NotificationPreference struct {
+	EventGroup string  `json:"event_group"`
+	Channel    string  `json:"channel"`
+	Enabled    bool    `json:"enabled"`
+	QuietStart *string `json:"quiet_start,omitempty"`
+	QuietEnd   *string `json:"quiet_end,omitempty"`
+	Timezone   string  `json:"timezone"`
+	DigestMode string  `json:"digest_mode"`
+	Locale     string  `json:"locale"`
 }
 
 type OutboxEvent struct {

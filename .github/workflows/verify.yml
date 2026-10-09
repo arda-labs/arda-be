@@ -15,6 +15,7 @@ jobs:
       postgres:
         image: postgres:18
         env:
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
@@ -31,6 +32,13 @@ jobs:
         with:
           go-version-file: go.work
           cache: true
+      - name: Test document number migration and transaction behavior on PostgreSQL 18
+        env:
+          ARDA_TEST_USER: postgres
+          ARDA_TEST_PASSWORD: postgres
+        run: |
+          export ARDA_TEST_DSN="postgres://${ARDA_TEST_USER}:${ARDA_TEST_PASSWORD}@localhost:5432/postgres?sslmode=disable"
+          go test ./apps/finance-service/internal/service -run '^TestDocumentNumberIssueConcurrencyRollbackAndRenumber$' -count=1 -v
       - name: Measure 20-row submission on PostgreSQL 18
         env:
           ARDA_TEST_USER: postgres
@@ -69,6 +77,10 @@ jobs:
         run: node scripts/check-ai-catalog.mjs
       - name: Validate migration conventions
         run: node scripts/check-migrations.mjs
+      - name: Validate journal immutability writes
+        run: node scripts/check-journal-invariants.mjs
+      - name: Test journal mutation invariant
+        run: node --test scripts/check-journal-invariants.test.mjs
       - name: Validate workflow BPMN invariants
         run: node scripts/check-bpmn.mjs
       - name: Validate RLS feasibility pilot
@@ -87,6 +99,8 @@ jobs:
         run: node scripts/check-body-limit.mjs
       - name: Validate the vulnerability allowlist
         run: node scripts/check-vuln.test.mjs
+      - name: Validate patched Go toolchain and network dependency baseline
+        run: node scripts/check-go-security-baseline.mjs
       - name: Validate reference service layering
         run: node scripts/check-layering.mjs
       - name: Validate generated protobuf contracts
@@ -106,5 +120,17 @@ jobs:
             echo "Testing $dir"
             (cd "$dir" && go test ./...)
           done < <(find . -name go.mod -not -path '*/node_modules/*' -print | sort)
+      - name: Verify business-date migration on disposable PostgreSQL 18
+        env:
+          ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
+        run: go test ./apps/platform-service/internal/service -run '^TestBusinessDateMigrationMapsHeadOfficeToSystem$' -count=1 -v
+      - name: Verify EOD orchestration on disposable PostgreSQL 18
+        env:
+          ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
+        run: go test ./apps/platform-service/internal/service -run '^TestRunSystem' -count=1 -v
+      - name: Verify finance balance snapshots and lock ordering on disposable PostgreSQL 18
+        env:
+          ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
+        run: go test ./apps/finance-service/internal/service -run '^(TestBalanceSnapshotIncludesBackdatedPostingAfterRebuild|TestOverlappingBalanceLocksUseDeterministicOrder)$' -count=1 -v
       - name: Check patch hygiene
         run: git diff --check
