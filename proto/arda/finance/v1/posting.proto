@@ -77,6 +77,13 @@ message ListPostingRulesRequest {
   string document_type = 2;    // LNM_DISB_REGISTER | LNM_DISB_COMPLETE | LNM_COLLECTION | ...
 }
 
+enum PostingStrategy {
+  POSTING_STRATEGY_UNSPECIFIED = 0;
+  POSTING_STRATEGY_SIMPLE = 1;
+  POSTING_STRATEGY_BAL_TYPE_SPLIT = 2;
+  POSTING_STRATEGY_DEBT_GROUP_RECLASS = 3;
+}
+
 message PostingRule {
   int32 line_no = 1;
   string direction = 2;        // DEBIT | CREDIT
@@ -87,6 +94,7 @@ message PostingRule {
   string acc_classification = 5; // analytics classification when CLASS_MAP
   repeated string required_dimensions = 6;
   string description_template = 7;
+  PostingStrategy posting_strategy = 8;
 }
 
 message ListPostingRulesResponse {
