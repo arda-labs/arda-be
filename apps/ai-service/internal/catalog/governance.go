@@ -36,7 +36,15 @@ type Governance struct {
 	overrides map[string]bool
 	loadedAt  time.Time
 	loaded    bool
+	// failedAt/lastErr throttle refresh attempts while the store is down, so
+	// every request does not add another failing query.
+	failedAt time.Time
+	lastErr  error
 }
+
+// refreshRetryBackoff is the minimum gap between refresh attempts after a
+// store failure.
+const refreshRetryBackoff = 2 * time.Second
 
 func NewGovernance(store repository.ToolSettingsStore) *Governance {
 	return &Governance{store: store, ttl: GovernanceCacheTTL, overrides: map[string]bool{}}
@@ -59,21 +67,31 @@ func (g *Governance) Available() bool {
 
 // EnsureFresh reloads the override snapshot when the TTL has elapsed. On a
 // store error the previous snapshot is kept (a stale kill switch beats no kill
-// switch) and the error is returned for the caller to log.
+// switch) and the error is returned for the caller to log. Before the first
+// successful load there is no snapshot to keep: IsEnabled then fails closed.
 func (g *Governance) EnsureFresh(ctx context.Context) error {
 	if g == nil || g.store == nil {
 		return nil
 	}
 	g.mu.RLock()
 	fresh := g.loaded && time.Since(g.loadedAt) < g.ttl
+	backingOff := g.lastErr != nil && time.Since(g.failedAt) < refreshRetryBackoff
+	lastErr := g.lastErr
 	g.mu.RUnlock()
 	if fresh {
 		return nil
 	}
+	if backingOff {
+		return lastErr
+	}
 
 	items, err := g.store.ListToolSettings(ctx)
 	if err != nil {
-		slog.Warn("ai tool governance: override refresh failed; keeping previous snapshot", "err", err)
+		g.mu.Lock()
+		g.failedAt = time.Now()
+		g.lastErr = err
+		g.mu.Unlock()
+		slog.Warn("ai tool governance: override refresh failed; keeping previous snapshot", "err", err, "snapshot_loaded", g.hasSnapshot())
 		return err
 	}
 	next := make(map[string]bool, len(items))
@@ -84,8 +102,15 @@ func (g *Governance) EnsureFresh(ctx context.Context) error {
 	g.overrides = next
 	g.loadedAt = time.Now()
 	g.loaded = true
+	g.lastErr = nil
 	g.mu.Unlock()
 	return nil
+}
+
+func (g *Governance) hasSnapshot() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.loaded
 }
 
 // Snapshot returns a copy of the current override map (methodName → enabled).
@@ -126,6 +151,12 @@ func (g *Governance) IsEnabled(entry CatalogEntry) bool {
 	}
 	g.mu.RLock()
 	defer g.mu.RUnlock()
+	if g.store != nil && !g.loaded {
+		// A persistent store exists but the overrides never loaded, so an
+		// admin's kill switch may be missing from the empty map. Fail closed
+		// rather than run a tool that was disabled.
+		return false
+	}
 	override, ok := g.overrides[entry.MethodName]
 	return !ok || override
 }

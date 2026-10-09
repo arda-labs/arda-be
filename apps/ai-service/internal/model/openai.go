@@ -88,7 +88,26 @@ func (e *ProviderStatusError) Error() string {
 	return fmt.Sprintf("model returned status %d: %s", e.StatusCode, e.Body)
 }
 
-const defaultTimeout = 120 * time.Second
+// responseHeaderTimeout bounds the wait for the provider to start answering.
+// The whole-request http.Client.Timeout is deliberately not used: it also
+// covers reading the stream body, so it cut off any generation longer than the
+// timeout. The run deadline (AI_AGENT_RUN_TIMEOUT_SECONDS) bounds total time.
+const responseHeaderTimeout = 90 * time.Second
+
+// DefaultMaxCompletionTokens caps one model turn when the provider would
+// otherwise pick its own limit (often tiny, sometimes unbounded and costly).
+const DefaultMaxCompletionTokens = 8192
+
+func newDefaultHTTPClient() *http.Client {
+	return &http.Client{Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   20,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+	}}
+}
 
 // Provider abstracts the streaming chat backend so the handler can later
 // route between multiple sources (cloud, local vLLM/Ollama) without changes.
@@ -246,7 +265,7 @@ func NewClient(baseURL, apiKey, model string, httpClient *http.Client) *Client {
 
 func NewProviderClient(providerType ProviderType, baseURL, apiKey, model string, httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultTimeout}
+		httpClient = newDefaultHTTPClient()
 	}
 	return &Client{
 		baseURL:      strings.TrimRight(strings.TrimSpace(baseURL), "/"),
@@ -258,11 +277,16 @@ func NewProviderClient(providerType ProviderType, baseURL, apiKey, model string,
 }
 
 type streamRequest struct {
-	Model         string       `json:"model"`
-	Messages      []Message    `json:"messages"`
-	Tools         []toolSchema `json:"tools,omitempty"`
-	Stream        bool         `json:"stream"`
-	StreamOptions *struct {
+	Model    string       `json:"model"`
+	Messages []Message    `json:"messages"`
+	Tools    []toolSchema `json:"tools,omitempty"`
+	Stream   bool         `json:"stream"`
+	// MaxTokens and MaxCompletionTokens are mutually exclusive: OpenAI's own
+	// reasoning models reject max_tokens, while most compatible servers only
+	// understand it.
+	MaxTokens           int `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int `json:"max_completion_tokens,omitempty"`
+	StreamOptions       *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
 }
@@ -302,6 +326,11 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 	request.StreamOptions = &struct {
 		IncludeUsage bool `json:"include_usage"`
 	}{IncludeUsage: true}
+	if c.providerType == ProviderOpenAI {
+		request.MaxCompletionTokens = DefaultMaxCompletionTokens
+	} else {
+		request.MaxTokens = DefaultMaxCompletionTokens
+	}
 	for _, tool := range tools {
 		parameters := tool.Parameters
 		if len(parameters) == 0 {
@@ -349,6 +378,12 @@ func (c *Client) StreamChat(ctx context.Context, messages []Message, tools []Too
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		// Gateways report mid-stream failures as an `error` object in a data
+		// frame. Skipping it would end the run as a "success" with a truncated
+		// or empty answer.
+		if hasStreamError(chunk.Error) {
+			return finishReason, usage, &ProviderStatusError{StatusCode: http.StatusBadGateway, Body: truncateString(string(chunk.Error), 1024)}
 		}
 		if chunk.Usage != nil {
 			usage = *chunk.Usage
@@ -470,7 +505,20 @@ type streamChunk struct {
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
-	Usage *Usage `json:"usage"`
+	Usage *Usage          `json:"usage"`
+	Error json.RawMessage `json:"error,omitempty"`
+}
+
+func hasStreamError(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed != "" && trimmed != "null" && trimmed != "{}" && trimmed != `""`
+}
+
+func truncateString(value string, max int) string {
+	if len(value) <= max {
+		return value
+	}
+	return value[:max]
 }
 
 type pendingToolCalls struct {

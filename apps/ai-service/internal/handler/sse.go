@@ -28,6 +28,8 @@ type sseWriter struct {
 	mu                 sync.Mutex
 	writer             *bufio.Writer
 	flusher            http.Flusher
+	controller         *http.ResponseController
+	broken             bool
 	sequence           uint64
 	terminal           bool
 	threadID           string
@@ -50,7 +52,20 @@ func newSSEWriter(w http.ResponseWriter) (*sseWriter, bool) {
 	if !ok {
 		return nil, false
 	}
-	return &sseWriter{writer: bufio.NewWriter(w), flusher: flusher}, true
+	return &sseWriter{writer: bufio.NewWriter(w), flusher: flusher, controller: http.NewResponseController(w)}, true
+}
+
+// sseWriteTimeout bounds one write to the client. The server has no global
+// WriteTimeout (streams are long-lived), so without a per-write deadline a
+// client that stops reading would block the run, the heartbeat and any
+// parallel tool goroutine waiting on the writer mutex until the run deadline.
+const sseWriteTimeout = 15 * time.Second
+
+// extendWriteDeadline must be called with s.mu held.
+func (s *sseWriter) extendWriteDeadline() {
+	if s.controller != nil {
+		_ = s.controller.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+	}
 }
 
 func (s *sseWriter) event(payload agentEvent) {

@@ -318,7 +318,12 @@ func (h *RAGHandler) handleSourcesSubtree(w http.ResponseWriter, r *http.Request
 			problem(w, http.StatusForbidden, "rag.scope_forbidden")
 			return
 		}
-		if src.OwnerID != nil && strings.TrimSpace(*src.OwnerID) == scope.ActorUserID {
+		version, err := h.svc.Repo().GetVersion(r.Context(), sourceID, versionID, scope.TenantID)
+		if err != nil {
+			problem(w, http.StatusNotFound, "rag.version_not_found")
+			return
+		}
+		if isSelfReview(scope.ActorUserID, src, version) {
 			problem(w, http.StatusForbidden, "rag.self_review_forbidden")
 			return
 		}
@@ -376,4 +381,21 @@ func (h *RAGHandler) handleJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
+}
+
+// isSelfReview reports whether the reviewer authored the version or created or
+// owns its source. OwnerID alone is not enough: it is supplied by the client
+// when the source is created, so it can be left empty or set to someone else.
+// created_by is stamped server-side from the authenticated actor.
+func isSelfReview(actor string, src *knowledge.Source, version *knowledge.Version) bool {
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		return true
+	}
+	for _, candidate := range []*string{src.OwnerID, src.CreatedBy, version.CreatedBy} {
+		if candidate != nil && strings.TrimSpace(*candidate) == actor {
+			return true
+		}
+	}
+	return false
 }

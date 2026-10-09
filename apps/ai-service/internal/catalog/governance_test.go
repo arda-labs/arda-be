@@ -64,6 +64,9 @@ func TestGovernanceEffectiveFormula(t *testing.T) {
 	store := newFakeToolSettingsStore()
 	gov := NewGovernance(store)
 	entry := testEntry("crm.getCustomer", true)
+	if err := gov.EnsureFresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
 	if !gov.IsEnabled(entry) {
 		t.Fatal("contract-enabled entry without override must be enabled")
@@ -146,6 +149,7 @@ func TestGovernanceEnsuresFreshWithinTTL(t *testing.T) {
 func TestRegistrySkipsDisabledEntries(t *testing.T) {
 	store := newFakeToolSettingsStore()
 	gov := NewGovernance(store)
+	_ = gov.EnsureFresh(context.Background())
 	reg := NewDispatcherRegistry()
 	reg.Register(testEntry("crm.getCustomer", true), func(context.Context, tools.Context, map[string]any) (any, error) {
 		return nil, nil
@@ -214,5 +218,55 @@ func TestBuiltinCatalogEntriesAreEnabled(t *testing.T) {
 		if !entry.Enabled {
 			t.Errorf("entry %s is not contract-enabled; set Enabled: true explicitly", entry.MethodName)
 		}
+	}
+}
+
+type failingToolSettingsStore struct {
+	*fakeToolSettingsStore
+	fail  bool
+	calls int
+}
+
+func (f *failingToolSettingsStore) ListToolSettings(ctx context.Context) ([]repository.ToolSetting, error) {
+	f.calls++
+	if f.fail {
+		return nil, context.DeadlineExceeded
+	}
+	return f.fakeToolSettingsStore.ListToolSettings(ctx)
+}
+
+// Before the first successful load the override map is empty, which would
+// silently re-enable a tool an admin had switched off. It must fail closed,
+// and a store outage must not add a failing query to every request.
+func TestGovernanceFailsClosedUntilFirstLoad(t *testing.T) {
+	inner := newFakeToolSettingsStore()
+	inner.items["crm.getCustomer"] = repository.ToolSetting{MethodName: "crm.getCustomer", Enabled: false}
+	store := &failingToolSettingsStore{fakeToolSettingsStore: inner, fail: true}
+	gov := NewGovernance(store)
+	entry := testEntry("crm.getCustomer", true)
+
+	if err := gov.EnsureFresh(context.Background()); err == nil {
+		t.Fatal("expected the refresh failure to be reported")
+	}
+	if gov.IsEnabled(entry) || gov.IsEnabled(testEntry("hrm.listEmployees", true)) {
+		t.Fatal("tools must stay disabled until overrides have loaded once")
+	}
+	_ = gov.EnsureFresh(context.Background())
+	if store.calls != 1 {
+		t.Fatalf("store calls = %d, want 1 (retry must back off)", store.calls)
+	}
+
+	store.fail = false
+	gov.mu.Lock()
+	gov.failedAt = time.Now().Add(-time.Hour)
+	gov.mu.Unlock()
+	if err := gov.EnsureFresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if gov.IsEnabled(entry) {
+		t.Fatal("the admin-disabled tool must stay disabled after loading")
+	}
+	if !gov.IsEnabled(testEntry("hrm.listEmployees", true)) {
+		t.Fatal("other tools must be enabled once overrides loaded")
 	}
 }

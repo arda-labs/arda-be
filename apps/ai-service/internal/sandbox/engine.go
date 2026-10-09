@@ -71,6 +71,15 @@ type MethodRegistry interface {
 	AllSDKMethods() []SDKMethod
 }
 
+// MaxAutoApprovedPerRun bounds act-mode mutations that run without a human in
+// a single script.
+const MaxAutoApprovedPerRun = 5
+
+// untrustedDomains return free text written by people or documents. Once a
+// script has read from one, its content may carry injected instructions, so
+// act mode must not let that script mutate without approval.
+var untrustedDomains = map[string]bool{"knowledge": true, "docs": true}
+
 // riskRank orders the risk tiers so an act-mode ceiling can be compared.
 func riskRank(risk string) int {
 	switch strings.ToLower(strings.TrimSpace(risk)) {
@@ -153,7 +162,16 @@ func executionBudget(ctx context.Context) time.Duration {
 }
 
 // Execute runs the provided JavaScript in an isolated Goja VM with arda.* bindings.
-func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) (ExecutionResult, error) {
+func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) (result ExecutionResult, execErr error) {
+	// A Go panic escaping a host function would otherwise unwind past the HTTP
+	// recovery middleware (tool calls run on their own goroutines) and take the
+	// whole process down for every tenant.
+	defer func() {
+		if rec := recover(); rec != nil {
+			result = ExecutionResult{Error: "ai.sandbox_internal_error: script execution failed"}
+			execErr = &tools.SandboxError{Code: "ai.sandbox_internal_error", Err: fmt.Errorf("sandbox panic: %v", rec)}
+		}
+	}()
 	// 1. Static validation
 	if err := ValidateScript(code); err != nil {
 		return ExecutionResult{
@@ -192,6 +210,10 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 
 	// 3. Setup Goja VM
 	vm := goja.New()
+	vm.SetMaxCallStackSize(MaxCallStackSize)
+	if err := installNativeLimits(vm); err != nil {
+		return ExecutionResult{Error: "ai.sandbox_internal_error: limits unavailable"}, &tools.SandboxError{Code: "ai.sandbox_internal_error", Err: err}
+	}
 
 	// Strip dangerous globals
 	dangerousGlobals := []string{
@@ -237,6 +259,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 	var mu sync.Mutex
 	callCount := 0
 	methodCalls := map[string]int{}
+	untrustedRead := false
 	var approvalRequiredErr error
 	var approvalTool string
 	var approvalRisk string
@@ -269,6 +292,9 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 				}))
 			}
 			res.MethodsCalled = append(res.MethodsCalled, methodCopy.SDKPath)
+			if untrustedDomains[methodCopy.Domain] {
+				untrustedRead = true
+			}
 			mu.Unlock()
 
 			// Check permissions in Go
@@ -302,7 +328,10 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 			// risk action through without a human decision; high risk always
 			// requires approval.
 			if methodCopy.RequiresApproval {
-				if !autoApprove(scope, methodCopy.Risk) {
+				mu.Lock()
+				autoAllowed := autoApprove(scope, methodCopy.Risk) && !untrustedRead && len(res.AutoApprovedMethods) < MaxAutoApprovedPerRun
+				mu.Unlock()
+				if !autoAllowed {
 					mu.Lock()
 					approvalRequiredErr = tools.ErrApprovalRequired
 					approvalTool = methodCopy.MethodName
@@ -372,6 +401,7 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 		vm.Interrupt(ErrSandboxTimeout.Error())
 	})
 	defer timer.Stop()
+	defer startHeapWatchdog(vm)()
 
 	// 6. Wrap script in strict mode and async runner
 	wrappedScript := fmt.Sprintf(`"use strict";
@@ -398,6 +428,10 @@ func (e *Engine) Execute(ctx context.Context, scope tools.Context, code string) 
 		}
 
 		errMsg := err.Error()
+		if strings.Contains(errMsg, ErrSandboxMemory.Error()) {
+			res.Error = ErrSandboxMemory.Error()
+			return res, &tools.SandboxError{Code: "ai.sandbox_memory_exceeded", Err: ErrSandboxMemory}
+		}
 		if strings.Contains(errMsg, ErrSandboxTimeout.Error()) {
 			res.Error = ErrSandboxTimeout.Error()
 			return res, &tools.SandboxError{Code: "ai.sandbox_timeout", Err: ErrSandboxTimeout}

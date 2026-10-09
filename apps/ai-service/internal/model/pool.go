@@ -34,14 +34,7 @@ type ClientPool struct {
 
 func NewClientPool(httpClient *http.Client) *ClientPool {
 	if httpClient == nil {
-		httpClient = &http.Client{
-			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 20,
-				IdleConnTimeout:     90 * time.Second,
-			},
-		}
+		httpClient = newDefaultHTTPClient()
 	}
 
 	return &ClientPool{

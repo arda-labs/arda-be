@@ -81,8 +81,11 @@ func runAgentStream(
 		}
 	}
 	if err := store.Start(ctx, scopeRun, sanitizeTranscript(latestUserMessage(input.Messages))); err != nil {
-		if quota, ok := store.(repository.QuotaGate); ok {
-			_ = quota.FinalizeQuota(context.WithoutCancel(ctx), scopeRun.TenantID, scopeRun.ExternalRun, 0)
+		// A replayed run id shares the original run's reservation: finalizing it
+		// here would refund the allowance while the original run still consumes
+		// tokens. Only release a reservation this request created.
+		if !errors.Is(err, repository.ErrRunAlreadyExists) {
+			finalizeQuotaReservation(ctx, store, scopeRun, 0)
 		}
 		if errors.Is(err, repository.ErrRunAlreadyExists) {
 			problem(w, http.StatusConflict, "ai.run_replay")
@@ -101,6 +104,7 @@ func runAgentStream(
 	stopHeartbeat := startSSEHeartbeat(sse)
 	defer stopHeartbeat()
 	if terminateAgentRunOnContext(ctx, store, scopeRun, input, sse, "") {
+		finalizeQuotaReservation(ctx, store, scopeRun, 0)
 		return
 	}
 
@@ -367,8 +371,10 @@ func agentStepsLoop(
 	executedCalls := make(map[callKey]int)
 	for step := 0; step < maxSteps && !awaitingApproval; step++ {
 		turnDefs := defs
-		if options.decisionSkill != "" && step == maxSteps-1 {
-			// Reserve a synthesis turn instead of spending every round on tools.
+		if maxSteps > 1 && step == maxSteps-1 {
+			// Reserve a synthesis turn instead of spending every round on tools,
+			// so evidence already gathered becomes an answer rather than a
+			// failed run.
 			turnDefs = nil
 			messages = append(messages, model.Message{Role: "system", Content: "Tool budget reached. Write the final answer now using only verified evidence already collected. If data or parameters are missing, state precisely what is missing. Do not claim the analysis is complete unless the evidence supports it."})
 		}
@@ -477,6 +483,14 @@ func agentStepsLoop(
 				startText()
 				sse.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: reply})
 			}
+			if finishReason == "length" {
+				// The provider stopped at the completion-token cap; say so
+				// instead of presenting a cut-off answer as complete.
+				note := "\n\n[Câu trả lời bị cắt vì đạt giới hạn độ dài. Hãy yêu cầu tiếp tục hoặc hỏi cụ thể hơn.]"
+				startText()
+				sse.event(agentEvent{Type: "TEXT_MESSAGE_CONTENT", ThreadID: input.ThreadID, RunID: input.RunID, MessageID: messageID, Delta: note})
+				reply += note
+			}
 			reply, invented := sanitizeInventedCitations(reply, knowledgeCitations)
 			recordInventedCitations(invented)
 			sanitizedReply, removedSources := sanitizeAnswerSources(reply, knowledgeCitations)
@@ -564,6 +578,14 @@ func agentStepsLoop(
 					defer wg.Done()
 					sem <- struct{}{}
 					defer func() { <-sem }()
+					// This goroutine is outside the HTTP recovery middleware: a
+					// panic in one tool would crash the process for every tenant.
+					defer func() {
+						if rec := recover(); rec != nil {
+							slog.Error("AI tool call panicked", "tool", c.Name, "panic", fmt.Sprint(rec), "run_id", input.RunID)
+							outcomes[index] = toolOutcome{message: `{"error":"ai.tool_execution_failed"}`}
+						}
+					}()
 					outcomes[index] = executeCall(c)
 				}(index, call)
 			}
@@ -600,6 +622,12 @@ func agentStepsLoop(
 			messages = append(messages, model.Message{Role: "tool", ToolCallID: call.ID, Content: toolMessage})
 			if isKnowledgeSearchTool(call.Name) || len(extractCitationLabels(toolMessage)) > 0 {
 				knowledgeCitations = appendUniqueCitations(knowledgeCitations, extractCitationLabels(toolMessage))
+			}
+			if len(knowledgeCitations) > 0 && scope.AutoApproveRisk != "" {
+				// Retrieved documents are untrusted text. After the run has
+				// read any, a mutation must go through a human even in act
+				// mode, so injected instructions cannot act on their own.
+				scope.AutoApproveRisk = ""
 			}
 			if pending {
 				awaitingApproval = true
@@ -689,7 +717,10 @@ func terminateAgentRunOnContext(
 		})
 	}
 	recordRunOutcome(status)
-	finalizeQuotaReservation(ctx, store, run, 0)
+	// Quota is deliberately not finalized here: the model loop's deferred
+	// finalize owns it and knows the tokens already consumed. Finalizing with
+	// zero would refund usage on every cancelled or timed-out run. Callers that
+	// terminate before any model call finalize with zero themselves.
 	if store != nil {
 		persistAgentRunTerminal(ctx, store, run, message, status)
 	}

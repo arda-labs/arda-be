@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"uuid"
@@ -578,6 +580,10 @@ func (s *Service) processNextJob(ctx context.Context) {
 		content = *rawContent
 	}
 
+	// Postgres rejects NUL in text columns; strip it so one stray byte cannot
+	// fail the whole job.
+	content = strings.ReplaceAll(content, "\x00", "")
+
 	chunks, err := ChunkMarkdown(content, chunkSize, chunkOverlap, chunkerVersion)
 	if err != nil {
 		s.failJob(ctx, jobID, fmt.Sprintf("chunking error: %v", err))
@@ -588,79 +594,177 @@ func (s *Service) processNextJob(ctx context.Context) {
 		return
 	}
 
-	// Save chunks
-	for i, c := range chunks {
-		h := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%s:%s", versionID, i, c.ContentHash, chunkerVersion)))
-		chunkID := hex.EncodeToString(h[:])
+	// Keep the lease alive while chunks are embedded: without a heartbeat a
+	// slow provider lets recoverStaleJobs hand the job to another replica.
+	stopHeartbeat := s.startJobHeartbeat(ctx, jobID)
+	defer stopHeartbeat()
 
-		_, err := s.repo.db.ExecContext(ctx, `
-			INSERT INTO public.ai_knowledge_chunks
-			       (source_version_id, chunk_index, heading, content, chunk_id, content_hash)
-			VALUES ($1, $2, $3, $4, $5, $6)
-			ON CONFLICT (chunk_id) DO NOTHING
-		`, versionID, i, c.Heading, c.Content, chunkID, c.ContentHash)
-		if err != nil {
-			s.failJob(ctx, jobID, fmt.Sprintf("save chunk error: %v", err))
-			return
-		}
-	}
-
-	_, _ = s.repo.db.ExecContext(ctx, `
-		UPDATE public.ai_ingestion_jobs
-		   SET total_chunks = $1, updated_at = now()
-		 WHERE id = $2
-	`, len(chunks), jobID)
-
-	// Embed chunks if embedder is configured
+	var vectors [][]float32
 	if s.embedder != nil && len(chunks) > 0 {
-		var texts []string
-		for _, c := range chunks {
-			texts = append(texts, c.Content)
-		}
-
-		vectors, err := s.embedder.Embed(ctx, texts)
+		vectors, err = s.embedChunks(ctx, chunks)
 		if err != nil {
 			s.failJob(ctx, jobID, fmt.Sprintf("embedding error: %v", err))
 			return
 		}
-		if len(vectors) != len(chunks) {
-			s.failJob(ctx, jobID, fmt.Sprintf("embedding error: expected %d vectors, got %d", len(chunks), len(vectors)))
+	}
+
+	// Chunks, embeddings, completion and activation commit together: a failed
+	// or abandoned job leaves no partial chunk set and never changes which
+	// version is searchable.
+	if err := s.commitIngestion(ctx, jobID, versionID, chunkerVersion, chunks, vectors); err != nil {
+		if errors.Is(err, errJobLeaseLost) {
+			// Another replica owns the job now; touching it would corrupt its state.
 			return
 		}
-		if len(vectors) == len(chunks) {
-			for i, c := range chunks {
-				h := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%s:%s", versionID, i, c.ContentHash, chunkerVersion)))
-				chunkID := hex.EncodeToString(h[:])
-				vecStr := floatVectorToString(vectors[i])
+		s.failJob(ctx, jobID, fmt.Sprintf("save ingestion error: %v", err))
+	}
+}
 
-				if _, err := s.repo.db.ExecContext(ctx, `
-					UPDATE public.ai_knowledge_chunks
-					   SET embedding = $1::vector,
-					       embedding_model = $2,
-					       embedding_dimensions = $3
-					 WHERE chunk_id = $4
-				`, vecStr, s.embedder.Model(), s.embedder.Dimensions(), chunkID); err != nil {
-					s.failJob(ctx, jobID, fmt.Sprintf("save embedding error: %v", err))
-					return
-				}
+// embedBatchSize bounds one embedding request so a large document cannot
+// exceed provider input limits or the client timeout.
+const embedBatchSize = 64
+
+func (s *Service) embedChunks(ctx context.Context, chunks []ChunkItem) ([][]float32, error) {
+	vectors := make([][]float32, 0, len(chunks))
+	for start := 0; start < len(chunks); start += embedBatchSize {
+		end := start + embedBatchSize
+		if end > len(chunks) {
+			end = len(chunks)
+		}
+		texts := make([]string, 0, end-start)
+		for _, c := range chunks[start:end] {
+			texts = append(texts, c.Content)
+		}
+		batch, err := s.embedder.Embed(ctx, texts)
+		if err != nil {
+			return nil, err
+		}
+		if len(batch) != len(texts) {
+			return nil, fmt.Errorf("expected %d vectors, got %d", len(texts), len(batch))
+		}
+		vectors = append(vectors, batch...)
+	}
+	return vectors, nil
+}
+
+var errJobLeaseLost = errors.New("ingestion job lease lost")
+
+// commitIngestion persists a finished job atomically. The job must still be
+// leased to this worker; otherwise another replica owns it and this result is
+// discarded instead of overwriting theirs.
+func (s *Service) commitIngestion(ctx context.Context, jobID string, versionID int64, chunkerVersion string, chunks []ChunkItem, vectors [][]float32) error {
+	tx, err := s.repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	withVectors := len(vectors) == len(chunks) && len(chunks) > 0
+	for i, c := range chunks {
+		h := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%s:%s", versionID, i, c.ContentHash, chunkerVersion)))
+		chunkID := hex.EncodeToString(h[:])
+		if withVectors {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO public.ai_knowledge_chunks
+				       (source_version_id, chunk_index, heading, content, chunk_id, content_hash,
+				        embedding, embedding_model, embedding_dimensions)
+				VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9)
+				ON CONFLICT (chunk_id) DO UPDATE
+				   SET embedding = EXCLUDED.embedding,
+				       embedding_model = EXCLUDED.embedding_model,
+				       embedding_dimensions = EXCLUDED.embedding_dimensions
+			`, versionID, i, c.Heading, c.Content, chunkID, c.ContentHash,
+				floatVectorToString(vectors[i]), s.embedder.Model(), s.embedder.Dimensions()); err != nil {
+				return fmt.Errorf("save chunk: %w", err)
 			}
-			_, _ = s.repo.db.ExecContext(ctx, `
-				UPDATE public.ai_ingestion_jobs
-				   SET embedded_chunks = $1, updated_at = now()
-				 WHERE id = $2
-			`, len(chunks), jobID)
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO public.ai_knowledge_chunks
+			       (source_version_id, chunk_index, heading, content, chunk_id, content_hash)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (chunk_id) DO NOTHING
+		`, versionID, i, c.Heading, c.Content, chunkID, c.ContentHash); err != nil {
+			return fmt.Errorf("save chunk: %w", err)
 		}
 	}
 
-	// Mark completed
-	_, _ = s.repo.db.ExecContext(ctx, `
+	embedded := 0
+	if withVectors {
+		embedded = len(chunks)
+	}
+	result, err := tx.ExecContext(ctx, `
 		UPDATE public.ai_ingestion_jobs
-		   SET status = 'completed', locked_by = NULL, locked_at = NULL, next_retry_at = NULL, updated_at = now()
-		 WHERE id = $1
-	`, jobID)
+		   SET status = 'completed', total_chunks = $3, embedded_chunks = $4,
+		       locked_by = NULL, locked_at = NULL, next_retry_at = NULL, error_message = NULL, updated_at = now()
+		 WHERE id = $1 AND status = 'running' AND locked_by = $2
+	`, jobID, s.workerID, len(chunks), embedded)
+	if err != nil {
+		return fmt.Errorf("complete job: %w", err)
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return errJobLeaseLost
+	}
+
+	// Activation happens only now that the chunks exist, and never moves the
+	// source back to an older version when jobs finish out of order.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE public.ai_knowledge_sources s
+		   SET active_version_id = v.id, updated_at = now()
+		  FROM public.ai_knowledge_source_versions v
+		 WHERE v.id = $1 AND s.id = v.source_id AND v.status = 'PUBLISHED'
+		   AND NOT EXISTS (
+		        SELECT 1 FROM public.ai_knowledge_source_versions newer
+		         WHERE newer.source_id = v.source_id AND newer.status = 'PUBLISHED' AND newer.id > v.id)
+	`, versionID); err != nil {
+		return fmt.Errorf("activate version: %w", err)
+	}
+	return tx.Commit()
+}
+
+const jobHeartbeatInterval = time.Minute
+
+func (s *Service) startJobHeartbeat(ctx context.Context, jobID string) func() {
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(jobHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_, _ = s.repo.db.ExecContext(ctx, `
+					UPDATE public.ai_ingestion_jobs SET locked_at = now()
+					 WHERE id = $1 AND status = 'running' AND locked_by = $2`, jobID, s.workerID)
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		wg.Wait()
+	}
 }
 
 func (s *Service) failJob(ctx context.Context, jobID, errMsg string) {
+	if ctx.Err() != nil {
+		// Shutdown or cancellation is not the document's fault: hand the job
+		// back immediately without spending one of its attempts.
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancel()
+		_, _ = s.repo.db.ExecContext(releaseCtx, `
+			UPDATE public.ai_ingestion_jobs
+			   SET status = 'pending', attempts = GREATEST(attempts - 1, 0), next_retry_at = now(),
+			       locked_by = NULL, locked_at = NULL, updated_at = now()
+			 WHERE id = $1 AND status = 'running' AND locked_by = $2
+		`, jobID, s.workerID)
+		return
+	}
 	_, _ = s.repo.db.ExecContext(ctx, `
 		UPDATE public.ai_ingestion_jobs
 		   SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
@@ -668,8 +772,8 @@ func (s *Service) failJob(ctx context.Context, jobID, errMsg string) {
 		       next_retry_at = CASE WHEN attempts >= max_attempts THEN NULL
 		                         ELSE now() + make_interval(secs => LEAST(900, (30 * power(2, GREATEST(attempts - 1, 0)))::int)) END,
 		       locked_by = NULL, locked_at = NULL, updated_at = now()
-		 WHERE id = $2
-	`, errMsg, jobID)
+		 WHERE id = $2 AND status = 'running' AND locked_by = $3
+	`, errMsg, jobID, s.workerID)
 }
 
 func (s *Service) recoverStaleJobs(ctx context.Context) {
