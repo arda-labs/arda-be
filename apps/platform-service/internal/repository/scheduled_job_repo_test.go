@@ -55,14 +55,55 @@ func TestSeedCatalogRetiresRemovedJobs(t *testing.T) {
 	db := openSchedDB(t)
 	repo := NewScheduledJobRepository(db)
 	ctx := context.Background()
-	_ = repo.SeedCatalog(ctx, domain.JobCatalog, "tenant-a", t0)
+	if err := repo.SeedCatalog(ctx, domain.JobCatalog, "tenant-a", t0); err != nil {
+		t.Fatal(err)
+	}
+	before, err := repo.Get(ctx, domain.JobCatalog[0].Code)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := repo.SeedCatalog(ctx, domain.JobCatalog[1:], "tenant-a", t0); err != nil {
 		t.Fatal(err)
 	}
-	job, _ := repo.Get(ctx, domain.JobCatalog[0].Code)
-	if job.Enabled || job.RetiredAt == nil || job.NextRunAt != nil {
-		t.Fatalf("removed job must be retired and disabled: %+v", job)
+	job, err := repo.Get(ctx, domain.JobCatalog[0].Code)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if job.RetiredAt == nil {
+		t.Fatalf("removed job must be retired: %+v", job)
+	}
+	// Retire only marks the row; scheduling skips retired jobs, so enabled and
+	// next_run_at stay as they were and survive an un-retire.
+	if job.Enabled != before.Enabled || !sameTime(job.NextRunAt, before.NextRunAt) {
+		t.Fatalf("retire must not touch enabled/next_run_at: before %+v after %+v", before, job)
+	}
+}
+
+// An older pod seeding an older catalog during a rolling deploy retires a new
+// job; the next seed with the full catalog must bring it back scheduled.
+func TestSeedCatalogUnretiresJobKeepingSchedule(t *testing.T) {
+	db := openSchedDB(t)
+	repo := NewScheduledJobRepository(db)
+	ctx := context.Background()
+	for _, defs := range [][]domain.JobDefinition{domain.JobCatalog, domain.JobCatalog[1:], domain.JobCatalog} {
+		if err := repo.SeedCatalog(ctx, defs, "tenant-a", t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	job, err := repo.Get(ctx, domain.JobCatalog[0].Code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.RetiredAt != nil || !job.Enabled || job.NextRunAt == nil {
+		t.Fatalf("un-retired job must be active and scheduled: %+v", job)
+	}
+}
+
+func sameTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Equal(*b)
 }
 
 func TestUpdateConfigVersionConflictAndAudit(t *testing.T) {

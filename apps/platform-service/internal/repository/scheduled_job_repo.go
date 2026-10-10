@@ -26,12 +26,13 @@ const jobColumns = `code, name, owner_service, path, cron_expr, timezone, enable
 
 type rowScanner interface{ Scan(dest ...any) error }
 
-func scanJob(row rowScanner) (*domain.ScheduledJob, error) {
+// scanJob reads one row. pgtype.FlatArray is not an sql.Scanner, so TEXT[]
+// columns go through m.SQLScanner to work with the pgx stdlib driver. A
+// pgtype.Map memoizes plans and is not safe for concurrent use, so callers
+// build one per repository call and reuse it across that call's rows.
+func scanJob(m *pgtype.Map, row rowScanner) (*domain.ScheduledJob, error) {
 	var j domain.ScheduledJob
 	var users, groups, roles []string
-	// pgtype.FlatArray is not an sql.Scanner; route TEXT[] through the pgx
-	// type map's SQLScanner so it works with the pgx stdlib driver.
-	m := pgtype.NewMap()
 	if err := row.Scan(&j.Code, &j.Name, &j.OwnerService, &j.Path, &j.CronExpr, &j.Timezone, &j.Enabled,
 		&j.TimeoutSeconds, &j.MaxAttempts, &j.RetryBackoffSeconds, &j.NotifyTenantID, m.SQLScanner(&users),
 		m.SQLScanner(&groups), m.SQLScanner(&roles), &j.NextRunAt, &j.LastStatus, &j.RetiredAt, &j.Version, &j.UpdatedAt, &j.UpdatedBy); err != nil {
@@ -61,7 +62,9 @@ func nextRunFor(cronExpr *string, tz string, enabled bool, now time.Time) (*time
 
 // SeedCatalog upserts code-owned columns only. Operator-owned columns get
 // defaults on insert and are never touched again. Jobs missing from defs are
-// retired: disabled, next_run_at cleared, row kept for history.
+// retired: only retired_at is set (scheduling skips retired rows), so enabled
+// and next_run_at survive an un-retire when a newer catalog is seeded again
+// (e.g. an old pod seeding an older catalog during a rolling deploy).
 func (r *ScheduledJobRepository) SeedCatalog(ctx context.Context, defs []domain.JobDefinition, defaultTenant string, now time.Time) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -97,7 +100,7 @@ func (r *ScheduledJobRepository) SeedCatalog(ctx context.Context, defs []domain.
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE plt_scheduled_jobs SET enabled = false, next_run_at = NULL, retired_at = $2, updated_at = now()
+		UPDATE plt_scheduled_jobs SET retired_at = $2, updated_at = now()
 		WHERE retired_at IS NULL AND NOT (code = ANY($1))`, codes, now); err != nil {
 		return err
 	}
@@ -110,9 +113,10 @@ func (r *ScheduledJobRepository) List(ctx context.Context) ([]domain.ScheduledJo
 		return nil, err
 	}
 	defer rows.Close()
+	m := pgtype.NewMap()
 	out := []domain.ScheduledJob{}
 	for rows.Next() {
-		j, err := scanJob(rows)
+		j, err := scanJob(m, rows)
 		if err != nil {
 			return nil, err
 		}
@@ -122,7 +126,7 @@ func (r *ScheduledJobRepository) List(ctx context.Context) ([]domain.ScheduledJo
 }
 
 func (r *ScheduledJobRepository) Get(ctx context.Context, code string) (*domain.ScheduledJob, error) {
-	j, err := scanJob(r.db.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM plt_scheduled_jobs WHERE code = $1`, code))
+	j, err := scanJob(pgtype.NewMap(), r.db.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM plt_scheduled_jobs WHERE code = $1`, code))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -137,7 +141,8 @@ func (r *ScheduledJobRepository) UpdateConfig(ctx context.Context, code string, 
 		return nil, err
 	}
 	defer tx.Rollback()
-	before, err := scanJob(tx.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM plt_scheduled_jobs WHERE code = $1 FOR UPDATE`, code))
+	m := pgtype.NewMap()
+	before, err := scanJob(m, tx.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM plt_scheduled_jobs WHERE code = $1 FOR UPDATE`, code))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -164,7 +169,7 @@ func (r *ScheduledJobRepository) UpdateConfig(ctx context.Context, code string, 
 		tenantID, nonNil(in.NotifyUserIDs), nonNil(in.NotifyGroupIDs), nonNil(in.NotifyRoleCodes), next, actor)); err != nil {
 		return nil, err
 	}
-	after, err := scanJob(tx.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM plt_scheduled_jobs WHERE code = $1`, code))
+	after, err := scanJob(m, tx.QueryRowContext(ctx, `SELECT `+jobColumns+` FROM plt_scheduled_jobs WHERE code = $1`, code))
 	if err != nil {
 		return nil, err
 	}
