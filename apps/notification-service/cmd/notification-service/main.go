@@ -364,6 +364,8 @@ var domainNotificationSubjects = []string{
 	ardaevents.SubjectLoanDisbursementApproved,
 	ardaevents.SubjectLoanDisbursementRejected,
 	ardaevents.SubjectLoanDisbursementFailed,
+	appevents.PlatformJobFailedSubject,
+	appevents.PlatformJobRecoveredSubject,
 }
 
 type notificationRecipientDirectory struct {
@@ -509,6 +511,28 @@ func handleDomainNotificationEvent(ctx context.Context, msg *nats.Msg, subject s
 		event.EventID, event.UserIDs = eventID, recipients
 		payload, _ := json.Marshal(event)
 		input, err = appevents.LoanDisbursementInput(payload, subject, defaultLocale)
+		if err != nil {
+			return err
+		}
+	case strings.Contains(subject, "platform.job."):
+		var event appevents.PlatformJobEvent
+		if err = json.Unmarshal(msg.Data, &event); err != nil {
+			return err
+		}
+		if event.EventID != "" {
+			eventID = event.EventID
+		}
+		tenantID, entityID, entityType = event.TenantID, event.RunID, "scheduled_job_run"
+		recipients, err = appevents.ResolveRecipients(ctx, directory, tenantID, appevents.RecipientSelectors{UserIDs: event.UserIDs, GroupIDs: event.GroupIDs, RoleCodes: event.RoleCodes, OrgUnitIDs: event.OrgUnitIDs, IncludeDescendants: event.IncludeDescendants}, managementGroup)
+		if err != nil {
+			return recipientResolutionResult(ctx, repo, tenantID, eventID, entityType, entityID, err, logger)
+		}
+		if len(recipients) == 0 {
+			return recipientResolutionResult(ctx, repo, tenantID, eventID, entityType, entityID, errors.New("notification.recipient_unresolved: recipient set is empty"), logger)
+		}
+		event.EventID, event.UserIDs = eventID, recipients
+		payload, _ := json.Marshal(event)
+		input, err = appevents.PlatformJobInput(payload, subject, defaultLocale)
 		if err != nil {
 			return err
 		}
