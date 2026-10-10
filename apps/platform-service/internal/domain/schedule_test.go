@@ -18,6 +18,8 @@ func TestValidateSchedule(t *testing.T) {
 		{"unknown tz", "0 6 * * *", "Asia/Hanoi", ErrInvalidTimezone},
 		{"empty tz", "0 6 * * *", "", ErrInvalidTimezone},
 		{"TZ prefix smuggling", "CRON_TZ=UTC 0 6 * * *", "Asia/Ho_Chi_Minh", ErrInvalidCron},
+		{"never fires feb 30", "0 0 30 2 *", "Asia/Ho_Chi_Minh", ErrInvalidCron},
+		{"never fires apr 31", "0 0 31 4 *", "Asia/Ho_Chi_Minh", ErrInvalidCron},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -53,5 +55,30 @@ func TestPreviewRunsReturnsAscendingTimes(t *testing.T) {
 	}
 	if len(runs) != 5 || !runs[0].Equal(after.Add(15*time.Minute)) || !runs[4].Equal(after.Add(75*time.Minute)) {
 		t.Fatalf("unexpected preview %v", runs)
+	}
+}
+
+func TestNextRunRejectsScheduleThatNeverFires(t *testing.T) {
+	got, err := NextRun("0 0 30 2 *", "UTC", time.Date(2026, 10, 11, 0, 0, 0, 0, time.UTC))
+	if !errors.Is(err, ErrInvalidCron) {
+		t.Fatalf("want ErrInvalidCron, got %v (time %s)", err, got)
+	}
+	if !got.IsZero() {
+		t.Fatalf("want zero time on error, got %s", got)
+	}
+	if _, err := PreviewRuns("0 0 30 2 *", "UTC", time.Now(), 3); !errors.Is(err, ErrInvalidCron) {
+		t.Fatalf("PreviewRuns: want ErrInvalidCron, got %v", err)
+	}
+}
+
+func TestPreviewRunsNonPositiveCount(t *testing.T) {
+	for _, n := range []int{0, -1} {
+		runs, err := PreviewRuns("0 6 * * *", "UTC", time.Now(), n)
+		if err != nil {
+			t.Fatalf("n=%d: unexpected error %v", n, err)
+		}
+		if len(runs) != 0 {
+			t.Fatalf("n=%d: want empty slice, got %v", n, runs)
+		}
 	}
 }
