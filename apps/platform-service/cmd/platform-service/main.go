@@ -176,9 +176,16 @@ func main() {
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
 
+	// Bind synchronously: the scheduler (started below) self-calls this server
+	// for platform-owned jobs on its first tick, so the listener must be up.
+	httpLis, err := net.Listen("tcp", cfg.HTTPAddr)
+	if err != nil {
+		logger.Error("http listen", "err", err)
+		os.Exit(1)
+	}
 	go func() {
 		logger.Info("http server started", "name", cfg.AppName, "addr", cfg.HTTPAddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(httpLis); err != nil && err != http.ErrServerClosed {
 			logger.Error("http server error", "err", err)
 			os.Exit(1)
 		}
@@ -197,10 +204,10 @@ func main() {
 		}
 	}()
 
-	// Start the scheduler only after the servers: platform-owned jobs
-	// (eod, platform-runs-cleanup) are dispatched to this same HTTP server, and
-	// Run ticks immediately. A missing secret already exited above (gRPC needs
-	// it), so the guard is defensive.
+	// Start the scheduler only after the HTTP listener is bound: platform-owned
+	// jobs (eod, platform-runs-cleanup) are dispatched to this same HTTP server,
+	// and Run ticks immediately. A missing secret already exited above (gRPC
+	// needs it), so the guard is defensive.
 	if secretErr == nil {
 		go jobScheduler.Run(appCtx)
 	}
@@ -210,18 +217,26 @@ func main() {
 	<-quit
 
 	logger.Info("shutting down", "name", cfg.AppName)
-	// Stop the scheduler loop and relay first, then HTTP, then let in-flight
-	// job runs finalize (bounded; runs still going are reaped by a peer).
+	// Shutdown order:
+	//  1. appCancel: stop the scheduler loop and the outbox relay.
+	//  2. Drain the scheduler while HTTP is still serving: no new dispatches
+	//     (its closing flag also guards the WaitGroup Add/Wait race), and
+	//     in-flight runs — including self-calls to /internal/jobs/eod and
+	//     /internal/jobs/platform-runs-cleanup — can finish instead of failing
+	//     and raising false failure notifications. A manual run requested
+	//     during the drain gets ErrSchedulerBusy (409). Runs still going at the
+	//     deadline are reaped later by a peer.
+	//  3. HTTP shutdown, then 4. gRPC.
 	appCancel()
+	jobCtx, jobCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer jobCancel()
+	if err := jobScheduler.Shutdown(jobCtx); err != nil {
+		logger.Warn("scheduled job runs still in flight at shutdown deadline", "err", err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("shutdown error", "err", err)
-	}
-	jobCtx, jobCancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer jobCancel()
-	if err := jobScheduler.Shutdown(jobCtx); err != nil {
-		logger.Warn("scheduled job runs still in flight at shutdown", "err", err)
 	}
 	grpcSrv.GracefulStop()
 }

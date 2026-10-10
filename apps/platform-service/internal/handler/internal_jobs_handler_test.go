@@ -28,6 +28,12 @@ type fakeCleaner struct{}
 
 func (fakeCleaner) Cleanup(context.Context, time.Time) (int64, int64, error) { return 3, 1, nil }
 
+type failingCleaner struct{}
+
+func (failingCleaner) Cleanup(context.Context, time.Time) (int64, int64, error) {
+	return 0, 0, errors.New("db down")
+}
+
 func callInternal(t *testing.T, h *InternalJobsHandler, path, body string) map[string]any {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -38,7 +44,9 @@ func callInternal(t *testing.T, h *InternalJobsHandler, path, body string) map[s
 		t.Fatalf("job endpoints always answer 200 with a status, got %d", rec.Code)
 	}
 	var out map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("job response is not JSON: %v: %s", err, rec.Body.String())
+	}
 	return out
 }
 
@@ -62,7 +70,12 @@ func TestInternalEODJob(t *testing.T) {
 
 func TestInternalCleanupJob(t *testing.T) {
 	out := callInternal(t, NewInternalJobsHandler(&fakeEOD{}, fakeCleaner{}), "/internal/jobs/platform-runs-cleanup", `{}`)
-	if out["status"] != "succeeded" {
+	summary, _ := out["summary"].(map[string]any)
+	if out["status"] != "succeeded" || summary["runs_deleted"] != float64(3) || summary["outbox_deleted"] != float64(1) {
+		t.Fatalf("unexpected %v", out)
+	}
+	out = callInternal(t, NewInternalJobsHandler(&fakeEOD{}, failingCleaner{}), "/internal/jobs/platform-runs-cleanup", `{}`)
+	if out["status"] != "failed" || out["error_code"] != "CLEANUP_FAILED" || out["error_message"] != "db down" {
 		t.Fatalf("unexpected %v", out)
 	}
 }
