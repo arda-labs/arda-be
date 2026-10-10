@@ -162,3 +162,54 @@ func TestCleanupRemovesOldRows(t *testing.T) {
 		t.Fatalf("want 1/1 deleted, got %d/%d err=%v", runs, outbox, err)
 	}
 }
+
+func TestClaimDuePoisonJobDoesNotBlockOthers(t *testing.T) {
+	db := openSchedDB(t)
+	repo := NewScheduledJobRepository(db)
+	seedDue(t, repo)
+	ctx := context.Background()
+	if _, err := db.Exec(`UPDATE plt_scheduled_jobs SET next_run_at = $1, timezone = 'Not/AZone' WHERE code = 'platform-runs-cleanup'`, t0); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := repo.ClaimDue(ctx, t0.Add(time.Second), 10)
+	if err != nil {
+		t.Fatalf("poison job must not fail the batch: %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].Job.Code != "ai-eval" {
+		t.Fatalf("want ai-eval claimed, got %+v", claimed)
+	}
+	bad, err := repo.Get(ctx, "platform-runs-cleanup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bad.NextRunAt != nil {
+		t.Fatalf("poison job must stop firing, next_run_at=%v", bad.NextRunAt)
+	}
+	var n int
+	var msg *string
+	_ = db.QueryRow(`SELECT count(*), max(error_message) FROM plt_scheduled_job_runs
+		WHERE job_code='platform-runs-cleanup' AND status='SKIPPED' AND error_code='SCHEDULE_ERROR'`).Scan(&n, &msg)
+	if n != 1 || msg == nil || *msg == "" {
+		t.Fatalf("want 1 SKIPPED/SCHEDULE_ERROR run with message, got %d msg=%v", n, msg)
+	}
+}
+
+func TestFinalizeRejectsNonTerminalStatus(t *testing.T) {
+	db := openSchedDB(t)
+	repo := NewScheduledJobRepository(db)
+	seedDue(t, repo)
+	ctx := context.Background()
+	c, err := repo.StartManual(ctx, "ai-eval", "u1", nil, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{domain.JobStatusRunning, domain.JobStatusSkipped, ""} {
+		if err := repo.Finalize(ctx, c.Run.ID, domain.RunOutcome{Status: s, Attempt: 1}, t0); err == nil {
+			t.Fatalf("status %q must be rejected", s)
+		}
+	}
+	run, _ := repo.GetRun(ctx, c.Run.ID)
+	if run.Status != domain.JobStatusRunning {
+		t.Fatalf("run must stay RUNNING, got %s", run.Status)
+	}
+}
