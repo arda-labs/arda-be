@@ -12,6 +12,7 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/pressly/goose/v3 v3.27.1
+	github.com/robfig/cron/v3 v3.0.1
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
