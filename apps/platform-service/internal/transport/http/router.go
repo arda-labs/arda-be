@@ -15,12 +15,26 @@ import (
 // callers and tests that do not build those services keep compiling.
 type RouterOption func(mux *http.ServeMux)
 
-// WithScheduledJobs mounts the admin scheduled-jobs API. A nil handler is a no-op.
+// WithScheduledJobs mounts the admin scheduled-jobs API. A nil handler panics
+// at construction so a missed wiring fails at startup instead of serving 404.
 func WithScheduledJobs(h *handler.ScheduledJobHandler) RouterOption {
+	if h == nil {
+		panic("platform router: WithScheduledJobs requires a non-nil handler")
+	}
 	return func(mux *http.ServeMux) {
-		if h != nil {
-			handler.RegisterScheduledJobRoutes(mux, h)
-		}
+		handler.RegisterScheduledJobRoutes(mux, h)
+	}
+}
+
+// WithInternalJobs mounts the platform-owned job targets (/internal/jobs/*)
+// that the scheduler's executor calls with a platform-service signature. A
+// nil handler panics at construction, like WithScheduledJobs.
+func WithInternalJobs(h *handler.InternalJobsHandler) RouterOption {
+	if h == nil {
+		panic("platform router: WithInternalJobs requires a non-nil handler")
+	}
+	return func(mux *http.ServeMux) {
+		handler.RegisterInternalJobRoutes(mux, h, internalJobService)
 	}
 }
 
@@ -304,6 +318,18 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 // browsers — this route is never exposed to them.
 func internalAIService(next http.Handler) http.Handler {
 	return identity.RequireServiceAuthFromEnv("platform-service", "ai-service")(next)
+}
+
+// internalJobService authenticates the job executor on /internal/jobs/*: the
+// platform scheduler signs its own calls (source = audience = platform-service).
+func internalJobService(next http.Handler) http.Handler {
+	secret, err := identity.SecretFromEnv()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
+		})
+	}
+	return identity.RequireServiceAuth(secret, "platform-service", identity.AllowedSources("platform-service"))(next)
 }
 
 func health(status string) http.HandlerFunc {

@@ -14,6 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/config"
+	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
 	"github.com/arda-labs/arda/apps/platform-service/internal/handler"
 	"github.com/arda-labs/arda/apps/platform-service/internal/migration"
 	"github.com/arda-labs/arda/apps/platform-service/internal/repository"
@@ -27,6 +28,7 @@ import (
 	ardamedia "github.com/arda-labs/arda/libs/go/arda-media"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	platformv1 "github.com/arda-labs/arda/libs/go/arda-proto/platform/v1"
+	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -88,10 +90,54 @@ func main() {
 	calendarHandler := handler.NewCalendarHandler(calendarSvc, eodSvc)
 	eodHandler := handler.NewEODHandler(eodSvc)
 
+	// Scheduled jobs: appCtx drives the scheduler loop and the outbox relay;
+	// it is cancelled first on shutdown.
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+	serviceSecret, secretErr := identity.SecretFromEnv()
+	if secretErr != nil {
+		logger.Warn("scheduled jobs disabled: service identity secret missing", "err", secretErr)
+	}
+	jobRepo := repository.NewScheduledJobRepository(db)
+	if err := jobRepo.SeedCatalog(appCtx, domain.JobCatalog, cfg.JobNotifyDefaultTenant, time.Now()); err != nil {
+		logger.Error("seed scheduled jobs", "err", err)
+		os.Exit(1)
+	}
+	jobExecutor := service.NewJobExecutor(cfg.JobTargetURLs, serviceSecret, &http.Client{})
+	jobScheduler := service.NewJobScheduler(jobRepo, jobExecutor, logger)
+	scheduledJobSvc := service.NewScheduledJobService(jobRepo, jobScheduler, jobExecutor, cfg.JobNotifyDefaultTenant)
+	scheduledJobHandler := handler.NewScheduledJobHandler(scheduledJobSvc)
+	internalJobsHandler := handler.NewInternalJobsHandler(eodSvc, jobRepo)
+	if cfg.NATSURL == "" {
+		logger.Warn("platform outbox relay disabled: NATS_URL is empty")
+	} else if nc, err := nats.Connect(cfg.NATSURL, nats.Name(cfg.AppName), nats.Timeout(5*time.Second)); err != nil {
+		logger.Warn("platform outbox relay disabled: nats unavailable", "err", err)
+	} else {
+		defer nc.Close()
+		js, err := nc.JetStream()
+		if err != nil {
+			logger.Error("platform outbox relay: jetstream", "err", err)
+		} else {
+			relay := service.NewOutboxRelay(db, func(subject, id string, data []byte) error {
+				msg := &nats.Msg{Subject: subject, Data: data, Header: nats.Header{}}
+				msg.Header.Set(nats.MsgIdHdr, id)
+				_, err := js.PublishMsg(msg)
+				return err
+			}, logger)
+			go relay.Run(appCtx)
+		}
+	}
+
+	router := transport.NewRouter(platformHandler, calendarHandler, menuHandler, eodHandler,
+		transport.WithScheduledJobs(scheduledJobHandler),
+		transport.WithInternalJobs(internalJobsHandler),
+	)
 	srv := &http.Server{
-		Addr:         cfg.HTTPAddr,
-		Handler:      ardahttp.HandlerChain(cfg.AppName, nil, ardahttp.UserTimezoneMiddleware(transport.NewRouter(platformHandler, calendarHandler, menuHandler, eodHandler))),
-		ReadTimeout:  10 * time.Second,
+		Addr:        cfg.HTTPAddr,
+		Handler:     ardahttp.HandlerChain(cfg.AppName, nil, ardahttp.UserTimezoneMiddleware(router), jobScheduler.RenderMetrics),
+		ReadTimeout: 10 * time.Second,
+		// Must stay >= the longest platform-owned job timeout: the scheduler
+		// calls POST /internal/jobs/eod on this server with a 330s timeout.
 		WriteTimeout: 6 * time.Minute,
 		IdleTimeout:  60 * time.Second,
 		// 16KiB is generous for a JSON API. net/http defaults to 1MiB of headers
@@ -99,9 +145,8 @@ func main() {
 		MaxHeaderBytes: 16 << 10,
 	}
 
-	serviceSecret, err := identity.SecretFromEnv()
-	if err != nil {
-		logger.Error("service identity is not configured", "err", err)
+	if secretErr != nil {
+		logger.Error("service identity is not configured", "err", secretErr)
 		os.Exit(1)
 	}
 	transportCreds, err := identity.ServerTransportCredentials()
@@ -152,15 +197,31 @@ func main() {
 		}
 	}()
 
+	// Start the scheduler only after the servers: platform-owned jobs
+	// (eod, platform-runs-cleanup) are dispatched to this same HTTP server, and
+	// Run ticks immediately. A missing secret already exited above (gRPC needs
+	// it), so the guard is defensive.
+	if secretErr == nil {
+		go jobScheduler.Run(appCtx)
+	}
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logger.Info("shutting down", "name", cfg.AppName)
+	// Stop the scheduler loop and relay first, then HTTP, then let in-flight
+	// job runs finalize (bounded; runs still going are reaped by a peer).
+	appCancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("shutdown error", "err", err)
+	}
+	jobCtx, jobCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer jobCancel()
+	if err := jobScheduler.Shutdown(jobCtx); err != nil {
+		logger.Warn("scheduled job runs still in flight at shutdown", "err", err)
 	}
 	grpcSrv.GracefulStop()
 }
