@@ -357,6 +357,26 @@ routes:
     auth: false
     risk: public
 
+  # Scheduled jobs (platform-service). Longer prefix than /api/platform/**, so
+  # these win on specificity; `/**` also matches the bare collection path.
+  # POST cron-preview is read-only but only called from the edit dialog, which
+  # already needs platform.manage.
+  - id: platform-jobs-read
+    path: /api/platform/scheduled-jobs/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - platform.read
+
+  - id: platform-jobs-manage
+    path: /api/platform/scheduled-jobs/**
+    methods: [POST, PATCH]
+    auth: true
+    risk: high
+    permissions:
+      - platform.manage
+
   - id: platform-read
     path: /api/platform/**
     methods: [GET]

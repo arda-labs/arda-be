@@ -10,7 +10,21 @@ import (
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
-func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handler.CalendarHandler, menuHandler *handler.MenuHandler, eodHandler *handler.EODHandler) http.Handler {
+// RouterOption mounts an optional route group on the platform mux. Optional
+// groups (scheduled jobs, internal job callbacks) are wired through options so
+// callers and tests that do not build those services keep compiling.
+type RouterOption func(mux *http.ServeMux)
+
+// WithScheduledJobs mounts the admin scheduled-jobs API. A nil handler is a no-op.
+func WithScheduledJobs(h *handler.ScheduledJobHandler) RouterOption {
+	return func(mux *http.ServeMux) {
+		if h != nil {
+			handler.RegisterScheduledJobRoutes(mux, h)
+		}
+	}
+}
+
+func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handler.CalendarHandler, menuHandler *handler.MenuHandler, eodHandler *handler.EODHandler, opts ...RouterOption) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -46,6 +60,9 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 	mux.HandleFunc("/api/platform/eod/seed", eodHandler.SeedCOBJobs)
 	mux.HandleFunc("GET /api/platform/jobs", eodHandler.ListJobs)
 	mux.HandleFunc("GET /api/platform/jobs/runs", eodHandler.ListJobRuns)
+	for _, opt := range opts {
+		opt(mux)
+	}
 	mux.HandleFunc("/api/platform/working-hours", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
