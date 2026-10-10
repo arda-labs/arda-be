@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -15,6 +16,9 @@ type Config struct {
 	LogLevel    string `yaml:"log_level"`
 	DatabaseDSN string `yaml:"database_dsn"`
 	NATSURL     string `yaml:"nats_url"`
+
+	JobTargetURLs          map[string]string `yaml:"-"`
+	JobNotifyDefaultTenant string            `yaml:"job_notify_default_tenant"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -44,6 +48,8 @@ func Load() Config {
 	envStr("LOG_LEVEL", &cfg.LogLevel)
 	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
 	envStr("NATS_URL", &cfg.NATSURL)
+	envStr("JOB_NOTIFY_DEFAULT_TENANT", &cfg.JobNotifyDefaultTenant)
+	cfg.JobTargetURLs = ParseTargets(os.Getenv("JOB_TARGET_URLS"))
 
 	return cfg
 }
@@ -69,6 +75,7 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("log_level", &c.LogLevel)
 	setStr("database_dsn", &c.DatabaseDSN)
 	setStr("nats_url", &c.NATSURL)
+	setStr("job_notify_default_tenant", &c.JobNotifyDefaultTenant)
 	return true
 }
 
@@ -76,4 +83,17 @@ func envStr(key string, target *string) {
 	if v := os.Getenv(key); v != "" {
 		*target = v
 	}
+}
+
+// ParseTargets reads "svc=url,svc2=url2". Malformed pairs are ignored.
+func ParseTargets(raw string) map[string]string {
+	out := map[string]string{}
+	for _, pair := range strings.Split(raw, ",") {
+		k, v, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if ok && k != "" && v != "" {
+			out[k] = v
+		}
+	}
+	return out
 }
