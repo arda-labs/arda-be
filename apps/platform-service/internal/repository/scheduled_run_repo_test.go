@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -211,5 +212,27 @@ func TestFinalizeRejectsNonTerminalStatus(t *testing.T) {
 	run, _ := repo.GetRun(ctx, c.Run.ID)
 	if run.Status != domain.JobStatusRunning {
 		t.Fatalf("run must stay RUNNING, got %s", run.Status)
+	}
+}
+
+func TestFinalizeTruncatesLongErrorCode(t *testing.T) {
+	db := openSchedDB(t)
+	repo := NewScheduledJobRepository(db)
+	seedDue(t, repo)
+	ctx := context.Background()
+	c, err := repo.StartManual(ctx, "ai-eval", "u1", nil, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("C", 100)
+	if err := repo.Finalize(ctx, c.Run.ID, domain.RunOutcome{Status: domain.JobStatusFailed, Attempt: 1, ErrorCode: long, ErrorMessage: "boom"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	run, err := repo.GetRun(ctx, c.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != domain.JobStatusFailed || run.ErrorCode == nil || *run.ErrorCode != long[:domain.MaxErrorCodeLen] {
+		t.Fatalf("unexpected run %+v", run)
 	}
 }

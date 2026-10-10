@@ -214,7 +214,7 @@ func finalizeTx(ctx context.Context, tx *sql.Tx, runID string, out domain.RunOut
 	}
 	var code, msg *string
 	if out.ErrorCode != "" {
-		c := out.ErrorCode
+		c := domain.Truncate(out.ErrorCode, domain.MaxErrorCodeLen)
 		code = &c
 	}
 	if out.ErrorMessage != "" {

@@ -24,6 +24,7 @@ const (
 	EventJobFailed      = "platform.job.failed"
 	EventJobRecovered   = "platform.job.recovered"
 
+	MaxErrorCodeLen    = 64 // plt_scheduled_job_runs.error_code VARCHAR(64)
 	MaxErrorMessageLen = 2000
 	MaxResultBytes     = 256 << 10
 )

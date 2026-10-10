@@ -128,3 +128,63 @@ func TestExecuteCancelledBeforeAttemptIsTerminal(t *testing.T) {
 		t.Fatalf("unexpected outcome %+v calls=%d", out, *calls)
 	}
 }
+
+func TestExecuteLongErrorCodeIsBounded(t *testing.T) {
+	code := strings.Repeat("E", 100)
+	ex, job, calls := execFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"failed","error_code":"` + code + `","error_message":"x"}`))
+	})
+	out := ex.Execute(context.Background(), job, execRun)
+	if out.Status != domain.JobStatusFailed || len(out.ErrorCode) > domain.MaxErrorCodeLen || out.ErrorCode != code[:domain.MaxErrorCodeLen] || *calls != 1 {
+		t.Fatalf("unexpected outcome %+v calls=%d", out, *calls)
+	}
+}
+
+func TestExecuteBlankErrorCodeFallsBack(t *testing.T) {
+	ex, job, _ := execFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"failed","error_code":"   "}`))
+	})
+	if out := ex.Execute(context.Background(), job, execRun); out.ErrorCode != "JOB_REPORTED_FAILURE" {
+		t.Fatalf("unexpected outcome %+v", out)
+	}
+}
+
+func TestExecutePartialBodyTimeoutBecomesTimedOut(t *testing.T) {
+	ex, job, _ := execFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body) // see TestExecuteTimeoutBecomesTimedOut
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"succ`))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	})
+	job.TimeoutSeconds, job.MaxAttempts = 1, 1
+	out := ex.Execute(context.Background(), job, execRun)
+	if out.Status != domain.JobStatusTimedOut || out.ErrorCode != "JOB_TIMEOUT" {
+		t.Fatalf("want TIMED_OUT/JOB_TIMEOUT, got %+v", out)
+	}
+}
+
+func TestExecuteParentCancelDuringRequestIsNotRetried(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ex, job, calls := execFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		cancel()
+		<-r.Context().Done()
+	})
+	out := ex.Execute(ctx, job, execRun)
+	if out.Status != domain.JobStatusFailed || out.ErrorCode != "JOB_CANCELLED" || out.Attempt != 1 || *calls != 1 {
+		t.Fatalf("unexpected outcome %+v calls=%d", out, *calls)
+	}
+}
+
+func TestExecuteResultIsNotHTMLEscaped(t *testing.T) {
+	ex, job, _ := execFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"succeeded","summary":"<a&b>"}`))
+	})
+	out := ex.Execute(context.Background(), job, execRun)
+	if got := string(out.Result); got != `{"metrics":null,"summary":"<a&b>"}` {
+		t.Fatalf("unexpected result %q", got)
+	}
+}

@@ -119,14 +119,13 @@ func (e *JobExecutor) attempt(ctx context.Context, job domain.ScheduledJob, run 
 	}
 	resp, err := e.client.Do(req)
 	if err != nil {
-		if errors.Is(actx.Err(), context.DeadlineExceeded) {
-			return attemptResult{outcome: domain.RunOutcome{Status: domain.JobStatusTimedOut, ErrorCode: "JOB_TIMEOUT",
-				ErrorMessage: fmt.Sprintf("no response within %ds", job.TimeoutSeconds)}, retryable: true}
-		}
-		return attemptResult{outcome: failed("JOB_UNREACHABLE", err.Error()), retryable: true}
+		return transportFailure(ctx, actx, job, "no response", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, int64(domain.MaxResultBytes)+1))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, int64(domain.MaxResultBytes)+1))
+	if err != nil {
+		return transportFailure(ctx, actx, job, "response body not completed", err)
+	}
 	switch {
 	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusTooManyRequests:
 		return attemptResult{outcome: failed("UPSTREAM_"+fmt.Sprint(resp.StatusCode), snippet(raw)), retryable: true}
@@ -140,15 +139,40 @@ func (e *JobExecutor) attempt(ctx context.Context, job domain.ScheduledJob, run 
 	if err := json.Unmarshal(raw, &jr); err != nil || (jr.Status != "succeeded" && jr.Status != "failed") {
 		return attemptResult{outcome: failed("INVALID_JOB_RESPONSE", "response is not a job result: "+snippet(raw))}
 	}
-	result, _ := json.Marshal(map[string]json.RawMessage{"summary": orNull(jr.Summary), "metrics": orNull(jr.Metrics)})
+	result := encodeResult(jr)
 	if jr.Status == "succeeded" {
 		return attemptResult{outcome: domain.RunOutcome{Status: domain.JobStatusSucceeded, Result: result}}
 	}
-	code := jr.ErrorCode
+	code := domain.Truncate(strings.TrimSpace(jr.ErrorCode), domain.MaxErrorCodeLen)
 	if code == "" {
 		code = "JOB_REPORTED_FAILURE"
 	}
 	return attemptResult{outcome: domain.RunOutcome{Status: domain.JobStatusFailed, ErrorCode: code, ErrorMessage: domain.Truncate(jr.ErrorMessage, 2000), Result: result}}
+}
+
+// transportFailure classifies an error from sending the request or reading the
+// response body. A cancelled parent ctx (shutdown, caller gave up) is final;
+// the attempt's own deadline is TIMED_OUT and anything else is UNREACHABLE,
+// both retryable.
+func transportFailure(ctx, actx context.Context, job domain.ScheduledJob, what string, err error) attemptResult {
+	if ctx.Err() != nil {
+		return attemptResult{outcome: failed("JOB_CANCELLED", "run cancelled: "+err.Error())}
+	}
+	if errors.Is(actx.Err(), context.DeadlineExceeded) {
+		return attemptResult{outcome: domain.RunOutcome{Status: domain.JobStatusTimedOut, ErrorCode: "JOB_TIMEOUT",
+			ErrorMessage: fmt.Sprintf("%s within %ds", what, job.TimeoutSeconds)}, retryable: true}
+	}
+	return attemptResult{outcome: failed("JOB_UNREACHABLE", err.Error()), retryable: true}
+}
+
+// encodeResult stores summary/metrics without HTML escaping (which would grow
+// <, > and & sixfold) and without the encoder's trailing newline.
+func encodeResult(jr jobResponse) json.RawMessage {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(map[string]json.RawMessage{"summary": orNull(jr.Summary), "metrics": orNull(jr.Metrics)})
+	return json.RawMessage(bytes.TrimRight(buf.Bytes(), "\n"))
 }
 
 func failed(code, msg string) domain.RunOutcome {
