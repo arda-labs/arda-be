@@ -79,6 +79,12 @@ type RouterOptions struct {
 	RAGClient ragFeedbacker
 	// RAGService is the in-process knowledge/RAG service for /api/rag/* endpoints.
 	RAGService *knowledge.Service
+	// InternalJobs serves /internal/jobs/* for the platform scheduler. Nil
+	// means the routes are not mounted (no RAG service available).
+	InternalJobs *InternalJobsHandler
+	// ServiceAuthSecret verifies the scheduler's workload identity on
+	// /internal/jobs/* routes.
+	ServiceAuthSecret string
 	// CatalogTools is the list of SDK tools surfaced via GET /api/ai/tools.
 	CatalogTools []CatalogToolDTO
 	// ApprovalResolver resolves confirm-kind tools when executing an approved
@@ -338,6 +344,9 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	})
 	if options.RAGService != nil {
 		NewRAGHandler(options.RAGService).RegisterRoutes(mux)
+	}
+	if options.InternalJobs != nil {
+		options.InternalJobs.Register(mux, options.ServiceAuthSecret)
 	}
 	return mux
 }

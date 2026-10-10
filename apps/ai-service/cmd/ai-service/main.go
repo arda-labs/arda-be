@@ -15,6 +15,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/catalog"
 	"github.com/arda-labs/arda/apps/ai-service/internal/config"
+	"github.com/arda-labs/arda/apps/ai-service/internal/evaluation"
 	"github.com/arda-labs/arda/apps/ai-service/internal/events"
 	"github.com/arda-labs/arda/apps/ai-service/internal/handler"
 	"github.com/arda-labs/arda/apps/ai-service/internal/knowledge"
@@ -174,6 +175,11 @@ func main() {
 		// Knowledge search and feedback are served in-process; the retired
 		// remote rag-service client was removed (audit-2026-09 A5).
 		routerOptions.RAGClient = inProcessRAG
+	}
+	if knowledgeSvc != nil {
+		// Scheduled golden-set evaluation, triggered by platform-service.
+		routerOptions.InternalJobs = handler.NewInternalJobsHandler(cfg.AIEvalSetPath, evaluation.DirectQuery(knowledgeSvc, cfg.AIEvalTenant))
+		routerOptions.ServiceAuthSecret = cfg.ServiceAuthSecret
 	}
 
 	var resolver *tools.Registry
