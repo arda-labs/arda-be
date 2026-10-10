@@ -116,9 +116,11 @@ type fakeRunStore struct {
 	finalizeFails int32 // number of Finalize calls that fail before success
 	finalizeCalls atomic.Int32
 	release       chan struct{} // if set, Finalize blocks until closed
+	claimCalls    atomic.Int32
 }
 
 func (f *fakeRunStore) ClaimDue(context.Context, time.Time, int) ([]repository.ClaimedRun, error) {
+	f.claimCalls.Add(1)
 	return nil, f.claimErr
 }
 
@@ -221,6 +223,40 @@ func TestClaimErrorCountedAndGaugeNotAdvanced(t *testing.T) {
 		if !strings.Contains(m, `arda_platform_scheduled_job_runs_total{status="`+st+`"} 0`) {
 			t.Fatalf("series %s not pre-registered:\n%s", st, m)
 		}
+	}
+}
+
+func TestTickAdvancesGaugeWhenSaturated(t *testing.T) {
+	store := &fakeRunStore{}
+	s := fakeScheduler(store)
+	fillSlots(s)
+	s.lastTick.Store(1000)
+	if n := s.Tick(context.Background()); n != 0 {
+		t.Fatalf("saturated tick dispatched %d", n)
+	}
+	if got := s.lastTick.Load(); got <= 1000 {
+		t.Fatalf("heartbeat must advance while saturated, got %d", got)
+	}
+	if c := store.claimCalls.Load(); c != 0 {
+		t.Fatalf("saturated tick must not call ClaimDue, got %d calls", c)
+	}
+}
+
+func TestTickAfterShutdownKeepsGauge(t *testing.T) {
+	store := &fakeRunStore{}
+	s := fakeScheduler(store)
+	if err := s.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s.lastTick.Store(1000)
+	if n := s.Tick(context.Background()); n != 0 {
+		t.Fatalf("got %d", n)
+	}
+	if got := s.lastTick.Load(); got != 1000 {
+		t.Fatalf("heartbeat must not advance after shutdown, got %d", got)
+	}
+	if c := store.claimCalls.Load(); c != 0 {
+		t.Fatalf("tick after shutdown must not call ClaimDue, got %d calls", c)
 	}
 }
 

@@ -74,14 +74,14 @@ func NewJobScheduler(store JobRunStore, exec *JobExecutor, logger *slog.Logger) 
 }
 
 // reserve takes up to max free slots without blocking and registers them in
-// wg. It returns 0 once shutdown has started.
-func (s *JobScheduler) reserve(max int) int {
+// wg. closing reports that shutdown has started (n is then 0); n == 0 with
+// closing == false means the replica is saturated.
+func (s *JobScheduler) reserve(max int) (n int, closing bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closing {
-		return 0
+		return 0, true
 	}
-	n := 0
 acquire:
 	for n < max {
 		select {
@@ -92,7 +92,7 @@ acquire:
 		}
 	}
 	s.wg.Add(n)
-	return n
+	return n, false
 }
 
 func (s *JobScheduler) release(n int) {
@@ -104,9 +104,17 @@ func (s *JobScheduler) release(n int) {
 
 // Tick claims only as many runs as there are free execution slots, so a busy
 // replica leaves due jobs for its peers.
+//
+// The last-tick gauge is a liveness heartbeat: it advances after a successful
+// claim and on a saturated tick (healthy, just busy), but not on a claim
+// error or after Shutdown.
 func (s *JobScheduler) Tick(ctx context.Context) int {
-	reserved := s.reserve(cap(s.slots))
+	reserved, closing := s.reserve(cap(s.slots))
+	if closing {
+		return 0
+	}
 	if reserved == 0 {
+		s.lastTick.Store(s.now().Unix())
 		return 0
 	}
 	claimed, err := s.store.ClaimDue(ctx, s.now(), reserved)
@@ -169,7 +177,7 @@ func (s *JobScheduler) finalize(runCtx context.Context, runID string, out domain
 // never blocks on execution capacity: with no free slot (or during shutdown)
 // it returns ErrSchedulerBusy without creating a run.
 func (s *JobScheduler) RunNow(ctx context.Context, code, actor string, params map[string]string) (*domain.ScheduledJobRun, error) {
-	if s.reserve(1) == 0 {
+	if n, _ := s.reserve(1); n == 0 {
 		return nil, ErrSchedulerBusy
 	}
 	c, err := s.store.StartManual(ctx, code, actor, params, s.now())
