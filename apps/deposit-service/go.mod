@@ -3,6 +3,7 @@ module github.com/arda-labs/arda/apps/deposit-service
 go 1.27.2
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-openapi v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
@@ -52,3 +53,5 @@ replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-po
 replace github.com/arda-labs/arda/libs/go/arda-money => ../../libs/go/arda-money
 
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
+
+replace github.com/arda-labs/arda/libs/go/arda-openapi => ../../libs/go/arda-openapi
