@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -43,6 +44,11 @@ func (h *InternalJobsHandler) aiEval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set, err := evaluation.Parse(raw)
+	if errors.Is(err, evaluation.ErrEmptySet) || (err == nil && len(set.Cases) == 0) {
+		// An empty set proves nothing; never report it as a pass.
+		writeJob(w, map[string]any{"status": "failed", "error_code": "AI_EVAL_EMPTY_SET", "error_message": "evaluation set has no cases"})
+		return
+	}
 	if err != nil {
 		writeJob(w, map[string]any{"status": "failed", "error_code": "AI_EVAL_SET_INVALID", "error_message": err.Error()})
 		return

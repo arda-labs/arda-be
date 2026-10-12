@@ -30,8 +30,13 @@ func writeSet(t *testing.T) string {
 
 func callEval(t *testing.T, q evaluation.QueryFunc, source string) (int, map[string]any) {
 	t.Helper()
+	return callEvalWithSet(t, writeSet(t), q, source)
+}
+
+func callEvalWithSet(t *testing.T, setPath string, q evaluation.QueryFunc, source string) (int, map[string]any) {
+	t.Helper()
 	mux := http.NewServeMux()
-	NewInternalJobsHandler(writeSet(t), q).Register(mux, jobSecret)
+	NewInternalJobsHandler(setPath, q).Register(mux, jobSecret)
 	req := httptest.NewRequest("POST", "/internal/jobs/ai-eval", nil)
 	if source != "" {
 		tok, _ := identity.Issue(jobSecret, source, "ai-service", time.Now(), time.Minute)
@@ -70,5 +75,19 @@ func TestAIEvalJobRequiresPlatformSignature(t *testing.T) {
 	}
 	if code, _ := callEval(t, ok, "auth-gateway"); code != http.StatusForbidden {
 		t.Fatalf("wrong source must be 403, got %d", code)
+	}
+}
+
+func TestAIEvalJobEmptySetFails(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "empty.yaml")
+	if err := os.WriteFile(p, []byte("version: 1\ncases: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	q := func(context.Context, evaluation.Case) (knowledge.QueryResponse, error) {
+		return knowledge.QueryResponse{}, nil
+	}
+	code, out := callEvalWithSet(t, p, q, "platform-service")
+	if code != 200 || out["status"] != "failed" || out["error_code"] != "AI_EVAL_EMPTY_SET" {
+		t.Fatalf("empty set: %d %v", code, out)
 	}
 }

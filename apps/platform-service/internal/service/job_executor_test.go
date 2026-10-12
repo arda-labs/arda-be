@@ -188,3 +188,19 @@ func TestExecuteResultIsNotHTMLEscaped(t *testing.T) {
 		t.Fatalf("unexpected result %q", got)
 	}
 }
+
+func TestExecuteDoesNotFollowRedirects(t *testing.T) {
+	var landed int32
+	ex, job, calls := execFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/landing" {
+			atomic.AddInt32(&landed, 1)
+			_, _ = w.Write([]byte(`{"status":"succeeded"}`))
+			return
+		}
+		http.Redirect(w, r, "/landing", http.StatusTemporaryRedirect)
+	})
+	out := ex.Execute(context.Background(), job, execRun)
+	if out.Status != domain.JobStatusFailed || out.ErrorCode != "UPSTREAM_3XX" || out.Attempt != 1 || *calls != 1 || atomic.LoadInt32(&landed) != 0 {
+		t.Fatalf("redirect must be a terminal failure without following: %+v calls=%d landed=%d", out, *calls, landed)
+	}
+}

@@ -23,10 +23,16 @@ type JobExecutor struct {
 	sleep   func(context.Context, time.Duration) error
 }
 
+// NewJobExecutor never lets the client follow redirects: Go re-sends custom
+// headers on a redirect, so following one would forward the signed service
+// identity token to wherever the target points. A 3xx is a terminal failure.
 func NewJobExecutor(targets map[string]string, secret string, client *http.Client) *JobExecutor {
-	if client == nil {
-		client = &http.Client{}
+	c := http.Client{}
+	if client != nil {
+		c = *client
 	}
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client = &c
 	return &JobExecutor{targets: targets, secret: secret, client: client, sleep: sleepCtx}
 }
 
@@ -131,6 +137,8 @@ func (e *JobExecutor) attempt(ctx context.Context, job domain.ScheduledJob, run 
 		return attemptResult{outcome: failed("UPSTREAM_"+fmt.Sprint(resp.StatusCode), snippet(raw)), retryable: true}
 	case resp.StatusCode >= 400:
 		return attemptResult{outcome: failed("UPSTREAM_4XX", fmt.Sprintf("HTTP %d: %s", resp.StatusCode, snippet(raw)))}
+	case resp.StatusCode >= 300:
+		return attemptResult{outcome: failed("UPSTREAM_3XX", fmt.Sprintf("HTTP %d redirect to %q not followed", resp.StatusCode, resp.Header.Get("Location")))}
 	}
 	if len(raw) > domain.MaxResultBytes {
 		return attemptResult{outcome: failed("INVALID_JOB_RESPONSE", "response exceeds 256 KB")}
