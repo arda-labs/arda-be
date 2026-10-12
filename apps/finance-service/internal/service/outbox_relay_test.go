@@ -11,6 +11,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/finance-service/internal/migration"
 	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
+	"github.com/arda-labs/arda/libs/go/arda-events/outbox"
 	"github.com/arda-labs/arda/libs/go/arda-postgres/testdb"
 	"github.com/nats-io/nats.go"
 )
@@ -57,11 +58,11 @@ func TestOutboxRelayConcurrentReplicasPublishOnePendingRow(t *testing.T) {
 		releaseFirst: make(chan struct{}),
 	}
 	logger := slog.New(slog.DiscardHandler)
-	first := newOutboxRelay(db, publisher, logger)
-	second := newOutboxRelay(db, publisher, logger)
+	first := newOutboxRelay(t, db, publisher, logger)
+	second := newOutboxRelay(t, db, publisher, logger)
 	firstDone := make(chan struct{})
 	go func() {
-		first.publishOnce(context.Background())
+		mustPublishOnce(t, first)
 		close(firstDone)
 	}()
 	select {
@@ -69,7 +70,7 @@ func TestOutboxRelayConcurrentReplicasPublishOnePendingRow(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("first relay did not publish the claimed event")
 	}
-	second.publishOnce(context.Background())
+	mustPublishOnce(t, second)
 	close(publisher.releaseFirst)
 	select {
 	case <-firstDone:
@@ -95,8 +96,8 @@ func TestOutboxRelayRetryAfterPublishFailureUsesStableMessageID(t *testing.T) {
 	db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
 	id := insertFinanceOutboxRow(t, db)
 	publisher := &testOutboxPublisher{failFirst: true}
-	relay := newOutboxRelay(db, publisher, slog.New(slog.DiscardHandler))
-	relay.publishOnce(context.Background())
+	relay := newOutboxRelay(t, db, publisher, slog.New(slog.DiscardHandler))
+	mustPublishOnce(t, relay)
 
 	var publishedAt sql.NullTime
 	var attempts int
@@ -107,7 +108,7 @@ func TestOutboxRelayRetryAfterPublishFailureUsesStableMessageID(t *testing.T) {
 		t.Fatalf("after failed publish: published=%t attempts=%d, want false/1", publishedAt.Valid, attempts)
 	}
 
-	relay.publishOnce(context.Background())
+	mustPublishOnce(t, relay)
 	if err := db.QueryRow(`SELECT published_at, publish_attempts FROM fin_outbox WHERE id = $1`, id).Scan(&publishedAt, &attempts); err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +122,22 @@ func TestOutboxRelayRetryAfterPublishFailureUsesStableMessageID(t *testing.T) {
 	publisher.mu.Unlock()
 	if storedCount != 1 {
 		t.Fatalf("JetStream accepted unique messages = %d, want one after redelivery", storedCount)
+	}
+}
+
+func newOutboxRelay(t *testing.T, db *sql.DB, publisher outbox.Publisher, logger *slog.Logger) *outbox.Relay {
+	t.Helper()
+	relay, err := outbox.New(db, publisher, financeOutboxTable, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return relay
+}
+
+func mustPublishOnce(t *testing.T, relay *outbox.Relay) {
+	t.Helper()
+	if _, err := relay.PublishOnce(context.Background()); err != nil {
+		t.Error(err)
 	}
 }
 

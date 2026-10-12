@@ -3,6 +3,7 @@ module github.com/arda-labs/arda/apps/finance-service
 go 1.27.2
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -61,3 +62,5 @@ replace github.com/arda-labs/arda/libs/go/arda-docno => ../../libs/go/arda-docno
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
+
+replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events

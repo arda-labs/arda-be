@@ -3,6 +3,7 @@ module github.com/arda-labs/arda/apps/media-service
 go 1.27.2
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-time v0.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.13 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.29 // indirect
@@ -77,3 +78,5 @@ require (
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
+
+replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events
