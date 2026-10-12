@@ -1,5 +1,6 @@
 param(
-  [string]$Node = "192.168.10.201",
+  # Defaults to $env:K3S_NODE_1 (see arda-infra/dev/endpoints.example.env).
+  [string]$Node = $env:K3S_NODE_1,
   [int]$PostgresPort = 30432,
   [int]$ValkeyPort = 30379,
   [int]$NatsPort = 4222,
@@ -9,6 +10,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($Node)) {
+  Write-Host "[fail] No k3s node address: pass -Node <ip> or set K3S_NODE_1 (values in arda-infra/dev/endpoints.example.env)."
+  exit 1
+}
+$Node = $Node.Trim()
 
 function Test-Tcp($Name, $HostName, $Port, [switch]$Required = $true) {
   $ok = Test-NetConnection -ComputerName $HostName -Port $Port -InformationLevel Quiet

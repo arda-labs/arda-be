@@ -33,7 +33,7 @@ func Load() Config {
 
 		KratosAdminURL: "http://localhost:4434",
 		TOTPIssuer:     "arda.io.vn",
-		HydraAdminURL:  "http://192.168.10.201:30445",
+		HydraAdminURL:  "http://localhost:4445",
 	}
 
 	if path := os.Getenv("CONFIG_FILE"); path != "" {

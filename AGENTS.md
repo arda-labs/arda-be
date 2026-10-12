@@ -9,11 +9,13 @@ Makefile, use `go` directly. The Go toolchain (`go 1.27.2`, see `go.work`) is
 downloaded automatically via `GOTOOLCHAIN=auto`.
 
 ### The shared k3s LAN dev infra is NOT reachable from the Cloud VM
-The committed `apps/*/configs/config.yaml` DSNs point at the shared cluster
-(`192.168.10.201:30432` Postgres, Redis, Hydra `:30445`, Kratos `:30446`, Zeebe
-`:30650`) and `auth.arda.io.vn`. From the Cloud VM these hosts accept the TCP
-handshake but **reset the connection at the application layer**, so they cannot
-be used. Do not rely on them; use the local Postgres below and override env vars.
+The committed `apps/*/configs/config.yaml` files and Go defaults contain no LAN
+addresses: DSNs are empty, and Hydra/Kratos admin, NATS and Zeebe default to
+`localhost` port-forwards (`docs/dev/dependencies.md`); public auth still uses
+`auth.arda.io.vn`. The LAN NodePorts (`arda-infra/dev/endpoints.example.env`)
+accept the TCP handshake from the Cloud VM but **reset the connection at the
+application layer**, so they cannot be used. Use the local Postgres below and
+override env vars.
 
 ### Local Postgres (provisioned in the VM snapshot)
 - **PostgreSQL 18** is installed and used on `127.0.0.1:5432`. Version 18 matters:
@@ -32,9 +34,11 @@ cd apps/platform-service
 DATABASE_DSN="postgres://arda_platform:<password>@127.0.0.1:5432/platform?sslmode=disable" \
   go run ./cmd/platform-service        # HTTP :8091, gRPC :9091
 ```
-- `iam-service` (HTTP :8080): set `KRATOS_ADMIN_URL=` empty when Ory is
-  unavailable. Migrations/casbin still load; browser auth is owned by
-  `auth-gateway`.
+- `iam-service` (HTTP :8080): Kratos/Hydra admin default to
+  `http://localhost:4434` / `http://localhost:4445`; without Ory the service
+  still starts and only user-management/OAuth-client calls fail (empty env
+  values never override config, so `KRATOS_ADMIN_URL=` is a no-op).
+  Migrations/casbin still load; browser auth is owned by `auth-gateway`.
 - `finance-service`: needs Postgres only; platform gRPC dial is optional.
   Bare-metal `go run` listens on the port in `configs/config.yaml` (HTTP 8080);
   container ports are unified at HTTP 8080 / gRPC 9090, with legacy host-port
