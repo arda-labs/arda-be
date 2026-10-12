@@ -159,6 +159,22 @@ production approval authority and exact compatibility windows.
 
 Owner: release/platform + data/domain owners.
 
+## ADR-011 — Domain flows on the shared maker-checker
+
+Status: accepted-with-follow-up (2026-10-12). Full record:
+[adr-011-workflow-domain-commands.md](../adr-011-workflow-domain-commands.md).
+
+Decision: new approval flows run on `common-maker-checker`; the owner service
+implements `arda.common.v1.CaseCommandService` and workflow-service routes by
+`business_operation_types.owner_service` with one generic transport.
+`scripts/check-workflow-workers.mjs` blocks new domain workers in
+workflow-service. Pilot: `HRM_EMPLOYEE_REGISTRATION`.
+
+Open decisions: flows with an `init` reserve step, execute-time business
+failures (BUG-9), and when loan adjustments move to the generic contract.
+
+Owner: backend architecture + domain owners.
+
 ## Approval gate
 
 Before Phase 2 foundations, each ADR must be marked:
