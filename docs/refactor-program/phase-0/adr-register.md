@@ -103,7 +103,8 @@ are settled as follows.
 - **Schema split.** One document per service (`<service>-v1.json`); the
   existing hand-written pilot documents stay until their service migrates.
 
-First migrated service: deposit (33 operations). Handlers that wrote
+Migrated services: deposit (33 operations) and loan (70 operations; replaces
+the hand-written `loan-disbursement-v1.json`). Handlers that wrote
 `map[string]any` or decoded anonymous structs now use named types so the
 document carries the exact wire shape.
 
