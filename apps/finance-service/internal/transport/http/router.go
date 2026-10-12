@@ -201,23 +201,11 @@ func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 // (X-Tenant-Id, X-User-Id, ...) is forwarded by the caller, not trusted from
 // browsers — this route is never exposed to them.
 func internalAIService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
-		})
-	}
-	return identity.RequireServiceAuth(secret, "finance-service", identity.AllowedSources("ai-service"))(next)
+	return identity.RequireServiceAuthFromEnv("finance-service", "ai-service")(next)
 }
 
 // internalReportingService authenticates the statistical-service caller on the
 // reporting ETL surface (same signed-assertion contract, distinct source).
 func internalReportingService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
-		})
-	}
-	return identity.RequireServiceAuth(secret, "finance-service", identity.AllowedSources("statistical-service"))(next)
+	return identity.RequireServiceAuthFromEnv("finance-service", "statistical-service")(next)
 }

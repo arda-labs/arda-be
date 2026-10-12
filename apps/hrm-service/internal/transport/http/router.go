@@ -170,13 +170,7 @@ func NewRouter(hrm *handler.HRMHandler) http.Handler {
 // (X-Tenant-Id, X-User-Id, ...) is forwarded by the caller, not trusted from
 // browsers — this route is never exposed to them.
 func internalAIService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
-		})
-	}
-	return identity.RequireServiceAuth(secret, "hrm-service", identity.AllowedSources("ai-service"))(next)
+	return identity.RequireServiceAuthFromEnv("hrm-service", "ai-service")(next)
 }
 
 func requireTenantScope(next http.Handler) http.Handler {

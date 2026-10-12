@@ -82,13 +82,7 @@ func NewRouter(catalogHandler *handler.CatalogHandler, rateHandler *handler.Inte
 // (X-Tenant-Id, ...) is forwarded by the caller, not trusted from browsers —
 // this route is never exposed to them.
 func internalAIService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
-		})
-	}
-	return identity.RequireServiceAuth(secret, "mdm-service", identity.AllowedSources("ai-service"))(next)
+	return identity.RequireServiceAuthFromEnv("mdm-service", "ai-service")(next)
 }
 
 func registerCatalog(mux *http.ServeMux, h *handler.CatalogHandler, catalog string) {

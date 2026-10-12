@@ -146,13 +146,7 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 // (X-Tenant-Id) is forwarded by the caller, never trusted from browsers —
 // these routes are not exposed through auth-gateway.
 func internalAIService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
-		})
-	}
-	return identity.RequireServiceAuth(secret, "statistical-service", identity.AllowedSources("ai-service"))(next)
+	return identity.RequireServiceAuthFromEnv("statistical-service", "ai-service")(next)
 }
 
 func method(verb string, fn http.HandlerFunc) http.HandlerFunc {

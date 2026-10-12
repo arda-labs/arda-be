@@ -105,25 +105,13 @@ func (r *Router) customerByID(w http.ResponseWriter, req *http.Request) {
 // (X-Tenant-Id, X-User-Id, ...) is forwarded by the caller, not trusted from
 // browsers — this route is never exposed to them.
 func internalAIService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
-		})
-	}
-	return identity.RequireServiceAuth(secret, "crm-service", identity.AllowedSources("ai-service"))(next)
+	return identity.RequireServiceAuthFromEnv("crm-service", "ai-service")(next)
 }
 
 // internalReportingService authenticates the statistical-service caller on the
 // reporting ETL surface (same signed-assertion contract, distinct source).
 func internalReportingService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
-		})
-	}
-	return identity.RequireServiceAuth(secret, "crm-service", identity.AllowedSources("statistical-service"))(next)
+	return identity.RequireServiceAuthFromEnv("crm-service", "statistical-service")(next)
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter, r *http.Request) {

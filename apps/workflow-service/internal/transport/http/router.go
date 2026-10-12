@@ -162,13 +162,7 @@ func NewRouter(wfHandler *handler.WorkflowHandler) http.Handler {
 // (X-Tenant-Id, X-User-Id, ...) is forwarded by the caller, not trusted from
 // browsers — these routes are never exposed to them.
 func internalAIService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
-		})
-	}
-	return identity.RequireServiceAuth(secret, "workflow-service", identity.AllowedSources("ai-service"))(next)
+	return identity.RequireServiceAuthFromEnv("workflow-service", "ai-service")(next)
 }
 
 func requireTenantScope(next http.Handler) http.Handler {

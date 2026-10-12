@@ -4,9 +4,7 @@ import (
 	"net/http"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/handler"
-	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
-	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
 func NewRouter(notificationHandler *handler.NotificationHandler) http.Handler {
@@ -61,11 +59,5 @@ func NewRouter(notificationHandler *handler.NotificationHandler) http.Handler {
 // (X-Tenant-Id, X-User-Id, ...) is forwarded by the caller, not trusted from
 // browsers — this route is never exposed to them.
 func internalAIService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
-		})
-	}
-	return identity.RequireServiceAuth(secret, "notification-service", identity.AllowedSources("ai-service"))(next)
+	return identity.RequireServiceAuthFromEnv("notification-service", "ai-service")(next)
 }
