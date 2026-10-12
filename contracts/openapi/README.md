@@ -23,15 +23,19 @@ is accepted.
 
 ## Generated documents
 
-`deposit-v1.json` is generated from Go, not written by hand: its operations are
-declared in `apps/deposit-service/internal/transport/http/openapi.go` and its
-schemas come from the Go types through `libs/go/arda-openapi`. Regenerate it
-with:
+`deposit-v1.json` and `loan-v1.json` are generated from Go, not written by
+hand: their operations are declared in
+`apps/<service>/internal/transport/http/openapi.go` and their schemas come from
+the Go types through `libs/go/arda-openapi`. Regenerate one with:
 
 ```bash
-cd apps/deposit-service
+cd apps/loan-service
 ARDA_UPDATE_OPENAPI=1 go test ./internal/transport/http -run TestOpenAPIDocumentIsCommitted
 ```
+
+`loan-v1.json` replaces the hand-written `loan-disbursement-v1.json` pilot; its
+adjustment flows use a `{kind}` path parameter restricted to the shared kind
+list.
 
 `TestOpenAPIDocumentIsCommitted` fails when the committed file is stale and
 `scripts/check-openapi-routes.mjs` fails when a public route is missing from

@@ -178,6 +178,25 @@ func TestRequestBodiesGetOptionalInputSchemas(t *testing.T) {
 	}
 }
 
+func TestPathEnumsRestrictPathParameters(t *testing.T) {
+	doc := Document{Title: "T", Version: "1", Operations: []Operation{
+		{Method: "GET", Path: "/api/test/{kind}/{id}", ID: "get", Result: Address{}, PathEnums: map[string][]string{"kind": {"a", "b"}}},
+	}}
+	out := generate(t, doc)
+	params := out["paths"].(map[string]any)["/api/test/{kind}/{id}"].(map[string]any)["get"].(map[string]any)["parameters"].([]any)
+	kind, _ := json.Marshal(params[0].(map[string]any)["schema"])
+	id, _ := json.Marshal(params[1].(map[string]any)["schema"])
+	if string(kind) != `{"enum":["a","b"],"type":"string"}` || string(id) != `{"type":"string"}` {
+		t.Fatalf("kind=%s id=%s", kind, id)
+	}
+	bad := Document{Title: "T", Version: "1", Operations: []Operation{
+		{Method: "GET", Path: "/api/test/{id}", ID: "get", Result: Address{}, PathEnums: map[string][]string{"kind": {"a"}}},
+	}}
+	if _, err := Generate(bad); err == nil {
+		t.Fatal("an enum for a parameter missing from the path was accepted")
+	}
+}
+
 func TestGenerateIsDeterministic(t *testing.T) {
 	first, err := Generate(testDoc())
 	if err != nil {

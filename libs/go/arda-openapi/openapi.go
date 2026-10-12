@@ -41,6 +41,8 @@ type Operation struct {
 	ID      string
 	Summary string
 	Query   []Param
+	// PathEnums restricts path parameters to fixed values, keyed by name.
+	PathEnums map[string][]string
 	// Request is a value of the JSON body type, or nil when there is no body.
 	Request any
 	// RequestName names an anonymous request struct.
@@ -207,10 +209,28 @@ func (g *generator) operation(op Operation) (map[string]any, error) {
 	}
 	var params []any
 	pathParams := pathParamPattern.FindAllStringSubmatch(op.Path, -1)
+	seenPath := map[string]bool{}
 	for _, m := range pathParams {
+		seenPath[m[1]] = true
+		schema := map[string]any{"type": "string"}
+		if values, ok := op.PathEnums[m[1]]; ok {
+			if len(values) == 0 {
+				return nil, fmt.Errorf("openapi: %s: path enum %s is empty", op.ID, m[1])
+			}
+			enum := make([]any, len(values))
+			for i, v := range values {
+				enum[i] = v
+			}
+			schema["enum"] = enum
+		}
 		params = append(params, map[string]any{
-			"name": m[1], "in": "path", "required": true, "schema": map[string]any{"type": "string"},
+			"name": m[1], "in": "path", "required": true, "schema": schema,
 		})
+	}
+	for name := range op.PathEnums {
+		if !seenPath[name] {
+			return nil, fmt.Errorf("openapi: %s: path enum %s has no {%s} in the path", op.ID, name, name)
+		}
 	}
 	for _, q := range op.Query {
 		schema := map[string]any{"type": "string"}
