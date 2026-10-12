@@ -54,3 +54,19 @@ func AllowedSources(sources ...string) map[string]struct{} {
 	}
 	return allowed
 }
+
+// RequireServiceAuthFromEnv protects an internal route of serviceName so that
+// only the listed caller services reach it. It reads ARDA_SERVICE_AUTH_SECRET
+// when the middleware is built. When the secret is missing or too short the
+// route fails closed: every request is answered 503 and next is never called.
+func RequireServiceAuthFromEnv(serviceName string, sources ...string) func(http.Handler) http.Handler {
+	secret, err := SecretFromEnv()
+	if err != nil {
+		return func(http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
+			})
+		}
+	}
+	return RequireServiceAuth(secret, serviceName, AllowedSources(sources...))
+}

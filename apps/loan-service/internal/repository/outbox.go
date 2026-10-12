@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 )
 
 func enqueueDisbursementEvent(ctx context.Context, q repoTX, tenantID, id, status, contractCode, createdBy, updatedBy string) error {
@@ -17,11 +19,11 @@ func enqueueDisbursementEvent(ctx context.Context, q repoTX, tenantID, id, statu
 	var subject, eventCode string
 	switch status {
 	case "APPROVED":
-		subject, eventCode = "arda.loan.disbursement.approved.v1", "loan.disbursement.approved"
+		subject, eventCode = ardaevents.SubjectLoanDisbursementApproved, ardaevents.EventLoanDisbursementApproved
 	case "REJECTED":
-		subject, eventCode = "arda.loan.disbursement.rejected.v1", "loan.disbursement.rejected"
+		subject, eventCode = ardaevents.SubjectLoanDisbursementRejected, ardaevents.EventLoanDisbursementRejected
 	case "FAILED":
-		subject, eventCode = "arda.loan.disbursement.failed.v1", "loan.disbursement.failed"
+		subject, eventCode = ardaevents.SubjectLoanDisbursementFailed, ardaevents.EventLoanDisbursementFailed
 	}
 	dedupe := "disbursement:" + id + ":" + strings.ToLower(status)
 	users := make([]string, 0, 2)

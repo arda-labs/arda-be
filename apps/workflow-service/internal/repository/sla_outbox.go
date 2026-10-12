@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 )
 
 // EmitSLANotifications adds each crossed milestone once. Thresholds are
@@ -59,9 +61,9 @@ func (r *CaseRepository) EmitSLANotifications(ctx context.Context, thresholds []
 			if now.Before(item.created.Add(window * time.Duration(milestone) / 100)) {
 				continue
 			}
-			kind, subject, code := "sla_warning", "arda.workflow.task.sla_warning.v1", "workflow.task.sla_warning"
+			kind, subject, code := "sla_warning", ardaevents.SubjectWorkflowTaskSLAWarning, ardaevents.EventWorkflowTaskSLAWarning
 			if milestone == 100 {
-				kind, subject, code = "overdue", "arda.workflow.task.overdue.v1", "workflow.task.overdue"
+				kind, subject, code = "overdue", ardaevents.SubjectWorkflowTaskOverdue, ardaevents.EventWorkflowTaskOverdue
 			}
 			dedupe := fmt.Sprintf("task:%s:sla:%d", item.id, milestone)
 			users := item.users

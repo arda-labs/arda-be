@@ -5,14 +5,13 @@ import (
 	"fmt"
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
+	"github.com/arda-labs/arda/libs/go/arda-events/outbox"
 	"github.com/nats-io/nats.go"
 )
 
 type NATSPublisher struct {
 	js nats.JetStreamContext
 }
-
-const eventStreamName = "ARDA_EVENTS"
 
 func NewNATSPublisher(conn *nats.Conn) (*NATSPublisher, error) {
 	if conn == nil {
@@ -22,18 +21,8 @@ func NewNATSPublisher(conn *nats.Conn) (*NATSPublisher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create jetstream context: %w", err)
 	}
-	if _, err := js.StreamInfo(eventStreamName); err != nil {
-		if err != nats.ErrStreamNotFound {
-			return nil, fmt.Errorf("inspect event stream: %w", err)
-		}
-		if _, err := js.AddStream(&nats.StreamConfig{
-			Name:      eventStreamName,
-			Subjects:  []string{"arda.>"},
-			Storage:   nats.FileStorage,
-			Retention: nats.LimitsPolicy,
-		}); err != nil {
-			return nil, fmt.Errorf("create event stream: %w", err)
-		}
+	if err := outbox.EnsureStream(js); err != nil {
+		return nil, err
 	}
 	return &NATSPublisher{js: js}, nil
 }

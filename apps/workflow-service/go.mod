@@ -3,6 +3,7 @@ module github.com/arda-labs/arda/apps/workflow-service
 go 1.27.2
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
 	github.com/asaskevich/govalidator v0.0.0-20200108200545-475eaeb16496 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0 // indirect
@@ -72,3 +73,5 @@ require (
 replace github.com/arda-labs/arda/libs/go/arda-leakcheck => ../../libs/go/arda-leakcheck
 
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
+
+replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events

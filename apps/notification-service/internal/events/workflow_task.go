@@ -7,14 +7,15 @@ import (
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
 	"github.com/arda-labs/arda/apps/notification-service/internal/service"
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 )
 
 const (
-	WorkflowTaskAssignedSubject   = "arda.workflow.task.assigned.v1"
-	WorkflowTaskOverdueSubject    = "arda.workflow.task.overdue.v1"
-	WorkflowTaskCompletedSubject  = "arda.workflow.task.completed.v1"
-	WorkflowTaskReassignedSubject = "arda.workflow.task.reassigned.v1"
-	WorkflowTaskSLAWarningSubject = "arda.workflow.task.sla_warning.v1"
+	WorkflowTaskAssignedSubject   = ardaevents.SubjectWorkflowTaskAssigned
+	WorkflowTaskOverdueSubject    = ardaevents.SubjectWorkflowTaskOverdue
+	WorkflowTaskCompletedSubject  = ardaevents.SubjectWorkflowTaskCompleted
+	WorkflowTaskReassignedSubject = ardaevents.SubjectWorkflowTaskReassigned
+	WorkflowTaskSLAWarningSubject = ardaevents.SubjectWorkflowTaskSLAWarning
 )
 
 type WorkflowTaskEvent struct {

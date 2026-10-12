@@ -3,6 +3,7 @@ module github.com/arda-labs/arda/apps/loan-service
 go 1.27.2
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-businessdate v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
@@ -58,3 +59,5 @@ replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-po
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
 
 replace github.com/arda-labs/arda/libs/go/arda-businessdate => ../../libs/go/arda-businessdate
+
+replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events

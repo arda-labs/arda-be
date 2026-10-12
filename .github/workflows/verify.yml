@@ -87,6 +87,8 @@ jobs:
         run: node scripts/check-rls-pilot.mjs
       - name: Validate event registry
         run: node scripts/check-events.mjs
+      - name: Check event subjects come from the registry
+        run: node scripts/check-event-subjects.mjs
       - name: Validate event runtime durability
         run: node scripts/check-event-runtime.mjs
       - name: Validate interaction policy
@@ -120,6 +122,13 @@ jobs:
             echo "Testing $dir"
             (cd "$dir" && go test ./...)
           done < <(find . -name go.mod -not -path '*/node_modules/*' -print | sort)
+      - name: Verify shared outbox relay on disposable PostgreSQL 18
+        env:
+          ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
+        run: |
+          go test ./libs/go/arda-events/outbox -count=1 -v
+          go test ./apps/finance-service/internal/service -run '^TestOutboxRelay' -count=1 -v
+          go test ./apps/workflow-service/internal/service ./apps/loan-service/internal/service ./apps/statistical-service/internal/service -run '^TestOutboxTableMatchesMigratedSchema$' -count=1 -v
       - name: Verify business-date migration on disposable PostgreSQL 18
         env:
           ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable

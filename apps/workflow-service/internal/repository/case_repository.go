@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
@@ -756,11 +757,11 @@ func (r *CaseRepository) FinishCase(ctx context.Context, processInstanceKey int6
 	var subject, eventCode string
 	switch strings.ToUpper(finalStatus) {
 	case CaseStatusCompleted:
-		subject, eventCode = "arda.workflow.case.approved.v1", "workflow.case.approved"
+		subject, eventCode = ardaevents.SubjectWorkflowCaseApproved, ardaevents.EventWorkflowCaseApproved
 	case CaseStatusRejected:
-		subject, eventCode = "arda.workflow.case.rejected.v1", "workflow.case.rejected"
+		subject, eventCode = ardaevents.SubjectWorkflowCaseRejected, ardaevents.EventWorkflowCaseRejected
 	case "FAILED":
-		subject, eventCode = "arda.workflow.case.failed.v1", "workflow.case.failed"
+		subject, eventCode = ardaevents.SubjectWorkflowCaseFailed, ardaevents.EventWorkflowCaseFailed
 	}
 	if subject != "" {
 		dedupe := "case:" + caseID + ":" + strings.ToLower(finalStatus)

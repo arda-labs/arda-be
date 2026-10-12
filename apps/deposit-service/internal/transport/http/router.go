@@ -132,25 +132,13 @@ func NewRouter(h *handler.DepositHandler, ai *handler.InternalAIHandler, rep *ha
 // (X-Tenant-Id, ...) is forwarded by the caller, not trusted from browsers —
 // this route is never exposed to them.
 func internalAIService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
-		})
-	}
-	return identity.RequireServiceAuth(secret, "deposit-service", identity.AllowedSources("ai-service"))(next)
+	return identity.RequireServiceAuthFromEnv("deposit-service", "ai-service")(next)
 }
 
 // internalReportingService authenticates the statistical-service caller on the
 // reporting ETL surface (same signed-assertion contract, distinct source).
 func internalReportingService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "internal service identity is not configured", http.StatusServiceUnavailable)
-		})
-	}
-	return identity.RequireServiceAuth(secret, "deposit-service", identity.AllowedSources("statistical-service"))(next)
+	return identity.RequireServiceAuthFromEnv("deposit-service", "statistical-service")(next)
 }
 
 func method(verb string, fn http.HandlerFunc) http.HandlerFunc {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/libs/go/arda-events/outbox"
 	"github.com/nats-io/nats.go"
 )
 
@@ -58,7 +59,7 @@ func NewConsumer(conn *nats.Conn, subject, durable string) (*Consumer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create jetstream context: %w", err)
 	}
-	return &Consumer{js: js, stream: eventStreamName, subject: subject, durable: durable}, nil
+	return &Consumer{js: js, stream: outbox.StreamName, subject: subject, durable: durable}, nil
 }
 
 // Run uses an explicit durable consumer shared across replicas via a queue
