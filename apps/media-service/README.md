@@ -16,7 +16,8 @@ Required local env example:
 
 ```env
 DATABASE_DSN=<database-dsn-from-local-secret>
-NATS_URL=nats://192.168.10.201:30222,nats://192.168.10.202:30222,nats://192.168.10.203:30222
+# kubectl port-forward default; LAN NodePorts: arda-infra/dev/endpoints.example.env
+NATS_URL=nats://localhost:4222
 GRPC_ADDR=0.0.0.0:9090
 MEDIA_GRPC_ADDR=media-service:9090
 ARDA_SERVICE_AUTH_SECRET=<local-workload-secret>

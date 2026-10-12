@@ -38,7 +38,7 @@ func Load() Config {
 		LogLevel:             "info",
 		DatabaseDSN:          "",
 		SLAMilestones:        "50,90,100",
-		ZeebeAddr:            "192.168.10.201:30650",
+		ZeebeAddr:            "localhost:26500",
 		CRMGRPCAddr:          "localhost:9090",
 		LoanGRPCAddr:         "localhost:9090",
 		FinanceGRPCAddr:      "localhost:9090",

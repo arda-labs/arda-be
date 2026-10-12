@@ -9,6 +9,49 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
+# Load <repo>/.env.local into this process: bare-metal overrides such as the
+# dev dependency endpoints (see .env.example and docs/dev/dependencies.md).
+# .env is not read here because docker compose owns it and its values target
+# containers. Variables that are already set win, so shell exports and
+# parent-process values are kept; empty values are skipped. Per-service values
+# in $ServiceEnv below still override.
+function Import-DotEnv([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    return
+  }
+  $loaded = 0
+  foreach ($rawLine in Get-Content -LiteralPath $Path -Encoding UTF8) {
+    $line = $rawLine.Trim()
+    if ($line -eq "" -or $line.StartsWith("#")) {
+      continue
+    }
+    $eq = $line.IndexOf("=")
+    if ($eq -lt 1) {
+      continue
+    }
+    $name = $line.Substring(0, $eq).Trim()
+    $value = $line.Substring($eq + 1).Trim()
+    if ($value.Length -ge 2) {
+      $quote = $value[0]
+      if (($quote -eq '"' -or $quote -eq "'") -and $value[$value.Length - 1] -eq $quote) {
+        $value = $value.Substring(1, $value.Length - 2)
+      }
+    }
+    if ($value -eq "") {
+      continue
+    }
+    if ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($name, "Process"))) {
+      [Environment]::SetEnvironmentVariable($name, $value, "Process")
+      $loaded++
+    }
+  }
+  if ($loaded -gt 0) {
+    Write-Host "dev: loaded $loaded variable(s) from $Path"
+  }
+}
+
+Import-DotEnv (Join-Path $Root ".env.local")
+
 $DefaultServices = @(
   "iam-service",
   "platform-service",

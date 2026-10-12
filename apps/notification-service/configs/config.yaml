@@ -5,4 +5,4 @@ log_level: info
 default_locale: vi-VN
 notification_management_group: ""
 database_dsn: ""
-nats_url: "nats://192.168.10.201:30222,nats://192.168.10.202:30222,nats://192.168.10.203:30222"
+nats_url: "nats://localhost:4222"
