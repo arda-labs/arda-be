@@ -75,6 +75,43 @@ func (r *CaseRepository) ListActiveMakerCheckerWorkerKinds(ctx context.Context) 
 	return kinds, rows.Err()
 }
 
+// MakerCheckerRoute maps a shared maker-checker worker kind to the service that
+// owns its business object (ADR-011).
+type MakerCheckerRoute struct {
+	WorkerKind   string
+	OwnerService string
+}
+
+// ListActiveMakerCheckerRoutes returns one route per active worker kind. A kind
+// claimed by two owner services is a registry error: the dispatcher could not
+// tell which service applies the decision.
+func (r *CaseRepository) ListActiveMakerCheckerRoutes(ctx context.Context) ([]MakerCheckerRoute, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT BTRIM(worker_kind), BTRIM(owner_service)
+		FROM business_operation_types
+		WHERE status = 'ACTIVE' AND NULLIF(BTRIM(worker_kind), '') IS NOT NULL
+		ORDER BY 1, 2
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	routes := make([]MakerCheckerRoute, 0)
+	owners := map[string]string{}
+	for rows.Next() {
+		var route MakerCheckerRoute
+		if err := rows.Scan(&route.WorkerKind, &route.OwnerService); err != nil {
+			return nil, err
+		}
+		if previous, seen := owners[route.WorkerKind]; seen {
+			return nil, fmt.Errorf("maker-checker worker kind %q is owned by both %q and %q", route.WorkerKind, previous, route.OwnerService)
+		}
+		owners[route.WorkerKind] = route.OwnerService
+		routes = append(routes, route)
+	}
+	return routes, rows.Err()
+}
+
 func (r *CaseRepository) ListActiveOperationTypes(ctx context.Context) ([]OperationTypeRef, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT case_type, bpmn_process_id, registry_version, owner_service, status
