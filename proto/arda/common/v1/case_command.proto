@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package arda.common.v1;
+
+option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/common/v1;commonv1";
+
+// CaseCommandService is the one callback surface workflow-service uses for an
+// approval flow that runs on the shared common-maker-checker process. A domain
+// service implements it once and serves every flow kind it owns; workflow
+// routes each job to the service named in business_operation_types.owner_service
+// and never needs domain-specific worker code. See ADR-011.
+//
+// Tenant, organisation and actor arrive through gRPC metadata exactly as for
+// the other internal command services. Only workflow-service may call it.
+service CaseCommandService {
+  // CheckCase validates the business object before checker review. A business
+  // rule failure is reported as ok=false with a message for the maker; the
+  // workflow sends the case back to maker input. A gRPC error means the check
+  // could not run and the job is retried.
+  rpc CheckCase(CheckCaseRequest) returns (CheckCaseResponse);
+
+  // ResolveCase applies the checker decision. It must be idempotent for the
+  // same (kind, object_id, decision): Zeebe delivers jobs at least once, so a
+  // retry after a successful call has to succeed again without a second side
+  // effect. A gRPC error fails the job and Zeebe retries it.
+  rpc ResolveCase(ResolveCaseRequest) returns (ResolveCaseResponse);
+}
+
+// CaseDecision is the checker outcome a ResolveCase call applies.
+enum CaseDecision {
+  CASE_DECISION_UNSPECIFIED = 0;
+  CASE_DECISION_APPROVE = 1;
+  CASE_DECISION_REJECT = 2;
+}
+
+message CheckCaseRequest {
+  // kind is business_operation_types.worker_kind, for example
+  // "hrm.employee-register".
+  string kind = 1;
+  // object_id is the case's primary object id.
+  string object_id = 2;
+  string case_id = 3;
+}
+
+message CheckCaseResponse {
+  bool ok = 1;
+  // message explains a failed check to the maker.
+  string message = 2;
+}
+
+message ResolveCaseRequest {
+  string kind = 1;
+  string object_id = 2;
+  string case_id = 3;
+  CaseDecision decision = 4;
+  string decided_by = 5;
+  string note = 6;
+}
+
+message ResolveCaseResponse {
+  // outputs become process variables, for example the id of a record the
+  // approval created. Keys must be camelCase and must not reuse a reserved
+  // case variable.
+  map<string, string> outputs = 1;
+}
