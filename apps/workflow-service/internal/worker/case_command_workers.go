@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
@@ -16,7 +17,7 @@ import (
 // (arda.common.v1.CaseCommandService, ADR-011).
 type CaseCommandCaller interface {
 	CheckCase(ctx context.Context, kind, objectID, caseID string) (bool, string, error)
-	ResolveCase(ctx context.Context, kind, objectID, caseID string, decision casecommand.Decision, decidedBy, note string) (map[string]string, error)
+	ResolveCase(ctx context.Context, kind, objectID, caseID string, decision casecommand.Decision, decidedBy, note, dataVersion string) (map[string]string, error)
 }
 
 // CaseCommandWorkers are the generic mc.validate|execute|cancel handlers for
@@ -43,10 +44,11 @@ func (w *CaseCommandWorkers) Handlers(kind string, caller CaseCommandCaller) Mak
 }
 
 type caseJobRef struct {
-	objectID  string
-	caseID    string
-	decidedBy string
-	note      string
+	objectID    string
+	caseID      string
+	decidedBy   string
+	note        string
+	dataVersion string
 }
 
 func readCaseJob(job entities.Job) (caseJobRef, error) {
@@ -59,6 +61,9 @@ func readCaseJob(job entities.Job) (caseJobRef, error) {
 		caseID:    stringVariable(vars, "caseId"),
 		decidedBy: stringVariable(vars, "actorUserId", "actor_user_id", "createdBy", "created_by"),
 		note:      stringVariable(vars, "decisionNote"),
+		// The checker form submits the row version it reviewed; legacy cases
+		// carry none. Numbers are normalised so the owner compares one format.
+		dataVersion: dataVersionVariable(vars),
 	}
 	if ref.objectID == "" {
 		return caseJobRef{}, fmt.Errorf("missing primaryObjectId variable")
@@ -83,6 +88,7 @@ func (w *CaseCommandWorkers) validate(kind string, caller CaseCommandCaller) wor
 			if strings.TrimSpace(message) == "" {
 				message = "business validation failed"
 			}
+			w.recordValidationFailure(ref.caseID, message)
 			throwValidationError(client, job, message)
 			return
 		}
@@ -108,7 +114,7 @@ func (w *CaseCommandWorkers) resolve(kind string, caller CaseCommandCaller, deci
 		if note == "" && decision == casecommand.DecisionReject {
 			note = "Rejected by checker"
 		}
-		outputs, err := caller.ResolveCase(crmJobContext(job), kind, ref.objectID, ref.caseID, decision, ref.decidedBy, note)
+		outputs, err := caller.ResolveCase(crmJobContext(job), kind, ref.objectID, ref.caseID, decision, ref.decidedBy, note, ref.dataVersion)
 		if err != nil {
 			failCaseCommandJob(client, job, job.GetRetries()-1, "resolve case: "+err.Error())
 			return
@@ -131,6 +137,37 @@ func (w *CaseCommandWorkers) resolve(kind string, caller CaseCommandCaller, deci
 			return
 		}
 		w.projection.FinishCase(context.Background(), job.GetProcessInstanceKey(), caseStatus)
+	}
+}
+
+// recordValidationFailure writes the owner's reason to the case timeline so
+// the maker sees why the case returned to input, not only the service log.
+func (w *CaseCommandWorkers) recordValidationFailure(caseID, reason string) {
+	if w.projection == nil || w.projection.caseRepo == nil || caseID == "" {
+		return
+	}
+	if err := w.projection.caseRepo.AddTimelineEventInternal(context.Background(), caseID, "VALIDATION_FAILED", reason); err != nil {
+		slog.Error("case command: record validation failure", "caseId", caseID, "err", err)
+	}
+}
+
+// dataVersionVariable returns the checker's dataVersion variable as the
+// string the owner compares against its row version ("" when absent).
+func dataVersionVariable(vars map[string]any) string {
+	switch v := vars["dataVersion"].(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case float64:
+		if v == float64(int64(v)) {
+			return strconv.FormatInt(int64(v), 10)
+		}
+		return ""
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case int:
+		return strconv.Itoa(v)
+	default:
+		return ""
 	}
 }
 

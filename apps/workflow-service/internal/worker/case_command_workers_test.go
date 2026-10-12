@@ -53,9 +53,9 @@ type fakeCaseCommand struct {
 	err          error
 	outputs      map[string]string
 
-	kind, objectID, caseID, decidedBy, note string
-	decision                                casecommand.Decision
-	tenantID, actorID                       string
+	kind, objectID, caseID, decidedBy, note, dataVersion string
+	decision                                             casecommand.Decision
+	tenantID, actorID                                    string
 }
 
 func (f *fakeCaseCommand) record(ctx context.Context, kind, objectID, caseID string) {
@@ -71,9 +71,9 @@ func (f *fakeCaseCommand) CheckCase(ctx context.Context, kind, objectID, caseID 
 	return f.checkOK, f.checkMessage, f.err
 }
 
-func (f *fakeCaseCommand) ResolveCase(ctx context.Context, kind, objectID, caseID string, decision casecommand.Decision, decidedBy, note string) (map[string]string, error) {
+func (f *fakeCaseCommand) ResolveCase(ctx context.Context, kind, objectID, caseID string, decision casecommand.Decision, decidedBy, note, dataVersion string) (map[string]string, error) {
 	f.record(ctx, kind, objectID, caseID)
-	f.decision, f.decidedBy, f.note = decision, decidedBy, note
+	f.decision, f.decidedBy, f.note, f.dataVersion = decision, decidedBy, note, dataVersion
 	return f.outputs, f.err
 }
 
@@ -156,12 +156,12 @@ func TestCaseCommandTransportErrorsRetryAndMissingObjectStops(t *testing.T) {
 func TestCaseCommandExecuteApprovesAndFiltersReservedOutputs(t *testing.T) {
 	caller := &fakeCaseCommand{outputs: map[string]string{"employeeId": "emp-9", "primaryObjectId": "hijack", "approvalStatus": "REJECTED"}}
 	gateway := &caseCommandGateway{}
-	vars := map[string]any{"decisionNote": "looks good"}
+	vars := map[string]any{"decisionNote": "looks good", "dataVersion": float64(4)}
 	for k, v := range baseCaseVars {
 		vars[k] = v
 	}
 	NewCaseCommandWorkers(nil).Handlers("hrm.employee-register", caller).Execute(gateway, caseJob(t, vars))
-	if caller.decision != casecommand.DecisionApprove || caller.decidedBy != "user-1" || caller.note != "looks good" {
+	if caller.decision != casecommand.DecisionApprove || caller.decidedBy != "user-1" || caller.note != "looks good" || caller.dataVersion != "4" {
 		t.Fatalf("resolve call = %+v", caller)
 	}
 	got := completedVariables(t, gateway)
@@ -177,7 +177,7 @@ func TestCaseCommandCancelRejectsWithDefaultNote(t *testing.T) {
 	caller := &fakeCaseCommand{}
 	gateway := &caseCommandGateway{}
 	NewCaseCommandWorkers(nil).Handlers("hrm.employee-register", caller).Cancel(gateway, caseJob(t, baseCaseVars))
-	if caller.decision != casecommand.DecisionReject || caller.note != "Rejected by checker" {
+	if caller.decision != casecommand.DecisionReject || caller.note != "Rejected by checker" || caller.dataVersion != "" {
 		t.Fatalf("resolve call = %+v", caller)
 	}
 	if got := completedVariables(t, gateway); got["approvalStatus"] != "REJECTED" {

@@ -188,13 +188,18 @@ func (x *CheckCaseResponse) GetMessage() string {
 }
 
 type ResolveCaseRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	ObjectId      string                 `protobuf:"bytes,2,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"`
-	CaseId        string                 `protobuf:"bytes,3,opt,name=case_id,json=caseId,proto3" json:"case_id,omitempty"`
-	Decision      CaseDecision           `protobuf:"varint,4,opt,name=decision,proto3,enum=arda.common.v1.CaseDecision" json:"decision,omitempty"`
-	DecidedBy     string                 `protobuf:"bytes,5,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
-	Note          string                 `protobuf:"bytes,6,opt,name=note,proto3" json:"note,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Kind      string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	ObjectId  string                 `protobuf:"bytes,2,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"`
+	CaseId    string                 `protobuf:"bytes,3,opt,name=case_id,json=caseId,proto3" json:"case_id,omitempty"`
+	Decision  CaseDecision           `protobuf:"varint,4,opt,name=decision,proto3,enum=arda.common.v1.CaseDecision" json:"decision,omitempty"`
+	DecidedBy string                 `protobuf:"bytes,5,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
+	Note      string                 `protobuf:"bytes,6,opt,name=note,proto3" json:"note,omitempty"`
+	// data_version is the row version the checker saw when deciding (the
+	// "dataVersion" variable the task form submits). Empty means the decision
+	// carries no optimistic-lock token; an owner that guards its rows must then
+	// apply the decision unguarded, as it did for legacy workers.
+	DataVersion   string `protobuf:"bytes,7,opt,name=data_version,json=dataVersion,proto3" json:"data_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -271,6 +276,13 @@ func (x *ResolveCaseRequest) GetNote() string {
 	return ""
 }
 
+func (x *ResolveCaseRequest) GetDataVersion() string {
+	if x != nil {
+		return x.DataVersion
+	}
+	return ""
+}
+
 type ResolveCaseResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// outputs become process variables, for example the id of a record the
@@ -329,7 +341,7 @@ const file_arda_common_v1_case_command_proto_rawDesc = "" +
 	"\acase_id\x18\x03 \x01(\tR\x06caseId\"=\n" +
 	"\x11CheckCaseResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\xcb\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xee\x01\n" +
 	"\x12ResolveCaseRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1b\n" +
 	"\tobject_id\x18\x02 \x01(\tR\bobjectId\x12\x17\n" +
@@ -337,7 +349,8 @@ const file_arda_common_v1_case_command_proto_rawDesc = "" +
 	"\bdecision\x18\x04 \x01(\x0e2\x1c.arda.common.v1.CaseDecisionR\bdecision\x12\x1d\n" +
 	"\n" +
 	"decided_by\x18\x05 \x01(\tR\tdecidedBy\x12\x12\n" +
-	"\x04note\x18\x06 \x01(\tR\x04note\"\x9d\x01\n" +
+	"\x04note\x18\x06 \x01(\tR\x04note\x12!\n" +
+	"\fdata_version\x18\a \x01(\tR\vdataVersion\"\x9d\x01\n" +
 	"\x13ResolveCaseResponse\x12J\n" +
 	"\aoutputs\x18\x01 \x03(\v20.arda.common.v1.ResolveCaseResponse.OutputsEntryR\aoutputs\x1a:\n" +
 	"\fOutputsEntry\x12\x10\n" +
