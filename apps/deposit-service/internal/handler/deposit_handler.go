@@ -220,10 +220,7 @@ func (h *DepositHandler) SubmitAdditional(w http.ResponseWriter, r *http.Request
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	var in struct {
-		AmountMinor int64  `json:"amount_minor"`
-		TxnDate     string `json:"txn_date"`
-	}
+	var in AdditionalDepositRequest
 	if !decodeDepositBody(w, r, &in) {
 		return
 	}
@@ -373,14 +370,7 @@ func (h *DepositHandler) SubmitIBMMovement(w http.ResponseWriter, r *http.Reques
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	var in struct {
-		Kind         string `json:"kind"`
-		AmountMinor  int64  `json:"amount_minor"`
-		MovementDate string `json:"movement_date"`
-		PeriodFrom   string `json:"period_from"`
-		PeriodTo     string `json:"period_to"`
-		Note         string `json:"note"`
-	}
+	var in IBMMovementRequest
 	if !decodeDepositBody(w, r, &in) {
 		return
 	}
@@ -490,10 +480,7 @@ func (h *DepositHandler) SubmitRateRequest(w http.ResponseWriter, r *http.Reques
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	var in struct {
-		RequestType string          `json:"request_type"`
-		Payload     json.RawMessage `json:"payload"`
-	}
+	var in RateChangeRequest
 	if !decodeDepositBody(w, r, &in) {
 		return
 	}
@@ -528,10 +515,7 @@ func (h *DepositHandler) SubmitSavingsInterest(w http.ResponseWriter, r *http.Re
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	var in struct {
-		OpType      string `json:"op_type"`
-		AmountMinor int64  `json:"amount_minor"`
-	}
+	var in SavingsInterestRequest
 	if !decodeDepositBody(w, r, &in) {
 		return
 	}
@@ -557,7 +541,7 @@ func (h *DepositHandler) SubmitBatchInterest(w http.ResponseWriter, r *http.Requ
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	ardahttp.WriteSuccess(w, r, http.StatusCreated, map[string]any{"items": ops, "total": len(ops)})
+	ardahttp.WriteSuccess(w, r, http.StatusCreated, BatchInterestResult{Items: ops, Total: len(ops)})
 }
 
 // RunAccrualDaily handles POST /internal/jobs/deposit-accrual-daily?to_date=.
@@ -642,4 +626,42 @@ func (h *DepositHandler) GetInterbankTransactions(w http.ResponseWriter, r *http
 		return
 	}
 	ardahttp.WriteEnvelopeUnpaged(w, r, items)
+}
+
+// Request and result bodies of the public deposit API. They are named so the
+// OpenAPI document (contracts/openapi/deposit-v1.json) is derived from the
+// exact wire shape; see internal/transport/http/openapi.go.
+
+// AdditionalDepositRequest is the POST /api/deposit/savings/{code}/deposit body.
+type AdditionalDepositRequest struct {
+	AmountMinor int64  `json:"amount_minor"`
+	TxnDate     string `json:"txn_date"`
+}
+
+// IBMMovementRequest is the POST /api/deposit/interbank/{id}/movements body.
+type IBMMovementRequest struct {
+	Kind         string `json:"kind"`
+	AmountMinor  int64  `json:"amount_minor"`
+	MovementDate string `json:"movement_date"`
+	PeriodFrom   string `json:"period_from"`
+	PeriodTo     string `json:"period_to"`
+	Note         string `json:"note"`
+}
+
+// RateChangeRequest is the POST /api/deposit/rates body.
+type RateChangeRequest struct {
+	RequestType string          `json:"request_type"`
+	Payload     json.RawMessage `json:"payload"`
+}
+
+// SavingsInterestRequest is the POST /api/deposit/savings/{code}/interest body.
+type SavingsInterestRequest struct {
+	OpType      string `json:"op_type"`
+	AmountMinor int64  `json:"amount_minor"`
+}
+
+// BatchInterestResult is the POST /api/deposit/batch-interest result.
+type BatchInterestResult struct {
+	Items []repository.InterestOp `json:"items"`
+	Total int                     `json:"total"`
 }

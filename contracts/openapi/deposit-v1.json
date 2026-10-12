@@ -1,0 +1,4544 @@
+{
+  "components": {
+    "responses": {
+      "Problem": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "RFC-style problem response"
+      }
+    },
+    "schemas": {
+      "Accrual": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "base_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "days": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "period_from": {
+            "type": "string"
+          },
+          "period_to": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "number"
+          },
+          "savings_code": {
+            "type": "string"
+          },
+          "savings_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount_minor",
+          "base_minor",
+          "created_at",
+          "days",
+          "id",
+          "period_from",
+          "period_to",
+          "rate",
+          "savings_code",
+          "savings_id",
+          "status",
+          "tenant_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.Accrual"
+      },
+      "AdditionalDepositRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "txn_date": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/handler.AdditionalDepositRequest"
+      },
+      "BatchInterestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InterestOp"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/handler.BatchInterestResult"
+      },
+      "BatchInterestResultSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/BatchInterestResult"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "BorrowDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "data_version": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/handler.BorrowDecisionRequest"
+      },
+      "BorrowDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "borrow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InterbankBorrow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "movements": {
+            "items": {
+              "$ref": "#/components/schemas/IBMBorrowMovement"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "borrow",
+          "movements"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/handler.BorrowDetail"
+      },
+      "BorrowDetailSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/BorrowDetail"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "DepositTxn": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "savings_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "txn_date": {
+            "type": "string"
+          },
+          "txn_type": {
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "amount_minor",
+          "created_at",
+          "created_by",
+          "currency_code",
+          "id",
+          "savings_id",
+          "status",
+          "tenant_id",
+          "txn_date",
+          "txn_type"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.DepositTxn"
+      },
+      "IBMBorrowMovement": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "borrow_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "data_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "movement_date": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "period_from": {
+            "type": "string"
+          },
+          "period_to": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "amount_minor",
+          "borrow_id",
+          "created_at",
+          "created_by",
+          "currency_code",
+          "data_version",
+          "id",
+          "kind",
+          "movement_date",
+          "status",
+          "tenant_id",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.IBMBorrowMovement"
+      },
+      "IBMBorrowMovementInput": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "borrow_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "data_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "movement_date": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "period_from": {
+            "type": "string"
+          },
+          "period_to": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.IBMBorrowMovement"
+      },
+      "IBMBorrowMovementSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/IBMBorrowMovement"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "IBMDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "deposit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InterbankDeposit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "movements": {
+            "items": {
+              "$ref": "#/components/schemas/IBMMovement"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "deposit",
+          "movements"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/service.IBMDetail"
+      },
+      "IBMDetailSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/IBMDetail"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "IBMMovement": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "deposit_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "movement_date": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "period_from": {
+            "type": "string"
+          },
+          "period_to": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "amount_minor",
+          "created_at",
+          "created_by",
+          "currency_code",
+          "deposit_id",
+          "id",
+          "kind",
+          "movement_date",
+          "status",
+          "tenant_id",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.IBMMovement"
+      },
+      "IBMMovementRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "movement_date": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "period_from": {
+            "type": "string"
+          },
+          "period_to": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/handler.IBMMovementRequest"
+      },
+      "IBMMovementSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/IBMMovement"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "IBMProduct": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "term_months": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "created_at",
+          "created_by",
+          "currency_code",
+          "id",
+          "interest_rate",
+          "is_active",
+          "name",
+          "tenant_id",
+          "term_months",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.IBMProduct"
+      },
+      "IBMProductInput": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "term_months": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.IBMProduct"
+      },
+      "IBMProductList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IBMProduct"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "IBMProductListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/IBMProductList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "IBMProductSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/IBMProduct"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterbankBorrow": {
+        "additionalProperties": false,
+        "properties": {
+          "accrued_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "borrow_code": {
+            "type": "string"
+          },
+          "counterparty_code": {
+            "type": "string"
+          },
+          "counterparty_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "data_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "drawdown_date": {
+            "type": "string"
+          },
+          "funding_purpose": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_interest_date": {
+            "type": "string"
+          },
+          "lender_type": {
+            "type": "string"
+          },
+          "maturity_date": {
+            "type": "string"
+          },
+          "org_code": {
+            "type": "string"
+          },
+          "outstanding_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "principal_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "term_months": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accrued_minor",
+          "borrow_code",
+          "counterparty_code",
+          "created_at",
+          "created_by",
+          "currency_code",
+          "data_version",
+          "drawdown_date",
+          "funding_purpose",
+          "id",
+          "interest_rate",
+          "lender_type",
+          "maturity_date",
+          "outstanding_minor",
+          "principal_minor",
+          "status",
+          "tenant_id",
+          "term_months",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.InterbankBorrow"
+      },
+      "InterbankBorrowInput": {
+        "additionalProperties": false,
+        "properties": {
+          "accrued_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "borrow_code": {
+            "type": "string"
+          },
+          "counterparty_code": {
+            "type": "string"
+          },
+          "counterparty_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "data_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "drawdown_date": {
+            "type": "string"
+          },
+          "funding_purpose": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_interest_date": {
+            "type": "string"
+          },
+          "lender_type": {
+            "type": "string"
+          },
+          "maturity_date": {
+            "type": "string"
+          },
+          "org_code": {
+            "type": "string"
+          },
+          "outstanding_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "principal_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "term_months": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.InterbankBorrow"
+      },
+      "InterbankBorrowList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InterbankBorrow"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "InterbankBorrowListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterbankBorrowList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterbankBorrowSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterbankBorrow"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterbankDeposit": {
+        "additionalProperties": false,
+        "properties": {
+          "accrued_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "counterparty_code": {
+            "type": "string"
+          },
+          "counterparty_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "data_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "deposit_code": {
+            "type": "string"
+          },
+          "deposit_date": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_interest_date": {
+            "type": "string"
+          },
+          "maturity_date": {
+            "type": "string"
+          },
+          "org_code": {
+            "type": "string"
+          },
+          "principal_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accrued_minor",
+          "counterparty_code",
+          "created_at",
+          "created_by",
+          "currency_code",
+          "data_version",
+          "deposit_code",
+          "deposit_date",
+          "id",
+          "interest_rate",
+          "maturity_date",
+          "principal_minor",
+          "status",
+          "tenant_id",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.InterbankDeposit"
+      },
+      "InterbankDepositInput": {
+        "additionalProperties": false,
+        "properties": {
+          "accrued_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "counterparty_code": {
+            "type": "string"
+          },
+          "counterparty_name": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "data_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "deposit_code": {
+            "type": "string"
+          },
+          "deposit_date": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_interest_date": {
+            "type": "string"
+          },
+          "maturity_date": {
+            "type": "string"
+          },
+          "org_code": {
+            "type": "string"
+          },
+          "principal_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.InterbankDeposit"
+      },
+      "InterbankDepositList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InterbankDeposit"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "InterbankDepositListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterbankDepositList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterbankDepositSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterbankDeposit"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterbankStatementRow": {
+        "additionalProperties": false,
+        "properties": {
+          "accrued_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "counterparty_code": {
+            "type": "string"
+          },
+          "counterparty_name": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "deposit_code": {
+            "type": "string"
+          },
+          "deposit_date": {
+            "type": "string"
+          },
+          "maturity_date": {
+            "type": "string"
+          },
+          "principal_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accrued_minor",
+          "counterparty_code",
+          "currency_code",
+          "deposit_code",
+          "deposit_date",
+          "maturity_date",
+          "principal_minor",
+          "status"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.InterbankStatementRow"
+      },
+      "InterbankStatementRowList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InterbankStatementRow"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "InterbankStatementRowListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterbankStatementRowList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterbankTxnRow": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "deposit_code": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "movement_date": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount_minor",
+          "currency_code",
+          "deposit_code",
+          "kind",
+          "movement_date",
+          "status"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.InterbankTxnRow"
+      },
+      "InterbankTxnRowList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InterbankTxnRow"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "InterbankTxnRowListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterbankTxnRowList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterestOp": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "batch_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "days": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "op_type": {
+            "type": "string"
+          },
+          "period_from": {
+            "type": "string"
+          },
+          "period_to": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "number"
+          },
+          "savings_code": {
+            "type": "string"
+          },
+          "savings_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "amount_minor",
+          "created_at",
+          "created_by",
+          "days",
+          "id",
+          "op_type",
+          "rate",
+          "savings_code",
+          "savings_id",
+          "status",
+          "tenant_id",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.InterestOp"
+      },
+      "InterestOpList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InterestOp"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "InterestOpListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterestOpList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterestOpSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterestOp"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterestRate": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "denominator": {
+            "type": "integer"
+          },
+          "effective_from": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "method": {
+            "type": "string"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "number"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "term_months": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "created_by",
+          "denominator",
+          "effective_from",
+          "id",
+          "is_active",
+          "method",
+          "rate",
+          "tenant_id",
+          "term_months",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.InterestRate"
+      },
+      "InterestRateList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InterestRate"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "InterestRateListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterestRateList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "OpenSavingsInput": {
+        "additionalProperties": false,
+        "properties": {
+          "currency_code": {
+            "type": "string"
+          },
+          "customer_code": {
+            "type": "string"
+          },
+          "open_date": {
+            "type": "string"
+          },
+          "principal_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "savings_code": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/service.OpenSavingsInput"
+      },
+      "Problem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ProblemError"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "type": {
+            "format": "uri-reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "ProblemError": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "ProductRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "data_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "request_type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "term_months": {
+            "type": "integer"
+          },
+          "workflow_case_code": {
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "created_by",
+          "currency_code",
+          "data_version",
+          "id",
+          "interest_rate",
+          "name",
+          "product_code",
+          "request_type",
+          "status",
+          "tenant_id",
+          "term_months"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.ProductRequest"
+      },
+      "ProductRequestInput": {
+        "additionalProperties": false,
+        "properties": {
+          "currency_code": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "request_type": {
+            "type": "string"
+          },
+          "term_months": {
+            "type": "integer"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/service.ProductRequestInput"
+      },
+      "ProductRequestList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductRequest"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "ProductRequestListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ProductRequestList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ProductRequestSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ProductRequest"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "RateChangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "payload": {},
+          "request_type": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/handler.RateChangeRequest"
+      },
+      "RateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "data_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "payload": {},
+          "request_type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "created_at",
+          "created_by",
+          "data_version",
+          "id",
+          "payload",
+          "request_type",
+          "status",
+          "tenant_id",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.RateRequest"
+      },
+      "RateRequestSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/RateRequest"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "ResponseMeta": {
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "Savings": {
+        "additionalProperties": false,
+        "properties": {
+          "accrued_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "customer_code": {
+            "type": "string"
+          },
+          "data_version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maturity_date": {
+            "type": "string"
+          },
+          "open_date": {
+            "type": "string"
+          },
+          "org_code": {
+            "type": "string"
+          },
+          "principal_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "savings_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workflow_case_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accrued_minor",
+          "created_at",
+          "created_by",
+          "currency_code",
+          "customer_code",
+          "data_version",
+          "id",
+          "maturity_date",
+          "open_date",
+          "principal_minor",
+          "product_code",
+          "savings_code",
+          "status",
+          "tenant_id",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.Savings"
+      },
+      "SavingsDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "accruals": {
+            "items": {
+              "$ref": "#/components/schemas/Accrual"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "interest_ops": {
+            "items": {
+              "$ref": "#/components/schemas/InterestOp"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "savings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Savings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transactions": {
+            "items": {
+              "$ref": "#/components/schemas/DepositTxn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accruals",
+          "interest_ops",
+          "savings",
+          "transactions"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/service.SavingsDetail"
+      },
+      "SavingsDetailSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/SavingsDetail"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "SavingsInterestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "op_type": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/handler.SavingsInterestRequest"
+      },
+      "SavingsList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Savings"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "SavingsListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/SavingsList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "SavingsProduct": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "term_months": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "created_at",
+          "created_by",
+          "currency_code",
+          "id",
+          "interest_rate",
+          "is_active",
+          "name",
+          "tenant_id",
+          "term_months",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.SavingsProduct"
+      },
+      "SavingsProductInput": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interest_rate": {
+            "type": "number"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "term_months": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.SavingsProduct"
+      },
+      "SavingsProductList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SavingsProduct"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "SavingsProductListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/SavingsProductList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "SavingsProductSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/SavingsProduct"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "SavingsStatementRow": {
+        "additionalProperties": false,
+        "properties": {
+          "accrued_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "customer_code": {
+            "type": "string"
+          },
+          "maturity_date": {
+            "type": "string"
+          },
+          "open_date": {
+            "type": "string"
+          },
+          "principal_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "product_code": {
+            "type": "string"
+          },
+          "savings_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accrued_minor",
+          "currency_code",
+          "customer_code",
+          "maturity_date",
+          "open_date",
+          "principal_minor",
+          "product_code",
+          "savings_code",
+          "status"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.SavingsStatementRow"
+      },
+      "SavingsStatementRowList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SavingsStatementRow"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "SavingsStatementRowListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/SavingsStatementRowList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "SavingsSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/Savings"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "SavingsTxnRow": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency_code": {
+            "type": "string"
+          },
+          "journal_entry_id": {
+            "type": "string"
+          },
+          "savings_code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "txn_date": {
+            "type": "string"
+          },
+          "txn_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount_minor",
+          "currency_code",
+          "savings_code",
+          "status",
+          "txn_date",
+          "txn_type"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/repository.SavingsTxnRow"
+      },
+      "SavingsTxnRowList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SavingsTxnRow"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "SavingsTxnRowListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/SavingsTxnRowList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "Submission": {
+        "additionalProperties": false,
+        "properties": {
+          "case_code": {
+            "type": "string"
+          },
+          "case_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_code",
+          "case_id"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/deposit-service/internal/service.Submission"
+      },
+      "SubmissionSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/Submission"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "ardaSession": {
+        "in": "cookie",
+        "name": "arda_session",
+        "type": "apiKey",
+        "x-browser-credentials": "include"
+      }
+    }
+  },
+  "info": {
+    "description": "Savings, deposit products, interest rates and interbank placements and borrowings. Generated from apps/deposit-service/internal/transport/http/openapi.go; do not edit by hand.",
+    "title": "Arda Deposit",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/deposit/batch-interest": {
+      "post": {
+        "operationId": "submitBatchInterest",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchInterestResultSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Stage the batch interest case over every savings account with accrued interest"
+      }
+    },
+    "/api/deposit/borrows": {
+      "get": {
+        "operationId": "listInterbankBorrows",
+        "parameters": [
+          {
+            "description": "Filter by status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterbankBorrowListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List interbank borrowings"
+      },
+      "post": {
+        "operationId": "createInterbankBorrow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterbankBorrowInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterbankBorrowSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Stage an interbank borrowing"
+      }
+    },
+    "/api/deposit/borrows/{id}": {
+      "get": {
+        "operationId": "getInterbankBorrowDetail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BorrowDetailSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read an interbank borrowing with its movements"
+      }
+    },
+    "/api/deposit/borrows/{id}/decision": {
+      "post": {
+        "operationId": "decideInterbankBorrow",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BorrowDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterbankBorrowSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Approve or reject a staged borrowing"
+      }
+    },
+    "/api/deposit/borrows/{id}/movements": {
+      "post": {
+        "operationId": "submitInterbankBorrowMovement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IBMBorrowMovementInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IBMBorrowMovementSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Record a borrowing movement"
+      }
+    },
+    "/api/deposit/ibm-products": {
+      "get": {
+        "operationId": "listInterbankProducts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_inactive",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IBMProductListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List interbank products"
+      },
+      "post": {
+        "operationId": "createInterbankProduct",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IBMProductInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IBMProductSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Create or update an interbank product"
+      },
+      "put": {
+        "operationId": "updateInterbankProduct",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IBMProductInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IBMProductSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Create or update an interbank product"
+      }
+    },
+    "/api/deposit/interbank": {
+      "get": {
+        "operationId": "listInterbankDeposits",
+        "parameters": [
+          {
+            "description": "Filter by status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterbankDepositListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List interbank placements"
+      },
+      "post": {
+        "operationId": "createInterbankDeposit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterbankDepositInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterbankDepositSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Stage an interbank placement case"
+      }
+    },
+    "/api/deposit/interbank/{id}": {
+      "get": {
+        "operationId": "getInterbankDetail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IBMDetailSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read an interbank placement with its movements"
+      }
+    },
+    "/api/deposit/interbank/{id}/movements": {
+      "post": {
+        "operationId": "submitInterbankMovement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IBMMovementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IBMMovementSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Stage a placement movement case"
+      }
+    },
+    "/api/deposit/interest-ops": {
+      "get": {
+        "operationId": "listInterestOpsByCase",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestOpListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List the interest operations of an approval case"
+      }
+    },
+    "/api/deposit/product-requests": {
+      "get": {
+        "operationId": "listDepositProductRequests",
+        "parameters": [
+          {
+            "description": "Filter by status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductRequestListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List staged product requests"
+      },
+      "post": {
+        "operationId": "submitDepositProductRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductRequestInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Stage a product request and submit its approval case"
+      }
+    },
+    "/api/deposit/product-requests/{id}": {
+      "get": {
+        "operationId": "getDepositProductRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductRequestSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read a staged product request"
+      }
+    },
+    "/api/deposit/products": {
+      "get": {
+        "operationId": "listDepositProducts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsProductListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List savings products"
+      },
+      "post": {
+        "operationId": "createDepositProduct",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavingsProductInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsProductSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Create or update a savings product"
+      },
+      "put": {
+        "operationId": "updateDepositProduct",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavingsProductInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsProductSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Create or update a savings product"
+      }
+    },
+    "/api/deposit/rates": {
+      "get": {
+        "operationId": "listDepositInterestRates",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product_code",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestRateListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List interest rates"
+      },
+      "post": {
+        "operationId": "submitDepositRateRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateRequestSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Stage a rate change and submit its approval case"
+      }
+    },
+    "/api/deposit/rates/{id}": {
+      "get": {
+        "operationId": "getDepositRateRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateRequestSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read a staged rate change"
+      }
+    },
+    "/api/deposit/reports/deposit-statement": {
+      "get": {
+        "operationId": "getDepositStatement",
+        "parameters": [
+          {
+            "description": "Start date, YYYY-MM-DD",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "End date, YYYY-MM-DD",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsStatementRowListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Savings statement report"
+      }
+    },
+    "/api/deposit/reports/deposit-transactions": {
+      "get": {
+        "operationId": "getDepositTransactions",
+        "parameters": [
+          {
+            "description": "Start date, YYYY-MM-DD",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "End date, YYYY-MM-DD",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "txn_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsTxnRowListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Savings transaction report"
+      }
+    },
+    "/api/deposit/reports/interbank-statement": {
+      "get": {
+        "operationId": "getInterbankStatement",
+        "parameters": [
+          {
+            "description": "Start date, YYYY-MM-DD",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "End date, YYYY-MM-DD",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterbankStatementRowListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Interbank placement statement report"
+      }
+    },
+    "/api/deposit/reports/interbank-transactions": {
+      "get": {
+        "operationId": "getInterbankTransactions",
+        "parameters": [
+          {
+            "description": "Start date, YYYY-MM-DD",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "End date, YYYY-MM-DD",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterbankTxnRowListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Interbank movement report"
+      }
+    },
+    "/api/deposit/savings": {
+      "get": {
+        "operationId": "listSavings",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List savings accounts"
+      }
+    },
+    "/api/deposit/savings/open": {
+      "post": {
+        "operationId": "openSavings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenSavingsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Open a savings account"
+      }
+    },
+    "/api/deposit/savings/{code}": {
+      "get": {
+        "operationId": "getSavingsDetail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsDetailSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read a savings account with its interest state"
+      }
+    },
+    "/api/deposit/savings/{code}/deposit": {
+      "post": {
+        "operationId": "submitAdditionalDeposit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdditionalDepositRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Submit an additional deposit approval case"
+      }
+    },
+    "/api/deposit/savings/{code}/interest": {
+      "post": {
+        "operationId": "submitSavingsInterest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavingsInterestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestOpSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Stage an interest operation on one savings account"
+      }
+    },
+    "/api/deposit/savings/{code}/settle": {
+      "post": {
+        "operationId": "submitSavingsSettlement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionSuccess"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Submit the settlement approval case"
+      }
+    }
+  },
+  "security": [
+    {
+      "ardaSession": []
+    }
+  ],
+  "servers": [
+    {
+      "url": "https://api.arda.io.vn"
+    }
+  ]
+}

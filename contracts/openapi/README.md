@@ -20,3 +20,19 @@ OpenAPI 3.1, has operation IDs, declares the canonical success/problem
 schemas, and does not omit cookie credentials from browser-facing operations.
 Replace it with the approved OpenAPI linter/breaking-change tool when ADR-005
 is accepted.
+
+## Generated documents
+
+`deposit-v1.json` is generated from Go, not written by hand: its operations are
+declared in `apps/deposit-service/internal/transport/http/openapi.go` and its
+schemas come from the Go types through `libs/go/arda-openapi`. Regenerate it
+with:
+
+```bash
+cd apps/deposit-service
+ARDA_UPDATE_OPENAPI=1 go test ./internal/transport/http -run TestOpenAPIDocumentIsCommitted
+```
+
+`TestOpenAPIDocumentIsCommitted` fails when the committed file is stale and
+`scripts/check-openapi-routes.mjs` fails when a public route is missing from
+it. arda-mfe generates its wire types from every document here (ADR-005).

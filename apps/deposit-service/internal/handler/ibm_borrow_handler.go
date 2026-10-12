@@ -60,7 +60,7 @@ func (h *DepositHandler) GetBorrowDetail(w http.ResponseWriter, r *http.Request)
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{"borrow": borrow, "movements": movements})
+	ardahttp.WriteSuccess(w, r, http.StatusOK, BorrowDetail{Borrow: borrow, Movements: movements})
 }
 
 // DecideBorrow handles POST /api/deposit/borrows/{id}/decision.
@@ -70,10 +70,7 @@ func (h *DepositHandler) DecideBorrow(w http.ResponseWriter, r *http.Request) {
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	var in struct {
-		Decision    string `json:"decision"`
-		DataVersion string `json:"data_version"`
-	}
+	var in BorrowDecisionRequest
 	if !decodeDepositBody(w, r, &in) {
 		return
 	}
@@ -104,4 +101,16 @@ func (h *DepositHandler) SubmitBorrowMovement(w http.ResponseWriter, r *http.Req
 		return
 	}
 	ardahttp.WriteSuccess(w, r, http.StatusCreated, created)
+}
+
+// BorrowDetail is the GET /api/deposit/borrows/{id} result.
+type BorrowDetail struct {
+	Borrow    *repository.InterbankBorrow    `json:"borrow"`
+	Movements []repository.IBMBorrowMovement `json:"movements"`
+}
+
+// BorrowDecisionRequest is the POST /api/deposit/borrows/{id}/decision body.
+type BorrowDecisionRequest struct {
+	Decision    string `json:"decision"`
+	DataVersion string `json:"data_version"`
 }

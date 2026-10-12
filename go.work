@@ -29,6 +29,7 @@ use (
 	./libs/go/arda-leakcheck
 	./libs/go/arda-media
 	./libs/go/arda-money
+	./libs/go/arda-openapi
 	./libs/go/arda-params
 	./libs/go/arda-postgres
 	./libs/go/arda-proto
