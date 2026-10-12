@@ -504,29 +504,3 @@ func (c *Client) VerifyMFAEnrollment(ctx context.Context, userID, code string) (
 func (c *Client) InternalBaseURL() string {
 	return c.baseURL
 }
-
-// DeviceFingerprint builds a device fingerprint for tracking.
-type DeviceFingerprint struct {
-	UserAgent string
-	IP        string
-}
-
-// Hash returns a simple device fingerprint string.
-func (f DeviceFingerprint) Hash() string {
-	// Simple fingerprint — truncate user agent + mask IP
-	ua := f.UserAgent
-	if len(ua) > 128 {
-		ua = ua[:128]
-	}
-	ip := maskIP(f.IP)
-	return fmt.Sprintf("%s|%s", ua, ip)
-}
-
-func maskIP(ip string) string {
-	for i := len(ip) - 1; i >= 0; i-- {
-		if ip[i] == '.' || ip[i] == ':' {
-			return ip[:i] + ".0"
-		}
-	}
-	return ip
-}
