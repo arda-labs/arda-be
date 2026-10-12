@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 )
 
 // IndicatorRule is one threshold rule over a stored indicator value.
@@ -202,7 +204,7 @@ func (r *StatisticalRepository) AckAlert(ctx context.Context, tenantID, id, acto
 }
 
 // IndicatorAlertSubject is the event subject notification-service consumes.
-const IndicatorAlertSubject = "arda.statistical.indicator.breached.v1"
+const IndicatorAlertSubject = ardaevents.SubjectStatisticalIndicatorBreached
 
 // EnqueueAlertEvent appends one alert event to the outbox for the relay to
 // publish. dedupe_key makes it idempotent across COB re-runs: a breach that

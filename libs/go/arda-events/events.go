@@ -15,6 +15,7 @@ const (
 	// SubjectFinanceTransactionPosted is the canonical finance outbox subject.
 	SubjectFinanceTransactionPosted = "arda.finance.transaction.posted"
 	SubjectIAMUserChanged           = "arda.iam.user.changed"
+	SubjectStatisticalIndicatorBreached = "arda.statistical.indicator.breached.v1"
 	SubjectNotificationInboxCreated = "arda.notification.inbox.created.v1"
 	SubjectWorkflowTaskAssigned = "arda.workflow.task.assigned.v1"
 	SubjectWorkflowTaskCompleted = "arda.workflow.task.completed.v1"
@@ -34,6 +35,7 @@ const (
 	EventPlatformLookupChanged    = "platform.lookup.changed"
 	EventFinanceTransactionPosted = "finance.transaction.posted"
 	EventIAMUserChanged           = "iam.user.changed"
+	EventStatisticalIndicatorBreached = "statistical.indicator.breached"
 	EventNotificationInboxCreated = "notification.inbox.created"
 	EventWorkflowTaskAssigned = "workflow.task.assigned"
 	EventWorkflowTaskCompleted = "workflow.task.completed"

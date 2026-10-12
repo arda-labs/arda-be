@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 	ardapg "github.com/arda-labs/arda/libs/go/arda-postgres"
 )
 
@@ -235,7 +236,7 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 			}
 			payload := taskEventPayload(dedupe, tenantID, id, seed.TaskType, seed.Title, "/workflow/tasks/"+id, seed.CandidateUsers,
 				optionalString(seed.CandidateGroupID), optionalString(seed.CandidateRole), optionalString(seed.CandidateOrgUnitID))
-			if err := enqueueWorkflowEvent(ctx, tx, "arda.workflow.task.assigned.v1", "workflow.task.assigned", dedupe, payload); err != nil {
+			if err := enqueueWorkflowEvent(ctx, tx, ardaevents.SubjectWorkflowTaskAssigned, ardaevents.EventWorkflowTaskAssigned, dedupe, payload); err != nil {
 				return nil, err
 			}
 		}
@@ -284,9 +285,9 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 		}
 		payload := taskEventPayload(dedupe, tenantID, id, seed.TaskType, seed.Title, "/workflow/tasks/"+id, seed.CandidateUsers,
 			optionalString(seed.CandidateGroupID), optionalString(seed.CandidateRole), optionalString(seed.CandidateOrgUnitID))
-		subject, eventCode := "arda.workflow.task.assigned.v1", "workflow.task.assigned"
+		subject, eventCode := ardaevents.SubjectWorkflowTaskAssigned, ardaevents.EventWorkflowTaskAssigned
 		if existingAssignedTo != "" {
-			subject, eventCode = "arda.workflow.task.reassigned.v1", "workflow.task.reassigned"
+			subject, eventCode = ardaevents.SubjectWorkflowTaskReassigned, ardaevents.EventWorkflowTaskReassigned
 			payload["previous_user_id"] = existingAssignedTo
 		}
 		if err := enqueueWorkflowEvent(ctx, tx, subject, eventCode, dedupe, payload); err != nil {
@@ -334,7 +335,7 @@ func (r *CaseRepository) UpsertWorkItem(ctx context.Context, seed WorkItemSeed) 
 		}
 		payload := taskEventPayload(dedupe, tenantID, existingID, seed.TaskType, seed.Title, "/workflow/tasks/"+existingID, seed.CandidateUsers,
 			optionalString(seed.CandidateGroupID), optionalString(seed.CandidateRole), optionalString(seed.CandidateOrgUnitID))
-		if err := enqueueWorkflowEvent(ctx, tx, "arda.workflow.task.assigned.v1", "workflow.task.assigned", dedupe, payload); err != nil {
+		if err := enqueueWorkflowEvent(ctx, tx, ardaevents.SubjectWorkflowTaskAssigned, ardaevents.EventWorkflowTaskAssigned, dedupe, payload); err != nil {
 			return nil, err
 		}
 	}
@@ -765,7 +766,7 @@ func (r *CaseRepository) ClaimWorkItem(ctx context.Context, id string, actor str
 		return nil, err
 	}
 	dedupe := "task:" + id + ":claimed:" + actor
-	if err := enqueueWorkflowEvent(ctx, tx, "arda.workflow.task.assigned.v1", "workflow.task.assigned", dedupe,
+	if err := enqueueWorkflowEvent(ctx, tx, ardaevents.SubjectWorkflowTaskAssigned, ardaevents.EventWorkflowTaskAssigned, dedupe,
 		taskEventPayload(dedupe, taskTenant, id, taskType, title, "/workflow/tasks/"+id, []string{actor}, nil, nil, nil)); err != nil {
 		return nil, err
 	}
@@ -801,7 +802,7 @@ func (r *CaseRepository) CompleteWorkItemByJob(ctx context.Context, jobKey int64
 	}
 	dedupe := "task:" + id + ":completed"
 	payload := taskEventPayload(dedupe, tenantID, id, taskType, title, "/workflow/tasks/"+id, nil, nil, nil, nil)
-	if err := enqueueWorkflowEvent(ctx, tx, "arda.workflow.task.completed.v1", "workflow.task.completed", dedupe, payload); err != nil {
+	if err := enqueueWorkflowEvent(ctx, tx, ardaevents.SubjectWorkflowTaskCompleted, ardaevents.EventWorkflowTaskCompleted, dedupe, payload); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -7,11 +7,12 @@ import (
 
 	"github.com/arda-labs/arda/apps/notification-service/internal/domain"
 	"github.com/arda-labs/arda/apps/notification-service/internal/service"
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 )
 
 // StatisticalBreachSubject is the subject statistical-service publishes a
 // breached indicator on (rpt_outbox_events -> outbox relay -> JetStream).
-const StatisticalBreachSubject = "arda.statistical.indicator.breached.v1"
+const StatisticalBreachSubject = ardaevents.SubjectStatisticalIndicatorBreached
 
 // StatisticalBreachEvent is the outbox payload statistical-service writes.
 // Only the fields the notification needs are decoded.
@@ -75,7 +76,7 @@ func StatisticalBreachInput(payload []byte) (service.AcceptInput, error) {
 		IdempotencyKey: "statistical.indicator.breached:" + eventID,
 		SourceService:  "statistical-service",
 		SourceEventID:  eventID,
-		EventType:      "statistical.indicator.breached",
+		EventType:      ardaevents.EventStatisticalIndicatorBreached,
 		TemplateKey:    "statistical.indicator.breached",
 		Channels:       []string{domain.ChannelInApp},
 		Recipients:     []domain.Recipient{{Type: "user", UserID: owner}},

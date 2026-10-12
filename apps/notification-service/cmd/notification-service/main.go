@@ -197,7 +197,7 @@ func main() {
 	// (notification.inbox.created) with at-least-once semantics. No business
 	// side effect yet — the marker is the integration fixture the event
 	// registry asks for.
-	consumer, consumerErr := appevents.NewConsumer(nc, "arda.notification.inbox.created.v1", "notification-inbox-cg")
+	consumer, consumerErr := appevents.NewConsumer(nc, ardaevents.SubjectNotificationInboxCreated, "notification-inbox-cg")
 	if consumerErr != nil {
 		logger.Error("JetStream consumer setup failed", "err", consumerErr)
 		os.Exit(1)
@@ -227,7 +227,7 @@ func main() {
 			logger.Error("notification inbox consumer stopped", "err", consumerRunErr)
 		}
 	}()
-	logger.Info("Notification inbox consumer started", "subject", "arda.notification.inbox.created.v1")
+	logger.Info("Notification inbox consumer started", "subject", ardaevents.SubjectNotificationInboxCreated)
 
 	// statistical-service publishes indicator breaches through its outbox; this
 	// consumer turns each one into an in-app notification for the rule owner.
@@ -358,12 +358,12 @@ var domainNotificationSubjects = []string{
 	appevents.WorkflowTaskCompletedSubject,
 	appevents.WorkflowTaskReassignedSubject,
 	appevents.WorkflowTaskSLAWarningSubject,
-	"arda.workflow.case.approved.v1",
-	"arda.workflow.case.rejected.v1",
-	"arda.workflow.case.failed.v1",
-	"arda.loan.disbursement.approved.v1",
-	"arda.loan.disbursement.rejected.v1",
-	"arda.loan.disbursement.failed.v1",
+	ardaevents.SubjectWorkflowCaseApproved,
+	ardaevents.SubjectWorkflowCaseRejected,
+	ardaevents.SubjectWorkflowCaseFailed,
+	ardaevents.SubjectLoanDisbursementApproved,
+	ardaevents.SubjectLoanDisbursementRejected,
+	ardaevents.SubjectLoanDisbursementFailed,
 }
 
 type notificationRecipientDirectory struct {
