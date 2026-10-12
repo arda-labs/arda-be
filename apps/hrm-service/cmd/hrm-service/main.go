@@ -27,6 +27,7 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
+	commonv1 "github.com/arda-labs/arda/libs/go/arda-proto/common/v1"
 	hrmv1 "github.com/arda-labs/arda/libs/go/arda-proto/hrm/v1"
 )
 
@@ -85,7 +86,10 @@ func main() {
 			interceptors.UnaryServerLogging(logger),
 		),
 	)
-	hrmv1.RegisterEmployeeCommandServiceServer(grpcSrv, grpcserver.NewEmployeeServer(db))
+	employeeServer := grpcserver.NewEmployeeServer(db)
+	hrmv1.RegisterEmployeeCommandServiceServer(grpcSrv, employeeServer)
+	// Shared maker-checker callback (ADR-011).
+	commonv1.RegisterCaseCommandServiceServer(grpcSrv, grpcserver.NewCaseCommandServer(employeeServer))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
