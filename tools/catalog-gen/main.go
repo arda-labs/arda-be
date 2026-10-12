@@ -238,7 +238,7 @@ func main() {
 		if readErr != nil {
 			fatal("--check: cannot read %s: %v", *outFile, readErr)
 		}
-		if string(existing) != string(formatted) {
+		if !sameGenerated(existing, formatted) {
 			fatal("--check: %s is stale — run `go run ./tools/catalog-gen` and commit the result", *outFile)
 		}
 		fmt.Printf("catalog-gen: %s up to date (%d entries)\n", *outFile, len(entries))
@@ -247,7 +247,7 @@ func main() {
 	if err := os.MkdirAll(filepath.Dir(*outFile), 0o755); err != nil {
 		fatal("mkdir: %v", err)
 	}
-	if readErr == nil && string(existing) == string(formatted) {
+	if readErr == nil && sameGenerated(existing, formatted) {
 		fmt.Printf("catalog-gen: %s up to date (%d entries)\n", *outFile, len(entries))
 		return
 	}
@@ -255,6 +255,13 @@ func main() {
 		fatal("write: %v", err)
 	}
 	fmt.Printf("catalog-gen: wrote %s (%d entries)\n", *outFile, len(entries))
+}
+
+// sameGenerated compares the committed file with fresh output while ignoring
+// CRLF line endings, which a Windows checkout with core.autocrlf=true adds to
+// the working copy even though git stores the file with LF.
+func sameGenerated(existing, formatted []byte) bool {
+	return bytes.Equal(bytes.ReplaceAll(existing, []byte("\r\n"), []byte("\n")), formatted)
 }
 
 func fatal(format string, args ...any) {
