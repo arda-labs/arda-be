@@ -32,6 +32,7 @@ import (
 	crmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/crm"
 	depositclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/deposit"
 	financeclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/finance"
+	casecommandclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/casecommand"
 	hrmclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/hrm"
 	iamclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/iam"
 	loanclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/loan"
@@ -167,10 +168,14 @@ func main() {
 		logger.Info("loan grpc configured", "addr", cfg.LoanGRPCAddr)
 	}
 
-	makerCheckerKinds, err := caseRepo.ListActiveMakerCheckerWorkerKinds(context.Background())
+	makerCheckerRoutes, err := caseRepo.ListActiveMakerCheckerRoutes(context.Background())
 	if err != nil {
-		logger.Error("failed to list active maker-checker worker kinds", "err", err)
+		logger.Error("failed to list active maker-checker routes", "err", err)
 		os.Exit(1)
+	}
+	makerCheckerKinds := make([]string, 0, len(makerCheckerRoutes))
+	for _, route := range makerCheckerRoutes {
+		makerCheckerKinds = append(makerCheckerKinds, route.WorkerKind)
 	}
 
 	iamClient, err := iamclient.Dial(context.Background(), cfg.IAMGRPCAddr, cfg.AppName)
@@ -314,24 +319,50 @@ func main() {
 		defer financeClient.Close()
 		logger.Info("finance grpc configured", "addr", cfg.FinanceGRPCAddr)
 	}
-	if err := worker.ValidateMakerCheckerDependencies(makerCheckerKinds, loanErr == nil, financeErr == nil); err != nil {
+	if err := worker.ValidateMakerCheckerRoutes(makerCheckerRoutes, loanErr == nil, financeErr == nil, cfg.GRPCAddrFor); err != nil {
 		logger.Error("maker-checker workers cannot be registered", "err", err)
 		os.Exit(1)
 	}
 
+	// Shared maker-checker handlers (ADR-011). Kinds owned by any service other
+	// than loan-service go through that service's CaseCommandService; this
+	// process holds no domain logic for them.
+	additionalMakerCheckerHandlers := map[string]worker.MakerCheckerHandlers{}
+	caseCommandWorkers := worker.NewCaseCommandWorkers(caseRepo)
+	caseCommandClients := map[string]*casecommandclient.Client{}
+	for _, route := range makerCheckerRoutes {
+		if route.OwnerService == worker.LoanOwnerService {
+			continue
+		}
+		client, ok := caseCommandClients[route.OwnerService]
+		if !ok {
+			dialed, err := casecommandclient.Dial(cfg.GRPCAddrFor(route.OwnerService), route.OwnerService, cfg.AppName)
+			if err != nil {
+				logger.Error("case command grpc dial", "owner", route.OwnerService, "err", err)
+				os.Exit(1)
+			}
+			defer dialed.Close()
+			caseCommandClients[route.OwnerService] = dialed
+			client = dialed
+		}
+		additionalMakerCheckerHandlers[route.WorkerKind] = caseCommandWorkers.Handlers(route.WorkerKind, client)
+		logger.Info("maker-checker kind routed to case command service", "kind", route.WorkerKind, "owner", route.OwnerService)
+	}
+	var loanWorkers *worker.LoanWorkers
+	var batchRegister, batchComplete *worker.BatchWorkers
+	var loanMakerCheckerKinds []string
 	if loanErr == nil {
-		loanWorkers := worker.NewLoanWorkers(loanClient, caseRepo)
-		var additionalMakerCheckerHandlers map[string]worker.MakerCheckerHandlers
-		var batchRegister, batchComplete *worker.BatchWorkers
+		loanWorkers = worker.NewLoanWorkers(loanClient, caseRepo)
+		loanMakerCheckerKinds = loanclient.Kinds
 		if financeErr == nil {
 			batchRegister = worker.NewBatchWorkers(worker.BatchDisbRegisterFlow, loanClient, financeClient, caseRepo)
 			batchComplete = worker.NewBatchWorkers(worker.BatchDisbCompleteFlow, loanClient, financeClient, caseRepo)
-			additionalMakerCheckerHandlers = map[string]worker.MakerCheckerHandlers{
-				"lnm.disb-batch-register": batchRegister.MakerCheckerHandlers(),
-				"lnm.disb-batch-complete": batchComplete.MakerCheckerHandlers(),
-			}
+			additionalMakerCheckerHandlers["lnm.disb-batch-register"] = batchRegister.MakerCheckerHandlers()
+			additionalMakerCheckerHandlers["lnm.disb-batch-complete"] = batchComplete.MakerCheckerHandlers()
 		}
-		makerCheckerWorkers, err := worker.NewMakerCheckerWorkersWithAdditional(loanWorkers, makerCheckerKinds, loanclient.Kinds, additionalMakerCheckerHandlers)
+	}
+	if loanWorkers != nil || len(makerCheckerRoutes) > 0 {
+		makerCheckerWorkers, err := worker.NewMakerCheckerWorkersWithAdditional(loanWorkers, makerCheckerKinds, loanMakerCheckerKinds, additionalMakerCheckerHandlers)
 		if err != nil {
 			logger.Error("invalid maker-checker worker configuration", "err", err)
 			os.Exit(1)
@@ -340,7 +371,10 @@ func main() {
 			jobWorker := zeebeSvc.NewJobWorker(registration.Topic, registration.Handler)
 			defer jobWorker.Close()
 		}
-		logger.Info("workflow maker-checker workers registered", "kinds", len(loanclient.Kinds))
+		logger.Info("workflow maker-checker workers registered", "loanKinds", len(loanMakerCheckerKinds), "activeRoutes", len(makerCheckerRoutes), "caseCommandOwners", len(caseCommandClients))
+	}
+
+	if loanErr == nil {
 		for _, kind := range loanclient.Kinds {
 			validateH, executeH, cancelH := loanWorkers.Handlers(kind)
 			v := zeebeSvc.NewJobWorker("lnm."+kind+".validate", validateH)

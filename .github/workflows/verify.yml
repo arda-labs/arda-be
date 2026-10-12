@@ -105,6 +105,8 @@ jobs:
         run: node scripts/check-go-security-baseline.mjs
       - name: Validate reference service layering
         run: node scripts/check-layering.mjs
+      - name: Check workflow-service worker ratchet (ADR-011)
+        run: node scripts/check-workflow-workers.mjs
       - name: Validate generated protobuf contracts
         run: node scripts/check-proto.mjs
       - name: Validate secret hygiene
@@ -129,6 +131,12 @@ jobs:
           go test ./libs/go/arda-events/outbox -count=1 -v
           go test ./apps/finance-service/internal/service -run '^TestOutboxRelay' -count=1 -v
           go test ./apps/workflow-service/internal/service ./apps/loan-service/internal/service ./apps/statistical-service/internal/service -run '^TestOutboxTableMatchesMigratedSchema$' -count=1 -v
+      - name: Verify shared case commands on disposable PostgreSQL 18
+        env:
+          ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
+        run: |
+          go test ./apps/hrm-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
+          go test ./apps/workflow-service/internal/migration -run '^TestHRMEmployeeRegisterCanaryAppliesAndRollsBack$' -count=1 -v
       - name: Verify business-date migration on disposable PostgreSQL 18
         env:
           ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable

@@ -3,6 +3,7 @@ package worker
 import (
 	"testing"
 
+	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 )
@@ -25,21 +26,43 @@ func TestResolveMakerCheckerHandlersRejectsUnknownKind(t *testing.T) {
 	}
 }
 
-func TestValidateMakerCheckerDependenciesFailsClosed(t *testing.T) {
-	if err := ValidateMakerCheckerDependencies([]string{"lnm.recovery"}, false, false); err == nil {
-		t.Fatal("active maker-checker worker kind must fail startup without loan-service")
+func TestValidateMakerCheckerRoutesFailsClosed(t *testing.T) {
+	loan := func(kind string) []repository.MakerCheckerRoute {
+		return []repository.MakerCheckerRoute{{WorkerKind: kind, OwnerService: LoanOwnerService}}
 	}
-	if err := ValidateMakerCheckerDependencies(nil, false, false); err != nil {
-		t.Fatalf("no shared worker kinds should not require loan-service: %v", err)
+	addrs := func(owner string) string {
+		if owner == "hrm-service" {
+			return "hrm-service:9090"
+		}
+		return ""
 	}
-	if err := ValidateMakerCheckerDependencies([]string{"lnm.recovery"}, true, false); err != nil {
-		t.Fatalf("available loan-service should satisfy worker dependency: %v", err)
+	if err := ValidateMakerCheckerRoutes(loan("lnm.recovery"), false, false, addrs); err == nil {
+		t.Fatal("loan-owned kind must fail startup without loan-service")
 	}
-	if err := ValidateMakerCheckerDependencies([]string{"lnm.disb-batch-register"}, true, false); err == nil {
-		t.Fatal("active batch disbursement kind must fail startup without finance-service")
+	if err := ValidateMakerCheckerRoutes(nil, false, false, addrs); err != nil {
+		t.Fatalf("no shared worker kinds should not require any service: %v", err)
 	}
-	if err := ValidateMakerCheckerDependencies([]string{"lnm.disb-batch-register"}, true, true); err != nil {
-		t.Fatalf("available loan and finance services should satisfy batch dependency: %v", err)
+	if err := ValidateMakerCheckerRoutes(loan("lnm.recovery"), true, false, addrs); err != nil {
+		t.Fatalf("available loan-service should satisfy a loan kind: %v", err)
+	}
+	if err := ValidateMakerCheckerRoutes(loan("lnm.disb-batch-register"), true, false, addrs); err == nil {
+		t.Fatal("batch disbursement kind must fail startup without finance-service")
+	}
+	if err := ValidateMakerCheckerRoutes(loan("lnm.disb-batch-register"), true, true, addrs); err != nil {
+		t.Fatalf("loan and finance should satisfy the batch kind: %v", err)
+	}
+	hrm := []repository.MakerCheckerRoute{{WorkerKind: "hrm.employee-register", OwnerService: "hrm-service"}}
+	if err := ValidateMakerCheckerRoutes(hrm, false, false, addrs); err != nil {
+		t.Fatalf("case-command kind must not require loan-service: %v", err)
+	}
+	if err := ValidateMakerCheckerRoutes([]repository.MakerCheckerRoute{{WorkerKind: "dpm.settle", OwnerService: "deposit-service"}}, true, true, addrs); err == nil {
+		t.Fatal("owner without a configured address must fail startup")
+	}
+	if err := ValidateMakerCheckerRoutes([]repository.MakerCheckerRoute{{WorkerKind: "lnm.recovery", OwnerService: "hrm-service"}}, true, true, addrs); err == nil {
+		t.Fatal("lnm. kind owned by another service must fail startup")
+	}
+	if err := ValidateMakerCheckerRoutes([]repository.MakerCheckerRoute{{WorkerKind: "hrm.x", OwnerService: " "}}, true, true, addrs); err == nil {
+		t.Fatal("route without owner must fail startup")
 	}
 }
 

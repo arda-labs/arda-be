@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 )
@@ -167,21 +168,40 @@ func (w *MakerCheckerWorkers) dispatch(phase string) worker.JobHandler {
 	}
 }
 
-// ValidateMakerCheckerDependencies fails startup rather than serving a process
-// type whose static job topics have no domain worker behind them.
-func ValidateMakerCheckerDependencies(workerKinds []string, loanAvailable, financeAvailable bool) error {
-	for _, workerKind := range workerKinds {
-		kind, err := normalizeMakerCheckerKind(workerKind)
+// LoanOwnerService owns the lnm.* maker-checker kinds, which still dispatch
+// through LoanWorkers and the batch workers until loan-service implements
+// CaseCommandService.
+const LoanOwnerService = "loan-service"
+
+// ValidateMakerCheckerRoutes fails startup rather than serving a process type
+// whose static mc.* topics have no handler behind them. Loan-owned kinds need
+// loan-service (and finance-service for batch disbursement); every other owner
+// must have a configured CaseCommandService address and may not use the lnm.
+// namespace.
+func ValidateMakerCheckerRoutes(routes []repository.MakerCheckerRoute, loanAvailable, financeAvailable bool, ownerAddr func(string) string) error {
+	for _, route := range routes {
+		kind, err := normalizeMakerCheckerKind(route.WorkerKind)
 		if err != nil {
 			return err
 		}
-		if !loanAvailable {
-			return fmt.Errorf("active maker-checker worker kinds require loan-service: %s", strings.Join(workerKinds, ","))
-		}
-		if kind == "disb-batch-register" || kind == "disb-batch-complete" {
-			if !financeAvailable {
-				return fmt.Errorf("active maker-checker batch disbursement worker kinds require finance-service: %s", strings.Join(workerKinds, ","))
+		owner := strings.TrimSpace(route.OwnerService)
+		if owner == LoanOwnerService {
+			if !loanAvailable {
+				return fmt.Errorf("maker-checker worker kind %q requires loan-service", route.WorkerKind)
 			}
+			if (kind == "disb-batch-register" || kind == "disb-batch-complete") && !financeAvailable {
+				return fmt.Errorf("maker-checker batch disbursement worker kind %q requires finance-service", route.WorkerKind)
+			}
+			continue
+		}
+		if owner == "" {
+			return fmt.Errorf("maker-checker worker kind %q has no owner service", route.WorkerKind)
+		}
+		if strings.HasPrefix(strings.TrimSpace(route.WorkerKind), "lnm.") {
+			return fmt.Errorf("maker-checker worker kind %q uses the loan namespace but is owned by %q", route.WorkerKind, owner)
+		}
+		if ownerAddr == nil || strings.TrimSpace(ownerAddr(owner)) == "" {
+			return fmt.Errorf("maker-checker worker kind %q: no gRPC address configured for owner %q", route.WorkerKind, owner)
 		}
 	}
 	return nil
