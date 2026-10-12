@@ -135,10 +135,19 @@ func parseBrowser(ua string) string {
 	}
 }
 
-// androidModel extracts the device model from the parenthesised Android
-// platform segment ("Linux; Android 14; Pixel 8 Build/..." -> "Pixel 8").
+// androidModel extracts the device model from the parenthesised platform
+// block of an Android User-Agent ("Mozilla/5.0 (Linux; Android 14; Pixel 8
+// Build/...; wv) ..." -> "Pixel 8"). Platform tokens, the WebView marker and
+// Chrome's reduced-UA placeholder "K" are skipped; without a model the
+// result is empty and the caller falls back to a generic label.
 func androidModel(ua string) string {
-	for _, part := range strings.Split(ua, ";") {
+	platform := ua
+	if start := strings.Index(ua, "("); start != -1 {
+		if end := strings.Index(ua[start:], ")"); end != -1 {
+			platform = ua[start+1 : start+end]
+		}
+	}
+	for _, part := range strings.Split(platform, ";") {
 		segment := strings.TrimSpace(part)
 		switch {
 		case segment == "":
@@ -147,7 +156,7 @@ func androidModel(ua string) string {
 			continue
 		case strings.HasPrefix(segment, "Android"):
 			continue
-		case segment == "wv":
+		case segment == "wv", segment == "K":
 			continue
 		}
 		if idx := strings.Index(segment, " Build/"); idx != -1 {

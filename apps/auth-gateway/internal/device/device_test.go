@@ -52,16 +52,20 @@ func TestParse(t *testing.T) {
 			want: Info{Type: "tablet", Name: "iPad", OS: "iOS", Browser: "Safari"},
 		},
 		{
-			// Current behaviour carried over from the handler: the product
-			// prefix before "(Linux" is taken as the model segment.
 			name: "android phone with model",
 			ua:   "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A.240805.005; wv) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
-			want: Info{Type: "mobile", Name: "Mozilla/5.0 (Linux", OS: "Android", Browser: "Chrome"},
+			want: Info{Type: "mobile", Name: "Pixel 8", OS: "Android", Browser: "Chrome"},
 		},
 		{
 			name: "android samsung browser",
 			ua:   "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/24.0 Chrome/117.0.0.0 Mobile Safari/537.36",
-			want: Info{Type: "mobile", Name: "Mozilla/5.0 (Linux", OS: "Android", Browser: "Samsung Internet"},
+			want: Info{Type: "mobile", Name: "SM-S918B", OS: "Android", Browser: "Samsung Internet"},
+		},
+		{
+			// Chrome's reduced User-Agent replaces the model with "K".
+			name: "android reduced user agent",
+			ua:   "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
+			want: Info{Type: "mobile", Name: "Android Phone", OS: "Android", Browser: "Chrome"},
 		},
 		{
 			// Every segment is a platform token, so no model can be extracted
