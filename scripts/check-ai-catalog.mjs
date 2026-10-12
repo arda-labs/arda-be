@@ -144,7 +144,9 @@ console.log(gen.stdout.trim());
 // contract-level `enabled` default — a drift here would silently enable or
 // disable tools at runtime.
 const generatedURL = new URL("../apps/ai-service/internal/catalog/generated.go", import.meta.url);
-const generatedSource = await readFile(generatedURL, "utf8");
+// Normalize CRLF: a Windows checkout with core.autocrlf=true stores LF in git
+// but writes CRLF to the working copy.
+const generatedSource = (await readFile(generatedURL, "utf8")).replaceAll("\r\n", "\n");
 const generatedEnabled = new Map();
 for (const block of generatedSource.split(/\n\t\t\{\n/).slice(1)) {
   const path = block.match(/SDKPath:\s+"([^"]+)"/);
