@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	ardaevents "github.com/arda-labs/arda/libs/go/arda-events"
 )
 
 const (
@@ -19,10 +21,10 @@ const (
 	JobTriggerSchedule = "SCHEDULE"
 	JobTriggerManual   = "MANUAL"
 
-	SubjectJobFailed    = "arda.platform.job.failed.v1"
-	SubjectJobRecovered = "arda.platform.job.recovered.v1"
-	EventJobFailed      = "platform.job.failed"
-	EventJobRecovered   = "platform.job.recovered"
+	SubjectJobFailed    = ardaevents.SubjectPlatformJobFailed
+	SubjectJobRecovered = ardaevents.SubjectPlatformJobRecovered
+	EventJobFailed      = ardaevents.EventPlatformJobFailed
+	EventJobRecovered   = ardaevents.EventPlatformJobRecovered
 
 	MaxErrorCodeLen    = 64 // plt_scheduled_job_runs.error_code VARCHAR(64)
 	MaxErrorMessageLen = 2000

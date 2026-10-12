@@ -323,13 +323,7 @@ func internalAIService(next http.Handler) http.Handler {
 // internalJobService authenticates the job executor on /internal/jobs/*: the
 // platform scheduler signs its own calls (source = audience = platform-service).
 func internalJobService(next http.Handler) http.Handler {
-	secret, err := identity.SecretFromEnv()
-	if err != nil {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ardahttp.WriteProblem(w, r, http.StatusServiceUnavailable, ardaerrors.New(ardaerrors.CodeInternal, "internal service identity is not configured"))
-		})
-	}
-	return identity.RequireServiceAuth(secret, "platform-service", identity.AllowedSources("platform-service"))(next)
+	return identity.RequireServiceAuthFromEnv("platform-service", "platform-service")(next)
 }
 
 func health(status string) http.HandlerFunc {

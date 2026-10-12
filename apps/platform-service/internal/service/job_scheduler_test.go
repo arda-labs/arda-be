@@ -37,7 +37,7 @@ func schedulerFixture(t *testing.T, body string) (*sql.DB, *JobScheduler) {
 
 func TestTickRunsDueJobAndRecordsOutcome(t *testing.T) {
 	db, s := schedulerFixture(t, `{"status":"failed","error_code":"EVAL_FAILED","error_message":"0/12"}`)
-	_, _ = db.Exec(`UPDATE plt_scheduled_jobs SET next_run_at = now() - interval '1 second' WHERE code='ai-eval'`)
+	_, _ = db.Exec(`UPDATE plt_scheduled_jobs SET next_run_at = now() - interval '1 minute' WHERE code='ai-eval'`)
 	if n := s.Tick(context.Background()); n != 1 {
 		t.Fatalf("want 1 dispatched, got %d", n)
 	}
@@ -73,7 +73,7 @@ func fillSlots(s *JobScheduler) {
 
 func TestRunNowBusyWhenSlotsFull(t *testing.T) {
 	db, s := schedulerFixture(t, `{"status":"succeeded"}`)
-	_, _ = db.Exec(`UPDATE plt_scheduled_jobs SET next_run_at = now() - interval '1 second' WHERE code='ai-eval'`)
+	_, _ = db.Exec(`UPDATE plt_scheduled_jobs SET next_run_at = now() - interval '1 minute' WHERE code='ai-eval'`)
 	fillSlots(s)
 	run, err := s.RunNow(context.Background(), "ai-eval", "u1", nil)
 	if !errors.Is(err, ErrSchedulerBusy) || run != nil {
@@ -93,7 +93,7 @@ func TestRunNowBusyWhenSlotsFull(t *testing.T) {
 
 func TestShutdownRefusesNewRuns(t *testing.T) {
 	db, s := schedulerFixture(t, `{"status":"succeeded"}`)
-	_, _ = db.Exec(`UPDATE plt_scheduled_jobs SET next_run_at = now() - interval '1 second' WHERE code='ai-eval'`)
+	_, _ = db.Exec(`UPDATE plt_scheduled_jobs SET next_run_at = now() - interval '1 minute' WHERE code='ai-eval'`)
 	if err := s.Shutdown(context.Background()); err != nil {
 		t.Fatalf("shutdown with nothing in flight: %v", err)
 	}
@@ -271,5 +271,33 @@ func TestTickReleasesUnusedSlots(t *testing.T) {
 	s.Wait()
 	if strings.Contains(metrics(s), "arda_platform_scheduler_last_tick_timestamp_seconds 0\n") {
 		t.Fatal("gauge must advance after a successful claim")
+	}
+}
+
+// With JOB_TARGET_URLS unset the scheduler still runs: a due job whose owner
+// has no target is finalized FAILED/JOB_TARGET_NOT_CONFIGURED (and raises the
+// failure event) instead of panicking or stalling the tick.
+func TestTickFailsRunWhenTargetNotConfigured(t *testing.T) {
+	db, s := schedulerFixture(t, `{"status":"succeeded"}`)
+	s.exec = NewJobExecutor(map[string]string{}, execSecret, nil)
+	_, _ = db.Exec(`UPDATE plt_scheduled_jobs SET next_run_at = now() - interval '1 minute' WHERE code='ai-eval'`)
+	if n := s.Tick(context.Background()); n != 1 {
+		t.Fatalf("want 1 dispatched, got %d", n)
+	}
+	s.Wait()
+	var status, code string
+	if err := db.QueryRow(`SELECT status, error_code FROM plt_scheduled_job_runs WHERE job_code='ai-eval'`).Scan(&status, &code); err != nil {
+		t.Fatal(err)
+	}
+	if status != domain.JobStatusFailed || code != "JOB_TARGET_NOT_CONFIGURED" {
+		t.Fatalf("status=%s code=%s", status, code)
+	}
+	var events int
+	_ = db.QueryRow(`SELECT count(*) FROM plt_outbox WHERE subject=$1`, domain.SubjectJobFailed).Scan(&events)
+	if events != 1 {
+		t.Fatalf("want 1 failure event, got %d", events)
+	}
+	if n := s.Tick(context.Background()); n != 0 {
+		t.Fatalf("job must be rescheduled, not re-claimed on the next tick; got %d", n)
 	}
 }
