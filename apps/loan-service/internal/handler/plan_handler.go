@@ -65,9 +65,14 @@ func (h *PlanHandler) PlanByID(w http.ResponseWriter, r *http.Request) {
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}
-	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]bool{"ok": true})
+	ardahttp.WriteSuccess(w, r, http.StatusOK, PlanClosed{OK: true})
 }
 
 func writeForbiddenPlan(w http.ResponseWriter, r *http.Request) {
 	ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
+}
+
+// PlanClosed is the DELETE /api/loan/plans/{id} result.
+type PlanClosed struct {
+	OK bool `json:"ok"`
 }
