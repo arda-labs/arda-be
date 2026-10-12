@@ -107,9 +107,7 @@ func (h *BatchHandler) SubmitDisbursementBatch(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	var req struct {
-		DataVersion int64 `json:"data_version"`
-	}
+	var req BatchVersionRequest
 	if !decodeBody(w, r, &req) {
 		return
 	}
@@ -118,7 +116,7 @@ func (h *BatchHandler) SubmitDisbursementBatch(w http.ResponseWriter, r *http.Re
 		writeServiceError(w, r, err)
 		return
 	}
-	ardahttp.WriteSuccess(w, r, http.StatusAccepted, map[string]any{"batch_id": item.ID, "reference_no": item.ID, "status": item.Status, "data_version": item.DataVersion})
+	ardahttp.WriteSuccess(w, r, http.StatusAccepted, BatchSubmitAccepted{BatchID: item.ID, ReferenceNo: item.ID, Status: item.Status, DataVersion: item.DataVersion})
 }
 
 // UpdateDisbursementDraft updates a DRAFT batch with optimistic concurrency.
@@ -141,9 +139,7 @@ func (h *BatchHandler) CancelDisbursementDraft(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	var req struct {
-		DataVersion int64 `json:"data_version"`
-	}
+	var req BatchVersionRequest
 	if !decodeBody(w, r, &req) {
 		return
 	}
@@ -151,7 +147,7 @@ func (h *BatchHandler) CancelDisbursementDraft(w http.ResponseWriter, r *http.Re
 		writeServiceError(w, r, err)
 		return
 	}
-	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{"batch_id": r.PathValue("id"), "status": "CANCELLED"})
+	ardahttp.WriteSuccess(w, r, http.StatusOK, BatchCancelled{BatchID: r.PathValue("id"), Status: "CANCELLED"})
 }
 
 // CreateBatchComplete handles POST /api/loan/disbursement-batches/complete.
@@ -161,10 +157,7 @@ func (h *BatchHandler) CreateBatchComplete(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	var req struct {
-		service.CreateBatchInput
-		SourceBatchID string `json:"source_batch_id"`
-	}
+	var req BatchCompleteRequest
 	if !decodeBody(w, r, &req) {
 		return
 	}
@@ -176,8 +169,8 @@ func (h *BatchHandler) CreateBatchComplete(w http.ResponseWriter, r *http.Reques
 	ardahttp.WriteSuccess(w, r, http.StatusCreated, draftCreatedResponse(created))
 }
 
-func draftCreatedResponse(batch *domain.DisbursementBatch) map[string]any {
-	return map[string]any{"id": batch.ID, "batch_id": batch.ID, "status": batch.Status, "data_version": batch.DataVersion}
+func draftCreatedResponse(batch *domain.DisbursementBatch) BatchDraftCreated {
+	return BatchDraftCreated{ID: batch.ID, BatchID: batch.ID, Status: batch.Status, DataVersion: batch.DataVersion}
 }
 
 // GetDisbursementBatch handles GET /api/loan/disbursement-batches/{id}
@@ -276,8 +269,8 @@ func (h *BatchHandler) PreviewDisbursementBatch(w http.ResponseWriter, r *http.R
 		writeServiceError(w, r, err)
 		return
 	}
-	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{
-		"valid": result.GetValid(), "coa_version_id": result.GetCoaVersionId(), "global_errors": result.GetGlobalErrors(), "lines": result.GetLines(), "headroom": headroom,
+	ardahttp.WriteSuccess(w, r, http.StatusOK, BatchPostingPreview{
+		Valid: result.GetValid(), CoaVersionID: result.GetCoaVersionId(), GlobalErrors: result.GetGlobalErrors(), Lines: result.GetLines(), Headroom: headroom,
 	})
 }
 
@@ -354,7 +347,7 @@ func (h *BatchHandler) ListPostingRules(w http.ResponseWriter, r *http.Request) 
 			"document_type must be one of: LNM_DISB_REGISTER, LNM_DISB_COMPLETE, LNM_COLLECTION, LNM_ACCRUAL, LNM_PROVISION")
 		return
 	}
-	items := []map[string]any{}
+	items := []PostingRuleView{}
 	if h.fin != nil {
 		rules, err := h.fin.ListPostingRules(r.Context(), docType)
 		if err != nil {
@@ -362,17 +355,81 @@ func (h *BatchHandler) ListPostingRules(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		for _, rule := range rules {
-			items = append(items, map[string]any{
-				"document_type":        docType,
-				"line_no":              rule.GetLineNo(),
-				"direction":            rule.GetDirection(),
-				"resolution_type":      rule.GetResolutionType(),
-				"account_ref":          rule.GetAccountRef(),
-				"acc_classification":   rule.GetAccClassification(),
-				"required_dimensions":  rule.GetRequiredDimensions(),
-				"description_template": rule.GetDescriptionTemplate(),
+			items = append(items, PostingRuleView{
+				DocumentType:        docType,
+				LineNo:              rule.GetLineNo(),
+				Direction:           rule.GetDirection(),
+				ResolutionType:      rule.GetResolutionType(),
+				AccountRef:          rule.GetAccountRef(),
+				AccClassification:   rule.GetAccClassification(),
+				RequiredDimensions:  rule.GetRequiredDimensions(),
+				DescriptionTemplate: rule.GetDescriptionTemplate(),
 			})
 		}
 	}
-	ardahttp.WriteSuccess(w, r, http.StatusOK, map[string]any{"items": items, "document_type": docType})
+	ardahttp.WriteSuccess(w, r, http.StatusOK, PostingRules{Items: items, DocumentType: docType})
+}
+
+// Request and result bodies of the batch endpoints, named so the OpenAPI
+// document (contracts/openapi/loan-v1.json) carries the exact wire shape; see
+// internal/transport/http/openapi.go.
+
+// BatchVersionRequest carries the optimistic row version for submit and cancel.
+type BatchVersionRequest struct {
+	DataVersion int64 `json:"data_version"`
+}
+
+// BatchCompleteRequest is the POST /api/loan/disbursement-batches/complete body.
+type BatchCompleteRequest struct {
+	service.CreateBatchInput
+	SourceBatchID string `json:"source_batch_id"`
+}
+
+// BatchDraftCreated is returned when a disbursement batch draft is created.
+type BatchDraftCreated struct {
+	ID          string `json:"id"`
+	BatchID     string `json:"batch_id"`
+	Status      string `json:"status"`
+	DataVersion int64  `json:"data_version"`
+}
+
+// BatchSubmitAccepted is returned when a batch submission is queued.
+type BatchSubmitAccepted struct {
+	BatchID     string `json:"batch_id"`
+	ReferenceNo string `json:"reference_no"`
+	Status      string `json:"status"`
+	DataVersion int64  `json:"data_version"`
+}
+
+// BatchCancelled is returned when a batch draft is cancelled.
+type BatchCancelled struct {
+	BatchID string `json:"batch_id"`
+	Status  string `json:"status"`
+}
+
+// BatchPostingPreview is the read-only finance validation of a REGISTER draft.
+type BatchPostingPreview struct {
+	Valid        bool                                `json:"valid"`
+	CoaVersionID string                              `json:"coa_version_id"`
+	GlobalErrors []string                            `json:"global_errors"`
+	Lines        []*financev1.ValidationLine         `json:"lines"`
+	Headroom     []service.DisbursementBatchHeadroom `json:"headroom"`
+}
+
+// PostingRuleView is one finance posting rule line a maker screen previews.
+type PostingRuleView struct {
+	DocumentType        string   `json:"document_type"`
+	LineNo              int32    `json:"line_no"`
+	Direction           string   `json:"direction"`
+	ResolutionType      string   `json:"resolution_type"`
+	AccountRef          string   `json:"account_ref"`
+	AccClassification   string   `json:"acc_classification"`
+	RequiredDimensions  []string `json:"required_dimensions"`
+	DescriptionTemplate string   `json:"description_template"`
+}
+
+// PostingRules is the GET /api/loan/posting-rules result.
+type PostingRules struct {
+	Items        []PostingRuleView `json:"items"`
+	DocumentType string            `json:"document_type"`
 }
