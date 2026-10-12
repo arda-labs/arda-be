@@ -73,14 +73,39 @@ Owner: edge/platform + auth-gateway.
 
 ## ADR-005 — OpenAPI and FE client strategy
 
-Status: accepted-with-follow-up. Follow-up: API-01 and QA-02 must expand the
-pilot into the supported public surface and add breaking-change comparison.
+Status: accepted (2026-10-12). Follow-up: move the remaining services onto
+generated documents, starting with loan; add a breaking-change comparison
+against `main`.
 
-Proposed decision: OpenAPI is public REST source of truth; specs are linted/breaking-
-checked and generate/reuse FE wire types/clients behind domain adapters.
+Decision: the committed OpenAPI 3.1 documents in `contracts/openapi` are the
+public REST contract the frontend and docs-site consume. The open questions
+are settled as follows.
 
-Open decisions: generator, generated artifact location, CI versus committed output,
-schema split and runtime conformance tool.
+- **Authoring.** A migrated service declares its operations in Go
+  (`internal/transport/http/openapi.go`) and `libs/go/arda-openapi` derives every
+  request and result schema from the real Go type through its json tags, with
+  the canonical success envelope, list shape and problem responses. A service
+  test (`TestOpenAPIDocumentIsCommitted`) regenerates the document and fails
+  when the committed copy differs, so it cannot drift from the code; this also
+  replaces a separate runtime conformance tool. Request schemas leave every
+  field optional, matching lenient JSON decoding; nil slices and pointers are
+  nullable.
+- **Coverage.** `scripts/check-openapi-routes.mjs` fails when a public `/api/`
+  route in a migrated service's router has no operation, or an operation has
+  no route. Services join its `covered` list as they migrate.
+- **Generator and location.** arda-mfe generates types only, with
+  openapi-typescript, into `packages/api/src/generated/<doc>.ts`, plus
+  document-prefixed aliases per schema (`DepositSavings`). The output is
+  committed.
+- **CI.** arda-mfe runs `bun run check:api-types` against arda-be `main`; a
+  merged contract change fails the frontend build until the types are
+  regenerated.
+- **Schema split.** One document per service (`<service>-v1.json`); the
+  existing hand-written pilot documents stay until their service migrates.
+
+First migrated service: deposit (33 operations). Handlers that wrote
+`map[string]any` or decoded anonymous structs now use named types so the
+document carries the exact wire shape.
 
 Owner: API architecture + FE platform.
 
