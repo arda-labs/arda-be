@@ -3,9 +3,9 @@ module github.com/arda-labs/arda/apps/loan-service
 go 1.27.2
 
 require (
-	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-businessdate v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-money v0.0.0
@@ -22,6 +22,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -61,3 +62,5 @@ replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
 replace github.com/arda-labs/arda/libs/go/arda-businessdate => ../../libs/go/arda-businessdate
 
 replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config
