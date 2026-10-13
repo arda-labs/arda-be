@@ -30,6 +30,7 @@ require (
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/arda-labs/arda/libs/go/arda-auth v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-crypto v0.0.0-20260924093952-c3c96299f064
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
@@ -62,3 +63,5 @@ replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-po
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config

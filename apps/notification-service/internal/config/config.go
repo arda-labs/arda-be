@@ -4,23 +4,23 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	ardaconfig "github.com/arda-labs/arda/libs/go/arda-config"
 )
 
 type Config struct {
-	AppName         string `yaml:"app_name"`
-	HTTPAddr        string `yaml:"http_addr"`
-	GRPCAddr        string `yaml:"grpc_addr"`
-	LogLevel        string `yaml:"log_level"`
-	DatabaseDSN     string `yaml:"database_dsn"`
-	NATSURL         string `yaml:"nats_url"`
-	IAMGRPCAddr     string `yaml:"iam_grpc_addr"`
-	HRMGRPCAddr     string `yaml:"hrm_grpc_addr"`
-	DefaultLocale   string `yaml:"default_locale"`
-	ManagementGroup string `yaml:"notification_management_group"`
-	VAPIDPublicKey  string `yaml:"vapid_public_key"`
-	VAPIDPrivateKey string `yaml:"vapid_private_key"`
-	VAPIDSubject    string `yaml:"vapid_subject"`
+	AppName         string `yaml:"app_name" env:"APP_NAME"`
+	HTTPAddr        string `yaml:"http_addr" env:"HTTP_ADDR"`
+	GRPCAddr        string `yaml:"grpc_addr" env:"GRPC_ADDR"`
+	LogLevel        string `yaml:"log_level" env:"LOG_LEVEL"`
+	DatabaseDSN     string `yaml:"database_dsn" env:"DATABASE_DSN"`
+	NATSURL         string `yaml:"nats_url" env:"NATS_URL,NOTIFICATION_NATS_URL"`
+	IAMGRPCAddr     string `yaml:"iam_grpc_addr" env:"IAM_GRPC_ADDR"`
+	HRMGRPCAddr     string `yaml:"hrm_grpc_addr" env:"HRM_GRPC_ADDR"`
+	DefaultLocale   string `yaml:"default_locale" env:"NOTIFICATION_DEFAULT_LOCALE"`
+	ManagementGroup string `yaml:"notification_management_group" env:"NOTIFICATION_MANAGEMENT_GROUP"`
+	VAPIDPublicKey  string `yaml:"vapid_public_key" env:"VAPID_PUBLIC_KEY"`
+	VAPIDPrivateKey string `yaml:"vapid_private_key" env:"VAPID_PRIVATE_KEY"`
+	VAPIDSubject    string `yaml:"vapid_subject" env:"VAPID_SUBJECT"`
 }
 
 func Load() Config {
@@ -34,68 +34,8 @@ func Load() Config {
 		VAPIDSubject:  "mailto:ops@arda.io.vn",
 		DefaultLocale: "vi-VN",
 	}
-
-	if path := os.Getenv("CONFIG_FILE"); path != "" {
-		cfg.loadYAML(path)
-	} else {
-		for _, p := range []string{"configs/config.yaml", "../configs/config.yaml", "/etc/arda/notification-service/config.yaml"} {
-			if cfg.loadYAML(p) {
-				break
-			}
-		}
+	if err := ardaconfig.Load(&cfg, ardaconfig.ServiceOptions("notification-service")); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
-
-	envStr("APP_NAME", &cfg.AppName)
-	envStr("HTTP_ADDR", &cfg.HTTPAddr)
-	envStr("GRPC_ADDR", &cfg.GRPCAddr)
-	envStr("LOG_LEVEL", &cfg.LogLevel)
-	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
-	envStr("NATS_URL", &cfg.NATSURL)
-	envStr("NOTIFICATION_NATS_URL", &cfg.NATSURL)
-	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
-	envStr("HRM_GRPC_ADDR", &cfg.HRMGRPCAddr)
-	envStr("NOTIFICATION_DEFAULT_LOCALE", &cfg.DefaultLocale)
-	envStr("NOTIFICATION_MANAGEMENT_GROUP", &cfg.ManagementGroup)
-	envStr("VAPID_PUBLIC_KEY", &cfg.VAPIDPublicKey)
-	envStr("VAPID_PRIVATE_KEY", &cfg.VAPIDPrivateKey)
-	envStr("VAPID_SUBJECT", &cfg.VAPIDSubject)
-
 	return cfg
-}
-
-func (c *Config) loadYAML(path string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	m := make(map[string]any)
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		fmt.Fprintf(os.Stderr, "config: parse %s: %v\n", path, err)
-		return false
-	}
-	set := func(key string, target *string) {
-		if v, ok := m[key].(string); ok {
-			*target = v
-		}
-	}
-	set("app_name", &c.AppName)
-	set("http_addr", &c.HTTPAddr)
-	set("grpc_addr", &c.GRPCAddr)
-	set("log_level", &c.LogLevel)
-	set("database_dsn", &c.DatabaseDSN)
-	set("nats_url", &c.NATSURL)
-	set("iam_grpc_addr", &c.IAMGRPCAddr)
-	set("hrm_grpc_addr", &c.HRMGRPCAddr)
-	set("default_locale", &c.DefaultLocale)
-	set("notification_management_group", &c.ManagementGroup)
-	set("vapid_public_key", &c.VAPIDPublicKey)
-	set("vapid_private_key", &c.VAPIDPrivateKey)
-	set("vapid_subject", &c.VAPIDSubject)
-	return true
-}
-
-func envStr(key string, target *string) {
-	if v := os.Getenv(key); v != "" {
-		*target = v
-	}
 }
