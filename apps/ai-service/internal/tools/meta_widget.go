@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Size ceilings for model-generated widgets. Code is bounded so one tool call
@@ -16,6 +17,11 @@ import (
 const (
 	widgetMaxCodeBytes = 48 * 1024
 	widgetMaxDataBytes = 64 * 1024
+
+	// title and inputs_summary are echoed into the transcript and the model
+	// feedback, so they are bounded by characters, not bytes.
+	widgetMaxTitleRunes   = 200
+	widgetMaxSummaryRunes = 500
 )
 
 // widgetForbidden is an early, model-facing filter so the agent can fix its
@@ -62,13 +68,13 @@ func (t *WidgetMetaTool) Definition() Definition {
 		Parameters: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"title": { "type": "string", "description": "Widget title in Vietnamese." },
+				"title": { "type": "string", "description": "Widget title in Vietnamese (<= 200 characters)." },
 				"html": { "type": "string", "description": "Body-only HTML: controls on top, results below." },
 				"css": { "type": "string", "description": "Optional CSS using only the provided variables." },
 				"js": { "type": "string", "description": "Plain JS; runs after the 'arda:data' event; reads window.ARDA_DATA; no network or imports." },
 				"data": { "type": "object", "description": "Inline data the widget computes on (<= 64 KB)." },
 				"result_id": { "type": "string", "description": "resultId from execute() when the data is too large to inline." },
-				"inputs_summary": { "type": "string", "description": "One sentence in Vietnamese listing the parameters the user can change." }
+				"inputs_summary": { "type": "string", "description": "One sentence in Vietnamese listing the parameters the user can change (<= 500 characters)." }
 			},
 			"required": ["title", "html", "js", "inputs_summary"]
 		}`),
@@ -89,6 +95,9 @@ func (t *WidgetMetaTool) Execute(ctx context.Context, scope Context, arguments j
 	if title == "" {
 		return Result{}, fmt.Errorf("%w: title is required", ErrInvalidArgument)
 	}
+	if n := utf8.RuneCountInString(title); n > widgetMaxTitleRunes {
+		return Result{}, fmt.Errorf("%w: title is %d characters, the limit is %d", ErrInvalidArgument, n, widgetMaxTitleRunes)
+	}
 	if strings.TrimSpace(input.HTML) == "" {
 		return Result{}, fmt.Errorf("%w: html is required", ErrInvalidArgument)
 	}
@@ -98,6 +107,9 @@ func (t *WidgetMetaTool) Execute(ctx context.Context, scope Context, arguments j
 	summary := strings.TrimSpace(input.InputsSummary)
 	if summary == "" {
 		return Result{}, fmt.Errorf("%w: inputs_summary is required", ErrInvalidArgument)
+	}
+	if n := utf8.RuneCountInString(summary); n > widgetMaxSummaryRunes {
+		return Result{}, fmt.Errorf("%w: inputs_summary is %d characters, the limit is %d", ErrInvalidArgument, n, widgetMaxSummaryRunes)
 	}
 
 	codeBytes := len(input.HTML) + len(input.CSS) + len(input.JS)
@@ -141,12 +153,16 @@ func (t *WidgetMetaTool) Execute(ctx context.Context, scope Context, arguments j
 		payload["data"] = nil
 	}
 
-	raw, err := json.Marshal(payload)
-	if err != nil {
+	// HTML escaping is off: "<", ">" and "&" are ordinary widget content, and
+	// the default encoder would turn each into a 6-byte escape sequence.
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(payload); err != nil {
 		return Result{}, fmt.Errorf("encode widget: %w", err)
 	}
 	return Result{
-		Data:      raw,
+		Data:      bytes.TrimRight(encoded.Bytes(), "\n"),
 		Summary:   fmt.Sprintf("Rendered widget %q (%d bytes of code).", title, codeBytes),
 		Source:    "ai-widget",
 		RequestID: scope.RequestID,
