@@ -25,6 +25,21 @@ func TestPublicBrandingPayloadStripsAuthSettings(t *testing.T) {
 	}
 }
 
+func TestPublicBrandingPayloadKeepsOrgTheme(t *testing.T) {
+	payload := publicBrandingPayload(`{"appName":"Bank","brandColor":"#0b7f7a","chartPalette":"finance","minPasswordLength":14}`)
+
+	var got map[string]any
+	if err := json.Unmarshal(payload, &got); err != nil {
+		t.Fatalf("payload json: %v", err)
+	}
+	if got["brandColor"] != "#0b7f7a" || got["chartPalette"] != "finance" {
+		t.Fatalf("missing org theme fields: %#v", got)
+	}
+	if _, ok := got["minPasswordLength"]; ok {
+		t.Fatalf("leaked auth setting: %#v", got)
+	}
+}
+
 // A targeted delete/update that matched no row must answer 404, not {"ok": true}.
 func TestWriteServiceErrorMapsNotFoundTo404(t *testing.T) {
 	for _, err := range []error{
