@@ -226,12 +226,8 @@ func (s *SettlementService) postSettlementV3(ctx context.Context, tenantID strin
 			Dimensions:   map[string]string{"savings_code": savings.SavingsCode},
 		}
 	}
-	payout := savings.PrincipalMinor + savings.AccruedMinor
-	lines, err := financeclient.BuildPostingLines(ctx, s.finance, "DPM_SETTLEMENT_V3", []financeclient.PostingLeg{
-		{CardLine: 1, Direction: "DEBIT", AmountMinor: savings.PrincipalMinor, Analytics: analytics()},
-		{CardLine: 2, Direction: "DEBIT", AmountMinor: savings.AccruedMinor, Analytics: analytics()},
-		{CardLine: 3, Direction: "CREDIT", AmountMinor: payout, Analytics: analytics()},
-	}, savings.CurrencyCode)
+	lines, err := financeclient.BuildPostingLines(ctx, s.finance, "DPM_SETTLEMENT_V3",
+		settlementV3Legs(savings.PrincipalMinor, savings.AccruedMinor, analytics), savings.CurrencyCode)
 	if err != nil {
 		return "", err
 	}
@@ -251,6 +247,18 @@ func (s *SettlementService) postSettlementV3(ctx context.Context, tenantID strin
 		return "", err
 	}
 	return resp.GetJournalEntryId(), nil
+}
+
+// settlementV3Legs builds the DPM.306 3-leg payout: DR deposit liability
+// (principal, card 1), DR interest payable (accrued, card 2), CR cash
+// (principal + accrued, card 3). Pure so the golden table can lock it.
+func settlementV3Legs(principalMinor, accruedMinor int64, analytics func() *financev1.Analytics) []financeclient.PostingLeg {
+	payout := principalMinor + accruedMinor
+	return []financeclient.PostingLeg{
+		{CardLine: 1, Direction: "DEBIT", AmountMinor: principalMinor, Analytics: analytics()},
+		{CardLine: 2, Direction: "DEBIT", AmountMinor: accruedMinor, Analytics: analytics()},
+		{CardLine: 3, Direction: "CREDIT", AmountMinor: payout, Analytics: analytics()},
+	}
 }
 
 // post builds and posts one two-leg movement from its required rule card.
