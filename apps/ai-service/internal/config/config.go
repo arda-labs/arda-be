@@ -27,6 +27,7 @@ type Config struct {
 	ProblemDocsURL      string
 	EnableReadTools     bool
 	EnableHITLProposals bool
+	EnableSandboxedUI   bool // registers renderWidget tool and prompt guidance; off by default
 	DBMaxOpenConns      int
 	DBMaxIdleConns      int
 	DBConnMaxIdleSec    int
@@ -174,6 +175,7 @@ func Load() Config {
 		ProblemDocsURL:      strings.TrimRight(strings.TrimSpace(envOr("PROBLEM_DOCS_URL", "https://docs.arda.io.vn")), "/"),
 		EnableReadTools:     enableReadTools,
 		EnableHITLProposals: envBoolOr("AI_ENABLE_HITL_PROPOSALS", false),
+		EnableSandboxedUI:   envBoolOr("AI_ENABLE_SANDBOXED_UI", false),
 		DBMaxOpenConns:      envIntOr("DB_MAX_OPEN_CONNS", 8),
 		DBMaxIdleConns:      envIntOr("DB_MAX_IDLE_CONNS", 4),
 		DBConnMaxIdleSec:    envIntOr("DB_CONN_MAX_IDLE_SECONDS", 300),
