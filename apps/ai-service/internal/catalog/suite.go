@@ -111,6 +111,17 @@ func resultNamespace(scope tools.Context) string {
 	return scope.TenantID + "|" + scope.ActorUserID + "|" + thread
 }
 
+// ReadResult returns the stored output of an execute() call for the caller's
+// own tenant/user/thread namespace. It backs GET /api/ai/results/{id} so the
+// interface can hydrate a renderWidget that referenced a result_id.
+func (s *CodeModeSuite) ReadResult(scope tools.Context, resultID string) (json.RawMessage, bool) {
+	if s == nil || s.ResultStore == nil {
+		return nil, false
+	}
+	data, _, ok := s.ResultStore.Get(resultNamespace(scope), resultID)
+	return data, ok
+}
+
 // SetGovernance wires tool governance into the registry (execution + model
 // surfaces) and the search index. Called once at startup, before serving.
 func (s *CodeModeSuite) SetGovernance(gov *Governance) {

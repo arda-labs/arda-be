@@ -538,10 +538,11 @@ func (s *SQLRunStore) ConversationMessages(ctx context.Context, tenantID, actorU
 				WHERE t.run_id = m.run_id
 				  AND m.role = 'assistant'
 				  AND t.status = 'SUCCEEDED'
-				  AND t.tool_name IN ('execute', 'renderChart')
+				  AND t.tool_name IN ('execute', 'renderChart', 'renderWidget')
 				  AND t.result_redacted IS NOT NULL
 			) a
-			WHERE (a.payload ? 'chart') OR ((a.payload ? 'columns') AND (a.payload ? 'rows'))
+			WHERE (a.tool_name = 'renderWidget' AND a.payload ? 'widget')
+			   OR (a.tool_name <> 'renderWidget' AND ((a.payload ? 'chart') OR ((a.payload ? 'columns') AND (a.payload ? 'rows'))))
 		) arts ON TRUE
 		WHERE c.tenant_id = $1 AND c.actor_user_id = $2 AND c.external_thread_id = $3
 		ORDER BY m.sequence ASC
@@ -574,7 +575,9 @@ type storedArtifact struct {
 // selectArtifacts picks the artifacts worth replaying in a reopened thread.
 // A run that asked for a report produces both an `execute` presentation and a
 // `renderChart` call; preferring renderChart avoids rendering the same chart
-// twice. The list is capped so a long agent run cannot flood the transcript.
+// twice. renderWidget results (sandboxed widgets, marked `widget: true`) are
+// first-class outputs and replay alongside charts in finished_at order. The
+// list is capped so a long agent run cannot flood the transcript.
 func selectArtifacts(raw []byte) []json.RawMessage {
 	if len(raw) == 0 {
 		return nil
@@ -585,7 +588,11 @@ func selectArtifacts(raw []byte) []json.RawMessage {
 	}
 	var chosen []json.RawMessage
 	for _, item := range items {
-		if item.ToolName == "renderChart" && len(item.Result) > 0 {
+		if len(item.Result) == 0 {
+			continue
+		}
+		// renderChart and renderWidget are first-class outputs; both replay.
+		if item.ToolName == "renderChart" || (item.ToolName == "renderWidget" && hasJSONKey(item.Result, "widget")) {
 			chosen = append(chosen, item.Result)
 		}
 	}
@@ -593,15 +600,19 @@ func selectArtifacts(raw []byte) []json.RawMessage {
 		// Fall back to the last execute presentation that carries a chart.
 		for index := len(items) - 1; index >= 0; index-- {
 			if items[index].ToolName == "execute" && len(items[index].Result) > 0 && hasJSONKey(items[index].Result, "chart") {
-				chosen = append(chosen, items[index].Result)
+				chosen = append(chosen, withoutWidgetKey(items[index].Result))
 				break
 			}
 		}
 	}
 	if len(chosen) == 0 {
+		// Last resort: the last non-empty result. A renderWidget row only
+		// replays through the loop above (it needs the widget marker), and any
+		// other tool (execute returns model-authored JS output) must never
+		// replay as a widget, so its widget key is dropped.
 		for index := len(items) - 1; index >= 0; index-- {
-			if len(items[index].Result) > 0 {
-				chosen = append(chosen, items[index].Result)
+			if len(items[index].Result) > 0 && items[index].ToolName != "renderWidget" {
+				chosen = append(chosen, withoutWidgetKey(items[index].Result))
 				break
 			}
 		}
@@ -610,6 +621,26 @@ func selectArtifacts(raw []byte) []json.RawMessage {
 		chosen = chosen[:2]
 	}
 	return chosen
+}
+
+// withoutWidgetKey drops a top-level "widget" key. Only renderWidget results
+// may replay as widgets (the interface discriminates by `widget === true`),
+// so a payload from any other tool that happens to carry the key is replayed
+// as the chart/table it otherwise is.
+func withoutWidgetKey(raw json.RawMessage) json.RawMessage {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return raw
+	}
+	if _, ok := object["widget"]; !ok {
+		return raw
+	}
+	delete(object, "widget")
+	stripped, err := json.Marshal(object)
+	if err != nil {
+		return raw
+	}
+	return stripped
 }
 
 func hasJSONKey(raw json.RawMessage, key string) bool {

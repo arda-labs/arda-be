@@ -23,6 +23,11 @@ import (
 
 const modelResultContentLimit = 8 << 10
 
+// widgetToolName results carry model-generated UI (up to ~113 KB by the tool's
+// own validation). They bypass the 8 KB model-content bound for persistence
+// and the interface stream; the model only gets a compact acknowledgement.
+const widgetToolName = "renderWidget"
+
 // Context-budget bounds for replayed conversation history (audit-2026-09 A6:
 // measured production prompts ranged 2.9k–37.9k tokens and history plus tool
 // results were the growth driver, not the SDK header).
@@ -1158,7 +1163,7 @@ func pruneToolDefinitions(defs []model.ToolDef, allowed []string) []model.ToolDe
 	if len(allowed) == 0 || len(defs) == 0 {
 		return defs
 	}
-	// In Code Mode, meta-tools (search, execute, readResult, render_chart) are preserved
+	// In Code Mode, meta-tools (search, execute, readResult, renderChart, renderWidget) are preserved
 	// so the Goja sandbox execution works.
 	for _, def := range defs {
 		if def.Name == "execute" {
@@ -1303,11 +1308,15 @@ func executeModelToolCall(
 		errorCode = toolErrorCode(execErr)
 		content = `{"error":"` + errorCode + `"}`
 	} else {
-		content = boundContent(string(result.Data))
 		// The Code Mode meta-tool reports sandbox failures as structured
 		// Result data so the model can inspect them. The audit row must still
 		// record the real outcome instead of SUCCEEDED.
 		errorCode = result.ErrorCode
+		if definition.Name == widgetToolName && errorCode == "" {
+			content = string(result.Data) // already size-validated by the tool
+		} else {
+			content = boundContent(string(result.Data))
+		}
 	}
 	status := "SUCCEEDED"
 	if execErr != nil || errorCode != "" {
@@ -1327,10 +1336,18 @@ func executeModelToolCall(
 	if execErr == nil && strings.TrimSpace(result.Summary) != "" {
 		feedback = compactToolFeedback(result.Data, result.Summary)
 	}
+	// Every tool streams exactly what the model is told (feedback), except
+	// renderWidget: the interface renders from the full payload while the
+	// model only gets a compact acknowledgement.
+	streamContent := feedback
+	if execErr == nil && errorCode == "" && definition.Name == widgetToolName {
+		streamContent = content
+		feedback = mustJSON(map[string]any{"summary": result.Summary, "rendered": true})
+	}
 	sse.event(agentEvent{
 		Type: "TOOL_CALL_RESULT", ThreadID: input.ThreadID, RunID: input.RunID,
 		MessageID: "tool-msg-" + input.RunID, ToolCallID: call.ID,
-		Content: feedback, Role: "tool",
+		Content: streamContent, Role: "tool",
 	})
 	return false, feedback
 }
