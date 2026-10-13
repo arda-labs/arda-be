@@ -197,6 +197,54 @@ func TestPathEnumsRestrictPathParameters(t *testing.T) {
 	}
 }
 
+func TestFormRawAndNoContentOperations(t *testing.T) {
+	doc := Document{Title: "T", Version: "1", Operations: []Operation{
+		{Method: "POST", Path: "/api/test/deploy", ID: "deploy", Result: Address{},
+			Form: []FormField{{Name: "file", File: true, Required: true}, {Name: "name", Description: "Display name"}}},
+		{Method: "GET", Path: "/api/test/{id}/xml", ID: "xml", Raw: &RawResponse{MediaType: "application/xml"}},
+		{Method: "GET", Path: "/api/test/export", ID: "export", Raw: &RawResponse{MediaType: "application/vnd.ms-excel", Binary: true}},
+		{Method: "DELETE", Path: "/api/test/{id}", ID: "remove", Status: 204},
+	}}
+	out := generate(t, doc)
+	paths := out["paths"].(map[string]any)
+
+	form, _ := json.Marshal(paths["/api/test/deploy"].(map[string]any)["post"].(map[string]any)["requestBody"])
+	want := `{"content":{"multipart/form-data":{"schema":{"properties":{"file":{"format":"binary","type":"string"},"name":{"description":"Display name","type":"string"}},"required":["file"],"type":"object"}}},"required":true}`
+	if string(form) != want {
+		t.Errorf("form body = %s", form)
+	}
+	xml, _ := json.Marshal(paths["/api/test/{id}/xml"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)["200"])
+	if string(xml) != `{"content":{"application/xml":{"schema":{"type":"string"}}},"description":"OK"}` {
+		t.Errorf("xml response = %s", xml)
+	}
+	export, _ := json.Marshal(paths["/api/test/export"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)["200"])
+	if string(export) != `{"content":{"application/vnd.ms-excel":{"schema":{"format":"binary","type":"string"}}},"description":"OK"}` {
+		t.Errorf("export response = %s", export)
+	}
+	remove, _ := json.Marshal(paths["/api/test/{id}"].(map[string]any)["delete"].(map[string]any)["responses"].(map[string]any)["204"])
+	if string(remove) != `{"description":"No Content"}` {
+		t.Errorf("204 response = %s", remove)
+	}
+	if _, has := schemas(out)["AddressSuccess"]; !has {
+		t.Error("the form operation still answers with the JSON envelope")
+	}
+
+	rejected := map[string]Operation{
+		"form and request":   {Method: "POST", Path: "/a", ID: "a", Result: Address{}, Request: createAccount{}, Form: []FormField{{Name: "file"}}},
+		"unnamed form field": {Method: "POST", Path: "/a", ID: "a", Result: Address{}, Form: []FormField{{File: true}}},
+		"raw with result":    {Method: "GET", Path: "/a", ID: "a", Result: Address{}, Raw: &RawResponse{MediaType: "text/plain"}},
+		"raw without media":  {Method: "GET", Path: "/a", ID: "a", Raw: &RawResponse{}},
+		"204 with result":    {Method: "DELETE", Path: "/a", ID: "a", Result: Address{}, Status: 204},
+	}
+	for name, op := range rejected {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Generate(Document{Title: "T", Version: "1", Operations: []Operation{op}}); err == nil {
+				t.Fatal("Generate succeeded")
+			}
+		})
+	}
+}
+
 func TestGenerateIsDeterministic(t *testing.T) {
 	first, err := Generate(testDoc())
 	if err != nil {
@@ -250,5 +298,22 @@ func TestGenerateAcceptsTypeSchemaOverride(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"price": {`) {
 		t.Fatalf("override not applied:\n%s", raw)
+	}
+
+	named := Document{
+		Title: "T", Version: "1",
+		Operations:  []Operation{{Method: "GET", Path: "/a", ID: "a", Result: Priced{}}},
+		TypeSchemas: map[string]map[string]any{"github.com/arda-labs/arda/libs/go/arda-openapi.Money": {"$ref": "#/components/schemas/Money"}},
+		Schemas:     map[string]map[string]any{"Money": {"type": "integer", "format": "int64"}},
+	}
+	s := schemas(generate(t, named))
+	if _, ok := s["Money"]; !ok {
+		t.Fatalf("hand-written schema missing: %v", s)
+	}
+	for name, bad := range map[string]map[string]map[string]any{"reserved": {"Problem": {}}, "lowercase": {"money": {}}} {
+		named.Schemas = bad
+		if _, err := Generate(named); err == nil {
+			t.Errorf("%s schema name accepted", name)
+		}
 	}
 }
