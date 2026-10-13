@@ -52,6 +52,40 @@ func TestDocumentRenumberPoliciesOverrideBroadFinanceWrite(t *testing.T) {
 	}
 }
 
+func TestScheduledJobPoliciesOverrideBroadPlatformRoutes(t *testing.T) {
+	pol, err := Load(filepath.Join("..", "..", "configs", "policy.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		method, path, id, permission string
+	}{
+		{"GET", "/api/platform/scheduled-jobs", "platform-jobs-read", "platform.read"},
+		{"GET", "/api/platform/scheduled-jobs/ai-eval", "platform-jobs-read", "platform.read"},
+		{"GET", "/api/platform/scheduled-jobs/ai-eval/runs", "platform-jobs-read", "platform.read"},
+		{"GET", "/api/platform/scheduled-jobs/runs/0192f0c4-7b7a-7cc4-9a51-6f0a4c2b1d11", "platform-jobs-read", "platform.read"},
+		{"PATCH", "/api/platform/scheduled-jobs/ai-eval", "platform-jobs-manage", "platform.manage"},
+		{"POST", "/api/platform/scheduled-jobs/ai-eval/run", "platform-jobs-manage", "platform.manage"},
+		{"POST", "/api/platform/scheduled-jobs/cron-preview", "platform-jobs-manage", "platform.manage"},
+	}
+	for _, tc := range cases {
+		matched, err := pol.Match(tc.path, tc.method)
+		if err != nil {
+			t.Fatalf("Match(%s %s): %v", tc.method, tc.path, err)
+		}
+		if matched.Route.ID != tc.id || !matched.RequireAuth {
+			t.Errorf("Match(%s %s) = %s (auth=%v), want %s", tc.method, tc.path, matched.Route.ID, matched.RequireAuth, tc.id)
+		}
+		if len(matched.Route.Permissions) != 1 || matched.Route.Permissions[0] != tc.permission {
+			t.Errorf("Match(%s %s) permissions=%v, want [%s]", tc.method, tc.path, matched.Route.Permissions, tc.permission)
+		}
+	}
+	// The broad platform routes still own everything else.
+	if m, err := pol.Match("/api/platform/jobs", "GET"); err != nil || m.Route.ID != "platform-read" {
+		t.Errorf("GET /api/platform/jobs must stay on platform-read, got %+v, %v", m, err)
+	}
+}
+
 func TestLoadRejectsInvalidRisk(t *testing.T) {
 	path := writePolicy(t, `
 routes:

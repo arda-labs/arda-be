@@ -28,6 +28,8 @@ const (
 	SubjectLoanDisbursementApproved = "arda.loan.disbursement.approved.v1"
 	SubjectLoanDisbursementRejected = "arda.loan.disbursement.rejected.v1"
 	SubjectLoanDisbursementFailed = "arda.loan.disbursement.failed.v1"
+	SubjectPlatformJobFailed    = "arda.platform.job.failed.v1"
+	SubjectPlatformJobRecovered = "arda.platform.job.recovered.v1"
 )
 
 const (
@@ -48,6 +50,8 @@ const (
 	EventLoanDisbursementApproved = "loan.disbursement.approved"
 	EventLoanDisbursementRejected = "loan.disbursement.rejected"
 	EventLoanDisbursementFailed = "loan.disbursement.failed"
+	EventPlatformJobFailed    = "platform.job.failed"
+	EventPlatformJobRecovered = "platform.job.recovered"
 )
 
 type Actor struct {

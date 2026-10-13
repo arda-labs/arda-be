@@ -10,7 +10,35 @@ import (
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
-func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handler.CalendarHandler, menuHandler *handler.MenuHandler, eodHandler *handler.EODHandler) http.Handler {
+// RouterOption mounts an optional route group on the platform mux. Optional
+// groups (scheduled jobs, internal job callbacks) are wired through options so
+// callers and tests that do not build those services keep compiling.
+type RouterOption func(mux *http.ServeMux)
+
+// WithScheduledJobs mounts the admin scheduled-jobs API. A nil handler panics
+// at construction so a missed wiring fails at startup instead of serving 404.
+func WithScheduledJobs(h *handler.ScheduledJobHandler) RouterOption {
+	if h == nil {
+		panic("platform router: WithScheduledJobs requires a non-nil handler")
+	}
+	return func(mux *http.ServeMux) {
+		handler.RegisterScheduledJobRoutes(mux, h)
+	}
+}
+
+// WithInternalJobs mounts the platform-owned job targets (/internal/jobs/*)
+// that the scheduler's executor calls with a platform-service signature. A
+// nil handler panics at construction, like WithScheduledJobs.
+func WithInternalJobs(h *handler.InternalJobsHandler) RouterOption {
+	if h == nil {
+		panic("platform router: WithInternalJobs requires a non-nil handler")
+	}
+	return func(mux *http.ServeMux) {
+		handler.RegisterInternalJobRoutes(mux, h, internalJobService)
+	}
+}
+
+func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handler.CalendarHandler, menuHandler *handler.MenuHandler, eodHandler *handler.EODHandler, opts ...RouterOption) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health/live", health("ok"))
@@ -46,6 +74,9 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 	mux.HandleFunc("/api/platform/eod/seed", eodHandler.SeedCOBJobs)
 	mux.HandleFunc("GET /api/platform/jobs", eodHandler.ListJobs)
 	mux.HandleFunc("GET /api/platform/jobs/runs", eodHandler.ListJobRuns)
+	for _, opt := range opts {
+		opt(mux)
+	}
 	mux.HandleFunc("/api/platform/working-hours", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -287,6 +318,12 @@ func NewRouter(platformHandler *handler.PlatformHandler, calendarHandler *handle
 // browsers — this route is never exposed to them.
 func internalAIService(next http.Handler) http.Handler {
 	return identity.RequireServiceAuthFromEnv("platform-service", "ai-service")(next)
+}
+
+// internalJobService authenticates the job executor on /internal/jobs/*: the
+// platform scheduler signs its own calls (source = audience = platform-service).
+func internalJobService(next http.Handler) http.Handler {
+	return identity.RequireServiceAuthFromEnv("platform-service", "platform-service")(next)
 }
 
 func health(status string) http.HandlerFunc {

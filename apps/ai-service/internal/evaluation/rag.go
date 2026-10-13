@@ -3,6 +3,7 @@ package evaluation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,9 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
 	"gopkg.in/yaml.v3"
 )
+
+// ErrEmptySet is returned by Parse for a set without cases.
+var ErrEmptySet = errors.New("evaluation set has no cases")
 
 type Set struct {
 	Version     int      `yaml:"version"`
@@ -41,7 +45,7 @@ func Parse(data []byte) (Set, error) {
 		return Set{}, fmt.Errorf("decode evaluation set: %w", err)
 	}
 	if len(set.Cases) == 0 {
-		return Set{}, fmt.Errorf("evaluation set has no cases")
+		return Set{}, ErrEmptySet
 	}
 	return set, nil
 }

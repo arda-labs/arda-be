@@ -30,7 +30,9 @@ func ServiceAuthMiddleware(next http.Handler, secret string, required bool) http
 			return
 		}
 		claims, err := identity.Verify(r.Header.Get(identity.MetadataKey), secret, "ai-service", time.Now())
-		if err != nil || !trustedSources[claims.Source] {
+		// platform-service (the job scheduler) is trusted only for
+		// /internal/jobs/*; those routes additionally enforce the source.
+		if err != nil || !(trustedSources[claims.Source] || (claims.Source == "platform-service" && strings.HasPrefix(r.URL.Path, "/internal/jobs/"))) {
 			problem(w, http.StatusUnauthorized, "ai.service_auth_required")
 			return
 		}

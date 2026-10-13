@@ -52,3 +52,18 @@ func TestServiceAuthAcceptsGatewayOnly(t *testing.T) {
 		t.Fatalf("foreign source accepted with status %d", rec.Code)
 	}
 }
+
+func TestServiceAuthAllowsPlatformOnlyForInternalJobs(t *testing.T) {
+	secret := "01234567890123456789012345678901"
+	next := ServiceAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }), secret, true)
+	tok, _ := identity.Issue(secret, "platform-service", "ai-service", time.Now(), time.Minute)
+	for path, want := range map[string]int{"/internal/jobs/ai-eval": 204, "/api/rag/query": 401} {
+		req := httptest.NewRequest("POST", path, nil)
+		req.Header.Set(identity.MetadataKey, tok)
+		rec := httptest.NewRecorder()
+		next.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Fatalf("%s: want %d got %d", path, want, rec.Code)
+		}
+	}
+}

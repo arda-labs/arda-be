@@ -69,6 +69,13 @@ type Config struct {
 	// matches scored ~0.70, so the floor moved from 0.35 to 0.5.
 	RAGMinSimilarity float64
 
+	// AIEvalSetPath is the golden RAG evaluation set run by the scheduled
+	// ai-eval job (POST /internal/jobs/ai-eval). The image ships it at the
+	// default path.
+	AIEvalSetPath string
+	// AIEvalTenant is the tenant used for eval cases that do not name one.
+	AIEvalTenant string
+
 	NATSURL string
 	// RedisURL enables the distributed rate limiter. Empty uses the
 	// in-process limiter (single-replica behavior).
@@ -178,6 +185,9 @@ func Load() Config {
 		RAGEmbeddingDimensions:      envIntOr("AI_RAG_EMBEDDING_DIMENSIONS", 1024),
 		RAGEmbeddingCacheTTLSeconds: embeddingCacheTTL,
 		RAGMinSimilarity:            envFloatOr("AI_RAG_MIN_SIMILARITY", 0.5),
+
+		AIEvalSetPath: envOr("AI_EVAL_SET", "/app/eval/evaluation-set.yaml"),
+		AIEvalTenant:  os.Getenv("AI_EVAL_TENANT"),
 
 		NATSURL:  envOr("NATS_URL", envOr("AI_NATS_URL", "")),
 		RedisURL: envOr("REDIS_URL", ""),

@@ -34,6 +34,8 @@ var notificationEventRegistry = []NotificationEvent{
 	{Code: "statistical.indicator.breached", Subject: "arda.statistical.indicator.breached.v1", Domain: "RPT", Description: "Chỉ tiêu vượt ngưỡng cảnh báo"},
 	{Code: "hrm.employee.registered", Subject: "arda.hrm.employee.registered.v1", Domain: "HRM", Description: "Nhân sự mới được đăng ký"},
 	{Code: "workflow.task.assigned", Subject: "arda.workflow.task.assigned.v1", Domain: "BPM", Description: "Công việc được phân công"},
+	{Code: "platform.job.failed", Subject: "arda.platform.job.failed.v1", Domain: "PLT", Description: "Job định kỳ lỗi"},
+	{Code: "platform.job.recovered", Subject: "arda.platform.job.recovered.v1", Domain: "PLT", Description: "Job định kỳ chạy lại thành công"},
 	{Code: "notification.inbox.created", Subject: "arda.notification.inbox.created.v1", Domain: "NOTI", Description: "Thông báo hộp thư đến"},
 }
 
