@@ -15,6 +15,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-time v0.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
@@ -38,3 +39,5 @@ replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
 replace github.com/arda-labs/arda/libs/go/arda-redis => ../../libs/go/arda-redis
 
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config

@@ -3,66 +3,67 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 
-	"gopkg.in/yaml.v3"
+	ardaconfig "github.com/arda-labs/arda/libs/go/arda-config"
 )
 
 // Config holds runtime configuration.
 type Config struct {
-	AppName       string `yaml:"app_name"`
-	HTTPAddr      string `yaml:"http_addr"`
-	LogLevel      string `yaml:"log_level"`
-	TokenStrategy string `yaml:"token_strategy"`
+	AppName       string `yaml:"app_name" env:"APP_NAME"`
+	HTTPAddr      string `yaml:"http_addr" env:"HTTP_ADDR"`
+	LogLevel      string `yaml:"log_level" env:"LOG_LEVEL"`
+	TokenStrategy string `yaml:"token_strategy" env:"TOKEN_STRATEGY"`
 
-	JWTSecret                 string `yaml:"jwt_secret"`
-	JWTIssuer                 string `yaml:"jwt_issuer"`
-	JWTAudience               string `yaml:"jwt_audience"`
-	JWKSURL                   string `yaml:"jwks_url"`
-	IntrospectionURL          string `yaml:"introspection_url"`
-	IntrospectionClientID     string `yaml:"introspection_client_id"`
-	IntrospectionClientSecret string `yaml:"introspection_client_secret"`
+	JWTSecret                 string `yaml:"jwt_secret" env:"JWT_SECRET"`
+	JWTIssuer                 string `yaml:"jwt_issuer" env:"JWT_ISSUER"`
+	JWTAudience               string `yaml:"jwt_audience" env:"JWT_AUDIENCE"`
+	JWKSURL                   string `yaml:"jwks_url" env:"JWKS_URL"`
+	IntrospectionURL          string `yaml:"introspection_url" env:"INTROSPECTION_URL"`
+	IntrospectionClientID     string `yaml:"introspection_client_id" env:"INTROSPECTION_CLIENT_ID"`
+	IntrospectionClientSecret string `yaml:"introspection_client_secret" env:"INTROSPECTION_CLIENT_SECRET"`
 
-	IAMServiceURL             string `yaml:"iam_service_url"`
-	IAMContextCacheTTL        int    `yaml:"iam_context_cache_ttl_seconds"`
-	SlowRequestLogEnabled     bool   `yaml:"slow_request_log_enabled"`
-	SlowRequestLogThresholdMS int    `yaml:"slow_request_log_threshold_ms"`
-	CORSAllowedOrigins        string `yaml:"cors_allowed_origins"`
-	FrontendOrigin            string `yaml:"frontend_origin"`
-	PlatformServiceURL        string `yaml:"platform_service_url"`
-	FinanceServiceURL         string `yaml:"finance_service_url"`
-	MediaServiceURL           string `yaml:"media_service_url"`
-	WorkflowServiceURL        string `yaml:"workflow_service_url"`
-	CRMServiceURL             string `yaml:"crm_service_url"`
-	HRMServiceURL             string `yaml:"hrm_service_url"`
-	NotificationURL           string `yaml:"notification_service_url"`
-	MDMServiceURL             string `yaml:"mdm_service_url"`
-	AIServiceURL              string `yaml:"ai_service_url"`
-	RAGServiceURL             string `yaml:"rag_service_url"`
-	LoanServiceURL            string `yaml:"loan_service_url"`
-	DepositServiceURL         string `yaml:"deposit_service_url"`
-	CapitalServiceURL         string `yaml:"capital_service_url"`
-	StatisticalServiceURL     string `yaml:"statistical_service_url"`
-	ServiceAuthSecret         string `yaml:"-"`
-	PolicyFile                string `yaml:"policy_file"`
+	IAMServiceURL             string `yaml:"iam_service_url" env:"IAM_SERVICE_URL"`
+	IAMContextCacheTTL        int    `yaml:"iam_context_cache_ttl_seconds" env:"IAM_CONTEXT_CACHE_TTL_SECONDS"`
+	SlowRequestLogEnabled     bool   `yaml:"slow_request_log_enabled" env:"SLOW_REQUEST_LOG_ENABLED"`
+	SlowRequestLogThresholdMS int    `yaml:"slow_request_log_threshold_ms" env:"SLOW_REQUEST_LOG_THRESHOLD_MS"`
+	CORSAllowedOrigins        string `yaml:"cors_allowed_origins" env:"CORS_ALLOWED_ORIGINS"`
+	FrontendOrigin            string `yaml:"frontend_origin" env:"FRONTEND_ORIGIN"`
+	PlatformServiceURL        string `yaml:"platform_service_url" env:"PLATFORM_SERVICE_URL"`
+	FinanceServiceURL         string `yaml:"finance_service_url" env:"FINANCE_SERVICE_URL"`
+	MediaServiceURL           string `yaml:"media_service_url" env:"MEDIA_SERVICE_URL"`
+	WorkflowServiceURL        string `yaml:"workflow_service_url" env:"WORKFLOW_SERVICE_URL"`
+	CRMServiceURL             string `yaml:"crm_service_url" env:"CRM_SERVICE_URL"`
+	HRMServiceURL             string `yaml:"hrm_service_url" env:"HRM_SERVICE_URL"`
+	NotificationURL           string `yaml:"notification_service_url" env:"NOTIFICATION_SERVICE_URL"`
+	MDMServiceURL             string `yaml:"mdm_service_url" env:"MDM_SERVICE_URL"`
+	AIServiceURL              string `yaml:"ai_service_url" env:"AI_SERVICE_URL"`
+	RAGServiceURL             string `yaml:"rag_service_url" env:"RAG_SERVICE_URL"`
+	// The loan, deposit, capital and statistical URLs were never read from
+	// the YAML file; keep them env-only.
+	LoanServiceURL        string `yaml:"-" env:"LOAN_SERVICE_URL"`
+	DepositServiceURL     string `yaml:"-" env:"DEPOSIT_SERVICE_URL"`
+	CapitalServiceURL     string `yaml:"-" env:"CAPITAL_SERVICE_URL"`
+	StatisticalServiceURL string `yaml:"-" env:"STATISTICAL_SERVICE_URL"`
+	ServiceAuthSecret     string `yaml:"-" env:"ARDA_SERVICE_AUTH_SECRET"`
+	PolicyFile            string `yaml:"policy_file" env:"POLICY_FILE"`
 
-	RedisURL                 string `yaml:"redis_url"`
-	SessionStore             string `yaml:"session_store"`
-	SessionCookieName        string `yaml:"session_cookie_name"`
-	SessionCookieDomain      string `yaml:"session_cookie_domain"`
-	SessionTTL               int    `yaml:"session_ttl_seconds"`
-	SessionAuthCheckInterval int    `yaml:"session_auth_check_interval_seconds"`
-	RecentAuthWindow         int    `yaml:"recent_auth_window_seconds"`
-	CookieSecure             bool   `yaml:"cookie_secure"`
-	CookieSameSite           string `yaml:"cookie_same_site"`
+	RedisURL                 string `yaml:"redis_url" env:"REDIS_URL"`
+	SessionStore             string `yaml:"session_store" env:"SESSION_STORE"`
+	SessionCookieName        string `yaml:"session_cookie_name" env:"SESSION_COOKIE_NAME"`
+	SessionCookieDomain      string `yaml:"session_cookie_domain" env:"SESSION_COOKIE_DOMAIN"`
+	SessionTTL               int    `yaml:"session_ttl_seconds" env:"SESSION_TTL_SECONDS"`
+	SessionAuthCheckInterval int    `yaml:"session_auth_check_interval_seconds" env:"SESSION_AUTH_CHECK_INTERVAL_SECONDS"`
+	RecentAuthWindow         int    `yaml:"recent_auth_window_seconds" env:"RECENT_AUTH_WINDOW_SECONDS"`
+	CookieSecure             bool   `yaml:"cookie_secure" env:"COOKIE_SECURE"`
+	CookieSameSite           string `yaml:"cookie_same_site" env:"COOKIE_SAMESITE"`
 
 	// Kratos + Hydra
-	KratosPublicURL   string `yaml:"kratos_public_url"`
-	HydraAdminURL     string `yaml:"hydra_admin_url"`
-	HydraPublicURL    string `yaml:"hydra_public_url"`
-	OAuthClientID     string `yaml:"oauth_client_id"`
-	OAuthRedirectURI  string `yaml:"oauth_redirect_uri"`
-	OAuthRedirectURIs string `yaml:"oauth_redirect_uris"`
+	KratosPublicURL   string `yaml:"kratos_public_url" env:"KRATOS_PUBLIC_URL"`
+	HydraAdminURL     string `yaml:"hydra_admin_url" env:"HYDRA_ADMIN_URL"`
+	HydraPublicURL    string `yaml:"hydra_public_url" env:"HYDRA_PUBLIC_URL"`
+	OAuthClientID     string `yaml:"oauth_client_id" env:"OAUTH_CLIENT_ID"`
+	OAuthRedirectURI  string `yaml:"oauth_redirect_uri" env:"OAUTH_REDIRECT_URI"`
+	OAuthRedirectURIs string `yaml:"oauth_redirect_uris" env:"OAUTH_REDIRECT_URIS"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -104,162 +105,8 @@ func Load() Config {
 		OAuthRedirectURI:          "http://localhost:5000/api/auth/callback",
 		OAuthRedirectURIs:         "https://api.arda.io.vn/api/auth/callback,https://arda.io.vn/callback,http://localhost:5000/api/auth/callback,http://localhost:5000/callback",
 	}
-
-	// Try loading YAML
-	if path := os.Getenv("CONFIG_FILE"); path != "" {
-		cfg.loadYAML(path)
-	} else {
-		for _, p := range []string{"configs/config.yaml", "../configs/config.yaml", "/etc/arda/auth-gateway/config.yaml"} {
-			if cfg.loadYAML(p) {
-				break
-			}
-		}
+	if err := ardaconfig.Load(&cfg, ardaconfig.ServiceOptions("auth-gateway")); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
-
-	// Env overrides
-	envStr("APP_NAME", &cfg.AppName)
-	envStr("HTTP_ADDR", &cfg.HTTPAddr)
-	envStr("LOG_LEVEL", &cfg.LogLevel)
-	envStr("TOKEN_STRATEGY", &cfg.TokenStrategy)
-	envStr("JWT_SECRET", &cfg.JWTSecret)
-	envStr("JWT_ISSUER", &cfg.JWTIssuer)
-	envStr("JWT_AUDIENCE", &cfg.JWTAudience)
-	envStr("JWKS_URL", &cfg.JWKSURL)
-	envStr("INTROSPECTION_URL", &cfg.IntrospectionURL)
-	envStr("INTROSPECTION_CLIENT_ID", &cfg.IntrospectionClientID)
-	envStr("INTROSPECTION_CLIENT_SECRET", &cfg.IntrospectionClientSecret)
-	envStr("IAM_SERVICE_URL", &cfg.IAMServiceURL)
-	envInt("IAM_CONTEXT_CACHE_TTL_SECONDS", &cfg.IAMContextCacheTTL)
-	envBool("SLOW_REQUEST_LOG_ENABLED", &cfg.SlowRequestLogEnabled)
-	envInt("SLOW_REQUEST_LOG_THRESHOLD_MS", &cfg.SlowRequestLogThresholdMS)
-	envStr("CORS_ALLOWED_ORIGINS", &cfg.CORSAllowedOrigins)
-	envStr("FRONTEND_ORIGIN", &cfg.FrontendOrigin)
-	envStr("PLATFORM_SERVICE_URL", &cfg.PlatformServiceURL)
-	envStr("FINANCE_SERVICE_URL", &cfg.FinanceServiceURL)
-	envStr("MEDIA_SERVICE_URL", &cfg.MediaServiceURL)
-	envStr("WORKFLOW_SERVICE_URL", &cfg.WorkflowServiceURL)
-	envStr("CRM_SERVICE_URL", &cfg.CRMServiceURL)
-	envStr("HRM_SERVICE_URL", &cfg.HRMServiceURL)
-	envStr("NOTIFICATION_SERVICE_URL", &cfg.NotificationURL)
-	envStr("MDM_SERVICE_URL", &cfg.MDMServiceURL)
-	envStr("AI_SERVICE_URL", &cfg.AIServiceURL)
-	envStr("RAG_SERVICE_URL", &cfg.RAGServiceURL)
-	envStr("LOAN_SERVICE_URL", &cfg.LoanServiceURL)
-	envStr("DEPOSIT_SERVICE_URL", &cfg.DepositServiceURL)
-	envStr("CAPITAL_SERVICE_URL", &cfg.CapitalServiceURL)
-	envStr("STATISTICAL_SERVICE_URL", &cfg.StatisticalServiceURL)
-	envStr("ARDA_SERVICE_AUTH_SECRET", &cfg.ServiceAuthSecret)
-	envStr("POLICY_FILE", &cfg.PolicyFile)
-	envStr("REDIS_URL", &cfg.RedisURL)
-	envStr("SESSION_STORE", &cfg.SessionStore)
-	envStr("SESSION_COOKIE_NAME", &cfg.SessionCookieName)
-	envStr("SESSION_COOKIE_DOMAIN", &cfg.SessionCookieDomain)
-	envInt("SESSION_TTL_SECONDS", &cfg.SessionTTL)
-	envInt("SESSION_AUTH_CHECK_INTERVAL_SECONDS", &cfg.SessionAuthCheckInterval)
-	envInt("RECENT_AUTH_WINDOW_SECONDS", &cfg.RecentAuthWindow)
-	envBool("COOKIE_SECURE", &cfg.CookieSecure)
-	envStr("COOKIE_SAMESITE", &cfg.CookieSameSite)
-	envStr("KRATOS_PUBLIC_URL", &cfg.KratosPublicURL)
-	envStr("HYDRA_ADMIN_URL", &cfg.HydraAdminURL)
-	envStr("HYDRA_PUBLIC_URL", &cfg.HydraPublicURL)
-	envStr("OAUTH_CLIENT_ID", &cfg.OAuthClientID)
-	envStr("OAUTH_REDIRECT_URI", &cfg.OAuthRedirectURI)
-	envStr("OAUTH_REDIRECT_URIS", &cfg.OAuthRedirectURIs)
-
 	return cfg
-}
-
-func (c *Config) loadYAML(path string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	m := make(map[string]interface{})
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		fmt.Fprintf(os.Stderr, "config: parse %s: %v\n", path, err)
-		return false
-	}
-	setStr := func(key string, target *string) {
-		if v, ok := m[key].(string); ok {
-			*target = v
-		}
-	}
-	setStr("app_name", &c.AppName)
-	setStr("http_addr", &c.HTTPAddr)
-	setStr("log_level", &c.LogLevel)
-	setStr("token_strategy", &c.TokenStrategy)
-	setStr("jwt_secret", &c.JWTSecret)
-	setStr("jwt_issuer", &c.JWTIssuer)
-	setStr("jwt_audience", &c.JWTAudience)
-	setStr("jwks_url", &c.JWKSURL)
-	setStr("introspection_url", &c.IntrospectionURL)
-	setStr("introspection_client_id", &c.IntrospectionClientID)
-	setStr("introspection_client_secret", &c.IntrospectionClientSecret)
-	setStr("iam_service_url", &c.IAMServiceURL)
-	if v, ok := m["iam_context_cache_ttl_seconds"].(int); ok {
-		c.IAMContextCacheTTL = v
-	}
-	if v, ok := m["slow_request_log_enabled"].(bool); ok {
-		c.SlowRequestLogEnabled = v
-	}
-	if v, ok := m["slow_request_log_threshold_ms"].(int); ok {
-		c.SlowRequestLogThresholdMS = v
-	}
-	setStr("cors_allowed_origins", &c.CORSAllowedOrigins)
-	setStr("frontend_origin", &c.FrontendOrigin)
-	setStr("platform_service_url", &c.PlatformServiceURL)
-	setStr("finance_service_url", &c.FinanceServiceURL)
-	setStr("media_service_url", &c.MediaServiceURL)
-	setStr("workflow_service_url", &c.WorkflowServiceURL)
-	setStr("crm_service_url", &c.CRMServiceURL)
-	setStr("hrm_service_url", &c.HRMServiceURL)
-	setStr("notification_service_url", &c.NotificationURL)
-	setStr("mdm_service_url", &c.MDMServiceURL)
-	setStr("ai_service_url", &c.AIServiceURL)
-	setStr("rag_service_url", &c.RAGServiceURL)
-	setStr("policy_file", &c.PolicyFile)
-	setStr("redis_url", &c.RedisURL)
-	setStr("session_store", &c.SessionStore)
-	setStr("session_cookie_name", &c.SessionCookieName)
-	setStr("session_cookie_domain", &c.SessionCookieDomain)
-	if v, ok := m["session_ttl_seconds"].(int); ok {
-		c.SessionTTL = v
-	}
-	if v, ok := m["session_auth_check_interval_seconds"].(int); ok {
-		c.SessionAuthCheckInterval = v
-	}
-	if v, ok := m["recent_auth_window_seconds"].(int); ok {
-		c.RecentAuthWindow = v
-	}
-	if v, ok := m["cookie_secure"].(bool); ok {
-		c.CookieSecure = v
-	}
-	setStr("cookie_same_site", &c.CookieSameSite)
-	setStr("kratos_public_url", &c.KratosPublicURL)
-	setStr("hydra_admin_url", &c.HydraAdminURL)
-	setStr("hydra_public_url", &c.HydraPublicURL)
-	setStr("oauth_client_id", &c.OAuthClientID)
-	setStr("oauth_redirect_uri", &c.OAuthRedirectURI)
-	setStr("oauth_redirect_uris", &c.OAuthRedirectURIs)
-	return true
-}
-
-func envStr(key string, target *string) {
-	if v := os.Getenv(key); v != "" {
-		*target = v
-	}
-}
-
-func envInt(key string, target *int) {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			*target = n
-		}
-	}
-}
-
-func envBool(key string, target *bool) {
-	if v := os.Getenv(key); v != "" {
-		*target = v == "true" || v == "1"
-	}
 }
