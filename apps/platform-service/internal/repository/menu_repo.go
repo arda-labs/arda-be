@@ -14,7 +14,7 @@ import (
 // the same code replaces the global entry in the effective menu.
 const effectiveMenuSQL = `
 	SELECT id, tenant_id, parent_id, code, title, path, icon, remote,
-	       required_permission, sort_order, is_active, created_at, updated_at
+	       required_permission, sort_order, section, is_active, created_at, updated_at
 	FROM (
 		SELECT m.*, ROW_NUMBER() OVER (
 			PARTITION BY code
@@ -34,7 +34,7 @@ func NewMenuRepository(db *sql.DB) *MenuRepository {
 	return &MenuRepository{db: db}
 }
 
-const menuColumns = `id, tenant_id, parent_id, code, title, path, icon, remote, required_permission, sort_order, is_active, created_at, updated_at`
+const menuColumns = `id, tenant_id, parent_id, code, title, path, icon, remote, required_permission, sort_order, section, is_active, created_at, updated_at`
 
 type scanner interface {
 	Scan(...any) error
@@ -43,7 +43,7 @@ type scanner interface {
 func scanMenu(s scanner) (domain.MenuItem, error) {
 	var item domain.MenuItem
 	err := s.Scan(&item.ID, &item.TenantID, &item.ParentID, &item.Code, &item.Title, &item.Path,
-		&item.Icon, &item.Remote, &item.RequiredPermission, &item.SortOrder, &item.IsActive,
+		&item.Icon, &item.Remote, &item.RequiredPermission, &item.SortOrder, &item.Section, &item.IsActive,
 		&item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
@@ -100,16 +100,16 @@ func (r *MenuRepository) Upsert(ctx context.Context, item domain.MenuItem) (doma
 		item.ID = NewID("menu")
 	}
 	row := r.db.QueryRowContext(ctx, fmt.Sprintf(`
-		INSERT INTO plt_menus (id, tenant_id, parent_id, code, title, path, icon, remote, required_permission, sort_order, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO plt_menus (id, tenant_id, parent_id, code, title, path, icon, remote, required_permission, sort_order, section, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (code, COALESCE(tenant_id, '')) DO UPDATE SET
 			parent_id = EXCLUDED.parent_id, title = EXCLUDED.title, path = EXCLUDED.path,
 			icon = EXCLUDED.icon, remote = EXCLUDED.remote,
 			required_permission = EXCLUDED.required_permission, sort_order = EXCLUDED.sort_order,
-			is_active = EXCLUDED.is_active, updated_at = now()
+			section = EXCLUDED.section, is_active = EXCLUDED.is_active, updated_at = now()
 		RETURNING %s`, menuColumns),
 		item.ID, item.TenantID, item.ParentID, item.Code, item.Title, item.Path, item.Icon,
-		item.Remote, item.RequiredPermission, item.SortOrder, item.IsActive)
+		item.Remote, item.RequiredPermission, item.SortOrder, item.Section, item.IsActive)
 	return scanMenu(row)
 }
 

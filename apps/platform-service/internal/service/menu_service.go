@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"regexp"
 	"strings"
 
 	"github.com/arda-labs/arda/apps/platform-service/internal/domain"
@@ -12,6 +13,10 @@ import (
 // MenuService serves the DB-driven navigation tree. The effective list is
 // tenant-aware (global seeds overridden by tenant-owned rows); filtering by
 // user permission happens client-side where the session lives.
+// menuSectionPattern keeps section codes short machine keys; labels live in
+// the frontend i18n catalogue.
+var menuSectionPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,49}$`)
+
 type MenuService struct {
 	repo *repository.MenuRepository
 }
@@ -49,6 +54,10 @@ func (s *MenuService) Upsert(ctx context.Context, tenantID string, item domain.M
 	}
 	if strings.TrimSpace(item.Title) == "" {
 		return domain.MenuItem{}, ardaerrors.New(ardaerrors.CodeRequired, "title is required")
+	}
+	item.Section = strings.TrimSpace(item.Section)
+	if item.Section != "" && !menuSectionPattern.MatchString(item.Section) {
+		return domain.MenuItem{}, ardaerrors.New(ardaerrors.CodeInvalidInput, "section must be a lowercase code")
 	}
 	// Runtime writes are always tenant-scoped; global seeds change via
 	// migration, never through the API.
