@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	testSecret = "0123456789abcdef0123456789abcdef"
+	testSecret = "0482913789abcdef0482913789abcdef"
 	knownUser  = "11111111-1111-1111-1111-111111111111"
 )
 
@@ -127,7 +127,7 @@ func (f *fakeMFA) VerifyCode(_ context.Context, userID, code string) error {
 		return service.ErrMFANotEnrolled
 	case code == "000000":
 		return service.ErrMFALocked
-	case code != "123456":
+	case code != "482913":
 		return service.ErrMFAInvalidCode
 	}
 	return nil
@@ -139,7 +139,7 @@ func (f *fakeMFA) VerifyAndEnroll(_ context.Context, userID, code string) ([]str
 	if f.enrolled[userID] {
 		return nil, service.ErrMFAAlreadyEnrolled
 	}
-	if code != "123456" {
+	if code != "482913" {
 		return nil, service.ErrMFAInvalidEnrollmentCode
 	}
 	f.enrolled[userID] = true
@@ -331,7 +331,7 @@ func TestMFAFlow(t *testing.T) {
 	if err != nil || st.GetIsEnrolled() {
 		t.Fatalf("status before enrollment = %v, %v", st, err)
 	}
-	_, err = f.client.VerifyMfa(ctx, &iamv1.VerifyMfaRequest{UserId: knownUser, Code: "123456"})
+	_, err = f.client.VerifyMfa(ctx, &iamv1.VerifyMfaRequest{UserId: knownUser, Code: "482913"})
 	wantCode(t, err, codes.FailedPrecondition) // not enrolled
 
 	secret, err := f.client.GenerateMfaSecret(ctx, &iamv1.GenerateMfaSecretRequest{UserId: knownUser, Username: "u1", Email: "u1@example.com"})
@@ -340,11 +340,11 @@ func TestMFAFlow(t *testing.T) {
 	}
 	_, err = f.client.VerifyMfaEnrollment(ctx, &iamv1.VerifyMfaEnrollmentRequest{UserId: knownUser, Code: "999999"})
 	wantCode(t, err, codes.InvalidArgument)
-	enrolled, err := f.client.VerifyMfaEnrollment(ctx, &iamv1.VerifyMfaEnrollmentRequest{UserId: knownUser, Code: "123456"})
+	enrolled, err := f.client.VerifyMfaEnrollment(ctx, &iamv1.VerifyMfaEnrollmentRequest{UserId: knownUser, Code: "482913"})
 	if err != nil || len(enrolled.GetBackupCodes()) != 2 {
 		t.Fatalf("VerifyMfaEnrollment = %v, %v", enrolled, err)
 	}
-	_, err = f.client.VerifyMfaEnrollment(ctx, &iamv1.VerifyMfaEnrollmentRequest{UserId: knownUser, Code: "123456"})
+	_, err = f.client.VerifyMfaEnrollment(ctx, &iamv1.VerifyMfaEnrollmentRequest{UserId: knownUser, Code: "482913"})
 	wantCode(t, err, codes.FailedPrecondition) // already enrolled
 
 	st, err = f.client.GetMfaStatus(ctx, &iamv1.GetMfaStatusRequest{UserId: knownUser})
@@ -361,7 +361,7 @@ func TestMFAFlow(t *testing.T) {
 		t.Fatalf("CheckMfa trusted = %v, %v", check, err)
 	}
 
-	if _, err := f.client.VerifyMfa(ctx, &iamv1.VerifyMfaRequest{UserId: knownUser, Code: "123456"}); err != nil {
+	if _, err := f.client.VerifyMfa(ctx, &iamv1.VerifyMfaRequest{UserId: knownUser, Code: "482913"}); err != nil {
 		t.Fatal(err)
 	}
 	_, err = f.client.VerifyMfa(ctx, &iamv1.VerifyMfaRequest{UserId: knownUser, Code: "654321"})

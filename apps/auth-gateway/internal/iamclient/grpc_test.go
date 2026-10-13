@@ -103,7 +103,7 @@ func (f *fakeGateway) CheckMfa(_ context.Context, req *iamv1.CheckMfaRequest) (*
 func (f *fakeGateway) VerifyMfa(_ context.Context, req *iamv1.VerifyMfaRequest) (*iamv1.VerifyMfaResponse, error) {
 	f.verified = append(f.verified, req.GetUserId()+":"+req.GetCode())
 	switch req.GetCode() {
-	case "123456":
+	case "482913":
 		return &iamv1.VerifyMfaResponse{}, nil
 	case "000000":
 		return nil, status.Error(codes.FailedPrecondition, "too many failed MFA attempts; try again later")
@@ -114,7 +114,7 @@ func (f *fakeGateway) GenerateMfaSecret(_ context.Context, req *iamv1.GenerateMf
 	return &iamv1.GenerateMfaSecretResponse{Secret: "S3CRET", OtpauthUrl: "otpauth://totp/arda:" + req.GetUsername()}, nil
 }
 func (f *fakeGateway) VerifyMfaEnrollment(_ context.Context, req *iamv1.VerifyMfaEnrollmentRequest) (*iamv1.VerifyMfaEnrollmentResponse, error) {
-	if req.GetCode() != "123456" {
+	if req.GetCode() != "482913" {
 		return nil, status.Error(codes.InvalidArgument, "invalid TOTP code")
 	}
 	return &iamv1.VerifyMfaEnrollmentResponse{BackupCodes: []string{"a", "b"}}, nil
@@ -240,7 +240,7 @@ func TestGRPCMFAMapping(t *testing.T) {
 	if check, _ := client.CheckMFA(ctx, "u1", "trusted"); check.RequiresMFA {
 		t.Fatal("trusted device must not require MFA")
 	}
-	if err := client.VerifyMFA(ctx, "u1", "123456"); err != nil {
+	if err := client.VerifyMFA(ctx, "u1", "482913"); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.VerifyMFA(ctx, "u1", "999999"); err == nil {
@@ -249,14 +249,14 @@ func TestGRPCMFAMapping(t *testing.T) {
 	if err := client.VerifyMFA(ctx, "u1", "000000"); err == nil {
 		t.Fatal("locked account must fail")
 	}
-	if len(fake.verified) != 3 || fake.verified[0] != "u1:123456" {
+	if len(fake.verified) != 3 || fake.verified[0] != "u1:482913" {
 		t.Fatalf("verify calls = %v", fake.verified)
 	}
 	secret, err := client.GenerateMFASecret(ctx, "u1", "alice", "alice@example.com")
 	if err != nil || secret.Secret != "S3CRET" || !strings.HasSuffix(secret.OTPAuthURL, "alice") {
 		t.Fatalf("secret = %+v %v", secret, err)
 	}
-	enroll, err := client.VerifyMFAEnrollment(ctx, "u1", "123456")
+	enroll, err := client.VerifyMFAEnrollment(ctx, "u1", "482913")
 	if err != nil || enroll.Status != "enrolled" || len(enroll.BackupCodes) != 2 {
 		t.Fatalf("enroll = %+v %v", enroll, err)
 	}
