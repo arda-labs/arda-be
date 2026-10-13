@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadEmbeddingConfigIsIndependentAndProductionFailsClosed(t *testing.T) {
 	t.Setenv("AI_MODE", "production")
@@ -50,5 +53,38 @@ func TestLoadServiceURLsUsesCanonicalRegistry(t *testing.T) {
 	}
 	if _, present := cfg.ServiceURLs["mdm-service"]; present {
 		t.Fatal("unset service URL must be omitted, not defaulted")
+	}
+}
+
+func TestCodeModeSystemPromptCarriesAnswerFormMatrix(t *testing.T) {
+	t.Setenv("AI_ENABLE_READ_TOOLS", "true")
+	t.Setenv("AI_MODEL_SYSTEM_PROMPT", "")
+	prompt := Load().ModelSystemPrompt
+
+	for _, want := range []string{
+		"Chọn dạng trả lời:",
+		"văn xuôi",
+		"bảng markdown",
+		"renderChart",
+		"getReportPresentation",
+		"một dạng chính",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("code mode prompt missing %q", want)
+		}
+	}
+	if strings.Count(prompt, "BẮT BUỘC hiển thị biểu đồ") != 0 {
+		t.Fatal("duplicate renderChart mandate should have been merged into the answer-form matrix")
+	}
+	if !strings.Contains(prompt, "không viết HTML") {
+		t.Fatal("HTML ban for report mode must stay")
+	}
+}
+
+func TestDirectToolSystemPromptUnchangedByAnswerFormMatrix(t *testing.T) {
+	t.Setenv("AI_ENABLE_READ_TOOLS", "false")
+	t.Setenv("AI_MODEL_SYSTEM_PROMPT", "")
+	if strings.Contains(Load().ModelSystemPrompt, "Chọn dạng trả lời:") {
+		t.Fatal("direct-tool prompt must not carry the answer-form matrix")
 	}
 }
