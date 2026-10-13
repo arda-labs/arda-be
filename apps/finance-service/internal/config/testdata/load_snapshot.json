@@ -1,0 +1,62 @@
+{
+  "defaults": {
+    "AppName": "finance-service",
+    "HTTPAddr": "0.0.0.0:8090",
+    "GRPCAddr": "0.0.0.0:9090",
+    "LogLevel": "info",
+    "DatabaseDSN": "",
+    "PlatformGRPCAddr": "localhost:9090",
+    "WorkflowGRPCAddr": "localhost:9090",
+    "LoanGRPCAddr": "localhost:9090",
+    "NATSURL": "nats://localhost:4222",
+    "MaxConcurrentTransactions": 100
+  },
+  "empty_env_keeps_yaml": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "GRPCAddr": "yaml-grpc_addr",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "PlatformGRPCAddr": "yaml-platform_grpc_addr",
+    "WorkflowGRPCAddr": "yaml-workflow_grpc_addr",
+    "LoanGRPCAddr": "yaml-loan_grpc_addr",
+    "NATSURL": "yaml-nats_url",
+    "MaxConcurrentTransactions": 100
+  },
+  "env_only": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "GRPCAddr": "env-GRPC_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "PlatformGRPCAddr": "env-PLATFORM_GRPC_ADDR",
+    "WorkflowGRPCAddr": "env-WORKFLOW_GRPC_ADDR",
+    "LoanGRPCAddr": "env-LOAN_GRPC_ADDR",
+    "NATSURL": "env-NATS_URL",
+    "MaxConcurrentTransactions": 99
+  },
+  "env_over_yaml": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "GRPCAddr": "env-GRPC_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "PlatformGRPCAddr": "env-PLATFORM_GRPC_ADDR",
+    "WorkflowGRPCAddr": "env-WORKFLOW_GRPC_ADDR",
+    "LoanGRPCAddr": "env-LOAN_GRPC_ADDR",
+    "NATSURL": "env-NATS_URL",
+    "MaxConcurrentTransactions": 99
+  },
+  "yaml_only": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "GRPCAddr": "yaml-grpc_addr",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "PlatformGRPCAddr": "yaml-platform_grpc_addr",
+    "WorkflowGRPCAddr": "yaml-workflow_grpc_addr",
+    "LoanGRPCAddr": "yaml-loan_grpc_addr",
+    "NATSURL": "yaml-nats_url",
+    "MaxConcurrentTransactions": 100
+  }
+}

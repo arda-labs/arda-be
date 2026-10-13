@@ -21,6 +21,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-time v0.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -58,3 +59,5 @@ replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-po
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
 
 replace github.com/arda-labs/arda/libs/go/arda-businessdate => ../../libs/go/arda-businessdate
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config

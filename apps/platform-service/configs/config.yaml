@@ -4,3 +4,10 @@ grpc_addr: 0.0.0.0:9091
 log_level: info
 database_dsn: ""
 nats_url: ""
+# Base URL per owner service for scheduled jobs and the EOD (COB) steps.
+# JOB_TARGET_URLS=svc=url,svc2=url2 replaces this map entirely.
+job_target_urls:
+  loan-service: "http://loan-service:8080"
+  deposit-service: "http://deposit-service:8080"
+  finance-service: "http://finance-service:8080"
+  statistical-service: "http://statistical-service:8080"

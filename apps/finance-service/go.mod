@@ -39,8 +39,9 @@ replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-po
 replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc
 
 require (
-	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-docno v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-money v0.0.0-20260908084620-c4d6c146e0ff
@@ -64,3 +65,5 @@ replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
 
 replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config

@@ -18,6 +18,7 @@ use (
 	./apps/workflow-service
 	./libs/go/arda-auth
 	./libs/go/arda-businessdate
+	./libs/go/arda-config
 	./libs/go/arda-crypto
 	./libs/go/arda-doc
 	./libs/go/arda-docno

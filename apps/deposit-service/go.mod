@@ -3,10 +3,10 @@ module github.com/arda-labs/arda/apps/deposit-service
 go 1.27.2
 
 require (
-	github.com/arda-labs/arda/libs/go/arda-openapi v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-openapi v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0-00010101000000-000000000000
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-time v0.0.0
@@ -18,6 +18,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -55,3 +56,5 @@ replace github.com/arda-labs/arda/libs/go/arda-money => ../../libs/go/arda-money
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
 
 replace github.com/arda-labs/arda/libs/go/arda-openapi => ../../libs/go/arda-openapi
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config

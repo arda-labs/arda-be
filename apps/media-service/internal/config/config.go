@@ -3,37 +3,39 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	ardaconfig "github.com/arda-labs/arda/libs/go/arda-config"
 )
 
+// Config holds runtime configuration for media-service. Every value accepts a
+// generic name, a MEDIA_-prefixed name and (for storage) a GARAGE_ name; the
+// later alias wins. Empty strings and non-positive sizes never override the
+// default (config:"positive").
 type Config struct {
-	AppName                string        `yaml:"app_name"`
-	HTTPAddr               string        `yaml:"http_addr"`
-	GRPCAddr               string        `yaml:"grpc_addr"`
-	LogLevel               string        `yaml:"log_level"`
-	DatabaseDSN            string        `yaml:"database_dsn"`
-	NATSURL                string        `yaml:"nats_url"`
-	StorageProvider        string        `yaml:"storage_provider"`
-	StorageEndpoint        string        `yaml:"storage_endpoint"`
-	StoragePublicEndpoint  string        `yaml:"storage_public_endpoint"`
-	StorageRegion          string        `yaml:"storage_region"`
-	StorageBucket          string        `yaml:"storage_bucket"`
-	StorageAccessKey       string        `yaml:"storage_access_key"`
-	StorageSecretKey       string        `yaml:"storage_secret_key"`
-	StorageForcePathStyle  bool          `yaml:"storage_force_path_style"`
-	UploadMaxSizeMB        int64         `yaml:"upload_max_size_mb"`
-	StreamMaxSizeMB        int64         `yaml:"stream_max_size_mb"`
-	PreviewMaxSizeMB       int64         `yaml:"preview_max_size_mb"`
-	GotenbergURL           string        `yaml:"gotenberg_url"`
-	PresignUploadTTL       time.Duration `yaml:"presign_upload_ttl"`
-	PresignDownloadTTL     time.Duration `yaml:"presign_download_ttl"`
-	RequireScanBeforeReady bool          `yaml:"require_scan_before_ready"`
-	TempFileTTL            time.Duration `yaml:"temp_file_ttl"`
-	AllowedUploadMIME      []string      `yaml:"allowed_upload_mime"`
+	AppName                string        `yaml:"app_name" env:"APP_NAME" config:"positive"`
+	HTTPAddr               string        `yaml:"http_addr" env:"HTTP_ADDR" config:"positive"`
+	GRPCAddr               string        `yaml:"grpc_addr" env:"GRPC_ADDR" config:"positive"`
+	LogLevel               string        `yaml:"log_level" env:"LOG_LEVEL" config:"positive"`
+	DatabaseDSN            string        `yaml:"database_dsn" env:"DATABASE_DSN,MEDIA_DATABASE_DSN" config:"positive"`
+	NATSURL                string        `yaml:"nats_url" env:"NATS_URL,MEDIA_NATS_URL" config:"positive"`
+	StorageProvider        string        `yaml:"storage_provider" env:"STORAGE_PROVIDER,MEDIA_STORAGE_PROVIDER" config:"positive"`
+	StorageEndpoint        string        `yaml:"storage_endpoint" env:"STORAGE_ENDPOINT,MEDIA_STORAGE_ENDPOINT,GARAGE_ENDPOINT" config:"positive"`
+	StoragePublicEndpoint  string        `yaml:"storage_public_endpoint" env:"STORAGE_PUBLIC_ENDPOINT,MEDIA_STORAGE_PUBLIC_ENDPOINT,GARAGE_PUBLIC_ENDPOINT" config:"positive"`
+	StorageRegion          string        `yaml:"storage_region" env:"STORAGE_REGION,MEDIA_STORAGE_REGION,GARAGE_REGION" config:"positive"`
+	StorageBucket          string        `yaml:"storage_bucket" env:"STORAGE_BUCKET,MEDIA_STORAGE_BUCKET,GARAGE_BUCKET" config:"positive"`
+	StorageAccessKey       string        `yaml:"storage_access_key" env:"STORAGE_ACCESS_KEY,MEDIA_STORAGE_ACCESS_KEY,GARAGE_ACCESS_KEY" config:"positive"`
+	StorageSecretKey       string        `yaml:"storage_secret_key" env:"STORAGE_SECRET_KEY,MEDIA_STORAGE_SECRET_KEY,GARAGE_SECRET_KEY" config:"positive"`
+	StorageForcePathStyle  bool          `yaml:"storage_force_path_style" env:"STORAGE_FORCE_PATH_STYLE,MEDIA_STORAGE_FORCE_PATH_STYLE,GARAGE_FORCE_PATH_STYLE"`
+	UploadMaxSizeMB        int64         `yaml:"upload_max_size_mb" env:"UPLOAD_MAX_SIZE_MB,MEDIA_UPLOAD_MAX_SIZE_MB" config:"positive"`
+	StreamMaxSizeMB        int64         `yaml:"stream_max_size_mb" env:"STREAM_MAX_SIZE_MB,MEDIA_STREAM_MAX_SIZE_MB" config:"positive"`
+	PreviewMaxSizeMB       int64         `yaml:"preview_max_size_mb" env:"PREVIEW_MAX_SIZE_MB,MEDIA_PREVIEW_MAX_SIZE_MB" config:"positive"`
+	GotenbergURL           string        `yaml:"gotenberg_url" env:"GOTENBERG_URL,MEDIA_GOTENBERG_URL" config:"positive"`
+	PresignUploadTTL       time.Duration `yaml:"presign_upload_ttl" env:"PRESIGN_UPLOAD_TTL,MEDIA_PRESIGN_UPLOAD_TTL"`
+	PresignDownloadTTL     time.Duration `yaml:"presign_download_ttl" env:"PRESIGN_DOWNLOAD_TTL,MEDIA_PRESIGN_DOWNLOAD_TTL"`
+	RequireScanBeforeReady bool          `yaml:"require_scan_before_ready" env:"REQUIRE_SCAN_BEFORE_READY,MEDIA_REQUIRE_SCAN_BEFORE_READY"`
+	TempFileTTL            time.Duration `yaml:"temp_file_ttl" env:"TEMP_FILE_TTL,MEDIA_TEMP_FILE_TTL"`
+	AllowedUploadMIME      []string      `yaml:"allowed_upload_mime" env:"ALLOWED_UPLOAD_MIME,MEDIA_ALLOWED_UPLOAD_MIME" config:"positive"`
 }
 
 func Load() Config {
@@ -56,207 +58,8 @@ func Load() Config {
 		PresignDownloadTTL:    5 * time.Minute,
 		TempFileTTL:           24 * time.Hour,
 	}
-
-	if path := os.Getenv("CONFIG_FILE"); path != "" {
-		cfg.loadYAML(path)
-	} else {
-		for _, p := range []string{"configs/config.yaml", "../configs/config.yaml", "/etc/arda/media-service/config.yaml"} {
-			if cfg.loadYAML(p) {
-				break
-			}
-		}
+	if err := ardaconfig.Load(&cfg, ardaconfig.ServiceOptions("media-service")); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
-
-	envStr("APP_NAME", &cfg.AppName)
-	envStr("HTTP_ADDR", &cfg.HTTPAddr)
-	envStr("GRPC_ADDR", &cfg.GRPCAddr)
-	envStr("LOG_LEVEL", &cfg.LogLevel)
-	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
-	envStr("MEDIA_DATABASE_DSN", &cfg.DatabaseDSN)
-	envStr("NATS_URL", &cfg.NATSURL)
-	envStr("MEDIA_NATS_URL", &cfg.NATSURL)
-
-	envStr("STORAGE_PROVIDER", &cfg.StorageProvider)
-	envStr("MEDIA_STORAGE_PROVIDER", &cfg.StorageProvider)
-	envStr("STORAGE_ENDPOINT", &cfg.StorageEndpoint)
-	envStr("MEDIA_STORAGE_ENDPOINT", &cfg.StorageEndpoint)
-	envStr("GARAGE_ENDPOINT", &cfg.StorageEndpoint)
-	envStr("STORAGE_PUBLIC_ENDPOINT", &cfg.StoragePublicEndpoint)
-	envStr("MEDIA_STORAGE_PUBLIC_ENDPOINT", &cfg.StoragePublicEndpoint)
-	envStr("GARAGE_PUBLIC_ENDPOINT", &cfg.StoragePublicEndpoint)
-	envStr("STORAGE_REGION", &cfg.StorageRegion)
-	envStr("MEDIA_STORAGE_REGION", &cfg.StorageRegion)
-	envStr("GARAGE_REGION", &cfg.StorageRegion)
-	envStr("STORAGE_BUCKET", &cfg.StorageBucket)
-	envStr("MEDIA_STORAGE_BUCKET", &cfg.StorageBucket)
-	envStr("GARAGE_BUCKET", &cfg.StorageBucket)
-	envStr("STORAGE_ACCESS_KEY", &cfg.StorageAccessKey)
-	envStr("MEDIA_STORAGE_ACCESS_KEY", &cfg.StorageAccessKey)
-	envStr("GARAGE_ACCESS_KEY", &cfg.StorageAccessKey)
-	envStr("STORAGE_SECRET_KEY", &cfg.StorageSecretKey)
-	envStr("MEDIA_STORAGE_SECRET_KEY", &cfg.StorageSecretKey)
-	envStr("GARAGE_SECRET_KEY", &cfg.StorageSecretKey)
-	envBool("STORAGE_FORCE_PATH_STYLE", &cfg.StorageForcePathStyle)
-	envBool("MEDIA_STORAGE_FORCE_PATH_STYLE", &cfg.StorageForcePathStyle)
-	envBool("GARAGE_FORCE_PATH_STYLE", &cfg.StorageForcePathStyle)
-	envInt64("UPLOAD_MAX_SIZE_MB", &cfg.UploadMaxSizeMB)
-	envInt64("MEDIA_UPLOAD_MAX_SIZE_MB", &cfg.UploadMaxSizeMB)
-	envInt64("STREAM_MAX_SIZE_MB", &cfg.StreamMaxSizeMB)
-	envInt64("MEDIA_STREAM_MAX_SIZE_MB", &cfg.StreamMaxSizeMB)
-	envInt64("PREVIEW_MAX_SIZE_MB", &cfg.PreviewMaxSizeMB)
-	envInt64("MEDIA_PREVIEW_MAX_SIZE_MB", &cfg.PreviewMaxSizeMB)
-	envStr("GOTENBERG_URL", &cfg.GotenbergURL)
-	envStr("MEDIA_GOTENBERG_URL", &cfg.GotenbergURL)
-	envDuration("PRESIGN_UPLOAD_TTL", &cfg.PresignUploadTTL)
-	envDuration("MEDIA_PRESIGN_UPLOAD_TTL", &cfg.PresignUploadTTL)
-	envDuration("PRESIGN_DOWNLOAD_TTL", &cfg.PresignDownloadTTL)
-	envDuration("MEDIA_PRESIGN_DOWNLOAD_TTL", &cfg.PresignDownloadTTL)
-	envDuration("TEMP_FILE_TTL", &cfg.TempFileTTL)
-	envDuration("MEDIA_TEMP_FILE_TTL", &cfg.TempFileTTL)
-	envBool("REQUIRE_SCAN_BEFORE_READY", &cfg.RequireScanBeforeReady)
-	envBool("MEDIA_REQUIRE_SCAN_BEFORE_READY", &cfg.RequireScanBeforeReady)
-	envList("ALLOWED_UPLOAD_MIME", &cfg.AllowedUploadMIME)
-	envList("MEDIA_ALLOWED_UPLOAD_MIME", &cfg.AllowedUploadMIME)
-
 	return cfg
-}
-
-func (c *Config) loadYAML(path string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	type rawConfig struct {
-		AppName                string   `yaml:"app_name"`
-		HTTPAddr               string   `yaml:"http_addr"`
-		GRPCAddr               string   `yaml:"grpc_addr"`
-		LogLevel               string   `yaml:"log_level"`
-		DatabaseDSN            string   `yaml:"database_dsn"`
-		NATSURL                string   `yaml:"nats_url"`
-		StorageProvider        string   `yaml:"storage_provider"`
-		StorageEndpoint        string   `yaml:"storage_endpoint"`
-		StoragePublicEndpoint  string   `yaml:"storage_public_endpoint"`
-		StorageRegion          string   `yaml:"storage_region"`
-		StorageBucket          string   `yaml:"storage_bucket"`
-		StorageAccessKey       string   `yaml:"storage_access_key"`
-		StorageSecretKey       string   `yaml:"storage_secret_key"`
-		StorageForcePathStyle  *bool    `yaml:"storage_force_path_style"`
-		UploadMaxSizeMB        int64    `yaml:"upload_max_size_mb"`
-		StreamMaxSizeMB        int64    `yaml:"stream_max_size_mb"`
-		PreviewMaxSizeMB       int64    `yaml:"preview_max_size_mb"`
-		GotenbergURL           string   `yaml:"gotenberg_url"`
-		PresignUploadTTL       string   `yaml:"presign_upload_ttl"`
-		PresignDownloadTTL     string   `yaml:"presign_download_ttl"`
-		TempFileTTL            string   `yaml:"temp_file_ttl"`
-		RequireScanBeforeReady *bool    `yaml:"require_scan_before_ready"`
-		AllowedUploadMIME      []string `yaml:"allowed_upload_mime"`
-	}
-	var raw rawConfig
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		fmt.Fprintf(os.Stderr, "config: parse %s: %v\n", path, err)
-		return false
-	}
-	setStr(raw.AppName, &c.AppName)
-	setStr(raw.HTTPAddr, &c.HTTPAddr)
-	setStr(raw.GRPCAddr, &c.GRPCAddr)
-	setStr(raw.LogLevel, &c.LogLevel)
-	setStr(raw.DatabaseDSN, &c.DatabaseDSN)
-	setStr(raw.NATSURL, &c.NATSURL)
-	setStr(raw.StorageProvider, &c.StorageProvider)
-	setStr(raw.StorageEndpoint, &c.StorageEndpoint)
-	setStr(raw.StoragePublicEndpoint, &c.StoragePublicEndpoint)
-	setStr(raw.StorageRegion, &c.StorageRegion)
-	setStr(raw.StorageBucket, &c.StorageBucket)
-	setStr(raw.StorageAccessKey, &c.StorageAccessKey)
-	setStr(raw.StorageSecretKey, &c.StorageSecretKey)
-	if raw.StorageForcePathStyle != nil {
-		c.StorageForcePathStyle = *raw.StorageForcePathStyle
-	}
-	if raw.UploadMaxSizeMB > 0 {
-		c.UploadMaxSizeMB = raw.UploadMaxSizeMB
-	}
-	if raw.StreamMaxSizeMB > 0 {
-		c.StreamMaxSizeMB = raw.StreamMaxSizeMB
-	}
-	if raw.PreviewMaxSizeMB > 0 {
-		c.PreviewMaxSizeMB = raw.PreviewMaxSizeMB
-	}
-	setStr(raw.GotenbergURL, &c.GotenbergURL)
-	if raw.PresignUploadTTL != "" {
-		if d, err := time.ParseDuration(raw.PresignUploadTTL); err == nil {
-			c.PresignUploadTTL = d
-		}
-	}
-	if raw.PresignDownloadTTL != "" {
-		if d, err := time.ParseDuration(raw.PresignDownloadTTL); err == nil {
-			c.PresignDownloadTTL = d
-		}
-	}
-	if raw.TempFileTTL != "" {
-		if d, err := time.ParseDuration(raw.TempFileTTL); err == nil {
-			c.TempFileTTL = d
-		}
-	}
-	if raw.RequireScanBeforeReady != nil {
-		c.RequireScanBeforeReady = *raw.RequireScanBeforeReady
-	}
-	if len(raw.AllowedUploadMIME) > 0 {
-		c.AllowedUploadMIME = raw.AllowedUploadMIME
-	}
-	return true
-}
-
-func setStr(value string, target *string) {
-	if value != "" {
-		*target = value
-	}
-}
-
-func envStr(key string, target *string) {
-	if v := os.Getenv(key); v != "" {
-		*target = v
-	}
-}
-
-func envBool(key string, target *bool) {
-	if v := os.Getenv(key); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		if err == nil {
-			*target = parsed
-		}
-	}
-}
-
-func envList(key string, target *[]string) {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return
-	}
-	values := make([]string, 0, 4)
-	for _, item := range strings.Split(v, ",") {
-		if trimmed := strings.TrimSpace(item); trimmed != "" {
-			values = append(values, trimmed)
-		}
-	}
-	if len(values) > 0 {
-		*target = values
-	}
-}
-
-func envInt64(key string, target *int64) {
-	if v := os.Getenv(key); v != "" {
-		parsed, err := strconv.ParseInt(v, 10, 64)
-		if err == nil && parsed > 0 {
-			*target = parsed
-		}
-	}
-}
-
-func envDuration(key string, target *time.Duration) {
-	if v := os.Getenv(key); v != "" {
-		parsed, err := time.ParseDuration(v)
-		if err == nil {
-			*target = parsed
-		}
-	}
 }

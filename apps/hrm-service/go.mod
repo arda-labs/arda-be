@@ -19,6 +19,7 @@ exclude google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
 exclude google.golang.org/genproto v0.0.0-20200513103714-09dca8ec2884
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-time v0.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -49,3 +50,5 @@ replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-po
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config

@@ -1,0 +1,72 @@
+{
+  "defaults": {
+    "AppName": "statistical-service",
+    "HTTPAddr": "0.0.0.0:8080",
+    "LogLevel": "info",
+    "DatabaseDSN": "",
+    "WorkflowGRPCAddr": "localhost:9090",
+    "LoanServiceURL": "",
+    "DepositServiceURL": "",
+    "CapitalServiceURL": "",
+    "CRMServiceURL": "",
+    "FinanceServiceURL": "",
+    "NATSURL": "nats://localhost:4222",
+    "GotenbergURL": ""
+  },
+  "empty_env_keeps_yaml": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "WorkflowGRPCAddr": "yaml-workflow_grpc_addr",
+    "LoanServiceURL": "yaml-loan_service_url",
+    "DepositServiceURL": "yaml-deposit_service_url",
+    "CapitalServiceURL": "yaml-capital_service_url",
+    "CRMServiceURL": "yaml-crm_service_url",
+    "FinanceServiceURL": "yaml-finance_service_url",
+    "NATSURL": "yaml-nats_url",
+    "GotenbergURL": "yaml-gotenberg_url"
+  },
+  "env_only": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "WorkflowGRPCAddr": "env-WORKFLOW_GRPC_ADDR",
+    "LoanServiceURL": "env-LOAN_SERVICE_URL",
+    "DepositServiceURL": "env-DEPOSIT_SERVICE_URL",
+    "CapitalServiceURL": "env-CAPITAL_SERVICE_URL",
+    "CRMServiceURL": "env-CRM_SERVICE_URL",
+    "FinanceServiceURL": "env-FINANCE_SERVICE_URL",
+    "NATSURL": "env-NATS_URL",
+    "GotenbergURL": "env-GOTENBERG_URL"
+  },
+  "env_over_yaml": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "WorkflowGRPCAddr": "env-WORKFLOW_GRPC_ADDR",
+    "LoanServiceURL": "env-LOAN_SERVICE_URL",
+    "DepositServiceURL": "env-DEPOSIT_SERVICE_URL",
+    "CapitalServiceURL": "env-CAPITAL_SERVICE_URL",
+    "CRMServiceURL": "env-CRM_SERVICE_URL",
+    "FinanceServiceURL": "env-FINANCE_SERVICE_URL",
+    "NATSURL": "env-NATS_URL",
+    "GotenbergURL": "env-GOTENBERG_URL"
+  },
+  "yaml_only": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "WorkflowGRPCAddr": "yaml-workflow_grpc_addr",
+    "LoanServiceURL": "yaml-loan_service_url",
+    "DepositServiceURL": "yaml-deposit_service_url",
+    "CapitalServiceURL": "yaml-capital_service_url",
+    "CRMServiceURL": "yaml-crm_service_url",
+    "FinanceServiceURL": "yaml-finance_service_url",
+    "NATSURL": "yaml-nats_url",
+    "GotenbergURL": "yaml-gotenberg_url"
+  }
+}

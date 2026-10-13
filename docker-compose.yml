@@ -47,6 +47,7 @@ services:
       LOG_LEVEL: info
       DATABASE_DSN: postgres://${COMMON_DATABASE_USER:?set COMMON_DATABASE_USER}:${COMMON_DATABASE_PASSWORD:?set COMMON_DATABASE_PASSWORD}@${COMMON_DATABASE_HOST:?set COMMON_DATABASE_HOST}:${COMMON_DATABASE_PORT:?set COMMON_DATABASE_PORT}/${COMMON_DATABASE_NAME:?set COMMON_DATABASE_NAME}?sslmode=${COMMON_DATABASE_SSLMODE:?set COMMON_DATABASE_SSLMODE}
       NATS_URL: nats://nats:4222
+      JOB_TARGET_URLS: platform-service=http://platform-service:8080,loan-service=http://loan-service:8080,deposit-service=http://deposit-service:8080,finance-service=http://finance-service:8080,statistical-service=http://statistical-service:8080
     ports:
       - "8091:8080"
       - "9091:9090"

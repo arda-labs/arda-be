@@ -19,6 +19,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
 	github.com/casbin/govaluate v1.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -60,3 +61,5 @@ replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-po
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
 
 replace github.com/arda-labs/arda/libs/go/arda-export => ../../libs/go/arda-export
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config

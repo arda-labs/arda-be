@@ -4,20 +4,20 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	ardaconfig "github.com/arda-labs/arda/libs/go/arda-config"
 )
 
 // Config holds runtime configuration for loan-service.
 type Config struct {
-	AppName          string `yaml:"app_name"`
-	HTTPAddr         string `yaml:"http_addr"`
-	GRPCAddr         string `yaml:"grpc_addr"`
-	LogLevel         string `yaml:"log_level"`
-	DatabaseDSN      string `yaml:"database_dsn"`
-	NATSURL          string `yaml:"nats_url"`
-	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr"`
-	FinanceGRPCAddr  string `yaml:"finance_grpc_addr"`
-	PlatformGRPCAddr string `yaml:"platform_grpc_addr"`
+	AppName          string `yaml:"app_name" env:"APP_NAME"`
+	HTTPAddr         string `yaml:"http_addr" env:"HTTP_ADDR"`
+	GRPCAddr         string `yaml:"grpc_addr" env:"GRPC_ADDR"`
+	LogLevel         string `yaml:"log_level" env:"LOG_LEVEL"`
+	DatabaseDSN      string `yaml:"database_dsn" env:"DATABASE_DSN"`
+	NATSURL          string `yaml:"nats_url" env:"NATS_URL"`
+	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr" env:"WORKFLOW_GRPC_ADDR"`
+	FinanceGRPCAddr  string `yaml:"finance_grpc_addr" env:"FINANCE_GRPC_ADDR"`
+	PlatformGRPCAddr string `yaml:"platform_grpc_addr" env:"PLATFORM_GRPC_ADDR"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -32,59 +32,8 @@ func Load() Config {
 		FinanceGRPCAddr:  "localhost:9090",
 		PlatformGRPCAddr: "platform-service:9090",
 	}
-
-	if path := os.Getenv("CONFIG_FILE"); path != "" {
-		cfg.loadYAML(path)
-	} else {
-		for _, p := range []string{"configs/config.yaml", "../configs/config.yaml", "/etc/arda/loan-service/config.yaml"} {
-			if cfg.loadYAML(p) {
-				break
-			}
-		}
+	if err := ardaconfig.Load(&cfg, ardaconfig.ServiceOptions("loan-service")); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
-
-	envStr("APP_NAME", &cfg.AppName)
-	envStr("HTTP_ADDR", &cfg.HTTPAddr)
-	envStr("GRPC_ADDR", &cfg.GRPCAddr)
-	envStr("LOG_LEVEL", &cfg.LogLevel)
-	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
-	envStr("NATS_URL", &cfg.NATSURL)
-	envStr("WORKFLOW_GRPC_ADDR", &cfg.WorkflowGRPCAddr)
-	envStr("FINANCE_GRPC_ADDR", &cfg.FinanceGRPCAddr)
-	envStr("PLATFORM_GRPC_ADDR", &cfg.PlatformGRPCAddr)
-
 	return cfg
-}
-
-func (c *Config) loadYAML(path string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	m := make(map[string]any)
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		fmt.Fprintf(os.Stderr, "config: parse %s: %v\n", path, err)
-		return false
-	}
-	setStr := func(key string, target *string) {
-		if v, ok := m[key].(string); ok {
-			*target = v
-		}
-	}
-	setStr("app_name", &c.AppName)
-	setStr("http_addr", &c.HTTPAddr)
-	setStr("grpc_addr", &c.GRPCAddr)
-	setStr("log_level", &c.LogLevel)
-	setStr("database_dsn", &c.DatabaseDSN)
-	setStr("nats_url", &c.NATSURL)
-	setStr("workflow_grpc_addr", &c.WorkflowGRPCAddr)
-	setStr("finance_grpc_addr", &c.FinanceGRPCAddr)
-	setStr("platform_grpc_addr", &c.PlatformGRPCAddr)
-	return true
-}
-
-func envStr(key string, target *string) {
-	if v := os.Getenv(key); v != "" {
-		*target = v
-	}
 }

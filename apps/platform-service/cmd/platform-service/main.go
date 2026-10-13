@@ -86,7 +86,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer iamClient.Close()
-	eodSvc := service.NewEODService(db, logger, calendarSvc, iamClient)
+	eodSvc := service.NewEODService(db, logger, calendarSvc, iamClient, cfg.JobTargetURLs)
 	calendarHandler := handler.NewCalendarHandler(calendarSvc, eodSvc)
 	eodHandler := handler.NewEODHandler(eodSvc)
 
@@ -114,16 +114,7 @@ func main() {
 		logger.Warn("platform outbox relay disabled: nats unavailable", "err", err)
 	} else {
 		defer nc.Close()
-		js, err := nc.JetStream()
-		if err != nil {
-			logger.Error("platform outbox relay: jetstream", "err", err)
-		} else {
-			relay := service.NewOutboxRelay(db, func(subject, id string, data []byte) error {
-				msg := &nats.Msg{Subject: subject, Data: data, Header: nats.Header{}}
-				msg.Header.Set(nats.MsgIdHdr, id)
-				_, err := js.PublishMsg(msg)
-				return err
-			}, logger)
+		if relay := service.NewJobOutboxRelay(db, nc, logger); relay != nil {
 			go relay.Run(appCtx)
 		}
 	}
