@@ -101,7 +101,7 @@ func publicBrandingPayload(value string) json.RawMessage {
 	if err := json.Unmarshal([]byte(value), &settings); err != nil {
 		return json.RawMessage(`{}`)
 	}
-	out := make(map[string]any, 12)
+	out := make(map[string]any, 15)
 	for _, key := range []string{
 		"appName",
 		"shortName",
@@ -116,6 +116,10 @@ func publicBrandingPayload(value string) json.RawMessage {
 		"loginBackgroundEnabled",
 		"loginWelcomeTitle",
 		"loginWelcomeSubtitle",
+		// Organisation theme, applied to every user by the frontend; the web
+		// client validates the colour (hex, white-text contrast) itself.
+		"brandColor",
+		"chartPalette",
 	} {
 		if value, ok := settings[key]; ok {
 			out[key] = value
