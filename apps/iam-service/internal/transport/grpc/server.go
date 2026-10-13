@@ -13,6 +13,7 @@ import (
 	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
@@ -85,7 +86,60 @@ func (s *UserServiceServer) ResolveNotificationRecipients(ctx context.Context, r
 	return &iamv1.ResolveNotificationRecipientsResponse{UserIds: ids}, nil
 }
 
-func ListenAndServe(grpcAddr string, userRepo *repository.UserRepository, tenantRepo *repository.TenantRepository) (*grpc.Server, error) {
+// Dependencies is everything the IAM gRPC surface serves from.
+type Dependencies struct {
+	UserRepo   *repository.UserRepository
+	TenantRepo *repository.TenantRepository
+	// Gateway surface (GatewayService); see gateway.go.
+	Users    UserContexts
+	Sessions Sessions
+	MFA      MFA
+	Audit    Audit
+}
+
+// sourcePolicy builds the per-method caller allowlist: UserService keeps its
+// historical callers, ListActiveTenants is platform-only, and every
+// GatewayService method is callable by auth-gateway alone. Deriving the list
+// from the service descriptor means a new gateway RPC cannot be forgotten.
+func sourcePolicy() (map[string]struct{}, map[string]map[string]struct{}) {
+	defaultSources := map[string]struct{}{"workflow-service": {}, "notification-service": {}}
+	methodSources := map[string]map[string]struct{}{
+		"/arda.iam.v1.UserService/ListActiveTenants": {"platform-service": {}},
+	}
+	for _, m := range iamv1.GatewayService_ServiceDesc.Methods {
+		methodSources["/"+iamv1.GatewayService_ServiceDesc.ServiceName+"/"+m.MethodName] = map[string]struct{}{gatewaySource: {}}
+	}
+	return defaultSources, methodSources
+}
+
+// newServer builds the gRPC server with the production interceptor chain.
+// creds may be nil only for in-memory tests; ListenAndServe always passes
+// mTLS credentials.
+func newServer(serviceSecret string, creds credentials.TransportCredentials, deps Dependencies) *grpc.Server {
+	defaultSources, methodSources := sourcePolicy()
+	opts := []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryServerRecovery(slog.Default()),
+			interceptors.UnaryServerServiceAuthMethodSources(serviceSecret, "iam-service", defaultSources, methodSources),
+		),
+	}
+	if creds != nil {
+		opts = append(opts, grpc.Creds(creds))
+	}
+	srv := grpc.NewServer(opts...)
+	if deps.UserRepo != nil || deps.TenantRepo != nil {
+		iamv1.RegisterUserServiceServer(srv, NewUserServiceServer(deps.UserRepo, deps.TenantRepo))
+	}
+	if deps.Users != nil && deps.Sessions != nil && deps.MFA != nil {
+		iamv1.RegisterGatewayServiceServer(srv, NewGatewayServer(deps.Users, deps.Sessions, deps.MFA, deps.Audit))
+	}
+	return srv
+}
+
+func ListenAndServe(grpcAddr string, deps Dependencies) (*grpc.Server, error) {
+	if deps.Users == nil || deps.Sessions == nil || deps.MFA == nil {
+		return nil, fmt.Errorf("gateway service dependencies are required")
+	}
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
 		return nil, fmt.Errorf("listen grpc: %w", err)
@@ -98,18 +152,7 @@ func ListenAndServe(grpcAddr string, userRepo *repository.UserRepository, tenant
 	if err != nil {
 		return nil, fmt.Errorf("grpc tls is not configured: %w", err)
 	}
-	srv := grpc.NewServer(
-		grpc.Creds(transportCreds),
-		grpc.ChainUnaryInterceptor(
-			interceptors.UnaryServerRecovery(slog.Default()),
-			interceptors.UnaryServerServiceAuthMethodSources(serviceSecret, "iam-service",
-				map[string]struct{}{"workflow-service": {}, "notification-service": {}},
-				map[string]map[string]struct{}{
-					"/arda.iam.v1.UserService/ListActiveTenants": {"platform-service": {}},
-				}),
-		),
-	)
-	iamv1.RegisterUserServiceServer(srv, NewUserServiceServer(userRepo, tenantRepo))
+	srv := newServer(serviceSecret, transportCreds, deps)
 	go func() {
 		if err := srv.Serve(lis); err != nil {
 			// The listener is owned by this long-running process; a serve failure

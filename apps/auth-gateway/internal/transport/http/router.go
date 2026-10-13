@@ -9,6 +9,7 @@ import (
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/config"
 	"github.com/arda-labs/arda/apps/auth-gateway/internal/handler"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
@@ -70,7 +71,7 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler,
 	// Generic proxy for /api/* to iam-service
 	mux.HandleFunc("/api/", bffHandler.Proxy)
 
-	var routed http.Handler = corsMiddleware(mux, cfg.CORSAllowedOrigins)
+	var routed http.Handler = correlationMetadata(corsMiddleware(mux, cfg.CORSAllowedOrigins))
 	routed = ardahttp.LimitBodyMiddlewareByPrefix(ardahttp.DefaultMaxBodyBytes, gatewayBodyLimits, routed)
 	routed = ardahttp.RecoveryMiddleware(slog.Default(), routed)
 	if !cfg.SlowRequestLogEnabled || cfg.SlowRequestLogThresholdMS <= 0 {
@@ -89,6 +90,22 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler,
 // gateway instead of the upload it is entitled to make.
 var gatewayBodyLimits = []ardahttp.BodyLimitOverride{
 	{Prefix: "/api/media", MaxBytes: ardahttp.MaxUploadBodyBytes},
+}
+
+// correlationMetadata seeds the outgoing gRPC metadata with the request's
+// correlation ids only (request id, trace id, traceparent) so IAM calls carry
+// the same request_id as the gateway logs. It deliberately does not use
+// ardametadata.HTTPMiddleware: that copies X-User-Id, X-Tenant-Id and the
+// other identity headers, which on this public edge are browser input.
+func correlationMetadata(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := ardametadata.AppendToOutgoing(r.Context(), ardametadata.Context{
+			RequestID:   ardahttp.RequestID(r),
+			TraceID:     ardahttp.TraceID(r),
+			TraceParent: strings.TrimSpace(r.Header.Get(ardahttp.HeaderTraceParent)),
+		})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 func corsMiddleware(next http.Handler, allowedOrigins string) http.Handler {

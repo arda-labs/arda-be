@@ -20,7 +20,8 @@ Use one private CA for the internal gRPC trust domain and issue one certificate
 and private key per workload. Every certificate must have `clientAuth` and
 `serverAuth` extended key usages, plus DNS SANs matching the destination names
 used by clients (`crm-service`, `iam-service`, `platform-service`, and
-`workflow-service`) and the corresponding cluster DNS names such as
+`workflow-service`; `auth-gateway` is a client only, its certificate needs no
+service SAN beyond its own name) and the corresponding cluster DNS names such as
 `crm-service.arda-app.svc.cluster.local`.
 
 Do not commit CA keys, workload keys, certificates, or generated files.
@@ -28,7 +29,7 @@ Do not commit CA keys, workload keys, certificates, or generated files.
 ## Local Compose
 
 Generate a local CA and workload certificates under
-`arda-be/.dev/grpc-tls/{crm,iam,platform,workflow,hrm,finance}`. Each directory
+`arda-be/.dev/grpc-tls/{crm,iam,platform,workflow,hrm,finance,auth-gateway}`. Each directory
 must contain `ca.crt`, `tls.crt`, and `tls.key`. The Compose mounts are
 read-only. A caller uses its own workload certificate; it does not reuse the
 destination certificate.
@@ -57,6 +58,7 @@ arda-grpc-tls-platform
 arda-grpc-tls-workflow
 arda-grpc-tls-hrm
 arda-grpc-tls-finance
+arda-grpc-tls-auth-gateway
 ```
 
 For example, from a protected operator workstation:

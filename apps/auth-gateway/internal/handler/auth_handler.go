@@ -20,14 +20,14 @@ import (
 // AuthHandler implements the ForwardAuth endpoint.
 type AuthHandler struct {
 	verifier token.Verifier
-	iam      *iamclient.Client
+	iam      iamclient.Client
 	policy   *policy.Policy
 	logger   *slog.Logger
 	cache    *userContextCache
 }
 
 // NewAuthHandler creates the auth check handler.
-func NewAuthHandler(verifier token.Verifier, iam *iamclient.Client, pol *policy.Policy, logger *slog.Logger, cacheTTL time.Duration) *AuthHandler {
+func NewAuthHandler(verifier token.Verifier, iam iamclient.Client, pol *policy.Policy, logger *slog.Logger, cacheTTL time.Duration) *AuthHandler {
 	return &AuthHandler{
 		verifier: verifier,
 		iam:      iam,

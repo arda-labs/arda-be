@@ -2,12 +2,67 @@ syntax = "proto3";
 
 package arda.iam.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/arda-labs/arda/libs/go/arda-proto/iam/v1;iamv1";
 
 service UserService {
   rpc GetUserBatch(GetUserBatchRequest) returns (GetUserBatchResponse);
   rpc ListActiveTenants(ListActiveTenantsRequest) returns (ListActiveTenantsResponse);
   rpc ResolveNotificationRecipients(ResolveNotificationRecipientsRequest) returns (ResolveNotificationRecipientsResponse);
+}
+
+// GatewayService is the internal surface auth-gateway uses to resolve user
+// contexts, track sessions and run MFA during login and step-up. It is a
+// separate service from UserService because its caller allowlist is exactly
+// one workload (auth-gateway) and its operations act on identity state that
+// no other service may touch. It replaces the HTTP routes under
+// /internal/iam that the gateway called before.
+//
+// Error contract:
+//   - NOT_FOUND: the user, identity or mapping does not exist (the gateway
+//     treats this as a definitive revocation, never as a transient error).
+//   - PERMISSION_DENIED: the user is not an active member of the requested
+//     tenant.
+//   - FAILED_PRECONDITION: an identity/MFA state rule blocks the call (inactive
+//     identity mapping, unverified e-mail on first link, MFA not enrolled,
+//     already enrolled, no pending enrollment, MFA locked after too many
+//     failed attempts).
+//   - INVALID_ARGUMENT: missing required fields or a wrong MFA/TOTP code.
+//   - RESOURCE_EXHAUSTED: the concurrent session limit was reached.
+service GatewayService {
+  // Ready reports whether IAM can serve gateway calls; it backs the gateway
+  // readiness probe.
+  rpc Ready(ReadyRequest) returns (ReadyResponse);
+
+  rpc GetUserBySubject(GetUserBySubjectRequest) returns (UserContextResponse);
+  // GetUserById returns the context for the user's default tenant, or for
+  // tenant_id when set (the membership must be active).
+  rpc GetUserById(GetUserByIdRequest) returns (UserContextResponse);
+  rpc GetUserByKratosIdentityId(GetUserByKratosIdentityIdRequest) returns (UserContextResponse);
+  // ResolveOrLinkKratosIdentity returns the user linked to a Kratos identity,
+  // linking it by e-mail on first login.
+  rpc ResolveOrLinkKratosIdentity(ResolveOrLinkKratosIdentityRequest) returns (UserContextResponse);
+  // ResolveOrLinkIdentity returns the user mapped to an external provider
+  // identity, creating the mapping by verified e-mail on first login.
+  rpc ResolveOrLinkIdentity(ResolveOrLinkIdentityRequest) returns (UserContextResponse);
+
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+  // TouchSession records activity on a live session (powers last_seen_at).
+  rpc TouchSession(TouchSessionRequest) returns (TouchSessionResponse);
+
+  rpc GetMfaStatus(GetMfaStatusRequest) returns (GetMfaStatusResponse);
+  // CheckMfa reports whether the device identified by device_token must
+  // complete MFA for this login.
+  rpc CheckMfa(CheckMfaRequest) returns (CheckMfaResponse);
+  // VerifyMfa verifies a TOTP code for login or step-up; a wrong code counts
+  // towards the lockout.
+  rpc VerifyMfa(VerifyMfaRequest) returns (VerifyMfaResponse);
+  // GenerateMfaSecret starts TOTP enrollment and returns the secret the user
+  // must register; it is not enrolled until VerifyMfaEnrollment succeeds.
+  rpc GenerateMfaSecret(GenerateMfaSecretRequest) returns (GenerateMfaSecretResponse);
+  rpc VerifyMfaEnrollment(VerifyMfaEnrollmentRequest) returns (VerifyMfaEnrollmentResponse);
 }
 
 message ListActiveTenantsRequest {}
@@ -45,4 +100,172 @@ message UserInfo {
 
 message GetUserBatchResponse {
   repeated UserInfo users = 1;
+}
+
+// ── GatewayService messages ──
+
+message ReadyRequest {}
+
+message ReadyResponse {}
+
+message GetUserBySubjectRequest {
+  string subject = 1;
+}
+
+message GetUserByIdRequest {
+  string user_id = 1;
+  // Optional: scope the context to this tenant; the user must be an active
+  // member, otherwise PERMISSION_DENIED.
+  string tenant_id = 2;
+}
+
+message GetUserByKratosIdentityIdRequest {
+  string identity_id = 1;
+}
+
+message ResolveOrLinkKratosIdentityRequest {
+  string identity_id = 1;
+  string email = 2;
+  string name = 3;
+}
+
+message ResolveOrLinkIdentityRequest {
+  string provider_id = 1;
+  string external_id = 2;
+  string email = 3;
+  string name = 4;
+  bool email_verified = 5;
+}
+
+message TenantMembership {
+  string tenant_id = 1;
+  string tenant_code = 2;
+  string tenant_name = 3;
+  string tenant_status = 4;
+  string status = 5;
+  bool is_default = 6;
+}
+
+// UserContext is the authorization context the gateway stores in the BFF
+// session and injects into upstream requests. Field set mirrors the IAM
+// UserContext browser contract.
+message UserContext {
+  string user_id = 1;
+  string subject = 2;
+  string username = 3;
+  string email = 4;
+  string display_name = 5;
+  string nickname = 6;
+  string first_name = 7;
+  string last_name = 8;
+  string phone_number = 9;
+  string birthdate = 10;
+  string gender = 11;
+  string address = 12;
+  string country = 13;
+  string status = 14;
+  string picture_url = 15;
+  string avatar_file_id = 16;
+  string cover_image_url = 17;
+  string cover_file_id = 18;
+  string tenant_id = 19;
+  string active_tenant_id = 20;
+  repeated TenantMembership tenant_memberships = 21;
+  bool tenant_selection_required = 22;
+  repeated string org_ids = 23;
+  repeated string group_ids = 24;
+  repeated string roles = 25;
+  repeated string permissions = 26;
+  repeated string global_roles = 27;
+  repeated string global_permissions = 28;
+  bool is_global_admin = 29;
+  bool global_capabilities_loaded = 30;
+  int64 auth_version = 31;
+  string timezone = 32;
+  string locale = 33;
+}
+
+message UserContextResponse {
+  UserContext user = 1;
+}
+
+message CreateSessionRequest {
+  string user_id = 1;
+  string hydra_session_id = 2;
+  string access_token_jti = 3;
+  string refresh_token_jti = 4;
+  string ip_address = 5;
+  string user_agent = 6;
+  string device_name = 7;
+  string device_type = 8;
+  string os = 9;
+  string browser = 10;
+  string fingerprint = 11;
+  string device_token = 12;
+  bool trust_for_mfa = 13;
+}
+
+message CreateSessionResponse {
+  string session_id = 1;
+  string device_id = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message RevokeSessionRequest {
+  string session_id = 1;
+}
+
+message RevokeSessionResponse {}
+
+message TouchSessionRequest {
+  string session_id = 1;
+}
+
+message TouchSessionResponse {}
+
+message GetMfaStatusRequest {
+  string user_id = 1;
+}
+
+message GetMfaStatusResponse {
+  bool is_enrolled = 1;
+  string method = 2;
+}
+
+message CheckMfaRequest {
+  string user_id = 1;
+  string device_token = 2;
+}
+
+message CheckMfaResponse {
+  bool requires_mfa = 1;
+  bool can_use_mfa = 2;
+  repeated string methods = 3;
+}
+
+message VerifyMfaRequest {
+  string user_id = 1;
+  string code = 2;
+}
+
+message VerifyMfaResponse {}
+
+message GenerateMfaSecretRequest {
+  string user_id = 1;
+  string username = 2;
+  string email = 3;
+}
+
+message GenerateMfaSecretResponse {
+  string secret = 1;
+  string otpauth_url = 2;
+}
+
+message VerifyMfaEnrollmentRequest {
+  string user_id = 1;
+  string code = 2;
+}
+
+message VerifyMfaEnrollmentResponse {
+  repeated string backup_codes = 1;
 }

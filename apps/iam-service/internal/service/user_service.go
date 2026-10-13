@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,15 @@ import (
 
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
+)
+
+// Sentinel errors let transports map identity failures to precise status
+// codes; their text is unchanged from the historical fmt.Errorf messages.
+var (
+	ErrUserNotFound             = errors.New("user not found")
+	ErrTenantMembershipInactive = errors.New("user is not an active member of the tenant")
+	ErrIdentityMappingInactive  = errors.New("identity mapping is inactive")
+	ErrVerifiedEmailRequired    = errors.New("verified email is required for first-time identity link")
 )
 
 // UserService orchestrates user-related business logic.
@@ -34,7 +44,7 @@ func (s *UserService) GetUserContextBySubject(ctx context.Context, subject strin
 		return nil, err
 	}
 	if user == nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	return s.buildContext(ctx, user)
 }
@@ -46,7 +56,7 @@ func (s *UserService) GetUserContextByID(ctx context.Context, id string) (*domai
 		return nil, err
 	}
 	if user == nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	return s.buildContext(ctx, user)
 }
@@ -59,7 +69,7 @@ func (s *UserService) GetUserContextByIDForTenant(ctx context.Context, id, tenan
 		return nil, err
 	}
 	if user == nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	if s.tenant == nil {
 		return nil, fmt.Errorf("tenant repository is not configured")
@@ -69,7 +79,7 @@ func (s *UserService) GetUserContextByIDForTenant(ctx context.Context, id, tenan
 		return nil, err
 	}
 	if membership == nil {
-		return nil, fmt.Errorf("user is not an active member of the tenant")
+		return nil, ErrTenantMembershipInactive
 	}
 	return s.buildContextForTenant(ctx, user, tenantID)
 }
@@ -80,7 +90,7 @@ func (s *UserService) GetUserContextByKratosIdentityID(ctx context.Context, iden
 		return nil, err
 	}
 	if user == nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	return s.buildContext(ctx, user)
 }
@@ -94,14 +104,14 @@ func (s *UserService) ResolveOrLinkKratosIdentity(ctx context.Context, identityI
 		return s.buildContext(ctx, user)
 	}
 	if email == "" {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	user, err = s.repo.GetUserByEmail(ctx, email)
 	if err != nil {
 		return nil, err
 	}
 	if user == nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	if user.DisplayName == "" {
 		user.DisplayName = name
@@ -126,22 +136,22 @@ func (s *UserService) ResolveOrLinkIdentity(ctx context.Context, providerID, ext
 	}
 	if mapping != nil {
 		if !mapping.IsActive {
-			return nil, fmt.Errorf("identity mapping is inactive")
+			return nil, ErrIdentityMappingInactive
 		}
 		return s.GetUserContextByID(ctx, mapping.InternalUserID)
 	}
 	if email == "" {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	if !emailVerified {
-		return nil, fmt.Errorf("verified email is required for first-time identity link")
+		return nil, ErrVerifiedEmailRequired
 	}
 	user, err := s.repo.GetUserByEmail(ctx, email)
 	if err != nil {
 		return nil, err
 	}
 	if user == nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	if user.DisplayName == "" {
 		user.DisplayName = name
@@ -169,7 +179,7 @@ func (s *UserService) UpdateUserAvatar(ctx context.Context, userID, avatarFileID
 		return nil, err
 	}
 	if user == nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	return s.buildContext(ctx, user)
 }
@@ -186,7 +196,7 @@ func (s *UserService) UpdateUserCover(ctx context.Context, userID, coverFileID, 
 		return nil, err
 	}
 	if user == nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	return s.buildContext(ctx, user)
 }
@@ -204,7 +214,7 @@ func (s *UserService) UpdateUserProfile(ctx context.Context, userID, name, nickn
 			return nil, err
 		}
 		if current == nil {
-			return nil, fmt.Errorf("user not found")
+			return nil, ErrUserNotFound
 		}
 		if timezone == "" {
 			timezone = current.Timezone
@@ -228,7 +238,7 @@ func (s *UserService) UpdateUserProfile(ctx context.Context, userID, name, nickn
 		return nil, err
 	}
 	if user == nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 	return s.buildContext(ctx, user)
 }
@@ -407,7 +417,7 @@ func (s *UserService) UpdateUserEmail(ctx context.Context, userID, newEmail stri
 		return nil, fmt.Errorf("failed to fetch user: %w", err)
 	}
 	if user == nil {
-		return nil, fmt.Errorf("user not found")
+		return nil, ErrUserNotFound
 	}
 
 	if user.Email == newEmail {
@@ -442,7 +452,7 @@ func (s *UserService) UpdateUserPassword(ctx context.Context, userID, newPasswor
 		return fmt.Errorf("failed to fetch user: %w", err)
 	}
 	if user == nil {
-		return fmt.Errorf("user not found")
+		return ErrUserNotFound
 	}
 	return s.identity.UpdatePassword(ctx, user, newPassword)
 }
