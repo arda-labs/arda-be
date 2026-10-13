@@ -84,3 +84,12 @@ func TestCRMCustomerRegisterCanaryAppliesAndRollsBack(t *testing.T) {
 		kind:      "crm.customer-register",
 	})
 }
+
+func TestCRMMemberRequestCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013090100_workflow_crm_member_request_common_maker_checker_canary.sql",
+		caseTypes: []string{"CRM_MEMBER_V1"},
+		legacy:    "crm-member-v1",
+		kind:      "crm.member-request",
+	})
+}
