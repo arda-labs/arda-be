@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	ardaconfig "github.com/arda-labs/arda/libs/go/arda-config"
 )
 
 type Config struct {
-	AppName          string `yaml:"app_name"`
-	HTTPAddr         string `yaml:"http_addr"`
-	GRPCAddr         string `yaml:"grpc_addr"`
-	LogLevel         string `yaml:"log_level"`
-	DatabaseDSN      string `yaml:"database_dsn"`
-	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr"`
+	AppName          string `yaml:"app_name" env:"APP_NAME"`
+	HTTPAddr         string `yaml:"http_addr" env:"HTTP_ADDR"`
+	GRPCAddr         string `yaml:"grpc_addr" env:"GRPC_ADDR"`
+	LogLevel         string `yaml:"log_level" env:"LOG_LEVEL"`
+	DatabaseDSN      string `yaml:"database_dsn" env:"DATABASE_DSN"`
+	WorkflowGRPCAddr string `yaml:"workflow_grpc_addr" env:"WORKFLOW_GRPC_ADDR"`
 }
 
 func Load() Config {
@@ -25,53 +25,8 @@ func Load() Config {
 		DatabaseDSN:      "",
 		WorkflowGRPCAddr: "localhost:9090",
 	}
-
-	if path := os.Getenv("CONFIG_FILE"); path != "" {
-		cfg.loadYAML(path)
-	} else {
-		for _, p := range []string{"configs/config.yaml", "../configs/config.yaml", "/etc/arda/crm-service/config.yaml"} {
-			if cfg.loadYAML(p) {
-				break
-			}
-		}
+	if err := ardaconfig.Load(&cfg, ardaconfig.ServiceOptions("crm-service")); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
-
-	envStr("APP_NAME", &cfg.AppName)
-	envStr("HTTP_ADDR", &cfg.HTTPAddr)
-	envStr("GRPC_ADDR", &cfg.GRPCAddr)
-	envStr("LOG_LEVEL", &cfg.LogLevel)
-	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
-	envStr("WORKFLOW_GRPC_ADDR", &cfg.WorkflowGRPCAddr)
-
 	return cfg
-}
-
-func (c *Config) loadYAML(path string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	m := make(map[string]any)
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		fmt.Fprintf(os.Stderr, "config: parse %s: %v\n", path, err)
-		return false
-	}
-	set := func(key string, target *string) {
-		if v, ok := m[key].(string); ok {
-			*target = v
-		}
-	}
-	set("app_name", &c.AppName)
-	set("http_addr", &c.HTTPAddr)
-	set("grpc_addr", &c.GRPCAddr)
-	set("log_level", &c.LogLevel)
-	set("database_dsn", &c.DatabaseDSN)
-	set("workflow_grpc_addr", &c.WorkflowGRPCAddr)
-	return true
-}
-
-func envStr(key string, target *string) {
-	if v := os.Getenv(key); v != "" {
-		*target = v
-	}
 }
