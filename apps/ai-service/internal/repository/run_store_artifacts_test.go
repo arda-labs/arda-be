@@ -79,3 +79,44 @@ func TestSelectArtifactsWidgetOnlyRun(t *testing.T) {
 		t.Fatalf("expected only the widget, got %d: %v", len(got), got)
 	}
 }
+
+func TestSelectArtifactsExecuteWidgetShapeNeverReplaysAsWidget(t *testing.T) {
+	// execute() output is model-authored JS; a {"widget":true,...} return value
+	// must not replay as a widget (it would bypass renderWidget validation and
+	// the feature flag). The otherwise-renderable chart artifact still replays.
+	raw := []byte(`[
+		{"tool_name":"execute","result":{"widget":true,"html":"<p>x</p>","js":"1","columns":["a"],"rows":[[1]],"chart":{"type":"bar"}}}
+	]`)
+	got := selectArtifacts(raw)
+	if len(got) != 1 {
+		t.Fatalf("got %d artifacts, want the chart-bearing execute payload", len(got))
+	}
+	if hasJSONKey(got[0], "widget") {
+		t.Fatalf("execute payload must not carry a widget key: %s", got[0])
+	}
+	if !hasJSONKey(got[0], "chart") || !hasJSONKey(got[0], "rows") {
+		t.Fatalf("the rest of the payload must survive: %s", got[0])
+	}
+}
+
+func TestSelectArtifactsLastResultFallbackStripsWidgetKey(t *testing.T) {
+	raw := []byte(`[
+		{"tool_name":"execute","result":{"widget":true,"html":"<p>x</p>","js":"1","columns":["a"],"rows":[[1]]}}
+	]`)
+	got := selectArtifacts(raw)
+	if len(got) != 1 {
+		t.Fatalf("got %d artifacts, want 1", len(got))
+	}
+	if hasJSONKey(got[0], "widget") {
+		t.Fatalf("widget key must be stripped: %s", got[0])
+	}
+}
+
+func TestSelectArtifactsRenderWidgetWithoutWidgetKeyIsNotChosen(t *testing.T) {
+	raw := []byte(`[
+		{"tool_name":"renderWidget","result":{"title":"W","columns":["a"],"rows":[[1]]}}
+	]`)
+	if got := selectArtifacts(raw); len(got) != 0 {
+		t.Fatalf("a renderWidget result lacking widget must not replay, got %s", got)
+	}
+}
