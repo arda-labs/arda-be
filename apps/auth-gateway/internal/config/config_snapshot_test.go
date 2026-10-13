@@ -28,6 +28,8 @@ introspection_url: "yaml-introspection_url"
 introspection_client_id: "yaml-introspection_client_id"
 introspection_client_secret: "yaml-introspection_client_secret"
 iam_service_url: "yaml-iam_service_url"
+iam_transport: "yaml-iam_transport"
+iam_grpc_addr: "yaml-iam_grpc_addr"
 iam_context_cache_ttl_seconds: 1012
 slow_request_log_enabled: true
 slow_request_log_threshold_ms: 1014
@@ -84,7 +86,9 @@ var loadSnapshotEnv = map[string]string{
 	"HYDRA_ADMIN_URL": "env-HYDRA_ADMIN_URL",
 	"HYDRA_PUBLIC_URL": "env-HYDRA_PUBLIC_URL",
 	"IAM_CONTEXT_CACHE_TTL_SECONDS": "99",
+	"IAM_GRPC_ADDR": "env-IAM_GRPC_ADDR",
 	"IAM_SERVICE_URL": "env-IAM_SERVICE_URL",
+	"IAM_TRANSPORT": "env-IAM_TRANSPORT",
 	"INTROSPECTION_CLIENT_ID": "env-INTROSPECTION_CLIENT_ID",
 	"INTROSPECTION_CLIENT_SECRET": "env-INTROSPECTION_CLIENT_SECRET",
 	"INTROSPECTION_URL": "env-INTROSPECTION_URL",

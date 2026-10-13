@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -56,12 +57,31 @@ func main() {
 	logger.Info("token verifier ready", "strategy", cfg.TokenStrategy)
 
 	// ── IAM client ──
-	iam := iamclient.New(cfg.IAMServiceURL, os.Getenv("ARDA_SERVICE_AUTH_SECRET"))
+	// IAM_TRANSPORT=grpc (default) needs IAM_GRPC_ADDR, ARDA_SERVICE_AUTH_SECRET
+	// and the ARDA_GRPC_* mTLS files; http keeps the legacy /internal routes.
+	// Either way an invalid service identity refuses to start.
+	var iam iamclient.Client
+	switch strings.ToLower(strings.TrimSpace(cfg.IAMTransport)) {
+	case "", "grpc":
+		grpcClient, err := iamclient.NewGRPC(cfg.IAMGRPCAddr, cfg.ServiceAuthSecret)
+		if err != nil {
+			logger.Error("auth-gateway IAM gRPC client is not configured (IAM_GRPC_ADDR, ARDA_SERVICE_AUTH_SECRET, ARDA_GRPC_CA_FILE/CERT_FILE/KEY_FILE)", "err", err)
+			os.Exit(1)
+		}
+		defer grpcClient.Close()
+		iam = grpcClient
+		logger.Info("iam transport: grpc", "addr", cfg.IAMGRPCAddr)
+	case "http":
+		iam = iamclient.New(cfg.IAMServiceURL, cfg.ServiceAuthSecret)
+		logger.Warn("iam transport: http (transitional; switch IAM_TRANSPORT to grpc)", "url", cfg.IAMServiceURL)
+	default:
+		logger.Error("invalid IAM_TRANSPORT; expected grpc or http", "value", cfg.IAMTransport)
+		os.Exit(1)
+	}
 	if err := iam.ValidateServiceIdentity(); err != nil {
 		logger.Error("auth-gateway IAM service identity is not configured", "err", err)
 		os.Exit(1)
 	}
-	_ = iam
 
 	// ── ForwardAuth handler ──
 	authHandler := handler.NewAuthHandler(verifier, iam, pol, logger, time.Duration(cfg.IAMContextCacheTTL)*time.Second)

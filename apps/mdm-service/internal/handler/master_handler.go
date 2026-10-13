@@ -49,6 +49,11 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	ardahttp.WriteProblem(w, r, http.StatusInternalServerError, ardaerrors.New(ardaerrors.CodeInternal, err.Error()))
 }
 
+// Deleted is the result of a successful delete.
+type Deleted struct {
+	Deleted bool `json:"deleted"`
+}
+
 // CatalogHandler serves every simple master-data catalog registered in the
 // service layer through one generic implementation.
 type CatalogHandler struct {
@@ -158,6 +163,6 @@ func (h *CatalogHandler) Delete(catalog string) http.HandlerFunc {
 			return
 		}
 		err := h.svc.Delete(r.Context(), catalog, tenantID, r.PathValue("id"))
-		writeResult(w, r, json.RawMessage(`{"deleted":true}`), err)
+		writeResult(w, r, Deleted{Deleted: true}, err)
 	}
 }

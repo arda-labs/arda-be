@@ -22,7 +22,12 @@ type Config struct {
 	IntrospectionClientID     string `yaml:"introspection_client_id" env:"INTROSPECTION_CLIENT_ID"`
 	IntrospectionClientSecret string `yaml:"introspection_client_secret" env:"INTROSPECTION_CLIENT_SECRET"`
 
-	IAMServiceURL             string `yaml:"iam_service_url" env:"IAM_SERVICE_URL"`
+	IAMServiceURL string `yaml:"iam_service_url" env:"IAM_SERVICE_URL"`
+	// IAMTransport selects how the gateway calls IAM: "grpc" (GatewayService,
+	// mTLS + service identity, default) or "http" (legacy /internal routes,
+	// transitional).
+	IAMTransport              string `yaml:"iam_transport" env:"IAM_TRANSPORT"`
+	IAMGRPCAddr               string `yaml:"iam_grpc_addr" env:"IAM_GRPC_ADDR"`
 	IAMContextCacheTTL        int    `yaml:"iam_context_cache_ttl_seconds" env:"IAM_CONTEXT_CACHE_TTL_SECONDS"`
 	SlowRequestLogEnabled     bool   `yaml:"slow_request_log_enabled" env:"SLOW_REQUEST_LOG_ENABLED"`
 	SlowRequestLogThresholdMS int    `yaml:"slow_request_log_threshold_ms" env:"SLOW_REQUEST_LOG_THRESHOLD_MS"`
@@ -77,6 +82,8 @@ func Load() Config {
 		JWTIssuer:                 "https://auth.arda.io.vn",
 		JWTAudience:               "arda-api",
 		IAMServiceURL:             "http://localhost:8081",
+		IAMTransport:              "grpc",
+		IAMGRPCAddr:               "localhost:9090",
 		IAMContextCacheTTL:        60,
 		SlowRequestLogEnabled:     false,
 		SlowRequestLogThresholdMS: 1000,

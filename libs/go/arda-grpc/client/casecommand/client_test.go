@@ -70,20 +70,20 @@ func TestCheckCaseMapsRequestAndBusinessFailure(t *testing.T) {
 
 func TestResolveCaseMapsDecisionAndOutputs(t *testing.T) {
 	client, server := newTestClient(t)
-	outputs, err := client.ResolveCase(context.Background(), "hrm.employee-register", "reg-1", "case-1", DecisionApprove, "user-1", "ok")
+	outputs, err := client.ResolveCase(context.Background(), "hrm.employee-register", "reg-1", "case-1", DecisionApprove, "user-1", "ok", " 7 ")
 	if err != nil || outputs["employeeId"] != "emp-1" {
 		t.Fatalf("ResolveCase = %v %v", outputs, err)
 	}
-	if server.resolve.GetDecision() != commonv1.CaseDecision_CASE_DECISION_APPROVE || server.resolve.GetDecidedBy() != "user-1" || server.resolve.GetNote() != "ok" {
+	if server.resolve.GetDecision() != commonv1.CaseDecision_CASE_DECISION_APPROVE || server.resolve.GetDecidedBy() != "user-1" || server.resolve.GetNote() != "ok" || server.resolve.GetDataVersion() != "7" {
 		t.Fatalf("request = %+v", server.resolve)
 	}
-	if _, err := client.ResolveCase(context.Background(), "k", "reg-1", "", DecisionReject, "", ""); err != nil {
+	if _, err := client.ResolveCase(context.Background(), "k", "reg-1", "", DecisionReject, "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if server.resolve.GetDecision() != commonv1.CaseDecision_CASE_DECISION_REJECT {
 		t.Fatalf("reject decision = %v", server.resolve.GetDecision())
 	}
-	if _, err := client.ResolveCase(context.Background(), "k", "locked", "", DecisionApprove, "", ""); status.Code(err) != codes.FailedPrecondition {
+	if _, err := client.ResolveCase(context.Background(), "k", "locked", "", DecisionApprove, "", "", ""); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("server error = %v, want FailedPrecondition passed through", err)
 	}
 }
@@ -93,7 +93,7 @@ func TestClientRejectsInvalidInput(t *testing.T) {
 	if _, _, err := client.CheckCase(context.Background(), "", "id", ""); err == nil {
 		t.Fatal("empty kind accepted")
 	}
-	if _, err := client.ResolveCase(context.Background(), "k", "id", "", Decision("CANCEL"), "", ""); err == nil {
+	if _, err := client.ResolveCase(context.Background(), "k", "id", "", Decision("CANCEL"), "", "", ""); err == nil {
 		t.Fatal("unknown decision accepted")
 	}
 	var nilClient *Client

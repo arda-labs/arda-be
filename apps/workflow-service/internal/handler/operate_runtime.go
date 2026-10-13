@@ -17,7 +17,7 @@ import (
 // caller tenant through business_cases: Zeebe records on this deployment all
 // carry the <default> tenant id, so the case registry is the tenant boundary.
 
-type operateInstanceRow struct {
+type OperateInstanceRow struct {
 	service.ZeebeProcessInstance
 	CaseID        string `json:"caseId,omitempty"`
 	BusinessKey   string `json:"businessKey,omitempty"`
@@ -26,13 +26,13 @@ type operateInstanceRow struct {
 	OpenIncidents int    `json:"openIncidents"`
 }
 
-type operateInstancePage struct {
-	Items      []operateInstanceRow `json:"items"`
+type OperateInstancePage struct {
+	Items      []OperateInstanceRow `json:"items"`
 	NextCursor string               `json:"nextCursor,omitempty"`
 	Source     string               `json:"source"`
 }
 
-type operateInstanceDetail struct {
+type OperateInstanceDetail struct {
 	service.ZeebeProcessInstance
 	CaseID        string  `json:"caseId,omitempty"`
 	BusinessKey   string  `json:"businessKey,omitempty"`
@@ -43,7 +43,7 @@ type operateInstanceDetail struct {
 	OpenIncidents int     `json:"openIncidents"`
 }
 
-type operateIncidentRow struct {
+type OperateIncidentRow struct {
 	IncidentKey        string `json:"incidentKey"`
 	ProcessInstanceKey string `json:"processInstanceKey"`
 	BpmnProcessID      string `json:"bpmnProcessId,omitempty"`
@@ -58,8 +58,8 @@ type operateIncidentRow struct {
 	BusinessKey        string `json:"businessKey,omitempty"`
 }
 
-type operateIncidentPage struct {
-	Items      []operateIncidentRow `json:"items"`
+type OperateIncidentPage struct {
+	Items      []OperateIncidentRow `json:"items"`
 	NextCursor string               `json:"nextCursor,omitempty"`
 	Source     string               `json:"source"`
 }
@@ -67,9 +67,9 @@ type operateIncidentPage struct {
 func (h *WorkflowHandler) operateSearchProcessInstances(w http.ResponseWriter, r *http.Request) {
 	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
 		items := h.operateInstancesFromDB(r.Context())
-		rows := make([]operateInstanceRow, 0, len(items))
+		rows := make([]OperateInstanceRow, 0, len(items))
 		for _, item := range items {
-			rows = append(rows, operateInstanceRow{
+			rows = append(rows, OperateInstanceRow{
 				ZeebeProcessInstance: service.ZeebeProcessInstance{
 					ProcessInstanceKey: item.ProcessInstanceKey,
 					BpmnProcessID:      item.BpmnProcessId,
@@ -80,7 +80,7 @@ func (h *WorkflowHandler) operateSearchProcessInstances(w http.ResponseWriter, r
 				BusinessKey: item.BusinessKey,
 			})
 		}
-		writeJSON(w, r, http.StatusOK, operateInstancePage{Items: rows, Source: "database"})
+		writeJSON(w, r, http.StatusOK, OperateInstancePage{Items: rows, Source: "database"})
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *WorkflowHandler) operateSearchProcessInstances(w http.ResponseWriter, r
 		Cursor:                   queryInt64(r, "cursor"),
 	}
 
-	rows := make([]operateInstanceRow, 0, pageSize)
+	rows := make([]OperateInstanceRow, 0, pageSize)
 	cursor := ""
 	for attempt := 0; attempt < 4; attempt++ {
 		items, next, err := h.MonitoringIndex.SearchProcessInstances(r.Context(), params)
@@ -126,7 +126,7 @@ func (h *WorkflowHandler) operateSearchProcessInstances(w http.ResponseWriter, r
 			if !owned {
 				continue
 			}
-			rows = append(rows, operateInstanceRow{
+			rows = append(rows, OperateInstanceRow{
 				ZeebeProcessInstance: item,
 				CaseID:               bc.ID,
 				BusinessKey:          bc.CaseCode,
@@ -146,7 +146,7 @@ func (h *WorkflowHandler) operateSearchProcessInstances(w http.ResponseWriter, r
 		}
 	}
 
-	writeJSON(w, r, http.StatusOK, operateInstancePage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
+	writeJSON(w, r, http.StatusOK, OperateInstancePage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
 }
 
 func (h *WorkflowHandler) OperateProcessInstanceDetail(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +182,7 @@ func (h *WorkflowHandler) OperateProcessInstanceDetail(w http.ResponseWriter, r 
 		return
 	}
 
-	detail := operateInstanceDetail{
+	detail := OperateInstanceDetail{
 		ZeebeProcessInstance: *instance,
 		CaseID:               bc.ID,
 		BusinessKey:          bc.CaseCode,
@@ -254,9 +254,9 @@ func (h *WorkflowHandler) operateInstanceRead(w http.ResponseWriter, r *http.Req
 func (h *WorkflowHandler) operateSearchIncidents(w http.ResponseWriter, r *http.Request) {
 	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
 		items := h.operateIncidentsFromTimeline(r.Context())
-		rows := make([]operateIncidentRow, 0, len(items))
+		rows := make([]OperateIncidentRow, 0, len(items))
 		for _, item := range items {
-			rows = append(rows, operateIncidentRow{
+			rows = append(rows, OperateIncidentRow{
 				IncidentKey:        item.IncidentKey,
 				ProcessInstanceKey: item.ProcessInstanceKey,
 				BpmnProcessID:      item.BpmnProcessId,
@@ -269,7 +269,7 @@ func (h *WorkflowHandler) operateSearchIncidents(w http.ResponseWriter, r *http.
 				CreatedAt:          item.CreatedAt,
 			})
 		}
-		writeJSON(w, r, http.StatusOK, operateIncidentPage{Items: rows, Source: "database"})
+		writeJSON(w, r, http.StatusOK, OperateIncidentPage{Items: rows, Source: "database"})
 		return
 	}
 
@@ -285,7 +285,7 @@ func (h *WorkflowHandler) operateSearchIncidents(w http.ResponseWriter, r *http.
 		Cursor:             queryInt64(r, "cursor"),
 	}
 
-	rows := make([]operateIncidentRow, 0, pageSize)
+	rows := make([]OperateIncidentRow, 0, pageSize)
 	cursor := ""
 	for attempt := 0; attempt < 4; attempt++ {
 		items, next, err := h.MonitoringIndex.SearchIncidents(r.Context(), params)
@@ -309,7 +309,7 @@ func (h *WorkflowHandler) operateSearchIncidents(w http.ResponseWriter, r *http.
 			if !owned {
 				continue
 			}
-			rows = append(rows, operateIncidentRow{
+			rows = append(rows, OperateIncidentRow{
 				IncidentKey:        strconv.FormatInt(item.IncidentKey, 10),
 				ProcessInstanceKey: strconv.FormatInt(item.ProcessInstanceKey, 10),
 				BpmnProcessID:      item.BpmnProcessID,
@@ -335,24 +335,24 @@ func (h *WorkflowHandler) operateSearchIncidents(w http.ResponseWriter, r *http.
 		}
 	}
 
-	writeJSON(w, r, http.StatusOK, operateIncidentPage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
+	writeJSON(w, r, http.StatusOK, OperateIncidentPage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
 }
 
-type operateJobRow struct {
+type OperateJobRow struct {
 	service.ZeebeJob
 	CaseID      string `json:"caseId,omitempty"`
 	BusinessKey string `json:"businessKey,omitempty"`
 }
 
-type operateJobPage struct {
-	Items      []operateJobRow `json:"items"`
+type OperateJobPage struct {
+	Items      []OperateJobRow `json:"items"`
 	NextCursor string          `json:"nextCursor,omitempty"`
 	Source     string          `json:"source"`
 }
 
 func (h *WorkflowHandler) operateSearchJobs(w http.ResponseWriter, r *http.Request) {
 	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
-		writeJSON(w, r, http.StatusOK, operateJobPage{Items: []operateJobRow{}, Source: "unavailable"})
+		writeJSON(w, r, http.StatusOK, OperateJobPage{Items: []OperateJobRow{}, Source: "unavailable"})
 		return
 	}
 
@@ -367,7 +367,7 @@ func (h *WorkflowHandler) operateSearchJobs(w http.ResponseWriter, r *http.Reque
 		Cursor:             queryInt64(r, "cursor"),
 	}
 
-	rows := make([]operateJobRow, 0, pageSize)
+	rows := make([]OperateJobRow, 0, pageSize)
 	cursor := ""
 	for attempt := 0; attempt < 4; attempt++ {
 		items, next, err := h.MonitoringIndex.SearchJobs(r.Context(), params)
@@ -392,7 +392,7 @@ func (h *WorkflowHandler) operateSearchJobs(w http.ResponseWriter, r *http.Reque
 			if !owned {
 				continue
 			}
-			rows = append(rows, operateJobRow{
+			rows = append(rows, OperateJobRow{
 				ZeebeJob:    item,
 				CaseID:      bc.ID,
 				BusinessKey: bc.CaseCode,
@@ -409,7 +409,7 @@ func (h *WorkflowHandler) operateSearchJobs(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	writeJSON(w, r, http.StatusOK, operateJobPage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
+	writeJSON(w, r, http.StatusOK, OperateJobPage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
 }
 
 func (h *WorkflowHandler) OperateInstanceHistory(w http.ResponseWriter, r *http.Request) {
@@ -440,7 +440,7 @@ func (h *WorkflowHandler) OperateInstanceHistory(w http.ResponseWriter, r *http.
 		writeAPIError(w, r, http.StatusBadGateway, "Runtime monitoring is unavailable: "+err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"items": events, "nextCursor": next})
+	writeJSON(w, r, http.StatusOK, OperateHistoryPage{Items: events, NextCursor: next})
 }
 
 // ─── Runtime summary ────────────────────────────────────────────────────────────
@@ -452,19 +452,19 @@ const (
 	summaryBreakdownLimit    = 5
 )
 
-type operateSummaryCount struct {
+type OperateSummaryCount struct {
 	Label string `json:"label"`
 	Count int    `json:"count"`
 }
 
-type operateSummary struct {
+type OperateSummary struct {
 	ActiveInstances    int                   `json:"activeInstances"`
 	OpenIncidents      int                   `json:"openIncidents"`
 	FailedJobs         int                   `json:"failedJobs"`
 	Truncated          bool                  `json:"truncated"`
-	IncidentsByType    []operateSummaryCount `json:"incidentsByType"`
-	FailedJobsByType   []operateSummaryCount `json:"failedJobsByType"`
-	InstancesByProcess []operateSummaryCount `json:"instancesByProcess"`
+	IncidentsByType    []OperateSummaryCount `json:"incidentsByType"`
+	FailedJobsByType   []OperateSummaryCount `json:"failedJobsByType"`
+	InstancesByProcess []OperateSummaryCount `json:"instancesByProcess"`
 }
 
 // OperateSummary aggregates tenant-scoped runtime counters. Counts come from
@@ -475,10 +475,10 @@ func (h *WorkflowHandler) OperateSummary(w http.ResponseWriter, r *http.Request)
 		writeMethodNotAllowed(w, r)
 		return
 	}
-	summary := operateSummary{
-		IncidentsByType:    []operateSummaryCount{},
-		FailedJobsByType:   []operateSummaryCount{},
-		InstancesByProcess: []operateSummaryCount{},
+	summary := OperateSummary{
+		IncidentsByType:    []OperateSummaryCount{},
+		FailedJobsByType:   []OperateSummaryCount{},
+		InstancesByProcess: []OperateSummaryCount{},
 	}
 	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
 		writeJSON(w, r, http.StatusOK, summary)
@@ -497,7 +497,7 @@ func (h *WorkflowHandler) OperateSummary(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, r, http.StatusOK, summary)
 }
 
-func (h *WorkflowHandler) summaryActiveInstances(r *http.Request) (int, []operateSummaryCount, bool) {
+func (h *WorkflowHandler) summaryActiveInstances(r *http.Request) (int, []OperateSummaryCount, bool) {
 	counts := map[string]int{}
 	total := 0
 	cursor := ""
@@ -521,7 +521,7 @@ func (h *WorkflowHandler) summaryActiveInstances(r *http.Request) (int, []operat
 	return total, topSummaryCounts(counts), truncated
 }
 
-func (h *WorkflowHandler) summaryOpenIncidents(r *http.Request) (int, []operateSummaryCount, bool) {
+func (h *WorkflowHandler) summaryOpenIncidents(r *http.Request) (int, []OperateSummaryCount, bool) {
 	counts := map[string]int{}
 	total := 0
 	cursor := ""
@@ -565,7 +565,7 @@ func (h *WorkflowHandler) summaryOpenIncidents(r *http.Request) (int, []operateS
 	return total, topSummaryCounts(counts), truncated
 }
 
-func (h *WorkflowHandler) summaryFailedJobs(r *http.Request) (int, []operateSummaryCount, bool) {
+func (h *WorkflowHandler) summaryFailedJobs(r *http.Request) (int, []OperateSummaryCount, bool) {
 	counts := map[string]int{}
 	total := 0
 	cursor := ""
@@ -629,10 +629,10 @@ func (h *WorkflowHandler) countOwnedInstances(r *http.Request, items []service.Z
 	return total
 }
 
-func topSummaryCounts(counts map[string]int) []operateSummaryCount {
-	out := make([]operateSummaryCount, 0, len(counts))
+func topSummaryCounts(counts map[string]int) []OperateSummaryCount {
+	out := make([]OperateSummaryCount, 0, len(counts))
 	for label, count := range counts {
-		out = append(out, operateSummaryCount{Label: label, Count: count})
+		out = append(out, OperateSummaryCount{Label: label, Count: count})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Count == out[j].Count {
@@ -648,7 +648,7 @@ func topSummaryCounts(counts map[string]int) []operateSummaryCount {
 
 // ─── Global user tasks ──────────────────────────────────────────────────────────
 
-type operateUserTaskRow struct {
+type OperateUserTaskRow struct {
 	UserTaskKey        string   `json:"userTaskKey"`
 	ElementID          string   `json:"elementId,omitempty"`
 	ElementInstanceKey string   `json:"elementInstanceKey,omitempty"`
@@ -665,8 +665,8 @@ type operateUserTaskRow struct {
 	BusinessKey        string   `json:"businessKey,omitempty"`
 }
 
-type operateUserTaskPage struct {
-	Items      []operateUserTaskRow `json:"items"`
+type OperateUserTaskPage struct {
+	Items      []OperateUserTaskRow `json:"items"`
 	NextCursor string               `json:"nextCursor,omitempty"`
 	Source     string               `json:"source"`
 }
@@ -677,7 +677,7 @@ func (h *WorkflowHandler) OperateUserTasks(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
-		writeJSON(w, r, http.StatusOK, operateUserTaskPage{Items: []operateUserTaskRow{}, Source: "unavailable"})
+		writeJSON(w, r, http.StatusOK, OperateUserTaskPage{Items: []OperateUserTaskRow{}, Source: "unavailable"})
 		return
 	}
 
@@ -693,7 +693,7 @@ func (h *WorkflowHandler) OperateUserTasks(w http.ResponseWriter, r *http.Reques
 		Cursor:             queryInt64(r, "cursor"),
 	}
 
-	rows := make([]operateUserTaskRow, 0, pageSize)
+	rows := make([]OperateUserTaskRow, 0, pageSize)
 	cursor := ""
 	for attempt := 0; attempt < 4; attempt++ {
 		items, next, err := h.MonitoringIndex.SearchUserTasks(r.Context(), params)
@@ -717,7 +717,7 @@ func (h *WorkflowHandler) OperateUserTasks(w http.ResponseWriter, r *http.Reques
 			if !owned {
 				continue
 			}
-			rows = append(rows, operateUserTaskRow{
+			rows = append(rows, OperateUserTaskRow{
 				UserTaskKey:        strconv.FormatInt(item.UserTaskKey, 10),
 				ElementID:          item.ElementID,
 				ElementInstanceKey: formatKey(item.ElementInstanceKey),
@@ -745,7 +745,7 @@ func (h *WorkflowHandler) OperateUserTasks(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	writeJSON(w, r, http.StatusOK, operateUserTaskPage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
+	writeJSON(w, r, http.StatusOK, OperateUserTaskPage{Items: rows, NextCursor: cursor, Source: "zeebe-exporter"})
 }
 
 func (h *WorkflowHandler) OperateUserTaskAssign(w http.ResponseWriter, r *http.Request) {
@@ -767,9 +767,7 @@ func (h *WorkflowHandler) OperateUserTaskAssign(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	var req struct {
-		Assignee string `json:"assignee"`
-	}
+	var req UserTaskAssignRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body")
 		return
@@ -808,11 +806,7 @@ func (h *WorkflowHandler) OperateUserTaskAssign(w http.ResponseWriter, r *http.R
 		writeAPIError(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]string{
-		"status":      "assigned",
-		"userTaskKey": strconv.FormatInt(key, 10),
-		"assignee":    assignee,
-	})
+	writeJSON(w, r, http.StatusOK, UserTaskAssignResult{Status: "assigned", UserTaskKey: strconv.FormatInt(key, 10), Assignee: assignee})
 }
 
 // OperateSetInstanceVariables updates variables for an incident fix (Operate's
@@ -842,11 +836,7 @@ func (h *WorkflowHandler) OperateSetInstanceVariables(w http.ResponseWriter, r *
 		return
 	}
 
-	var req struct {
-		Variables          map[string]any `json:"variables"`
-		ElementInstanceKey int64          `json:"elementInstanceKey"`
-		Local              bool           `json:"local"`
-	}
+	var req SetVariablesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body")
 		return
@@ -863,11 +853,7 @@ func (h *WorkflowHandler) OperateSetInstanceVariables(w http.ResponseWriter, r *
 		writeAPIError(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"status":             "updated",
-		"elementInstanceKey": strconv.FormatInt(scope, 10),
-		"variables":          len(req.Variables),
-	})
+	writeJSON(w, r, http.StatusOK, SetVariablesResult{Status: "updated", ElementInstanceKey: strconv.FormatInt(scope, 10), Variables: len(req.Variables)})
 }
 
 // ─── Query helpers ──────────────────────────────────────────────────────────────

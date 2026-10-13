@@ -267,6 +267,13 @@ func (s *ProvisionService) accumulatedProvision(ctx context.Context, tenantID, a
 // card seeded by 20260909100000 drives the classification; the pre-rules
 // Analytics per leg keep the provision scope.
 func (s *ProvisionService) provisionLines(ctx context.Context, a repository.AccruableAgreement, delta int64) ([]*financev1.PostingLine, error) {
+	return financeclient.BuildPostingLines(ctx, s.finance, "LNM_PROVISION", provisionLegs(a, delta), "VND")
+}
+
+// provisionLegs maps a signed provision delta onto the LNM_PROVISION card:
+// delta > 0 → lines 1-2 (trích tăng), delta < 0 → lines 3-4 (hoàn giảm) with
+// the absolute amount. Pure so the golden table can lock it.
+func provisionLegs(a repository.AccruableAgreement, delta int64) []financeclient.PostingLeg {
 	amount := delta
 	cardLine := int32(1)
 	if delta < 0 {
@@ -281,11 +288,8 @@ func (s *ProvisionService) provisionLines(ctx context.Context, a repository.Accr
 			Dimensions:    map[string]string{"agreement_code": a.AgreementCode},
 		}
 	}
-	return financeclient.BuildPostingLines(ctx, s.finance, "LNM_PROVISION",
-		[]financeclient.PostingLeg{
-			{CardLine: cardLine, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics()},
-			{CardLine: cardLine + 1, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics()},
-		},
-		"VND",
-	)
+	return []financeclient.PostingLeg{
+		{CardLine: cardLine, Direction: "DEBIT", AmountMinor: amount, Analytics: analytics()},
+		{CardLine: cardLine + 1, Direction: "CREDIT", AmountMinor: amount, Analytics: analytics()},
+	}
 }

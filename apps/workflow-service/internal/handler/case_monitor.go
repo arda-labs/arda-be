@@ -128,7 +128,7 @@ func (h *WorkflowHandler) ResolveCaseIncident(w http.ResponseWriter, r *http.Req
 		writeAPIError(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]string{"status": "resolved", "incidentKey": strconv.FormatInt(incidentKey, 10)})
+	writeJSON(w, r, http.StatusOK, IncidentResolveResult{Status: "resolved", IncidentKey: strconv.FormatInt(incidentKey, 10)})
 }
 
 // incidentBelongsToCase verifies an incident key against the process instance

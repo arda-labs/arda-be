@@ -27,6 +27,7 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
+	commonv1 "github.com/arda-labs/arda/libs/go/arda-proto/common/v1"
 	statisticalv1 "github.com/arda-labs/arda/libs/go/arda-proto/statistical/v1"
 	workflowv1 "github.com/arda-labs/arda/libs/go/arda-proto/workflow/v1"
 	"google.golang.org/grpc"
@@ -106,6 +107,8 @@ func main() {
 		),
 	)
 	statisticalv1.RegisterStatisticalCommandServiceServer(grpcSrv, grpcserver.NewStatisticalServer(statisticalSvc))
+	// Shared maker-checker callback (ADR-011): rpt.submit on common-maker-checker.
+	commonv1.RegisterCaseCommandServiceServer(grpcSrv, grpcserver.NewCaseCommandServer(statisticalSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)

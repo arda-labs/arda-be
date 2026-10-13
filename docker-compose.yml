@@ -117,6 +117,12 @@ services:
       HTTP_ADDR: 0.0.0.0:8080
       LOG_LEVEL: debug
       IAM_SERVICE_URL: http://iam-service:8080
+      IAM_TRANSPORT: ${IAM_TRANSPORT:-grpc}
+      IAM_GRPC_ADDR: iam-service:9090
+      ARDA_SERVICE_AUTH_SECRET: ${ARDA_SERVICE_AUTH_SECRET:?set ARDA_SERVICE_AUTH_SECRET}
+      ARDA_GRPC_CA_FILE: /var/run/arda-grpc-tls/ca.crt
+      ARDA_GRPC_CERT_FILE: /var/run/arda-grpc-tls/tls.crt
+      ARDA_GRPC_KEY_FILE: /var/run/arda-grpc-tls/tls.key
       IAM_CONTEXT_CACHE_TTL_SECONDS: 60
       HRM_SERVICE_URL: http://hrm-service:8080
       NOTIFICATION_SERVICE_URL: http://notification-service:8080
@@ -131,6 +137,8 @@ services:
       SESSION_STORE: memory
     ports:
       - "8082:8080"
+    volumes:
+      - ./.dev/grpc-tls/auth-gateway:/var/run/arda-grpc-tls:ro
     env_file:
       - .env
     depends_on:
@@ -173,6 +181,11 @@ services:
       CRM_GRPC_ADDR: crm-service:9090
       IAM_GRPC_ADDR: iam-service:9090
       NOTIFICATION_GRPC_ADDR: notification-service:9090
+      # CaseCommandService owners (ADR-011); dialled only for kinds routed to them.
+      HRM_GRPC_ADDR: hrm-service:9090
+      DEPOSIT_GRPC_ADDR: deposit-service:9090
+      CAPITAL_GRPC_ADDR: capital-service:9090
+      STATISTICAL_GRPC_ADDR: statistical-service:9090
     ports:
       - "8093:8080"
       - "9093:9090"

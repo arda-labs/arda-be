@@ -95,19 +95,13 @@ func (h *WorkflowHandler) retryJob(w http.ResponseWriter, r *http.Request, jobKe
 		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
 	}
-	var req struct {
-		Retries int32 `json:"retries"`
-	}
+	var req RetryRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	if err := h.zeebeSvc.RetryJob(r.Context(), jobKey, req.Retries); err != nil {
 		writeAPIError(w, r, http.StatusBadGateway, "Failed to retry job: "+err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"status":  "retried",
-		"jobKey":  strconv.FormatInt(jobKey, 10),
-		"retries": req.Retries,
-	})
+	writeJSON(w, r, http.StatusOK, JobRetryResult{Status: "retried", JobKey: strconv.FormatInt(jobKey, 10), Retries: req.Retries})
 }
 
 func (h *WorkflowHandler) retryProcessServiceJobs(w http.ResponseWriter, r *http.Request, processInstanceKey int64) {
@@ -168,17 +162,10 @@ func (h *WorkflowHandler) retryProcessServiceJobs(w http.ResponseWriter, r *http
 		}
 	}
 	if len(retried) == 0 {
-		writeJSON(w, r, http.StatusOK, map[string]any{
-			"status":  "noop",
-			"message": "Không tìm thấy service job incident để retry — kiểm tra tab Jobs hoặc log workflow-service.",
-			"retried": retried,
-		})
+		writeJSON(w, r, http.StatusOK, ServiceJobsRetryResult{Status: "noop", Message: "Không tìm thấy service job incident để retry — kiểm tra tab Jobs hoặc log workflow-service.", Retried: retried})
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"status":  "retried",
-		"retried": retried,
-	})
+	writeJSON(w, r, http.StatusOK, ServiceJobsRetryResult{Status: "retried", Retried: retried})
 }
 
 func jobPath(path string) (int64, string) {

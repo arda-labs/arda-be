@@ -17,7 +17,7 @@ func NewSpecificProvisionHandler(svc *service.SpecificProvisionService) *Specifi
 	return &SpecificProvisionHandler{svc: svc}
 }
 
-type specificProvisionInput struct {
+type SpecificProvisionRequest struct {
 	AgreementCode string `json:"agreement_code"`
 	ProvisionDate string `json:"provision_date"`
 }
@@ -52,7 +52,7 @@ func (h *SpecificProvisionHandler) CalculateSpecificProvision(w http.ResponseWri
 	if !ok {
 		return
 	}
-	var req specificProvisionInput
+	var req SpecificProvisionRequest
 	if !decodeBody(w, r, &req) {
 		return
 	}
@@ -70,7 +70,7 @@ func (h *SpecificProvisionHandler) SubmitSpecificProvision(w http.ResponseWriter
 	if !ok {
 		return
 	}
-	var req specificProvisionInput
+	var req SpecificProvisionRequest
 	if !decodeBody(w, r, &req) {
 		return
 	}

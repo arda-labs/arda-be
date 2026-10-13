@@ -125,7 +125,14 @@ func main() {
 	oauthClientHandler := handler.NewOAuthClientHandler(hydra.New(cfg.HydraAdminURL))
 
 	// ── gRPC server ──
-	if _, err := iamgrpc.ListenAndServe(cfg.GRPCAddr, userRepo, tenantRepo); err != nil {
+	if _, err := iamgrpc.ListenAndServe(cfg.GRPCAddr, iamgrpc.Dependencies{
+		UserRepo:   userRepo,
+		TenantRepo: tenantRepo,
+		Users:      userSvc,
+		Sessions:   sessionSvc,
+		MFA:        mfaSvc,
+		Audit:      auditLogger,
+	}); err != nil {
 		logger.Error("start grpc server", "err", err)
 		os.Exit(1)
 	}

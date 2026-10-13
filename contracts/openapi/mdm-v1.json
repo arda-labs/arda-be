@@ -1,0 +1,1711 @@
+{
+  "components": {
+    "responses": {
+      "Problem": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "RFC-style problem response"
+      }
+    },
+    "schemas": {
+      "CatalogItem": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {},
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "created_at",
+          "id",
+          "is_active",
+          "name",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/mdm-service/internal/domain.CatalogItem"
+      },
+      "CatalogItemInput": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {},
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/mdm-service/internal/domain.CatalogItem"
+      },
+      "CatalogItemList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogItem"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "CatalogItemListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/CatalogItemList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "CatalogItemSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/CatalogItem"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "Deleted": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/mdm-service/internal/handler.Deleted"
+      },
+      "DeletedSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/Deleted"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterestRate": {
+        "additionalProperties": false,
+        "properties": {
+          "apply_type": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currency_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rate_type": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "apply_type",
+          "code",
+          "created_at",
+          "id",
+          "is_active",
+          "name",
+          "rate_type",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/mdm-service/internal/domain.InterestRate"
+      },
+      "InterestRateInput": {
+        "additionalProperties": false,
+        "properties": {
+          "apply_type": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currency_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rate_type": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/mdm-service/internal/domain.InterestRate"
+      },
+      "InterestRateList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InterestRate"
+            },
+            "type": "array"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "per_page": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total"
+        ],
+        "type": "object",
+        "x-arda-list": true
+      },
+      "InterestRateListSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterestRateList"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterestRateSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterestRate"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterestRateTier": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_from_minor": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "amount_to_minor": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decision_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decision_no": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effective_from": {
+            "type": "string"
+          },
+          "effective_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "max_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "min_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "rate_id": {
+            "type": "string"
+          },
+          "rate_value": {
+            "type": "number"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "effective_from",
+          "id",
+          "rate_id",
+          "rate_value",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/mdm-service/internal/domain.InterestRateTier"
+      },
+      "InterestRateTierInput": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_from_minor": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "amount_to_minor": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decision_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decision_no": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effective_from": {
+            "type": "string"
+          },
+          "effective_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "max_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "min_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "rate_id": {
+            "type": "string"
+          },
+          "rate_value": {
+            "type": "number"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/mdm-service/internal/domain.InterestRateTier"
+      },
+      "InterestRateTierSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "$ref": "#/components/schemas/InterestRateTier"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "InterestRateTiersSuccess": {
+        "properties": {
+          "errors": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          },
+          "result": {
+            "items": {
+              "$ref": "#/components/schemas/InterestRateTier"
+            },
+            "type": "array"
+          },
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "result",
+          "success",
+          "errors",
+          "messages",
+          "meta"
+        ],
+        "type": "object"
+      },
+      "Problem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ProblemError"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "type": {
+            "format": "uri-reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "ProblemError": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "ResponseMeta": {
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "ardaSession": {
+        "in": "cookie",
+        "name": "arda_session",
+        "type": "apiKey",
+        "x-browser-credentials": "include"
+      }
+    }
+  },
+  "info": {
+    "description": "Master data catalogs and versioned interest rates. Generated from apps/mdm-service/internal/transport/http/openapi.go; do not edit by hand.",
+    "title": "Arda MDM",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/mdm/interest-rates": {
+      "get": {
+        "operationId": "listInterestRates",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "enum": [
+                "code",
+                "name",
+                "created_at"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Free-text search over code and name",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Return every row up to the server cap instead of one page",
+            "in": "query",
+            "name": "all",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Comma-separated filter: true, false or both",
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Legacy: include inactive rows",
+            "in": "query",
+            "name": "include_inactive",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestRateListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List interest rate headers"
+      },
+      "post": {
+        "operationId": "createInterestRate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterestRateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestRateSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Create an interest rate header"
+      }
+    },
+    "/api/mdm/interest-rates/{id}": {
+      "delete": {
+        "operationId": "deleteInterestRate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Delete an interest rate header"
+      },
+      "get": {
+        "operationId": "getInterestRate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestRateSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read an interest rate header"
+      },
+      "put": {
+        "operationId": "updateInterestRate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterestRateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestRateSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Update an interest rate header"
+      }
+    },
+    "/api/mdm/interest-rates/{id}/tiers": {
+      "get": {
+        "operationId": "listInterestRateTiers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestRateTiersSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List the tiers of one rate"
+      },
+      "post": {
+        "operationId": "createInterestRateTier",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterestRateTierInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestRateTierSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Add a tier to one rate"
+      }
+    },
+    "/api/mdm/interest-rates/{id}/tiers/{tierId}": {
+      "delete": {
+        "operationId": "deleteInterestRateTier",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tierId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Delete a tier"
+      },
+      "put": {
+        "operationId": "updateInterestRateTier",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tierId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterestRateTierInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestRateTierSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Update a tier"
+      }
+    },
+    "/api/mdm/{catalog}": {
+      "get": {
+        "operationId": "listCatalogItems",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "catalog",
+            "required": true,
+            "schema": {
+              "enum": [
+                "base-rates",
+                "cash-denominations",
+                "collateral-types",
+                "countries",
+                "currencies",
+                "debt-groups",
+                "economic-types",
+                "fee-types",
+                "fund-purposes",
+                "fund-sources",
+                "id-document-types",
+                "industries",
+                "interest-factors",
+                "loan-contract-types",
+                "loan-methods",
+                "loan-purposes",
+                "scoring-benchmarks",
+                "scoring-criteria-mappings",
+                "scoring-indicator-groups",
+                "scoring-indicators",
+                "scoring-types"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "enum": [
+                "code",
+                "name",
+                "created_at"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Free-text search over code and name",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Return every row up to the server cap instead of one page",
+            "in": "query",
+            "name": "all",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Comma-separated filter: true, false or both",
+            "in": "query",
+            "name": "is_active",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Legacy: include inactive rows",
+            "in": "query",
+            "name": "include_inactive",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemListSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List the rows of one catalog"
+      },
+      "post": {
+        "operationId": "createCatalogItem",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "catalog",
+            "required": true,
+            "schema": {
+              "enum": [
+                "base-rates",
+                "cash-denominations",
+                "collateral-types",
+                "countries",
+                "currencies",
+                "debt-groups",
+                "economic-types",
+                "fee-types",
+                "fund-purposes",
+                "fund-sources",
+                "id-document-types",
+                "industries",
+                "interest-factors",
+                "loan-contract-types",
+                "loan-methods",
+                "loan-purposes",
+                "scoring-benchmarks",
+                "scoring-criteria-mappings",
+                "scoring-indicator-groups",
+                "scoring-indicators",
+                "scoring-types"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogItemInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Create a catalog row"
+      }
+    },
+    "/api/mdm/{catalog}/{id}": {
+      "delete": {
+        "operationId": "deleteCatalogItem",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "catalog",
+            "required": true,
+            "schema": {
+              "enum": [
+                "base-rates",
+                "cash-denominations",
+                "collateral-types",
+                "countries",
+                "currencies",
+                "debt-groups",
+                "economic-types",
+                "fee-types",
+                "fund-purposes",
+                "fund-sources",
+                "id-document-types",
+                "industries",
+                "interest-factors",
+                "loan-contract-types",
+                "loan-methods",
+                "loan-purposes",
+                "scoring-benchmarks",
+                "scoring-criteria-mappings",
+                "scoring-indicator-groups",
+                "scoring-indicators",
+                "scoring-types"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Delete a catalog row"
+      },
+      "get": {
+        "operationId": "getCatalogItem",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "catalog",
+            "required": true,
+            "schema": {
+              "enum": [
+                "base-rates",
+                "cash-denominations",
+                "collateral-types",
+                "countries",
+                "currencies",
+                "debt-groups",
+                "economic-types",
+                "fee-types",
+                "fund-purposes",
+                "fund-sources",
+                "id-document-types",
+                "industries",
+                "interest-factors",
+                "loan-contract-types",
+                "loan-methods",
+                "loan-purposes",
+                "scoring-benchmarks",
+                "scoring-criteria-mappings",
+                "scoring-indicator-groups",
+                "scoring-indicators",
+                "scoring-types"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read a catalog row"
+      },
+      "put": {
+        "operationId": "updateCatalogItem",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "catalog",
+            "required": true,
+            "schema": {
+              "enum": [
+                "base-rates",
+                "cash-denominations",
+                "collateral-types",
+                "countries",
+                "currencies",
+                "debt-groups",
+                "economic-types",
+                "fee-types",
+                "fund-purposes",
+                "fund-sources",
+                "id-document-types",
+                "industries",
+                "interest-factors",
+                "loan-contract-types",
+                "loan-methods",
+                "loan-purposes",
+                "scoring-benchmarks",
+                "scoring-criteria-mappings",
+                "scoring-indicator-groups",
+                "scoring-indicators",
+                "scoring-types"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogItemInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogItemSuccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Update a catalog row"
+      }
+    }
+  },
+  "security": [
+    {
+      "ardaSession": []
+    }
+  ],
+  "servers": [
+    {
+      "url": "https://api.arda.io.vn"
+    }
+  ]
+}

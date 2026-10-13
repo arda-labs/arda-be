@@ -26,6 +26,7 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
+	commonv1 "github.com/arda-labs/arda/libs/go/arda-proto/common/v1"
 	depositv1 "github.com/arda-labs/arda/libs/go/arda-proto/deposit/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -105,6 +106,9 @@ func main() {
 		),
 	)
 	depositv1.RegisterDepositCommandServiceServer(grpcSrv, grpcserver.NewDepositServer(settlementSvc, additionalSvc, productRequestSvc, ibmSvc, interestSvc))
+	// Shared maker-checker callback (ADR-011): dpm.* and ibm.* kinds on
+	// common-maker-checker (DPM_ADDITIONAL_V1 stays on its own process).
+	commonv1.RegisterCaseCommandServiceServer(grpcSrv, grpcserver.NewCaseCommandServer(settlementSvc, productRequestSvc, ibmSvc, interestSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)

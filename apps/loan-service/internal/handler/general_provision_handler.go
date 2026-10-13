@@ -17,7 +17,7 @@ func NewGeneralProvisionHandler(svc *service.GeneralProvisionService) *GeneralPr
 	return &GeneralProvisionHandler{svc: svc}
 }
 
-type generalProvisionInput struct {
+type GeneralProvisionRequest struct {
 	OrgCode       string `json:"org_code"`
 	ProvisionDate string `json:"provision_date"`
 }
@@ -53,7 +53,7 @@ func (h *GeneralProvisionHandler) CalculateGeneralProvision(w http.ResponseWrite
 	if !ok {
 		return
 	}
-	var req generalProvisionInput
+	var req GeneralProvisionRequest
 	if !decodeBody(w, r, &req) {
 		return
 	}
@@ -72,7 +72,7 @@ func (h *GeneralProvisionHandler) SubmitGeneralProvision(w http.ResponseWriter, 
 	if !ok {
 		return
 	}
-	var req generalProvisionInput
+	var req GeneralProvisionRequest
 	if !decodeBody(w, r, &req) {
 		return
 	}

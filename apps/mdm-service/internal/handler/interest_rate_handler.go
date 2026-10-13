@@ -85,7 +85,7 @@ func (h *InterestRateHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := h.svc.Delete(r.Context(), tenantID, r.PathValue("id"))
-	writeResult(w, r, json.RawMessage(`{"deleted":true}`), err)
+	writeResult(w, r, Deleted{Deleted: true}, err)
 }
 
 func (h *InterestRateHandler) ListTiers(w http.ResponseWriter, r *http.Request) {
@@ -131,5 +131,5 @@ func (h *InterestRateHandler) DeleteTier(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	err := h.svc.DeleteTier(r.Context(), tenantID, r.PathValue("id"), r.PathValue("tierId"))
-	writeResult(w, r, json.RawMessage(`{"deleted":true}`), err)
+	writeResult(w, r, Deleted{Deleted: true}, err)
 }

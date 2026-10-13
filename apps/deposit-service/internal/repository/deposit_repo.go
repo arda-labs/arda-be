@@ -425,7 +425,7 @@ func (r *DepositRepository) GetProductByCode(ctx context.Context, tenantID, code
 // cannot close an account that changed after review.
 func (r *DepositRepository) CloseSavings(ctx context.Context, tenantID, savingsID, journalEntryID, actor, dataVersion string) error {
 	res, err := r.db.ExecContext(ctx, `
-		UPDATE dpm_savings SET status = 'CLOSED', journal_entry_id = $3, updated_by = $4, updated_at = now(), version = version + 1
+		UPDATE dpm_savings SET status = 'CLOSED', journal_entry_id = NULLIF($3, '')::uuid, updated_by = $4, updated_at = now(), version = version + 1
 		WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'
 		  AND ($5 = '' OR version::text = $5)`, tenantID, savingsID, journalEntryID, actor, dataVersion)
 	if err != nil {

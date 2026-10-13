@@ -43,6 +43,7 @@
   "apps/workflow-service/internal/handler/claim_resolve.go",
   "apps/workflow-service/internal/handler/internal_ai_handler.go",
   "apps/workflow-service/internal/handler/native_case.go",
+  "apps/workflow-service/internal/handler/openapi_types.go",
   "apps/workflow-service/internal/handler/operate.go",
   "apps/workflow-service/internal/handler/process_runtime.go",
   "apps/workflow-service/internal/handler/workflow_case_scope.go",

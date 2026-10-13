@@ -89,9 +89,15 @@ Session/device routes:
 - `DELETE /api/iam/me/devices/{id}`
 - `POST /api/iam/me/devices/{id}/trust`
 
-## Internal gateway routes
+## Internal gateway surface
 
-auth-gateway uses these routes to resolve user context and record sessions:
+auth-gateway resolves user context, records sessions and runs login/step-up
+MFA through gRPC `arda.iam.v1.GatewayService` (`proto/arda/iam/v1/iam.proto`,
+server in `internal/transport/grpc/gateway.go`). Only the `auth-gateway`
+workload identity may call it, over mTLS.
+
+The HTTP routes below are the transitional transport behind the gateway's
+`IAM_TRANSPORT=http` and are removed once every environment runs gRPC:
 
 - `GET /internal/iam/users/by-id/{id}/context`
 - `GET /internal/iam/users/by-kratos-identity/{identityId}/context`

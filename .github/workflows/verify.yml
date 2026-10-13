@@ -71,6 +71,14 @@ jobs:
         run: node scripts/check-openapi.mjs
       - name: Check generated OpenAPI covers every public route
         run: node scripts/check-openapi-routes.mjs
+      - name: Test the OpenAPI gates
+        run: node --test scripts/check-openapi-routes.test.mjs scripts/check-openapi-breaking.test.mjs scripts/check-openapi-policy.test.mjs
+      - name: Check OpenAPI documents for breaking changes against main
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          node scripts/check-openapi-breaking.mjs
+      - name: Check auth-gateway policy against generated OpenAPI
+        run: node scripts/check-openapi-policy.mjs
       - name: Validate JSON field naming (snake_case, protocol exceptions allowlisted)
         run: node scripts/check-json-tags.mjs
       - name: Validate problem catalog coverage
@@ -138,7 +146,11 @@ jobs:
           ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
         run: |
           go test ./apps/hrm-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
-          go test ./apps/workflow-service/internal/migration -run '^TestHRMEmployeeRegisterCanaryAppliesAndRollsBack$' -count=1 -v
+          go test ./apps/crm-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
+          go test ./apps/deposit-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
+          go test ./apps/capital-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
+          go test ./apps/statistical-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
+          go test ./apps/workflow-service/internal/migration -run 'CanaryAppliesAndRollsBack$' -count=1 -v
       - name: Verify business-date migration on disposable PostgreSQL 18
         env:
           ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable

@@ -211,20 +211,7 @@ func (s *GeneralProvisionService) Resolve(ctx context.Context, tenantID, id, dec
 }
 
 func (s *GeneralProvisionService) postingRequest(ctx context.Context, row *repository.GeneralProvisionRow, preview GeneralProvisionPreview) (*financev1.PostingRequest, error) {
-	analytics := &financev1.Analytics{OrgUnitCode: row.OrgCode}
-	legs := []financeclient.PostingLeg{}
-	if preview.AllocMinor > 0 {
-		legs = append(legs,
-			financeclient.PostingLeg{CardLine: 1, Direction: "DEBIT", AmountMinor: preview.AllocMinor, Analytics: analytics},
-			financeclient.PostingLeg{CardLine: 2, Direction: "CREDIT", AmountMinor: preview.AllocMinor, Analytics: analytics},
-		)
-	}
-	if preview.ReverseMinor > 0 {
-		legs = append(legs,
-			financeclient.PostingLeg{CardLine: 3, Direction: "DEBIT", AmountMinor: preview.ReverseMinor, Analytics: analytics},
-			financeclient.PostingLeg{CardLine: 4, Direction: "CREDIT", AmountMinor: preview.ReverseMinor, Analytics: analytics},
-		)
-	}
+	legs := generalProvisionLegs(row.OrgCode, preview.AllocMinor, preview.ReverseMinor)
 	lines, err := financeclient.BuildPostingLines(ctx, s.finance, generalProvisionDocumentType, legs, generalProvisionDefaultCurrency)
 	if err != nil {
 		return nil, err
@@ -242,6 +229,27 @@ func (s *GeneralProvisionService) postingRequest(ctx context.Context, row *repos
 		},
 		Lines: lines,
 	}, nil
+}
+
+// generalProvisionLegs maps the period alloc/reverse amounts onto the
+// LNM_PROVISION card: alloc → lines 1-2, reverse → lines 3-4 (both pairs when
+// both are positive). Pure so the golden table can lock it.
+func generalProvisionLegs(orgCode string, allocMinor, reverseMinor int64) []financeclient.PostingLeg {
+	analytics := &financev1.Analytics{OrgUnitCode: orgCode}
+	legs := []financeclient.PostingLeg{}
+	if allocMinor > 0 {
+		legs = append(legs,
+			financeclient.PostingLeg{CardLine: 1, Direction: "DEBIT", AmountMinor: allocMinor, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 2, Direction: "CREDIT", AmountMinor: allocMinor, Analytics: analytics},
+		)
+	}
+	if reverseMinor > 0 {
+		legs = append(legs,
+			financeclient.PostingLeg{CardLine: 3, Direction: "DEBIT", AmountMinor: reverseMinor, Analytics: analytics},
+			financeclient.PostingLeg{CardLine: 4, Direction: "CREDIT", AmountMinor: reverseMinor, Analytics: analytics},
+		)
+	}
+	return legs
 }
 
 func orgCodeOrDefault(orgCode string) string {

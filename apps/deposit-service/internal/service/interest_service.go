@@ -619,16 +619,8 @@ func (s *InterestService) ResolveInterestOp(ctx context.Context, tenantID, id, d
 			return ardaerrors.New(ardaerrors.CodeConflict,
 				fmt.Sprintf("dossier changed: savings %s is at version %d", op.SavingsCode, savings.DataVersion))
 		}
-		card := "DPM_INTEREST_PAY"
-		debit, credit := "DPM_INTEREST_PAYABLE", "CASH_SETTLEMENT_ACCOUNT"
-		description := "Trả lãi tiền gửi"
-		capitalize := false
-		if op.OpType == "CAPITALIZE" {
-			card = "DPM_CAPITALIZE"
-			debit, credit = "DPM_INTEREST_PAYABLE", "DPM_DEPOSIT_LIABILITY"
-			description = "Lãi nhập gốc tiền gửi"
-			capitalize = true
-		}
+		card, debit, credit, description := interestOpCard(op.OpType)
+		capitalize := op.OpType == "CAPITALIZE"
 		if mode == opModeFresh {
 			if err := s.repo.BeginInterestOpPosting(ctx, tenantID, op.ID, savings.ID, op.AmountMinor, capitalize, dataVersion); err != nil {
 				switch {
@@ -705,6 +697,16 @@ func (s *InterestService) GetSavingsDetail(ctx context.Context, tenantID, code s
 		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
 	return &SavingsDetail{Savings: savings, Txns: txns, Accruals: accruals, Interest: ops}, nil
+}
+
+// interestOpCard maps a PAY/CAPITALIZE op onto its finance card and the
+// DR/CR classifications (docs/accounting-rule-cards.md DPM_INTEREST_PAY /
+// DPM_CAPITALIZE). Pure so the golden table can lock it.
+func interestOpCard(opType string) (card, debitClass, creditClass, description string) {
+	if opType == "CAPITALIZE" {
+		return "DPM_CAPITALIZE", "DPM_INTEREST_PAYABLE", "DPM_DEPOSIT_LIABILITY", "Lãi nhập gốc tiền gửi"
+	}
+	return "DPM_INTEREST_PAY", "DPM_INTEREST_PAYABLE", "CASH_SETTLEMENT_ACCOUNT", "Trả lãi tiền gửi"
 }
 
 // postInterest posts one 2-leg interest entry.

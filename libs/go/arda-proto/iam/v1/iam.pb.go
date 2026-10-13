@@ -9,6 +9,7 @@ package iamv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -395,11 +396,1656 @@ func (x *GetUserBatchResponse) GetUsers() []*UserInfo {
 	return nil
 }
 
+type ReadyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadyRequest) Reset() {
+	*x = ReadyRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadyRequest) ProtoMessage() {}
+
+func (x *ReadyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadyRequest.ProtoReflect.Descriptor instead.
+func (*ReadyRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{7}
+}
+
+type ReadyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadyResponse) Reset() {
+	*x = ReadyResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadyResponse) ProtoMessage() {}
+
+func (x *ReadyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadyResponse.ProtoReflect.Descriptor instead.
+func (*ReadyResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{8}
+}
+
+type GetUserBySubjectRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Subject       string                 `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserBySubjectRequest) Reset() {
+	*x = GetUserBySubjectRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserBySubjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserBySubjectRequest) ProtoMessage() {}
+
+func (x *GetUserBySubjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserBySubjectRequest.ProtoReflect.Descriptor instead.
+func (*GetUserBySubjectRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetUserBySubjectRequest) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+type GetUserByIdRequest struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	UserId string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// Optional: scope the context to this tenant; the user must be an active
+	// member, otherwise PERMISSION_DENIED.
+	TenantId      string `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserByIdRequest) Reset() {
+	*x = GetUserByIdRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserByIdRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserByIdRequest) ProtoMessage() {}
+
+func (x *GetUserByIdRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserByIdRequest.ProtoReflect.Descriptor instead.
+func (*GetUserByIdRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetUserByIdRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *GetUserByIdRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+type GetUserByKratosIdentityIdRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IdentityId    string                 `protobuf:"bytes,1,opt,name=identity_id,json=identityId,proto3" json:"identity_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserByKratosIdentityIdRequest) Reset() {
+	*x = GetUserByKratosIdentityIdRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserByKratosIdentityIdRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserByKratosIdentityIdRequest) ProtoMessage() {}
+
+func (x *GetUserByKratosIdentityIdRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserByKratosIdentityIdRequest.ProtoReflect.Descriptor instead.
+func (*GetUserByKratosIdentityIdRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetUserByKratosIdentityIdRequest) GetIdentityId() string {
+	if x != nil {
+		return x.IdentityId
+	}
+	return ""
+}
+
+type ResolveOrLinkKratosIdentityRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IdentityId    string                 `protobuf:"bytes,1,opt,name=identity_id,json=identityId,proto3" json:"identity_id,omitempty"`
+	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveOrLinkKratosIdentityRequest) Reset() {
+	*x = ResolveOrLinkKratosIdentityRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveOrLinkKratosIdentityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveOrLinkKratosIdentityRequest) ProtoMessage() {}
+
+func (x *ResolveOrLinkKratosIdentityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveOrLinkKratosIdentityRequest.ProtoReflect.Descriptor instead.
+func (*ResolveOrLinkKratosIdentityRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ResolveOrLinkKratosIdentityRequest) GetIdentityId() string {
+	if x != nil {
+		return x.IdentityId
+	}
+	return ""
+}
+
+func (x *ResolveOrLinkKratosIdentityRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *ResolveOrLinkKratosIdentityRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ResolveOrLinkIdentityRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProviderId    string                 `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ExternalId    string                 `protobuf:"bytes,2,opt,name=external_id,json=externalId,proto3" json:"external_id,omitempty"`
+	Email         string                 `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
+	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
+	EmailVerified bool                   `protobuf:"varint,5,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveOrLinkIdentityRequest) Reset() {
+	*x = ResolveOrLinkIdentityRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveOrLinkIdentityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveOrLinkIdentityRequest) ProtoMessage() {}
+
+func (x *ResolveOrLinkIdentityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveOrLinkIdentityRequest.ProtoReflect.Descriptor instead.
+func (*ResolveOrLinkIdentityRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ResolveOrLinkIdentityRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *ResolveOrLinkIdentityRequest) GetExternalId() string {
+	if x != nil {
+		return x.ExternalId
+	}
+	return ""
+}
+
+func (x *ResolveOrLinkIdentityRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *ResolveOrLinkIdentityRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ResolveOrLinkIdentityRequest) GetEmailVerified() bool {
+	if x != nil {
+		return x.EmailVerified
+	}
+	return false
+}
+
+type TenantMembership struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	TenantCode    string                 `protobuf:"bytes,2,opt,name=tenant_code,json=tenantCode,proto3" json:"tenant_code,omitempty"`
+	TenantName    string                 `protobuf:"bytes,3,opt,name=tenant_name,json=tenantName,proto3" json:"tenant_name,omitempty"`
+	TenantStatus  string                 `protobuf:"bytes,4,opt,name=tenant_status,json=tenantStatus,proto3" json:"tenant_status,omitempty"`
+	Status        string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	IsDefault     bool                   `protobuf:"varint,6,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TenantMembership) Reset() {
+	*x = TenantMembership{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TenantMembership) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TenantMembership) ProtoMessage() {}
+
+func (x *TenantMembership) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TenantMembership.ProtoReflect.Descriptor instead.
+func (*TenantMembership) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *TenantMembership) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *TenantMembership) GetTenantCode() string {
+	if x != nil {
+		return x.TenantCode
+	}
+	return ""
+}
+
+func (x *TenantMembership) GetTenantName() string {
+	if x != nil {
+		return x.TenantName
+	}
+	return ""
+}
+
+func (x *TenantMembership) GetTenantStatus() string {
+	if x != nil {
+		return x.TenantStatus
+	}
+	return ""
+}
+
+func (x *TenantMembership) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *TenantMembership) GetIsDefault() bool {
+	if x != nil {
+		return x.IsDefault
+	}
+	return false
+}
+
+// UserContext is the authorization context the gateway stores in the BFF
+// session and injects into upstream requests. Field set mirrors the IAM
+// UserContext browser contract.
+type UserContext struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	UserId                   string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Subject                  string                 `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
+	Username                 string                 `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`
+	Email                    string                 `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
+	DisplayName              string                 `protobuf:"bytes,5,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Nickname                 string                 `protobuf:"bytes,6,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	FirstName                string                 `protobuf:"bytes,7,opt,name=first_name,json=firstName,proto3" json:"first_name,omitempty"`
+	LastName                 string                 `protobuf:"bytes,8,opt,name=last_name,json=lastName,proto3" json:"last_name,omitempty"`
+	PhoneNumber              string                 `protobuf:"bytes,9,opt,name=phone_number,json=phoneNumber,proto3" json:"phone_number,omitempty"`
+	Birthdate                string                 `protobuf:"bytes,10,opt,name=birthdate,proto3" json:"birthdate,omitempty"`
+	Gender                   string                 `protobuf:"bytes,11,opt,name=gender,proto3" json:"gender,omitempty"`
+	Address                  string                 `protobuf:"bytes,12,opt,name=address,proto3" json:"address,omitempty"`
+	Country                  string                 `protobuf:"bytes,13,opt,name=country,proto3" json:"country,omitempty"`
+	Status                   string                 `protobuf:"bytes,14,opt,name=status,proto3" json:"status,omitempty"`
+	PictureUrl               string                 `protobuf:"bytes,15,opt,name=picture_url,json=pictureUrl,proto3" json:"picture_url,omitempty"`
+	AvatarFileId             string                 `protobuf:"bytes,16,opt,name=avatar_file_id,json=avatarFileId,proto3" json:"avatar_file_id,omitempty"`
+	CoverImageUrl            string                 `protobuf:"bytes,17,opt,name=cover_image_url,json=coverImageUrl,proto3" json:"cover_image_url,omitempty"`
+	CoverFileId              string                 `protobuf:"bytes,18,opt,name=cover_file_id,json=coverFileId,proto3" json:"cover_file_id,omitempty"`
+	TenantId                 string                 `protobuf:"bytes,19,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	ActiveTenantId           string                 `protobuf:"bytes,20,opt,name=active_tenant_id,json=activeTenantId,proto3" json:"active_tenant_id,omitempty"`
+	TenantMemberships        []*TenantMembership    `protobuf:"bytes,21,rep,name=tenant_memberships,json=tenantMemberships,proto3" json:"tenant_memberships,omitempty"`
+	TenantSelectionRequired  bool                   `protobuf:"varint,22,opt,name=tenant_selection_required,json=tenantSelectionRequired,proto3" json:"tenant_selection_required,omitempty"`
+	OrgIds                   []string               `protobuf:"bytes,23,rep,name=org_ids,json=orgIds,proto3" json:"org_ids,omitempty"`
+	GroupIds                 []string               `protobuf:"bytes,24,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"`
+	Roles                    []string               `protobuf:"bytes,25,rep,name=roles,proto3" json:"roles,omitempty"`
+	Permissions              []string               `protobuf:"bytes,26,rep,name=permissions,proto3" json:"permissions,omitempty"`
+	GlobalRoles              []string               `protobuf:"bytes,27,rep,name=global_roles,json=globalRoles,proto3" json:"global_roles,omitempty"`
+	GlobalPermissions        []string               `protobuf:"bytes,28,rep,name=global_permissions,json=globalPermissions,proto3" json:"global_permissions,omitempty"`
+	IsGlobalAdmin            bool                   `protobuf:"varint,29,opt,name=is_global_admin,json=isGlobalAdmin,proto3" json:"is_global_admin,omitempty"`
+	GlobalCapabilitiesLoaded bool                   `protobuf:"varint,30,opt,name=global_capabilities_loaded,json=globalCapabilitiesLoaded,proto3" json:"global_capabilities_loaded,omitempty"`
+	AuthVersion              int64                  `protobuf:"varint,31,opt,name=auth_version,json=authVersion,proto3" json:"auth_version,omitempty"`
+	Timezone                 string                 `protobuf:"bytes,32,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	Locale                   string                 `protobuf:"bytes,33,opt,name=locale,proto3" json:"locale,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *UserContext) Reset() {
+	*x = UserContext{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserContext) ProtoMessage() {}
+
+func (x *UserContext) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserContext.ProtoReflect.Descriptor instead.
+func (*UserContext) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *UserContext) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *UserContext) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *UserContext) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *UserContext) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *UserContext) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *UserContext) GetNickname() string {
+	if x != nil {
+		return x.Nickname
+	}
+	return ""
+}
+
+func (x *UserContext) GetFirstName() string {
+	if x != nil {
+		return x.FirstName
+	}
+	return ""
+}
+
+func (x *UserContext) GetLastName() string {
+	if x != nil {
+		return x.LastName
+	}
+	return ""
+}
+
+func (x *UserContext) GetPhoneNumber() string {
+	if x != nil {
+		return x.PhoneNumber
+	}
+	return ""
+}
+
+func (x *UserContext) GetBirthdate() string {
+	if x != nil {
+		return x.Birthdate
+	}
+	return ""
+}
+
+func (x *UserContext) GetGender() string {
+	if x != nil {
+		return x.Gender
+	}
+	return ""
+}
+
+func (x *UserContext) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *UserContext) GetCountry() string {
+	if x != nil {
+		return x.Country
+	}
+	return ""
+}
+
+func (x *UserContext) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *UserContext) GetPictureUrl() string {
+	if x != nil {
+		return x.PictureUrl
+	}
+	return ""
+}
+
+func (x *UserContext) GetAvatarFileId() string {
+	if x != nil {
+		return x.AvatarFileId
+	}
+	return ""
+}
+
+func (x *UserContext) GetCoverImageUrl() string {
+	if x != nil {
+		return x.CoverImageUrl
+	}
+	return ""
+}
+
+func (x *UserContext) GetCoverFileId() string {
+	if x != nil {
+		return x.CoverFileId
+	}
+	return ""
+}
+
+func (x *UserContext) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *UserContext) GetActiveTenantId() string {
+	if x != nil {
+		return x.ActiveTenantId
+	}
+	return ""
+}
+
+func (x *UserContext) GetTenantMemberships() []*TenantMembership {
+	if x != nil {
+		return x.TenantMemberships
+	}
+	return nil
+}
+
+func (x *UserContext) GetTenantSelectionRequired() bool {
+	if x != nil {
+		return x.TenantSelectionRequired
+	}
+	return false
+}
+
+func (x *UserContext) GetOrgIds() []string {
+	if x != nil {
+		return x.OrgIds
+	}
+	return nil
+}
+
+func (x *UserContext) GetGroupIds() []string {
+	if x != nil {
+		return x.GroupIds
+	}
+	return nil
+}
+
+func (x *UserContext) GetRoles() []string {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+func (x *UserContext) GetPermissions() []string {
+	if x != nil {
+		return x.Permissions
+	}
+	return nil
+}
+
+func (x *UserContext) GetGlobalRoles() []string {
+	if x != nil {
+		return x.GlobalRoles
+	}
+	return nil
+}
+
+func (x *UserContext) GetGlobalPermissions() []string {
+	if x != nil {
+		return x.GlobalPermissions
+	}
+	return nil
+}
+
+func (x *UserContext) GetIsGlobalAdmin() bool {
+	if x != nil {
+		return x.IsGlobalAdmin
+	}
+	return false
+}
+
+func (x *UserContext) GetGlobalCapabilitiesLoaded() bool {
+	if x != nil {
+		return x.GlobalCapabilitiesLoaded
+	}
+	return false
+}
+
+func (x *UserContext) GetAuthVersion() int64 {
+	if x != nil {
+		return x.AuthVersion
+	}
+	return 0
+}
+
+func (x *UserContext) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *UserContext) GetLocale() string {
+	if x != nil {
+		return x.Locale
+	}
+	return ""
+}
+
+type UserContextResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	User          *UserContext           `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UserContextResponse) Reset() {
+	*x = UserContextResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserContextResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserContextResponse) ProtoMessage() {}
+
+func (x *UserContextResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserContextResponse.ProtoReflect.Descriptor instead.
+func (*UserContextResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *UserContextResponse) GetUser() *UserContext {
+	if x != nil {
+		return x.User
+	}
+	return nil
+}
+
+type CreateSessionRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	UserId          string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	HydraSessionId  string                 `protobuf:"bytes,2,opt,name=hydra_session_id,json=hydraSessionId,proto3" json:"hydra_session_id,omitempty"`
+	AccessTokenJti  string                 `protobuf:"bytes,3,opt,name=access_token_jti,json=accessTokenJti,proto3" json:"access_token_jti,omitempty"`
+	RefreshTokenJti string                 `protobuf:"bytes,4,opt,name=refresh_token_jti,json=refreshTokenJti,proto3" json:"refresh_token_jti,omitempty"`
+	IpAddress       string                 `protobuf:"bytes,5,opt,name=ip_address,json=ipAddress,proto3" json:"ip_address,omitempty"`
+	UserAgent       string                 `protobuf:"bytes,6,opt,name=user_agent,json=userAgent,proto3" json:"user_agent,omitempty"`
+	DeviceName      string                 `protobuf:"bytes,7,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"`
+	DeviceType      string                 `protobuf:"bytes,8,opt,name=device_type,json=deviceType,proto3" json:"device_type,omitempty"`
+	Os              string                 `protobuf:"bytes,9,opt,name=os,proto3" json:"os,omitempty"`
+	Browser         string                 `protobuf:"bytes,10,opt,name=browser,proto3" json:"browser,omitempty"`
+	Fingerprint     string                 `protobuf:"bytes,11,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
+	DeviceToken     string                 `protobuf:"bytes,12,opt,name=device_token,json=deviceToken,proto3" json:"device_token,omitempty"`
+	TrustForMfa     bool                   `protobuf:"varint,13,opt,name=trust_for_mfa,json=trustForMfa,proto3" json:"trust_for_mfa,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CreateSessionRequest) Reset() {
+	*x = CreateSessionRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateSessionRequest) ProtoMessage() {}
+
+func (x *CreateSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateSessionRequest.ProtoReflect.Descriptor instead.
+func (*CreateSessionRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CreateSessionRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetHydraSessionId() string {
+	if x != nil {
+		return x.HydraSessionId
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetAccessTokenJti() string {
+	if x != nil {
+		return x.AccessTokenJti
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetRefreshTokenJti() string {
+	if x != nil {
+		return x.RefreshTokenJti
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetIpAddress() string {
+	if x != nil {
+		return x.IpAddress
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetUserAgent() string {
+	if x != nil {
+		return x.UserAgent
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetDeviceName() string {
+	if x != nil {
+		return x.DeviceName
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetDeviceType() string {
+	if x != nil {
+		return x.DeviceType
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetOs() string {
+	if x != nil {
+		return x.Os
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetBrowser() string {
+	if x != nil {
+		return x.Browser
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetFingerprint() string {
+	if x != nil {
+		return x.Fingerprint
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetDeviceToken() string {
+	if x != nil {
+		return x.DeviceToken
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetTrustForMfa() bool {
+	if x != nil {
+		return x.TrustForMfa
+	}
+	return false
+}
+
+type CreateSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateSessionResponse) Reset() {
+	*x = CreateSessionResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateSessionResponse) ProtoMessage() {}
+
+func (x *CreateSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateSessionResponse.ProtoReflect.Descriptor instead.
+func (*CreateSessionResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CreateSessionResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *CreateSessionResponse) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *CreateSessionResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+type RevokeSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeSessionRequest) Reset() {
+	*x = RevokeSessionRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeSessionRequest) ProtoMessage() {}
+
+func (x *RevokeSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeSessionRequest.ProtoReflect.Descriptor instead.
+func (*RevokeSessionRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RevokeSessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type RevokeSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeSessionResponse) Reset() {
+	*x = RevokeSessionResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeSessionResponse) ProtoMessage() {}
+
+func (x *RevokeSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeSessionResponse.ProtoReflect.Descriptor instead.
+func (*RevokeSessionResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{20}
+}
+
+type TouchSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TouchSessionRequest) Reset() {
+	*x = TouchSessionRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TouchSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TouchSessionRequest) ProtoMessage() {}
+
+func (x *TouchSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TouchSessionRequest.ProtoReflect.Descriptor instead.
+func (*TouchSessionRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *TouchSessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type TouchSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TouchSessionResponse) Reset() {
+	*x = TouchSessionResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TouchSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TouchSessionResponse) ProtoMessage() {}
+
+func (x *TouchSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TouchSessionResponse.ProtoReflect.Descriptor instead.
+func (*TouchSessionResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{22}
+}
+
+type GetMfaStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMfaStatusRequest) Reset() {
+	*x = GetMfaStatusRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMfaStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMfaStatusRequest) ProtoMessage() {}
+
+func (x *GetMfaStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMfaStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetMfaStatusRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *GetMfaStatusRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type GetMfaStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IsEnrolled    bool                   `protobuf:"varint,1,opt,name=is_enrolled,json=isEnrolled,proto3" json:"is_enrolled,omitempty"`
+	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMfaStatusResponse) Reset() {
+	*x = GetMfaStatusResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMfaStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMfaStatusResponse) ProtoMessage() {}
+
+func (x *GetMfaStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMfaStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetMfaStatusResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *GetMfaStatusResponse) GetIsEnrolled() bool {
+	if x != nil {
+		return x.IsEnrolled
+	}
+	return false
+}
+
+func (x *GetMfaStatusResponse) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+type CheckMfaRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	DeviceToken   string                 `protobuf:"bytes,2,opt,name=device_token,json=deviceToken,proto3" json:"device_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckMfaRequest) Reset() {
+	*x = CheckMfaRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckMfaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckMfaRequest) ProtoMessage() {}
+
+func (x *CheckMfaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckMfaRequest.ProtoReflect.Descriptor instead.
+func (*CheckMfaRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *CheckMfaRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *CheckMfaRequest) GetDeviceToken() string {
+	if x != nil {
+		return x.DeviceToken
+	}
+	return ""
+}
+
+type CheckMfaResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequiresMfa   bool                   `protobuf:"varint,1,opt,name=requires_mfa,json=requiresMfa,proto3" json:"requires_mfa,omitempty"`
+	CanUseMfa     bool                   `protobuf:"varint,2,opt,name=can_use_mfa,json=canUseMfa,proto3" json:"can_use_mfa,omitempty"`
+	Methods       []string               `protobuf:"bytes,3,rep,name=methods,proto3" json:"methods,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckMfaResponse) Reset() {
+	*x = CheckMfaResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckMfaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckMfaResponse) ProtoMessage() {}
+
+func (x *CheckMfaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckMfaResponse.ProtoReflect.Descriptor instead.
+func (*CheckMfaResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *CheckMfaResponse) GetRequiresMfa() bool {
+	if x != nil {
+		return x.RequiresMfa
+	}
+	return false
+}
+
+func (x *CheckMfaResponse) GetCanUseMfa() bool {
+	if x != nil {
+		return x.CanUseMfa
+	}
+	return false
+}
+
+func (x *CheckMfaResponse) GetMethods() []string {
+	if x != nil {
+		return x.Methods
+	}
+	return nil
+}
+
+type VerifyMfaRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Code          string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyMfaRequest) Reset() {
+	*x = VerifyMfaRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyMfaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyMfaRequest) ProtoMessage() {}
+
+func (x *VerifyMfaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyMfaRequest.ProtoReflect.Descriptor instead.
+func (*VerifyMfaRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *VerifyMfaRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *VerifyMfaRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+type VerifyMfaResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyMfaResponse) Reset() {
+	*x = VerifyMfaResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyMfaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyMfaResponse) ProtoMessage() {}
+
+func (x *VerifyMfaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyMfaResponse.ProtoReflect.Descriptor instead.
+func (*VerifyMfaResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{28}
+}
+
+type GenerateMfaSecretRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	Email         string                 `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GenerateMfaSecretRequest) Reset() {
+	*x = GenerateMfaSecretRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerateMfaSecretRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerateMfaSecretRequest) ProtoMessage() {}
+
+func (x *GenerateMfaSecretRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerateMfaSecretRequest.ProtoReflect.Descriptor instead.
+func (*GenerateMfaSecretRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *GenerateMfaSecretRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *GenerateMfaSecretRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *GenerateMfaSecretRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+type GenerateMfaSecretResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Secret        string                 `protobuf:"bytes,1,opt,name=secret,proto3" json:"secret,omitempty"`
+	OtpauthUrl    string                 `protobuf:"bytes,2,opt,name=otpauth_url,json=otpauthUrl,proto3" json:"otpauth_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GenerateMfaSecretResponse) Reset() {
+	*x = GenerateMfaSecretResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerateMfaSecretResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerateMfaSecretResponse) ProtoMessage() {}
+
+func (x *GenerateMfaSecretResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerateMfaSecretResponse.ProtoReflect.Descriptor instead.
+func (*GenerateMfaSecretResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *GenerateMfaSecretResponse) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+func (x *GenerateMfaSecretResponse) GetOtpauthUrl() string {
+	if x != nil {
+		return x.OtpauthUrl
+	}
+	return ""
+}
+
+type VerifyMfaEnrollmentRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Code          string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyMfaEnrollmentRequest) Reset() {
+	*x = VerifyMfaEnrollmentRequest{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyMfaEnrollmentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyMfaEnrollmentRequest) ProtoMessage() {}
+
+func (x *VerifyMfaEnrollmentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyMfaEnrollmentRequest.ProtoReflect.Descriptor instead.
+func (*VerifyMfaEnrollmentRequest) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *VerifyMfaEnrollmentRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *VerifyMfaEnrollmentRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+type VerifyMfaEnrollmentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BackupCodes   []string               `protobuf:"bytes,1,rep,name=backup_codes,json=backupCodes,proto3" json:"backup_codes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyMfaEnrollmentResponse) Reset() {
+	*x = VerifyMfaEnrollmentResponse{}
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyMfaEnrollmentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyMfaEnrollmentResponse) ProtoMessage() {}
+
+func (x *VerifyMfaEnrollmentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arda_iam_v1_iam_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyMfaEnrollmentResponse.ProtoReflect.Descriptor instead.
+func (*VerifyMfaEnrollmentResponse) Descriptor() ([]byte, []int) {
+	return file_arda_iam_v1_iam_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *VerifyMfaEnrollmentResponse) GetBackupCodes() []string {
+	if x != nil {
+		return x.BackupCodes
+	}
+	return nil
+}
+
 var File_arda_iam_v1_iam_proto protoreflect.FileDescriptor
 
 const file_arda_iam_v1_iam_proto_rawDesc = "" +
 	"\n" +
-	"\x15arda/iam/v1/iam.proto\x12\varda.iam.v1\"\x1a\n" +
+	"\x15arda/iam/v1/iam.proto\x12\varda.iam.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x1a\n" +
 	"\x18ListActiveTenantsRequest\":\n" +
 	"\x19ListActiveTenantsResponse\x12\x1d\n" +
 	"\n" +
@@ -427,11 +2073,162 @@ const file_arda_iam_v1_iam_proto_rawDesc = "" +
 	"department\x12\x14\n" +
 	"\x05title\x18\b \x01(\tR\x05title\"C\n" +
 	"\x14GetUserBatchResponse\x12+\n" +
-	"\x05users\x18\x01 \x03(\v2\x15.arda.iam.v1.UserInfoR\x05users2\xcf\x02\n" +
+	"\x05users\x18\x01 \x03(\v2\x15.arda.iam.v1.UserInfoR\x05users\"\x0e\n" +
+	"\fReadyRequest\"\x0f\n" +
+	"\rReadyResponse\"3\n" +
+	"\x17GetUserBySubjectRequest\x12\x18\n" +
+	"\asubject\x18\x01 \x01(\tR\asubject\"J\n" +
+	"\x12GetUserByIdRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1b\n" +
+	"\ttenant_id\x18\x02 \x01(\tR\btenantId\"C\n" +
+	" GetUserByKratosIdentityIdRequest\x12\x1f\n" +
+	"\videntity_id\x18\x01 \x01(\tR\n" +
+	"identityId\"o\n" +
+	"\"ResolveOrLinkKratosIdentityRequest\x12\x1f\n" +
+	"\videntity_id\x18\x01 \x01(\tR\n" +
+	"identityId\x12\x14\n" +
+	"\x05email\x18\x02 \x01(\tR\x05email\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\xb1\x01\n" +
+	"\x1cResolveOrLinkIdentityRequest\x12\x1f\n" +
+	"\vprovider_id\x18\x01 \x01(\tR\n" +
+	"providerId\x12\x1f\n" +
+	"\vexternal_id\x18\x02 \x01(\tR\n" +
+	"externalId\x12\x14\n" +
+	"\x05email\x18\x03 \x01(\tR\x05email\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\x12%\n" +
+	"\x0eemail_verified\x18\x05 \x01(\bR\remailVerified\"\xcd\x01\n" +
+	"\x10TenantMembership\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x1f\n" +
+	"\vtenant_code\x18\x02 \x01(\tR\n" +
+	"tenantCode\x12\x1f\n" +
+	"\vtenant_name\x18\x03 \x01(\tR\n" +
+	"tenantName\x12#\n" +
+	"\rtenant_status\x18\x04 \x01(\tR\ftenantStatus\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"is_default\x18\x06 \x01(\bR\tisDefault\"\xf3\b\n" +
+	"\vUserContext\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x18\n" +
+	"\asubject\x18\x02 \x01(\tR\asubject\x12\x1a\n" +
+	"\busername\x18\x03 \x01(\tR\busername\x12\x14\n" +
+	"\x05email\x18\x04 \x01(\tR\x05email\x12!\n" +
+	"\fdisplay_name\x18\x05 \x01(\tR\vdisplayName\x12\x1a\n" +
+	"\bnickname\x18\x06 \x01(\tR\bnickname\x12\x1d\n" +
+	"\n" +
+	"first_name\x18\a \x01(\tR\tfirstName\x12\x1b\n" +
+	"\tlast_name\x18\b \x01(\tR\blastName\x12!\n" +
+	"\fphone_number\x18\t \x01(\tR\vphoneNumber\x12\x1c\n" +
+	"\tbirthdate\x18\n" +
+	" \x01(\tR\tbirthdate\x12\x16\n" +
+	"\x06gender\x18\v \x01(\tR\x06gender\x12\x18\n" +
+	"\aaddress\x18\f \x01(\tR\aaddress\x12\x18\n" +
+	"\acountry\x18\r \x01(\tR\acountry\x12\x16\n" +
+	"\x06status\x18\x0e \x01(\tR\x06status\x12\x1f\n" +
+	"\vpicture_url\x18\x0f \x01(\tR\n" +
+	"pictureUrl\x12$\n" +
+	"\x0eavatar_file_id\x18\x10 \x01(\tR\favatarFileId\x12&\n" +
+	"\x0fcover_image_url\x18\x11 \x01(\tR\rcoverImageUrl\x12\"\n" +
+	"\rcover_file_id\x18\x12 \x01(\tR\vcoverFileId\x12\x1b\n" +
+	"\ttenant_id\x18\x13 \x01(\tR\btenantId\x12(\n" +
+	"\x10active_tenant_id\x18\x14 \x01(\tR\x0eactiveTenantId\x12L\n" +
+	"\x12tenant_memberships\x18\x15 \x03(\v2\x1d.arda.iam.v1.TenantMembershipR\x11tenantMemberships\x12:\n" +
+	"\x19tenant_selection_required\x18\x16 \x01(\bR\x17tenantSelectionRequired\x12\x17\n" +
+	"\aorg_ids\x18\x17 \x03(\tR\x06orgIds\x12\x1b\n" +
+	"\tgroup_ids\x18\x18 \x03(\tR\bgroupIds\x12\x14\n" +
+	"\x05roles\x18\x19 \x03(\tR\x05roles\x12 \n" +
+	"\vpermissions\x18\x1a \x03(\tR\vpermissions\x12!\n" +
+	"\fglobal_roles\x18\x1b \x03(\tR\vglobalRoles\x12-\n" +
+	"\x12global_permissions\x18\x1c \x03(\tR\x11globalPermissions\x12&\n" +
+	"\x0fis_global_admin\x18\x1d \x01(\bR\risGlobalAdmin\x12<\n" +
+	"\x1aglobal_capabilities_loaded\x18\x1e \x01(\bR\x18globalCapabilitiesLoaded\x12!\n" +
+	"\fauth_version\x18\x1f \x01(\x03R\vauthVersion\x12\x1a\n" +
+	"\btimezone\x18  \x01(\tR\btimezone\x12\x16\n" +
+	"\x06locale\x18! \x01(\tR\x06locale\"C\n" +
+	"\x13UserContextResponse\x12,\n" +
+	"\x04user\x18\x01 \x01(\v2\x18.arda.iam.v1.UserContextR\x04user\"\xc2\x03\n" +
+	"\x14CreateSessionRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12(\n" +
+	"\x10hydra_session_id\x18\x02 \x01(\tR\x0ehydraSessionId\x12(\n" +
+	"\x10access_token_jti\x18\x03 \x01(\tR\x0eaccessTokenJti\x12*\n" +
+	"\x11refresh_token_jti\x18\x04 \x01(\tR\x0frefreshTokenJti\x12\x1d\n" +
+	"\n" +
+	"ip_address\x18\x05 \x01(\tR\tipAddress\x12\x1d\n" +
+	"\n" +
+	"user_agent\x18\x06 \x01(\tR\tuserAgent\x12\x1f\n" +
+	"\vdevice_name\x18\a \x01(\tR\n" +
+	"deviceName\x12\x1f\n" +
+	"\vdevice_type\x18\b \x01(\tR\n" +
+	"deviceType\x12\x0e\n" +
+	"\x02os\x18\t \x01(\tR\x02os\x12\x18\n" +
+	"\abrowser\x18\n" +
+	" \x01(\tR\abrowser\x12 \n" +
+	"\vfingerprint\x18\v \x01(\tR\vfingerprint\x12!\n" +
+	"\fdevice_token\x18\f \x01(\tR\vdeviceToken\x12\"\n" +
+	"\rtrust_for_mfa\x18\r \x01(\bR\vtrustForMfa\"\x8e\x01\n" +
+	"\x15CreateSessionResponse\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"5\n" +
+	"\x14RevokeSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\x17\n" +
+	"\x15RevokeSessionResponse\"4\n" +
+	"\x13TouchSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\x16\n" +
+	"\x14TouchSessionResponse\".\n" +
+	"\x13GetMfaStatusRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"O\n" +
+	"\x14GetMfaStatusResponse\x12\x1f\n" +
+	"\vis_enrolled\x18\x01 \x01(\bR\n" +
+	"isEnrolled\x12\x16\n" +
+	"\x06method\x18\x02 \x01(\tR\x06method\"M\n" +
+	"\x0fCheckMfaRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
+	"\fdevice_token\x18\x02 \x01(\tR\vdeviceToken\"o\n" +
+	"\x10CheckMfaResponse\x12!\n" +
+	"\frequires_mfa\x18\x01 \x01(\bR\vrequiresMfa\x12\x1e\n" +
+	"\vcan_use_mfa\x18\x02 \x01(\bR\tcanUseMfa\x12\x18\n" +
+	"\amethods\x18\x03 \x03(\tR\amethods\"?\n" +
+	"\x10VerifyMfaRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\"\x13\n" +
+	"\x11VerifyMfaResponse\"e\n" +
+	"\x18GenerateMfaSecretRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername\x12\x14\n" +
+	"\x05email\x18\x03 \x01(\tR\x05email\"T\n" +
+	"\x19GenerateMfaSecretResponse\x12\x16\n" +
+	"\x06secret\x18\x01 \x01(\tR\x06secret\x12\x1f\n" +
+	"\votpauth_url\x18\x02 \x01(\tR\n" +
+	"otpauthUrl\"I\n" +
+	"\x1aVerifyMfaEnrollmentRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\"@\n" +
+	"\x1bVerifyMfaEnrollmentResponse\x12!\n" +
+	"\fbackup_codes\x18\x01 \x03(\tR\vbackupCodes2\xcf\x02\n" +
 	"\vUserService\x12S\n" +
 	"\fGetUserBatch\x12 .arda.iam.v1.GetUserBatchRequest\x1a!.arda.iam.v1.GetUserBatchResponse\x12b\n" +
 	"\x11ListActiveTenants\x12%.arda.iam.v1.ListActiveTenantsRequest\x1a&.arda.iam.v1.ListActiveTenantsResponse\x12\x86\x01\n" +
-	"\x1dResolveNotificationRecipients\x121.arda.iam.v1.ResolveNotificationRecipientsRequest\x1a2.arda.iam.v1.ResolveNotificationRecipientsResponseB;Z9github.com/arda-labs/arda/libs/go/arda-proto/iam/v1;iamv1b\x06proto3"
+	"\x1dResolveNotificationRecipients\x121.arda.iam.v1.ResolveNotificationRecipientsRequest\x1a2.arda.iam.v1.ResolveNotificationRecipientsResponse2\x81\n" +
+	"\n" +
+	"\x0eGatewayService\x12>\n" +
+	"\x05Ready\x12\x19.arda.iam.v1.ReadyRequest\x1a\x1a.arda.iam.v1.ReadyResponse\x12Z\n" +
+	"\x10GetUserBySubject\x12$.arda.iam.v1.GetUserBySubjectRequest\x1a .arda.iam.v1.UserContextResponse\x12P\n" +
+	"\vGetUserById\x12\x1f.arda.iam.v1.GetUserByIdRequest\x1a .arda.iam.v1.UserContextResponse\x12l\n" +
+	"\x19GetUserByKratosIdentityId\x12-.arda.iam.v1.GetUserByKratosIdentityIdRequest\x1a .arda.iam.v1.UserContextResponse\x12p\n" +
+	"\x1bResolveOrLinkKratosIdentity\x12/.arda.iam.v1.ResolveOrLinkKratosIdentityRequest\x1a .arda.iam.v1.UserContextResponse\x12d\n" +
+	"\x15ResolveOrLinkIdentity\x12).arda.iam.v1.ResolveOrLinkIdentityRequest\x1a .arda.iam.v1.UserContextResponse\x12V\n" +
+	"\rCreateSession\x12!.arda.iam.v1.CreateSessionRequest\x1a\".arda.iam.v1.CreateSessionResponse\x12V\n" +
+	"\rRevokeSession\x12!.arda.iam.v1.RevokeSessionRequest\x1a\".arda.iam.v1.RevokeSessionResponse\x12S\n" +
+	"\fTouchSession\x12 .arda.iam.v1.TouchSessionRequest\x1a!.arda.iam.v1.TouchSessionResponse\x12S\n" +
+	"\fGetMfaStatus\x12 .arda.iam.v1.GetMfaStatusRequest\x1a!.arda.iam.v1.GetMfaStatusResponse\x12G\n" +
+	"\bCheckMfa\x12\x1c.arda.iam.v1.CheckMfaRequest\x1a\x1d.arda.iam.v1.CheckMfaResponse\x12J\n" +
+	"\tVerifyMfa\x12\x1d.arda.iam.v1.VerifyMfaRequest\x1a\x1e.arda.iam.v1.VerifyMfaResponse\x12b\n" +
+	"\x11GenerateMfaSecret\x12%.arda.iam.v1.GenerateMfaSecretRequest\x1a&.arda.iam.v1.GenerateMfaSecretResponse\x12h\n" +
+	"\x13VerifyMfaEnrollment\x12'.arda.iam.v1.VerifyMfaEnrollmentRequest\x1a(.arda.iam.v1.VerifyMfaEnrollmentResponseB;Z9github.com/arda-labs/arda/libs/go/arda-proto/iam/v1;iamv1b\x06proto3"
 
 var (
 	file_arda_iam_v1_iam_proto_rawDescOnce sync.Once
@@ -445,7 +2242,7 @@ func file_arda_iam_v1_iam_proto_rawDescGZIP() []byte {
 	return file_arda_iam_v1_iam_proto_rawDescData
 }
 
-var file_arda_iam_v1_iam_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_arda_iam_v1_iam_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_arda_iam_v1_iam_proto_goTypes = []any{
 	(*ListActiveTenantsRequest)(nil),              // 0: arda.iam.v1.ListActiveTenantsRequest
 	(*ListActiveTenantsResponse)(nil),             // 1: arda.iam.v1.ListActiveTenantsResponse
@@ -454,20 +2251,78 @@ var file_arda_iam_v1_iam_proto_goTypes = []any{
 	(*GetUserBatchRequest)(nil),                   // 4: arda.iam.v1.GetUserBatchRequest
 	(*UserInfo)(nil),                              // 5: arda.iam.v1.UserInfo
 	(*GetUserBatchResponse)(nil),                  // 6: arda.iam.v1.GetUserBatchResponse
+	(*ReadyRequest)(nil),                          // 7: arda.iam.v1.ReadyRequest
+	(*ReadyResponse)(nil),                         // 8: arda.iam.v1.ReadyResponse
+	(*GetUserBySubjectRequest)(nil),               // 9: arda.iam.v1.GetUserBySubjectRequest
+	(*GetUserByIdRequest)(nil),                    // 10: arda.iam.v1.GetUserByIdRequest
+	(*GetUserByKratosIdentityIdRequest)(nil),      // 11: arda.iam.v1.GetUserByKratosIdentityIdRequest
+	(*ResolveOrLinkKratosIdentityRequest)(nil),    // 12: arda.iam.v1.ResolveOrLinkKratosIdentityRequest
+	(*ResolveOrLinkIdentityRequest)(nil),          // 13: arda.iam.v1.ResolveOrLinkIdentityRequest
+	(*TenantMembership)(nil),                      // 14: arda.iam.v1.TenantMembership
+	(*UserContext)(nil),                           // 15: arda.iam.v1.UserContext
+	(*UserContextResponse)(nil),                   // 16: arda.iam.v1.UserContextResponse
+	(*CreateSessionRequest)(nil),                  // 17: arda.iam.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),                 // 18: arda.iam.v1.CreateSessionResponse
+	(*RevokeSessionRequest)(nil),                  // 19: arda.iam.v1.RevokeSessionRequest
+	(*RevokeSessionResponse)(nil),                 // 20: arda.iam.v1.RevokeSessionResponse
+	(*TouchSessionRequest)(nil),                   // 21: arda.iam.v1.TouchSessionRequest
+	(*TouchSessionResponse)(nil),                  // 22: arda.iam.v1.TouchSessionResponse
+	(*GetMfaStatusRequest)(nil),                   // 23: arda.iam.v1.GetMfaStatusRequest
+	(*GetMfaStatusResponse)(nil),                  // 24: arda.iam.v1.GetMfaStatusResponse
+	(*CheckMfaRequest)(nil),                       // 25: arda.iam.v1.CheckMfaRequest
+	(*CheckMfaResponse)(nil),                      // 26: arda.iam.v1.CheckMfaResponse
+	(*VerifyMfaRequest)(nil),                      // 27: arda.iam.v1.VerifyMfaRequest
+	(*VerifyMfaResponse)(nil),                     // 28: arda.iam.v1.VerifyMfaResponse
+	(*GenerateMfaSecretRequest)(nil),              // 29: arda.iam.v1.GenerateMfaSecretRequest
+	(*GenerateMfaSecretResponse)(nil),             // 30: arda.iam.v1.GenerateMfaSecretResponse
+	(*VerifyMfaEnrollmentRequest)(nil),            // 31: arda.iam.v1.VerifyMfaEnrollmentRequest
+	(*VerifyMfaEnrollmentResponse)(nil),           // 32: arda.iam.v1.VerifyMfaEnrollmentResponse
+	(*timestamppb.Timestamp)(nil),                 // 33: google.protobuf.Timestamp
 }
 var file_arda_iam_v1_iam_proto_depIdxs = []int32{
-	5, // 0: arda.iam.v1.GetUserBatchResponse.users:type_name -> arda.iam.v1.UserInfo
-	4, // 1: arda.iam.v1.UserService.GetUserBatch:input_type -> arda.iam.v1.GetUserBatchRequest
-	0, // 2: arda.iam.v1.UserService.ListActiveTenants:input_type -> arda.iam.v1.ListActiveTenantsRequest
-	2, // 3: arda.iam.v1.UserService.ResolveNotificationRecipients:input_type -> arda.iam.v1.ResolveNotificationRecipientsRequest
-	6, // 4: arda.iam.v1.UserService.GetUserBatch:output_type -> arda.iam.v1.GetUserBatchResponse
-	1, // 5: arda.iam.v1.UserService.ListActiveTenants:output_type -> arda.iam.v1.ListActiveTenantsResponse
-	3, // 6: arda.iam.v1.UserService.ResolveNotificationRecipients:output_type -> arda.iam.v1.ResolveNotificationRecipientsResponse
-	4, // [4:7] is the sub-list for method output_type
-	1, // [1:4] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	5,  // 0: arda.iam.v1.GetUserBatchResponse.users:type_name -> arda.iam.v1.UserInfo
+	14, // 1: arda.iam.v1.UserContext.tenant_memberships:type_name -> arda.iam.v1.TenantMembership
+	15, // 2: arda.iam.v1.UserContextResponse.user:type_name -> arda.iam.v1.UserContext
+	33, // 3: arda.iam.v1.CreateSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 4: arda.iam.v1.UserService.GetUserBatch:input_type -> arda.iam.v1.GetUserBatchRequest
+	0,  // 5: arda.iam.v1.UserService.ListActiveTenants:input_type -> arda.iam.v1.ListActiveTenantsRequest
+	2,  // 6: arda.iam.v1.UserService.ResolveNotificationRecipients:input_type -> arda.iam.v1.ResolveNotificationRecipientsRequest
+	7,  // 7: arda.iam.v1.GatewayService.Ready:input_type -> arda.iam.v1.ReadyRequest
+	9,  // 8: arda.iam.v1.GatewayService.GetUserBySubject:input_type -> arda.iam.v1.GetUserBySubjectRequest
+	10, // 9: arda.iam.v1.GatewayService.GetUserById:input_type -> arda.iam.v1.GetUserByIdRequest
+	11, // 10: arda.iam.v1.GatewayService.GetUserByKratosIdentityId:input_type -> arda.iam.v1.GetUserByKratosIdentityIdRequest
+	12, // 11: arda.iam.v1.GatewayService.ResolveOrLinkKratosIdentity:input_type -> arda.iam.v1.ResolveOrLinkKratosIdentityRequest
+	13, // 12: arda.iam.v1.GatewayService.ResolveOrLinkIdentity:input_type -> arda.iam.v1.ResolveOrLinkIdentityRequest
+	17, // 13: arda.iam.v1.GatewayService.CreateSession:input_type -> arda.iam.v1.CreateSessionRequest
+	19, // 14: arda.iam.v1.GatewayService.RevokeSession:input_type -> arda.iam.v1.RevokeSessionRequest
+	21, // 15: arda.iam.v1.GatewayService.TouchSession:input_type -> arda.iam.v1.TouchSessionRequest
+	23, // 16: arda.iam.v1.GatewayService.GetMfaStatus:input_type -> arda.iam.v1.GetMfaStatusRequest
+	25, // 17: arda.iam.v1.GatewayService.CheckMfa:input_type -> arda.iam.v1.CheckMfaRequest
+	27, // 18: arda.iam.v1.GatewayService.VerifyMfa:input_type -> arda.iam.v1.VerifyMfaRequest
+	29, // 19: arda.iam.v1.GatewayService.GenerateMfaSecret:input_type -> arda.iam.v1.GenerateMfaSecretRequest
+	31, // 20: arda.iam.v1.GatewayService.VerifyMfaEnrollment:input_type -> arda.iam.v1.VerifyMfaEnrollmentRequest
+	6,  // 21: arda.iam.v1.UserService.GetUserBatch:output_type -> arda.iam.v1.GetUserBatchResponse
+	1,  // 22: arda.iam.v1.UserService.ListActiveTenants:output_type -> arda.iam.v1.ListActiveTenantsResponse
+	3,  // 23: arda.iam.v1.UserService.ResolveNotificationRecipients:output_type -> arda.iam.v1.ResolveNotificationRecipientsResponse
+	8,  // 24: arda.iam.v1.GatewayService.Ready:output_type -> arda.iam.v1.ReadyResponse
+	16, // 25: arda.iam.v1.GatewayService.GetUserBySubject:output_type -> arda.iam.v1.UserContextResponse
+	16, // 26: arda.iam.v1.GatewayService.GetUserById:output_type -> arda.iam.v1.UserContextResponse
+	16, // 27: arda.iam.v1.GatewayService.GetUserByKratosIdentityId:output_type -> arda.iam.v1.UserContextResponse
+	16, // 28: arda.iam.v1.GatewayService.ResolveOrLinkKratosIdentity:output_type -> arda.iam.v1.UserContextResponse
+	16, // 29: arda.iam.v1.GatewayService.ResolveOrLinkIdentity:output_type -> arda.iam.v1.UserContextResponse
+	18, // 30: arda.iam.v1.GatewayService.CreateSession:output_type -> arda.iam.v1.CreateSessionResponse
+	20, // 31: arda.iam.v1.GatewayService.RevokeSession:output_type -> arda.iam.v1.RevokeSessionResponse
+	22, // 32: arda.iam.v1.GatewayService.TouchSession:output_type -> arda.iam.v1.TouchSessionResponse
+	24, // 33: arda.iam.v1.GatewayService.GetMfaStatus:output_type -> arda.iam.v1.GetMfaStatusResponse
+	26, // 34: arda.iam.v1.GatewayService.CheckMfa:output_type -> arda.iam.v1.CheckMfaResponse
+	28, // 35: arda.iam.v1.GatewayService.VerifyMfa:output_type -> arda.iam.v1.VerifyMfaResponse
+	30, // 36: arda.iam.v1.GatewayService.GenerateMfaSecret:output_type -> arda.iam.v1.GenerateMfaSecretResponse
+	32, // 37: arda.iam.v1.GatewayService.VerifyMfaEnrollment:output_type -> arda.iam.v1.VerifyMfaEnrollmentResponse
+	21, // [21:38] is the sub-list for method output_type
+	4,  // [4:21] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_arda_iam_v1_iam_proto_init() }
@@ -481,9 +2336,9 @@ func file_arda_iam_v1_iam_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arda_iam_v1_iam_proto_rawDesc), len(file_arda_iam_v1_iam_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   33,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_arda_iam_v1_iam_proto_goTypes,
 		DependencyIndexes: file_arda_iam_v1_iam_proto_depIdxs,

@@ -195,3 +195,667 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "arda/iam/v1/iam.proto",
 }
+
+const (
+	GatewayService_Ready_FullMethodName                       = "/arda.iam.v1.GatewayService/Ready"
+	GatewayService_GetUserBySubject_FullMethodName            = "/arda.iam.v1.GatewayService/GetUserBySubject"
+	GatewayService_GetUserById_FullMethodName                 = "/arda.iam.v1.GatewayService/GetUserById"
+	GatewayService_GetUserByKratosIdentityId_FullMethodName   = "/arda.iam.v1.GatewayService/GetUserByKratosIdentityId"
+	GatewayService_ResolveOrLinkKratosIdentity_FullMethodName = "/arda.iam.v1.GatewayService/ResolveOrLinkKratosIdentity"
+	GatewayService_ResolveOrLinkIdentity_FullMethodName       = "/arda.iam.v1.GatewayService/ResolveOrLinkIdentity"
+	GatewayService_CreateSession_FullMethodName               = "/arda.iam.v1.GatewayService/CreateSession"
+	GatewayService_RevokeSession_FullMethodName               = "/arda.iam.v1.GatewayService/RevokeSession"
+	GatewayService_TouchSession_FullMethodName                = "/arda.iam.v1.GatewayService/TouchSession"
+	GatewayService_GetMfaStatus_FullMethodName                = "/arda.iam.v1.GatewayService/GetMfaStatus"
+	GatewayService_CheckMfa_FullMethodName                    = "/arda.iam.v1.GatewayService/CheckMfa"
+	GatewayService_VerifyMfa_FullMethodName                   = "/arda.iam.v1.GatewayService/VerifyMfa"
+	GatewayService_GenerateMfaSecret_FullMethodName           = "/arda.iam.v1.GatewayService/GenerateMfaSecret"
+	GatewayService_VerifyMfaEnrollment_FullMethodName         = "/arda.iam.v1.GatewayService/VerifyMfaEnrollment"
+)
+
+// GatewayServiceClient is the client API for GatewayService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// GatewayService is the internal surface auth-gateway uses to resolve user
+// contexts, track sessions and run MFA during login and step-up. It is a
+// separate service from UserService because its caller allowlist is exactly
+// one workload (auth-gateway) and its operations act on identity state that
+// no other service may touch. It replaces the HTTP routes under
+// /internal/iam that the gateway called before.
+//
+// Error contract:
+//   - NOT_FOUND: the user, identity or mapping does not exist (the gateway
+//     treats this as a definitive revocation, never as a transient error).
+//   - PERMISSION_DENIED: the user is not an active member of the requested
+//     tenant.
+//   - FAILED_PRECONDITION: an identity/MFA state rule blocks the call (inactive
+//     identity mapping, unverified e-mail on first link, MFA not enrolled,
+//     already enrolled, no pending enrollment, MFA locked after too many
+//     failed attempts).
+//   - INVALID_ARGUMENT: missing required fields or a wrong MFA/TOTP code.
+//   - RESOURCE_EXHAUSTED: the concurrent session limit was reached.
+type GatewayServiceClient interface {
+	// Ready reports whether IAM can serve gateway calls; it backs the gateway
+	// readiness probe.
+	Ready(ctx context.Context, in *ReadyRequest, opts ...grpc.CallOption) (*ReadyResponse, error)
+	GetUserBySubject(ctx context.Context, in *GetUserBySubjectRequest, opts ...grpc.CallOption) (*UserContextResponse, error)
+	// GetUserById returns the context for the user's default tenant, or for
+	// tenant_id when set (the membership must be active).
+	GetUserById(ctx context.Context, in *GetUserByIdRequest, opts ...grpc.CallOption) (*UserContextResponse, error)
+	GetUserByKratosIdentityId(ctx context.Context, in *GetUserByKratosIdentityIdRequest, opts ...grpc.CallOption) (*UserContextResponse, error)
+	// ResolveOrLinkKratosIdentity returns the user linked to a Kratos identity,
+	// linking it by e-mail on first login.
+	ResolveOrLinkKratosIdentity(ctx context.Context, in *ResolveOrLinkKratosIdentityRequest, opts ...grpc.CallOption) (*UserContextResponse, error)
+	// ResolveOrLinkIdentity returns the user mapped to an external provider
+	// identity, creating the mapping by verified e-mail on first login.
+	ResolveOrLinkIdentity(ctx context.Context, in *ResolveOrLinkIdentityRequest, opts ...grpc.CallOption) (*UserContextResponse, error)
+	CreateSession(ctx context.Context, in *CreateSessionRequest, opts ...grpc.CallOption) (*CreateSessionResponse, error)
+	RevokeSession(ctx context.Context, in *RevokeSessionRequest, opts ...grpc.CallOption) (*RevokeSessionResponse, error)
+	// TouchSession records activity on a live session (powers last_seen_at).
+	TouchSession(ctx context.Context, in *TouchSessionRequest, opts ...grpc.CallOption) (*TouchSessionResponse, error)
+	GetMfaStatus(ctx context.Context, in *GetMfaStatusRequest, opts ...grpc.CallOption) (*GetMfaStatusResponse, error)
+	// CheckMfa reports whether the device identified by device_token must
+	// complete MFA for this login.
+	CheckMfa(ctx context.Context, in *CheckMfaRequest, opts ...grpc.CallOption) (*CheckMfaResponse, error)
+	// VerifyMfa verifies a TOTP code for login or step-up; a wrong code counts
+	// towards the lockout.
+	VerifyMfa(ctx context.Context, in *VerifyMfaRequest, opts ...grpc.CallOption) (*VerifyMfaResponse, error)
+	// GenerateMfaSecret starts TOTP enrollment and returns the secret the user
+	// must register; it is not enrolled until VerifyMfaEnrollment succeeds.
+	GenerateMfaSecret(ctx context.Context, in *GenerateMfaSecretRequest, opts ...grpc.CallOption) (*GenerateMfaSecretResponse, error)
+	VerifyMfaEnrollment(ctx context.Context, in *VerifyMfaEnrollmentRequest, opts ...grpc.CallOption) (*VerifyMfaEnrollmentResponse, error)
+}
+
+type gatewayServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewGatewayServiceClient(cc grpc.ClientConnInterface) GatewayServiceClient {
+	return &gatewayServiceClient{cc}
+}
+
+func (c *gatewayServiceClient) Ready(ctx context.Context, in *ReadyRequest, opts ...grpc.CallOption) (*ReadyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadyResponse)
+	err := c.cc.Invoke(ctx, GatewayService_Ready_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) GetUserBySubject(ctx context.Context, in *GetUserBySubjectRequest, opts ...grpc.CallOption) (*UserContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UserContextResponse)
+	err := c.cc.Invoke(ctx, GatewayService_GetUserBySubject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) GetUserById(ctx context.Context, in *GetUserByIdRequest, opts ...grpc.CallOption) (*UserContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UserContextResponse)
+	err := c.cc.Invoke(ctx, GatewayService_GetUserById_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) GetUserByKratosIdentityId(ctx context.Context, in *GetUserByKratosIdentityIdRequest, opts ...grpc.CallOption) (*UserContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UserContextResponse)
+	err := c.cc.Invoke(ctx, GatewayService_GetUserByKratosIdentityId_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) ResolveOrLinkKratosIdentity(ctx context.Context, in *ResolveOrLinkKratosIdentityRequest, opts ...grpc.CallOption) (*UserContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UserContextResponse)
+	err := c.cc.Invoke(ctx, GatewayService_ResolveOrLinkKratosIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) ResolveOrLinkIdentity(ctx context.Context, in *ResolveOrLinkIdentityRequest, opts ...grpc.CallOption) (*UserContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UserContextResponse)
+	err := c.cc.Invoke(ctx, GatewayService_ResolveOrLinkIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) CreateSession(ctx context.Context, in *CreateSessionRequest, opts ...grpc.CallOption) (*CreateSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateSessionResponse)
+	err := c.cc.Invoke(ctx, GatewayService_CreateSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) RevokeSession(ctx context.Context, in *RevokeSessionRequest, opts ...grpc.CallOption) (*RevokeSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeSessionResponse)
+	err := c.cc.Invoke(ctx, GatewayService_RevokeSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) TouchSession(ctx context.Context, in *TouchSessionRequest, opts ...grpc.CallOption) (*TouchSessionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TouchSessionResponse)
+	err := c.cc.Invoke(ctx, GatewayService_TouchSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) GetMfaStatus(ctx context.Context, in *GetMfaStatusRequest, opts ...grpc.CallOption) (*GetMfaStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMfaStatusResponse)
+	err := c.cc.Invoke(ctx, GatewayService_GetMfaStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) CheckMfa(ctx context.Context, in *CheckMfaRequest, opts ...grpc.CallOption) (*CheckMfaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckMfaResponse)
+	err := c.cc.Invoke(ctx, GatewayService_CheckMfa_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) VerifyMfa(ctx context.Context, in *VerifyMfaRequest, opts ...grpc.CallOption) (*VerifyMfaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyMfaResponse)
+	err := c.cc.Invoke(ctx, GatewayService_VerifyMfa_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) GenerateMfaSecret(ctx context.Context, in *GenerateMfaSecretRequest, opts ...grpc.CallOption) (*GenerateMfaSecretResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GenerateMfaSecretResponse)
+	err := c.cc.Invoke(ctx, GatewayService_GenerateMfaSecret_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gatewayServiceClient) VerifyMfaEnrollment(ctx context.Context, in *VerifyMfaEnrollmentRequest, opts ...grpc.CallOption) (*VerifyMfaEnrollmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyMfaEnrollmentResponse)
+	err := c.cc.Invoke(ctx, GatewayService_VerifyMfaEnrollment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GatewayServiceServer is the server API for GatewayService service.
+// All implementations must embed UnimplementedGatewayServiceServer
+// for forward compatibility.
+//
+// GatewayService is the internal surface auth-gateway uses to resolve user
+// contexts, track sessions and run MFA during login and step-up. It is a
+// separate service from UserService because its caller allowlist is exactly
+// one workload (auth-gateway) and its operations act on identity state that
+// no other service may touch. It replaces the HTTP routes under
+// /internal/iam that the gateway called before.
+//
+// Error contract:
+//   - NOT_FOUND: the user, identity or mapping does not exist (the gateway
+//     treats this as a definitive revocation, never as a transient error).
+//   - PERMISSION_DENIED: the user is not an active member of the requested
+//     tenant.
+//   - FAILED_PRECONDITION: an identity/MFA state rule blocks the call (inactive
+//     identity mapping, unverified e-mail on first link, MFA not enrolled,
+//     already enrolled, no pending enrollment, MFA locked after too many
+//     failed attempts).
+//   - INVALID_ARGUMENT: missing required fields or a wrong MFA/TOTP code.
+//   - RESOURCE_EXHAUSTED: the concurrent session limit was reached.
+type GatewayServiceServer interface {
+	// Ready reports whether IAM can serve gateway calls; it backs the gateway
+	// readiness probe.
+	Ready(context.Context, *ReadyRequest) (*ReadyResponse, error)
+	GetUserBySubject(context.Context, *GetUserBySubjectRequest) (*UserContextResponse, error)
+	// GetUserById returns the context for the user's default tenant, or for
+	// tenant_id when set (the membership must be active).
+	GetUserById(context.Context, *GetUserByIdRequest) (*UserContextResponse, error)
+	GetUserByKratosIdentityId(context.Context, *GetUserByKratosIdentityIdRequest) (*UserContextResponse, error)
+	// ResolveOrLinkKratosIdentity returns the user linked to a Kratos identity,
+	// linking it by e-mail on first login.
+	ResolveOrLinkKratosIdentity(context.Context, *ResolveOrLinkKratosIdentityRequest) (*UserContextResponse, error)
+	// ResolveOrLinkIdentity returns the user mapped to an external provider
+	// identity, creating the mapping by verified e-mail on first login.
+	ResolveOrLinkIdentity(context.Context, *ResolveOrLinkIdentityRequest) (*UserContextResponse, error)
+	CreateSession(context.Context, *CreateSessionRequest) (*CreateSessionResponse, error)
+	RevokeSession(context.Context, *RevokeSessionRequest) (*RevokeSessionResponse, error)
+	// TouchSession records activity on a live session (powers last_seen_at).
+	TouchSession(context.Context, *TouchSessionRequest) (*TouchSessionResponse, error)
+	GetMfaStatus(context.Context, *GetMfaStatusRequest) (*GetMfaStatusResponse, error)
+	// CheckMfa reports whether the device identified by device_token must
+	// complete MFA for this login.
+	CheckMfa(context.Context, *CheckMfaRequest) (*CheckMfaResponse, error)
+	// VerifyMfa verifies a TOTP code for login or step-up; a wrong code counts
+	// towards the lockout.
+	VerifyMfa(context.Context, *VerifyMfaRequest) (*VerifyMfaResponse, error)
+	// GenerateMfaSecret starts TOTP enrollment and returns the secret the user
+	// must register; it is not enrolled until VerifyMfaEnrollment succeeds.
+	GenerateMfaSecret(context.Context, *GenerateMfaSecretRequest) (*GenerateMfaSecretResponse, error)
+	VerifyMfaEnrollment(context.Context, *VerifyMfaEnrollmentRequest) (*VerifyMfaEnrollmentResponse, error)
+	mustEmbedUnimplementedGatewayServiceServer()
+}
+
+// UnimplementedGatewayServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedGatewayServiceServer struct{}
+
+func (UnimplementedGatewayServiceServer) Ready(context.Context, *ReadyRequest) (*ReadyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Ready not implemented")
+}
+func (UnimplementedGatewayServiceServer) GetUserBySubject(context.Context, *GetUserBySubjectRequest) (*UserContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetUserBySubject not implemented")
+}
+func (UnimplementedGatewayServiceServer) GetUserById(context.Context, *GetUserByIdRequest) (*UserContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetUserById not implemented")
+}
+func (UnimplementedGatewayServiceServer) GetUserByKratosIdentityId(context.Context, *GetUserByKratosIdentityIdRequest) (*UserContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetUserByKratosIdentityId not implemented")
+}
+func (UnimplementedGatewayServiceServer) ResolveOrLinkKratosIdentity(context.Context, *ResolveOrLinkKratosIdentityRequest) (*UserContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveOrLinkKratosIdentity not implemented")
+}
+func (UnimplementedGatewayServiceServer) ResolveOrLinkIdentity(context.Context, *ResolveOrLinkIdentityRequest) (*UserContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveOrLinkIdentity not implemented")
+}
+func (UnimplementedGatewayServiceServer) CreateSession(context.Context, *CreateSessionRequest) (*CreateSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateSession not implemented")
+}
+func (UnimplementedGatewayServiceServer) RevokeSession(context.Context, *RevokeSessionRequest) (*RevokeSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeSession not implemented")
+}
+func (UnimplementedGatewayServiceServer) TouchSession(context.Context, *TouchSessionRequest) (*TouchSessionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TouchSession not implemented")
+}
+func (UnimplementedGatewayServiceServer) GetMfaStatus(context.Context, *GetMfaStatusRequest) (*GetMfaStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMfaStatus not implemented")
+}
+func (UnimplementedGatewayServiceServer) CheckMfa(context.Context, *CheckMfaRequest) (*CheckMfaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckMfa not implemented")
+}
+func (UnimplementedGatewayServiceServer) VerifyMfa(context.Context, *VerifyMfaRequest) (*VerifyMfaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyMfa not implemented")
+}
+func (UnimplementedGatewayServiceServer) GenerateMfaSecret(context.Context, *GenerateMfaSecretRequest) (*GenerateMfaSecretResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GenerateMfaSecret not implemented")
+}
+func (UnimplementedGatewayServiceServer) VerifyMfaEnrollment(context.Context, *VerifyMfaEnrollmentRequest) (*VerifyMfaEnrollmentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method VerifyMfaEnrollment not implemented")
+}
+func (UnimplementedGatewayServiceServer) mustEmbedUnimplementedGatewayServiceServer() {}
+func (UnimplementedGatewayServiceServer) testEmbeddedByValue()                        {}
+
+// UnsafeGatewayServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to GatewayServiceServer will
+// result in compilation errors.
+type UnsafeGatewayServiceServer interface {
+	mustEmbedUnimplementedGatewayServiceServer()
+}
+
+func RegisterGatewayServiceServer(s grpc.ServiceRegistrar, srv GatewayServiceServer) {
+	// If the following call panics, it indicates UnimplementedGatewayServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&GatewayService_ServiceDesc, srv)
+}
+
+func _GatewayService_Ready_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).Ready(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_Ready_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).Ready(ctx, req.(*ReadyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_GetUserBySubject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUserBySubjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).GetUserBySubject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_GetUserBySubject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).GetUserBySubject(ctx, req.(*GetUserBySubjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_GetUserById_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUserByIdRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).GetUserById(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_GetUserById_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).GetUserById(ctx, req.(*GetUserByIdRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_GetUserByKratosIdentityId_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUserByKratosIdentityIdRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).GetUserByKratosIdentityId(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_GetUserByKratosIdentityId_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).GetUserByKratosIdentityId(ctx, req.(*GetUserByKratosIdentityIdRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_ResolveOrLinkKratosIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveOrLinkKratosIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).ResolveOrLinkKratosIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_ResolveOrLinkKratosIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).ResolveOrLinkKratosIdentity(ctx, req.(*ResolveOrLinkKratosIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_ResolveOrLinkIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveOrLinkIdentityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).ResolveOrLinkIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_ResolveOrLinkIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).ResolveOrLinkIdentity(ctx, req.(*ResolveOrLinkIdentityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_CreateSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).CreateSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_CreateSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).CreateSession(ctx, req.(*CreateSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_RevokeSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).RevokeSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_RevokeSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).RevokeSession(ctx, req.(*RevokeSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_TouchSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TouchSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).TouchSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_TouchSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).TouchSession(ctx, req.(*TouchSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_GetMfaStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMfaStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).GetMfaStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_GetMfaStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).GetMfaStatus(ctx, req.(*GetMfaStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_CheckMfa_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckMfaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).CheckMfa(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_CheckMfa_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).CheckMfa(ctx, req.(*CheckMfaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_VerifyMfa_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyMfaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).VerifyMfa(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_VerifyMfa_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).VerifyMfa(ctx, req.(*VerifyMfaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_GenerateMfaSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GenerateMfaSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).GenerateMfaSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_GenerateMfaSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).GenerateMfaSecret(ctx, req.(*GenerateMfaSecretRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GatewayService_VerifyMfaEnrollment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyMfaEnrollmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).VerifyMfaEnrollment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_VerifyMfaEnrollment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).VerifyMfaEnrollment(ctx, req.(*VerifyMfaEnrollmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// GatewayService_ServiceDesc is the grpc.ServiceDesc for GatewayService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var GatewayService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "arda.iam.v1.GatewayService",
+	HandlerType: (*GatewayServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Ready",
+			Handler:    _GatewayService_Ready_Handler,
+		},
+		{
+			MethodName: "GetUserBySubject",
+			Handler:    _GatewayService_GetUserBySubject_Handler,
+		},
+		{
+			MethodName: "GetUserById",
+			Handler:    _GatewayService_GetUserById_Handler,
+		},
+		{
+			MethodName: "GetUserByKratosIdentityId",
+			Handler:    _GatewayService_GetUserByKratosIdentityId_Handler,
+		},
+		{
+			MethodName: "ResolveOrLinkKratosIdentity",
+			Handler:    _GatewayService_ResolveOrLinkKratosIdentity_Handler,
+		},
+		{
+			MethodName: "ResolveOrLinkIdentity",
+			Handler:    _GatewayService_ResolveOrLinkIdentity_Handler,
+		},
+		{
+			MethodName: "CreateSession",
+			Handler:    _GatewayService_CreateSession_Handler,
+		},
+		{
+			MethodName: "RevokeSession",
+			Handler:    _GatewayService_RevokeSession_Handler,
+		},
+		{
+			MethodName: "TouchSession",
+			Handler:    _GatewayService_TouchSession_Handler,
+		},
+		{
+			MethodName: "GetMfaStatus",
+			Handler:    _GatewayService_GetMfaStatus_Handler,
+		},
+		{
+			MethodName: "CheckMfa",
+			Handler:    _GatewayService_CheckMfa_Handler,
+		},
+		{
+			MethodName: "VerifyMfa",
+			Handler:    _GatewayService_VerifyMfa_Handler,
+		},
+		{
+			MethodName: "GenerateMfaSecret",
+			Handler:    _GatewayService_GenerateMfaSecret_Handler,
+		},
+		{
+			MethodName: "VerifyMfaEnrollment",
+			Handler:    _GatewayService_VerifyMfaEnrollment_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "arda/iam/v1/iam.proto",
+}

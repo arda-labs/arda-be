@@ -27,6 +27,7 @@ import (
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
 	capitalv1 "github.com/arda-labs/arda/libs/go/arda-proto/capital/v1"
+	commonv1 "github.com/arda-labs/arda/libs/go/arda-proto/common/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -99,6 +100,8 @@ func main() {
 		),
 	)
 	capitalv1.RegisterCapitalCommandServiceServer(grpcSrv, grpcserver.NewCapitalServer(capitalSvc))
+	// Shared maker-checker callback (ADR-011): cfc.* kinds on common-maker-checker.
+	commonv1.RegisterCaseCommandServiceServer(grpcSrv, grpcserver.NewCaseCommandServer(capitalSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
