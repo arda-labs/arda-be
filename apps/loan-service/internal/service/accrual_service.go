@@ -189,12 +189,7 @@ func (s *AccrualService) completeAccrual(ctx context.Context, tenantID string, a
 			currency = "VND"
 		}
 		lines, err := financeclient.BuildPostingLines(ctx, s.finance, "LNM_ACCRUAL",
-			[]financeclient.PostingLeg{
-				{CardLine: 1, Direction: "DEBIT", AmountMinor: pending.interestMinor,
-					Analytics: &financev1.Analytics{DebtGroupCode: agreement.DebtGroupCode, OrgUnitCode: agreement.AccClassification, ContractCode: agreement.ContractCode, Dimensions: map[string]string{"agreement_code": agreement.AgreementCode}}, Description: "Phải thu lãi cho vay"},
-				{CardLine: 2, Direction: "CREDIT", AmountMinor: pending.interestMinor,
-					Analytics: &financev1.Analytics{OrgUnitCode: agreement.AccClassification, ContractCode: agreement.ContractCode, Dimensions: map[string]string{"agreement_code": agreement.AgreementCode}}, Description: "Doanh thu lãi cho vay"},
-			}, currency)
+			accrualLegs(agreement, pending.interestMinor), currency)
 		if err != nil {
 			return "", err
 		}
@@ -235,6 +230,18 @@ func (s *AccrualService) completeAccrual(ctx context.Context, tenantID string, a
 		}
 	}
 	return entryID, nil
+}
+
+// accrualLegs builds the 2-leg LNM_ACCRUAL card legs (DR interest receivable
+// / CR interest income) for one accrual amount. Pure so the golden table can
+// lock amounts and card lines without a finance client.
+func accrualLegs(agreement repository.AccruableAgreement, interestMinor int64) []financeclient.PostingLeg {
+	return []financeclient.PostingLeg{
+		{CardLine: 1, Direction: "DEBIT", AmountMinor: interestMinor,
+			Analytics: &financev1.Analytics{DebtGroupCode: agreement.DebtGroupCode, OrgUnitCode: agreement.AccClassification, ContractCode: agreement.ContractCode, Dimensions: map[string]string{"agreement_code": agreement.AgreementCode}}, Description: "Phải thu lãi cho vay"},
+		{CardLine: 2, Direction: "CREDIT", AmountMinor: interestMinor,
+			Analytics: &financev1.Analytics{OrgUnitCode: agreement.AccClassification, ContractCode: agreement.ContractCode, Dimensions: map[string]string{"agreement_code": agreement.AgreementCode}}, Description: "Doanh thu lãi cho vay"},
+	}
 }
 
 // lastAccrualDate returns the latest accrual to_date for the agreement.
