@@ -4,21 +4,22 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	ardaconfig "github.com/arda-labs/arda/libs/go/arda-config"
 )
 
 // Config holds runtime configuration for iam-service.
 type Config struct {
-	AppName  string `yaml:"app_name"`
-	HTTPAddr string `yaml:"http_addr"`
-	GRPCAddr string `yaml:"grpc_addr"`
-	LogLevel string `yaml:"log_level"`
+	AppName  string `yaml:"app_name" env:"APP_NAME"`
+	HTTPAddr string `yaml:"http_addr" env:"HTTP_ADDR"`
+	// GRPCAddr was never read from the YAML file; keep it env-only.
+	GRPCAddr string `yaml:"-" env:"GRPC_ADDR"`
+	LogLevel string `yaml:"log_level" env:"LOG_LEVEL"`
 
-	DatabaseDSN string `yaml:"database_dsn"`
+	DatabaseDSN string `yaml:"database_dsn" env:"DATABASE_DSN"`
 
-	KratosAdminURL string `yaml:"kratos_admin_url"`
-	TOTPIssuer     string `yaml:"totp_issuer"`
-	HydraAdminURL  string `yaml:"hydra_admin_url"`
+	KratosAdminURL string `yaml:"kratos_admin_url" env:"KRATOS_ADMIN_URL"`
+	TOTPIssuer     string `yaml:"totp_issuer" env:"TOTP_ISSUER"`
+	HydraAdminURL  string `yaml:"hydra_admin_url" env:"HYDRA_ADMIN_URL"`
 }
 
 // Load reads config from YAML file (optional) + env overrides.
@@ -35,61 +36,8 @@ func Load() Config {
 		TOTPIssuer:     "arda.io.vn",
 		HydraAdminURL:  "http://localhost:4445",
 	}
-
-	if path := os.Getenv("CONFIG_FILE"); path != "" {
-		cfg.loadYAML(path)
-	} else {
-		for _, p := range []string{"configs/config.yaml", "../configs/config.yaml", "/etc/arda/iam-service/config.yaml"} {
-			if cfg.loadYAML(p) {
-				break
-			}
-		}
+	if err := ardaconfig.Load(&cfg, ardaconfig.ServiceOptions("iam-service")); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
-
-	envStr("APP_NAME", &cfg.AppName)
-	envStr("HTTP_ADDR", &cfg.HTTPAddr)
-	envStr("GRPC_ADDR", &cfg.GRPCAddr)
-	envStr("LOG_LEVEL", &cfg.LogLevel)
-	envStr("DATABASE_DSN", &cfg.DatabaseDSN)
-	envStr("KRATOS_ADMIN_URL", &cfg.KratosAdminURL)
-	envStr("TOTP_ISSUER", &cfg.TOTPIssuer)
-	envStr("HYDRA_ADMIN_URL", &cfg.HydraAdminURL)
-
 	return cfg
-}
-
-func (c *Config) loadYAML(path string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	m := make(map[string]any)
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		fmt.Fprintf(os.Stderr, "config: parse %s: %v\n", path, err)
-		return false
-	}
-	set := func(key string, target *string) {
-		if v, ok := m[key].(string); ok {
-			*target = v
-		}
-	}
-	set("app_name", &c.AppName)
-	set("http_addr", &c.HTTPAddr)
-	set("log_level", &c.LogLevel)
-	set("database_dsn", &c.DatabaseDSN)
-	set("kratos_admin_url", &c.KratosAdminURL)
-	set("totp_issuer", &c.TOTPIssuer)
-	set("hydra_admin_url", &c.HydraAdminURL)
-	return true
-}
-
-func envStr(key string, target *string) {
-	if v := os.Getenv(key); v != "" {
-		*target = v
-	}
-}
-func envBool(key string, target *bool) {
-	if v := os.Getenv(key); v != "" {
-		*target = v == "true" || v == "1"
-	}
 }
