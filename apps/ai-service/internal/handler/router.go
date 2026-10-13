@@ -47,6 +47,9 @@ type RouterOptions struct {
 	ModelProvider     model.Provider
 	AgentMaxSteps     int
 	ModelSystemPrompt string
+	// ResultReader resolves an execute() result for GET /api/ai/results/{id};
+	// nil means the endpoint answers 404 for every id.
+	ResultReader func(scope tools.Context, resultID string) (json.RawMessage, bool)
 	// AgentRunTimeout bounds a whole agent run (model + tools). Zero disables
 	// the server-side deadline.
 	AgentRunTimeout time.Duration
@@ -312,6 +315,9 @@ func newRouter(store runStore, resolver toolResolver, options RouterOptions) htt
 	})
 	mux.HandleFunc("/api/ai/settings/conversations", func(w http.ResponseWriter, r *http.Request) {
 		handleConversationSettings(w, r, store)
+	})
+	mux.HandleFunc("/api/ai/results/", func(w http.ResponseWriter, r *http.Request) {
+		handleReadResult(w, r, options)
 	})
 	mux.HandleFunc("/api/ai/answers/feedback", func(w http.ResponseWriter, r *http.Request) {
 		handleAnswerFeedback(w, r, store)

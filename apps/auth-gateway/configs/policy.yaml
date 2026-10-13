@@ -16,6 +16,14 @@ routes:
     permissions:
       - ai.assistant.use
 
+  - id: ai-results-read
+    path: /api/ai/results/**
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - ai.assistant.use
+
   - id: ai-conversations-delete
     path: /api/ai/conversations/**
     methods: [DELETE]
