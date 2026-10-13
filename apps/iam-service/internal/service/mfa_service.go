@@ -19,9 +19,23 @@ import (
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 )
 
-// ErrMFALocked is returned while an account is temporarily locked after too
-// many failed verification attempts.
-var ErrMFALocked = errors.New("too many failed MFA attempts; try again later")
+// Sentinel errors let transports map MFA failures to precise status codes;
+// their text is unchanged from the historical fmt.Errorf messages.
+var (
+	// ErrMFALocked is returned while an account is temporarily locked after too
+	// many failed verification attempts.
+	ErrMFALocked = errors.New("too many failed MFA attempts; try again later")
+	// ErrMFANotEnrolled is returned when verification is attempted before enrollment.
+	ErrMFANotEnrolled = errors.New("MFA not enrolled")
+	// ErrMFAInvalidCode is returned for a wrong TOTP code during login or step-up.
+	ErrMFAInvalidCode = errors.New("invalid MFA code")
+	// ErrMFAInvalidEnrollmentCode is returned for a wrong TOTP code during enrollment.
+	ErrMFAInvalidEnrollmentCode = errors.New("invalid TOTP code")
+	// ErrMFANoPendingEnrollment is returned when enrollment is verified before a secret exists.
+	ErrMFANoPendingEnrollment = errors.New("no pending enrollment, generate a secret first")
+	// ErrMFAAlreadyEnrolled is returned when enrollment is verified twice.
+	ErrMFAAlreadyEnrolled = errors.New("already enrolled in MFA")
+)
 
 const (
 	mfaMaxFailedAttempts = 5
@@ -94,10 +108,10 @@ func (s *MFAService) VerifyAndEnroll(ctx context.Context, userID, code string) (
 		return nil, err
 	}
 	if settings == nil {
-		return nil, fmt.Errorf("no pending enrollment, generate a secret first")
+		return nil, ErrMFANoPendingEnrollment
 	}
 	if settings.IsEnrolled {
-		return nil, fmt.Errorf("already enrolled in MFA")
+		return nil, ErrMFAAlreadyEnrolled
 	}
 
 	ok, err := s.totp.Verify(settings.Secret, code)
@@ -105,7 +119,7 @@ func (s *MFAService) VerifyAndEnroll(ctx context.Context, userID, code string) (
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("invalid TOTP code")
+		return nil, ErrMFAInvalidEnrollmentCode
 	}
 
 	settings.IsEnrolled = true
@@ -136,7 +150,7 @@ func (s *MFAService) IssueLoginChallenge(ctx context.Context, userID, loginChall
 		return "", err
 	}
 	if settings == nil || !settings.IsEnrolled {
-		return "", fmt.Errorf("MFA not enrolled")
+		return "", ErrMFANotEnrolled
 	}
 
 	exp := time.Now().UTC().Add(5 * time.Minute).Unix()
@@ -151,7 +165,7 @@ func (s *MFAService) VerifyLoginChallenge(ctx context.Context, userID, loginChal
 		return err
 	}
 	if settings == nil || !settings.IsEnrolled {
-		return fmt.Errorf("MFA not enrolled")
+		return ErrMFANotEnrolled
 	}
 
 	payload, signature, ok := strings.Cut(token, ".")
@@ -181,7 +195,7 @@ func (s *MFAService) VerifyLoginChallenge(ctx context.Context, userID, loginChal
 		return err
 	}
 	if !okCode {
-		return fmt.Errorf("invalid MFA code")
+		return ErrMFAInvalidCode
 	}
 	return nil
 }
@@ -233,7 +247,7 @@ func (s *MFAService) VerifyCode(ctx context.Context, userID, code string) error 
 		return err
 	}
 	if settings == nil || !settings.IsEnrolled {
-		return fmt.Errorf("MFA not enrolled")
+		return ErrMFANotEnrolled
 	}
 	if mfaLocked(settings) {
 		return ErrMFALocked
@@ -245,7 +259,7 @@ func (s *MFAService) VerifyCode(ctx context.Context, userID, code string) error 
 	}
 	if !ok {
 		s.recordFailedAttempt(ctx, userID)
-		return fmt.Errorf("invalid MFA code")
+		return ErrMFAInvalidCode
 	}
 
 	s.clearFailedAttempts(ctx, userID)
@@ -259,7 +273,7 @@ func (s *MFAService) VerifyBackupCode(ctx context.Context, userID, code string) 
 		return err
 	}
 	if settings == nil || !settings.IsEnrolled {
-		return fmt.Errorf("MFA not enrolled")
+		return ErrMFANotEnrolled
 	}
 	if mfaLocked(settings) {
 		return ErrMFALocked

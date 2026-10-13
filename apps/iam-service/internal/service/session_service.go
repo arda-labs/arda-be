@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -9,6 +10,10 @@ import (
 	"github.com/arda-labs/arda/apps/iam-service/internal/domain"
 	"github.com/arda-labs/arda/apps/iam-service/internal/repository"
 )
+
+// ErrSessionLimitReached is returned by CreateSession when the concurrent
+// session limit is reached and the policy rejects new sessions.
+var ErrSessionLimitReached = errors.New("maximum concurrent sessions reached")
 
 const (
 	DefaultMaxConcurrentSessions = 5
@@ -117,7 +122,7 @@ func (s *SessionService) CreateSession(ctx context.Context, userID, deviceID, hy
 					}
 				}
 			case "reject_new":
-				return nil, fmt.Errorf("maximum concurrent sessions reached (%d)", s.cfg.MaxConcurrent)
+				return nil, fmt.Errorf("%w (%d)", ErrSessionLimitReached, s.cfg.MaxConcurrent)
 			}
 		}
 	}
