@@ -132,7 +132,7 @@ jobs:
         run: |
           go test ./libs/go/arda-events/outbox -count=1 -v
           go test ./apps/finance-service/internal/service -run '^TestOutboxRelay' -count=1 -v
-          go test ./apps/workflow-service/internal/service ./apps/loan-service/internal/service ./apps/statistical-service/internal/service -run '^TestOutboxTableMatchesMigratedSchema$' -count=1 -v
+          go test ./apps/workflow-service/internal/service ./apps/loan-service/internal/service ./apps/statistical-service/internal/service ./apps/platform-service/internal/service -run '^TestOutboxTableMatchesMigratedSchema$' -count=1 -v
       - name: Verify shared case commands on disposable PostgreSQL 18
         env:
           ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
