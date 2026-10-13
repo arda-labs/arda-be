@@ -593,7 +593,7 @@ func (s *CapitalService) postMovement(ctx context.Context, contract *repository.
 	if s.finance == nil {
 		return "", ardaerrors.New(ardaerrors.CodeInternal, "finance client is not configured")
 	}
-	docType, debitClass, creditClass := movementCard(movement.MovementType)
+	docType, lines := movementLines(contract, movement)
 	posted, err := s.finance.Post(ctx, &financev1.PostingRequest{
 		IdempotencyKey: movement.IdempotencyKey,
 		AccountingDate: movement.MovementDate,
@@ -605,37 +605,31 @@ func (s *CapitalService) postMovement(ctx context.Context, contract *repository.
 			DocumentId:   movement.ID,
 			DocumentCode: contract.ContractCode,
 		},
-		Lines: []*financev1.PostingLine{
-			{
-				LineNo:       1,
-				Direction:    "DEBIT",
-				AmountMinor:  movement.AmountMinor,
-				CurrencyCode: movement.CurrencyCode,
-				Analytics: &financev1.Analytics{
-					AccClassification: debitClass,
-					OrgUnitCode:       contract.OrgCode,
-					FundSourceCode:    contract.FundTypeCode,
-					Dimensions:        map[string]string{"contract_code": contract.ContractCode},
-				},
-			},
-			{
-				LineNo:       2,
-				Direction:    "CREDIT",
-				AmountMinor:  movement.AmountMinor,
-				CurrencyCode: movement.CurrencyCode,
-				Analytics: &financev1.Analytics{
-					AccClassification: creditClass,
-					OrgUnitCode:       contract.OrgCode,
-					FundSourceCode:    contract.FundTypeCode,
-					Dimensions:        map[string]string{"contract_code": contract.ContractCode},
-				},
-			},
-		},
+		Lines: lines,
 	})
 	if err != nil {
 		return "", ardaerrors.Wrap(ardaerrors.CodeBadGateway, "capital posting failed", err)
 	}
 	return posted.GetJournalEntryId(), nil
+}
+
+// movementLines builds the 2-leg CFC entry (document type + DR/CR lines with
+// the contract's org/fund-source analytics). Pure so the golden table can
+// lock it without a finance client.
+func movementLines(contract *repository.CapitalContract, movement *repository.CapitalMovement) (string, []*financev1.PostingLine) {
+	docType, debitClass, creditClass := movementCard(movement.MovementType)
+	analytics := func(class string) *financev1.Analytics {
+		return &financev1.Analytics{
+			AccClassification: class,
+			OrgUnitCode:       contract.OrgCode,
+			FundSourceCode:    contract.FundTypeCode,
+			Dimensions:        map[string]string{"contract_code": contract.ContractCode},
+		}
+	}
+	return docType, []*financev1.PostingLine{
+		{LineNo: 1, Direction: "DEBIT", AmountMinor: movement.AmountMinor, CurrencyCode: movement.CurrencyCode, Analytics: analytics(debitClass)},
+		{LineNo: 2, Direction: "CREDIT", AmountMinor: movement.AmountMinor, CurrencyCode: movement.CurrencyCode, Analytics: analytics(creditClass)},
+	}
 }
 
 func movementCard(movementType string) (string, string, string) {
