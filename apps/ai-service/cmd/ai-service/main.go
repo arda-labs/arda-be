@@ -237,6 +237,7 @@ func main() {
 		// Evaluated per run: a runtime disable disappears from the model
 		// context without a restart (ADR-003).
 		routerOptions.ModelSDKTypesProvider = suite.TypeDefinitions
+		routerOptions.ResultReader = suite.ReadResult
 
 		if suite.Registry != nil {
 			entries := suite.Registry.AllEntries()
