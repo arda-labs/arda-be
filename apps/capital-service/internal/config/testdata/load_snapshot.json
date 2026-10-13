@@ -1,0 +1,42 @@
+{
+  "defaults": {
+    "AppName": "capital-service",
+    "HTTPAddr": "0.0.0.0:8080",
+    "LogLevel": "info",
+    "DatabaseDSN": "",
+    "FinanceGRPCAddr": "localhost:9090",
+    "WorkflowGRPCAddr": ""
+  },
+  "empty_env_keeps_yaml": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "FinanceGRPCAddr": "yaml-finance_grpc_addr",
+    "WorkflowGRPCAddr": "yaml-workflow_grpc_addr"
+  },
+  "env_only": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "FinanceGRPCAddr": "env-FINANCE_GRPC_ADDR",
+    "WorkflowGRPCAddr": "env-WORKFLOW_GRPC_ADDR"
+  },
+  "env_over_yaml": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "FinanceGRPCAddr": "env-FINANCE_GRPC_ADDR",
+    "WorkflowGRPCAddr": "env-WORKFLOW_GRPC_ADDR"
+  },
+  "yaml_only": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "FinanceGRPCAddr": "yaml-finance_grpc_addr",
+    "WorkflowGRPCAddr": "yaml-workflow_grpc_addr"
+  }
+}

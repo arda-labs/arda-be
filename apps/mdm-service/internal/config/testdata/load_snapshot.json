@@ -1,0 +1,32 @@
+{
+  "defaults": {
+    "AppName": "mdm-service",
+    "HTTPAddr": "0.0.0.0:8096",
+    "LogLevel": "info",
+    "DatabaseDSN": ""
+  },
+  "empty_env_keeps_yaml": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn"
+  },
+  "env_only": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN"
+  },
+  "env_over_yaml": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN"
+  },
+  "yaml_only": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn"
+  }
+}

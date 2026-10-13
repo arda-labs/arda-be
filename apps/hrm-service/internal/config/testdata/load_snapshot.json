@@ -1,0 +1,42 @@
+{
+  "defaults": {
+    "AppName": "hrm-service",
+    "HTTPAddr": "0.0.0.0:8099",
+    "GRPCAddr": "0.0.0.0:9090",
+    "LogLevel": "info",
+    "DatabaseDSN": "",
+    "WorkflowGRPCAddr": "localhost:9090"
+  },
+  "empty_env_keeps_yaml": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "GRPCAddr": "0.0.0.0:9090",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "WorkflowGRPCAddr": "yaml-workflow_grpc_addr"
+  },
+  "env_only": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "GRPCAddr": "env-GRPC_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "WorkflowGRPCAddr": "env-WORKFLOW_GRPC_ADDR"
+  },
+  "env_over_yaml": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "GRPCAddr": "env-GRPC_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "WorkflowGRPCAddr": "env-WORKFLOW_GRPC_ADDR"
+  },
+  "yaml_only": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "GRPCAddr": "0.0.0.0:9090",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "WorkflowGRPCAddr": "yaml-workflow_grpc_addr"
+  }
+}

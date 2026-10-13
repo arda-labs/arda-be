@@ -1,0 +1,58 @@
+{
+  "defaults": {
+    "AppName": "platform-service",
+    "HTTPAddr": "0.0.0.0:8091",
+    "GRPCAddr": "0.0.0.0:9091",
+    "LogLevel": "info",
+    "DatabaseDSN": "",
+    "NATSURL": "",
+    "JobTargetURLs": {},
+    "JobNotifyDefaultTenant": ""
+  },
+  "empty_env_keeps_yaml": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "GRPCAddr": "yaml-grpc_addr",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "NATSURL": "yaml-nats_url",
+    "JobTargetURLs": {},
+    "JobNotifyDefaultTenant": "yaml-job_notify_default_tenant"
+  },
+  "env_only": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "GRPCAddr": "env-GRPC_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "NATSURL": "env-NATS_URL",
+    "JobTargetURLs": {
+      "loan-service": "http://env-loan:1",
+      "x-service": "http://env-x:2"
+    },
+    "JobNotifyDefaultTenant": "env-JOB_NOTIFY_DEFAULT_TENANT"
+  },
+  "env_over_yaml": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "GRPCAddr": "env-GRPC_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "NATSURL": "env-NATS_URL",
+    "JobTargetURLs": {
+      "loan-service": "http://env-loan:1",
+      "x-service": "http://env-x:2"
+    },
+    "JobNotifyDefaultTenant": "env-JOB_NOTIFY_DEFAULT_TENANT"
+  },
+  "yaml_only": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "GRPCAddr": "yaml-grpc_addr",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "NATSURL": "yaml-nats_url",
+    "JobTargetURLs": {},
+    "JobNotifyDefaultTenant": "yaml-job_notify_default_tenant"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "defaults": {
+    "AppName": "iam-service",
+    "HTTPAddr": "0.0.0.0:8080",
+    "GRPCAddr": "0.0.0.0:9090",
+    "LogLevel": "info",
+    "DatabaseDSN": "",
+    "KratosAdminURL": "http://localhost:4434",
+    "TOTPIssuer": "arda.io.vn",
+    "HydraAdminURL": "http://localhost:4445"
+  },
+  "empty_env_keeps_yaml": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "GRPCAddr": "0.0.0.0:9090",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "KratosAdminURL": "yaml-kratos_admin_url",
+    "TOTPIssuer": "yaml-totp_issuer",
+    "HydraAdminURL": "yaml-hydra_admin_url"
+  },
+  "env_only": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "GRPCAddr": "env-GRPC_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "KratosAdminURL": "env-KRATOS_ADMIN_URL",
+    "TOTPIssuer": "env-TOTP_ISSUER",
+    "HydraAdminURL": "env-HYDRA_ADMIN_URL"
+  },
+  "env_over_yaml": {
+    "AppName": "env-APP_NAME",
+    "HTTPAddr": "env-HTTP_ADDR",
+    "GRPCAddr": "env-GRPC_ADDR",
+    "LogLevel": "env-LOG_LEVEL",
+    "DatabaseDSN": "env-DATABASE_DSN",
+    "KratosAdminURL": "env-KRATOS_ADMIN_URL",
+    "TOTPIssuer": "env-TOTP_ISSUER",
+    "HydraAdminURL": "env-HYDRA_ADMIN_URL"
+  },
+  "yaml_only": {
+    "AppName": "yaml-app_name",
+    "HTTPAddr": "yaml-http_addr",
+    "GRPCAddr": "0.0.0.0:9090",
+    "LogLevel": "yaml-log_level",
+    "DatabaseDSN": "yaml-database_dsn",
+    "KratosAdminURL": "yaml-kratos_admin_url",
+    "TOTPIssuer": "yaml-totp_issuer",
+    "HydraAdminURL": "yaml-hydra_admin_url"
+  }
+}
