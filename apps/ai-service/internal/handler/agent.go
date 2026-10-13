@@ -1308,15 +1308,15 @@ func executeModelToolCall(
 		errorCode = toolErrorCode(execErr)
 		content = `{"error":"` + errorCode + `"}`
 	} else {
-		if definition.Name == widgetToolName {
-			content = string(result.Data) // already size-validated by the tool
-		} else {
-			content = boundContent(string(result.Data))
-		}
 		// The Code Mode meta-tool reports sandbox failures as structured
 		// Result data so the model can inspect them. The audit row must still
 		// record the real outcome instead of SUCCEEDED.
 		errorCode = result.ErrorCode
+		if definition.Name == widgetToolName && errorCode == "" {
+			content = string(result.Data) // already size-validated by the tool
+		} else {
+			content = boundContent(string(result.Data))
+		}
 	}
 	status := "SUCCEEDED"
 	if execErr != nil || errorCode != "" {
@@ -1340,7 +1340,7 @@ func executeModelToolCall(
 	// renderWidget: the interface renders from the full payload while the
 	// model only gets a compact acknowledgement.
 	streamContent := feedback
-	if execErr == nil && definition.Name == widgetToolName {
+	if execErr == nil && errorCode == "" && definition.Name == widgetToolName {
 		streamContent = content
 		feedback = mustJSON(map[string]any{"summary": result.Summary, "rendered": true})
 	}

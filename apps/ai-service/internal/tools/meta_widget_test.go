@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -134,5 +135,72 @@ func TestWidgetMetaToolEnforcesSizeLimits(t *testing.T) {
 	_, err = executeWidget(t, `{"title":"t","html":"<p>a</p>","js":"1","data":{"v":"`+bigData+`"},"inputs_summary":"s"}`)
 	if !errors.Is(err, ErrInvalidArgument) || !strings.Contains(err.Error(), "64 KB") {
 		t.Fatalf("data size: err = %v", err)
+	}
+}
+
+// A widget full of "<" is valid, but the default JSON encoder escapes each one
+// to "\u003c" (6 bytes), blowing the payload up before it even reaches SSE.
+func TestWidgetMetaToolDoesNotHTMLEscapePayload(t *testing.T) {
+	html := "<p>" + strings.Repeat("<", 20000)
+	args, err := json.Marshal(map[string]any{
+		"title": "t", "html": html, "js": "1", "data": map[string]any{"a": 1}, "inputs_summary": "s",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := executeWidget(t, string(args))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	t.Logf("Result.Data = %d bytes for a %d-byte html", len(res.Data), len(html))
+	if len(res.Data) >= 25000 {
+		t.Fatalf("Result.Data is %d bytes, want < 25000 (HTML escaping must be off)", len(res.Data))
+	}
+	if bytes.Contains(res.Data, []byte(`\u003c`)) || bytes.HasSuffix(res.Data, []byte("\n")) {
+		t.Fatalf("payload must carry literal < and no trailing newline")
+	}
+	var payload struct {
+		HTML string `json:"html"`
+	}
+	if err := json.Unmarshal(res.Data, &payload); err != nil {
+		t.Fatalf("payload not JSON: %v", err)
+	}
+	if payload.HTML != html {
+		t.Fatalf("html did not round-trip (%d vs %d bytes)", len(payload.HTML), len(html))
+	}
+}
+
+func TestWidgetMetaToolBoundsTitleAndSummary(t *testing.T) {
+	build := func(title, summary string) string {
+		raw, _ := json.Marshal(map[string]any{
+			"title": title, "html": "<p>a</p>", "js": "1", "data": map[string]any{"a": 1}, "inputs_summary": summary,
+		})
+		return string(raw)
+	}
+	vi := func(n int) string { return strings.Repeat("ệ", n) } // 3 bytes per rune
+
+	for _, tc := range []struct {
+		name, title, summary string
+		wantErr              string
+	}{
+		{"title at limit", strings.Repeat("a", widgetMaxTitleRunes), "s", ""},
+		{"title at limit multibyte", vi(widgetMaxTitleRunes), "s", ""},
+		{"title one over", strings.Repeat("a", widgetMaxTitleRunes+1), "s", "title"},
+		{"title one over multibyte", vi(widgetMaxTitleRunes + 1), "s", "title"},
+		{"summary at limit", "t", strings.Repeat("a", widgetMaxSummaryRunes), ""},
+		{"summary at limit multibyte", "t", vi(widgetMaxSummaryRunes), ""},
+		{"summary one over", "t", strings.Repeat("a", widgetMaxSummaryRunes+1), "inputs_summary"},
+		{"summary one over multibyte", "t", vi(widgetMaxSummaryRunes + 1), "inputs_summary"},
+	} {
+		_, err := executeWidget(t, build(tc.title, tc.summary))
+		if tc.wantErr == "" {
+			if err != nil {
+				t.Fatalf("%s: unexpected error %v", tc.name, err)
+			}
+			continue
+		}
+		if !errors.Is(err, ErrInvalidArgument) || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Fatalf("%s: err = %v, want ErrInvalidArgument mentioning %q", tc.name, err, tc.wantErr)
+		}
 	}
 }

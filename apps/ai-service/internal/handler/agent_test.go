@@ -30,8 +30,19 @@ func (s *agentRunStore) SetUsage(_ context.Context, _ repository.RunContext, _ s
 
 func newModelServer(t *testing.T, turns [][]string) *httptest.Server {
 	t.Helper()
+	return serveModelTurns(t, turns, nil)
+}
+
+// serveModelTurns replays one scripted SSE turn per model request. When
+// record is non-nil it receives every request body.
+func serveModelTurns(t *testing.T, turns [][]string, record func(body string)) *httptest.Server {
+	t.Helper()
 	var index int
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if record != nil {
+			raw, _ := io.ReadAll(r.Body)
+			record(string(raw))
+		}
 		if index >= len(turns) {
 			t.Fatalf("unexpected extra model request")
 		}
@@ -496,20 +507,7 @@ func (s *finishCapturingStore) FinishTool(_ context.Context, _, status, content,
 // so tests can inspect exactly what the model was handed back after a tool call.
 func newCapturingModelServer(t *testing.T, turns [][]string, bodies *[]string) *httptest.Server {
 	t.Helper()
-	var index int
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		*bodies = append(*bodies, string(raw))
-		if index >= len(turns) {
-			t.Fatalf("unexpected extra model request")
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		for _, line := range turns[index] {
-			_, _ = w.Write([]byte("data: " + line + "\n\n"))
-		}
-		_, _ = w.Write([]byte("data: [DONE]\n\n"))
-		index++
-	}))
+	return serveModelTurns(t, turns, func(body string) { *bodies = append(*bodies, body) })
 }
 
 // toolCallTurns builds the model stream for a single tool call with the given
@@ -679,7 +677,12 @@ func TestAgentLoopStillBoundsOtherToolResults(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		summary string
-	}{{"without summary", ""}, {"with summary", "Big result."}} {
+	}{
+		{"without summary", ""},
+		// The 24 KB non-widget result with a Summary intentionally locks in
+		// today's {} degradation of compactToolFeedback; do not "fix" it here.
+		{"with summary", "Big result."},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var bodies []string
 			server := newCapturingModelServer(t, toolCallTurns(t, "test.big", map[string]any{}), &bodies)
@@ -812,5 +815,112 @@ func TestAgentLoopWidgetAdversarialEscapingMeasurement(t *testing.T) {
 			resultUnits, argsUnits, persisted := widgetEventSizes(t, htmlPart, cssPart, jsPart, encoded)
 			t.Logf("%s: TOOL_CALL_RESULT = %d, TOOL_CALL_ARGS = %d UTF-16 units (limit %d), persisted = %d bytes", tc.name, resultUnits, argsUnits, browserEventLimit, persisted)
 		})
+	}
+}
+
+// smallResultTool returns a result well under the 8 KB model-content bound.
+type smallResultTool struct{ summary string }
+
+func (smallResultTool) Definition() tools.Definition {
+	return tools.Definition{Name: "test.small", Version: 1, Kind: "read", Timeout: time.Second, Risk: "low"}
+}
+
+func (s smallResultTool) Execute(_ context.Context, _ tools.Context, _ json.RawMessage) (tools.Result, error) {
+	return tools.Result{Data: json.RawMessage(`{"rows":[1,2,3]}`), Summary: s.summary}, nil
+}
+
+// TestAgentLoopSmallResultWithSummaryUsesCompactFeedback: a non-widget result
+// under 8 KB that carries a Summary is streamed and fed back as the
+// {"summary":..,"data":..} compact form, while the stored row keeps the data.
+func TestAgentLoopSmallResultWithSummaryUsesCompactFeedback(t *testing.T) {
+	var bodies []string
+	server := newCapturingModelServer(t, toolCallTurns(t, "test.small", map[string]any{}), &bodies)
+	defer server.Close()
+
+	store := &finishCapturingStore{}
+	body := runAgent(t, store, tools.NewRegistry(smallResultTool{summary: "Three rows."}), server.URL, server.Client())
+
+	want := `{"data":{"rows":[1,2,3]},"summary":"Three rows."}`
+	if streamed := toolResultEventContent(t, body); streamed != want {
+		t.Fatalf("SSE content = %s, want %s", streamed, want)
+	}
+	if feedback := lastToolMessageContent(t, bodies); feedback != want {
+		t.Fatalf("model feedback = %s, want %s", feedback, want)
+	}
+	if store.finishedContent != `{"rows":[1,2,3]}` || store.finishedStatus != "SUCCEEDED" {
+		t.Fatalf("persisted = %q (%s), want the raw data", store.finishedContent, store.finishedStatus)
+	}
+}
+
+// widgetNamedFailingTool is a tool that answers to the widget name but reports
+// failure through Result.ErrorCode (the Code Mode meta-tool does this).
+type widgetNamedFailingTool struct{}
+
+func (widgetNamedFailingTool) Definition() tools.Definition {
+	return tools.Definition{Name: widgetToolName, Version: 1, Kind: "read", Timeout: time.Second, Risk: "low"}
+}
+
+func (widgetNamedFailingTool) Execute(_ context.Context, _ tools.Context, _ json.RawMessage) (tools.Result, error) {
+	return tools.Result{Data: bigResultData(), Summary: "Sandbox failed.", ErrorCode: "ai.sandbox_failed"}, nil
+}
+
+// TestAgentLoopWidgetGuardRequiresNoErrorCode: the widget bypass (full
+// persisted/streamed payload, "rendered" acknowledgement) must not apply to a
+// widget-named result that carries an ErrorCode; it falls back to the normal
+// bounded behaviour and the audit row is FAILED.
+func TestAgentLoopWidgetGuardRequiresNoErrorCode(t *testing.T) {
+	var bodies []string
+	server := newCapturingModelServer(t, toolCallTurns(t, widgetToolName, map[string]any{}), &bodies)
+	defer server.Close()
+
+	store := &finishCapturingStore{}
+	body := runAgent(t, store, tools.NewRegistry(widgetNamedFailingTool{}), server.URL, server.Client())
+
+	feedback := lastToolMessageContent(t, bodies)
+	if strings.Contains(feedback, `"rendered":true`) {
+		t.Fatalf("an errored result must not be acknowledged as rendered: %s", feedback)
+	}
+	if feedback != compactToolFeedback(bigResultData(), "Sandbox failed.") {
+		t.Fatalf("errored result must get the normal compact feedback, got %.200s", feedback)
+	}
+	streamed := toolResultEventContent(t, body)
+	if streamed != feedback || len(streamed) > modelResultContentLimit {
+		t.Fatalf("SSE content must equal the bounded model feedback: %d vs %d bytes", len(streamed), len(feedback))
+	}
+	if store.finishedStatus != "FAILED" || len(store.finishedContent) > modelResultContentLimit {
+		t.Fatalf("persisted row must be FAILED and bounded: status=%q len=%d", store.finishedStatus, len(store.finishedContent))
+	}
+}
+
+// TestAgentLoopWidgetValidationFailureLooksLikeAnyToolFailure: a renderWidget
+// call the tool rejects (js uses fetch) surfaces the same error JSON in the
+// stored row, the SSE event and the model feedback as every other failing tool.
+func TestAgentLoopWidgetValidationFailureLooksLikeAnyToolFailure(t *testing.T) {
+	arguments := map[string]any{
+		"title":          "Mô phỏng",
+		"html":           "<div id=\"app\"></div>",
+		"js":             "fetch('/api/x').then(r => r.json());",
+		"data":           map[string]any{"a": 1},
+		"inputs_summary": "Điều chỉnh lãi suất.",
+	}
+	var bodies []string
+	server := newCapturingModelServer(t, toolCallTurns(t, "renderWidget", arguments), &bodies)
+	defer server.Close()
+
+	store := &finishCapturingStore{}
+	body := runAgent(t, store, tools.NewRegistry(tools.NewWidgetMetaTool()), server.URL, server.Client())
+
+	want := `{"error":"` + toolErrorCode(tools.ErrInvalidArgument) + `"}`
+	if want != `{"error":"ai.tool_invalid_arguments"}` {
+		t.Fatalf("unexpected error JSON %s", want)
+	}
+	if store.finishedContent != want || store.finishedStatus != "FAILED" {
+		t.Fatalf("persisted = %q (%s), want %s (FAILED)", store.finishedContent, store.finishedStatus, want)
+	}
+	if streamed := toolResultEventContent(t, body); streamed != want {
+		t.Fatalf("SSE content = %s, want %s", streamed, want)
+	}
+	if feedback := lastToolMessageContent(t, bodies); feedback != want {
+		t.Fatalf("model feedback = %s, want %s", feedback, want)
 	}
 }
