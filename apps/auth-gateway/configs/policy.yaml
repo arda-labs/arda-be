@@ -365,6 +365,15 @@ routes:
     auth: false
     risk: public
 
+  # Current business date / EOD state, shown to every signed-in user in the
+  # shell context pill. Read-only and not tenant data; more specific than
+  # /api/platform/** (platform.read), which only admins hold.
+  - id: platform-calendar-status
+    path: /api/platform/calendar/status
+    methods: [GET]
+    auth: true
+    risk: low
+
   # Scheduled jobs (platform-service). Longer prefix than /api/platform/**, so
   # these win on specificity; `/**` also matches the bare collection path.
   # POST cron-preview is read-only but only called from the edit dialog, which
