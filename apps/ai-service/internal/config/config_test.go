@@ -88,3 +88,14 @@ func TestDirectToolSystemPromptUnchangedByAnswerFormMatrix(t *testing.T) {
 		t.Fatal("direct-tool prompt must not carry the answer-form matrix")
 	}
 }
+
+func TestLoadSandboxedUIFlagDefaultsOff(t *testing.T) {
+	t.Setenv("AI_ENABLE_SANDBOXED_UI", "")
+	if Load().EnableSandboxedUI {
+		t.Fatal("AI_ENABLE_SANDBOXED_UI must default to false")
+	}
+	t.Setenv("AI_ENABLE_SANDBOXED_UI", "true")
+	if !Load().EnableSandboxedUI {
+		t.Fatal("AI_ENABLE_SANDBOXED_UI=true must enable the flag")
+	}
+}
