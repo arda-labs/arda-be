@@ -34,6 +34,23 @@ type Param struct {
 	Enum []string
 }
 
+// FormField is one part of a multipart/form-data request.
+type FormField struct {
+	Name        string
+	Description string
+	Required    bool
+	// File marks a binary file part; other parts are text.
+	File bool
+}
+
+// RawResponse is a success body that is not the JSON envelope, such as a BPMN
+// XML download or an XLSX export.
+type RawResponse struct {
+	MediaType string
+	// Binary marks an opaque body (format: binary); otherwise it is text.
+	Binary bool
+}
+
 // Operation is one public REST operation.
 type Operation struct {
 	Method  string
@@ -41,18 +58,25 @@ type Operation struct {
 	ID      string
 	Summary string
 	Query   []Param
+	// PathEnums restricts path parameters to fixed values, keyed by name.
+	PathEnums map[string][]string
 	// Request is a value of the JSON body type, or nil when there is no body.
 	Request any
 	// RequestName names an anonymous request struct.
 	RequestName string
+	// Form declares a multipart/form-data body instead of a JSON Request.
+	Form []FormField
 	// Result is a value of the envelope result type. For a list it is the
-	// item type.
+	// item type. It is nil for a 204 response or a Raw response.
 	Result any
 	// ResultName names an anonymous or map result.
 	ResultName string
 	// List marks a result wrapped in {items, page, per_page, total}.
 	List bool
-	// Status is the success status code (200 when zero).
+	// Raw replaces the JSON envelope with a body of another media type.
+	Raw *RawResponse
+	// Status is the success status code (200 when zero). 204 documents a
+	// response without a body.
 	Status int
 	// Problems lists the documented problem status codes. Empty means
 	// 400, 401, 403 and 500, plus 404 when the path has a parameter.
@@ -69,6 +93,9 @@ type Document struct {
 	// derive, such as one with a custom MarshalJSON, keyed by the type's
 	// package path and name (for example "github.com/x/money.Amount").
 	TypeSchemas map[string]map[string]any
+	// Schemas adds hand-written component schemas, typically the targets of
+	// a TypeSchemas $ref so a custom-marshalled type still has a named schema.
+	Schemas map[string]map[string]any
 }
 
 const (
@@ -100,6 +127,16 @@ func Generate(doc Document) ([]byte, error) {
 		return nil, fmt.Errorf("openapi: document title and version are required")
 	}
 	g.addStandardSchemas()
+	for name, schema := range doc.Schemas {
+		if !namePattern.MatchString(name) {
+			return nil, fmt.Errorf("openapi: schema name %q must be PascalCase", name)
+		}
+		if _, taken := g.schemas[name]; taken {
+			return nil, fmt.Errorf("openapi: schema name %s is reserved", name)
+		}
+		g.schemas[name] = schema
+		g.owners[name] = reflect.TypeOf(schema)
+	}
 
 	paths := map[string]map[string]any{}
 	seenIDs := map[string]bool{}
@@ -207,10 +244,28 @@ func (g *generator) operation(op Operation) (map[string]any, error) {
 	}
 	var params []any
 	pathParams := pathParamPattern.FindAllStringSubmatch(op.Path, -1)
+	seenPath := map[string]bool{}
 	for _, m := range pathParams {
+		seenPath[m[1]] = true
+		schema := map[string]any{"type": "string"}
+		if values, ok := op.PathEnums[m[1]]; ok {
+			if len(values) == 0 {
+				return nil, fmt.Errorf("openapi: %s: path enum %s is empty", op.ID, m[1])
+			}
+			enum := make([]any, len(values))
+			for i, v := range values {
+				enum[i] = v
+			}
+			schema["enum"] = enum
+		}
 		params = append(params, map[string]any{
-			"name": m[1], "in": "path", "required": true, "schema": map[string]any{"type": "string"},
+			"name": m[1], "in": "path", "required": true, "schema": schema,
 		})
+	}
+	for name := range op.PathEnums {
+		if !seenPath[name] {
+			return nil, fmt.Errorf("openapi: %s: path enum %s has no {%s} in the path", op.ID, name, name)
+		}
 	}
 	for _, q := range op.Query {
 		schema := map[string]any{"type": "string"}
@@ -238,6 +293,9 @@ func (g *generator) operation(op Operation) (map[string]any, error) {
 		out["parameters"] = params
 	}
 
+	if op.Request != nil && len(op.Form) > 0 {
+		return nil, fmt.Errorf("openapi: %s: declare either Request or Form, not both", op.ID)
+	}
 	if op.Request != nil {
 		schema, err := g.inputSchema(reflect.TypeOf(op.Request), op.RequestName, op.ID+" request")
 		if err != nil {
@@ -248,6 +306,16 @@ func (g *generator) operation(op Operation) (map[string]any, error) {
 			"content":  map[string]any{"application/json": map[string]any{"schema": schema}},
 		}
 	}
+	if len(op.Form) > 0 {
+		schema, err := formSchema(op)
+		if err != nil {
+			return nil, err
+		}
+		out["requestBody"] = map[string]any{
+			"required": true,
+			"content":  map[string]any{"multipart/form-data": map[string]any{"schema": schema}},
+		}
+	}
 
 	status := op.Status
 	if status == 0 {
@@ -256,21 +324,37 @@ func (g *generator) operation(op Operation) (map[string]any, error) {
 	if status < 200 || status > 299 {
 		return nil, fmt.Errorf("openapi: %s: success status %d is not 2xx", op.ID, status)
 	}
-	if op.Result == nil {
-		return nil, fmt.Errorf("openapi: %s: result type is required", op.ID)
+	success := map[string]any{"description": http.StatusText(status)}
+	switch {
+	case op.Raw != nil:
+		if op.Result != nil || op.List {
+			return nil, fmt.Errorf("openapi: %s: a raw response has no envelope result", op.ID)
+		}
+		if strings.TrimSpace(op.Raw.MediaType) == "" {
+			return nil, fmt.Errorf("openapi: %s: raw response media type is required", op.ID)
+		}
+		body := map[string]any{"type": "string"}
+		if op.Raw.Binary {
+			body["format"] = "binary"
+		}
+		success["content"] = map[string]any{op.Raw.MediaType: map[string]any{"schema": body}}
+	case status == http.StatusNoContent:
+		if op.Result != nil || op.List {
+			return nil, fmt.Errorf("openapi: %s: a 204 response has no body", op.ID)
+		}
+	default:
+		if op.Result == nil {
+			return nil, fmt.Errorf("openapi: %s: result type is required", op.ID)
+		}
+		resultSchema, resultName, err := g.resultSchema(op)
+		if err != nil {
+			return nil, err
+		}
+		envelope := resultName + "Success"
+		g.schemas[envelope] = successEnvelope(resultSchema)
+		success["content"] = map[string]any{"application/json": map[string]any{"schema": ref(envelope)}}
 	}
-	resultSchema, resultName, err := g.resultSchema(op)
-	if err != nil {
-		return nil, err
-	}
-	envelope := resultName + "Success"
-	g.schemas[envelope] = successEnvelope(resultSchema)
-	responses := map[string]any{
-		fmt.Sprint(status): map[string]any{
-			"description": http.StatusText(status),
-			"content":     map[string]any{"application/json": map[string]any{"schema": ref(envelope)}},
-		},
-	}
+	responses := map[string]any{fmt.Sprint(status): success}
 	problems := op.Problems
 	if len(problems) == 0 {
 		problems = []int{400, 401, 403, 500}
@@ -283,6 +367,38 @@ func (g *generator) operation(op Operation) (map[string]any, error) {
 	}
 	out["responses"] = responses
 	return out, nil
+}
+
+// formSchema builds the multipart/form-data object schema of an upload
+// operation. Parts are required only when declared so, matching r.FormValue
+// returning "" for a missing text part; a file part is a binary string.
+func formSchema(op Operation) (map[string]any, error) {
+	props := map[string]any{}
+	var required []any
+	for _, field := range op.Form {
+		if strings.TrimSpace(field.Name) == "" {
+			return nil, fmt.Errorf("openapi: %s: form field name is required", op.ID)
+		}
+		if _, dup := props[field.Name]; dup {
+			return nil, fmt.Errorf("openapi: %s: form field %s declared twice", op.ID, field.Name)
+		}
+		part := map[string]any{"type": "string"}
+		if field.File {
+			part["format"] = "binary"
+		}
+		if field.Description != "" {
+			part["description"] = field.Description
+		}
+		props[field.Name] = part
+		if field.Required {
+			required = append(required, field.Name)
+		}
+	}
+	schema := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return schema, nil
 }
 
 func successEnvelope(result map[string]any) map[string]any {

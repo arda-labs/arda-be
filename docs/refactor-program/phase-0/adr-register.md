@@ -74,8 +74,8 @@ Owner: edge/platform + auth-gateway.
 ## ADR-005 — OpenAPI and FE client strategy
 
 Status: accepted (2026-10-12). Follow-up: move the remaining services onto
-generated documents, starting with loan; add a breaking-change comparison
-against `main`.
+generated documents (platform next, after `feat/scheduled-jobs` lands; then
+crm, hrm, finance, iam, notification, media, ai).
 
 Decision: the committed OpenAPI 3.1 documents in `contracts/openapi` are the
 public REST contract the frontend and docs-site consume. The open questions
@@ -103,9 +103,25 @@ are settled as follows.
 - **Schema split.** One document per service (`<service>-v1.json`); the
   existing hand-written pilot documents stay until their service migrates.
 
-First migrated service: deposit (33 operations). Handlers that wrote
-`map[string]any` or decoded anonymous structs now use named types so the
-document carries the exact wire shape.
+- **Breaking changes.** `scripts/check-openapi-breaking.mjs` compares every
+  document with its copy on `origin/main` and fails on a removed path or
+  operation, a response field removed or widened, a request field or
+  parameter made required or narrowed, a narrowed enum, a changed success
+  status or a lost content type. A deliberate break is recorded with a reason
+  and expiry in `scripts/check-openapi-breaking-allowlist.json`.
+- **Gateway policy.** `scripts/check-openapi-policy.mjs` matches
+  `auth-gateway/configs/policy.yaml` against the generated documents with the
+  gateway's own path rules: every policy route under a migrated service's
+  prefix must match an operation and every operation must be covered by a
+  policy route. Real mismatches are authorization decisions and go to
+  `scripts/check-openapi-policy-baseline.json` for review, not into the policy.
+
+Migrated services: deposit (33 operations), loan (70; replaces the
+hand-written `loan-disbursement-v1.json`), workflow (82; BPMN uploads as
+multipart, XML/XLSX downloads as raw bodies, Go mux subtrees read by the route
+gate) and mdm (14; catalogs as `/api/mdm/{catalog}` with an enum). Handlers
+that wrote `map[string]any` or decoded anonymous structs now use named types so
+the document carries the exact wire shape.
 
 Owner: API architecture + FE platform.
 

@@ -461,7 +461,7 @@ func (h *WorkflowHandler) OperatePauseInstance(w http.ResponseWriter, r *http.Re
 		writeCaseScopeError(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]string{"status": "paused"})
+	writeJSON(w, r, http.StatusOK, StatusResult{Status: "paused"})
 }
 
 func (h *WorkflowHandler) OperateResumeInstance(w http.ResponseWriter, r *http.Request) {
@@ -487,7 +487,7 @@ func (h *WorkflowHandler) OperateResumeInstance(w http.ResponseWriter, r *http.R
 		writeCaseScopeError(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]string{"status": "resumed"})
+	writeJSON(w, r, http.StatusOK, StatusResult{Status: "resumed"})
 }
 
 func (h *WorkflowHandler) OperateCancelInstance(w http.ResponseWriter, r *http.Request) {
@@ -516,7 +516,7 @@ func (h *WorkflowHandler) OperateCancelInstance(w http.ResponseWriter, r *http.R
 	if h.zeebeSvc != nil {
 		_ = h.zeebeSvc.CancelWorkflow(r.Context(), key)
 	}
-	writeJSON(w, r, http.StatusOK, map[string]string{"status": "cancelled"})
+	writeJSON(w, r, http.StatusOK, StatusResult{Status: "cancelled"})
 }
 
 func (h *WorkflowHandler) OperateRetryIncident(w http.ResponseWriter, r *http.Request) {
@@ -567,11 +567,7 @@ func (h *WorkflowHandler) OperateRetryIncident(w http.ResponseWriter, r *http.Re
 				return
 			}
 		}
-		writeJSON(w, r, http.StatusOK, map[string]string{
-			"status":      "retried",
-			"incidentKey": strconv.FormatInt(incidentKey, 10),
-			"jobKey":      strconv.FormatInt(incident.JobKey, 10),
-		})
+		writeJSON(w, r, http.StatusOK, IncidentRetryResult{Status: "retried", IncidentKey: strconv.FormatInt(incidentKey, 10), JobKey: strconv.FormatInt(incident.JobKey, 10)})
 		return
 	}
 
@@ -592,7 +588,7 @@ func (h *WorkflowHandler) OperateRetryIncident(w http.ResponseWriter, r *http.Re
 		writeAPIError(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]string{"status": "retried", "jobKey": strconv.FormatInt(incidentKey, 10)})
+	writeJSON(w, r, http.StatusOK, IncidentRetryResult{Status: "retried", JobKey: strconv.FormatInt(incidentKey, 10)})
 }
 
 func (h *WorkflowHandler) OperateResolveIncident(w http.ResponseWriter, r *http.Request) {
@@ -637,10 +633,7 @@ func (h *WorkflowHandler) OperateResolveIncident(w http.ResponseWriter, r *http.
 		writeAPIError(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]string{
-		"status":      "resolved",
-		"incidentKey": strconv.FormatInt(incidentKey, 10),
-	})
+	writeJSON(w, r, http.StatusOK, IncidentResolveResult{Status: "resolved", IncidentKey: strconv.FormatInt(incidentKey, 10)})
 }
 
 // incidentPathKey extracts the incident key from an operate incident action
@@ -676,9 +669,7 @@ func (h *WorkflowHandler) OperateUpdateJobRetries(w http.ResponseWriter, r *http
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid job key")
 		return
 	}
-	var req struct {
-		Retries int32 `json:"retries"`
-	}
+	var req RetryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body")
 		return
@@ -703,11 +694,7 @@ func (h *WorkflowHandler) OperateUpdateJobRetries(w http.ResponseWriter, r *http
 		writeAPIError(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"status":  "updated",
-		"jobKey":  parts[0],
-		"retries": req.Retries,
-	})
+	writeJSON(w, r, http.StatusOK, JobRetryResult{Status: "updated", JobKey: parts[0], Retries: req.Retries})
 }
 
 func (h *WorkflowHandler) OperateSuspendJobDef(w http.ResponseWriter, r *http.Request) {

@@ -58,6 +58,7 @@ require (
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-leakcheck v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-openapi v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-proto v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-time v0.0.0
@@ -75,3 +76,5 @@ replace github.com/arda-labs/arda/libs/go/arda-leakcheck => ../../libs/go/arda-l
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
 
 replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events
+
+replace github.com/arda-labs/arda/libs/go/arda-openapi => ../../libs/go/arda-openapi

@@ -56,8 +56,6 @@ func NewRouter(catalogHandler *handler.CatalogHandler, rateHandler *handler.Inte
 	})
 	mux.HandleFunc("/api/mdm/interest-rates/{id}/tiers/{tierId}", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
-		case http.MethodGet:
-			http.NotFound(w, r)
 		case http.MethodPut:
 			rateHandler.UpdateTier(w, r)
 		case http.MethodDelete:
