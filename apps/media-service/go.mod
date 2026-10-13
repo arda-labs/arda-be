@@ -60,6 +60,7 @@ replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-erro
 replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-doc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
@@ -80,3 +81,5 @@ require (
 replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 
 replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config
