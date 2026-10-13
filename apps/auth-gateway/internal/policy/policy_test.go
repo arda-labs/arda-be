@@ -86,6 +86,28 @@ func TestScheduledJobPoliciesOverrideBroadPlatformRoutes(t *testing.T) {
 	}
 }
 
+func TestCalendarStatusIsReadableByAnySignedInUser(t *testing.T) {
+	pol, err := Load(filepath.Join("..", "..", "configs", "policy.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := pol.Match("/api/platform/calendar/status", "GET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Route.ID != "platform-calendar-status" || !m.RequireAuth || len(m.Route.Permissions) != 0 {
+		t.Errorf("GET calendar/status = %s (auth=%v, perms=%v), want platform-calendar-status, auth, no permissions",
+			m.Route.ID, m.RequireAuth, m.Route.Permissions)
+	}
+	// Running EOD and the rest of the calendar stay on the broad platform routes.
+	if m, err := pol.Match("/api/platform/calendar/eod", "POST"); err != nil || m.Route.ID != "platform-write" {
+		t.Errorf("POST calendar/eod must stay on platform-write, got %+v, %v", m, err)
+	}
+	if m, err := pol.Match("/api/platform/calendar/holidays", "GET"); err != nil || m.Route.ID != "platform-read" {
+		t.Errorf("GET calendar/holidays must stay on platform-read, got %+v, %v", m, err)
+	}
+}
+
 func TestLoadRejectsInvalidRisk(t *testing.T) {
 	path := writePolicy(t, `
 routes:
