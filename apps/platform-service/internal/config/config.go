@@ -16,11 +16,12 @@ type Config struct {
 	DatabaseDSN string `yaml:"database_dsn" env:"DATABASE_DSN"`
 	NATSURL     string `yaml:"nats_url" env:"NATS_URL"`
 
-	// JobTargetURLs maps a job's owner_service to its base URL, from
-	// JOB_TARGET_URLS in the form "svc=url,svc2=url2". It is optional: unset
-	// leaves an empty map so the scheduler starts and reports every target as
-	// unconfigured.
-	JobTargetURLs          map[string]string `yaml:"-" env:"JOB_TARGET_URLS"`
+	// JobTargetURLs maps a job's owner_service to its base URL: the YAML map
+	// job_target_urls, replaced as a whole by JOB_TARGET_URLS in the form
+	// "svc=url,svc2=url2" when set. The scheduled-job executor and the EOD
+	// seed both read it. Optional for the scheduler (unconfigured targets are
+	// reported); the EOD seed fails when a step's owner service is missing.
+	JobTargetURLs          map[string]string `yaml:"job_target_urls" env:"JOB_TARGET_URLS"`
 	JobNotifyDefaultTenant string            `yaml:"job_notify_default_tenant" env:"JOB_NOTIFY_DEFAULT_TENANT"`
 }
 

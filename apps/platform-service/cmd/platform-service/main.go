@@ -86,7 +86,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer iamClient.Close()
-	eodSvc := service.NewEODService(db, logger, calendarSvc, iamClient)
+	eodSvc := service.NewEODService(db, logger, calendarSvc, iamClient, cfg.JobTargetURLs)
 	calendarHandler := handler.NewCalendarHandler(calendarSvc, eodSvc)
 	eodHandler := handler.NewEODHandler(eodSvc)
 

@@ -23,6 +23,7 @@ log_level: "yaml-log_level"
 database_dsn: "yaml-database_dsn"
 nats_url: "yaml-nats_url"
 job_notify_default_tenant: "yaml-job_notify_default_tenant"
+job_target_urls: {loan-service: "http://yaml-loan:1", finance-service: "http://yaml-finance:1"}
 `
 
 // loadSnapshotEnv lists every environment variable Load() reads, with a value

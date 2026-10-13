@@ -14,7 +14,7 @@ func TestSeedJobsRegistersLoanAgreementDailySnapshot(t *testing.T) {
 	defer db.Close()
 
 	const tenantID = "00000000-0000-0000-0000-000000000044"
-	svc := NewEODService(db, slog.Default(), nil, nil)
+	svc := NewEODService(db, slog.Default(), nil, nil, eodTestJobTargets())
 	if err := svc.SeedJobs(t.Context(), tenantID); err != nil {
 		t.Fatal(err)
 	}

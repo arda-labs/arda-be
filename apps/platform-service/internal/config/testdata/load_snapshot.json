@@ -16,7 +16,10 @@
     "LogLevel": "yaml-log_level",
     "DatabaseDSN": "yaml-database_dsn",
     "NATSURL": "yaml-nats_url",
-    "JobTargetURLs": {},
+    "JobTargetURLs": {
+      "finance-service": "http://yaml-finance:1",
+      "loan-service": "http://yaml-loan:1"
+    },
     "JobNotifyDefaultTenant": "yaml-job_notify_default_tenant"
   },
   "env_only": {
@@ -52,7 +55,10 @@
     "LogLevel": "yaml-log_level",
     "DatabaseDSN": "yaml-database_dsn",
     "NATSURL": "yaml-nats_url",
-    "JobTargetURLs": {},
+    "JobTargetURLs": {
+      "finance-service": "http://yaml-finance:1",
+      "loan-service": "http://yaml-loan:1"
+    },
     "JobNotifyDefaultTenant": "yaml-job_notify_default_tenant"
   }
 }

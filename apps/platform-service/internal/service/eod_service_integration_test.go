@@ -51,7 +51,7 @@ func newEODIntegrationFixture(t *testing.T, handler http.Handler) (*sql.DB, *EOD
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := NewEODService(db, slog.New(slog.NewTextHandler(io.Discard, nil)), calendar, eodTestTenantDirectory{ids: []string{eodTestTenant}})
+	svc := NewEODService(db, slog.New(slog.NewTextHandler(io.Discard, nil)), calendar, eodTestTenantDirectory{ids: []string{eodTestTenant}}, eodTestJobTargets())
 	svc.client = &http.Client{Timeout: 5 * time.Second, Transport: eodTestTransport{target: target}}
 	return db, svc, state.CurrentBusinessDate
 }

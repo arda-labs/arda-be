@@ -32,6 +32,8 @@ type EODService struct {
 	calendar ardaBusinessDate.Calendar
 	tenants  EODTenantDirectory
 	eodDate  EODDateController
+	// jobTargets maps owner service -> base URL (JOB_TARGET_URLS).
+	jobTargets map[string]string
 }
 
 type EODTenantDirectory interface {
@@ -45,8 +47,10 @@ type EODDateController interface {
 	GetSystemDate(context.Context, string) (*domain.SystemDate, error)
 }
 
-func NewEODService(db *sql.DB, logger *slog.Logger, calendar ardaBusinessDate.Calendar, tenants EODTenantDirectory) *EODService {
-	service := &EODService{db: db, client: &http.Client{Timeout: 5 * time.Minute}, logger: logger}
+// NewEODService wires the COB runner. jobTargets is the JOB_TARGET_URLS map
+// (owner service -> base URL); SeedJobs reads it at seed time.
+func NewEODService(db *sql.DB, logger *slog.Logger, calendar ardaBusinessDate.Calendar, tenants EODTenantDirectory, jobTargets map[string]string) *EODService {
+	service := &EODService{db: db, client: &http.Client{Timeout: 5 * time.Minute}, logger: logger, jobTargets: jobTargets}
 	service.calendar = calendar
 	service.tenants = tenants
 	if lifecycle, ok := calendar.(EODDateController); ok {
@@ -182,27 +186,94 @@ type StepResult struct {
 	Error    string `json:"error,omitempty"`
 }
 
-// SeedJobs upserts the default COB sequence (loan accrual -> provision).
+// eodStepTemplate is one COB step of the fixed catalog. The owner service
+// base URL is not part of the template: it comes from JOB_TARGET_URLS at seed
+// time (see EODModuleServices), and Path is appended to it.
+type eodStepTemplate struct {
+	Code       string
+	Name       string
+	Module     string
+	Order      int
+	DependsOn  []string
+	Path       string
+	Mandatory  bool
+	StopOnFail bool
+	Retryable  bool
+}
+
+// eodStepCatalog is the default COB sequence (loan accrual -> provision ->
+// snapshot -> trial balance -> reporting).
+var eodStepCatalog = []eodStepTemplate{
+	{Code: "LNM_ACCRUAL_DAILY", Name: "Tính lãi cho vay (EOD)", Module: "loan", Order: 10, DependsOn: []string{}, Path: "/internal/jobs/accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+	{Code: "DPM_ACCRUAL_DAILY", Name: "Dự chi lãi tiền gửi (EOD)", Module: "deposit", Order: 15, DependsOn: []string{}, Path: "/internal/jobs/deposit-accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+	{Code: "LNM_PROVISION_DAILY", Name: "Trích lập dự phòng (EOD)", Module: "loan", Order: 20, DependsOn: []string{"LNM_ACCRUAL_DAILY"}, Path: "/internal/jobs/provision-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+	{Code: "LNM_AGREEMENT_DAILY_SNAPSHOT", Name: "Chụp số dư khế ước (EOD)", Module: "loan", Order: 25, DependsOn: []string{"LNM_PROVISION_DAILY"}, Path: "/internal/jobs/agreement-daily-snapshot", Mandatory: true, StopOnFail: true, Retryable: true},
+	// P3a reporting foundation: rebuild fin_trial_balance_daily after
+	// the loan steps so statements see the day's accrual/provision posts.
+	{Code: "FIN_TRIAL_BALANCE_DAILY", Name: "Tổng hợp số dư hằng ngày (EOD)", Module: "finance", Order: 30, DependsOn: []string{"LNM_ACCRUAL_DAILY", "DPM_ACCRUAL_DAILY", "LNM_PROVISION_DAILY", "LNM_AGREEMENT_DAILY_SNAPSHOT"}, Path: "/internal/jobs/trial-balance-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+	// Reporting data layer: materialise the fact read model from the
+	// domain services after the day's posts so period reports see the
+	// as-of snapshot (arda-be/docs/reporting-data-layer.md).
+	{Code: "RPT_EXTRACT_DAILY", Name: "Trích xuất dữ liệu báo cáo (EOD)", Module: "statistical", Order: 35, DependsOn: []string{"FIN_TRIAL_BALANCE_DAILY"}, Path: "/internal/jobs/report-extract-daily", Mandatory: true, StopOnFail: true, Retryable: true},
+	// Verify the accounting indicators against the trial balance the ETL
+	// just materialised: a wrong account mapping surfaces at COB rather
+	// than on a published balance sheet.
+	{Code: "RPT_RECONCILE_ACCOUNTING", Name: "Đối soát chỉ tiêu tài chính kế toán (EOD)", Module: "statistical", Order: 38, DependsOn: []string{"RPT_EXTRACT_DAILY"}, Path: "/internal/jobs/reconcile-accounting", Mandatory: true, StopOnFail: true, Retryable: true},
+	// Proactive reporting: judge the period's computed results against the
+	// threshold rules and raise alerts. Last, so the numbers are final.
+	{Code: "RPT_EVALUATE_RULES", Name: "Đánh giá ngưỡng cảnh báo chỉ tiêu (EOD)", Module: "statistical", Order: 40, DependsOn: []string{"RPT_RECONCILE_ACCOUNTING"}, Path: "/internal/jobs/evaluate-rules", Mandatory: true, StopOnFail: true, Retryable: true},
+}
+
+// EODModuleServices maps an EOD step module to the owner service whose base
+// URL must be present in JOB_TARGET_URLS (the same map the scheduled-job
+// executor uses, keyed by owner_service).
+var EODModuleServices = map[string]string{
+	"loan":        "loan-service",
+	"deposit":     "deposit-service",
+	"finance":     "finance-service",
+	"statistical": "statistical-service",
+}
+
+// ErrEODJobTargetMissing is returned by SeedJobs when JOB_TARGET_URLS lacks
+// the owner service of a catalog step. Seeding fails closed: no step is
+// written with an empty or guessed endpoint.
+var ErrEODJobTargetMissing = errors.New("EOD job target is not configured")
+
+// resolveEODSteps turns the catalog into definitions whose Endpoint is the
+// configured owner-service base URL plus the step path. Every missing target
+// is reported in one error.
+func (s *EODService) resolveEODSteps() ([]EODStepDefinition, error) {
+	var missing []string
+	steps := make([]EODStepDefinition, 0, len(eodStepCatalog))
+	for _, step := range eodStepCatalog {
+		owner, ok := EODModuleServices[step.Module]
+		if !ok {
+			return nil, fmt.Errorf("EOD step %s: module %q has no owner service", step.Code, step.Module)
+		}
+		base := strings.TrimSpace(s.jobTargets[owner])
+		if base == "" {
+			missing = append(missing, step.Code+" ("+owner+")")
+			continue
+		}
+		steps = append(steps, EODStepDefinition{
+			Code: step.Code, Name: step.Name, Module: step.Module, Order: step.Order, DependsOn: step.DependsOn,
+			Mandatory: step.Mandatory, StopOnFail: step.StopOnFail, Retryable: step.Retryable,
+			Endpoint: strings.TrimRight(base, "/") + step.Path,
+		})
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("%w: set JOB_TARGET_URLS for %s", ErrEODJobTargetMissing, strings.Join(missing, ", "))
+	}
+	return steps, nil
+}
+
+// SeedJobs upserts the default COB sequence for a tenant, with endpoints
+// resolved from JOB_TARGET_URLS at call time. It fails before writing
+// anything when a target is missing.
 func (s *EODService) SeedJobs(ctx context.Context, tenantID string) error {
-	jobs := []EODStepDefinition{
-		{Code: "LNM_ACCRUAL_DAILY", Name: "Tính lãi cho vay (EOD)", Module: "loan", Order: 10, DependsOn: []string{}, Endpoint: "http://loan-service:8080/internal/jobs/accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
-		{Code: "DPM_ACCRUAL_DAILY", Name: "Dự chi lãi tiền gửi (EOD)", Module: "deposit", Order: 15, DependsOn: []string{}, Endpoint: "http://deposit-service:8080/internal/jobs/deposit-accrual-daily", Mandatory: true, StopOnFail: true, Retryable: true},
-		{Code: "LNM_PROVISION_DAILY", Name: "Trích lập dự phòng (EOD)", Module: "loan", Order: 20, DependsOn: []string{"LNM_ACCRUAL_DAILY"}, Endpoint: "http://loan-service:8080/internal/jobs/provision-daily", Mandatory: true, StopOnFail: true, Retryable: true},
-		{Code: "LNM_AGREEMENT_DAILY_SNAPSHOT", Name: "Chụp số dư khế ước (EOD)", Module: "loan", Order: 25, DependsOn: []string{"LNM_PROVISION_DAILY"}, Endpoint: "http://loan-service:8080/internal/jobs/agreement-daily-snapshot", Mandatory: true, StopOnFail: true, Retryable: true},
-		// P3a reporting foundation: rebuild fin_trial_balance_daily after
-		// the loan steps so statements see the day's accrual/provision posts.
-		{Code: "FIN_TRIAL_BALANCE_DAILY", Name: "Tổng hợp số dư hằng ngày (EOD)", Module: "finance", Order: 30, DependsOn: []string{"LNM_ACCRUAL_DAILY", "DPM_ACCRUAL_DAILY", "LNM_PROVISION_DAILY", "LNM_AGREEMENT_DAILY_SNAPSHOT"}, Endpoint: "http://finance-service:8080/internal/jobs/trial-balance-daily", Mandatory: true, StopOnFail: true, Retryable: true},
-		// Reporting data layer: materialise the fact read model from the
-		// domain services after the day's posts so period reports see the
-		// as-of snapshot (arda-be/docs/reporting-data-layer.md).
-		{Code: "RPT_EXTRACT_DAILY", Name: "Trích xuất dữ liệu báo cáo (EOD)", Module: "statistical", Order: 35, DependsOn: []string{"FIN_TRIAL_BALANCE_DAILY"}, Endpoint: "http://statistical-service:8080/internal/jobs/report-extract-daily", Mandatory: true, StopOnFail: true, Retryable: true},
-		// Verify the accounting indicators against the trial balance the ETL
-		// just materialised: a wrong account mapping surfaces at COB rather
-		// than on a published balance sheet.
-		{Code: "RPT_RECONCILE_ACCOUNTING", Name: "Đối soát chỉ tiêu tài chính kế toán (EOD)", Module: "statistical", Order: 38, DependsOn: []string{"RPT_EXTRACT_DAILY"}, Endpoint: "http://statistical-service:8080/internal/jobs/reconcile-accounting", Mandatory: true, StopOnFail: true, Retryable: true},
-		// Proactive reporting: judge the period's computed results against the
-		// threshold rules and raise alerts. Last, so the numbers are final.
-		{Code: "RPT_EVALUATE_RULES", Name: "Đánh giá ngưỡng cảnh báo chỉ tiêu (EOD)", Module: "statistical", Order: 40, DependsOn: []string{"RPT_RECONCILE_ACCOUNTING"}, Endpoint: "http://statistical-service:8080/internal/jobs/evaluate-rules", Mandatory: true, StopOnFail: true, Retryable: true},
+	jobs, err := s.resolveEODSteps()
+	if err != nil {
+		return err
 	}
 	for _, j := range jobs {
 		dependsOn := j.DependsOn
