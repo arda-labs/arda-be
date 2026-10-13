@@ -129,3 +129,102 @@ func TestCFCMovementCanaryAppliesAndRollsBack(t *testing.T) {
 		kind:      "cfc.movement",
 	})
 }
+
+func TestDPMSettleCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013090600_workflow_dpm_settle_common_maker_checker_canary.sql",
+		caseTypes: []string{"DPM_SETTLE_V2"},
+		legacy:    "dpm-settle-v2",
+		kind:      "dpm.settle",
+	})
+}
+
+func TestDPMProductRequestCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013090700_workflow_dpm_product_request_common_maker_checker_canary.sql",
+		caseTypes: []string{"DPM_PRODUCT_REGISTER_V1"},
+		legacy:    "dpm-product-register-v1",
+		kind:      "dpm.product-request",
+	})
+}
+
+func TestDPMRateRequestCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013090800_workflow_dpm_rate_request_common_maker_checker_canary.sql",
+		caseTypes: []string{"DPM_RATE_REGISTER_V1", "DPM_RATE_EDIT_V1"},
+		legacy:    "dpm-rate-v1",
+		kind:      "dpm.rate-request",
+	})
+}
+
+func TestDPMInterestOpCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013090900_workflow_dpm_interest_op_common_maker_checker_canary.sql",
+		caseTypes: []string{"DPM_PAY_INTEREST_V1", "DPM_CAPITALIZE_V1"},
+		legacy:    "dpm-interest-v1",
+		kind:      "dpm.interest-op",
+	})
+}
+
+func TestDPMInterestBatchCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013091000_workflow_dpm_interest_batch_common_maker_checker_canary.sql",
+		caseTypes: []string{"DPM_BATCH_INTEREST_V1"},
+		legacy:    "dpm-interest-v1",
+		kind:      "dpm.interest-batch",
+	})
+}
+
+func TestIBMPlaceCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013091100_workflow_ibm_place_common_maker_checker_canary.sql",
+		caseTypes: []string{"IBM_PLACE_V1"},
+		legacy:    "ibm-place-v1",
+		kind:      "ibm.place",
+	})
+}
+
+func TestIBMBorrowCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013091200_workflow_ibm_borrow_common_maker_checker_canary.sql",
+		caseTypes: []string{"IBM_BORROW_V1"},
+		legacy:    "ibm-place-v1",
+		kind:      "ibm.borrow",
+	})
+}
+
+func TestIBMTopUpCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013091300_workflow_ibm_top_up_common_maker_checker_canary.sql",
+		caseTypes: []string{"IBM_TOP_UP_V1"},
+		legacy:    "ibm-movement-v1",
+		kind:      "ibm.top-up",
+	})
+}
+
+func TestIBMInterestCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013091400_workflow_ibm_interest_common_maker_checker_canary.sql",
+		caseTypes: []string{"IBM_INTEREST_V1"},
+		legacy:    "ibm-movement-v1",
+		kind:      "ibm.interest",
+	})
+}
+
+func TestIBMExpectedCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013091500_workflow_ibm_expected_common_maker_checker_canary.sql",
+		caseTypes: []string{"IBM_EXPECTED_V1"},
+		legacy:    "ibm-movement-v1",
+		kind:      "ibm.expected",
+	})
+}
+
+func TestIBMWithdrawCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013091600_workflow_ibm_withdraw_common_maker_checker_canary.sql",
+		caseTypes: []string{"IBM_WITHDRAW_V1"},
+		legacy:    "ibm-movement-v1",
+		kind:      "ibm.withdraw",
+	})
+}
