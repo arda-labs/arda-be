@@ -53,6 +53,7 @@ exclude google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
 exclude google.golang.org/genproto v0.0.0-20200513103714-09dca8ec2884
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-export v0.0.0-20260924093952-c3c96299f064
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
@@ -75,3 +76,5 @@ replace github.com/arda-labs/arda/libs/go/arda-leakcheck => ../../libs/go/arda-l
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
 
 replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config
