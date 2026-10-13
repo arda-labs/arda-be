@@ -334,18 +334,20 @@ func (s *IBMService) resolveBorrow(ctx context.Context, tenantID, id, decision, 
 	if borrow == nil {
 		return ardaerrors.New(ardaerrors.CodeNotFound, "interbank borrow not found")
 	}
-	if decision == "APPROVE" && dataVersion != "" &&
-		strconv.FormatInt(borrow.DataVersion, 10) != dataVersion {
-		return ardaerrors.New(ardaerrors.CodeConflict,
-			fmt.Sprintf("dossier changed: interbank borrow %s is at version %d", borrow.BorrowCode, borrow.DataVersion))
-	}
 	switch decision {
 	case "APPROVE":
+		// An already ACTIVE borrow is the retried approval; its version moved
+		// on when it was activated, so the idempotent return comes before the
+		// stale-token guard.
 		if borrow.Status == "ACTIVE" {
 			return nil
 		}
 		if borrow.Status != "PENDING_APPROVAL" {
 			return ardaerrors.New(ardaerrors.CodeInvalidInput, "borrow is not PENDING_APPROVAL")
+		}
+		if dataVersion != "" && strconv.FormatInt(borrow.DataVersion, 10) != dataVersion {
+			return ardaerrors.New(ardaerrors.CodeConflict,
+				fmt.Sprintf("dossier changed: interbank borrow %s is at version %d", borrow.BorrowCode, borrow.DataVersion))
 		}
 		if err := s.repo.UpdateIBMBorrowStatus(ctx, tenantID, id, "ACTIVE", actor, dataVersion); err != nil {
 			return ardaerrors.New(ardaerrors.CodeConflict, err.Error())
@@ -372,18 +374,19 @@ func (s *IBMService) resolvePlace(ctx context.Context, tenantID, id, decision, a
 	if deposit == nil {
 		return ardaerrors.New(ardaerrors.CodeNotFound, "interbank deposit not found")
 	}
-	if decision == "APPROVE" && dataVersion != "" &&
-		strconv.FormatInt(deposit.DataVersion, 10) != dataVersion {
-		return ardaerrors.New(ardaerrors.CodeConflict,
-			fmt.Sprintf("dossier changed: interbank deposit %s is at version %d", deposit.DepositCode, deposit.DataVersion))
-	}
 	switch decision {
 	case "APPROVE":
+		// An already ACTIVE contract is the retried approval; the stale-token
+		// guard only applies to a placement still awaiting activation.
 		if deposit.Status == "ACTIVE" {
 			return nil
 		}
 		if deposit.Status != "PENDING_APPROVAL" {
 			return ardaerrors.New(ardaerrors.CodeInvalidInput, "contract is not PENDING_APPROVAL")
+		}
+		if dataVersion != "" && strconv.FormatInt(deposit.DataVersion, 10) != dataVersion {
+			return ardaerrors.New(ardaerrors.CodeConflict,
+				fmt.Sprintf("dossier changed: interbank deposit %s is at version %d", deposit.DepositCode, deposit.DataVersion))
 		}
 		if err := s.postIBM(ctx, deposit, nil, "IBM_PLACE"); err != nil {
 			return err
