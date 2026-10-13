@@ -51,5 +51,5 @@ func handleReadResult(w http.ResponseWriter, r *http.Request, options RouterOpti
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]json.RawMessage{"output": output})
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "errors": []any{}, "messages": []string{}, "result": map[string]json.RawMessage{"output": output}})
 }
