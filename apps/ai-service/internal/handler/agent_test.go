@@ -764,6 +764,10 @@ func widgetEventSizes(t *testing.T, htmlPart, cssPart, jsPart string, data []byt
 
 const browserEventLimit = 256 * 1024 // FE transport maxEventBytes (packages/api/src/ai-agent.ts)
 
+// browserHardEventCeiling is the budget (UTF-16 units) adversarial-but-valid
+// widgets must stay under; the realistic case is held to browserEventLimit.
+const browserHardEventCeiling = 1024 * 1024
+
 // TestAgentLoopWidgetAtLimitsFitsBrowserEventLimit: a widget at both size
 // limits with realistic content (typical markup/JS with ordinary quote and
 // newline density, tabular JSON data) must stream as one event the browser
@@ -788,17 +792,21 @@ func TestAgentLoopWidgetAtLimitsFitsBrowserEventLimit(t *testing.T) {
 	}
 }
 
-// TestAgentLoopWidgetAdversarialEscapingMeasurement records how far a
-// maliciously escape-heavy (but still valid) widget overshoots the browser
-// event limit. It does not fail on the overshoot: the numbers are reported as
-// a known concern (see the Task 7 report), not asserted away.
-func TestAgentLoopWidgetAdversarialEscapingMeasurement(t *testing.T) {
+// TestAgentLoopWidgetAdversarialEscapingStaysUnderHardEventCeiling is the
+// asserting contract for worst-case widgets: even with maximum-size inputs
+// (html+css+js = 48 KiB, data = 64 KiB) filled with the most escape-hungry
+// characters, the TOOL_CALL_RESULT event stays under the 1 MiB (UTF-16 units)
+// budget the browser side is planned around. The control-character fill is the
+// true worst case: the tool encodes U+0001 as `\u0001` (6 bytes) and the SSE
+// writer re-escapes the backslash (7 bytes per character).
+func TestAgentLoopWidgetAdversarialEscapingStaysUnderHardEventCeiling(t *testing.T) {
 	const codeLimit, dataLimit = 48 * 1024, 64 * 1024
 	for _, tc := range []struct{ name, fill string }{
 		{"quotes and newlines", "\"\n"},
 		{"html angle brackets", "<"},
 		{"non-ASCII", "ệ"},
 		{"backslashes", "\\"},
+		{"control characters", "\x01"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			code := strings.Repeat(tc.fill, codeLimit/len(tc.fill))
@@ -813,7 +821,10 @@ func TestAgentLoopWidgetAdversarialEscapingMeasurement(t *testing.T) {
 			encoded, _ := marshalNoHTMLEscape(strings.Repeat(tc.fill, (dataLimit-2)/(len(unit)-2)))
 
 			resultUnits, argsUnits, persisted := widgetEventSizes(t, htmlPart, cssPart, jsPart, encoded)
-			t.Logf("%s: TOOL_CALL_RESULT = %d, TOOL_CALL_ARGS = %d UTF-16 units (limit %d), persisted = %d bytes", tc.name, resultUnits, argsUnits, browserEventLimit, persisted)
+			t.Logf("%s: TOOL_CALL_RESULT = %d, TOOL_CALL_ARGS = %d UTF-16 units (ceiling %d), persisted = %d bytes", tc.name, resultUnits, argsUnits, browserHardEventCeiling, persisted)
+			if resultUnits >= browserHardEventCeiling {
+				t.Fatalf("TOOL_CALL_RESULT event is %d UTF-16 units, at or over the 1 MiB ceiling %d", resultUnits, browserHardEventCeiling)
+			}
 		})
 	}
 }
