@@ -146,7 +146,11 @@ jobs:
           ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable
         run: |
           go test ./apps/hrm-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
-          go test ./apps/workflow-service/internal/migration -run '^TestHRMEmployeeRegisterCanaryAppliesAndRollsBack$' -count=1 -v
+          go test ./apps/crm-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
+          go test ./apps/deposit-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
+          go test ./apps/capital-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
+          go test ./apps/statistical-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
+          go test ./apps/workflow-service/internal/migration -run 'CanaryAppliesAndRollsBack$' -count=1 -v
       - name: Verify business-date migration on disposable PostgreSQL 18
         env:
           ARDA_TEST_DSN: postgres://postgres@localhost:5432/postgres?sslmode=disable

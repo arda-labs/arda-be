@@ -113,8 +113,9 @@ func (c *Client) CheckCase(ctx context.Context, kind, objectID, caseID string) (
 }
 
 // ResolveCase applies decision and returns the variables to store on the
-// process instance.
-func (c *Client) ResolveCase(ctx context.Context, kind, objectID, caseID string, decision Decision, decidedBy, note string) (map[string]string, error) {
+// process instance. dataVersion is the row version the checker saw (the task
+// form's "dataVersion" variable); empty when the decision carries none.
+func (c *Client) ResolveCase(ctx context.Context, kind, objectID, caseID string, decision Decision, decidedBy, note, dataVersion string) (map[string]string, error) {
 	if c == nil {
 		return nil, errors.New("case command client is nil")
 	}
@@ -129,6 +130,7 @@ func (c *Client) ResolveCase(ctx context.Context, kind, objectID, caseID string,
 	defer cancel()
 	resp, err := c.api.ResolveCase(callCtx, &commonv1.ResolveCaseRequest{
 		Kind: kind, ObjectId: objectID, CaseId: caseID, Decision: value, DecidedBy: decidedBy, Note: note,
+		DataVersion: strings.TrimSpace(dataVersion),
 	})
 	if err != nil {
 		return nil, err

@@ -55,6 +55,11 @@ message ResolveCaseRequest {
   CaseDecision decision = 4;
   string decided_by = 5;
   string note = 6;
+  // data_version is the row version the checker saw when deciding (the
+  // "dataVersion" variable the task form submits). Empty means the decision
+  // carries no optimistic-lock token; an owner that guards its rows must then
+  // apply the decision unguarded, as it did for legacy workers.
+  string data_version = 7;
 }
 
 message ResolveCaseResponse {

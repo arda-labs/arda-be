@@ -25,6 +25,7 @@ import (
 	"github.com/arda-labs/arda/libs/go/arda-grpc/interceptors"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 	ardapostgres "github.com/arda-labs/arda/libs/go/arda-postgres"
+	commonv1 "github.com/arda-labs/arda/libs/go/arda-proto/common/v1"
 	crmv1 "github.com/arda-labs/arda/libs/go/arda-proto/crm/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -92,11 +93,15 @@ func main() {
 			interceptors.UnaryServerLogging(logger),
 		),
 	)
-	crmv1.RegisterCustomerCommandServiceServer(grpcSrv, grpcserver.NewCustomerCommandServer(customerRepo, amendmentRepo))
+	customerCommandServer := grpcserver.NewCustomerCommandServer(customerRepo, amendmentRepo)
+	crmv1.RegisterCustomerCommandServiceServer(grpcSrv, customerCommandServer)
 	// Member callback must be registered before Serve(): a gRPC server rejects
 	// RegisterService once it is serving.
 	memberSvc := service.NewMemberService(memberRepo, workflowClient)
 	crmv1.RegisterMemberCommandServiceServer(grpcSrv, grpcserver.NewMemberCommandServer(memberSvc))
+	// Shared maker-checker callback (ADR-011): customer registration and
+	// member capital requests on common-maker-checker.
+	commonv1.RegisterCaseCommandServiceServer(grpcSrv, grpcserver.NewCaseCommandServer(customerCommandServer, memberSvc))
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(grpcSrv, healthSrv)
