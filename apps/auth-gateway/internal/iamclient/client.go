@@ -114,21 +114,44 @@ type canonicalResponse[T any] struct {
 	Result T `json:"result"`
 }
 
-// Client calls the IAM service internal APIs.
-type Client struct {
+// Client is what the gateway needs from IAM. HTTPClient (legacy /internal
+// routes) and GRPCClient (GatewayService) both implement it; the transport is
+// chosen at startup by IAM_TRANSPORT.
+type Client interface {
+	// ValidateServiceIdentity fails startup when the workload identity used to
+	// call IAM is missing or invalid.
+	ValidateServiceIdentity() error
+	Ready(ctx context.Context) error
+	GetUserBySubject(ctx context.Context, subject string) (*UserContext, error)
+	GetUserByID(ctx context.Context, id string, tenantID ...string) (*UserContext, error)
+	GetUserByKratosIdentityID(ctx context.Context, identityID string) (*UserContext, error)
+	ResolveOrLinkKratosIdentity(ctx context.Context, identityID, email, name string) (*UserContext, error)
+	ResolveOrLinkIdentity(ctx context.Context, providerID, externalID, email, name string, emailVerified bool) (*UserContext, error)
+	CreateSession(ctx context.Context, req *CreateSessionRequest) (*CreateSessionResponse, error)
+	RevokeSession(ctx context.Context, sessionID string) error
+	TouchSession(ctx context.Context, sessionID string) error
+	GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, error)
+	CheckMFA(ctx context.Context, userID, deviceToken string) (*MFACheck, error)
+	VerifyMFA(ctx context.Context, userID, code string) error
+	GenerateMFASecret(ctx context.Context, userID, username, email string) (*MFASecret, error)
+	VerifyMFAEnrollment(ctx context.Context, userID, code string) (*MFAEnrollResponse, error)
+}
+
+// HTTPClient calls the IAM service internal HTTP APIs. It is the transitional
+// transport kept behind IAM_TRANSPORT=http while GRPCClient rolls out.
+type HTTPClient struct {
 	baseURL       string
 	client        *http.Client
 	serviceSecret string
 }
 
-// New creates a new IAM client.
-
-func New(baseURL string, serviceSecret ...string) *Client {
+// New creates the HTTP transport client.
+func New(baseURL string, serviceSecret ...string) *HTTPClient {
 	secret := ""
 	if len(serviceSecret) > 0 {
 		secret = serviceSecret[0]
 	}
-	return &Client{
+	return &HTTPClient{
 		baseURL:       baseURL,
 		client:        &http.Client{Timeout: 10 * time.Second},
 		serviceSecret: secret,
@@ -137,7 +160,7 @@ func New(baseURL string, serviceSecret ...string) *Client {
 
 // ValidateServiceIdentity ensures production cannot start with an unauthenticated
 // auth-gateway -> IAM internal adapter.
-func (c *Client) ValidateServiceIdentity() error {
+func (c *HTTPClient) ValidateServiceIdentity() error {
 	if c.serviceSecret == "" {
 		return fmt.Errorf("auth-gateway service identity secret is required")
 	}
@@ -147,7 +170,7 @@ func (c *Client) ValidateServiceIdentity() error {
 	return nil
 }
 
-func (c *Client) authorizeInternal(req *http.Request) error {
+func (c *HTTPClient) authorizeInternal(req *http.Request) error {
 	token, err := identity.Issue(c.serviceSecret, "auth-gateway", "iam-service", time.Now(), time.Minute)
 	if err != nil {
 		return fmt.Errorf("issue IAM service identity: %w", err)
@@ -156,7 +179,7 @@ func (c *Client) authorizeInternal(req *http.Request) error {
 	return nil
 }
 
-func (c *Client) Ready(ctx context.Context) error {
+func (c *HTTPClient) Ready(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health/ready", nil)
 	if err != nil {
 		return err
@@ -173,7 +196,7 @@ func (c *Client) Ready(ctx context.Context) error {
 }
 
 // GetUserBySubject fetches a user context by external subject.
-func (c *Client) GetUserBySubject(ctx context.Context, subject string) (*UserContext, error) {
+func (c *HTTPClient) GetUserBySubject(ctx context.Context, subject string) (*UserContext, error) {
 	endpoint := c.baseURL + "/internal/iam/users/by-subject/" + url.PathEscape(subject)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -187,7 +210,7 @@ func (c *Client) GetUserBySubject(ctx context.Context, subject string) (*UserCon
 }
 
 // GetUserByID fetches a user context by internal IAM UUID.
-func (c *Client) GetUserByID(ctx context.Context, id string, tenantID ...string) (*UserContext, error) {
+func (c *HTTPClient) GetUserByID(ctx context.Context, id string, tenantID ...string) (*UserContext, error) {
 	endpoint := c.baseURL + "/internal/iam/users/by-id/" + url.PathEscape(id) + "/context"
 	if len(tenantID) > 0 && strings.TrimSpace(tenantID[0]) != "" {
 		endpoint += "?tenant_id=" + url.QueryEscape(strings.TrimSpace(tenantID[0]))
@@ -203,7 +226,7 @@ func (c *Client) GetUserByID(ctx context.Context, id string, tenantID ...string)
 	return c.doUserContext(req)
 }
 
-func (c *Client) GetUserByKratosIdentityID(ctx context.Context, identityID string) (*UserContext, error) {
+func (c *HTTPClient) GetUserByKratosIdentityID(ctx context.Context, identityID string) (*UserContext, error) {
 	endpoint := c.baseURL + "/internal/iam/users/by-kratos-identity/" + url.PathEscape(identityID) + "/context"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -216,7 +239,7 @@ func (c *Client) GetUserByKratosIdentityID(ctx context.Context, identityID strin
 	return c.doUserContext(req)
 }
 
-func (c *Client) ResolveOrLinkKratosIdentity(ctx context.Context, identityID, email, name string) (*UserContext, error) {
+func (c *HTTPClient) ResolveOrLinkKratosIdentity(ctx context.Context, identityID, email, name string) (*UserContext, error) {
 	body, err := json.Marshal(map[string]string{
 		"identity_id": identityID,
 		"email":       email,
@@ -237,7 +260,7 @@ func (c *Client) ResolveOrLinkKratosIdentity(ctx context.Context, identityID, em
 	return c.doUserContext(req)
 }
 
-func (c *Client) ResolveOrLinkIdentity(ctx context.Context, providerID, externalID, email, name string, emailVerified bool) (*UserContext, error) {
+func (c *HTTPClient) ResolveOrLinkIdentity(ctx context.Context, providerID, externalID, email, name string, emailVerified bool) (*UserContext, error) {
 	body, err := json.Marshal(map[string]any{
 		"provider_id":    providerID,
 		"external_id":    externalID,
@@ -260,7 +283,7 @@ func (c *Client) ResolveOrLinkIdentity(ctx context.Context, providerID, external
 	return c.doUserContext(req)
 }
 
-func (c *Client) doUserContext(req *http.Request) (*UserContext, error) {
+func (c *HTTPClient) doUserContext(req *http.Request) (*UserContext, error) {
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("iam request failed: %w", err)
@@ -282,7 +305,7 @@ func (c *Client) doUserContext(req *http.Request) (*UserContext, error) {
 }
 
 // CreateSession calls the IAM internal API to create a session tracking record.
-func (c *Client) CreateSession(ctx context.Context, req *CreateSessionRequest) (*CreateSessionResponse, error) {
+func (c *HTTPClient) CreateSession(ctx context.Context, req *CreateSessionRequest) (*CreateSessionResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
@@ -330,7 +353,7 @@ func (c *Client) CreateSession(ctx context.Context, req *CreateSessionRequest) (
 }
 
 // RevokeSession calls IAM internal API to revoke a session.
-func (c *Client) RevokeSession(ctx context.Context, sessionID string) error {
+func (c *HTTPClient) RevokeSession(ctx context.Context, sessionID string) error {
 	url := c.baseURL + "/internal/iam/sessions/" + sessionID
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
@@ -354,7 +377,7 @@ func (c *Client) RevokeSession(ctx context.Context, sessionID string) error {
 
 // TouchSession records activity on a live session (best-effort; the admin
 // session list shows the resulting last_seen_at).
-func (c *Client) TouchSession(ctx context.Context, sessionID string) error {
+func (c *HTTPClient) TouchSession(ctx context.Context, sessionID string) error {
 	url := c.baseURL + "/internal/iam/sessions/" + sessionID + "/activity"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
@@ -376,7 +399,7 @@ func (c *Client) TouchSession(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-func (c *Client) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, error) {
+func (c *HTTPClient) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/iam/me/mfa/status", nil)
 	if err != nil {
 		return nil, err
@@ -399,7 +422,7 @@ func (c *Client) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, e
 }
 
 // CheckMFA determines whether a device is trusted for login MFA bypass.
-func (c *Client) CheckMFA(ctx context.Context, userID, deviceToken string) (*MFACheck, error) {
+func (c *HTTPClient) CheckMFA(ctx context.Context, userID, deviceToken string) (*MFACheck, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/iam/users/"+url.PathEscape(userID)+"/mfa/check", nil)
 	if err != nil {
 		return nil, err
@@ -424,7 +447,7 @@ func (c *Client) CheckMFA(ctx context.Context, userID, deviceToken string) (*MFA
 	return &result, nil
 }
 
-func (c *Client) VerifyMFA(ctx context.Context, userID, code string) error {
+func (c *HTTPClient) VerifyMFA(ctx context.Context, userID, code string) error {
 	body, err := json.Marshal(map[string]string{"code": code})
 	if err != nil {
 		return err
@@ -449,7 +472,7 @@ func (c *Client) VerifyMFA(ctx context.Context, userID, code string) error {
 	return nil
 }
 
-func (c *Client) GenerateMFASecret(ctx context.Context, userID, username, email string) (*MFASecret, error) {
+func (c *HTTPClient) GenerateMFASecret(ctx context.Context, userID, username, email string) (*MFASecret, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/iam/me/mfa/enroll", nil)
 	if err != nil {
 		return nil, err
@@ -473,7 +496,7 @@ func (c *Client) GenerateMFASecret(ctx context.Context, userID, username, email 
 	return &response.Result, nil
 }
 
-func (c *Client) VerifyMFAEnrollment(ctx context.Context, userID, code string) (*MFAEnrollResponse, error) {
+func (c *HTTPClient) VerifyMFAEnrollment(ctx context.Context, userID, code string) (*MFAEnrollResponse, error) {
 	body, err := json.Marshal(map[string]string{"code": code})
 	if err != nil {
 		return nil, err
@@ -501,6 +524,6 @@ func (c *Client) VerifyMFAEnrollment(ctx context.Context, userID, code string) (
 }
 
 // InternalBaseURL returns the base URL for IAM internal API calls.
-func (c *Client) InternalBaseURL() string {
+func (c *HTTPClient) InternalBaseURL() string {
 	return c.baseURL
 }

@@ -162,7 +162,9 @@ Current user routes:
 - `DELETE /api/iam/me/devices/{id}`
 - `POST /api/iam/me/devices/{id}/trust`
 
-Internal gateway-to-IAM routes:
+Internal gateway-to-IAM calls go through gRPC `arda.iam.v1.GatewayService`
+(`IAM_TRANSPORT=grpc`, default). The legacy HTTP routes stay available behind
+`IAM_TRANSPORT=http` during the rollout:
 
 - `POST /internal/iam/sessions`
 - `DELETE /internal/iam/sessions/{id}`

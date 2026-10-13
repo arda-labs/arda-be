@@ -45,7 +45,7 @@ const (
 type BFFHandler struct {
 	cfg              config.Config
 	store            session.Store
-	iamClient        *iamclient.Client
+	iamClient        iamclient.Client
 	policy           *policy.Policy
 	logger           *slog.Logger
 	cache            *userContextCache
@@ -63,7 +63,7 @@ type BFFHandler struct {
 // active; the admin session list needs minutes, not per-request precision.
 const sessionTouchInterval = 5 * time.Minute
 
-func NewBFFHandler(cfg config.Config, store session.Store, iamClient *iamclient.Client, pol *policy.Policy) *BFFHandler {
+func NewBFFHandler(cfg config.Config, store session.Store, iamClient iamclient.Client, pol *policy.Policy) *BFFHandler {
 	return &BFFHandler{
 		cfg: cfg, store: store, iamClient: iamClient, policy: pol, logger: slog.Default(),
 		cache:            newUserContextCache(time.Duration(cfg.IAMContextCacheTTL) * time.Second),

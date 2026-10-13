@@ -24,6 +24,11 @@ type Config struct {
 	IntrospectionClientSecret string `yaml:"introspection_client_secret"`
 
 	IAMServiceURL             string `yaml:"iam_service_url"`
+	// IAMTransport selects how the gateway calls IAM: "grpc" (GatewayService,
+	// mTLS + service identity, default) or "http" (legacy /internal routes,
+	// transitional).
+	IAMTransport              string `yaml:"iam_transport"`
+	IAMGRPCAddr               string `yaml:"iam_grpc_addr"`
 	IAMContextCacheTTL        int    `yaml:"iam_context_cache_ttl_seconds"`
 	SlowRequestLogEnabled     bool   `yaml:"slow_request_log_enabled"`
 	SlowRequestLogThresholdMS int    `yaml:"slow_request_log_threshold_ms"`
@@ -76,6 +81,8 @@ func Load() Config {
 		JWTIssuer:                 "https://auth.arda.io.vn",
 		JWTAudience:               "arda-api",
 		IAMServiceURL:             "http://localhost:8081",
+		IAMTransport:              "grpc",
+		IAMGRPCAddr:               "localhost:9090",
 		IAMContextCacheTTL:        60,
 		SlowRequestLogEnabled:     false,
 		SlowRequestLogThresholdMS: 1000,
@@ -129,6 +136,8 @@ func Load() Config {
 	envStr("INTROSPECTION_CLIENT_ID", &cfg.IntrospectionClientID)
 	envStr("INTROSPECTION_CLIENT_SECRET", &cfg.IntrospectionClientSecret)
 	envStr("IAM_SERVICE_URL", &cfg.IAMServiceURL)
+	envStr("IAM_TRANSPORT", &cfg.IAMTransport)
+	envStr("IAM_GRPC_ADDR", &cfg.IAMGRPCAddr)
 	envInt("IAM_CONTEXT_CACHE_TTL_SECONDS", &cfg.IAMContextCacheTTL)
 	envBool("SLOW_REQUEST_LOG_ENABLED", &cfg.SlowRequestLogEnabled)
 	envInt("SLOW_REQUEST_LOG_THRESHOLD_MS", &cfg.SlowRequestLogThresholdMS)
@@ -196,6 +205,8 @@ func (c *Config) loadYAML(path string) bool {
 	setStr("introspection_client_id", &c.IntrospectionClientID)
 	setStr("introspection_client_secret", &c.IntrospectionClientSecret)
 	setStr("iam_service_url", &c.IAMServiceURL)
+	setStr("iam_transport", &c.IAMTransport)
+	setStr("iam_grpc_addr", &c.IAMGRPCAddr)
 	if v, ok := m["iam_context_cache_ttl_seconds"].(int); ok {
 		c.IAMContextCacheTTL = v
 	}

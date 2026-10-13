@@ -13,6 +13,9 @@ introspection_client_id: auth-gateway
 introspection_client_secret: ""
 
 iam_service_url: "http://localhost:8080"
+# grpc (default) calls IAM GatewayService with mTLS; http is the transitional legacy path.
+iam_transport: grpc
+iam_grpc_addr: "localhost:9090"
 iam_context_cache_ttl_seconds: 60
 cors_allowed_origins: "https://arda.io.vn,http://localhost:5000"
 frontend_origin: "http://localhost:5000"

@@ -8,11 +8,23 @@
   },
   "interactions": [
     {
+      "id": "auth-gateway.iam-grpc",
+      "source": "auth-gateway",
+      "target": "iam-service",
+      "protocol": "grpc",
+      "operation": "IAM GatewayService: user context, session tracking, login/step-up MFA",
+      "timeout_ms": 10000,
+      "retry": "bounded-idempotent",
+      "identity": "mtls-and-signed-service-token",
+      "context": ["request_id", "traceparent"],
+      "source_location": "libs/go/arda-grpc/client/iam/gateway.go"
+    },
+    {
       "id": "auth-gateway.iam-http",
       "source": "auth-gateway",
       "target": "iam-service",
       "protocol": "http",
-      "operation": "internal IAM context/session/MFA adapter",
+      "operation": "transitional: legacy /internal IAM adapter behind IAM_TRANSPORT=http; remove with the HTTP routes once gRPC is rolled out",
       "path_prefix": "/internal/iam",
       "timeout_ms": 10000,
       "retry": "none",
