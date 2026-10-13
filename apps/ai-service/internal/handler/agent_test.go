@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
@@ -471,5 +474,343 @@ func TestAgentToolExecutionFailsClosedWhenAuditUnavailable(t *testing.T) {
 	}
 	if !strings.Contains(res.Body.String(), "ai.tool_persistence_unavailable") {
 		t.Fatalf("expected ai.tool_persistence_unavailable in stream, got %s", res.Body.String())
+	}
+}
+
+// finishCapturingStore records what the handler persists as the tool result,
+// so tests can lock the stored copy independently of the SSE copy.
+type finishCapturingStore struct {
+	agentRunStore
+	finishedContent string
+	finishedStatus  string
+}
+
+func (s *finishCapturingStore) FinishTool(_ context.Context, _, status, content, _ string) error {
+	s.toolFinished = true
+	s.finishedStatus = status
+	s.finishedContent = content
+	return nil
+}
+
+// newCapturingModelServer is newModelServer plus a record of every request body,
+// so tests can inspect exactly what the model was handed back after a tool call.
+func newCapturingModelServer(t *testing.T, turns [][]string, bodies *[]string) *httptest.Server {
+	t.Helper()
+	var index int
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		*bodies = append(*bodies, string(raw))
+		if index >= len(turns) {
+			t.Fatalf("unexpected extra model request")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, line := range turns[index] {
+			_, _ = w.Write([]byte("data: " + line + "\n\n"))
+		}
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		index++
+	}))
+}
+
+// toolCallTurns builds the model stream for a single tool call with the given
+// arguments, followed by a final text turn.
+func toolCallTurns(t *testing.T, toolName string, arguments any) [][]string {
+	t.Helper()
+	// A model emits literal < > & in tool arguments; do not let the test
+	// harness HTML-escape them, or size limits would be measured on a bigger
+	// payload than the tool actually receives.
+	argsJSON, err := marshalNoHTMLEscape(arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	argsString, err := json.Marshal(string(argsJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return [][]string{
+		{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"` + toolName + `","arguments":` + string(argsString) + `}}]}}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+		},
+		{
+			`{"choices":[{"delta":{"content":"done"}}]}`,
+			`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		},
+	}
+}
+
+func marshalNoHTMLEscape(value any) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buffer.Bytes(), "\n"), nil
+}
+
+// runAgent drives one agent request and returns the raw SSE body.
+func runAgent(t *testing.T, store runStore, resolver toolResolver, serverURL string, client *http.Client) string {
+	t.Helper()
+	options := RouterOptions{ModelProvider: model.NewClient(serverURL, "k", "m", client), AgentMaxSteps: 3}
+	router := NewRouterWithOptions(store, resolver, options)
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/agent", strings.NewReader(`{"threadId":"t1","runId":"r1","messages":[{"role":"user","content":"x"}]}`))
+	gatewayHeaders(req)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", res.Code, res.Body.String())
+	}
+	return res.Body.String()
+}
+
+// toolResultEventContent returns the Content of the (single) TOOL_CALL_RESULT
+// event that carries a string content, i.e. what the browser renders from.
+func toolResultEventContent(t *testing.T, body string) string {
+	t.Helper()
+	var found []string
+	for _, event := range decodeSSEEvents(t, body) {
+		if event["type"] != "TOOL_CALL_RESULT" {
+			continue
+		}
+		if content, ok := event["content"].(string); ok {
+			found = append(found, content)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected exactly one TOOL_CALL_RESULT with content, got %d", len(found))
+	}
+	return found[0]
+}
+
+// lastToolMessageContent extracts the content of the tool-role message from the
+// follow-up model request: what the MODEL sees after the tool ran.
+func lastToolMessageContent(t *testing.T, bodies []string) string {
+	t.Helper()
+	if len(bodies) < 2 {
+		t.Fatalf("expected a follow-up model request, got %d request(s)", len(bodies))
+	}
+	var request struct {
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(bodies[1]), &request); err != nil {
+		t.Fatalf("bad follow-up model request: %v", err)
+	}
+	for i := len(request.Messages) - 1; i >= 0; i-- {
+		if request.Messages[i].Role != "tool" {
+			continue
+		}
+		var text string
+		if err := json.Unmarshal(request.Messages[i].Content, &text); err != nil {
+			t.Fatalf("tool message content is not a string: %s", request.Messages[i].Content)
+		}
+		return text
+	}
+	t.Fatalf("no tool message in follow-up model request: %s", bodies[1])
+	return ""
+}
+
+// TestAgentLoopRendersWidgetResultUnbounded locks the renderWidget bypass of the
+// 8 KB model-content bound: the browser and the stored row get the full,
+// valid-JSON widget payload; the model only gets a compact acknowledgement.
+func TestAgentLoopRendersWidgetResultUnbounded(t *testing.T) {
+	arguments := map[string]any{
+		"title":          "Mô phỏng khoản vay",
+		"html":           "<div id=\"app\">" + strings.Repeat("<p>row</p>", 2000) + "</div>",
+		"js":             "document.getElementById('app');",
+		"data":           map[string]any{"a": 1},
+		"inputs_summary": "Điều chỉnh lãi suất và kỳ hạn.",
+	}
+	var bodies []string
+	server := newCapturingModelServer(t, toolCallTurns(t, "renderWidget", arguments), &bodies)
+	defer server.Close()
+
+	store := &finishCapturingStore{}
+	body := runAgent(t, store, tools.NewRegistry(tools.NewWidgetMetaTool()), server.URL, server.Client())
+
+	persisted := store.finishedContent
+	if len(persisted) <= modelResultContentLimit || !json.Valid([]byte(persisted)) {
+		t.Fatalf("persisted content must be the full valid JSON payload (> %d bytes), got %d bytes valid=%v", modelResultContentLimit, len(persisted), json.Valid([]byte(persisted)))
+	}
+	if store.finishedStatus != "SUCCEEDED" {
+		t.Fatalf("persisted status = %q, want SUCCEEDED", store.finishedStatus)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal([]byte(persisted), &stored); err != nil || stored["widget"] != true {
+		t.Fatalf("persisted payload must carry widget:true, got err=%v widget=%v", err, stored["widget"])
+	}
+
+	streamed := toolResultEventContent(t, body)
+	if streamed != persisted {
+		t.Fatalf("SSE content (%d bytes) must equal the persisted payload (%d bytes)", len(streamed), len(persisted))
+	}
+
+	feedback := lastToolMessageContent(t, bodies)
+	if len(feedback) >= 1024 || !strings.Contains(feedback, `"rendered":true`) || !strings.Contains(feedback, "Rendered widget") {
+		t.Fatalf("model feedback must be a compact acknowledgement (<1 KB, rendered:true), got %d bytes: %.200s", len(feedback), feedback)
+	}
+	if strings.Contains(feedback, "<div") {
+		t.Fatalf("model feedback must not echo the widget code: %.200s", feedback)
+	}
+}
+
+// bigResultTool returns a payload far above the 8 KB model-content bound.
+type bigResultTool struct{ summary string }
+
+func (bigResultTool) Definition() tools.Definition {
+	return tools.Definition{Name: "test.big", Version: 1, Kind: "read", Timeout: time.Second, Risk: "low"}
+}
+
+func bigResultData() json.RawMessage {
+	data, _ := json.Marshal(map[string]any{"rows": strings.Repeat("x", 3*modelResultContentLimit)})
+	return data
+}
+
+func (b bigResultTool) Execute(_ context.Context, _ tools.Context, _ json.RawMessage) (tools.Result, error) {
+	return tools.Result{Data: bigResultData(), Summary: b.summary}, nil
+}
+
+// TestAgentLoopStillBoundsOtherToolResults is the contrast for the widget
+// bypass: every other tool keeps the old behaviour, byte for byte.
+func TestAgentLoopStillBoundsOtherToolResults(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		summary string
+	}{{"without summary", ""}, {"with summary", "Big result."}} {
+		t.Run(tc.name, func(t *testing.T) {
+			var bodies []string
+			server := newCapturingModelServer(t, toolCallTurns(t, "test.big", map[string]any{}), &bodies)
+			defer server.Close()
+
+			store := &finishCapturingStore{}
+			body := runAgent(t, store, tools.NewRegistry(bigResultTool{summary: tc.summary}), server.URL, server.Client())
+
+			wantPersisted := boundContent(string(bigResultData()))
+			if store.finishedContent != wantPersisted || len(store.finishedContent) > modelResultContentLimit {
+				t.Fatalf("persisted content must stay bounded: got %d bytes, want %d", len(store.finishedContent), len(wantPersisted))
+			}
+
+			streamed := toolResultEventContent(t, body)
+			feedback := lastToolMessageContent(t, bodies)
+			if streamed != feedback {
+				t.Fatalf("SSE content must equal the model feedback for non-widget tools: %d vs %d bytes", len(streamed), len(feedback))
+			}
+			if len(streamed) > modelResultContentLimit {
+				t.Fatalf("SSE content must stay bounded, got %d bytes", len(streamed))
+			}
+			if tc.summary == "" && streamed != wantPersisted {
+				t.Fatalf("without a summary the SSE/feedback content is the persisted content")
+			}
+			if tc.summary != "" && streamed != compactToolFeedback(bigResultData(), tc.summary) {
+				t.Fatalf("with a summary the SSE/feedback content is compactToolFeedback output")
+			}
+		})
+	}
+}
+
+// widgetEventSizes runs a renderWidget call through the agent loop and returns
+// the size, in UTF-16 units of the SSE data line (what the FE transport counts
+// against maxEventBytes), of the TOOL_CALL_RESULT and TOOL_CALL_ARGS events,
+// plus the persisted payload length.
+func widgetEventSizes(t *testing.T, htmlPart, cssPart, jsPart string, data []byte) (resultUnits, argsUnits, persisted int) {
+	t.Helper()
+	arguments := map[string]any{
+		"title": "w", "html": htmlPart, "css": cssPart, "js": jsPart,
+		"data": json.RawMessage(data), "inputs_summary": "s",
+	}
+	var bodies []string
+	server := newCapturingModelServer(t, toolCallTurns(t, "renderWidget", arguments), &bodies)
+	defer server.Close()
+	store := &finishCapturingStore{}
+	body := runAgent(t, store, tools.NewRegistry(tools.NewWidgetMetaTool()), server.URL, server.Client())
+
+	if store.finishedStatus != "SUCCEEDED" || !json.Valid([]byte(store.finishedContent)) {
+		t.Fatalf("limit-sized widget must execute and persist valid JSON: status=%q valid=%v", store.finishedStatus, json.Valid([]byte(store.finishedContent)))
+	}
+	utf16Units := func(s string) int {
+		n := 0
+		for _, r := range s {
+			if r >= 0x10000 {
+				n += 2
+			} else {
+				n++
+			}
+		}
+		return n
+	}
+	for _, l := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(l, "data: ") {
+			continue
+		}
+		line := strings.TrimPrefix(l, "data: ")
+		switch {
+		case strings.Contains(line, `"TOOL_CALL_RESULT"`) && strings.Contains(line, `"content"`):
+			resultUnits = utf16Units(line)
+		case strings.Contains(line, `"TOOL_CALL_ARGS"`):
+			argsUnits = utf16Units(line)
+		}
+	}
+	if resultUnits == 0 {
+		t.Fatal("no TOOL_CALL_RESULT content event found")
+	}
+	return resultUnits, argsUnits, len(store.finishedContent)
+}
+
+const browserEventLimit = 256 * 1024 // FE transport maxEventBytes (packages/api/src/ai-agent.ts)
+
+// TestAgentLoopWidgetAtLimitsFitsBrowserEventLimit: a widget at both size
+// limits with realistic content (typical markup/JS with ordinary quote and
+// newline density, tabular JSON data) must stream as one event the browser
+// accepts.
+func TestAgentLoopWidgetAtLimitsFitsBrowserEventLimit(t *testing.T) {
+	const codeLimit, dataLimit = 48 * 1024, 64 * 1024
+	repeatTo := func(unit string, limit int) string {
+		return strings.Repeat(unit, limit/len(unit))
+	}
+	htmlPart := repeatTo("<div class=\"row\"><span>Lãi suất</span><input id=\"rate\" value=\"12.5\"></div>\n", codeLimit/3)
+	cssPart := repeatTo(".row { display: flex; color: var(--foreground); }\n", codeLimit/3)
+	jsPart := repeatTo("const el = document.getElementById('rate'); el.addEventListener('input', () => render(el.value));\n", codeLimit-len(htmlPart)-len(cssPart))
+	data := "[" + repeatTo(`{"month":1,"balance":1234567.89,"label":"Tháng 1"},`, dataLimit-64) + `{"month":0}]`
+	if len(htmlPart)+len(cssPart)+len(jsPart) > codeLimit || len(data) > dataLimit {
+		t.Fatalf("test input exceeds widget limits: code=%d data=%d", len(htmlPart)+len(cssPart)+len(jsPart), len(data))
+	}
+
+	resultUnits, argsUnits, persisted := widgetEventSizes(t, htmlPart, cssPart, jsPart, []byte(data))
+	t.Logf("realistic at-limit widget: TOOL_CALL_RESULT = %d, TOOL_CALL_ARGS = %d UTF-16 units (limit %d), persisted = %d bytes", resultUnits, argsUnits, browserEventLimit, persisted)
+	if resultUnits > browserEventLimit {
+		t.Fatalf("TOOL_CALL_RESULT event is %d UTF-16 units, over the browser limit %d", resultUnits, browserEventLimit)
+	}
+}
+
+// TestAgentLoopWidgetAdversarialEscapingMeasurement records how far a
+// maliciously escape-heavy (but still valid) widget overshoots the browser
+// event limit. It does not fail on the overshoot: the numbers are reported as
+// a known concern (see the Task 7 report), not asserted away.
+func TestAgentLoopWidgetAdversarialEscapingMeasurement(t *testing.T) {
+	const codeLimit, dataLimit = 48 * 1024, 64 * 1024
+	for _, tc := range []struct{ name, fill string }{
+		{"quotes and newlines", "\"\n"},
+		{"html angle brackets", "<"},
+		{"non-ASCII", "ệ"},
+		{"backslashes", "\\"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code := strings.Repeat(tc.fill, codeLimit/len(tc.fill))
+			third := len(code) / 3
+			for third > 0 && !utf8.ValidString(code[:third]) {
+				third--
+			}
+			htmlPart := code[:third]
+			cssPart := strings.Repeat(tc.fill, third/len(tc.fill))
+			jsPart := strings.Repeat(tc.fill, (codeLimit-len(htmlPart)-len(cssPart))/len(tc.fill))
+			unit, _ := marshalNoHTMLEscape(tc.fill)
+			encoded, _ := marshalNoHTMLEscape(strings.Repeat(tc.fill, (dataLimit-2)/(len(unit)-2)))
+
+			resultUnits, argsUnits, persisted := widgetEventSizes(t, htmlPart, cssPart, jsPart, encoded)
+			t.Logf("%s: TOOL_CALL_RESULT = %d, TOOL_CALL_ARGS = %d UTF-16 units (limit %d), persisted = %d bytes", tc.name, resultUnits, argsUnits, browserEventLimit, persisted)
+		})
 	}
 }
