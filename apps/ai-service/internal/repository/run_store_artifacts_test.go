@@ -53,3 +53,29 @@ func TestSelectArtifactsCapsAndIgnoresEmpty(t *testing.T) {
 		t.Fatalf("got %d artifacts, want cap of 2", len(got))
 	}
 }
+
+func TestSelectArtifactsKeepsWidgetsAlongsideCharts(t *testing.T) {
+	raw := []byte(`[
+		{"tool_name":"execute","result":{"columns":["a"],"rows":[[1]],"chart":{"type":"bar"}}},
+		{"tool_name":"renderChart","result":{"render":"report","chart":{"type":"bar"}}},
+		{"tool_name":"renderWidget","result":{"widget":true,"title":"W","html":"<p>a</p>","js":"1","data":{"a":1}}}
+	]`)
+	got := selectArtifacts(raw)
+	if len(got) != 2 {
+		t.Fatalf("got %d artifacts, want 2 (chart + widget), execute dropped", len(got))
+	}
+	if !hasJSONKey(got[0], "render") || !hasJSONKey(got[1], "widget") {
+		t.Fatalf("order must follow finished_at: chart then widget, got %s / %s", got[0], got[1])
+	}
+}
+
+func TestSelectArtifactsWidgetOnlyRun(t *testing.T) {
+	raw := []byte(`[
+		{"tool_name":"execute","result":{"columns":["a"],"rows":[[1]]}},
+		{"tool_name":"renderWidget","result":{"widget":true,"title":"W","html":"<p>a</p>","js":"1","result_id":"r1"}}
+	]`)
+	got := selectArtifacts(raw)
+	if len(got) != 1 || !hasJSONKey(got[0], "widget") {
+		t.Fatalf("expected only the widget, got %d: %v", len(got), got)
+	}
+}
