@@ -23,8 +23,8 @@ is accepted.
 
 ## Generated documents
 
-`deposit-v1.json` and `loan-v1.json` are generated from Go, not written by
-hand: their operations are declared in
+`deposit-v1.json`, `loan-v1.json`, `workflow-v1.json` and `mdm-v1.json` are
+generated from Go, not written by hand: their operations are declared in
 `apps/<service>/internal/transport/http/openapi.go` and their schemas come from
 the Go types through `libs/go/arda-openapi`. Regenerate one with:
 
@@ -37,6 +37,19 @@ ARDA_UPDATE_OPENAPI=1 go test ./internal/transport/http -run TestOpenAPIDocument
 adjustment flows use a `{kind}` path parameter restricted to the shared kind
 list.
 
+`workflow-v1.json` documents BPMN uploads as `multipart/form-data`, the BPMN
+XML and work-item XLSX downloads as raw bodies, and process-definition delete
+as 204. `mdm-v1.json` documents the simple catalogs once as
+`/api/mdm/{catalog}` with the catalog names as an enum.
+
 `TestOpenAPIDocumentIsCommitted` fails when the committed file is stale and
 `scripts/check-openapi-routes.mjs` fails when a public route is missing from
-it. arda-mfe generates its wire types from every document here (ADR-005).
+it. `scripts/check-openapi-breaking.mjs` fails when a document breaks clients
+compared with `origin/main` (removed operation or response field, newly
+required input, narrowed type or enum, changed success status); a deliberate
+break is listed with a reason and expiry in
+`scripts/check-openapi-breaking-allowlist.json`, which lives outside this
+directory because docs-site publishes every `.json` here.
+`scripts/check-openapi-policy.mjs` keeps `auth-gateway/configs/policy.yaml`
+and the generated documents in step. arda-mfe generates its wire types from
+every document here (ADR-005).
