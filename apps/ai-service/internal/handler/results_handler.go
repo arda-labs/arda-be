@@ -25,6 +25,12 @@ func handleReadResult(w http.ResponseWriter, r *http.Request, options RouterOpti
 		problem(w, http.StatusUnauthorized, "ai.identity_context_required")
 		return
 	}
+	if !hasPermission(r.Header.Get("X-Permissions"), assistantPermission) {
+		problem(w, http.StatusForbidden, "ai.assistant_forbidden")
+		return
+	}
+	// r.URL.Path is already percent-decoded: validate the decoded id, so an
+	// encoded slash, query or fragment cannot slip through as part of the id.
 	resultID := strings.TrimPrefix(r.URL.Path, "/api/ai/results/")
 	if !resultid.Valid(resultID) {
 		problem(w, http.StatusBadRequest, "ai.invalid_request_body")
@@ -44,5 +50,6 @@ func handleReadResult(w http.ResponseWriter, r *http.Request, options RouterOpti
 		problem(w, http.StatusNotFound, "ai.result_not_found")
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]json.RawMessage{"output": output})
 }

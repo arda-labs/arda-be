@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
@@ -19,6 +20,7 @@ func resultsRequest(id, thread string, withIdentity bool) *http.Request {
 		req.Header.Set("X-Auth-Checked", "true")
 		req.Header.Set("X-Tenant-Id", "t1")
 		req.Header.Set("X-User-Id", "u1")
+		req.Header.Set("X-Permissions", assistantPermission)
 	}
 	return req
 }
@@ -76,6 +78,9 @@ func TestReadResultScopesByTenantUserThread(t *testing.T) {
 	if got.TenantID != "t1" || got.ActorUserID != "u1" || got.ExternalThread != "thread-9" || gotID != "t1|u1|th-9:1" {
 		t.Fatalf("scope not forwarded: %+v id=%s", got, gotID)
 	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store (tenant data in a GET)", cc)
+	}
 	var body map[string]json.RawMessage
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || string(body["output"]) != `{"rows":[1,2]}` {
 		t.Fatalf("body = %s", rec.Body.String())
@@ -132,5 +137,26 @@ func TestReadResultRejectsMalformedIDs(t *testing.T) {
 	}
 	if called {
 		t.Fatal("reader must not be consulted for a malformed id")
+	}
+}
+
+func TestReadResultRequiresAssistantPermission(t *testing.T) {
+	called := false
+	router := newResultsRouter(func(tools.Context, string) (json.RawMessage, bool) { called = true; return json.RawMessage(`{}`), true })
+	for name, perms := range map[string]string{"absent": "", "other permission": "ai.settings.read", "prefix only": "ai.assistant"} {
+		req := resultsRequest("t1%7Cu1%7Cth1:1", "th1", true)
+		if perms == "" {
+			req.Header.Del("X-Permissions")
+		} else {
+			req.Header.Set("X-Permissions", perms)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "ai.assistant_forbidden") {
+			t.Fatalf("%s: status = %d body %s, want 403 ai.assistant_forbidden", name, rec.Code, rec.Body.String())
+		}
+	}
+	if called {
+		t.Fatal("reader must not be consulted without ai.assistant.use")
 	}
 }
