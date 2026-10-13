@@ -3,9 +3,9 @@ module github.com/arda-labs/arda/apps/statistical-service
 go 1.27.2
 
 require (
-	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-doc v0.0.0-20260924093952-c3c96299f064
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0-00010101000000-000000000000
@@ -20,6 +20,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -66,3 +67,5 @@ replace github.com/arda-labs/arda/libs/go/arda-proto => ../../libs/go/arda-proto
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
 
 replace github.com/arda-labs/arda/libs/go/arda-events => ../../libs/go/arda-events
+
+replace github.com/arda-labs/arda/libs/go/arda-config => ../../libs/go/arda-config
