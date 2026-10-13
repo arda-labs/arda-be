@@ -36,7 +36,8 @@ var skillPacks = map[string]SkillPack{
 		AllowedTools: []string{
 			"arda.statistical.getReportPresentation",
 			"readResult",
-			"render_chart",
+			"renderChart",
+			"renderWidget",
 		},
 	},
 	"report": {
@@ -48,7 +49,8 @@ var skillPacks = map[string]SkillPack{
 			"arda.statistical.runReport",
 			"arda.statistical.listIndicatorResults",
 			"readResult",
-			"render_chart",
+			"renderChart",
+			"renderWidget",
 		},
 	},
 	"knowledge": {

@@ -96,12 +96,32 @@ func TestPruneToolDefinitionsDirectMode(t *testing.T) {
 	}
 }
 
+func TestSkillAllowedToolsUseRealMetaToolNames(t *testing.T) {
+	for _, skill := range []string{"loan_portfolio", "report"} {
+		allowed := skillAllowedTools(skill)
+		has := func(name string) bool {
+			for _, a := range allowed {
+				if a == name {
+					return true
+				}
+			}
+			return false
+		}
+		if has("render_chart") {
+			t.Fatalf("%s: render_chart is not a tool; the meta-tool is renderChart", skill)
+		}
+		if !has("renderChart") || !has("renderWidget") {
+			t.Fatalf("%s: must allow renderChart and renderWidget, got %v", skill, allowed)
+		}
+	}
+}
+
 func TestPruneToolDefinitionsPreservesCodeMode(t *testing.T) {
 	codeModeDefs := []model.ToolDef{
 		{Name: "search"},
 		{Name: "execute"},
 		{Name: "readResult"},
-		{Name: "render_chart"},
+		{Name: "renderChart"},
 	}
 
 	loanAllowed := skillAllowedTools("loan_portfolio")
