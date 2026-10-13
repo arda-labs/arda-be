@@ -30,6 +30,7 @@ const (
 // the CSP inside the iframe are. Keep it in sync with the spec §4.3.
 var widgetForbidden = []string{
 	"<script src", "import(", "fetch(", "xmlhttprequest", "websocket", "sendbeacon",
+	"rtcpeerconnection", "webkitrtcpeerconnection",
 	"document.cookie", "window.top", "parent.location",
 	"<link", "<iframe", "<object", "<embed", "<form",
 }
@@ -60,7 +61,7 @@ func (t *WidgetMetaTool) Definition() Definition {
 		Risk:    "low",
 		Description: "Render a small interactive 'what-if' tool for the user (sliders, inputs, recomputed results) on data you already computed with execute(). " +
 			"Do NOT use it to display static numbers, tables, charts or catalogued reports: use markdown or renderChart for those. " +
-			"html is body-only; js runs after the 'arda:data' event and reads window.ARDA_DATA; no network, no imports, no external libraries, no cookies or storage; " +
+			"html is body-only; js runs after the 'arda:data' event and reads window.ARDA_DATA; no network (no fetch, WebSocket or WebRTC), no imports, no external libraries, no cookies or storage; " +
 			"style only with the provided CSS variables (--background, --foreground, --card, --border, --primary, --primary-foreground, --muted-foreground, --chart-1..10, --radius). " +
 			"Pass small data inline (<= 64 KB) or a result_id from execute() for larger data.",
 		Timeout: 1 * time.Second,

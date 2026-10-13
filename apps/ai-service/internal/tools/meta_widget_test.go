@@ -105,6 +105,8 @@ func TestWidgetMetaToolRejectsForbiddenPatterns(t *testing.T) {
 		{"js", "new XMLHttpRequest()"},
 		{"js", "new WebSocket('ws://x')"},
 		{"js", "navigator.sendBeacon('/x')"},
+		{"js", "new RTCPeerConnection()"},
+		{"js", "new webkitRTCPeerConnection()"},
 		{"js", "document.cookie"},
 		{"js", "window.top.location"},
 		{"js", "parent.location.href"},

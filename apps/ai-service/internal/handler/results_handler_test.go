@@ -81,9 +81,23 @@ func TestReadResultScopesByTenantUserThread(t *testing.T) {
 	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store (tenant data in a GET)", cc)
 	}
-	var body map[string]json.RawMessage
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || string(body["output"]) != `{"rows":[1,2]}` {
-		t.Fatalf("body = %s", rec.Body.String())
+	// Canonical success envelope, same as the sibling AI handlers.
+	var body struct {
+		Success  bool              `json:"success"`
+		Errors   []json.RawMessage `json:"errors"`
+		Messages []json.RawMessage `json:"messages"`
+		Result   struct {
+			Output json.RawMessage `json:"output"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body = %s: %v", rec.Body.String(), err)
+	}
+	if !body.Success || string(body.Result.Output) != `{"rows":[1,2]}` {
+		t.Fatalf("envelope = %s", rec.Body.String())
+	}
+	if body.Errors == nil || len(body.Errors) != 0 || body.Messages == nil || len(body.Messages) != 0 {
+		t.Fatalf("errors/messages must be empty arrays, got %s", rec.Body.String())
 	}
 }
 
