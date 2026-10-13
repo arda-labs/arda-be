@@ -89,6 +89,39 @@ func TestDirectToolSystemPromptUnchangedByAnswerFormMatrix(t *testing.T) {
 	}
 }
 
+func TestCodeModePromptMentionsWidgetOnlyWhenFlagOn(t *testing.T) {
+	t.Setenv("AI_ENABLE_READ_TOOLS", "true")
+	t.Setenv("AI_MODEL_SYSTEM_PROMPT", "")
+
+	t.Setenv("AI_ENABLE_SANDBOXED_UI", "false")
+	off := Load().ModelSystemPrompt
+	for _, banned := range []string{"renderWidget", "window.ARDA_DATA", "arda:data"} {
+		if strings.Contains(off, banned) {
+			t.Fatalf("flag off: prompt must not mention %q anywhere", banned)
+		}
+	}
+
+	t.Setenv("AI_ENABLE_SANDBOXED_UI", "true")
+	on := Load().ModelSystemPrompt
+	for _, want := range []string{
+		"5. renderWidget(",
+		"gọi renderWidget",
+		"window.ARDA_DATA",
+		"Không dùng renderWidget",
+		"--chart-1",
+	} {
+		if !strings.Contains(on, want) {
+			t.Fatalf("flag on: prompt missing %q", want)
+		}
+	}
+	if strings.Index(on, "Chọn dạng trả lời:") > strings.Index(on, "gọi renderWidget") {
+		t.Fatal("the renderWidget rule must live inside the answer-form matrix")
+	}
+	if !strings.Contains(on, "không viết HTML") {
+		t.Fatal("HTML ban for catalogued reports must stay")
+	}
+}
+
 func TestLoadSandboxedUIFlagDefaultsOff(t *testing.T) {
 	t.Setenv("AI_ENABLE_SANDBOXED_UI", "")
 	if Load().EnableSandboxedUI {

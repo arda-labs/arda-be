@@ -227,7 +227,13 @@ func main() {
 		}
 		// readResult is model-visible so the agent can fetch full sandbox
 		// outputs by resultId when the inline preview is truncated.
-		resolver = tools.NewRegistry(suite.SearchTool, suite.ExecuteTool, suite.ReadTool, tools.NewChartMetaTool())
+		metaTools := []tools.Tool{suite.SearchTool, suite.ExecuteTool, suite.ReadTool, tools.NewChartMetaTool()}
+		if cfg.EnableSandboxedUI {
+			// renderWidget is model-visible only when the deployment opted in;
+			// the prompt guidance is gated by the same flag (config.Load).
+			metaTools = append(metaTools, tools.NewWidgetMetaTool())
+		}
+		resolver = tools.NewRegistry(metaTools...)
 		// Evaluated per run: a runtime disable disappears from the model
 		// context without a restart (ADR-003).
 		routerOptions.ModelSDKTypesProvider = suite.TypeDefinitions
