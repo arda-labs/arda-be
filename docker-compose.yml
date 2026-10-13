@@ -172,6 +172,11 @@ services:
       CRM_GRPC_ADDR: crm-service:9090
       IAM_GRPC_ADDR: iam-service:9090
       NOTIFICATION_GRPC_ADDR: notification-service:9090
+      # CaseCommandService owners (ADR-011); dialled only for kinds routed to them.
+      HRM_GRPC_ADDR: hrm-service:9090
+      DEPOSIT_GRPC_ADDR: deposit-service:9090
+      CAPITAL_GRPC_ADDR: capital-service:9090
+      STATISTICAL_GRPC_ADDR: statistical-service:9090
     ports:
       - "8093:8080"
       - "9093:9090"

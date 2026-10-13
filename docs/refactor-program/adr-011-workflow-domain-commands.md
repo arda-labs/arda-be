@@ -1,7 +1,7 @@
 # ADR-011 — Domain flows on the shared maker-checker through CaseCommandService
 
-Status: accepted-with-follow-up (2026-10-12). Follow-up: move the second and
-third T6.2 waves onto this contract; decide how flows with an `init` reserve
+Status: accepted-with-follow-up (2026-10-12, wave 2 added 2026-10-13). Follow-up:
+move the loan wave onto this contract; decide how flows with an `init` reserve
 step and execute-time business failures (BUG-9) fit the shared process.
 
 ## Context
@@ -102,6 +102,55 @@ a running loan route.
 5. Tests: owner-side tests on PostgreSQL for check, approve twice, reject twice;
    a script test like `TestHRMEmployeeRegisterCanaryAppliesAndRollsBack`.
 
+## Wave 2 (2026-10-13): crm, deposit, capital, statistical
+
+Every three-step flow (validate, approve or reject, execute) owned by a
+service other than loan-service now has a `CaseCommandService` adapter in
+its owner and a manual route script under `migrations/canary/`. The legacy
+workers and their baseline entries stay until the cases on the old
+processes drain.
+
+| Case type(s) | Legacy process | Owner | Worker kind | Status |
+|---|---|---|---|---|
+| HRM_EMPLOYEE_REGISTRATION | hrm-employee-registration-v2 | hrm-service | hrm.employee-register | pilot, applied on the dev cluster |
+| CUSTOMER_REGISTRATION | crm-customer-registration-v2 | crm-service | crm.customer-register | moved |
+| CRM_MEMBER_V1 | crm-member-v1 | crm-service | crm.member-request | moved |
+| DPM_SETTLE_V2 | dpm-settle-v2 | deposit-service | dpm.settle | moved |
+| DPM_PRODUCT_REGISTER_V1, DPM_PRODUCT_EDIT_V1 | dpm-product-register-v1, dpm-product-edit-v1 | deposit-service | dpm.product-request | moved (one script per legacy process) |
+| DPM_RATE_REGISTER_V1, DPM_RATE_EDIT_V1 | dpm-rate-v1 | deposit-service | dpm.rate-request | moved |
+| DPM_PAY_INTEREST_V1, DPM_CAPITALIZE_V1 | dpm-interest-v1 | deposit-service | dpm.interest-op | moved |
+| DPM_BATCH_INTEREST_V1 | dpm-interest-v1 | deposit-service | dpm.interest-batch | moved; ops are read by `case_id` |
+| IBM_PLACE_V1 | ibm-place-v1 | deposit-service | ibm.place | moved |
+| IBM_BORROW_V1 | ibm-place-v1 | deposit-service | ibm.borrow | moved |
+| IBM_TOP_UP_V1, IBM_INTEREST_V1, IBM_EXPECTED_V1, IBM_WITHDRAW_V1 | ibm-movement-v1 | deposit-service | ibm.top-up, ibm.interest, ibm.expected, ibm.withdraw | moved; the registry, not a variable, names the movement kind |
+| CFC_CONTRACT_V1, CFC_AMENDMENT_V1, CFC_MOVEMENT_V1 | cfc-*-v1 | capital-service | cfc.contract, cfc.amendment, cfc.movement | moved |
+| RPT_SUBMIT_V2 | rpt-submit-v2 | statistical-service | rpt.submit | moved |
+| DPM_ADDITIONAL_V1 | dpm-additional-v1 | deposit-service | — | open: amount, date and idempotency key live only in process variables; needs a staged request first |
+| CUSTOMER_ADJUSTMENT | customer-adjustment-v2 | crm-service | — | open: two terminal service tasks and no validate step; a different shape |
+| CUSTOMER_RISK_REVIEW, FINANCE_INCOMING_TRANSACTION, FINANCE_OUTGOING_TRANSACTION | *-v1 | crm, finance | — | open: v1 seeds without a deployed BPMN; retire or redesign |
+| FIN_* (7 flows) | fin-*-v2 | finance-service | — | open: `init` reserve step |
+| LNM_* | lnm-*-v2 | loan-service | lnm.* (loan path) | unchanged until loan-service implements the contract |
+
+Contract additions made for this wave:
+
+- `ResolveCaseRequest.data_version` carries the row version the checker saw
+  (the task form's `dataVersion` variable). Owners that guard rows keep
+  their stale-approval check on the shared process; empty applies the
+  decision unguarded as the legacy workers did for cases without a token.
+- The generic transport records a failed check on the case timeline as
+  `VALIDATION_FAILED`, as the CRM register worker did.
+- Owners that lacked idempotency for a retried decision (statistical
+  submission, deposit settlement and product request, IBM placement and
+  borrow with a token) now re-read the row and accept one already in the
+  state the decision produces. The opposite decision after a terminal
+  state is `FailedPrecondition`; a stale token on a row still awaiting
+  review is `Aborted`.
+- On the shared process every flow starts at `UT_MakerInput` because
+  `mcSkipMakerInput` is only set for batch disbursement. Flows whose own
+  BPMN started at `ST_Validate` (customer and employee registration) gain a
+  maker step before validation; their `UT_MakerRevise` step policies do not
+  apply to `UT_MakerInput` and may need registry rows.
+
 ## Open follow-ups
 
 - Flows with an `init` reserve step (disbursement, collection, batch, the seven
@@ -112,3 +161,11 @@ a running loan route.
   error boundary on `ST_Execute`.
 - Loan adjustments move to `CaseCommandService` when loan-service implements
   it; then LoanWorkers and its per-kind topics leave the baseline.
+- DPM_ADDITIONAL_V1 needs a staged request row in deposit-service before it
+  can use the shared contract; CUSTOMER_ADJUSTMENT needs a shape decision.
+- Owner-side approval paths that post to finance (dpm.interest-op,
+  dpm.interest-batch, ibm.place, ibm movements, cfc.movement) are only
+  covered on their idempotent already-applied paths in tests; a fake
+  finance client would let the posting path run on PostgreSQL.
+- Once a wave-2 kind is live, remove its legacy `*_workers.go`, client
+  import and topics from `scripts/check-workflow-workers-baseline.json`.
