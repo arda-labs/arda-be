@@ -101,11 +101,7 @@ func (h *WorkflowHandler) Deploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"processDefinitionKey": key,
-		"filename":             header.Filename,
-		"status":               "deployed",
-	})
+	writeJSON(w, r, http.StatusOK, DeployResult{ProcessDefinitionKey: key, Filename: header.Filename, Status: "deployed"})
 }
 
 type StartRequest struct {
@@ -154,11 +150,7 @@ func (h *WorkflowHandler) Start(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"processInstanceKey": key,
-		"businessKey":        req.BusinessKey,
-		"status":             "started",
-	})
+	writeJSON(w, r, http.StatusOK, StartResult{ProcessInstanceKey: key, BusinessKey: req.BusinessKey, Status: "started"})
 }
 
 type MessageRequest struct {
@@ -191,9 +183,7 @@ func (h *WorkflowHandler) PublishMessage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"status": "published",
-	})
+	writeJSON(w, r, http.StatusOK, StatusResult{Status: "published"})
 }
 
 func (h *WorkflowHandler) Cancel(w http.ResponseWriter, r *http.Request) {
@@ -237,10 +227,7 @@ func (h *WorkflowHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"processInstanceKey": instanceKey,
-		"status":             "cancelled",
-	})
+	writeJSON(w, r, http.StatusOK, CancelResult{ProcessInstanceKey: instanceKey, Status: "cancelled"})
 }
 
 func (h *WorkflowHandler) GetMapping(w http.ResponseWriter, r *http.Request) {
@@ -360,11 +347,7 @@ func (h *WorkflowHandler) caseTypeSteps(w http.ResponseWriter, r *http.Request, 
 		writeAPIError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"caseType":        caseType,
-		"registryVersion": version,
-		"steps":           steps,
-	})
+	writeJSON(w, r, http.StatusOK, CaseTypeSteps{CaseType: caseType, RegistryVersion: version, Steps: steps})
 }
 
 func (h *WorkflowHandler) SLAPolicies(w http.ResponseWriter, r *http.Request) {
@@ -787,11 +770,7 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
 	}
-	var req struct {
-		ProcessInstanceKey flexInt64      `json:"processInstanceKey"`
-		ElementID          string         `json:"elementId"`
-		Variables          map[string]any `json:"variables"`
-	}
+	var req CompleteUserTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
@@ -916,7 +895,7 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 			}
 		}
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"status": "completed"})
+	writeJSON(w, r, http.StatusOK, StatusResult{Status: "completed"})
 }
 
 // recordTaskDecision stores the human decision before the engine/domain side
@@ -1070,13 +1049,7 @@ func (h *WorkflowHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
 	}
-	var req struct {
-		Role               string    `json:"role"`
-		TaskType           string    `json:"taskType"`
-		ProcessInstanceKey flexInt64 `json:"processInstanceKey"`
-		CaseID             string    `json:"caseId"`
-		ElementID          string    `json:"elementId"`
-	}
+	var req ClaimTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
@@ -1213,7 +1186,7 @@ func (h *WorkflowHandler) WorkItemSummary(w http.ResponseWriter, r *http.Request
 		return
 	}
 	h.decorateWorkItemsWithRegistry(r.Context(), items)
-	writeJSON(w, r, http.StatusOK, map[string]any{"nodes": workItemSummary(items, currentUserID(r))})
+	writeJSON(w, r, http.StatusOK, WorkItemSummaryResult{Nodes: workItemSummary(items, currentUserID(r))})
 }
 
 // Analytics handles GET /api/workflow/analytics/overview (W6 dashboard).
@@ -1458,7 +1431,7 @@ func (h *WorkflowHandler) WorkItemByID(w http.ResponseWriter, r *http.Request) {
 	// `formKey` immediately after claiming (no second round-trip).
 	claimedItems := []repository.WorkItem{*claimed}
 	h.decorateWorkItemsWithRegistry(r.Context(), claimedItems)
-	writeJSON(w, r, http.StatusOK, map[string]any{"workItem": claimedItems[0], "claimedBy": userID, "claimedAt": time.Now()})
+	writeJSON(w, r, http.StatusOK, WorkItemClaimResult{WorkItem: claimedItems[0], ClaimedBy: userID, ClaimedAt: time.Now()})
 }
 
 func workItemToWorkflowTask(item repository.WorkItem) service.WorkflowTask {
@@ -1692,7 +1665,7 @@ func (h *WorkflowHandler) processInstanceRuntime(w http.ResponseWriter, r *http.
 		return
 	}
 
-	var activeWorkTask any
+	var activeWorkTask *repository.WorkItem
 	if bc != nil {
 		if pending, err := h.caseRepo.FindActiveWorkTask(runtimeCtx, bc.ID, processInstanceKey); err != nil {
 			writeAPIError(w, r, http.StatusInternalServerError, "Failed to query work task: "+err.Error())
@@ -1747,18 +1720,18 @@ func (h *WorkflowHandler) processInstanceRuntime(w http.ResponseWriter, r *http.
 	}
 	activeElementID := activeElementID(bc, pendingJobs, incidents)
 
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"processInstanceKey": strconv.FormatInt(processInstanceKey, 10),
-		"zeebeStatus":        zeebeStatus,
-		"activeElementId":    activeElementID,
-		"case":               bc,
-		"activeWorkTask":     activeWorkTask,
-		"pendingJobs":        pendingJobs,
-		"incidents":          incidents,
-		"pendingJobsError":   jobsErr,
-		"timeline":           timeline,
-		"hint":               runtimeHint(bc, pendingJobs, zeebeStatus),
-		"workerNote":         "CRM/notification workers chạy trong workflow-service — xem log workflow-service, không phải crm-service HTTP.",
+	writeJSON(w, r, http.StatusOK, ProcessInstanceRuntime{
+		ProcessInstanceKey: strconv.FormatInt(processInstanceKey, 10),
+		ZeebeStatus:        zeebeStatus,
+		ActiveElementID:    activeElementID,
+		Case:               bc,
+		ActiveWorkTask:     activeWorkTask,
+		PendingJobs:        pendingJobs,
+		Incidents:          incidents,
+		PendingJobsError:   jobsErr,
+		Timeline:           timeline,
+		Hint:               runtimeHint(bc, pendingJobs, zeebeStatus),
+		WorkerNote:         "CRM/notification workers chạy trong workflow-service — xem log workflow-service, không phải crm-service HTTP.",
 	})
 }
 
@@ -1880,11 +1853,7 @@ func (h *WorkflowHandler) caseVariables(w http.ResponseWriter, r *http.Request, 
 		writeAPIError(w, r, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"case_id":              bc.ID,
-		"process_instance_key": strconv.FormatInt(*bc.ProcessInstanceKey, 10),
-		"variables":            variables,
-	})
+	writeJSON(w, r, http.StatusOK, CaseVariables{CaseID: bc.ID, ProcessInstanceKey: strconv.FormatInt(*bc.ProcessInstanceKey, 10), Variables: variables})
 }
 
 func (h *WorkflowHandler) caseTimeline(w http.ResponseWriter, r *http.Request, id string) {
@@ -1894,12 +1863,6 @@ func (h *WorkflowHandler) caseTimeline(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 	writeJSON(w, r, http.StatusOK, events)
-}
-
-type caseActorRequest struct {
-	Actor          string         `json:"actor"`
-	Variables      map[string]any `json:"variables"`
-	IdempotencyKey string         `json:"idempotencyKey"`
 }
 
 func (h *WorkflowHandler) caseTaskReadiness(w http.ResponseWriter, r *http.Request, id string) {
@@ -1919,14 +1882,11 @@ func (h *WorkflowHandler) caseTaskReadiness(w http.ResponseWriter, r *http.Reque
 		status = string(item.Status)
 		ready = item.Status == repository.TaskStatusReady || item.Status == repository.TaskStatusClaimed
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{
-		"ready":  ready,
-		"status": status,
-	})
+	writeJSON(w, r, http.StatusOK, TaskReadiness{Ready: ready, Status: status})
 }
 
 func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id string) {
-	var req caseActorRequest
+	var req CaseActorRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
@@ -1972,7 +1932,7 @@ func (h *WorkflowHandler) submitCase(w http.ResponseWriter, r *http.Request, id 
 }
 
 func (h *WorkflowHandler) claimCase(w http.ResponseWriter, r *http.Request, id string) {
-	var req caseActorRequest
+	var req CaseActorRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
