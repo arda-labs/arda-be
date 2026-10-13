@@ -13,6 +13,7 @@ require (
 )
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-openapi v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-time v0.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -39,3 +40,5 @@ replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
 
 replace github.com/arda-labs/arda/libs/go/arda-time => ../../libs/go/arda-time
+
+replace github.com/arda-labs/arda/libs/go/arda-openapi => ../../libs/go/arda-openapi
