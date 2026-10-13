@@ -26,14 +26,14 @@ func resultsRequest(id, thread string, withIdentity bool) *http.Request {
 func TestReadResultRequiresIdentity(t *testing.T) {
 	rec := httptest.NewRecorder()
 	newResultsRouter(func(tools.Context, string) (json.RawMessage, bool) { return nil, false }).
-		ServeHTTP(rec, resultsRequest("res1", "th1", false))
+		ServeHTTP(rec, resultsRequest("t1%7Cu1%7Cth1:1", "th1", false))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 }
 
 func TestReadResultRequiresIdentityHeadersAfterAuthCheck(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/ai/results/res1?thread_id=th1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/ai/results/t1%7Cu1%7Cth1:1?thread_id=th1", nil)
 	req.Header.Set("X-Auth-Checked", "true")
 	rec := httptest.NewRecorder()
 	newResultsRouter(func(tools.Context, string) (json.RawMessage, bool) { return nil, true }).ServeHTTP(rec, req)
@@ -45,14 +45,14 @@ func TestReadResultRequiresIdentityHeadersAfterAuthCheck(t *testing.T) {
 func TestReadResultRequiresThread(t *testing.T) {
 	rec := httptest.NewRecorder()
 	newResultsRouter(func(tools.Context, string) (json.RawMessage, bool) { return nil, false }).
-		ServeHTTP(rec, resultsRequest("res1", "", true))
+		ServeHTTP(rec, resultsRequest("t1%7Cu1%7Cth1:1", "", true))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
 
 func TestReadResultRejectsNonGet(t *testing.T) {
-	req := resultsRequest("res1", "th1", true)
+	req := resultsRequest("t1%7Cu1%7Cth1:1", "th1", true)
 	req.Method = http.MethodPost
 	rec := httptest.NewRecorder()
 	newResultsRouter(func(tools.Context, string) (json.RawMessage, bool) { return nil, true }).ServeHTTP(rec, req)
@@ -69,11 +69,11 @@ func TestReadResultScopesByTenantUserThread(t *testing.T) {
 		return json.RawMessage(`{"rows":[1,2]}`), true
 	})
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, resultsRequest("res_1", "thread-9", true))
+	router.ServeHTTP(rec, resultsRequest("t1%7Cu1%7Cth-9:1", "thread-9", true))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body %s", rec.Code, rec.Body.String())
 	}
-	if got.TenantID != "t1" || got.ActorUserID != "u1" || got.ExternalThread != "thread-9" || gotID != "res_1" {
+	if got.TenantID != "t1" || got.ActorUserID != "u1" || got.ExternalThread != "thread-9" || gotID != "t1|u1|th-9:1" {
 		t.Fatalf("scope not forwarded: %+v id=%s", got, gotID)
 	}
 	var body map[string]json.RawMessage
@@ -86,7 +86,7 @@ func TestReadResultNotFoundHidesExistence(t *testing.T) {
 	// Review Focus 4: another thread's id must look like a missing id.
 	rec := httptest.NewRecorder()
 	newResultsRouter(func(tools.Context, string) (json.RawMessage, bool) { return nil, false }).
-		ServeHTTP(rec, resultsRequest("res_1", "other", true))
+		ServeHTTP(rec, resultsRequest("t1%7Cu1%7Cth-9:1", "other", true))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
@@ -94,7 +94,7 @@ func TestReadResultNotFoundHidesExistence(t *testing.T) {
 
 func TestReadResultNilReaderIsNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newResultsRouter(nil).ServeHTTP(rec, resultsRequest("res_1", "th", true))
+	newResultsRouter(nil).ServeHTTP(rec, resultsRequest("t1%7Cu1%7Cth-9:1", "th", true))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
@@ -106,5 +106,31 @@ func TestReadResultRejectsBadID(t *testing.T) {
 		ServeHTTP(rec, resultsRequest("..%2Fx", "th", true))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestReadResultRejectsMalformedIDs(t *testing.T) {
+	called := false
+	router := newResultsRouter(func(tools.Context, string) (json.RawMessage, bool) { called = true; return nil, true })
+	for _, id := range []string{
+		"t1%7Cu1%7Cth1",           // no :seq suffix
+		"t1%7Cu1%7Cth1:zz",        // non-hex seq
+		"t1%7Cu1%7Ca%2Fb:1",       // encoded slash
+		"t1%7Cu1%7Cth1:1%3Fx%3D1", // encoded query
+		"t1%7Cu1%7Cth1:1%23x",     // encoded fragment
+		"t1%7Cu1%7Ca%25b:1",       // encoded percent
+		"t1%7Cu1%7Ca%20b:1",       // space
+		"t1%7Cu1%7Ca%01b:1",       // control character
+		"t1%7Cu1%7Ca%22b:1",       // quote
+		"t1%7Cu1%7Ca%5Cb:1",       // backslash
+	} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, resultsRequest(id, "th1", true))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", id, rec.Code)
+		}
+	}
+	if called {
+		t.Fatal("reader must not be consulted for a malformed id")
 	}
 }
