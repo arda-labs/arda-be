@@ -93,3 +93,39 @@ func TestCRMMemberRequestCanaryAppliesAndRollsBack(t *testing.T) {
 		kind:      "crm.member-request",
 	})
 }
+
+func TestRPTSubmitCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013090200_workflow_rpt_submit_common_maker_checker_canary.sql",
+		caseTypes: []string{"RPT_SUBMIT_V2"},
+		legacy:    "rpt-submit-v2",
+		kind:      "rpt.submit",
+	})
+}
+
+func TestCFCContractCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013090300_workflow_cfc_contract_common_maker_checker_canary.sql",
+		caseTypes: []string{"CFC_CONTRACT_V1"},
+		legacy:    "cfc-contract-v1",
+		kind:      "cfc.contract",
+	})
+}
+
+func TestCFCAmendmentCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013090400_workflow_cfc_amendment_common_maker_checker_canary.sql",
+		caseTypes: []string{"CFC_AMENDMENT_V1"},
+		legacy:    "cfc-amendment-v1",
+		kind:      "cfc.amendment",
+	})
+}
+
+func TestCFCMovementCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013090500_workflow_cfc_movement_common_maker_checker_canary.sql",
+		caseTypes: []string{"CFC_MOVEMENT_V1"},
+		legacy:    "cfc-movement-v1",
+		kind:      "cfc.movement",
+	})
+}
