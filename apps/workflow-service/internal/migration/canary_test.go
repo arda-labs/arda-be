@@ -228,3 +228,12 @@ func TestIBMWithdrawCanaryAppliesAndRollsBack(t *testing.T) {
 		kind:      "ibm.withdraw",
 	})
 }
+
+func TestDPMProductEditCanaryAppliesAndRollsBack(t *testing.T) {
+	runCanary(t, canaryRoute{
+		script:    "20261013091700_workflow_dpm_product_request_common_maker_checker_canary.sql",
+		caseTypes: []string{"DPM_PRODUCT_EDIT_V1"},
+		legacy:    "dpm-product-edit-v1",
+		kind:      "dpm.product-request",
+	})
+}
