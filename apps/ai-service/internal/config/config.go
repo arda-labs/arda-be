@@ -87,12 +87,19 @@ const defaultDirectToolSystemPrompt = `Bạn là Olorin, trợ lý của nền t
 	`dựa trên dữ liệu tenant hiện tại. Chỉ dùng tool khi cần; mọi hành động thay đổi ` +
 	`dữ liệu đều phải chờ con người phê duyệt.` + userFacingAnswerGuidance
 
-const defaultCodeModeSystemPrompt = `Bạn là Olorin, trợ lý thông minh của nền tảng Arda.
+const codeModeMetaToolsHead = `Bạn là Olorin, trợ lý thông minh của nền tảng Arda.
 Bạn tương tác với hệ thống thông qua các Meta-Tools:
 1. search({ query, domain? }): Tìm kiếm các phương thức TypeScript SDK (arda.*) phù hợp với yêu cầu.
 2. execute({ code }): Viết và thực thi mã JavaScript (ES6) để gọi SDK arda.* (ví dụ: await arda.crm.getCustomer({ customerId: "..." })), xử lý mảng (map, filter, reduce, sort) và trả về kết quả cuối cùng.
 3. readResult({ resultId }): Lấy toàn bộ dữ liệu kết quả của một lần execute() khi output bị cắt ngắn (truncated) hoặc bạn cần chi tiết hơn preview.
-4. renderChart({ title, chart_type, categories, series, value_format? }): Dựng biểu đồ kèm bảng cho người dùng từ dữ liệu bạn đã tính (thường là kết quả execute()). Dùng cho phân tích ad-hoc không nằm trong danh mục báo cáo; giao diện tự vẽ biểu đồ, bạn chỉ mô tả dữ liệu.
+4. renderChart({ title, chart_type, categories, series, value_format? }): Dựng biểu đồ kèm bảng cho người dùng từ dữ liệu bạn đã tính (thường là kết quả execute()). Dùng cho phân tích ad-hoc không nằm trong danh mục báo cáo; giao diện tự vẽ biểu đồ, bạn chỉ mô tả dữ liệu.`
+
+// codeModeMetaToolWidgetLine is appended to the meta-tool list only when the
+// sandboxed UI flag is on.
+const codeModeMetaToolWidgetLine = `
+5. renderWidget({ title, html, css?, js, data?, result_id?, inputs_summary }): Dựng một công cụ "nếu... thì" nhỏ (slider, ô nhập, kết quả tính lại ngay) trên số liệu bạn đã có từ execute(). Giao diện chạy nó trong iframe cô lập; chỉ dùng khi người dùng muốn tự thay đổi giả định.`
+
+const codeModeRules = `
 
 Quy tắc quan trọng:
 - Ngay khi xác định được thao tác cần làm, hãy GỌI tool trong cùng lượt (execute hoặc search) — tuyệt đối không chỉ mô tả kế hoạch rồi dừng.
@@ -103,7 +110,7 @@ Quy tắc quan trọng:
 - Nếu search() 2 lần liên tiếp không trả về phương thức SDK phù hợp, hãy dừng và nói thẳng cho người dùng biết bạn chưa có khả năng xử lý yêu cầu đó (ví dụ: "Tôi hiện chưa hỗ trợ thao tác này trong tenant của bạn."). Đừng lặp lại search với các từ khóa khác nhau nhiều lần.
 - Nếu một phương thức đọc dữ liệu trả về kết quả rỗng sau 2 lần thử với truy vấn khác nhau, hãy dừng và trả lời thẳng rằng hệ thống chưa có dữ liệu phù hợp (ví dụ: "Hiện chưa có nội dung nào được đăng tải cho yêu cầu này.") thay vì tiếp tục thử lại hay chuyển sang câu hỏi khác — kết quả rỗng không phải yêu cầu quá phức tạp.
 - Với arda.knowledge.search: kết quả rỗng nghĩa là kho tri thức chưa có tài liệu phù hợp (đã qua sàn bằng chứng), KHÔNG phải tool lỗi. Khi đó trả lời thẳng là chưa có nội dung và TUYỆT ĐỐI không tạo mục "Nguồn tham khảo".
-- Chỉ liệt kê "Nguồn tham khảo" gồm đúng những tài liệu bạn thực sự dùng để trả lời và có trong kết quả tool (kèm citation dạng [id:tiêu đề mục]); không thêm tài liệu khác chủ đề chỉ vì nó xuất hiện trong kết quả tìm kiếm.` + userFacingAnswerGuidance + answerFormGuidance + reportModeGuidance
+- Chỉ liệt kê "Nguồn tham khảo" gồm đúng những tài liệu bạn thực sự dùng để trả lời và có trong kết quả tool (kèm citation dạng [id:tiêu đề mục]); không thêm tài liệu khác chủ đề chỉ vì nó xuất hiện trong kết quả tìm kiếm.`
 
 const userFacingAnswerGuidance = `
 Cách trả lời cho người dùng:
@@ -127,6 +134,40 @@ Chọn dạng trả lời: mỗi câu hỏi chọn một dạng chính, không v
 - Số liệu nằm trong danh mục báo cáo: getReportPresentation rồi renderChart theo chế độ phân tích / báo cáo bên dưới.
 - Chưa đủ dữ liệu để chọn dạng (vd thiếu kỳ báo cáo): hỏi lại một câu ngắn thay vì đoán.`
 
+// answerFormWidgetLine is appended to the answer-form matrix only when the
+// sandboxed UI flag is on, so an off deployment never nudges the model
+// towards generated UI.
+const answerFormWidgetLine = `
+- Người dùng muốn tự thay đổi giả định (lãi suất, kỳ hạn, số tiền, tỷ lệ phân bổ) và xem kết quả đổi theo: gọi renderWidget; số liệu nền phải lấy từ execute() trước, không bịa.`
+
+// widgetGuidance is the renderWidget usage section, spliced in only when the
+// sandboxed UI flag is on.
+const widgetGuidance = `
+
+Công cụ tương tác (renderWidget):
+- Không dùng renderWidget để hiển thị số liệu tĩnh, bảng, báo cáo danh mục, hay bất kỳ việc gì renderChart và bảng markdown làm được.
+- html chỉ là nội dung body: khối điều khiển (slider, number, select) ở trên, kết quả ở dưới, cập nhật ngay khi người dùng thay đổi; luôn hiển thị giả định hiện tại thành chữ.
+- js chạy sau sự kiện arda:data và đọc dữ liệu từ window.ARDA_DATA; không fetch, không import, không thư viện ngoài, không cookie, không localStorage.
+- Chỉ dùng CSS variables có sẵn: --background, --foreground, --card, --border, --primary, --primary-foreground, --muted-foreground, --chart-1 đến --chart-10, --radius. Nhãn và đơn vị tiếng Việt; số định dạng 1.234.567.
+- Tổng html+css+js tối đa 48 KB; data inline tối đa 64 KB, lớn hơn thì truyền result_id của execute().
+- inputs_summary là một câu liệt kê các tham số người dùng chỉnh được.
+- Sau khi gọi tool, viết 1–2 câu nói công cụ làm gì và giả định mặc định là gì; không lặp lại số trong công cụ.`
+
+// codeModeSystemPrompt assembles the Code Mode prompt. The widget pieces are
+// spliced in only when the sandboxed UI flag is on (spec §5); with the flag
+// off the result is identical to the pre-widget prompt.
+func codeModeSystemPrompt(enableWidget bool) string {
+	head := codeModeMetaToolsHead
+	answerForm := answerFormGuidance
+	tail := ""
+	if enableWidget {
+		head += codeModeMetaToolWidgetLine
+		answerForm += answerFormWidgetLine
+		tail = widgetGuidance
+	}
+	return head + codeModeRules + userFacingAnswerGuidance + answerForm + tail + reportModeGuidance
+}
+
 // reportModeGuidance tells the agent how to answer analytic/report questions:
 // pick a real report code, call the presentation tool, and let the UI render
 // the chart/KPI while it writes the commentary. It explicitly forbids the model
@@ -148,9 +189,10 @@ Chế độ phân tích / báo cáo:
 func Load() Config {
 	mode := envOr("AI_MODE", "development")
 	enableReadTools := envBoolOr("AI_ENABLE_READ_TOOLS", false)
+	enableSandboxedUI := envBoolOr("AI_ENABLE_SANDBOXED_UI", false)
 	defaultPrompt := defaultDirectToolSystemPrompt
 	if enableReadTools {
-		defaultPrompt = defaultCodeModeSystemPrompt
+		defaultPrompt = codeModeSystemPrompt(enableSandboxedUI)
 	}
 	embeddingBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("AI_RAG_EMBEDDING_BASE_URL")), "/")
 	embeddingAPIKey := strings.TrimSpace(os.Getenv("AI_RAG_EMBEDDING_API_KEY"))
@@ -175,7 +217,7 @@ func Load() Config {
 		ProblemDocsURL:      strings.TrimRight(strings.TrimSpace(envOr("PROBLEM_DOCS_URL", "https://docs.arda.io.vn")), "/"),
 		EnableReadTools:     enableReadTools,
 		EnableHITLProposals: envBoolOr("AI_ENABLE_HITL_PROPOSALS", false),
-		EnableSandboxedUI:   envBoolOr("AI_ENABLE_SANDBOXED_UI", false),
+		EnableSandboxedUI:   enableSandboxedUI,
 		DBMaxOpenConns:      envIntOr("DB_MAX_OPEN_CONNS", 8),
 		DBMaxIdleConns:      envIntOr("DB_MAX_IDLE_CONNS", 4),
 		DBConnMaxIdleSec:    envIntOr("DB_CONN_MAX_IDLE_SECONDS", 300),
