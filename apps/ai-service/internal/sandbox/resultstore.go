@@ -2,11 +2,12 @@ package sandbox
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox/resultid"
 )
 
 const (
@@ -87,7 +88,7 @@ func (s *MemoryResultStore) Put(namespace string, data json.RawMessage, logs []s
 	}
 
 	seq := s.seq.Add(1)
-	id := fmt.Sprintf("%s:%x", namespace, seq)
+	id := resultid.Mint(namespace, seq)
 	s.items[id] = storedResult{
 		Data:      data,
 		Logs:      logs,

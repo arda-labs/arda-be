@@ -80,17 +80,17 @@ func TestWidgetMetaToolRequiresDataOrResultID(t *testing.T) {
 	if !errors.Is(err, ErrInvalidArgument) || !strings.Contains(err.Error(), "data or result_id") {
 		t.Fatalf("whitespace empty data: err = %v", err)
 	}
-	res, err := executeWidget(t, `{"title":"t","html":"<p>a</p>","js":"1","result_id":"res_abc-123","inputs_summary":"s"}`)
+	res, err := executeWidget(t, `{"title":"t","html":"<p>a</p>","js":"1","result_id":"t1|u1|th-1:a1","inputs_summary":"s"}`)
 	if err != nil {
 		t.Fatalf("result_id only should pass: %v", err)
 	}
-	if !strings.Contains(string(res.Data), `"result_id":"res_abc-123"`) {
+	if !strings.Contains(string(res.Data), `"result_id":"t1|u1|th-1:a1"`) {
 		t.Fatalf("result_id not echoed: %s", res.Data)
 	}
 }
 
 func TestWidgetMetaToolRejectsMalformedResultID(t *testing.T) {
-	// Review Focus 3: the id ends up in a FE URL, so only [A-Za-z0-9_-].
+	// Review Focus 3: the id ends up in a FE URL, so only the sandbox result-id grammar (internal/sandbox/resultid).
 	_, err := executeWidget(t, `{"title":"t","html":"<p>a</p>","js":"1","result_id":"../x?y","inputs_summary":"s"}`)
 	if !errors.Is(err, ErrInvalidArgument) || !strings.Contains(err.Error(), "result_id") {
 		t.Fatalf("err = %v", err)
@@ -201,6 +201,15 @@ func TestWidgetMetaToolBoundsTitleAndSummary(t *testing.T) {
 		}
 		if !errors.Is(err, ErrInvalidArgument) || !strings.Contains(err.Error(), tc.wantErr) {
 			t.Fatalf("%s: err = %v, want ErrInvalidArgument mentioning %q", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
+func TestWidgetMetaToolRejectsResultIDsOutsideTheGrammar(t *testing.T) {
+	for _, id := range []string{"t1|u1|th1", "t1|u1|a/b:1", "t1|u1|th1:1?x=1", "t1|u1|a b:1", "t1|u1|a%2Fb:1", `t1|u1|a\"b:1`} {
+		_, err := executeWidget(t, `{"title":"t","html":"<p>a</p>","js":"1","result_id":"`+id+`","inputs_summary":"s"}`)
+		if !errors.Is(err, ErrInvalidArgument) || !strings.Contains(err.Error(), "result_id") {
+			t.Errorf("%q: err = %v", id, err)
 		}
 	}
 }

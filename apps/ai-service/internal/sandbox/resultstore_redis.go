@@ -3,11 +3,11 @@ package sandbox
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox/resultid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -49,7 +49,7 @@ func (s *RedisResultStore) Put(namespace string, data json.RawMessage, logs []st
 		s.logger.Warn("sandbox result store: sequence allocation failed", "err", err)
 		return ""
 	}
-	id := fmt.Sprintf("%s:%x", namespace, seq)
+	id := resultid.Mint(namespace, uint64(seq))
 	payload, err := json.Marshal(storedResult{Data: data, Logs: logs, Seq: uint64(seq), CreatedAt: time.Now().UTC()})
 	if err != nil {
 		s.logger.Warn("sandbox result store: encode failed", "err", err)

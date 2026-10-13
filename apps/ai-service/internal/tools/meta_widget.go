@@ -5,10 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox/resultid"
 )
 
 // Size ceilings for model-generated widgets. Code is bounded so one tool call
@@ -32,8 +33,6 @@ var widgetForbidden = []string{
 	"document.cookie", "window.top", "parent.location",
 	"<link", "<iframe", "<object", "<embed", "<form",
 }
-
-var widgetResultIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 type widgetArguments struct {
 	Title         string          `json:"title"`
@@ -125,8 +124,8 @@ func (t *WidgetMetaTool) Execute(ctx context.Context, scope Context, arguments j
 	if hasData && len(input.Data) > widgetMaxDataBytes {
 		return Result{}, fmt.Errorf("%w: data is %d bytes, the limit is 64 KB; pass result_id instead", ErrInvalidArgument, len(input.Data))
 	}
-	if resultID != "" && !widgetResultIDPattern.MatchString(resultID) {
-		return Result{}, fmt.Errorf("%w: result_id must match [A-Za-z0-9_-]", ErrInvalidArgument)
+	if resultID != "" && !resultid.Valid(resultID) {
+		return Result{}, fmt.Errorf("%w: result_id is not a valid resultId (a sandbox result id such as the one execute() returned)", ErrInvalidArgument)
 	}
 
 	for _, field := range []struct{ name, value string }{{"html", input.HTML}, {"js", input.JS}} {

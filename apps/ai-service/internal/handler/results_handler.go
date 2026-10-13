@@ -3,12 +3,10 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"regexp"
 	"strings"
-)
 
-// resultIDPattern mirrors the renderWidget tool's result_id pattern.
-var resultIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+	"github.com/arda-labs/arda/apps/ai-service/internal/sandbox/resultid"
+)
 
 // handleReadResult serves GET /api/ai/results/{resultId}?thread_id=... The
 // result store is namespaced by tenant|user|thread, so a wrong thread or user
@@ -27,8 +25,8 @@ func handleReadResult(w http.ResponseWriter, r *http.Request, options RouterOpti
 		problem(w, http.StatusUnauthorized, "ai.identity_context_required")
 		return
 	}
-	resultID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/ai/results/"), "/")
-	if !resultIDPattern.MatchString(resultID) {
+	resultID := strings.TrimPrefix(r.URL.Path, "/api/ai/results/")
+	if !resultid.Valid(resultID) {
 		problem(w, http.StatusBadRequest, "ai.invalid_request_body")
 		return
 	}
