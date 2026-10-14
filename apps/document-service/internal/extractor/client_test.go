@@ -107,6 +107,28 @@ func TestCompleteErrors(t *testing.T) {
 	}
 }
 
+func TestCompleteInvalidBodyIsUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html>oops</html>`))
+	}))
+	defer srv.Close()
+	text, err := NewClient(ClientConfig{BaseURL: srv.URL, Model: "m"}, srv.Client()).Complete(context.Background(), nil, "p")
+	if !errors.Is(err, ErrModelUnavailable) || text != "" {
+		t.Fatalf("text=%q err=%v, want ErrModelUnavailable", text, err)
+	}
+}
+
+func TestCompleteEmptyChoices(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[]}`))
+	}))
+	defer srv.Close()
+	text, err := NewClient(ClientConfig{BaseURL: srv.URL, Model: "m"}, srv.Client()).Complete(context.Background(), nil, "p")
+	if err != nil || text != "" {
+		t.Fatalf("text=%q err=%v", text, err)
+	}
+}
+
 func TestCompleteEmptyContent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":null}}]}`))

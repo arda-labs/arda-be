@@ -125,7 +125,10 @@ func (c *Client) Complete(ctx context.Context, images [][]byte, prompt string) (
 		return "", fmt.Errorf("%w: status %d", ErrModelUnavailable, resp.StatusCode)
 	}
 	var out chatResponse
-	if err := json.Unmarshal(raw, &out); err != nil || len(out.Choices) == 0 || out.Choices[0].Message.Content == nil {
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return "", fmt.Errorf("%w: invalid response body", ErrModelUnavailable)
+	}
+	if len(out.Choices) == 0 || out.Choices[0].Message.Content == nil {
 		return "", nil
 	}
 	return *out.Choices[0].Message.Content, nil
