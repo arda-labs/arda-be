@@ -10,7 +10,8 @@ uv run gen_cards.py --out samples --per-version 6
 uv run run_eval.py --base-url http://localhost:8100 --samples samples
 ```
 
-Pass criteria (spec §3.5): id_number, date_of_birth and sex 100% correct;
-all fields ≥ 90%. Exit code 1 otherwise. Run it after changing the model,
+Pass criteria (spec §3.5): id_number, all dates (date_of_birth, issue_date,
+expiry_date) and sex 100% correct; every field individually ≥ 90%. Exit
+code 1 otherwise. Run it after changing the model,
 the prompt, or `cccd` normalization. Fonts: Arial on Windows, DejaVu Sans on
 Linux (`--font-dir` to override).

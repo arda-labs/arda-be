@@ -58,7 +58,10 @@ def make_identity(r, version):
     milestones = [14, 25, 40, 60] if version == "can_cuoc_2024" else [25, 40, 60]
     expiry = "Không thời hạn"
     for m in milestones:
-        at = date(dob.year + m, dob.month, dob.day)
+        try:
+            at = date(dob.year + m, dob.month, dob.day)
+        except ValueError:  # 29 Feb in a non-leap target year
+            at = date(dob.year + m, 2, 28)
         if at > issue + timedelta(days=730):
             expiry = fmt(at)
             break

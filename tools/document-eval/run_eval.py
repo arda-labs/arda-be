@@ -5,7 +5,7 @@ from pathlib import Path
 
 import requests
 
-STRICT = ("id_number", "date_of_birth", "sex")
+STRICT = ("id_number", "date_of_birth", "issue_date", "expiry_date", "sex")
 
 
 def expected(field, raw):
@@ -31,7 +31,17 @@ def same(field, want, got):
     return norm(want) == norm(got)
 
 
+def passes(per_field):
+    """Spec 3.5: STRICT fields 100% correct, and every field >= 90% (per field, not pooled)."""
+    if not per_field:
+        return False
+    strict_ok = all(f in per_field and all(per_field[f]) for f in STRICT)
+    return strict_ok and min(sum(v) / len(v) for v in per_field.values()) >= 0.90
+
+
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://localhost:8100")
     ap.add_argument("--samples", default="samples")
@@ -66,9 +76,8 @@ def main():
         print(f"  {f:16s} {sum(v)}/{len(v)}")
     for e in errors[:40]:
         print("   ", e)
-    strict_ok = all(all(per_field[f]) for f in STRICT)
-    if not strict_ok or total < 0.90:
-        print("FAIL: spec §3.5 thresholds not met")
+    if not passes(per_field):
+        print("FAIL: spec 3.5 thresholds not met")
         sys.exit(1)
     print("PASS")
 
