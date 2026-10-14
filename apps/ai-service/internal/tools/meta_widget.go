@@ -61,7 +61,7 @@ func (t *WidgetMetaTool) Definition() Definition {
 		Risk:    "low",
 		Description: "Render a small interactive 'what-if' tool for the user (sliders, inputs, recomputed results) on data you already computed with execute(). " +
 			"Do NOT use it to display static numbers, tables, charts or catalogued reports: use markdown or renderChart for those. " +
-			"html is body-only; js runs after the 'arda:data' event and reads window.ARDA_DATA; no network (no fetch, WebSocket or WebRTC), no imports, no external libraries, no cookies or storage; " +
+			"html is body-only; js runs once, after window.ARDA_DATA is set: read it at top level, wire input listeners and render immediately; do not wait for DOMContentLoaded or load (both have already fired); no network (no fetch, WebSocket or WebRTC), no imports, no external libraries, no cookies or storage; " +
 			"style only with the provided CSS variables (--background, --foreground, --card, --border, --primary, --primary-foreground, --muted-foreground, --chart-1..10, --radius). " +
 			"Pass small data inline (<= 64 KB) or a result_id from execute() for larger data.",
 		Timeout: 1 * time.Second,
@@ -71,7 +71,7 @@ func (t *WidgetMetaTool) Definition() Definition {
 				"title": { "type": "string", "description": "Widget title in Vietnamese (<= 200 characters)." },
 				"html": { "type": "string", "description": "Body-only HTML: controls on top, results below." },
 				"css": { "type": "string", "description": "Optional CSS using only the provided variables." },
-				"js": { "type": "string", "description": "Plain JS; runs after the 'arda:data' event; reads window.ARDA_DATA; no network or imports." },
+				"js": { "type": "string", "description": "Plain JS; runs once, after window.ARDA_DATA is set (read it at top level); do not wait for DOMContentLoaded; no network or imports." },
 				"data": { "type": "object", "description": "Inline data the widget computes on (<= 64 KB)." },
 				"result_id": { "type": "string", "description": "resultId from execute() when the data is too large to inline." },
 				"inputs_summary": { "type": "string", "description": "One sentence in Vietnamese listing the parameters the user can change (<= 500 characters)." }

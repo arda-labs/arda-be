@@ -147,7 +147,7 @@ const widgetGuidance = `
 Công cụ tương tác (renderWidget):
 - Không dùng renderWidget để hiển thị số liệu tĩnh, bảng, báo cáo danh mục, hay bất kỳ việc gì renderChart và bảng markdown làm được.
 - html chỉ là nội dung body: khối điều khiển (slider, number, select) ở trên, kết quả ở dưới, cập nhật ngay khi người dùng thay đổi; luôn hiển thị giả định hiện tại thành chữ.
-- js chạy sau sự kiện arda:data và đọc dữ liệu từ window.ARDA_DATA; không fetch, không import, không thư viện ngoài, không cookie, không localStorage.
+- js chạy đúng một lần, khi window.ARDA_DATA đã có dữ liệu: đọc trực tiếp ở đầu script, lấy phần tử bằng getElementById, gắn sự kiện input rồi tính lại ngay; không chờ DOMContentLoaded hay load (đã xảy ra trước đó); không fetch, không import, không thư viện ngoài, không cookie, không localStorage.
 - Chỉ dùng CSS variables có sẵn: --background, --foreground, --card, --border, --primary, --primary-foreground, --muted-foreground, --chart-1 đến --chart-10, --radius. Nhãn và đơn vị tiếng Việt; số định dạng 1.234.567.
 - Tổng html+css+js tối đa 48 KB; data inline tối đa 64 KB, lớn hơn thì truyền result_id của execute().
 - inputs_summary là một câu liệt kê các tham số người dùng chỉnh được.
