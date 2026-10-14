@@ -195,7 +195,7 @@ func TestDocumentRoutesRequireDocumentExtract(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := []struct{ path, method, risk string }{
-		{"/api/documents/extract", "POST", "high"},
+		{"/api/documents/extract", "POST", "medium"},
 		{"/api/documents/capabilities", "GET", "low"},
 	}
 	for _, c := range cases {

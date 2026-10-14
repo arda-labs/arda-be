@@ -733,7 +733,7 @@ routes:
     path: /api/documents/extract
     methods: [POST]
     auth: true
-    risk: high
+    risk: medium
     permissions:
       - document.extract
 
