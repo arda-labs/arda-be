@@ -111,6 +111,7 @@ func TestCodeModePromptMentionsWidgetOnlyWhenFlagOn(t *testing.T) {
 		"--chart-1",
 		"arda.chart(",
 		"arda.fmt(",
+		`arda.set(id, số, "amount")`,
 	} {
 		if !strings.Contains(on, want) {
 			t.Fatalf("flag on: prompt missing %q", want)
