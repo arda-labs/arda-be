@@ -15,3 +15,5 @@ expiry_date) and sex 100% correct; every field individually ≥ 90%. Exit
 code 1 otherwise. Run it after changing the model,
 the prompt, or `cccd` normalization. Fonts: Arial on Windows, DejaVu Sans on
 Linux (`--font-dir` to override).
+
+Generated ID numbers use real province codes with random digits and may coincide with real numbers; the cards themselves are fictional.

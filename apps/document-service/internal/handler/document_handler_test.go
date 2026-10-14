@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/jpeg"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -149,5 +150,46 @@ func TestExtractNotMultipart(t *testing.T) {
 	newHandler(&fakeExtractor{}, metrics.New()).Extract(rec, r)
 	if rec.Code != 400 || problemCode(t, rec) != CodeInvalidForm {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestExtractClientCanceled(t *testing.T) {
+	ex := &fakeExtractor{err: context.Canceled}
+	m := metrics.New()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := multipartReq(t, part{"doc_type", "", []byte("cccd")}, part{"front", "f.jpg", jpegBytes(t)}).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	newHandler(ex, m).Extract(rec, req)
+	if rec.Code != http.StatusRequestTimeout || problemCode(t, rec) != "document.extract.canceled" {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	var b bytes.Buffer
+	m.Render(&b)
+	if !strings.Contains(b.String(), `outcome="canceled"`) {
+		t.Fatalf("metrics: %s", b.String())
+	}
+}
+
+func TestExtractCanceledLogsAtInfo(t *testing.T) {
+	var logs bytes.Buffer
+	h := NewDocumentHandler(Options{Extractor: &fakeExtractor{err: context.Canceled}, ModelLocation: "cloud", MaxImageBytes: 64 << 10,
+		Timeout: time.Second, Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	h.Extract(httptest.NewRecorder(), multipartReq(t, part{"doc_type", "", []byte("cccd")}, part{"front", "f.jpg", jpegBytes(t)}).WithContext(ctx))
+	if !strings.Contains(logs.String(), `"level":"INFO"`) || strings.Contains(logs.String(), `"level":"WARN"`) {
+		t.Fatalf("logs: %s", logs.String())
+	}
+}
+
+func TestExtractSuccessLogsAttempts(t *testing.T) {
+	var logs bytes.Buffer
+	ex := &fakeExtractor{res: cccd.Result{DocType: "cccd", Warnings: []string{}, Attempts: 2}}
+	h := NewDocumentHandler(Options{Extractor: ex, ModelLocation: "cloud", MaxImageBytes: 64 << 10,
+		Timeout: time.Second, Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+	h.Extract(httptest.NewRecorder(), multipartReq(t, part{"doc_type", "", []byte("cccd")}, part{"front", "f.jpg", jpegBytes(t)}))
+	if !strings.Contains(logs.String(), `"attempts":2`) {
+		t.Fatalf("logs: %s", logs.String())
 	}
 }

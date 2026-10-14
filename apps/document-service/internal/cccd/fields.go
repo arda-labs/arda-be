@@ -83,4 +83,5 @@ type Result struct {
 	Warnings      []string `json:"warnings"`
 	Model         string   `json:"model"`
 	ModelLocation string   `json:"model_location"`
+	Attempts      int      `json:"-"` // model calls used; diagnostic only
 }

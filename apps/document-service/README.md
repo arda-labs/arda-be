@@ -18,6 +18,8 @@ DOCUMENT_REQUIRE_LOCAL=false          # production: true (refuses non-local mode
 DOCUMENT_LOCAL_HOSTS=*.svc.cluster.local,localhost,127.0.0.1,192.168.10.0/24
 ```
 
+`DOCUMENT_LOCAL_HOSTS` must list only hosts that run inference themselves; a LAN proxy that forwards to a cloud model must not be listed, or `DOCUMENT_REQUIRE_LOCAL` will accept it as local.
+
 Dev uses a cloud model with fictional or sample cards only.
 
 HTTP endpoints:

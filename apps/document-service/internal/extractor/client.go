@@ -148,3 +148,11 @@ func newSessionID() string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
+
+// NewHTTPClient returns the client used for model calls. It never follows
+// redirects: a 3xx arrives as a non-200 and maps to ErrModelUnavailable, so a
+// compromised or misconfigured endpoint cannot bounce the request (and the
+// API key) to another host.
+func NewHTTPClient() *http.Client {
+	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}

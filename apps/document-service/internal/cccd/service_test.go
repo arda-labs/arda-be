@@ -74,6 +74,9 @@ func TestExtractHappyPath(t *testing.T) {
 			t.Errorf("%s flags = %v", name, f.Flags)
 		}
 	})
+	if res.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", res.Attempts)
+	}
 	if llm.calls != 1 || len(llm.images[0]) != 2 || extractor.SniffImageType(llm.images[0][0]) != "image/jpeg" {
 		t.Fatalf("calls=%d images=%d", llm.calls, len(llm.images[0]))
 	}
@@ -82,15 +85,16 @@ func TestExtractHappyPath(t *testing.T) {
 func TestExtractRetriesOnceOnUnusableOutput(t *testing.T) {
 	echo := `[{"type": "object", "properties": {"so_cccd": {"type": "string"}}}]`
 	llm := &fakeLLM{replies: []string{echo, goodReply}}
-	if _, err := NewService(llm, "m", "cloud", 1600, fixedNow).Extract(context.Background(), pngBytes(t), nil); err != nil {
+	res, err := NewService(llm, "m", "cloud", 1600, fixedNow).Extract(context.Background(), pngBytes(t), nil)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if llm.calls != 2 {
+	if llm.calls != 2 || res.Attempts != 2 {
 		t.Fatalf("calls = %d", llm.calls)
 	}
 
 	llm = &fakeLLM{replies: []string{"xin lỗi, tôi không đọc được"}}
-	_, err := NewService(llm, "m", "cloud", 1600, fixedNow).Extract(context.Background(), pngBytes(t), nil)
+	_, err = NewService(llm, "m", "cloud", 1600, fixedNow).Extract(context.Background(), pngBytes(t), nil)
 	if !errors.Is(err, ErrBadModelOutput) || llm.calls != 2 {
 		t.Fatalf("err=%v calls=%d", err, llm.calls)
 	}
@@ -180,5 +184,24 @@ func TestTodayUsesVietnamDate(t *testing.T) {
 	svc := NewService(nil, "m", "cloud", 1600, func() time.Time { return time.Date(2026, 10, 13, 18, 30, 0, 0, time.UTC) })
 	if got := svc.today(); !got.Equal(time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("today = %v", got)
+	}
+}
+
+func TestExtractWaitsForPrepSlotUntilDeadline(t *testing.T) {
+	llm := &fakeLLM{replies: []string{goodReply}}
+	svc := NewService(llm, "m", "cloud", 1600, fixedNow)
+	svc.prep <- struct{}{} // another request is decoding an image
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := svc.Extract(ctx, pngBytes(t), nil)
+	if !errors.Is(err, extractor.ErrModelTimeout) {
+		t.Fatalf("err = %v, want ErrModelTimeout", err)
+	}
+	if llm.calls != 0 {
+		t.Fatalf("model called %d times", llm.calls)
+	}
+	<-svc.prep
+	if _, err := svc.Extract(context.Background(), pngBytes(t), nil); err != nil {
+		t.Fatalf("after release: %v", err)
 	}
 }

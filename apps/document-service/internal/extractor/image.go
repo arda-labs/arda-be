@@ -19,6 +19,23 @@ var (
 // huge canvas.
 const maxPixels = 40_000_000
 
+// maxDecodedBytes bounds the in-memory size of the decoded image: a 16-bit
+// PNG at the pixel cap would otherwise decode to ~305 MiB from a tiny file.
+const maxDecodedBytes = 96 << 20
+
+// bytesPerPixel is a conservative decoded cost per pixel for a color model.
+func bytesPerPixel(m color.Model) int {
+	switch m {
+	case color.RGBA64Model, color.NRGBA64Model:
+		return 8
+	case color.Gray16Model:
+		return 2
+	case color.GrayModel, color.AlphaModel:
+		return 1
+	}
+	return 4
+}
+
 // SniffImageType trusts magic bytes, never the client's Content-Type.
 func SniffImageType(data []byte) string {
 	switch ct := http.DetectContentType(data); ct {
@@ -38,7 +55,11 @@ func PrepareImage(data []byte, maxSide int) ([]byte, error) {
 	if err != nil {
 		return nil, ErrUnsupportedImage
 	}
-	if cfg.Width*cfg.Height > maxPixels {
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return nil, ErrUnsupportedImage
+	}
+	if cfg.Width*cfg.Height > maxPixels ||
+		int64(cfg.Width)*int64(cfg.Height)*int64(bytesPerPixel(cfg.ColorModel)) > maxDecodedBytes {
 		return nil, ErrImageTooLarge
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))

@@ -28,33 +28,29 @@ type Service struct {
 	location string
 	maxSide  int
 	now      func() time.Time
+	prep     chan struct{} // size-1 semaphore bounding concurrent image decoding
 }
 
 func NewService(llm Completer, model, location string, maxSide int, now func() time.Time) *Service {
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{llm: llm, model: model, location: location, maxSide: maxSide, now: now}
+	return &Service{llm: llm, model: model, location: location, maxSide: maxSide, now: now, prep: make(chan struct{}, 1)}
 }
 
 // Extract reads a front image and an optional back image. Unusable model
 // output is retried once within the same ctx deadline; model transport
 // errors are not retried.
 func (s *Service) Extract(ctx context.Context, front, back []byte) (Result, error) {
-	images := make([][]byte, 0, 2)
-	for _, raw := range [][]byte{front, back} {
-		if raw == nil {
-			continue
-		}
-		img, err := extractor.PrepareImage(raw, s.maxSide)
-		if err != nil {
-			return Result{}, err
-		}
-		images = append(images, img)
+	images, err := s.prepare(ctx, front, back)
+	if err != nil {
+		return Result{}, err
 	}
 
 	var out map[string]any
-	for attempt := 0; attempt < 2 && out == nil; attempt++ {
+	attempts := 0
+	for attempts < 2 && out == nil {
+		attempts++
 		text, err := s.llm.Complete(ctx, images, Prompt)
 		if err != nil {
 			return Result{}, err
@@ -75,7 +71,34 @@ func (s *Service) Extract(ctx context.Context, front, back []byte) (Result, erro
 	}
 	res := s.build(out, version, back != nil)
 	res.Model, res.ModelLocation = s.model, s.location
+	res.Attempts = attempts
 	return res, nil
+}
+
+// prepare decodes and shrinks the images under the prep semaphore: decoding a
+// large image costs tens of MiB, so only one runs at a time. Waiting honours ctx.
+func (s *Service) prepare(ctx context.Context, front, back []byte) ([][]byte, error) {
+	select {
+	case s.prep <- struct{}{}:
+		defer func() { <-s.prep }()
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, extractor.ErrModelTimeout
+		}
+		return nil, ctx.Err()
+	}
+	images := make([][]byte, 0, 2)
+	for _, raw := range [][]byte{front, back} {
+		if raw == nil {
+			continue
+		}
+		img, err := extractor.PrepareImage(raw, s.maxSide)
+		if err != nil {
+			return nil, err
+		}
+		images = append(images, img)
+	}
+	return images, nil
 }
 
 func (s *Service) build(out map[string]any, version string, hasBack bool) Result {

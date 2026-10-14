@@ -139,3 +139,23 @@ func TestCompleteEmptyContent(t *testing.T) {
 		t.Fatalf("text=%q err=%v", text, err)
 	}
 }
+
+func TestCompleteDoesNotFollowRedirects(t *testing.T) {
+	var hit bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"x"}}]}`))
+	}))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	_, err := NewClient(ClientConfig{BaseURL: srv.URL, Model: "m", APIKey: "secret"}, NewHTTPClient()).Complete(context.Background(), [][]byte{{1}}, "p")
+	if !errors.Is(err, ErrModelUnavailable) {
+		t.Fatalf("err = %v, want ErrModelUnavailable", err)
+	}
+	if hit {
+		t.Fatal("redirect target was contacted")
+	}
+}

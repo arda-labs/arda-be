@@ -3,6 +3,7 @@ package extractor
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"hash/crc32"
 	"image"
 	"image/color"
@@ -28,13 +29,16 @@ func encodePNG(t *testing.T, w, h int) []byte {
 }
 
 // pngHeaderOnly builds a PNG whose IHDR claims w×h; DecodeConfig reads only this.
-func pngHeaderOnly(w, h uint32) []byte {
+func pngHeaderOnly(w, h uint32) []byte { return pngHeaderWith(w, h, 8, 2) }
+
+// pngHeaderWith is pngHeaderOnly with an explicit bit depth and color type.
+func pngHeaderWith(w, h uint32, depth, colorType byte) []byte {
 	var b bytes.Buffer
 	b.Write([]byte("\x89PNG\r\n\x1a\n"))
 	ihdr := make([]byte, 13)
 	binary.BigEndian.PutUint32(ihdr[0:], w)
 	binary.BigEndian.PutUint32(ihdr[4:], h)
-	ihdr[8], ihdr[9] = 8, 2 // 8-bit RGB
+	ihdr[8], ihdr[9] = depth, colorType
 	binary.Write(&b, binary.BigEndian, uint32(len(ihdr)))
 	chunk := append([]byte("IHDR"), ihdr...)
 	b.Write(chunk)
@@ -92,5 +96,17 @@ func TestPrepareImageRejects(t *testing.T) {
 	}
 	if _, err := PrepareImage(pngHeaderOnly(10000, 9000), 1600); err != ErrImageTooLarge {
 		t.Fatalf("90MP: %v", err)
+	}
+}
+
+func TestPrepareImageBudgetsDecodedBytes(t *testing.T) {
+	// 6400x6250 = 40 MP (at the pixel cap) but 16-bit RGBA decodes to ~305 MiB.
+	if _, err := PrepareImage(pngHeaderWith(6400, 6250, 16, 6), 1600); !errors.Is(err, ErrImageTooLarge) {
+		t.Fatalf("16-bit 40MP: %v", err)
+	}
+	// 8-bit RGB 4000x3000 passes the config stage; the missing IDAT fails later.
+	_, err := PrepareImage(pngHeaderWith(4000, 3000, 8, 2), 1600)
+	if errors.Is(err, ErrImageTooLarge) {
+		t.Fatalf("8-bit 12MP must not be too large: %v", err)
 	}
 }

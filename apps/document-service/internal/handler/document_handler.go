@@ -26,6 +26,7 @@ const (
 	CodeModelBadOutput       = "document.extract.model_bad_output"
 	CodeModelUnavailable     = "document.extract.model_unavailable"
 	CodeModelTimeout         = "document.extract.model_timeout"
+	CodeCanceled             = "document.extract.canceled"
 )
 
 type Extractor interface {
@@ -82,8 +83,10 @@ func (h *DocumentHandler) Extract(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, problem{http.StatusServiceUnavailable, CodeModelUnavailable, "Document extraction is not configured", ""})
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 2*h.o.MaxImageBytes+(1<<20))
-	if err := r.ParseMultipartForm(8 << 20); err != nil {
+	// Same cap for the body and the in-memory part budget, so image parts never spill to disk.
+	maxBody := 2*h.o.MaxImageBytes + (1 << 20)
+	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+	if err := r.ParseMultipartForm(maxBody); err != nil {
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) {
 			h.fail(w, r, problem{http.StatusRequestEntityTooLarge, CodeImageTooLarge, "Image is too large", ""})
@@ -114,8 +117,13 @@ func (h *DocumentHandler) Extract(w http.ResponseWriter, r *http.Request) {
 	res, err := h.o.Extractor.Extract(ctx, front, back)
 	if err != nil {
 		p := mapError(err)
+		level := slog.LevelWarn
+		if errors.Is(r.Context().Err(), context.Canceled) {
+			p = problem{http.StatusRequestTimeout, CodeCanceled, "The request was canceled before extraction finished", "canceled"}
+			level = slog.LevelInfo
+		}
 		outcome = p.outcome
-		h.o.Logger.Warn("document extraction failed", "request_id", ardahttp.RequestID(r), "doc_type", cccd.DocType,
+		h.o.Logger.Log(r.Context(), level, "document extraction failed", "request_id", ardahttp.RequestID(r), "doc_type", cccd.DocType,
 			"outcome", outcome, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		h.fail(w, r, p)
 		return
@@ -129,7 +137,7 @@ func (h *DocumentHandler) Extract(w http.ResponseWriter, r *http.Request) {
 		}
 	})
 	h.o.Logger.Info("document extracted", "request_id", ardahttp.RequestID(r), "doc_type", res.DocType,
-		"card_version", res.CardVersion, "flags", flags, "warnings", len(res.Warnings),
+		"card_version", res.CardVersion, "flags", flags, "warnings", len(res.Warnings), "attempts", res.Attempts,
 		"duration_ms", time.Since(start).Milliseconds())
 	ardahttp.WriteSuccess(w, r, http.StatusOK, res)
 }

@@ -47,7 +47,7 @@ func main() {
 			Model:     cfg.ModelName,
 			APIKey:    cfg.ModelAPIKey,
 			UserAgent: "arda-document-service/1.0",
-		}, &http.Client{})
+		}, extractor.NewHTTPClient())
 		opts.Extractor = cccd.NewService(client, cfg.ModelName, cfg.ModelLocation(), cfg.MaxImageSide, time.Now)
 		logger.Info("document model configured", "model", cfg.ModelName, "model_location", cfg.ModelLocation())
 	} else {
