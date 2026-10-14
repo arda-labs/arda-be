@@ -47,6 +47,7 @@ func TestUpstreamBaseURLRoutesKnownAPIPrefixes(t *testing.T) {
 		PlatformServiceURL: "http://platform",
 		FinanceServiceURL:  "http://finance",
 		MediaServiceURL:    "http://media",
+		DocumentServiceURL: "http://document",
 		WorkflowServiceURL: "http://workflow",
 		CRMServiceURL:      "http://crm",
 		NotificationURL:    "http://notification",
@@ -56,19 +57,21 @@ func TestUpstreamBaseURLRoutesKnownAPIPrefixes(t *testing.T) {
 	}}
 
 	tests := map[string]string{
-		"/api/admin/users":          "http://iam",
-		"/api/iam/me":               "http://iam",
-		"/api/unknown":              "",
-		"/api/platform/parameters":  "http://platform",
-		"/api/finance/accounts":     "http://finance",
-		"/api/media/files":          "http://media",
-		"/api/workflow/processes":   "http://workflow",
-		"/api/crm/customers":        "http://crm",
-		"/api/notifications/unread": "http://notification",
-		"/api/mdm/items":            "http://mdm",
-		"/api/ai/agent":             "http://ai",
-		"/api/rag/query":            "http://rag",
-		"/api/rag/sources":          "http://rag",
+		"/api/admin/users":            "http://iam",
+		"/api/iam/me":                 "http://iam",
+		"/api/unknown":                "",
+		"/api/platform/parameters":    "http://platform",
+		"/api/finance/accounts":       "http://finance",
+		"/api/media/files":            "http://media",
+		"/api/documents/extract":      "http://document",
+		"/api/documents/capabilities": "http://document",
+		"/api/workflow/processes":     "http://workflow",
+		"/api/crm/customers":          "http://crm",
+		"/api/notifications/unread":   "http://notification",
+		"/api/mdm/items":              "http://mdm",
+		"/api/ai/agent":               "http://ai",
+		"/api/rag/query":              "http://rag",
+		"/api/rag/sources":            "http://rag",
 	}
 	for path, want := range tests {
 		if got := handler.upstreamBaseURL(path); got != want {

@@ -343,6 +343,7 @@ func (h *BFFHandler) upstreamBaseURL(path string) string {
 		{"/api/platform", h.cfg.PlatformServiceURL},
 		{"/api/finance", h.cfg.FinanceServiceURL},
 		{"/api/media", h.cfg.MediaServiceURL},
+		{"/api/documents", h.cfg.DocumentServiceURL},
 		{"/api/workflow", h.cfg.WorkflowServiceURL},
 		{"/api/crm", h.cfg.CRMServiceURL},
 		{"/api/hrm", h.cfg.HRMServiceURL},

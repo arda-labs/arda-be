@@ -36,6 +36,7 @@ type Config struct {
 	PlatformServiceURL        string `yaml:"platform_service_url" env:"PLATFORM_SERVICE_URL"`
 	FinanceServiceURL         string `yaml:"finance_service_url" env:"FINANCE_SERVICE_URL"`
 	MediaServiceURL           string `yaml:"media_service_url" env:"MEDIA_SERVICE_URL"`
+	DocumentServiceURL        string `yaml:"document_service_url" env:"DOCUMENT_SERVICE_URL"`
 	WorkflowServiceURL        string `yaml:"workflow_service_url" env:"WORKFLOW_SERVICE_URL"`
 	CRMServiceURL             string `yaml:"crm_service_url" env:"CRM_SERVICE_URL"`
 	HRMServiceURL             string `yaml:"hrm_service_url" env:"HRM_SERVICE_URL"`
@@ -92,6 +93,7 @@ func Load() Config {
 		PlatformServiceURL:        "http://localhost:8091",
 		FinanceServiceURL:         "http://localhost:8090",
 		MediaServiceURL:           "http://localhost:8092",
+		DocumentServiceURL:        "http://localhost:8100",
 		WorkflowServiceURL:        "http://localhost:8093",
 		CRMServiceURL:             "http://localhost:8094",
 		HRMServiceURL:             "http://localhost:8099",

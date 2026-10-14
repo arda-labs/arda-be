@@ -188,3 +188,24 @@ func writePolicy(t *testing.T, data string) string {
 	}
 	return path
 }
+
+func TestDocumentRoutesRequireDocumentExtract(t *testing.T) {
+	pol, err := Load(filepath.Join("..", "..", "configs", "policy.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ path, method, risk string }{
+		{"/api/documents/extract", "POST", "high"},
+		{"/api/documents/capabilities", "GET", "low"},
+	}
+	for _, c := range cases {
+		m, err := pol.Match(c.path, c.method)
+		if err != nil {
+			t.Fatalf("%s %s: %v", c.method, c.path, err)
+		}
+		route := m.Route
+		if !route.Auth || route.Risk != c.risk || len(route.Permissions) != 1 || route.Permissions[0] != "document.extract" {
+			t.Fatalf("%s %s => %+v", c.method, c.path, route)
+		}
+	}
+}
