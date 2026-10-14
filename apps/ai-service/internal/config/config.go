@@ -150,6 +150,9 @@ Công cụ tương tác (renderWidget):
 - js chạy đúng một lần, khi window.ARDA_DATA đã có dữ liệu: đọc trực tiếp ở đầu script, lấy phần tử bằng getElementById, gắn sự kiện input rồi tính lại ngay; không chờ DOMContentLoaded hay load (đã xảy ra trước đó); không fetch, không import, không thư viện ngoài, không cookie, không localStorage.
 - Mọi điều khiển hiển thị đều phải hoạt động: có giá trị mặc định đúng với câu hỏi, kết quả tính lại ngay khi đổi, và một nút "Đặt lại" về giả định ban đầu.
 - Trước khi tính, kiểm tra đầu vào rỗng, không phải số hữu hạn (dùng Number.isFinite), ngoài khoảng cho phép, hoặc mẫu số bằng 0; khi đó hiện thông báo lỗi dễ hiểu thay vì NaN, Infinity hay kết quả cũ.
+- Dùng bộ trợ giúp window.arda có sẵn, không tự vẽ SVG/canvas, không tự định dạng số:
+  arda.live(render) chạy render ngay và mỗi khi người dùng đổi điều khiển; arda.val(id, mặcĐịnh) đọc số từ ô nhập (đã chặn rỗng/NaN và kẹp theo min/max); arda.num(v, mặcĐịnh) ép số an toàn; arda.set(id, chữ) ghi kết quả; arda.fmt(v, "amount" | "percent" | "int" | "number") định dạng số tiếng Việt (1,25 tỷ; 3,4 triệu; 12,5%), giá trị không hợp lệ hiện "—".
+  Biểu đồ: arda.chart("idPhầnTử", { type: "bar" | "stacked" | "line" | "area" | "donut", categories: [...], series: [{ name, values: [...] }], format: "amount" }); gọi lại trong render để vẽ lại. Bảng: arda.table("idPhầnTử", { columns: [{ key, label, format? }], rows: [...] }).
 - Chỉ dùng CSS variables có sẵn: --background, --foreground, --card, --border, --primary, --primary-foreground, --muted-foreground, --chart-1 đến --chart-10, --radius. Nhãn và đơn vị tiếng Việt; số định dạng 1.234.567.
 - Tổng html+css+js tối đa 48 KB; data inline tối đa 64 KB, lớn hơn thì truyền result_id của execute().
 - inputs_summary là một câu liệt kê các tham số người dùng chỉnh được.
