@@ -1,0 +1,34 @@
+name: auto-merge
+
+# Bật auto-merge (squash) cho mọi PR nhắm vào main; GitHub chỉ merge khi các
+# check bắt buộc trong ruleset "main: CI xanh mới merge" đều xanh.
+#
+# Dùng PAT (secret AUTOMERGE_TOKEN) thay cho GITHUB_TOKEN: commit merge do
+# GITHUB_TOKEN tạo ra không kích hoạt workflow push, nên image/deploy trên main
+# sẽ không chạy.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  enable:
+    name: enable auto-merge
+    # PR từ fork không được tự merge.
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: gh pr merge --auto --squash
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::AUTOMERGE_TOKEN chưa được cấu hình, bỏ qua."
+            exit 0
+          fi
+          gh pr merge "$PR" --repo "$REPO" --auto --squash
