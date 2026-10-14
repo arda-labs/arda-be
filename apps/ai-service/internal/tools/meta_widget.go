@@ -62,6 +62,7 @@ func (t *WidgetMetaTool) Definition() Definition {
 		Description: "Render a small interactive 'what-if' tool for the user (sliders, inputs, recomputed results) on data you already computed with execute(). " +
 			"Do NOT use it to display static numbers, tables, charts or catalogued reports: use markdown or renderChart for those. " +
 			"html is body-only; js runs once, after window.ARDA_DATA is set: read it at top level, wire input listeners and render immediately; do not wait for DOMContentLoaded or load (both have already fired); no network (no fetch, WebSocket or WebRTC), no imports, no external libraries, no cookies or storage; " +
+			"every visible control must work, with defaults matching the question and a reset to them; validate empty, non-finite (Number.isFinite), out-of-range and zero-denominator inputs before computing and show a readable message instead of NaN, Infinity or a stale result; " +
 			"style only with the provided CSS variables (--background, --foreground, --card, --border, --primary, --primary-foreground, --muted-foreground, --chart-1..10, --radius). " +
 			"Pass small data inline (<= 64 KB) or a result_id from execute() for larger data.",
 		Timeout: 1 * time.Second,
