@@ -19,6 +19,7 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 const modelResultContentLimit = 8 << 10
@@ -781,6 +782,7 @@ func buildModelMessages(ctx context.Context, store runStore, options RouterOptio
 		// runtime enforces authorization at execution time.
 		messages = append(messages, model.Message{Role: "system", Content: identity})
 	}
+	messages = append(messages, model.Message{Role: "system", Content: dateContextPrompt(ardatime.NowCtx(ctx))})
 	if uiContext != "" {
 		messages = append(messages, model.Message{Role: "system", Content: uiContextPrompt(uiContext)})
 	}

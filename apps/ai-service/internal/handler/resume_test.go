@@ -104,19 +104,22 @@ func TestBuildResumeMessagesPairsToolCall(t *testing.T) {
 		TenantID: "tenant-1", ActorUserID: "user-1",
 	}, exec, `{"prepared":true}`, "")
 
-	// [system identity user assistant tool] — identity context is injected
-	// after the base system prompt.
-	if len(messages) != 5 {
-		t.Fatalf("expected [system identity user assistant tool], got %d messages: %+v", len(messages), messages)
+	// [system identity date user assistant tool] — identity and date context
+	// are injected after the base system prompt.
+	if len(messages) != 6 {
+		t.Fatalf("expected [system identity date user assistant tool], got %d messages: %+v", len(messages), messages)
 	}
-	if messages[0].Role != "system" || messages[1].Role != "system" || messages[2].Role != "user" {
+	if messages[0].Role != "system" || messages[1].Role != "system" || messages[2].Role != "system" || messages[3].Role != "user" {
 		t.Fatalf("unexpected leading roles: %+v", messages)
 	}
 	if !strings.Contains(messages[1].Content, "tenant_id") {
 		t.Errorf("expected identity context in second system message, got %q", messages[1].Content)
 	}
-	assistant := messages[3]
-	tool := messages[4]
+	if !strings.Contains(messages[2].Content, "Current date") {
+		t.Errorf("expected date context in third system message, got %q", messages[2].Content)
+	}
+	assistant := messages[4]
+	tool := messages[5]
 	if assistant.Role != "assistant" || len(assistant.ToolCalls) != 1 {
 		t.Fatalf("expected assistant tool_calls message, got %+v", assistant)
 	}
