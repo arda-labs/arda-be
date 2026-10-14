@@ -1,0 +1,16 @@
+app_name: document-service
+http_addr: 0.0.0.0:8100
+log_level: info
+model:
+  # Dev default: cloud model, fictional/sample cards only. Set the key with
+  # DOCUMENT_MODEL_API_KEY; without it OCR stays disabled.
+  preset: opencode-go
+  base_url: https://opencode.ai/zen/go/v1
+  name: qwen3.8-flash
+  timeout: 25s
+  max_image_side: 1600
+privacy:
+  require_local: false
+  local_hosts: ["*.svc.cluster.local", "localhost", "127.0.0.1", "192.168.10.0/24"]
+limits:
+  max_image_bytes: 10485760
