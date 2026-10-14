@@ -90,6 +90,7 @@ func NewRouter(authHandler *handler.AuthHandler, bffHandler *handler.BFFHandler,
 // gateway instead of the upload it is entitled to make.
 var gatewayBodyLimits = []ardahttp.BodyLimitOverride{
 	{Prefix: "/api/media", MaxBytes: ardahttp.MaxUploadBodyBytes},
+	{Prefix: "/api/documents/extract", MaxBytes: ardahttp.MaxDocumentExtractBodyBytes},
 }
 
 // correlationMetadata seeds the outgoing gRPC metadata with the request's

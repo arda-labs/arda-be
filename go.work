@@ -6,6 +6,7 @@ use (
 	./apps/capital-service
 	./apps/crm-service
 	./apps/deposit-service
+	./apps/document-service
 	./apps/finance-service
 	./apps/hrm-service
 	./apps/iam-service

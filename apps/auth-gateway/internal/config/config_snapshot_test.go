@@ -47,6 +47,7 @@ ai_service_url: "yaml-ai_service_url"
 rag_service_url: "yaml-rag_service_url"
 loan_service_url: "yaml-loan_service_url"
 deposit_service_url: "yaml-deposit_service_url"
+document_service_url: "yaml-document_service_url"
 capital_service_url: "yaml-capital_service_url"
 statistical_service_url: "yaml-statistical_service_url"
 policy_file: "yaml-policy_file"
@@ -79,6 +80,7 @@ var loadSnapshotEnv = map[string]string{
 	"CORS_ALLOWED_ORIGINS": "env-CORS_ALLOWED_ORIGINS",
 	"CRM_SERVICE_URL": "env-CRM_SERVICE_URL",
 	"DEPOSIT_SERVICE_URL": "env-DEPOSIT_SERVICE_URL",
+	"DOCUMENT_SERVICE_URL": "env-DOCUMENT_SERVICE_URL",
 	"FINANCE_SERVICE_URL": "env-FINANCE_SERVICE_URL",
 	"FRONTEND_ORIGIN": "env-FRONTEND_ORIGIN",
 	"HRM_SERVICE_URL": "env-HRM_SERVICE_URL",

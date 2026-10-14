@@ -56,3 +56,7 @@ cloudflare/docs/dist/
 
 # Local tunnel credentials
 cf.txt
+
+# document-eval generated output
+tools/document-eval/samples/
+tools/document-eval/.venv/

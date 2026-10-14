@@ -721,6 +721,22 @@ routes:
     permissions:
       - media.manage
 
+  - id: document-capabilities
+    path: /api/documents/capabilities
+    methods: [GET]
+    auth: true
+    risk: low
+    permissions:
+      - document.extract
+
+  - id: document-extract
+    path: /api/documents/extract
+    methods: [POST]
+    auth: true
+    risk: medium
+    permissions:
+      - document.extract
+
   - id: notifications-read
     path: /api/notifications/**
     methods: [GET]

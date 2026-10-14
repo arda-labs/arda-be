@@ -40,6 +40,10 @@ const MaxRAGBodyBytes int64 = 33 << 20
 // MaxWorkflowBodyBytes matches workflow-service's ParseMultipartForm(10 << 20).
 const MaxWorkflowBodyBytes int64 = 11 << 20
 
+// MaxDocumentExtractBodyBytes covers two 10 MiB card images plus multipart
+// overhead (document-service and its gateway route).
+const MaxDocumentExtractBodyBytes int64 = 21 << 20
+
 // MaxPostingSheetBodyBytes matches finance-service's ParseMultipartForm(8 << 20).
 const MaxPostingSheetBodyBytes int64 = 9 << 20
 

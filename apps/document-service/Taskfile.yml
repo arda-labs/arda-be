@@ -1,0 +1,15 @@
+version: "3"
+
+tasks:
+  build:
+    cmds:
+      - go build ./cmd/document-service
+  run:
+    cmds:
+      - go run ./cmd/document-service
+  test:
+    cmds:
+      - go test ./...
+  lint:
+    cmds:
+      - go vet ./...

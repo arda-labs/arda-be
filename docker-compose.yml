@@ -126,6 +126,7 @@ services:
       IAM_CONTEXT_CACHE_TTL_SECONDS: 60
       HRM_SERVICE_URL: http://hrm-service:8080
       NOTIFICATION_SERVICE_URL: http://notification-service:8080
+      DOCUMENT_SERVICE_URL: http://document-service:8080
       TOKEN_STRATEGY: jwks
       JWKS_URL: https://auth.arda.io.vn/.well-known/jwks.json
       INTROSPECTION_URL: https://auth.arda.io.vn/oauth2/introspect
@@ -268,6 +269,20 @@ services:
       - .env
     depends_on:
       - nats
+
+  document-service:
+    build:
+      context: .
+      dockerfile: apps/document-service/Dockerfile
+    environment:
+      APP_NAME: document-service
+      HTTP_ADDR: 0.0.0.0:8080
+      LOG_LEVEL: info
+      DOCUMENT_MODEL_API_KEY: ${DOCUMENT_MODEL_API_KEY:-}
+    ports:
+      - "8100:8080"
+    env_file:
+      - .env
 
 volumes:
   nats-data:
