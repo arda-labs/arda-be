@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/url"
 	"os"
@@ -37,6 +39,11 @@ type Config struct {
 	// Production sets it (personal data must not leave the cluster).
 	RequireLocal bool
 	LocalHosts   []string
+
+	// loadErrs collects configuration that was present but unusable (an
+	// unreadable or unparsable config file, an unparsable boolean env var).
+	// Validate reports them so a broken privacy setting cannot fail open.
+	loadErrs []error
 }
 
 type rawConfig struct {
@@ -71,12 +78,21 @@ func Load() Config {
 		LocalHosts:     []string{"*.svc.cluster.local", "localhost", "127.0.0.1", "192.168.10.0/24"},
 	}
 	if path := os.Getenv("CONFIG_FILE"); path != "" {
-		cfg.loadYAML(path)
+		if err := cfg.loadYAML(path); err != nil {
+			cfg.loadErrs = append(cfg.loadErrs, fmt.Errorf("CONFIG_FILE %s: %w", path, err))
+		}
 	} else {
 		for _, p := range []string{"configs/config.yaml", "../configs/config.yaml", "/etc/arda/document-service/config.yaml"} {
-			if cfg.loadYAML(p) {
+			err := cfg.loadYAML(p)
+			if err == nil {
 				break
 			}
+			// Missing default paths are normal; a file that exists but fails is not.
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			cfg.loadErrs = append(cfg.loadErrs, fmt.Errorf("config file %s: %w", p, err))
+			break
 		}
 	}
 	envStr("APP_NAME", &cfg.AppName)
@@ -89,9 +105,24 @@ func Load() Config {
 	envDuration("DOCUMENT_MODEL_TIMEOUT", &cfg.RequestTimeout)
 	envInt("DOCUMENT_MAX_IMAGE_SIDE", &cfg.MaxImageSide)
 	envInt64("DOCUMENT_MAX_IMAGE_BYTES", &cfg.MaxImageBytes)
-	envBool("DOCUMENT_REQUIRE_LOCAL", &cfg.RequireLocal)
+	cfg.loadRequireLocalEnv()
 	envList("DOCUMENT_LOCAL_HOSTS", &cfg.LocalHosts)
 	return cfg
+}
+
+// loadRequireLocalEnv applies DOCUMENT_REQUIRE_LOCAL. An unparsable value is
+// an error, not a silent no-op: "yes" must not turn the guard off.
+func (c *Config) loadRequireLocalEnv() {
+	v := strings.TrimSpace(os.Getenv("DOCUMENT_REQUIRE_LOCAL"))
+	if v == "" {
+		return
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		c.loadErrs = append(c.loadErrs, fmt.Errorf("DOCUMENT_REQUIRE_LOCAL=%q is not a boolean", v))
+		return
+	}
+	c.RequireLocal = b
 }
 
 // ModelLocation is "local" when the model host matches LocalHosts.
@@ -115,6 +146,9 @@ func (c Config) ModelConfigured() bool {
 }
 
 func (c Config) Validate() error {
+	if len(c.loadErrs) > 0 {
+		return errors.Join(c.loadErrs...)
+	}
 	switch c.ModelPreset {
 	case extractor.PresetOpenAICompatible, extractor.PresetOpenCodeGo:
 	default:
@@ -158,14 +192,16 @@ func HostIsLocal(host string, patterns []string) bool {
 	return false
 }
 
-func (c *Config) loadYAML(path string) bool {
+// loadYAML applies the file at path. It returns the read or parse error; a
+// missing file wraps fs.ErrNotExist. Nothing is applied unless the file parses.
+func (c *Config) loadYAML(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false
+		return err
 	}
 	var raw rawConfig
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return false
+		return err
 	}
 	setStr(raw.AppName, &c.AppName)
 	setStr(raw.HTTPAddr, &c.HTTPAddr)
@@ -188,7 +224,7 @@ func (c *Config) loadYAML(path string) bool {
 	if raw.Limits.MaxImageBytes > 0 {
 		c.MaxImageBytes = raw.Limits.MaxImageBytes
 	}
-	return true
+	return nil
 }
 
 func setStr(v string, dst *string) {
@@ -218,12 +254,6 @@ func envInt(key string, dst *int) {
 func envInt64(key string, dst *int64) {
 	if n, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(key)), 10, 64); err == nil && n > 0 {
 		*dst = n
-	}
-}
-
-func envBool(key string, dst *bool) {
-	if b, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(key))); err == nil {
-		*dst = b
 	}
 }
 

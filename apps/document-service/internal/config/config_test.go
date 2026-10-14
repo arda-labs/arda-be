@@ -3,18 +3,97 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 func isolate(t *testing.T) {
 	t.Helper()
-	t.Setenv("CONFIG_FILE", filepath.Join(t.TempDir(), "missing.yaml"))
-	for _, k := range []string{"APP_NAME", "HTTP_ADDR", "LOG_LEVEL", "DOCUMENT_MODEL_PRESET", "DOCUMENT_MODEL_BASE_URL",
+	for _, k := range []string{"CONFIG_FILE", "APP_NAME", "HTTP_ADDR", "LOG_LEVEL", "DOCUMENT_MODEL_PRESET", "DOCUMENT_MODEL_BASE_URL",
 		"DOCUMENT_MODEL_NAME", "DOCUMENT_MODEL_API_KEY", "DOCUMENT_MODEL_TIMEOUT", "DOCUMENT_MAX_IMAGE_SIDE",
 		"DOCUMENT_MAX_IMAGE_BYTES", "DOCUMENT_REQUIRE_LOCAL", "DOCUMENT_LOCAL_HOSTS"} {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
+	}
+	// Run from an empty directory so the default config search finds nothing.
+	t.Chdir(t.TempDir())
+}
+
+// writeConfig writes content to path, creating parent directories.
+func writeConfig(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDefaultsValidate(t *testing.T) {
+	isolate(t)
+	if err := Load().Validate(); err != nil {
+		t.Fatalf("defaults rejected: %v", err)
+	}
+}
+
+func TestRequireLocalEnvBooleanAccepted(t *testing.T) {
+	isolate(t)
+	t.Setenv("DOCUMENT_REQUIRE_LOCAL", "true")
+	cfg := Load()
+	if !cfg.RequireLocal {
+		t.Fatal("DOCUMENT_REQUIRE_LOCAL=true not applied")
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid boolean rejected: %v", err)
+	}
+}
+
+func TestLoadRejectsUnparsableRequireLocalEnv(t *testing.T) {
+	isolate(t)
+	t.Setenv("DOCUMENT_REQUIRE_LOCAL", "yes")
+	err := Load().Validate()
+	if err == nil {
+		t.Fatal("DOCUMENT_REQUIRE_LOCAL=yes accepted; privacy guard would fail open")
+	}
+	if !strings.Contains(err.Error(), "DOCUMENT_REQUIRE_LOCAL") {
+		t.Fatalf("error does not name the variable: %v", err)
+	}
+}
+
+func TestLoadRejectsMissingExplicitConfigFile(t *testing.T) {
+	isolate(t)
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	t.Setenv("CONFIG_FILE", missing)
+	err := Load().Validate()
+	if err == nil {
+		t.Fatal("missing CONFIG_FILE accepted")
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Fatalf("error does not name the path: %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidYAMLConfigFile(t *testing.T) {
+	isolate(t)
+	path := filepath.Join(t.TempDir(), "bad.yaml")
+	writeConfig(t, path, "model: [\n")
+	t.Setenv("CONFIG_FILE", path)
+	err := Load().Validate()
+	if err == nil {
+		t.Fatal("invalid YAML in CONFIG_FILE accepted")
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Fatalf("error does not name the path: %v", err)
+	}
+}
+
+func TestLoadRejectsBrokenDefaultConfigFile(t *testing.T) {
+	isolate(t)
+	writeConfig(t, filepath.Join("configs", "config.yaml"), "privacy: [\n")
+	if err := Load().Validate(); err == nil {
+		t.Fatal("unparsable default config.yaml accepted")
 	}
 }
 
