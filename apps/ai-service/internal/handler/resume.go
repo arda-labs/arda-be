@@ -11,6 +11,7 @@ import (
 	"github.com/arda-labs/arda/apps/ai-service/internal/model"
 	"github.com/arda-labs/arda/apps/ai-service/internal/repository"
 	"github.com/arda-labs/arda/apps/ai-service/internal/tools"
+	ardatime "github.com/arda-labs/arda/libs/go/arda-time"
 )
 
 type executionResolver interface {
@@ -228,6 +229,7 @@ func buildResumeMessages(
 	if identity := buildIdentityContext(scope); identity != "" {
 		messages = append(messages, model.Message{Role: "system", Content: identity})
 	}
+	messages = append(messages, model.Message{Role: "system", Content: dateContextPrompt(ardatime.NowCtx(ctx))})
 	if uiContext != "" {
 		messages = append(messages, model.Message{Role: "system", Content: uiContextPrompt(uiContext)})
 	}
