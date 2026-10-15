@@ -2,7 +2,7 @@
 
 Every card carries a "MẪU THỬ" watermark and no emblem/portrait/QR/chip.
 """
-import argparse, json, random
+import argparse, json, random, unicodedata
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -89,29 +89,99 @@ def card(lines, F, bg=(232, 240, 236)):
     return watermark(img, F)
 
 
+def wrap(text, font, width):
+    """Split text into lines no wider than width (whole words)."""
+    lines, line = [], ""
+    for word in text.split():
+        cand = f"{line} {word}".strip()
+        if line and font.getlength(cand) > width:
+            lines.append(line)
+            line = word
+        else:
+            line = cand
+    return lines + [line] if line else lines
+
+
+def centered(d, cx, y, text, font, fill):
+    d.text((cx - font.getlength(text) / 2, y), text, font=font, fill=fill)
+
+
+# The 2024 Căn cước layout follows the published blank specimen of Thông tư
+# 16/2024/TT-BCA (label order, bilingual labels, field positions). It keeps
+# the card obviously fictional: flat background, watermark, no national
+# emblem, map, drum or lotus artwork, no chip, no QR.
+def front_2024(gt, F):
+    ink, red = (20, 20, 20), (170, 20, 20)
+    img = Image.new("RGB", (1300, 820), (236, 241, 238))
+    d = ImageDraw.Draw(img)
+    cx = 780
+    centered(d, cx, 28, "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", F(30, True), ink)
+    centered(d, cx, 68, "Độc lập - Tự do - Hạnh phúc", F(24, True), ink)
+    centered(d, cx, 102, "SOCIALIST REPUBLIC OF VIET NAM", F(19), ink)
+    centered(d, cx, 128, "Independence - Freedom - Happiness", F(18), ink)
+    centered(d, cx, 172, "CĂN CƯỚC", F(50, True), red)
+    centered(d, cx, 232, "IDENTITY CARD", F(18, True), red)
+    d.rectangle((60, 290, 330, 640), fill=(214, 218, 216), outline=(120, 120, 120), width=3)
+    x = 370
+    d.text((x, 290), "Số định danh cá nhân / Personal identification number:", font=F(20), fill=ink)
+    d.text((x, 318), gt["id_number"], font=F(40, True), fill=ink)
+    d.text((x, 388), "Họ, chữ đệm và tên khai sinh / Full name:", font=F(20), fill=ink)
+    d.text((x, 416), gt["full_name"], font=F(32, True), fill=ink)
+    label = "Ngày, tháng, năm sinh / Date of birth: "
+    d.text((x, 488), label, font=F(20), fill=ink)
+    d.text((x + F(20).getlength(label), 482), gt["date_of_birth"], font=F(26, True), fill=ink)
+    d.text((960, 488), "Giới tính / Sex: ", font=F(20), fill=ink)
+    d.text((960 + F(20).getlength("Giới tính / Sex: "), 482), gt["sex"], font=F(26, True), fill=ink)
+    d.text((x, 548), "Quốc tịch / Nationality: ", font=F(20), fill=ink)
+    d.text((x + F(20).getlength("Quốc tịch / Nationality: "), 542), gt["nationality"], font=F(26, True), fill=ink)
+    return watermark(img, F)
+
+
+def back_2024(gt, F):
+    ink = (20, 20, 20)
+    img = Image.new("RGB", (1300, 820), (238, 238, 234))
+    d = ImageDraw.Draw(img)
+    d.rectangle((960, 40, 1240, 300), fill=(214, 216, 214), outline=(120, 120, 120), width=3)
+    d.text((60, 40), "Nơi cư trú / Place of residence:", font=F(20), fill=ink)
+    y = 68
+    for line in wrap(gt["residence"], F(26, True), 860):
+        d.text((60, y), line, font=F(26, True), fill=ink)
+        y += 34
+    y += 14
+    d.text((60, y), "Nơi đăng ký khai sinh / Place of birth:", font=F(20), fill=ink)
+    d.text((60, y + 28), "Thành phố Hà Nội", font=F(26, True), fill=ink)
+    for i, (label, value) in enumerate([("Ngày, tháng, năm cấp / Date of issue: ", gt["issue_date"]),
+                                        ("Ngày, tháng, năm hết hạn / Date of expiry: ", gt["expiry_date"])]):
+        yy = 330 + i * 52
+        d.text((440, yy), label, font=F(20), fill=ink)
+        d.text((440 + F(20).getlength(label), yy - 6), value, font=F(26, True), fill=ink)
+    d.text((440, 450), gt["issue_place"], font=F(30, True), fill=ink)
+    d.text((440 + F(30, True).getlength(gt["issue_place"]) + 8, 458), "/ MINISTRY OF PUBLIC SECURITY", font=F(20), fill=ink)
+    surname = "".join(c for c in unicodedata.normalize("NFD", gt["full_name"].split()[0].replace("Đ", "D"))
+                      if unicodedata.category(c) != "Mn")  # MRZ is ASCII
+    mrz = [f"IDVNM{gt['id_number'][-9:]}0{gt['id_number']}<<0",
+           "MAUTHU<KHONG<CO<GIA<TRI<<<<<<<<",
+           f"{surname}<<MAU<THU<<<<<<<<<<<<<<<"]
+    for i, line in enumerate(mrz):
+        d.text((60, 620 + i * 52), line, font=F(32), fill=ink)
+    return watermark(img, F)
+
+
 def front(gt, version, F):
     ink, red = (20, 20, 20), (170, 20, 20)
+    if version == "can_cuoc_2024":
+        return front_2024(gt, F)
     head = [((420, 40), "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", 30, True, ink),
             ((520, 80), "Độc lập - Tự do - Hạnh phúc", 26, True, ink)]
-    if version == "can_cuoc_2024":
-        rows = [((540, 130), "CĂN CƯỚC", 42, True, red),
-                ((370, 210), "Số định danh cá nhân / Personal identification number:", 20, False, ink),
-                ((370, 238), gt["id_number"], 38, True, ink),
-                ((370, 300), "Họ, chữ đệm và tên khai sinh / Full name:", 20, False, ink),
-                ((370, 328), gt["full_name"], 30, True, ink),
-                ((370, 390), f"Ngày, tháng, năm sinh / Date of birth: {gt['date_of_birth']}", 24, False, ink),
-                ((370, 432), f"Giới tính / Sex: {gt['sex']}", 24, False, ink),
-                ((370, 474), f"Quốc tịch / Nationality: {gt['nationality']}", 24, False, ink)]
-    else:
-        rows = [((470, 130), "CĂN CƯỚC CÔNG DÂN", 40, True, red),
-                ((370, 200), "Số / No.:", 20, False, ink), ((370, 228), gt["id_number"], 38, True, ink),
-                ((370, 285), "Họ và tên / Full name:", 20, False, ink), ((370, 313), gt["full_name"], 30, True, ink),
-                ((370, 370), f"Ngày sinh / Date of birth: {gt['date_of_birth']}", 24, False, ink),
-                ((370, 410), f"Giới tính / Sex: {gt['sex']}", 24, False, ink),
-                ((370, 450), f"Quốc tịch / Nationality: {gt['nationality']}", 24, False, ink),
-                ((370, 495), "Quê quán / Place of origin:", 20, False, ink), ((370, 522), gt["place_of_origin"], 24, False, ink),
-                ((370, 570), "Nơi thường trú / Place of residence:", 20, False, ink), ((370, 597), gt["residence"], 24, False, ink),
-                ((50, 640), "Có giá trị đến:", 20, False, ink), ((50, 668), gt["expiry_date"], 24, False, ink)]
+    rows = [((470, 130), "CĂN CƯỚC CÔNG DÂN", 40, True, red),
+            ((370, 200), "Số / No.:", 20, False, ink), ((370, 228), gt["id_number"], 38, True, ink),
+            ((370, 285), "Họ và tên / Full name:", 20, False, ink), ((370, 313), gt["full_name"], 30, True, ink),
+            ((370, 370), f"Ngày sinh / Date of birth: {gt['date_of_birth']}", 24, False, ink),
+            ((370, 410), f"Giới tính / Sex: {gt['sex']}", 24, False, ink),
+            ((370, 450), f"Quốc tịch / Nationality: {gt['nationality']}", 24, False, ink),
+            ((370, 495), "Quê quán / Place of origin:", 20, False, ink), ((370, 522), gt["place_of_origin"], 24, False, ink),
+            ((370, 570), "Nơi thường trú / Place of residence:", 20, False, ink), ((370, 597), gt["residence"], 24, False, ink),
+            ((50, 640), "Có giá trị đến:", 20, False, ink), ((50, 668), gt["expiry_date"], 24, False, ink)]
     img = card(head + rows, F)
     ImageDraw.Draw(img).rectangle((50, 230, 330, 580), outline=(120, 120, 120), width=3)
     return img
@@ -120,17 +190,11 @@ def front(gt, version, F):
 def back(gt, version, F):
     ink = (20, 20, 20)
     if version == "can_cuoc_2024":
-        rows = [((60, 60), "Nơi cư trú / Place of residence:", 20, False, ink), ((60, 88), gt["residence"], 24, False, ink),
-                ((60, 150), "Nơi đăng ký khai sinh / Place of birth:", 20, False, ink),
-                ((60, 178), "Thành phố Hà Nội", 24, False, ink),
-                ((60, 240), f"Ngày, tháng, năm cấp / Date of issue: {gt['issue_date']}", 24, False, ink),
-                ((60, 282), f"Ngày, tháng, năm hết hạn / Date of expiry: {gt['expiry_date']}", 24, False, ink),
-                ((700, 360), gt["issue_place"], 28, True, ink), ((700, 400), "MINISTRY OF PUBLIC SECURITY", 20, False, ink)]
-    else:
-        rows = [((60, 60), "Đặc điểm nhân dạng / Personal identification:", 20, False, ink),
-                ((60, 88), "Nốt ruồi C:1cm trên đuôi mắt trái", 24, False, ink),
-                ((60, 160), f"Ngày, tháng, năm / Date, month, year: {gt['issue_date']}", 24, False, ink),
-                ((60, 220), gt["issue_place"], 22, True, ink)]
+        return back_2024(gt, F)
+    rows = [((60, 60), "Đặc điểm nhân dạng / Personal identification:", 20, False, ink),
+            ((60, 88), "Nốt ruồi C:1cm trên đuôi mắt trái", 24, False, ink),
+            ((60, 160), f"Ngày, tháng, năm / Date, month, year: {gt['issue_date']}", 24, False, ink),
+            ((60, 220), gt["issue_place"], 22, True, ink)]
     rows.append(((60, 700), f"IDVNM{gt['id_number'][-9:]}<<0MAUTHU<<<<<<<<<<<<", 30, False, ink))
     return card(rows, F, bg=(236, 236, 232))
 
