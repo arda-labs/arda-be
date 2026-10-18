@@ -1169,6 +1169,91 @@ func (r *DepositRepository) FirstPendingAccrual(ctx context.Context, tenantID, s
 	return a, nil
 }
 
+// InterestPeriodStart returns the start of the current interest period of one
+// savings: the effective date of its last PAY/CAPITALIZE op that is POSTING or
+// POSTED, or "" when there is none (the period then starts at the open date).
+// A compensated op is back to SUBMITTED and drops out by itself.
+func (r *DepositRepository) InterestPeriodStart(ctx context.Context, tenantID, savingsID string) (string, error) {
+	var start sql.NullString
+	err := r.db.QueryRowContext(ctx, `
+		SELECT MAX(effective_date)::text FROM dpm_interest_ops
+		WHERE tenant_id = $1 AND savings_id = $2
+		  AND op_type IN ('PAY','CAPITALIZE') AND status IN ('POSTING','POSTED')`,
+		tenantID, savingsID).Scan(&start)
+	if err != nil {
+		return "", err
+	}
+	return start.String, nil
+}
+
+// SumPeriodAccruals returns the total already accrued in the interest period
+// that starts at periodStart: every accrual row whose period_from is on or
+// after it, whatever its posting status (a PENDING row is completed before the
+// next window is computed).
+func (r *DepositRepository) SumPeriodAccruals(ctx context.Context, tenantID, savingsID, periodStart string) (int64, error) {
+	var total int64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(amount_minor), 0) FROM dpm_accruals
+		WHERE tenant_id = $1 AND savings_id = $2 AND period_from >= $3::date`,
+		tenantID, savingsID, periodStart).Scan(&total)
+	return total, err
+}
+
+// TopUp is one posted additional deposit of a savings.
+type TopUp struct {
+	Date        string
+	AmountMinor int64
+}
+
+// ListPostedTopUps returns the posted additional deposits dated on or after
+// from, oldest first.
+func (r *DepositRepository) ListPostedTopUps(ctx context.Context, tenantID, savingsID, from string) ([]TopUp, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT txn_date::text, amount_minor FROM dpm_transactions
+		WHERE tenant_id = $1 AND savings_id = $2 AND txn_type = 'TOP_UP_POSTED' AND status = 'POSTED'
+		  AND txn_date >= $3::date
+		ORDER BY txn_date, created_at`, tenantID, savingsID, from)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TopUp{}
+	for rows.Next() {
+		var t TopUp
+		if err := rows.Scan(&t.Date, &t.AmountMinor); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// ListRateChangeDates returns the distinct effective_from dates in (after,
+// through] of the rate rows that can apply to the product bucket (the same
+// candidate set as FindEffectiveRate), oldest first.
+func (r *DepositRepository) ListRateChangeDates(ctx context.Context, tenantID, productCode string, termMonths int, after, through string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT effective_from::text FROM dpm_interest_rates
+		WHERE tenant_id = $1 AND is_active
+		  AND (product_code = $2 OR product_code IS NULL)
+		  AND (term_months = $3 OR term_months = 0)
+		  AND effective_from > $4::date AND effective_from <= $5::date
+		ORDER BY 1`, tenantID, nullStringDep(productCode), termMonths, after, through)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // LastAccrualPeriod returns the last *confirmed* accrued-to date for one
 // savings. Rows still PENDING (staged but not confirmed by finance) are
 // deliberately ignored so a failed day is picked up by the retry path on the
@@ -1248,16 +1333,18 @@ func (r *DepositRepository) ListActiveSavingsForAccrual(ctx context.Context, ten
 // masking) means two concurrent payouts cannot both pass the check — the loser
 // matches zero rows, the transaction rolls back and it gets
 // ErrAccruedInsufficient before any GL posting.
-func (r *DepositRepository) BeginInterestOpPosting(ctx context.Context, tenantID, opID, savingsID string, amountMinor int64, capitalize bool, dataVersion string) error {
+func (r *DepositRepository) BeginInterestOpPosting(ctx context.Context, tenantID, opID, savingsID string, amountMinor int64, capitalize bool, dataVersion, effectiveDate string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// effective_date is the business date the op takes effect: it starts the
+	// next interest period of the savings (see InterestPeriodStart).
 	tag, err := tx.ExecContext(ctx, `
-		UPDATE dpm_interest_ops SET status = 'POSTING', updated_at = now(), version = version + 1
-		WHERE tenant_id = $1 AND id = $2::uuid AND status = 'SUBMITTED'`, tenantID, opID)
+		UPDATE dpm_interest_ops SET status = 'POSTING', effective_date = $3::date, updated_at = now(), version = version + 1
+		WHERE tenant_id = $1 AND id = $2::uuid AND status = 'SUBMITTED'`, tenantID, opID, effectiveDate)
 	if err != nil {
 		return err
 	}
