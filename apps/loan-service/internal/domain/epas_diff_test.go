@@ -950,6 +950,9 @@ type egResult struct {
 	TFirst     string            `json:"t_first_day,omitempty"`
 	TDays      int               `json:"t_days,omitempty"`
 	TErr       string            `json:"t_err,omitempty"`
+	NTotal     string            `json:"n_total,omitempty"` // bộ tính sản xuất T9.1 (domain.CalculateInterest / RoundInterest)
+	NRaw       string            `json:"n_raw,omitempty"`
+	NErr       string            `json:"n_err,omitempty"`
 	Validated  *bool             `json:"validated,omitempty"`
 	Causes     []string          `json:"causes,omitempty"`
 	Marginal   map[string]string `json:"marginal,omitempty"`
@@ -970,9 +973,22 @@ func runCase(c *egCase) egResult {
 			return res
 		}
 		res.AMinor = &m
+		roundNo, roundType := 0, ""
+		if c.RoundNo != nil {
+			roundNo = *c.RoundNo
+		}
+		if c.RoundType != nil {
+			roundType = *c.RoundType
+		}
+		res.NTotal = ratStr(RoundInterest(d, roundNo, roundType).Rat())
 		return res
 	case "fe_alloc":
 		return res
+	}
+	if nc := newCalc(c); nc.Total != nil {
+		res.NTotal, res.NRaw = ratStr(nc.Total), ratStr(nc.Raw)
+	} else {
+		res.NErr = nc.Err
 	}
 	D := dayNum(c.Agreement.DisburseDate)
 	T := dayNum(c.Calc.CalculateDate)
@@ -1164,12 +1180,15 @@ type fixtureRow struct {
 	EpasOK  bool            `json:"epas_ok"`
 }
 
-// TestEpasGoldenFixture khóa hành vi hiện tại của Arda so với oracle EPAS:
-//   - ca "khop": Arda phải bằng EPAS;
-//   - mọi ca so được: Arda hiện tại phải đúng giá trị đã ghi (đổi hành vi thì test báo để cập nhật có chủ đích);
-//   - bộ tính mục tiêu (G2) phải bằng EPAS ở các ca không có "lech_epas".
+// TestEpasGoldenFixture đối chiếu fixture oracle EPAS với Arda ở hai tầng:
 //
-// EPAS_GOLDEN_STRICT=1: yêu cầu Arda bằng EPAS ở mọi ca so được (bật khi T9.1 hoàn tất).
+//   - bộ tính sản xuất domain.CalculateInterest / RoundInterest (T9.1): ở mọi ca so được phải bằng EPAS (dung sai 1e-6
+//     cho số lẻ 10 chữ số), ở ca "loi_epas" phải bằng bộ tính mục tiêu (EPAS sai có chủ đích không được chép), ở ca EPAS
+//     từ chối phải trả đúng mã lỗi, ca CSTL_01 phải bị từ chối có mã;
+//   - đường dự chi cũ (mô phỏng AccrualService.RunDaily, vẫn dùng AccruedInterestMinor, chưa nối vào bộ tính vì Arda chưa
+//     có cấu hình sản phẩm CM124/cơ sở năm/ROUND_NO và lịch sử số dư/lãi suất): khóa đúng giá trị đã ghi trong fixture.
+//
+// EPAS_GOLDEN_STRICT=1 (T9.1 hoàn tất): bỏ khóa đường dự chi cũ, chỉ đòi bộ tính sản xuất khớp EPAS.
 func TestEpasGoldenFixture(t *testing.T) {
 	path := os.Getenv("EPAS_GOLDEN_FIXTURE")
 	if path == "" {
@@ -1183,7 +1202,17 @@ func TestEpasGoldenFixture(t *testing.T) {
 	strict := os.Getenv("EPAS_GOLDEN_STRICT") == "1"
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 1<<26)
+	type tally struct{ comparable, oldMatch, newMatch int }
+	var interestT, roundT tally
 	n := 0
+	defer func() {
+		t.Logf("fixture: %d dòng", n)
+		t.Logf("lãi: %d ca so được; đường RunDaily cũ khớp EPAS %d/%d; bộ tính T9.1 khớp EPAS %d/%d",
+			interestT.comparable, interestT.oldMatch, interestT.comparable, interestT.newMatch, interestT.comparable)
+		t.Logf("làm tròn: %d ca so được; ToMinor cũ khớp EPAS %d/%d; RoundInterest khớp EPAS %d/%d",
+			roundT.comparable, roundT.oldMatch, roundT.comparable, roundT.newMatch, roundT.comparable)
+	}()
+	tol := big.NewRat(1, 1000000)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
@@ -1203,29 +1232,101 @@ func TestEpasGoldenFixture(t *testing.T) {
 		n++
 		t.Run(c.ID, func(t *testing.T) {
 			if !row.EpasOK {
-				t.Skip("EPAS từ chối tính ca này (ngoại lệ nghiệp vụ), không có số chuẩn")
+				var ep struct {
+					Error string `json:"error"`
+				}
+				_ = json.Unmarshal(row.Epas, &ep)
+				if c.Type == "interest" {
+					if got := newCalc(c); got.Err != ep.Error {
+						t.Errorf("EPAS từ chối với %s, bộ tính T9.1 trả %q", ep.Error, got.Err)
+					}
+				}
+				return
 			}
 			if c.Type == "fe_alloc" {
 				t.Skip("chia lãi theo tỷ lệ vốn: Arda chưa có hàm tương đương (chỉ dùng để so BE với FE)")
 			}
-			got := runCase(c)
-			if got.AMinor == nil {
-				t.Fatalf("Arda không tính được (%s)", got.AErr)
-			}
-			if row.ArdaWas != nil && *got.AMinor != *row.ArdaWas {
-				t.Errorf("Arda đổi hành vi: nay %d, fixture ghi %d (cụm %s)", *got.AMinor, *row.ArdaWas, row.Cluster)
-			}
 			epasTotal := sim0(row.EpasTot)
-			if row.Class == "khop" || strict {
-				if new(big.Rat).SetInt64(*got.AMinor).Cmp(epasTotal) != 0 {
-					t.Errorf("Arda %d khác EPAS %s (lớp %s, cụm %s)", *got.AMinor, row.EpasTot, row.Class, row.Cluster)
+			comparableRow := row.Class == "khop" || row.Class == "lech_co_chu_dich" || row.Class == "loi_arda"
+			if c.Type == "round" {
+				amount, err := decimal.NewFromString(c.Amount)
+				if err != nil {
+					t.Fatal(err)
+				}
+				roundNo, roundType := 0, ""
+				if c.RoundNo != nil {
+					roundNo = *c.RoundNo
+				}
+				if c.RoundType != nil {
+					roundType = *c.RoundType
+				}
+				gotRound := RoundInterest(amount, roundNo, roundType).Rat()
+				want := roundIntended(rat(c.Amount), c.RoundNo, c.RoundType)
+				if gotRound.Cmp(want) != 0 {
+					t.Errorf("RoundInterest(%s, %d, %v) = %s, đúng là %s", c.Amount, roundNo, c.RoundType, gotRound.FloatString(4), want.FloatString(4))
+				}
+				if comparableRow {
+					roundT.comparable++
+					if gotRound.Cmp(epasTotal) == 0 {
+						roundT.newMatch++
+					} else {
+						t.Errorf("RoundInterest %s khác EPAS %s (lớp %s)", gotRound.FloatString(4), row.EpasTot, row.Class)
+					}
+					old := runCase(c)
+					if old.AMinor != nil && new(big.Rat).SetInt64(*old.AMinor).Cmp(epasTotal) == 0 {
+						roundT.oldMatch++
+					}
+				}
+				return
+			}
+			old := runCase(c)
+			if old.AMinor == nil {
+				t.Fatalf("đường RunDaily cũ không tính được (%s)", old.AErr)
+			}
+			if !strict && row.ArdaWas != nil && *old.AMinor != *row.ArdaWas {
+				t.Errorf("đường RunDaily cũ đổi hành vi: nay %d, fixture ghi %d (cụm %s)", *old.AMinor, *row.ArdaWas, row.Cluster)
+			}
+			if row.Class != "loi_epas" && old.TFinal != "" {
+				d := new(big.Rat).Sub(sim0(old.TFinal), epasTotal)
+				if d.Abs(d).Cmp(tol) > 0 {
+					t.Errorf("bộ tính mục tiêu %s lệch EPAS %s", old.TFinal, row.EpasTot)
 				}
 			}
-			if row.Class != "loi_epas" && got.TFinal != "" {
-				d := new(big.Rat).Sub(sim0(got.TFinal), epasTotal)
-				tol := big.NewRat(1, 1000000)
-				if d.Abs(d).Cmp(tol) > 0 {
-					t.Errorf("bộ tính mục tiêu %s lệch EPAS %s", got.TFinal, row.EpasTot)
+			got := newCalc(c)
+			if isBaseCodeCase(c) {
+				if !strings.HasPrefix(got.Err, "BASE_CODE:") {
+					t.Errorf("CSTL_01 chưa có định nghĩa, bộ tính phải từ chối có mã, nhưng trả %+v", got)
+				}
+				return
+			}
+			if got.Skipped {
+				return
+			}
+			if got.Err != "" {
+				t.Errorf("bộ tính T9.1 lỗi %s ở ca EPAS tính được", got.Err)
+				return
+			}
+			if comparableRow {
+				interestT.comparable++
+				if new(big.Rat).SetInt64(*old.AMinor).Cmp(epasTotal) == 0 {
+					interestT.oldMatch++
+				}
+				if ratEqualWithin(got.Total, epasTotal, tol) {
+					interestT.newMatch++
+				} else {
+					t.Errorf("bộ tính T9.1 %s khác EPAS %s (lớp %s, cụm %s)", got.Total.FloatString(4), row.EpasTot, row.Class, row.Cluster)
+				}
+			}
+			// Ngoài lãi thừa thiếu / khoản đã thu (chưa có quyết định), lãi thô phải bằng bộ tính mục tiêu.
+			if old.TNormal != "" {
+				target := new(big.Rat).Add(sim0(old.TNormal), sim0(old.TOverdue))
+				if !ratEqualWithin(got.Raw, target, tol) {
+					t.Errorf("lãi thô T9.1 %s lệch bộ tính mục tiêu %s", got.Raw.FloatString(6), target.FloatString(6))
+				}
+				if row.Class == "loi_epas" && old.TFinal != "" {
+					if want := sim0(old.TFinal); !ratEqualWithin(got.Total, want, tol) {
+						t.Errorf("ca lỗi EPAS: T9.1 %s, đúng là %s", got.Total.FloatString(4), want.FloatString(4))
+					}
 				}
 			}
 		})
