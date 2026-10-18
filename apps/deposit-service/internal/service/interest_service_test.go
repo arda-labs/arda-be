@@ -24,7 +24,7 @@ func TestAccrualWindow(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			from, to, days, ok := accrualWindow(tt.openDate, tt.lastPosted, tt.businessDate)
+			from, to, days, ok := accrualWindow(tt.openDate, tt.lastPosted, tt.businessDate, "")
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
 			}
@@ -44,7 +44,7 @@ func TestAccrualWindow(t *testing.T) {
 func TestAccrualWindowRetriesFailedDay(t *testing.T) {
 	// Last POSTED period is 2026-01-09 even though 2026-01-10 was staged
 	// PENDING by the failed run; the window must include 2026-01-10 again.
-	from, to, days, ok := accrualWindow("2026-01-01", "2026-01-09", "2026-01-10")
+	from, to, days, ok := accrualWindow("2026-01-01", "2026-01-09", "2026-01-10", "")
 	if !ok || from != "2026-01-10" || to != "2026-01-11" || days != 1 {
 		t.Fatalf("failed day must be retried, got (%s, %s, %d, %v)", from, to, days, ok)
 	}
@@ -59,7 +59,7 @@ func TestAccrualWindowsChainWithoutGap(t *testing.T) {
 	var chained int
 	prevTo := open
 	for _, business := range []string{"2026-01-01", "2026-01-02", "2026-01-05", "2026-01-06"} {
-		from, to, days, ok := accrualWindow(open, last, business)
+		from, to, days, ok := accrualWindow(open, last, business, "")
 		if !ok {
 			t.Fatalf("window for %s must exist", business)
 		}
