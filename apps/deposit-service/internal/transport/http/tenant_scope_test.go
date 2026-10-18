@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -162,5 +163,49 @@ func TestTenantScopeProductRequestReachesWorkflow(t *testing.T) {
 	}
 	if n := countProductRequests(t, db, "SUBMITTED"); n != 1 {
 		t.Fatalf("SUBMITTED requests = %d, want 1", n)
+	}
+}
+
+// failingWorkflow đóng vai workflow-service từ chối ca (CreateCase lỗi hoặc SubmitCase lỗi).
+type failingWorkflow struct {
+	createErr, submitErr error
+}
+
+func (w failingWorkflow) CreateCase(context.Context, workflowclient.CaseCreate) (*workflowv1.BusinessCase, error) {
+	if w.createErr != nil {
+		return nil, w.createErr
+	}
+	return &workflowv1.BusinessCase{Id: "case-1", CaseCode: "DPM-PROD-1"}, nil
+}
+
+func (w failingWorkflow) SubmitCase(context.Context, string, string, map[string]any, string) (*workflowv1.BusinessCase, error) {
+	return nil, w.submitErr
+}
+
+// Lỗi workflow không được để lại dòng yêu cầu SUBMITTED mồ côi (không có ca duyệt nào sẽ xử lý nó, nhưng nó vẫn hiện
+// trong danh sách chờ duyệt): dòng phải chuyển sang FAILED. Cần ARDA_TEST_DSN.
+func TestTenantScopeWorkflowFailureDoesNotLeaveOrphanRequest(t *testing.T) {
+	headers := map[string]string{"X-Tenant-Id": "system", "X-User-Id": "user-1", "X-Auth-Checked": "true"}
+	tests := []struct {
+		name string
+		wf   failingWorkflow
+	}{
+		{"CreateCase lỗi", failingWorkflow{createErr: errors.New("rpc error: code = PermissionDenied desc = verified tenant scope is required")}},
+		{"SubmitCase lỗi", failingWorkflow{submitErr: errors.New("rpc error: code = FailedPrecondition desc = case is not submittable")}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
+			rec := postProductRequest(t, db, tc.wf, headers)
+			if rec.Code != http.StatusBadGateway {
+				t.Fatalf("status = %d, want 502 (body %s)", rec.Code, rec.Body.String())
+			}
+			if n := countProductRequests(t, db, "SUBMITTED"); n != 0 {
+				t.Fatalf("SUBMITTED requests = %d, want 0 (orphan left behind)", n)
+			}
+			if n := countProductRequests(t, db, "FAILED"); n != 1 {
+				t.Fatalf("FAILED requests = %d, want 1", n)
+			}
+		})
 	}
 }

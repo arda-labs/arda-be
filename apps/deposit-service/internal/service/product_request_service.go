@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -140,16 +141,27 @@ func (s *ProductRequestService) Submit(ctx context.Context, tenantID, actor stri
 		IdempotencyKey:    key,
 	})
 	if err != nil {
+		s.abandonRequest(ctx, tenantID, request.ID)
 		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
 	}
 	if _, err := s.workflow.SubmitCase(ctx, caseCreated.GetId(), actor,
 		map[string]any{"productRequestId": request.ID}, key+"-submit"); err != nil {
+		s.abandonRequest(ctx, tenantID, request.ID)
 		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
 	}
 	if err := s.repo.SetProductRequestCase(ctx, tenantID, request.ID, caseCreated.GetId(), caseCreated.GetCaseCode()); err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
 	return &Submission{CaseID: caseCreated.GetId(), CaseCode: caseCreated.GetCaseCode()}, nil
+}
+
+// abandonRequest closes a request whose approval case could not be opened, so it does not
+// linger as a SUBMITTED row that no case will ever resolve. Best effort: the caller already
+// has a workflow error to report.
+func (s *ProductRequestService) abandonRequest(ctx context.Context, tenantID, id string) {
+	if err := s.repo.MarkProductRequestResolved(context.WithoutCancel(ctx), tenantID, id, "FAILED", 0); err != nil {
+		slog.Warn("deposit: cannot close product request after workflow failure", "request_id", id, "err", err)
+	}
 }
 
 // Check validates the request is actionable (BPMN validate job).
