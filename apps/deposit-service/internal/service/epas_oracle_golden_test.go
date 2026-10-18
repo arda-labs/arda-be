@@ -10,12 +10,12 @@ package service
 //  2. Fixture: go test -tags epasgolden -run TestEpasOracleFixture ./internal/service/
 //     doc testdata/epas_oracle_fixture.jsonl (truong "src" = epas-oracle@<sha9 be_dpm>).
 //
-// Arda duoc chay o 4 che do tren CUNG dau vao:
-//   r  = interest.Calculate nguyen trang, khoang [from,to] tinh ca hai dau, MOT lai suat = lai suat hieu luc tai `to`
-//        (dung nhu RunDaily: FindEffectiveRate(businessDate));
-//   s  = nhu r nhung To = to-1 ngay (quy uoc nua mo [from,to) cua EPAS) de tach rieng chenh lech dem ngay;
-//   sx = nhu s nhung chia ky theo moc lai suat EPAS, moi doan chay mot lan interest.Calculate (Arda khong co RatePoint);
-//   daily = mo phong RunDaily: moi ngay mot lan accrualWindow + Calculate(RoundNo 0), lam tron den dong moi ngay.
+// Sau T9.1 (G2-DPM-NGAY-01 nua mo, RatePoint, lam tron mot lan chinh xac) Arda co mot duong tinh duy nhat:
+//   r  = interest.Calculate voi khoang nua mo [from,to), diem so du va moc lai suat (RatePoints) cua hop dong;
+//   s, sx = bi danh cua r, giu lai de cong cu so sanh P3 (compare.mjs) van doc duoc tep dump;
+//   daily = mo phong RunDaily: moi ngay mot lan accrualWindow + Calculate(RoundNo 0), lam tron den dong moi ngay
+//           (cach lam tron cua du chi hang ngay CHUA co quyet dinh, T9.1 giu nguyen hanh vi cu).
+// Che do EPAS_GOLDEN_STRICT=1: moi ca fixture phai khop EPAS o che do r.
 
 import (
 	"bufio"
@@ -135,8 +135,16 @@ func p3Balance(bs []p3Point, at time.Time) decimal.Decimal {
 	return v
 }
 
+func p3RatePoints(rps []p3Point) []interest.RatePoint {
+	out := make([]interest.RatePoint, 0, len(rps))
+	for _, rp := range rps {
+		out = append(out, interest.RatePoint{Date: p3Date(rp.D), Rate: p3Dec(rp.R)})
+	}
+	return out
+}
+
 func p3Input(v p3Vector, from, to time.Time, rate decimal.Decimal) interest.Input {
-	in := interest.Input{From: from, To: to, Rate: rate, Points: p3Points(v.Balances)}
+	in := interest.Input{From: from, To: to, Rate: rate, Points: p3Points(v.Balances), RatePoints: p3RatePoints(v.RatePoints)}
 	if v.Denom != nil {
 		in.BaseDenominator = *v.Denom
 	}
@@ -154,58 +162,9 @@ func p3RunArda(v p3Vector) p3Out {
 	def := p3Dec(v.Rate)
 	out := p3Out{ID: v.ID}
 
-	// r: nguyen trang
-	rateTo := p3RateAt(def, v.RatePoints, to)
-	r := interest.Calculate(p3Input(v, from, to, rateTo))
-	out.R = p3Convert(r)
-
-	// s: nua mo
-	s := interest.Calculate(p3Input(v, from, to.AddDate(0, 0, -1), rateTo))
-	out.S = p3Convert(s)
-
-	// sx: chia theo moc lai suat, moi doan mot lan Calculate (nua mo), cong raw roi lam tron mot lan
-	cuts := []time.Time{from}
-	seen := map[time.Time]bool{from: true}
-	rpDates := make([]time.Time, 0, len(v.RatePoints))
-	for _, rp := range v.RatePoints {
-		rpDates = append(rpDates, p3Date(rp.D))
-	}
-	sort.Slice(rpDates, func(i, j int) bool { return rpDates[i].Before(rpDates[j]) })
-	for _, d := range rpDates {
-		if d.After(from) && d.Before(to) && !seen[d] {
-			seen[d] = true
-			cuts = append(cuts, d)
-		}
-	}
-	cuts = append(cuts, to)
-	sx := &p3Calc{Segs: []p3Seg{}}
-	rawSum := decimal.Zero
-	if !from.After(to) {
-		for i := 0; i+1 < len(cuts); i++ {
-			a, b := cuts[i], cuts[i+1]
-			if !a.Before(b) {
-				continue
-			}
-			sub := p3Input(v, a, b.AddDate(0, 0, -1), p3RateAt(def, v.RatePoints, a))
-			sub.RoundNo = 0
-			res := interest.Calculate(sub)
-			rawSum = rawSum.Add(res.Raw)
-			sx.Days += res.TotalDays
-			for _, sg := range res.Segments {
-				sx.Segs = append(sx.Segs, p3Seg{D: sg.Days, Bal: sg.Balance.String(), Amt: sg.Amount.String()})
-			}
-		}
-	}
-	roundNo, roundType := 0, ""
-	if v.RoundNo != nil {
-		roundNo = *v.RoundNo
-	}
-	if v.RoundType != nil {
-		roundType = *v.RoundType
-	}
-	sx.Raw = rawSum.String()
-	sx.Rounded = interest.ApplyRound(rawSum, roundNo, roundType).String()
-	out.SX = sx
+	// r: duong tinh san xuat (nua mo, RatePoints, lam tron mot lan); s va sx la bi danh.
+	r := p3Convert(interest.Calculate(p3Input(v, from, to, def)))
+	out.R, out.S, out.SX = r, r, r
 
 	// daily: mo phong RunDaily cho moi ngay [from, to-1], dung accrualWindow that.
 	if from.Before(to) {
@@ -220,7 +179,7 @@ func p3RunArda(v p3Vector) p3Out {
 			if day.After(from) {
 				last = day.AddDate(0, 0, -1).Format("2006-01-02")
 			}
-			wFrom, wDays, ok := accrualWindow(v.From, last, day.Format("2006-01-02"))
+			wFrom, wTo, wDays, ok := accrualWindow(v.From, last, day.Format("2006-01-02"))
 			if !ok {
 				d.Skip++
 				continue
@@ -231,9 +190,9 @@ func p3RunArda(v p3Vector) p3Out {
 				continue
 			}
 			bal := p3Balance(v.Balances, day)
-			fd := p3Date(wFrom)
+			fd, td := p3Date(wFrom), p3Date(wTo)
 			res := interest.Calculate(interest.Input{
-				From: fd, To: day, Rate: rate, BaseDenominator: denom, RoundNo: 0,
+				From: fd, To: td, Rate: rate, BaseDenominator: denom, RoundNo: 0,
 				Points: []interest.BalancePoint{{Date: fd, Balance: bal}},
 			})
 			amount := res.Rounded.Round(0).IntPart()
