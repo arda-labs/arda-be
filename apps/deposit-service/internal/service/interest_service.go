@@ -638,7 +638,9 @@ func (s *InterestService) ResolveInterestOp(ctx context.Context, tenantID, id, d
 		card, debit, credit, description := interestOpCard(op.OpType)
 		capitalize := op.OpType == "CAPITALIZE"
 		if mode == opModeFresh {
-			if err := s.repo.BeginInterestOpPosting(ctx, tenantID, op.ID, savings.ID, op.AmountMinor, capitalize, dataVersion); err != nil {
+			// The op takes effect on the business date it is approved and starts a
+			// new interest period (owner decision: PAY and CAPITALIZE both do).
+			if err := s.repo.BeginInterestOpPosting(ctx, tenantID, op.ID, savings.ID, op.AmountMinor, capitalize, dataVersion, todayDep(ctx)); err != nil {
 				switch {
 				case errors.Is(err, repository.ErrAccruedInsufficient):
 					if dataVersion != "" {
