@@ -5,6 +5,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/statistical-service/internal/handler"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 // NewRouter wires the statistical-service HTTP surface.
@@ -138,7 +139,9 @@ func NewRouter(h *handler.StatisticalHandler, internalAIHandler *handler.Interna
 	// it judges are already computed for the period.
 	mux.HandleFunc("/internal/jobs/evaluate-rules", indicatorResults.RunEvaluateRulesJob)
 
-	return mux
+	// Bind the BFF identity headers (X-Tenant-Id, X-User-Id, ...) to the outgoing
+	// gRPC metadata so calls to workflow/finance carry the verified tenant scope.
+	return ardametadata.HTTPMiddleware(mux)
 }
 
 // internalAIService authenticates the ai-service caller on the internal AI

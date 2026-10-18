@@ -5,6 +5,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/capital-service/internal/handler"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 // NewRouter wires the capital-service HTTP surface.
@@ -71,7 +72,9 @@ func NewRouter(h *handler.CapitalHandler, internalAIHandler *handler.InternalAIH
 	mux.Handle("GET /internal/reporting/capital-contracts", internalReportingService(http.HandlerFunc(rep.InternalReportingContracts)))
 	mux.Handle("GET /internal/reporting/capital-movements", internalReportingService(http.HandlerFunc(rep.InternalReportingMovements)))
 
-	return mux
+	// Bind the BFF identity headers (X-Tenant-Id, X-User-Id, ...) to the outgoing
+	// gRPC metadata so calls to workflow/finance carry the verified tenant scope.
+	return ardametadata.HTTPMiddleware(mux)
 }
 
 // internalAIService authenticates the ai-service caller on the internal AI

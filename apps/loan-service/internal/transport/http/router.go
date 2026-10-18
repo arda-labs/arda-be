@@ -6,6 +6,7 @@ import (
 	"github.com/arda-labs/arda/apps/loan-service/internal/handler"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 	ardahttp "github.com/arda-labs/arda/libs/go/arda-http"
 )
 
@@ -278,7 +279,9 @@ func NewRouter(h *handler.LoanHandler, d *handler.DisbursementHandler, c *handle
 	mux.Handle("GET /internal/reporting/loan-agreements", internalReportingService(http.HandlerFunc(rep.InternalReportingAgreements)))
 	mux.Handle("GET /internal/reporting/loan-collaterals", internalReportingService(http.HandlerFunc(rep.InternalReportingCollaterals)))
 
-	return mux
+	// Bind the BFF identity headers (X-Tenant-Id, X-User-Id, ...) to the outgoing
+	// gRPC metadata so calls to workflow/finance carry the verified tenant scope.
+	return ardametadata.HTTPMiddleware(mux)
 }
 
 // internalAIService authenticates the ai-service caller on the internal AI
