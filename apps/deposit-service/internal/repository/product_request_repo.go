@@ -19,6 +19,8 @@ type ProductRequest struct {
 	TermMonths       int     `json:"term_months"`
 	InterestRate     float64 `json:"interest_rate"`
 	CurrencyCode     string  `json:"currency_code"`
+	RoundNo          *int    `json:"round_no,omitempty"`
+	RoundType        *string `json:"round_type,omitempty"`
 	Status           string  `json:"status"`
 	WorkflowCaseID   string  `json:"workflow_case_id,omitempty"`
 	WorkflowCaseCode string  `json:"workflow_case_code,omitempty"`
@@ -30,16 +32,19 @@ type ProductRequest struct {
 }
 
 const productRequestColumns = `id, tenant_id, request_type, product_code, name, term_months,
-	interest_rate::float8, currency_code, status,
+	interest_rate::float8, currency_code, round_no, round_type, status,
 	COALESCE(workflow_case_id,''), COALESCE(workflow_case_code,''), created_by, created_at::text, version`
 
 func scanProductRequest(scan func(...any) error) (*ProductRequest, error) {
 	var p ProductRequest
+	var roundNo sql.NullInt32
+	var roundType sql.NullString
 	if err := scan(&p.ID, &p.TenantID, &p.RequestType, &p.ProductCode, &p.Name, &p.TermMonths,
-		&p.InterestRate, &p.CurrencyCode, &p.Status, &p.WorkflowCaseID, &p.WorkflowCaseCode,
+		&p.InterestRate, &p.CurrencyCode, &roundNo, &roundType, &p.Status, &p.WorkflowCaseID, &p.WorkflowCaseCode,
 		&p.CreatedBy, &p.CreatedAt, &p.DataVersion); err != nil {
 		return nil, err
 	}
+	p.RoundNo, p.RoundType = roundConfig(roundNo, roundType)
 	return &p, nil
 }
 
@@ -50,11 +55,12 @@ func (r *DepositRepository) InsertProductRequest(ctx context.Context, p *Product
 	}
 	row := r.db.QueryRowContext(ctx, `
 		INSERT INTO dpm_product_requests
-			(id, tenant_id, request_type, product_code, name, term_months, interest_rate, currency_code, status, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'SUBMITTED',$9)
+			(id, tenant_id, request_type, product_code, name, term_months, interest_rate, currency_code,
+			 round_no, round_type, status, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'SUBMITTED',$11)
 		RETURNING created_at::text`,
 		p.ID, p.TenantID, p.RequestType, p.ProductCode, p.Name, p.TermMonths,
-		p.InterestRate, p.CurrencyCode, p.CreatedBy)
+		p.InterestRate, p.CurrencyCode, p.RoundNo, p.RoundType, p.CreatedBy)
 	if err := row.Scan(&p.CreatedAt); err != nil {
 		return nil, err
 	}

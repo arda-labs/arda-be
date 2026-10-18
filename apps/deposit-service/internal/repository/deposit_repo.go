@@ -43,9 +43,29 @@ type SavingsProduct struct {
 	InterestRate float64   `json:"interest_rate"`
 	CurrencyCode string    `json:"currency_code"`
 	IsActive     bool      `json:"is_active"`
-	CreatedBy    string    `json:"created_by"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	// RoundNo and RoundType (CM163) are the rounding of the cumulative daily
+	// accrual; nil = not configured (the accrual of such a product is skipped).
+	RoundNo   *int      `json:"round_no,omitempty"`
+	RoundType *string   `json:"round_type,omitempty"`
+	CreatedBy string    `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// roundConfig maps the nullable round_no / round_type columns to the optional
+// fields of SavingsProduct.
+func roundConfig(no sql.NullInt32, kind sql.NullString) (*int, *string) {
+	var n *int
+	var k *string
+	if no.Valid {
+		v := int(no.Int32)
+		n = &v
+	}
+	if kind.Valid {
+		v := kind.String
+		k = &v
+	}
+	return n, k
 }
 
 // Savings is one citizen deposit account (EPAS dpm_inf_saving subset).
@@ -206,7 +226,7 @@ func (r *DepositRepository) ListProducts(ctx context.Context, params ListProduct
 	}
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, tenant_id, code, name, term_months, interest_rate, currency_code, is_active,
-		       COALESCE(created_by,''), created_at, updated_at
+		       round_no, round_type, COALESCE(created_by,''), created_at, updated_at
 		FROM dpm_products WHERE %s ORDER BY %s %s`,
 		strings.Join(where, " AND "), productSortCol(params.Sort), listDepOrder(params.Order)), args...)
 	if err != nil {
@@ -216,10 +236,13 @@ func (r *DepositRepository) ListProducts(ctx context.Context, params ListProduct
 	out := []SavingsProduct{}
 	for rows.Next() {
 		var p SavingsProduct
+		var roundNo sql.NullInt32
+		var roundType sql.NullString
 		if err := rows.Scan(&p.ID, &p.TenantID, &p.Code, &p.Name, &p.TermMonths, &p.InterestRate,
-			&p.CurrencyCode, &p.IsActive, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			&p.CurrencyCode, &p.IsActive, &roundNo, &roundType, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
+		p.RoundNo, p.RoundType = roundConfig(roundNo, roundType)
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -231,12 +254,16 @@ func (r *DepositRepository) UpsertProduct(ctx context.Context, p *SavingsProduct
 		p.ID = NewDepositID("dpmprd")
 	}
 	row := r.db.QueryRowContext(ctx, `
-		INSERT INTO dpm_products (id, tenant_id, code, name, term_months, interest_rate, currency_code, is_active, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8)
+		INSERT INTO dpm_products (id, tenant_id, code, name, term_months, interest_rate, currency_code, is_active,
+			round_no, round_type, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8,$9,$10)
 		ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name, term_months = EXCLUDED.term_months,
-			interest_rate = EXCLUDED.interest_rate, updated_at = now(), version = dpm_products.version + 1
+			interest_rate = EXCLUDED.interest_rate,
+			round_no = COALESCE(EXCLUDED.round_no, dpm_products.round_no),
+			round_type = COALESCE(EXCLUDED.round_type, dpm_products.round_type),
+			updated_at = now(), version = dpm_products.version + 1
 		RETURNING created_at, updated_at`,
-		p.ID, p.TenantID, p.Code, p.Name, p.TermMonths, p.InterestRate, p.CurrencyCode, p.CreatedBy)
+		p.ID, p.TenantID, p.Code, p.Name, p.TermMonths, p.InterestRate, p.CurrencyCode, p.RoundNo, p.RoundType, p.CreatedBy)
 	if err := row.Scan(&p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -404,11 +431,14 @@ func (r *DepositRepository) ListTxnsBySavings(ctx context.Context, tenantID, sav
 func (r *DepositRepository) GetProductByCode(ctx context.Context, tenantID, code string) (*SavingsProduct, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, code, name, term_months, interest_rate, currency_code, is_active,
-		       COALESCE(created_by,''), created_at, updated_at
+		       round_no, round_type, COALESCE(created_by,''), created_at, updated_at
 		FROM dpm_products WHERE tenant_id = $1 AND code = $2`, tenantID, code)
 	var p SavingsProduct
+	var roundNo sql.NullInt32
+	var roundType sql.NullString
 	err := row.Scan(&p.ID, &p.TenantID, &p.Code, &p.Name, &p.TermMonths, &p.InterestRate,
-		&p.CurrencyCode, &p.IsActive, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt)
+		&p.CurrencyCode, &p.IsActive, &roundNo, &roundType, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt)
+	p.RoundNo, p.RoundType = roundConfig(roundNo, roundType)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
