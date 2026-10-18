@@ -993,8 +993,8 @@ func (r *CaseRepository) AddTimelineEvent(ctx context.Context, caseID, eventType
 	}
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO case_timeline_events (case_id, event_type, note)
-		SELECT $2, $3, $4
-		WHERE EXISTS (SELECT 1 FROM business_cases WHERE id = $2 AND tenant_id = $1)
+		SELECT $2::varchar, $3::varchar, $4::text
+		WHERE EXISTS (SELECT 1 FROM business_cases WHERE id = $2::varchar AND tenant_id = $1::varchar)
 	`, tenant, caseID, eventType, note)
 	return err
 }
