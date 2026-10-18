@@ -179,7 +179,7 @@ func p3RunArda(v p3Vector) p3Out {
 			if day.After(from) {
 				last = day.AddDate(0, 0, -1).Format("2006-01-02")
 			}
-			wFrom, wTo, wDays, ok := accrualWindow(v.From, last, day.Format("2006-01-02"))
+			wFrom, wTo, wDays, ok := accrualWindow(v.From, last, day.Format("2006-01-02"), "")
 			if !ok {
 				d.Skip++
 				continue

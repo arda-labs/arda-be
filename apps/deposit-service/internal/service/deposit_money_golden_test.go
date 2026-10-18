@@ -48,7 +48,7 @@ func TestGoldenAccrualWindow(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			from, to, days, ok := accrualWindow(tc.openDate, tc.lastPosted, tc.businessDate)
+			from, to, days, ok := accrualWindow(tc.openDate, tc.lastPosted, tc.businessDate, "")
 			if ok != tc.wantOK || from != tc.wantFrom || to != tc.wantTo || days != tc.wantDays {
 				t.Fatalf("accrualWindow = (%s, %s, %d, %v), muốn (%s, %s, %d, %v)", from, to, days, ok, tc.wantFrom, tc.wantTo, tc.wantDays, tc.wantOK)
 			}
@@ -59,7 +59,7 @@ func TestGoldenAccrualWindow(t *testing.T) {
 // dailyAccrualMinor ghép đúng các bước RunDaily thực hiện cho một sổ.
 func dailyAccrualMinor(t *testing.T, openDate, lastPosted, businessDate string, principal int64, rate float64, denominator int) (int, int64) {
 	t.Helper()
-	from, to, days, ok := accrualWindow(openDate, lastPosted, businessDate)
+	from, to, days, ok := accrualWindow(openDate, lastPosted, businessDate, "")
 	if !ok {
 		return 0, 0
 	}

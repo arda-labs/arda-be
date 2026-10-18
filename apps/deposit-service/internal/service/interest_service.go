@@ -225,12 +225,15 @@ func mapRateResolveErr(err error) error {
 // ── Accrual (DPM.305, EOD) ──
 
 // accrualWindow returns the half-open date window [from, to) still to accrue
-// for one savings account, given the last confirmed period ("" when none) and
-// the run business date. The run accrues through the business date inclusive,
-// so to = business date + 1. Because to is the first day the next run would
-// start from, consecutive windows chain without losing or repeating a day
-// (G2-DPM-NGAY-01/02). It is pure so the retry semantics can be unit tested.
-func accrualWindow(openDate, lastPosted, businessDate string) (from, to string, days int, ok bool) {
+// for one savings account, given the last confirmed period ("" when none), the
+// run business date and the start of the current interest period ("" = the
+// open date). The run accrues through the business date inclusive, so
+// to = business date + 1. Because to is the first day the next run would start
+// from, consecutive windows chain without losing or repeating a day
+// (G2-DPM-NGAY-01/02). The window never starts before periodStart, so a row
+// never straddles two interest periods. It is pure so the retry semantics can
+// be unit tested.
+func accrualWindow(openDate, lastPosted, businessDate, periodStart string) (from, to string, days int, ok bool) {
 	business, err := time.Parse("2006-01-02", businessDate)
 	if err != nil {
 		return "", "", 0, false
@@ -242,6 +245,9 @@ func accrualWindow(openDate, lastPosted, businessDate string) (from, to string, 
 			return "", "", 0, false
 		}
 		from = last.AddDate(0, 0, 1).Format("2006-01-02")
+	}
+	if periodStart != "" && periodStart > from {
+		from = periodStart // ISO dates compare as strings
 	}
 	fromDate, err := time.Parse("2006-01-02", from)
 	if err != nil || business.Before(fromDate) {
@@ -297,7 +303,7 @@ func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate s
 		if err != nil {
 			return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
-		from, windowEnd, days, ok := accrualWindow(item.OpenDate, last, businessDate)
+		from, windowEnd, days, ok := accrualWindow(item.OpenDate, last, businessDate, "")
 		if !ok {
 			continue
 		}
