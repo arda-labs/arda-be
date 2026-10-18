@@ -5,6 +5,7 @@ import (
 
 	"github.com/arda-labs/arda/apps/deposit-service/internal/handler"
 	"github.com/arda-labs/arda/libs/go/arda-grpc/identity"
+	ardametadata "github.com/arda-labs/arda/libs/go/arda-grpc/metadata"
 )
 
 // NewRouter wires the deposit-service HTTP surface.
@@ -124,7 +125,10 @@ func NewRouter(h *handler.DepositHandler, ai *handler.InternalAIHandler, rep *ha
 	mux.Handle("GET /internal/reporting/ibm-deposits", internalReportingService(http.HandlerFunc(rep.InternalReportingIBMDeposits)))
 	mux.Handle("GET /internal/reporting/ibm-borrows", internalReportingService(http.HandlerFunc(rep.InternalReportingIBMBorrows)))
 
-	return mux
+	// Bind the BFF identity headers (X-Tenant-Id, X-User-Id, ...) to the outgoing
+	// gRPC metadata. Without it the workflow client reaches workflow-service with
+	// an empty tenant scope and every CreateCase/SubmitCase is rejected.
+	return ardametadata.HTTPMiddleware(mux)
 }
 
 // internalAIService authenticates the ai-service caller on the internal AI

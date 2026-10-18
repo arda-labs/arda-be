@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -140,16 +143,56 @@ func (s *ProductRequestService) Submit(ctx context.Context, tenantID, actor stri
 		IdempotencyKey:    key,
 	})
 	if err != nil {
+		s.abandonRequest(ctx, tenantID, request.ID, "", err)
 		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
 	}
 	if _, err := s.workflow.SubmitCase(ctx, caseCreated.GetId(), actor,
 		map[string]any{"productRequestId": request.ID}, key+"-submit"); err != nil {
+		s.abandonRequest(ctx, tenantID, request.ID, caseCreated.GetId(), err)
 		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow submit case failed", err)
 	}
 	if err := s.repo.SetProductRequestCase(ctx, tenantID, request.ID, caseCreated.GetId(), caseCreated.GetCaseCode()); err != nil {
 		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
 	return &Submission{CaseID: caseCreated.GetId(), CaseCode: caseCreated.GetCaseCode()}, nil
+}
+
+// abandonRequest closes a request whose approval case could not be opened, so it does not
+// linger as a SUBMITTED row that no case will ever resolve — but only when workflow-service
+// definitely refused. A timeout or lost connection does not say whether the case was created
+// and the reply got lost; closing the request then would leave a live case whose approval
+// fails with "not awaiting approval", so the request stays SUBMITTED (and approvable) and the
+// ambiguity is logged. caseID is set when CreateCase succeeded but SubmitCase failed (a DRAFT
+// case is left on the workflow side). Best effort: the caller already has an error to report.
+func (s *ProductRequestService) abandonRequest(ctx context.Context, tenantID, id, caseID string, cause error) {
+	if !workflowDefinitelyRejected(cause) {
+		slog.Warn("deposit: workflow outcome unknown, product request kept SUBMITTED",
+			"request_id", id, "case_id", caseID, "err", cause)
+		return
+	}
+	if caseID != "" {
+		slog.Warn("deposit: workflow rejected submit, DRAFT case left behind",
+			"request_id", id, "case_id", caseID, "err", cause)
+	}
+	if err := s.repo.MarkProductRequestResolved(context.WithoutCancel(ctx), tenantID, id, "FAILED", 0); err != nil {
+		slog.Warn("deposit: cannot close product request after workflow failure", "request_id", id, "err", err)
+	}
+}
+
+// workflowDefinitelyRejected reports whether err is a gRPC answer that proves the call had no
+// effect. Transport-level or unknown outcomes (DeadlineExceeded, Unavailable, Canceled, Unknown,
+// Internal, a non-gRPC error) are not.
+func workflowDefinitelyRejected(err error) bool {
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	switch st.Code() {
+	case codes.InvalidArgument, codes.NotFound, codes.AlreadyExists, codes.PermissionDenied,
+		codes.FailedPrecondition, codes.Unauthenticated, codes.OutOfRange, codes.Unimplemented:
+		return true
+	}
+	return false
 }
 
 // Check validates the request is actionable (BPMN validate job).
