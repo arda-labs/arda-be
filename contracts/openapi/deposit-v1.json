@@ -2050,6 +2050,18 @@
           "request_type": {
             "type": "string"
           },
+          "round_no": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "round_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status": {
             "type": "string"
           },
@@ -2100,6 +2112,18 @@
           },
           "request_type": {
             "type": "string"
+          },
+          "round_no": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "round_type": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "term_months": {
             "type": "integer"
@@ -2585,6 +2609,18 @@
           "name": {
             "type": "string"
           },
+          "round_no": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "round_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "tenant_id": {
             "type": "string"
           },
@@ -2639,6 +2675,18 @@
           },
           "name": {
             "type": "string"
+          },
+          "round_no": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "round_type": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "tenant_id": {
             "type": "string"
