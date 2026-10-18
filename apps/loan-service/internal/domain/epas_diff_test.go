@@ -980,7 +980,11 @@ func runCase(c *egCase) egResult {
 		if c.RoundType != nil {
 			roundType = *c.RoundType
 		}
-		res.NTotal = ratStr(RoundInterest(d, roundNo, roundType).Rat())
+		if rounded, err := RoundInterest(d, roundNo, fixtureRoundCode(roundType)); err == nil {
+			res.NTotal = ratStr(rounded.Rat())
+		} else {
+			res.NErr = err.(*InterestError).Code
+		}
 		return res
 	case "fe_alloc":
 		return res
@@ -1260,7 +1264,11 @@ func TestEpasGoldenFixture(t *testing.T) {
 				if c.RoundType != nil {
 					roundType = *c.RoundType
 				}
-				gotRound := RoundInterest(amount, roundNo, roundType).Rat()
+				rounded, rerr := RoundInterest(amount, roundNo, fixtureRoundCode(roundType))
+				if rerr != nil {
+					t.Fatalf("RoundInterest(%s, %d, %q): %v", c.Amount, roundNo, roundType, rerr)
+				}
+				gotRound := rounded.Rat()
 				want := roundIntended(rat(c.Amount), c.RoundNo, c.RoundType)
 				if gotRound.Cmp(want) != 0 {
 					t.Errorf("RoundInterest(%s, %d, %v) = %s, đúng là %s", c.Amount, roundNo, c.RoundType, gotRound.FloatString(4), want.FloatString(4))
