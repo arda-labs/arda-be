@@ -11,6 +11,7 @@ import (
 	"github.com/arda-labs/arda/apps/deposit-service/internal/handler"
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
 	"github.com/arda-labs/arda/apps/deposit-service/internal/service"
+	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 )
 
 type fakeSettlement struct {
@@ -124,7 +125,11 @@ func (f *fakeIBM) SubmitBorrowMovement(_ context.Context, _, borrowID, _ string,
 	return &repository.IBMBorrowMovement{ID: "bmv-1", BorrowID: borrowID, Kind: in.Kind}, nil
 }
 
-type fakeInterest struct{}
+type fakeInterest struct {
+	// runDailyErr, when set, is what RunDaily returns after accruing posted savings.
+	runDailyErr error
+	posted      int
+}
 
 func (f *fakeInterest) ListInterestRates(context.Context, string, string) ([]repository.InterestRate, error) {
 	return nil, nil
@@ -151,7 +156,7 @@ func (f *fakeInterest) GetSavingsDetail(context.Context, string, string) (*servi
 }
 
 func (f *fakeInterest) RunDaily(context.Context, string, string) (int, error) {
-	return 0, nil
+	return f.posted, f.runDailyErr
 }
 
 type fakeReports struct{}
@@ -214,5 +219,29 @@ func TestRouterRejectsWrongMethodOnActionRoutes(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+// Savings skipped for a missing product rounding config are a 422 problem with the
+// code and the skipped savings; any other service error keeps its usual mapping.
+func TestRouterDailyAccrualReportsMissingRoundConfigAs422(t *testing.T) {
+	skipped := ardaerrors.New(service.CodeAccrualRoundConfigMissing, "daily accrual skipped for 1 savings")
+	skipped.Fields = map[string]string{"savings_codes": "S-NOROUND", "posted": "3"}
+	mux := NewRouter(handler.NewDepositHandler(&fakeSettlement{}, &fakeAdditional{}, &fakeProducts{}, &fakeIBM{},
+		&fakeInterest{runDailyErr: skipped, posted: 3}, &fakeReports{}), nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/jobs/deposit-accrual-daily?to_date=2026-01-03", nil)
+	req.Header.Set("X-Tenant-Id", "tenant-1")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (body %s)", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{service.CodeAccrualRoundConfigMissing, "S-NOROUND"} {
+		if !bytes.Contains([]byte(body), []byte(want)) {
+			t.Fatalf("body %s does not mention %q", body, want)
+		}
 	}
 }
