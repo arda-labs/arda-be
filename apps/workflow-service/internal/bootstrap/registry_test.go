@@ -1,8 +1,11 @@
 package bootstrap
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 )
 
 func TestDeriveRegistryStepsDPMAdditional(t *testing.T) {
@@ -84,7 +87,10 @@ func TestCommonMakerCheckerRegistryStepsAreCaseTypeSpecific(t *testing.T) {
 		if step.ElementID != want[i].element || step.StepCode != want[i].code || step.Kind != want[i].kind {
 			t.Fatalf("step %d = %+v, want %+v", i, step, want[i])
 		}
-		wantFormKey := "lnm_recovery_v2." + strings.ToLower(step.ElementID)
+		wantFormKey := "lnm_recovery_v2." + map[string]string{
+			"UT_MakerInput":    "maker_input",
+			"UT_CheckerReview": "checker_review",
+		}[step.ElementID]
 		if got := FormKey("LNM_RECOVERY_V2", step.StepCode); got != wantFormKey {
 			t.Fatalf("recovery form key = %q, want %q", got, wantFormKey)
 		}
@@ -151,4 +157,77 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestFormKeyNormalizesNativeStandardSteps(t *testing.T) {
+	tests := []struct {
+		caseType, stepCode, want string
+	}{
+		{"DPM_PRODUCT_REGISTER_V1", "UT_MakerInput", "dpm_product_register_v1.maker_input"},
+		{"DPM_PRODUCT_REGISTER_V1", "UT_CheckerReview", "dpm_product_register_v1.checker_review"},
+		{"HRM_EMPLOYEE_REGISTRATION", "UT_MakerRevise", "hrm_employee_registration.maker_revise"},
+		{" dpm_product_register_v1 ", " ut_makerinput ", "dpm_product_register_v1.maker_input"},
+		// Step codes that are already legacy-style stay untouched.
+		{"DPM_ADDITIONAL_V1", "maker_input", "dpm_additional_v1.maker_input"},
+		{"LNM_DISB_REGISTER_V2", "checker_review", "lnm_disb_register_v2.checker_review"},
+		// Non-standard native steps have no FE form yet; keep lower(step code).
+		{"LNM_LOAN_FORMATION_V2", "UT_GDReview", "lnm_loan_formation_v2.ut_gdreview"},
+		{"LNM_LOAN_FORMATION_V2", "UT_TWRevalidate", "lnm_loan_formation_v2.ut_twrevalidate"},
+	}
+	for _, tt := range tests {
+		if got := FormKey(tt.caseType, tt.stepCode); got != tt.want {
+			t.Errorf("FormKey(%q, %q) = %q, want %q", tt.caseType, tt.stepCode, got, tt.want)
+		}
+	}
+}
+
+type fakeRegistryWriter struct {
+	refs    []repository.OperationTypeRef
+	steps   map[string][]repository.CaseTypeStep
+	version map[string]int
+}
+
+func (f *fakeRegistryWriter) ListActiveOperationTypes(context.Context) ([]repository.OperationTypeRef, error) {
+	return f.refs, nil
+}
+
+func (f *fakeRegistryWriter) UpsertCaseTypeSteps(_ context.Context, caseType string, version int, steps []repository.CaseTypeStep) error {
+	f.steps[caseType] = steps
+	f.version[caseType] = version
+	return nil
+}
+
+// Case types on the shared common-maker-checker process must be seeded with
+// the legacy form keys the domain remotes register, at the same registry
+// version in-flight cases already pin (so the upsert rewrites rows in place).
+func TestSeedRegistryUsesRemoteFormKeysForCommonMakerChecker(t *testing.T) {
+	writer := &fakeRegistryWriter{
+		refs: []repository.OperationTypeRef{
+			{CaseType: "DPM_PRODUCT_REGISTER_V1", BpmnProcessID: "common-maker-checker", RegistryVersion: 1, Status: "ACTIVE"},
+		},
+		steps:   map[string][]repository.CaseTypeStep{},
+		version: map[string]int{},
+	}
+	if err := SeedRegistry(context.Background(), writer, BuiltInProcesses()); err != nil {
+		t.Fatalf("seed registry: %v", err)
+	}
+	if writer.version["DPM_PRODUCT_REGISTER_V1"] != 1 {
+		t.Fatalf("registry version = %d, want 1 (in-flight cases pin version 1)", writer.version["DPM_PRODUCT_REGISTER_V1"])
+	}
+	got := map[string]string{}
+	for _, step := range writer.steps["DPM_PRODUCT_REGISTER_V1"] {
+		got[step.ElementID] = step.FormKey
+		if step.StepCode != step.ElementID {
+			t.Errorf("step code of %s = %q; native assignment/SLA config is keyed by element id", step.ElementID, step.StepCode)
+		}
+	}
+	want := map[string]string{
+		"UT_MakerInput":    "dpm_product_register_v1.maker_input",
+		"UT_CheckerReview": "dpm_product_register_v1.checker_review",
+	}
+	for element, key := range want {
+		if got[element] != key {
+			t.Errorf("form key of %s = %q, want %q", element, got[element], key)
+		}
+	}
 }
