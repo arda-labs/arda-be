@@ -3,8 +3,10 @@ package service
 // Bảng case chuẩn — luồng tiền deposit-service ở lớp service:
 //
 //   1. Cửa sổ dự chi (accrualWindow, DPM.305): từ ngày mở sổ hoặc ngày sau kỳ
-//      POSTED gần nhất tới ngày nghiệp vụ, đếm CẢ HAI ĐẦU — hiện trạng BUG-10
-//      / Q1 (EPAS dùng [from,to)); các case ghi "hiện trạng".
+//      POSTED gần nhất tới ngày nghiệp vụ. Phiên chạy dự chi TỚI HẾT ngày nghiệp
+//      vụ nên cửa sổ nửa mở [from, to) có to = ngày nghiệp vụ + 1 (G2-DPM-NGAY-01
+//      A / -02: nửa mở, dự chi liền kỳ không mất ngày); các case ghi "hiện trạng"
+//      là hành vi cần xác nhận nghiệp vụ, không liên quan quy ước đếm ngày.
 //   2. Số tiền dự chi một lần chạy = cửa sổ × interest.Calculate × Round(0),
 //      đúng như RunDaily ghép lại (ghép lại ở đây vì RunDaily cần DB + finance).
 //   3. Ngày đáo hạn = ngày mở + kỳ hạn tháng, kẹp cuối tháng (AddMonthsClamped).
@@ -29,26 +31,26 @@ func TestGoldenAccrualWindow(t *testing.T) {
 	cases := []struct {
 		name                             string
 		openDate, lastPosted, businessDate string
-		wantFrom                         string
+		wantFrom, wantTo                 string
 		wantDays                         int
 		wantOK                           bool
 	}{
-		{"hiện trạng [from,to]: mở sổ 01/01 chạy 01/01 → 1 ngày", "2026-01-01", "", "2026-01-01", "2026-01-01", 1, true},
-		{"hiện trạng [from,to]: mở sổ 01/01 chạy 31/01 lần đầu → 31 ngày", "2026-01-01", "", "2026-01-31", "2026-01-01", 31, true},
-		{"đã POSTED tới 31/01, chạy 01/02 → từ 01/02, 1 ngày", "2026-01-01", "2026-01-31", "2026-02-01", "2026-02-01", 1, true},
-		{"qua năm: POSTED tới 31/12/2025, chạy 02/01/2026 → 2 ngày", "2025-12-01", "2025-12-31", "2026-01-02", "2026-01-01", 2, true},
-		{"năm nhuận: POSTED tới 28/02/2028, chạy 01/03 → từ 29/02, 2 ngày", "2028-01-01", "2028-02-28", "2028-03-01", "2028-02-29", 2, true},
-		{"năm thường: POSTED tới 28/02/2026, chạy 01/03 → 1 ngày", "2026-01-01", "2026-02-28", "2026-03-01", "2026-03-01", 1, true},
-		{"đã POSTED đến đúng ngày chạy → không còn gì", "2026-01-01", "2026-01-31", "2026-01-31", "", 0, false},
-		{"chạy trước ngày mở sổ → không tính", "2026-02-01", "", "2026-01-31", "", 0, false},
+		{"nửa mở: mở sổ 01/01 chạy 01/01 → [01/01, 02/01) 1 ngày", "2026-01-01", "", "2026-01-01", "2026-01-01", "2026-01-02", 1, true},
+		{"nửa mở: mở sổ 01/01 chạy 31/01 lần đầu → [01/01, 01/02) 31 ngày", "2026-01-01", "", "2026-01-31", "2026-01-01", "2026-02-01", 31, true},
+		{"đã POSTED tới 31/01, chạy 01/02 → từ 01/02, 1 ngày", "2026-01-01", "2026-01-31", "2026-02-01", "2026-02-01", "2026-02-02", 1, true},
+		{"qua năm: POSTED tới 31/12/2025, chạy 02/01/2026 → 2 ngày", "2025-12-01", "2025-12-31", "2026-01-02", "2026-01-01", "2026-01-03", 2, true},
+		{"năm nhuận: POSTED tới 28/02/2028, chạy 01/03 → từ 29/02, 2 ngày", "2028-01-01", "2028-02-28", "2028-03-01", "2028-02-29", "2028-03-02", 2, true},
+		{"năm thường: POSTED tới 28/02/2026, chạy 01/03 → 1 ngày", "2026-01-01", "2026-02-28", "2026-03-01", "2026-03-01", "2026-03-02", 1, true},
+		{"đã POSTED đến đúng ngày chạy → không còn gì", "2026-01-01", "2026-01-31", "2026-01-31", "", "", 0, false},
+		{"chạy trước ngày mở sổ → không tính", "2026-02-01", "", "2026-01-31", "", "", 0, false},
 		// Không có mốc maturity_date trong cửa sổ: sau đáo hạn vẫn dự chi (BUG-10 mục 2).
-		{"hiện trạng, cần xác nhận nghiệp vụ: sau ngày đáo hạn vẫn mở cửa sổ (không dừng ở maturity)", "2025-01-01", "2026-01-01", "2026-01-05", "2026-01-02", 4, true},
+		{"hiện trạng, cần xác nhận nghiệp vụ: sau ngày đáo hạn vẫn mở cửa sổ (không dừng ở maturity)", "2025-01-01", "2026-01-01", "2026-01-05", "2026-01-02", "2026-01-06", 4, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			from, days, ok := accrualWindow(tc.openDate, tc.lastPosted, tc.businessDate)
-			if ok != tc.wantOK || from != tc.wantFrom || days != tc.wantDays {
-				t.Fatalf("accrualWindow = (%s, %d, %v), muốn (%s, %d, %v)", from, days, ok, tc.wantFrom, tc.wantDays, tc.wantOK)
+			from, to, days, ok := accrualWindow(tc.openDate, tc.lastPosted, tc.businessDate)
+			if ok != tc.wantOK || from != tc.wantFrom || to != tc.wantTo || days != tc.wantDays {
+				t.Fatalf("accrualWindow = (%s, %s, %d, %v), muốn (%s, %s, %d, %v)", from, to, days, ok, tc.wantFrom, tc.wantTo, tc.wantDays, tc.wantOK)
 			}
 		})
 	}
@@ -57,12 +59,12 @@ func TestGoldenAccrualWindow(t *testing.T) {
 // dailyAccrualMinor ghép đúng các bước RunDaily thực hiện cho một sổ.
 func dailyAccrualMinor(t *testing.T, openDate, lastPosted, businessDate string, principal int64, rate float64, denominator int) (int, int64) {
 	t.Helper()
-	from, days, ok := accrualWindow(openDate, lastPosted, businessDate)
+	from, to, days, ok := accrualWindow(openDate, lastPosted, businessDate)
 	if !ok {
 		return 0, 0
 	}
 	fromDate, _ := time.Parse("2006-01-02", from)
-	toDate, _ := time.Parse("2006-01-02", businessDate)
+	toDate, _ := time.Parse("2006-01-02", to)
 	res := interest.Calculate(interest.Input{
 		From: fromDate, To: toDate, Rate: decimal.NewFromFloat(rate), BaseDenominator: denominator, RoundNo: 0,
 		Points: []interest.BalancePoint{{Date: fromDate, Balance: decimal.NewFromInt(principal)}},

@@ -9,12 +9,13 @@ func TestAccrualWindow(t *testing.T) {
 		lastPosted   string
 		businessDate string
 		wantFrom     string
+		wantTo       string // exclusive end = business date + 1 (half-open window, G2-DPM-NGAY-01/02)
 		wantDays     int
 		wantOK       bool
 	}{
-		{name: "first run accrues from open date", openDate: "2026-01-01", businessDate: "2026-01-03", wantFrom: "2026-01-01", wantDays: 3, wantOK: true},
-		{name: "single day", openDate: "2026-01-05", businessDate: "2026-01-05", wantFrom: "2026-01-05", wantDays: 1, wantOK: true},
-		{name: "continues after last posted period", openDate: "2026-01-01", lastPosted: "2026-01-03", businessDate: "2026-01-05", wantFrom: "2026-01-04", wantDays: 2, wantOK: true},
+		{name: "first run accrues from open date", openDate: "2026-01-01", businessDate: "2026-01-03", wantFrom: "2026-01-01", wantTo: "2026-01-04", wantDays: 3, wantOK: true},
+		{name: "single day", openDate: "2026-01-05", businessDate: "2026-01-05", wantFrom: "2026-01-05", wantTo: "2026-01-06", wantDays: 1, wantOK: true},
+		{name: "continues after last posted period", openDate: "2026-01-01", lastPosted: "2026-01-03", businessDate: "2026-01-05", wantFrom: "2026-01-04", wantTo: "2026-01-06", wantDays: 2, wantOK: true},
 		{name: "nothing to accrue when business date already covered", openDate: "2026-01-01", lastPosted: "2026-01-05", businessDate: "2026-01-05", wantOK: false},
 		{name: "nothing to accrue when last posted is ahead of business date", openDate: "2026-01-01", lastPosted: "2026-01-06", businessDate: "2026-01-05", wantOK: false},
 		{name: "business date before open date", openDate: "2026-01-10", businessDate: "2026-01-05", wantOK: false},
@@ -23,15 +24,15 @@ func TestAccrualWindow(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			from, days, ok := accrualWindow(tt.openDate, tt.lastPosted, tt.businessDate)
+			from, to, days, ok := accrualWindow(tt.openDate, tt.lastPosted, tt.businessDate)
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
 			}
 			if !ok {
 				return
 			}
-			if from != tt.wantFrom || days != tt.wantDays {
-				t.Fatalf("got (%s, %d), want (%s, %d)", from, days, tt.wantFrom, tt.wantDays)
+			if from != tt.wantFrom || to != tt.wantTo || days != tt.wantDays {
+				t.Fatalf("got (%s, %s, %d), want (%s, %s, %d)", from, to, days, tt.wantFrom, tt.wantTo, tt.wantDays)
 			}
 		})
 	}
@@ -43,9 +44,33 @@ func TestAccrualWindow(t *testing.T) {
 func TestAccrualWindowRetriesFailedDay(t *testing.T) {
 	// Last POSTED period is 2026-01-09 even though 2026-01-10 was staged
 	// PENDING by the failed run; the window must include 2026-01-10 again.
-	from, days, ok := accrualWindow("2026-01-01", "2026-01-09", "2026-01-10")
-	if !ok || from != "2026-01-10" || days != 1 {
-		t.Fatalf("failed day must be retried, got (%s, %d, %v)", from, days, ok)
+	from, to, days, ok := accrualWindow("2026-01-01", "2026-01-09", "2026-01-10")
+	if !ok || from != "2026-01-10" || to != "2026-01-11" || days != 1 {
+		t.Fatalf("failed day must be retried, got (%s, %s, %d, %v)", from, to, days, ok)
+	}
+}
+
+// TestAccrualWindowsChainWithoutGap pins G2-DPM-NGAY-02: with half-open
+// counting the exclusive end of one window is the first day of the next, so
+// consecutive daily runs neither lose nor double-count a day.
+func TestAccrualWindowsChainWithoutGap(t *testing.T) {
+	open := "2026-01-01"
+	last := ""
+	var chained int
+	prevTo := open
+	for _, business := range []string{"2026-01-01", "2026-01-02", "2026-01-05", "2026-01-06"} {
+		from, to, days, ok := accrualWindow(open, last, business)
+		if !ok {
+			t.Fatalf("window for %s must exist", business)
+		}
+		if from != prevTo {
+			t.Fatalf("window for %s starts %s, previous window ended (exclusive) %s: gap or overlap", business, from, prevTo)
+		}
+		chained += days
+		prevTo, last = to, business
+	}
+	if chained != 6 {
+		t.Fatalf("daily windows covered %d days, want 6 (01/01 to 06/01 inclusive)", chained)
 	}
 }
 

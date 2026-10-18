@@ -23,6 +23,12 @@ func DaysBetween(fromDate, toDate string) (int, error) {
 
 // AccruedInterestMinor computes monthly interest prorated over a 30-day month
 // and converts it to the currency's minor unit using arda-money rounding.
+//
+// Legacy path: kept only for AccrualService.RunDaily until the product
+// configuration (CM124 date method, year-basis code, ROUND_NO/CM163) and the
+// balance and rate history are available to the EOD job. It fixes the basis at
+// 360, uses float64 and rounds every run to the minor unit; use CalculateInterest
+// (G2-LNM-LAI-01, G2-LNM-LAI-08, T9.1) for anything new.
 func AccruedInterestMinor(outstandingMinor int64, ratePercent float64, days int, currency string) (int64, error) {
 	if currency == "" {
 		currency = "VND"

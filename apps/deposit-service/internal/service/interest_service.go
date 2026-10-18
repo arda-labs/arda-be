@@ -224,31 +224,35 @@ func mapRateResolveErr(err error) error {
 
 // ── Accrual (DPM.305, EOD) ──
 
-// accrualWindow returns the inclusive date range still to accrue for one
-// savings account, given the last confirmed period ("" when none) and the run
-// business date. It is pure so the retry semantics can be unit tested.
-func accrualWindow(openDate, lastPosted, businessDate string) (from string, days int, ok bool) {
-	to, err := time.Parse("2006-01-02", businessDate)
+// accrualWindow returns the half-open date window [from, to) still to accrue
+// for one savings account, given the last confirmed period ("" when none) and
+// the run business date. The run accrues through the business date inclusive,
+// so to = business date + 1. Because to is the first day the next run would
+// start from, consecutive windows chain without losing or repeating a day
+// (G2-DPM-NGAY-01/02). It is pure so the retry semantics can be unit tested.
+func accrualWindow(openDate, lastPosted, businessDate string) (from, to string, days int, ok bool) {
+	business, err := time.Parse("2006-01-02", businessDate)
 	if err != nil {
-		return "", 0, false
+		return "", "", 0, false
 	}
 	from = openDate
 	if lastPosted != "" {
 		last, err := time.Parse("2006-01-02", lastPosted)
 		if err != nil {
-			return "", 0, false
+			return "", "", 0, false
 		}
 		from = last.AddDate(0, 0, 1).Format("2006-01-02")
 	}
 	fromDate, err := time.Parse("2006-01-02", from)
-	if err != nil || to.Before(fromDate) {
-		return "", 0, false
+	if err != nil || business.Before(fromDate) {
+		return "", "", 0, false
 	}
-	days = int(to.Sub(fromDate).Hours()/24) + 1
+	exclusiveEnd := business.AddDate(0, 0, 1)
+	days = int(exclusiveEnd.Sub(fromDate) / (24 * time.Hour))
 	if days <= 0 {
-		return "", 0, false
+		return "", "", 0, false
 	}
-	return from, days, true
+	return from, exclusiveEnd.Format("2006-01-02"), days, true
 }
 
 // RunDaily accrues interest per active savings up to businessDate.
@@ -260,8 +264,7 @@ func accrualWindow(openDate, lastPosted, businessDate string) (from string, days
 // midway leaves the day to be retried (not silently skipped) by the next run,
 // and the retry reuses the same GL key so finance de-duplicates the posting.
 func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate string) (int, error) {
-	to, err := time.Parse("2006-01-02", businessDate)
-	if err != nil {
+	if _, err := time.Parse("2006-01-02", businessDate); err != nil {
 		return 0, ardaerrors.New(ardaerrors.CodeInvalidInput, "business_date must be YYYY-MM-DD")
 	}
 	savings, err := s.repo.ListActiveSavingsForAccrual(ctx, tenantID)
@@ -294,7 +297,7 @@ func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate s
 		if err != nil {
 			return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
-		from, days, ok := accrualWindow(item.OpenDate, last, businessDate)
+		from, windowEnd, days, ok := accrualWindow(item.OpenDate, last, businessDate)
 		if !ok {
 			continue
 		}
@@ -322,9 +325,16 @@ func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate s
 		if err != nil {
 			continue
 		}
+		toDate, err := time.Parse("2006-01-02", windowEnd)
+		if err != nil {
+			continue
+		}
+		// The per-day amount keeps the legacy "round to the dong each day"
+		// (RoundNo 0 + Round(0)): the cumulative-vs-per-day ROUND_NO policy for
+		// daily accrual has no decision yet (T9.1 open question).
 		result := interest.Calculate(interest.Input{
 			From:            fromDate,
-			To:              to,
+			To:              toDate,
 			Rate:            rate,
 			BaseDenominator: denominator,
 			RoundNo:         0,
