@@ -720,6 +720,7 @@ func main() {
 			interceptors.UnaryServerRecovery(logger),
 			interceptors.UnaryServerMetadataPropagate(),
 			interceptors.UnaryServerServiceAuth(serviceSecret, "workflow-service", map[string]struct{}{
+				"capital-service":     {},
 				"crm-service":         {},
 				"hrm-service":         {},
 				"loan-service":        {},

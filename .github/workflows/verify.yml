@@ -117,6 +117,8 @@ jobs:
         run: node scripts/check-layering.mjs
       - name: Check workflow-service worker ratchet (ADR-011)
         run: node scripts/check-workflow-workers.mjs
+      - name: Check workflow-service callers carry tenant scope
+        run: node scripts/check-workflow-callers.mjs
       - name: Validate generated protobuf contracts
         run: node scripts/check-proto.mjs
       - name: Validate secret hygiene
