@@ -30,14 +30,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Year-basis codes accepted by the configuration (com_cfg_base_int at EPAS).
-const (
-	InterestBaseCSTL01 = "CSTL_01" // "360/365": no confirmed meaning, never usable
-	InterestBaseCSTL02 = "CSTL_02" // actual/365
-
-	interestYearDaysCSTL02 = 365
-)
-
 // Codes of the product settings the calculator does not read as a flag but that
 // the configuration still records.
 const (
@@ -153,14 +145,13 @@ func ParseInterestConfig(r InterestConfigRecord) (InterestConfig, error) {
 		cfg.OrgCode = *r.OrgCode
 	}
 
-	switch r.InterestBaseCode {
-	case InterestBaseCSTL02:
-		cfg.BaseCode, cfg.YearDays = InterestBaseCSTL02, interestYearDaysCSTL02
-	case InterestBaseCSTL01:
-		return cfg, &InterestError{Code: ErrCodeInterestBaseUndefined, Message: "year-basis code CSTL_01 has no confirmed definition yet (version " + r.ID + ")"}
-	default:
-		return cfg, &InterestError{Code: ErrCodeInterestBaseUnknown, Message: "unknown year-basis code " + quoteCode(r.InterestBaseCode) + " (version " + r.ID + ")"}
+	// One source of truth for the year basis: the calculator's own exact table
+	// (CSTL_02 = 365; CSTL_01 undefined; anything else unknown).
+	days, err := InterestBaseDays(r.InterestBaseCode)
+	if err != nil {
+		return cfg, err
 	}
+	cfg.BaseCode, cfg.YearDays = r.InterestBaseCode, days
 
 	switch r.InterestCalcMethod {
 	case InterestCalcMethodStandard:
