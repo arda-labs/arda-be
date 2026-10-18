@@ -172,6 +172,12 @@ func (c *ZeebeRestClient) UnassignUserTask(ctx context.Context, userTaskKey int6
 
 // ResolveIncident marks an incident resolved through the Zeebe gateway
 // (POST /v2/incidents/{key}/resolution) once the underlying job/element is fixed.
+//
+// KNOWN LIMITATION: the v2 REST API only exists from Camunda 8.6+. The DEV
+// cluster runs 8.5.25, where this route answers 404, so resolving an incident
+// currently fails with a 502. 8.5 resolves incidents over gRPC
+// (ResolveIncident on the gateway client); moving this onto ZeebeService is a
+// separate follow-up.
 func (c *ZeebeRestClient) ResolveIncident(ctx context.Context, incidentKey int64) error {
 	if !c.Enabled() {
 		return fmt.Errorf("zeebe REST client is not configured")
@@ -219,37 +225,6 @@ func (c *ZeebeRestClient) CompleteUserTask(ctx context.Context, userTaskKey int6
 		return fmt.Errorf("complete user task HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 	return nil
-}
-
-// GetVariables reads the live process-instance variables through the Zeebe
-// gateway REST API (GET /v2/process-instances/{key}/variables). The v2
-// endpoint returns the variables as a flat JSON object keyed by name.
-func (c *ZeebeRestClient) GetVariables(ctx context.Context, processInstanceKey int64) (map[string]any, error) {
-	if !c.Enabled() {
-		return nil, ErrZeebeRestUnavailable
-	}
-	if processInstanceKey <= 0 {
-		return nil, fmt.Errorf("processInstanceKey is required")
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		fmt.Sprintf("%s/v2/process-instances/%d/variables", c.baseURL, processInstanceKey), nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("get process instance variables: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("get process instance variables HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
-	}
-	var variables map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&variables); err != nil {
-		return nil, fmt.Errorf("decode process instance variables: %w", err)
-	}
-	return variables, nil
 }
 
 // IsNativeUserTaskElement reports whether a BPMN element id denotes a v2 native user task.
