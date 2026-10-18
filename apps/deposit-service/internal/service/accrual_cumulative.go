@@ -105,3 +105,16 @@ func sortedTopUps(in []topUp) []topUp {
 	}
 	return out
 }
+
+// RateOn is the annual rate (percent) in force on date: the latest rate point
+// dated on or before it, else the rate of the period start.
+func (in cumulativeAccrualInput) RateOn(date time.Time) decimal.Decimal {
+	rate := in.Rate
+	var at time.Time
+	for _, p := range in.RatePoints {
+		if !p.Date.After(date) && !p.Date.Before(at) {
+			rate, at = p.Rate, p.Date
+		}
+	}
+	return rate
+}

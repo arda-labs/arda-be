@@ -13,8 +13,8 @@ package service
 // Sau T9.1 (G2-DPM-NGAY-01 nua mo, RatePoint, lam tron mot lan chinh xac) Arda co mot duong tinh duy nhat:
 //   r  = interest.Calculate voi khoang nua mo [from,to), diem so du va moc lai suat (RatePoints) cua hop dong;
 //   s, sx = bi danh cua r, giu lai de cong cu so sanh P3 (compare.mjs) van doc duoc tep dump;
-//   daily = mo phong RunDaily: moi ngay mot lan accrualWindow + Calculate(RoundNo 0), lam tron den dong moi ngay
-//           (cach lam tron cua du chi hang ngay CHUA co quyet dinh, T9.1 giu nguyen hanh vi cu).
+//   daily = mo phong RunDaily phuong an B (du chi luy ke theo ROUND_NO/CM163 cua san pham, quyet dinh 2026-10-18):
+//           moi ngay nghiep vu mot lan computeCumulativeAccrual; tong sau n ngay phai bang lai mot lan cua EPAS.
 // Che do EPAS_GOLDEN_STRICT=1: moi ca fixture phai khop EPAS o che do r.
 
 import (
@@ -166,47 +166,80 @@ func p3RunArda(v p3Vector) p3Out {
 	r := p3Convert(interest.Calculate(p3Input(v, from, to, def)))
 	out.R, out.S, out.SX = r, r, r
 
-	// daily: mo phong RunDaily cho moi ngay [from, to-1], dung accrualWindow that.
-	if from.Before(to) {
+	// daily: mo phong RunDaily theo phuong an B (du chi luy ke) cho moi ngay nghiep vu [from, to-1]: moi ngay mot lan
+	// computeCumulativeAccrual (loi ra neu san pham thieu ROUND_NO/ROUND_TYPE), so am hoac 0 bi bo, so duong cong vao
+	// "da du chi" cua ngay sau. Khong mo phong duoc khi vector khong co cau hinh lam tron hop le.
+	if from.Before(to) && v.RoundNo != nil && v.RoundType != nil && *v.RoundNo >= 0 {
 		d := &p3Daily{}
-		var total int64
 		denom := 0
 		if v.Denom != nil {
 			denom = *v.Denom
 		}
-		for day := from; day.Before(to); day = day.AddDate(0, 0, 1) {
-			last := ""
-			if day.After(from) {
-				last = day.AddDate(0, 0, -1).Format("2006-01-02")
-			}
-			wFrom, wTo, wDays, ok := accrualWindow(v.From, last, day.Format("2006-01-02"), "")
-			if !ok {
-				d.Skip++
+		// Diem so du sau ngay from thanh cac khoan gui them (co the am); so du ban dau la so du tai from.
+		sortedBal := append([]p3Point(nil), v.Balances...)
+		sort.SliceStable(sortedBal, func(i, j int) bool { return sortedBal[i].D < sortedBal[j].D })
+		opening := p3Balance(v.Balances, from)
+		running := opening
+		var topUps []topUp
+		for _, b := range sortedBal {
+			bd := p3Date(b.D)
+			if !bd.After(from) {
 				continue
 			}
-			rate := p3RateAt(def, v.RatePoints, day)
-			if rate.IsZero() {
-				d.Skip++
-				continue
-			}
-			bal := p3Balance(v.Balances, day)
-			fd, td := p3Date(wFrom), p3Date(wTo)
-			res := interest.Calculate(interest.Input{
-				From: fd, To: td, Rate: rate, BaseDenominator: denom, RoundNo: 0,
-				Points: []interest.BalancePoint{{Date: fd, Balance: bal}},
-			})
-			amount := res.Rounded.Round(0).IntPart()
-			if amount <= 0 {
-				d.Skip++
-				continue
-			}
-			total += amount
-			d.Days += int64(wDays)
+			next := p3Dec(b.B)
+			topUps = append(topUps, topUp{Date: bd, Amount: next.Sub(running)})
+			running = next
 		}
+		var ratePoints []interest.RatePoint
+		for _, rp := range v.RatePoints {
+			if p3Date(rp.D).After(from) {
+				ratePoints = append(ratePoints, interest.RatePoint{Date: p3Date(rp.D), Rate: p3Dec(rp.R)})
+			}
+		}
+		in := cumulativeAccrualInput{
+			PeriodStart:      from,
+			CurrentPrincipal: running,
+			TopUps:           topUps,
+			Rate:             p3RateAt(def, v.RatePoints, from),
+			RatePoints:       ratePoints,
+			Denominator:      denom,
+			RoundNo:          v.RoundNo,
+			RoundType:        v.RoundType,
+		}
+		var total int64
+		for day := from; day.Before(to); day = day.AddDate(0, 0, 1) {
+			in.BusinessDate = day
+			in.PriorAccrued = total
+			res, err := computeCumulativeAccrual(in)
+			if err != nil || res.Amount <= 0 {
+				d.Skip++
+				continue
+			}
+			total += res.Amount
+		}
+		d.Days = p3Dur(from, to)
 		d.Minor = total
 		out.Daily = d
 	}
 	return out
+}
+
+// p3NonNegative: vector khong co so du hoac lai suat am (khong hop le nghiep vu, EPAS cong ca so am).
+func p3NonNegative(v p3Vector) bool {
+	for _, b := range v.Balances {
+		if p3Dec(b.B).Sign() < 0 {
+			return false
+		}
+	}
+	if p3Dec(v.Rate).Sign() < 0 {
+		return false
+	}
+	for _, r := range v.RatePoints {
+		if p3Dec(r.R).Sign() < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func p3ReadLines(t *testing.T, path string, fn func(line []byte)) {
@@ -295,7 +328,7 @@ func TestEpasOracleFixture(t *testing.T) {
 		t.Skip("chua co fixture")
 	}
 	strict := os.Getenv("EPAS_GOLDEN_STRICT") == "1"
-	n, matched := 0, 0
+	n, matched, dailyCmp, dailyMatched := 0, 0, 0, 0
 	p3ReadLines(t, path, func(line []byte) {
 		var fx p3Fixture
 		if err := json.Unmarshal(line, &fx); err != nil {
@@ -308,6 +341,14 @@ func TestEpasOracleFixture(t *testing.T) {
 		}
 		seen := func(c *p3Calc) bool {
 			return c.Days == fx.ArdaSeen.Days && p3Same(c.Raw, fx.ArdaSeen.Raw) && p3Same(c.Rounded, fx.ArdaSeen.Rounded)
+		}
+		if got.Daily != nil && fx.Class != "arda_bug" && p3NonNegative(fx.p3Vector) {
+			dailyCmp++
+			if got.Daily.Minor == p3Dec(fx.Epas.Rounded).Round(0).IntPart() && p3Dec(fx.Epas.Rounded).IsInteger() {
+				dailyMatched++
+			} else if fx.RoundNo != nil && *fx.RoundNo > 0 {
+				t.Errorf("%s: du chi luy ke %d != EPAS %s sau %d ngay", fx.ID, got.Daily.Minor, fx.Epas.Rounded, got.Daily.Days)
+			}
 		}
 		if eq(got.R) {
 			matched++
@@ -333,5 +374,5 @@ func TestEpasOracleFixture(t *testing.T) {
 			}
 		}
 	})
-	t.Logf("fixture: %d ca, che do r khop EPAS: %d/%d", n, matched, n)
+	t.Logf("fixture: %d ca, che do r khop EPAS: %d/%d; du chi luy ke (RunDaily B) khop EPAS: %d/%d", n, matched, n, dailyMatched, dailyCmp)
 }
