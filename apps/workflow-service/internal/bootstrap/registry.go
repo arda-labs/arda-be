@@ -191,8 +191,24 @@ func ProcessIDOf(content []byte) (string, error) {
 // FormKey is the stable key a domain remote registers its step component
 // under. It is case-type specific because two case types can share one
 // process (e.g. dpm-rate-v1 serves register and edit).
+//
+// The shared common-maker-checker process derives step codes from native
+// user-task element ids (UT_*), but the remotes register the legacy step
+// codes. The three standard native steps are therefore normalized to those
+// codes; other native steps (UT_GDReview, UT_PGDReview, UT_BoardReview,
+// UT_TWRevalidate, ...) have no remote form yet and keep lower(stepCode).
 func FormKey(caseType, stepCode string) string {
-	return strings.ToLower(strings.TrimSpace(caseType)) + "." + strings.ToLower(strings.TrimSpace(stepCode))
+	code := strings.ToLower(strings.TrimSpace(stepCode))
+	if legacy, ok := nativeStepFormCodes[code]; ok {
+		code = legacy
+	}
+	return strings.ToLower(strings.TrimSpace(caseType)) + "." + code
+}
+
+var nativeStepFormCodes = map[string]string{
+	"ut_makerinput":    "maker_input",
+	"ut_makerrevise":   "maker_revise",
+	"ut_checkerreview": "checker_review",
 }
 
 func deriveStepKind(elementID string) StepKind {
