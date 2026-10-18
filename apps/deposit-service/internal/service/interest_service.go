@@ -43,10 +43,17 @@ type InterestService struct {
 	db       *sql.DB
 	finance  *financeclient.Client
 	workflow WorkflowSubmitter
+	// accruals is the storage RunDaily needs; it is the repository, and a fake
+	// in the unit tests of the daily accrual.
+	accruals accrualStore
+	// postGL posts one interest GL entry; it is postInterest, and a fake in tests.
+	postGL func(ctx context.Context, tenantID, card, idemKey, accountingDate string, savings *repository.Savings, amountMinor int64, debitClass, creditClass, description string) (string, error)
 }
 
 func NewInterestService(repo *repository.DepositRepository, db *sql.DB, finance *financeclient.Client, workflow WorkflowSubmitter) *InterestService {
-	return &InterestService{repo: repo, db: db, finance: finance, workflow: workflow}
+	s := &InterestService{repo: repo, db: db, finance: finance, workflow: workflow, accruals: repo}
+	s.postGL = s.postInterest
+	return s
 }
 
 // ── Rate tiers ──
@@ -225,12 +232,15 @@ func mapRateResolveErr(err error) error {
 // ── Accrual (DPM.305, EOD) ──
 
 // accrualWindow returns the half-open date window [from, to) still to accrue
-// for one savings account, given the last confirmed period ("" when none) and
-// the run business date. The run accrues through the business date inclusive,
-// so to = business date + 1. Because to is the first day the next run would
-// start from, consecutive windows chain without losing or repeating a day
-// (G2-DPM-NGAY-01/02). It is pure so the retry semantics can be unit tested.
-func accrualWindow(openDate, lastPosted, businessDate string) (from, to string, days int, ok bool) {
+// for one savings account, given the last confirmed period ("" when none), the
+// run business date and the start of the current interest period ("" = the
+// open date). The run accrues through the business date inclusive, so
+// to = business date + 1. Because to is the first day the next run would start
+// from, consecutive windows chain without losing or repeating a day
+// (G2-DPM-NGAY-01/02). The window never starts before periodStart, so a row
+// never straddles two interest periods. It is pure so the retry semantics can
+// be unit tested.
+func accrualWindow(openDate, lastPosted, businessDate, periodStart string) (from, to string, days int, ok bool) {
 	business, err := time.Parse("2006-01-02", businessDate)
 	if err != nil {
 		return "", "", 0, false
@@ -242,6 +252,9 @@ func accrualWindow(openDate, lastPosted, businessDate string) (from, to string, 
 			return "", "", 0, false
 		}
 		from = last.AddDate(0, 0, 1).Format("2006-01-02")
+	}
+	if periodStart != "" && periodStart > from {
+		from = periodStart // ISO dates compare as strings
 	}
 	fromDate, err := time.Parse("2006-01-02", from)
 	if err != nil || business.Before(fromDate) {
@@ -257,21 +270,35 @@ func accrualWindow(openDate, lastPosted, businessDate string) (from, to string, 
 
 // RunDaily accrues interest per active savings up to businessDate.
 //
-// Each day is staged PENDING first and only completed by completeAccrual:
+// The amount is cumulative per interest period (owner decision of 2026-10-18):
+// round(interest from the period start through businessDate, by the product
+// ROUND_NO / CM163) minus the total already accrued in the period. The period
+// starts at the open date or at the effective date of the last PAY/CAPITALIZE
+// op; the opening balance, top-ups, rate history and the total already accrued
+// are all read from stored rows, so a rerun of the same day adds nothing. Days
+// whose amount is zero or negative write no row; a later day makes them up.
+//
+// A savings whose product has no ROUND_NO/ROUND_TYPE is skipped and the run
+// ends with one error carrying dpm.accrual.round_config_missing and the list of
+// skipped savings; the other savings are accrued normally.
+//
+// Each row is staged PENDING first and only completed by completeAccrual:
 // post the GL entry with the stable row id as idempotency key, then flip the
 // row POSTED while adding the amount to the savings accrued balance in one
 // transaction. LastAccrualPeriod ignores PENDING rows, so a run that fails
 // midway leaves the day to be retried (not silently skipped) by the next run,
 // and the retry reuses the same GL key so finance de-duplicates the posting.
 func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate string) (int, error) {
-	if _, err := time.Parse("2006-01-02", businessDate); err != nil {
+	business, err := time.Parse("2006-01-02", businessDate)
+	if err != nil {
 		return 0, ardaerrors.New(ardaerrors.CodeInvalidInput, "business_date must be YYYY-MM-DD")
 	}
-	savings, err := s.repo.ListActiveSavingsForAccrual(ctx, tenantID)
+	savings, err := s.accruals.ListActiveSavingsForAccrual(ctx, tenantID)
 	if err != nil {
 		return 0, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 	}
 	posted := 0
+	var skipped []string
 	for i := range savings {
 		item := &savings[i]
 
@@ -280,7 +307,7 @@ func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate s
 		// a second journal entry. Finishing them before computing the next
 		// window keeps MAX(period_to) — and the accrual range — in order.
 		for {
-			pending, err := s.repo.FirstPendingAccrual(ctx, tenantID, item.ID)
+			pending, err := s.accruals.FirstPendingAccrual(ctx, tenantID, item.ID)
 			if err != nil {
 				return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 			}
@@ -293,57 +320,36 @@ func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate s
 			posted++
 		}
 
-		last, err := s.repo.LastAccrualPeriod(ctx, tenantID, item.ID)
+		last, err := s.accruals.LastAccrualPeriod(ctx, tenantID, item.ID)
 		if err != nil {
 			return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
-		from, windowEnd, days, ok := accrualWindow(item.OpenDate, last, businessDate)
+		storedStart, err := s.accruals.InterestPeriodStart(ctx, tenantID, item.ID)
+		if err != nil {
+			return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+		}
+		from, _, days, ok := accrualWindow(item.OpenDate, last, businessDate, storedStart)
 		if !ok {
 			continue
 		}
-		rateRow, err := s.repo.FindEffectiveRate(ctx, tenantID, item.ProductCode, 0, businessDate)
-		if err != nil {
-			return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+		periodStart := item.OpenDate
+		if storedStart > periodStart {
+			periodStart = storedStart
 		}
-		rate := decimal.Zero
-		denominator := 365
-		if rateRow != nil {
-			rate = decimal.NewFromFloat(rateRow.Rate)
-			if rateRow.Denominator > 0 {
-				denominator = rateRow.Denominator
+		input, err := s.cumulativeInput(ctx, tenantID, item, periodStart, business)
+		if err != nil {
+			return posted, err
+		}
+		result, err := computeCumulativeAccrual(input)
+		if err != nil {
+			var typed *ardaerrors.Error
+			if errors.As(err, &typed) && typed.Code == CodeAccrualRoundConfigMissing {
+				skipped = append(skipped, item.SavingsCode)
+				continue
 			}
-		} else {
-			product, err := s.repo.GetProductByCode(ctx, tenantID, item.ProductCode)
-			if err == nil && product != nil {
-				rate = decimal.NewFromFloat(product.InterestRate)
-			}
+			return posted, err
 		}
-		if rate.IsZero() {
-			continue
-		}
-		fromDate, err := time.Parse("2006-01-02", from)
-		if err != nil {
-			continue
-		}
-		toDate, err := time.Parse("2006-01-02", windowEnd)
-		if err != nil {
-			continue
-		}
-		// The per-day amount keeps the legacy "round to the dong each day"
-		// (RoundNo 0 + Round(0)): the cumulative-vs-per-day ROUND_NO policy for
-		// daily accrual has no decision yet (T9.1 open question).
-		result := interest.Calculate(interest.Input{
-			From:            fromDate,
-			To:              toDate,
-			Rate:            rate,
-			BaseDenominator: denominator,
-			RoundNo:         0,
-			Points: []interest.BalancePoint{
-				{Date: fromDate, Balance: decimal.NewFromInt(item.PrincipalMinor)},
-			},
-		})
-		amount := result.Rounded.Round(0).IntPart()
-		if amount <= 0 {
+		if result.Amount <= 0 {
 			continue
 		}
 		accrual := &repository.Accrual{
@@ -354,10 +360,10 @@ func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate s
 			PeriodTo:    businessDate,
 			Days:        days,
 			BaseMinor:   item.PrincipalMinor,
-			Rate:        rate.InexactFloat64(),
-			AmountMinor: amount,
+			Rate:        input.RateOn(business).InexactFloat64(),
+			AmountMinor: result.Amount,
 		}
-		inserted, err := s.repo.CreateAccrual(ctx, accrual)
+		inserted, err := s.accruals.CreateAccrual(ctx, accrual)
 		if err != nil {
 			return posted, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
 		}
@@ -372,7 +378,101 @@ func (s *InterestService) RunDaily(ctx context.Context, tenantID, businessDate s
 		}
 		posted++
 	}
+	if len(skipped) > 0 {
+		typed := ardaerrors.New(CodeAccrualRoundConfigMissing, fmt.Sprintf(
+			"daily accrual skipped for %d savings whose product has no ROUND_NO/ROUND_TYPE; %d accrued", len(skipped), posted))
+		typed.Fields = map[string]string{
+			"savings_codes": strings.Join(skipped, ","),
+			"posted":        strconv.Itoa(posted),
+		}
+		return posted, typed
+	}
 	return posted, nil
+}
+
+// cumulativeInput reads everything the cumulative accrual of one savings needs
+// from stored rows: the product rounding, the rate on the period start and its
+// later changes, the top-ups of the period and the total already accrued.
+func (s *InterestService) cumulativeInput(ctx context.Context, tenantID string, item *repository.Savings, periodStart string, business time.Time) (cumulativeAccrualInput, error) {
+	start, err := time.Parse("2006-01-02", periodStart)
+	if err != nil {
+		return cumulativeAccrualInput{}, ardaerrors.New(ardaerrors.CodeInternal, "invalid interest period start "+periodStart)
+	}
+	businessDate := business.Format("2006-01-02")
+	in := cumulativeAccrualInput{
+		PeriodStart:      start,
+		BusinessDate:     business,
+		CurrentPrincipal: decimal.NewFromInt(item.PrincipalMinor),
+		Denominator:      365,
+	}
+	product, err := s.accruals.GetProductByCode(ctx, tenantID, item.ProductCode)
+	if err != nil {
+		return in, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	if product != nil {
+		in.RoundNo, in.RoundType = product.RoundNo, product.RoundType
+	}
+	productRate := decimal.Zero
+	if product != nil {
+		productRate = decimal.NewFromFloat(product.InterestRate)
+	}
+	// Rate in force on the period start, then every change up to the business
+	// date. The denominator of the row in force on the business date applies.
+	rateAt := func(date string) (*repository.InterestRate, error) {
+		row, err := s.accruals.FindEffectiveRate(ctx, tenantID, item.ProductCode, 0, date)
+		if err != nil {
+			return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+		}
+		return row, nil
+	}
+	startRow, err := rateAt(periodStart)
+	if err != nil {
+		return in, err
+	}
+	in.Rate = productRate
+	if startRow != nil {
+		in.Rate = decimal.NewFromFloat(startRow.Rate)
+	}
+	changes, err := s.accruals.ListRateChangeDates(ctx, tenantID, item.ProductCode, 0, periodStart, businessDate)
+	if err != nil {
+		return in, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	for _, date := range changes {
+		row, err := rateAt(date)
+		if err != nil {
+			return in, err
+		}
+		if row == nil {
+			continue
+		}
+		d, err := time.Parse("2006-01-02", date)
+		if err != nil {
+			continue
+		}
+		in.RatePoints = append(in.RatePoints, interest.RatePoint{Date: d, Rate: decimal.NewFromFloat(row.Rate)})
+	}
+	if endRow, err := rateAt(businessDate); err != nil {
+		return in, err
+	} else if endRow != nil && endRow.Denominator > 0 {
+		in.Denominator = endRow.Denominator
+	}
+	topUps, err := s.accruals.ListPostedTopUps(ctx, tenantID, item.ID, periodStart)
+	if err != nil {
+		return in, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	for _, t := range topUps {
+		d, err := time.Parse("2006-01-02", t.Date)
+		if err != nil {
+			continue
+		}
+		in.TopUps = append(in.TopUps, topUp{Date: d, Amount: decimal.NewFromInt(t.AmountMinor)})
+	}
+	prior, err := s.accruals.SumPeriodAccruals(ctx, tenantID, item.ID, periodStart)
+	if err != nil {
+		return in, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
+	in.PriorAccrued = prior
+	return in, nil
 }
 
 // completeAccrual finishes one staged accrual: post the GL entry when it is
@@ -386,13 +486,13 @@ func (s *InterestService) completeAccrual(ctx context.Context, tenantID string, 
 	}
 	if entryID == "" {
 		var err error
-		entryID, err = s.postInterest(ctx, tenantID, "DPM_ACCRUAL", "dpm-accrual-"+a.ID,
+		entryID, err = s.postGL(ctx, tenantID, "DPM_ACCRUAL", "dpm-accrual-"+a.ID,
 			a.PeriodTo, item, a.AmountMinor, "DPM_INTEREST_EXPENSE", "DPM_INTEREST_PAYABLE", "Dự chi lãi tiền gửi")
 		if err != nil {
 			return err
 		}
 	}
-	if err := s.repo.MarkAccrualPosted(ctx, tenantID, a.ID, entryID); err != nil {
+	if err := s.accruals.MarkAccrualPosted(ctx, tenantID, a.ID, entryID); err != nil {
 		if errors.Is(err, repository.ErrSavingsNotActive) {
 			return ardaerrors.New(ardaerrors.CodeConflict, "savings is no longer ACTIVE — accrual cannot be applied")
 		}
@@ -632,7 +732,9 @@ func (s *InterestService) ResolveInterestOp(ctx context.Context, tenantID, id, d
 		card, debit, credit, description := interestOpCard(op.OpType)
 		capitalize := op.OpType == "CAPITALIZE"
 		if mode == opModeFresh {
-			if err := s.repo.BeginInterestOpPosting(ctx, tenantID, op.ID, savings.ID, op.AmountMinor, capitalize, dataVersion); err != nil {
+			// The op takes effect on the business date it is approved and starts a
+			// new interest period (owner decision: PAY and CAPITALIZE both do).
+			if err := s.repo.BeginInterestOpPosting(ctx, tenantID, op.ID, savings.ID, op.AmountMinor, capitalize, dataVersion, todayDep(ctx)); err != nil {
 				switch {
 				case errors.Is(err, repository.ErrAccruedInsufficient):
 					if dataVersion != "" {

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -558,6 +559,14 @@ func (h *DepositHandler) RunAccrualDaily(w http.ResponseWriter, r *http.Request)
 	}
 	posted, err := h.interest.RunDaily(r.Context(), tenantID, toDate)
 	if err != nil {
+		// Products without ROUND_NO/ROUND_TYPE are skipped, the others are
+		// accrued: report it as an unprocessable configuration (the problem
+		// lists the skipped savings and the number posted), not a server fault.
+		var typed *ardaerrors.Error
+		if errors.As(err, &typed) && typed.Code == service.CodeAccrualRoundConfigMissing {
+			ardahttp.WriteProblem(w, r, http.StatusUnprocessableEntity, typed.WithRequestID(ardahttp.RequestID(r)))
+			return
+		}
 		ardahttp.WriteServiceError(w, r, err)
 		return
 	}

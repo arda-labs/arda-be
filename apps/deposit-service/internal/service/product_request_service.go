@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/arda-labs/arda/apps/deposit-service/internal/interest"
 	"github.com/arda-labs/arda/apps/deposit-service/internal/repository"
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
@@ -41,6 +42,29 @@ type ProductRequestInput struct {
 	TermMonths   int     `json:"term_months"`
 	InterestRate float64 `json:"interest_rate"`
 	CurrencyCode string  `json:"currency_code"`
+	// RoundNo and RoundType (CM163.001/.002/.003) configure the rounding of the
+	// cumulative daily accrual; both or neither. Omitted on an EDIT = unchanged.
+	RoundNo   *int    `json:"round_no,omitempty"`
+	RoundType *string `json:"round_type,omitempty"`
+}
+
+// validateProductRounding checks the product rounding pair: both or neither,
+// round_no >= 0 and a CM163 mode code.
+func validateProductRounding(roundNo *int, roundType *string) error {
+	if roundNo == nil && roundType == nil {
+		return nil
+	}
+	switch {
+	case roundNo == nil || roundType == nil:
+		return ardaerrors.New(ardaerrors.CodeInvalidInput, "round_no and round_type must be provided together")
+	case *roundNo < 0:
+		return ardaerrors.New(ardaerrors.CodeInvalidInput, "round_no must not be negative")
+	}
+	switch *roundType {
+	case interest.RoundHalfUp, interest.RoundUp, interest.RoundDown:
+		return nil
+	}
+	return ardaerrors.New(ardaerrors.CodeInvalidInput, "round_type must be CM163.001, CM163.002 or CM163.003")
 }
 
 // Submit validates the payload, stages the request and starts the
@@ -65,6 +89,9 @@ func (s *ProductRequestService) Submit(ctx context.Context, tenantID, actor stri
 	case in.InterestRate < 0:
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "interest_rate must not be negative")
 	}
+	if err := validateProductRounding(in.RoundNo, in.RoundType); err != nil {
+		return nil, err
+	}
 	if in.CurrencyCode == "" {
 		in.CurrencyCode = "VND"
 	}
@@ -87,6 +114,8 @@ func (s *ProductRequestService) Submit(ctx context.Context, tenantID, actor stri
 		TermMonths:   in.TermMonths,
 		InterestRate: in.InterestRate,
 		CurrencyCode: in.CurrencyCode,
+		RoundNo:      in.RoundNo,
+		RoundType:    in.RoundType,
 		CreatedBy:    actor,
 	})
 	if err != nil {
@@ -158,6 +187,8 @@ func (s *ProductRequestService) Resolve(ctx context.Context, tenantID, id, decis
 		TermMonths:   request.TermMonths,
 		InterestRate: request.InterestRate,
 		CurrencyCode: request.CurrencyCode,
+		RoundNo:      request.RoundNo,
+		RoundType:    request.RoundType,
 		CreatedBy:    actor,
 	}); err != nil {
 		return ardaerrors.New(ardaerrors.CodeInternal, err.Error())

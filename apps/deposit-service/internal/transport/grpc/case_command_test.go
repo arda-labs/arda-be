@@ -82,11 +82,17 @@ func insertRateRequest(t *testing.T, db *sql.DB, requestStatus string) string {
 
 func insertInterestOp(t *testing.T, db *sql.DB, savingsID, savingsCode, opStatus string, caseID *string) string {
 	t.Helper()
+	// A POSTING/POSTED op always carries the business date it took effect on
+	// (chk_dpm_interest_op_effective_date); a SUBMITTED one has none yet.
+	var effectiveDate any
+	if opStatus == "POSTING" || opStatus == "POSTED" {
+		effectiveDate = "2026-10-18"
+	}
 	var id string
 	if err := db.QueryRow(`
-		INSERT INTO dpm_interest_ops (tenant_id, savings_id, savings_code, op_type, amount_minor, status, created_by, workflow_case_id)
-		VALUES ($1, $2, $3, 'PAY', 10000, $4, 'tester', $5::uuid) RETURNING id::text`,
-		caseTestTenant, savingsID, savingsCode, opStatus, caseID).Scan(&id); err != nil {
+		INSERT INTO dpm_interest_ops (tenant_id, savings_id, savings_code, op_type, amount_minor, status, created_by, workflow_case_id, effective_date)
+		VALUES ($1, $2, $3, 'PAY', 10000, $4, 'tester', $5::uuid, $6::date) RETURNING id::text`,
+		caseTestTenant, savingsID, savingsCode, opStatus, caseID, effectiveDate).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	return id

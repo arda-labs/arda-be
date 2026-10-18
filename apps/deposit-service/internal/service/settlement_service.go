@@ -360,6 +360,9 @@ func (s *SettlementService) UpsertProduct(ctx context.Context, tenantID, actor s
 	if in.Code == "" || in.Name == "" || in.TermMonths <= 0 {
 		return nil, ardaerrors.New(ardaerrors.CodeRequired, "code, name and a positive term_months are required")
 	}
+	if err := validateProductRounding(in.RoundNo, in.RoundType); err != nil {
+		return nil, err
+	}
 	in.ID = ""
 	in.TenantID = tenantID
 	in.CreatedBy = actor

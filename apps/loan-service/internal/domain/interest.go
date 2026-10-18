@@ -21,8 +21,10 @@ package domain
 // The total is rounded ONCE, to the product ROUND_NO with the CM163 mode, on
 // the sum of the in-term and overdue interest of the run (post-P3 decision
 // P3-1). EPAS defects are deliberately not copied: CM163.002/.003 codes are
-// honoured (EPAS turns them into HALF_UP) and the rounding is a single exact
-// division (EPAS roundCurrency divides at scale 10 first).
+// honoured (EPAS turns them into HALF_UP), the rounding is a single exact
+// division (EPAS roundCurrency divides at scale 10 first), and codes are matched
+// exactly (EPAS uses substring tests): an unknown or empty CM124 flag, CM163
+// mode or year-basis code is a coded error, never silently another mode.
 //
 // Out of scope here (no decision yet): the over/under interest adjustment
 // (LNM_APPLY_INTEREST_DIFF), receivable deductions and INT_ALLOC.
@@ -30,7 +32,6 @@ package domain
 import (
 	"math/big"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -42,8 +43,7 @@ const (
 	DateMethodSkipLastDay  = "CM124.002"
 )
 
-// CM163 rounding-mode codes (product ROUND_TYPE). The mode names stored by the
-// EPAS front-end (ROUND, CEIL, FLOOR) are accepted as well.
+// CM163 rounding-mode codes (product ROUND_TYPE), matched exactly.
 const (
 	RoundModeHalfUp  = "CM163.001"
 	RoundModeCeiling = "CM163.002"
@@ -63,6 +63,12 @@ const (
 	ErrCodeInterestOverRateMissing = "lnm.interest.over_rate_missing"
 	// ErrCodeInterestBalanceMissing: no balance history up to the calculation date.
 	ErrCodeInterestBalanceMissing = "lnm.interest.balance_missing"
+	// ErrCodeInterestDateMethodUnsupported: the CM124 flag is empty or not one
+	// of CM124.001 / CM124.002.
+	ErrCodeInterestDateMethodUnsupported = "lnm.interest.unsupported_date_method"
+	// ErrCodeInterestRoundTypeUnsupported: ROUND_NO > 0 with a CM163 mode that is
+	// empty or not one of CM163.001 / .002 / .003.
+	ErrCodeInterestRoundTypeUnsupported = "lnm.interest.unsupported_round_type"
 )
 
 // InterestError is a coded calculator failure.
@@ -73,29 +79,42 @@ type InterestError struct {
 
 func (e *InterestError) Error() string { return e.Code + ": " + e.Message }
 
-// interestBaseDays is the known year-basis table. CSTL_01 is intentionally
-// absent (see ErrCodeInterestBaseUndefined).
+// interestBaseDays is the confirmed year-basis table. The EPAS catalogue
+// (com_cfg_base_int) has two codes: CSTL_02 = 365 (every product of the dev
+// configuration) and CSTL_01, which has no confirmed meaning and must not be
+// used (ErrCodeInterestBaseUndefined). Codes are matched exactly; nothing else
+// is accepted until the business confirms it.
 var interestBaseDays = map[string]int{
-	"CSTL_02":  365,
-	"CSTL_365": 365,
-	"CSTL_360": 360,
-	"CSTL_366": 366,
-	"365":      365,
-	"360":      360,
-	"366":      366,
+	"CSTL_02": 365,
 }
 
-// InterestBaseDays resolves a year-basis code to its day count. An empty or
-// unrecognised code is an error, not a default.
+// InterestBaseDays resolves a year-basis code to its day count. CSTL_01, an
+// empty code and any code outside the confirmed table are errors, not defaults.
 func InterestBaseDays(code string) (int, error) {
-	key := strings.ToUpper(strings.TrimSpace(code))
-	if key == "CSTL_01" {
+	if code == "CSTL_01" {
 		return 0, &InterestError{Code: ErrCodeInterestBaseUndefined, Message: "year-basis code CSTL_01 has no confirmed definition yet"}
 	}
-	if days, ok := interestBaseDays[key]; ok {
+	if days, ok := interestBaseDays[code]; ok {
 		return days, nil
 	}
 	return 0, &InterestError{Code: ErrCodeInterestBaseUnknown, Message: "unknown year-basis code " + quoteCode(code)}
+}
+
+// validateDateMethod accepts exactly CM124.001 and CM124.002.
+func validateDateMethod(method string) error {
+	if method == DateMethodSkipFirstDay || method == DateMethodSkipLastDay {
+		return nil
+	}
+	return &InterestError{Code: ErrCodeInterestDateMethodUnsupported, Message: "date method must be CM124.001 or CM124.002, got " + quoteCode(method)}
+}
+
+// validateRoundType accepts exactly CM163.001, CM163.002 and CM163.003.
+func validateRoundType(kind string) error {
+	switch kind {
+	case RoundModeHalfUp, RoundModeCeiling, RoundModeFloor:
+		return nil
+	}
+	return &InterestError{Code: ErrCodeInterestRoundTypeUnsupported, Message: "round type must be CM163.001, CM163.002 or CM163.003, got " + quoteCode(kind)}
 }
 
 func quoteCode(code string) string {
@@ -109,37 +128,45 @@ func quoteCode(code string) string {
 // the last accrual/collection milestone, nil when none yet. The first period
 // (base not after the disbursement day, or no base) of a CM124.002 product
 // starts ON the base (the disbursement day counts); every other case starts at
-// base + 1.
-func InterestFromDay(disburse time.Time, base *time.Time, dateMethod string) time.Time {
+// base + 1. An unsupported date method is an error.
+func InterestFromDay(disburse time.Time, base *time.Time, dateMethod string) (time.Time, error) {
+	if err := validateDateMethod(dateMethod); err != nil {
+		return time.Time{}, err
+	}
 	b := disburse
 	if base != nil {
 		b = *base
 	}
 	firstPeriod := civilDay(b) <= civilDay(disburse)
-	if firstPeriod && strings.Contains(dateMethod, DateMethodSkipLastDay) {
-		return dayTime(civilDay(b))
+	if firstPeriod && dateMethod == DateMethodSkipLastDay {
+		return dayTime(civilDay(b)), nil
 	}
-	return dayTime(civilDay(b) + 1)
+	return dayTime(civilDay(b) + 1), nil
 }
 
 // RoundInterest rounds amount to a multiple of roundNo with the CM163 mode, in
-// one exact step. roundNo <= 0 keeps the amount untouched (EPAS). An empty or
-// unrecognised mode is HALF_UP (half away from zero).
-func RoundInterest(amount decimal.Decimal, roundNo int, roundType string) decimal.Decimal {
+// one exact step. roundNo <= 0 keeps the amount untouched and the mode is
+// irrelevant. With roundNo > 0 the mode must be exactly CM163.001 (HALF_UP, half
+// away from zero), CM163.002 (CEILING) or CM163.003 (FLOOR); anything else is a
+// coded error.
+func RoundInterest(amount decimal.Decimal, roundNo int, roundType string) (decimal.Decimal, error) {
 	if roundNo <= 0 {
-		return amount
+		return amount, nil
+	}
+	if err := validateRoundType(roundType); err != nil {
+		return decimal.Zero, err
 	}
 	q := new(big.Rat).Quo(amount.Rat(), new(big.Rat).SetInt64(int64(roundNo)))
 	var n *big.Int
-	switch {
-	case strings.Contains(roundType, "CEIL") || strings.Contains(roundType, RoundModeCeiling):
+	switch roundType {
+	case RoundModeCeiling:
 		n = ratCeil(q)
-	case strings.Contains(roundType, "FLOOR") || strings.Contains(roundType, RoundModeFloor):
+	case RoundModeFloor:
 		n = ratFloor(q)
 	default:
 		n = ratHalfUp(q)
 	}
-	return decimal.NewFromBigInt(n, 0).Mul(decimal.NewFromInt(int64(roundNo)))
+	return decimal.NewFromBigInt(n, 0).Mul(decimal.NewFromInt(int64(roundNo))), nil
 }
 
 func ratFloor(x *big.Rat) *big.Int { return new(big.Int).Div(x.Num(), x.Denom()) }
@@ -264,13 +291,20 @@ func CalculateInterest(in InterestInput) (InterestResult, error) {
 	if err != nil {
 		return res, err
 	}
+	if err := validateDateMethod(in.DateMethod); err != nil {
+		return res, err
+	}
+	if in.RoundNo > 0 {
+		if err := validateRoundType(in.RoundType); err != nil {
+			return res, err
+		}
+	}
 	first, last := civilDay(in.From), civilDay(in.To)
-	skipLast := strings.Contains(in.DateMethod, DateMethodSkipLastDay)
 	shift := 0
-	if strings.Contains(in.DateMethod, DateMethodSkipFirstDay) {
+	if in.DateMethod == DateMethodSkipFirstDay {
 		shift = 1
 	}
-	if in.IsSettlement && skipLast {
+	if in.IsSettlement && in.DateMethod == DateMethodSkipLastDay {
 		last--
 	}
 
@@ -380,9 +414,10 @@ func CalculateInterest(in InterestInput) (InterestResult, error) {
 		res.Segments = append(res.Segments, seg)
 	}
 	res.Raw = res.Normal.Add(res.Overdue)
-	res.Total = RoundInterest(res.Raw, in.RoundNo, in.RoundType)
-	res.NormalRounded = RoundInterest(res.Normal, in.RoundNo, in.RoundType)
-	res.OverdueRounded = RoundInterest(res.Overdue, in.RoundNo, in.RoundType)
+	// The round type was validated above, so these cannot fail.
+	res.Total, _ = RoundInterest(res.Raw, in.RoundNo, in.RoundType)
+	res.NormalRounded, _ = RoundInterest(res.Normal, in.RoundNo, in.RoundType)
+	res.OverdueRounded, _ = RoundInterest(res.Overdue, in.RoundNo, in.RoundType)
 	return res, nil
 }
 

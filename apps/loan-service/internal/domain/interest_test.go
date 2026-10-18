@@ -53,21 +53,30 @@ func wantRaw(t *testing.T, res InterestResult, want string) {
 }
 
 func TestInterestBaseDays(t *testing.T) {
-	for code, want := range map[string]int{"CSTL_02": 365, "CSTL_360": 360, "360": 360, "365": 365, "CSTL_366": 366, " cstl_02 ": 365} {
-		got, err := InterestBaseDays(code)
-		if err != nil || got != want {
-			t.Fatalf("InterestBaseDays(%q) = %d, %v; muốn %d", code, got, err, want)
-		}
+	got, err := InterestBaseDays("CSTL_02")
+	if err != nil || got != 365 {
+		t.Fatalf("InterestBaseDays(CSTL_02) = %d, %v; muốn 365", got, err)
 	}
 }
 
 // G2-LNM-LAI-01: CSTL_01 chưa có định nghĩa, mã lạ hoặc để trống không được đoán.
 func TestInterestBaseCodeRejectedWithCode(t *testing.T) {
+	// Danh mục EPAS chỉ có CSTL_01 và CSTL_02; mọi mã khác (kể cả 360/365/366 trần, CSTL_360, sai hoa thường, thừa
+	// khoảng trắng) không nằm trong danh sách đã xác nhận nên bị từ chối, không đoán.
 	for code, wantCode := range map[string]string{
-		"CSTL_01": ErrCodeInterestBaseUndefined,
-		"":        ErrCodeInterestBaseUnknown,
-		"CSTL_99": ErrCodeInterestBaseUnknown,
-		"ACT/365": ErrCodeInterestBaseUnknown,
+		"CSTL_01":  ErrCodeInterestBaseUndefined,
+		"":         ErrCodeInterestBaseUnknown,
+		"CSTL_99":  ErrCodeInterestBaseUnknown,
+		"ACT/365":  ErrCodeInterestBaseUnknown,
+		"CSTL_360": ErrCodeInterestBaseUnknown,
+		"CSTL_365": ErrCodeInterestBaseUnknown,
+		"CSTL_366": ErrCodeInterestBaseUnknown,
+		"360":      ErrCodeInterestBaseUnknown,
+		"365":      ErrCodeInterestBaseUnknown,
+		"366":      ErrCodeInterestBaseUnknown,
+		"cstl_02":  ErrCodeInterestBaseUnknown,
+		" CSTL_02": ErrCodeInterestBaseUnknown,
+		"CSTL_02 ": ErrCodeInterestBaseUnknown,
 	} {
 		in := baseInput()
 		in.BaseCode = code
@@ -88,8 +97,6 @@ func TestInterestFirstDayCountsDisbursementDay(t *testing.T) {
 		t.Fatalf("số ngày = %d, muốn 1", res.Days)
 	}
 	wantRaw(t, res, "232876.7123287671")
-	in.BaseCode = "CSTL_360"
-	wantRaw(t, mustInterest(t, in), "236111.1111111111")
 }
 
 func TestInterestFromDay(t *testing.T) {
@@ -109,10 +116,58 @@ func TestInterestFromDay(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := InterestFromDay(disburse, tc.base, tc.method); !got.Equal(tc.want) {
-				t.Fatalf("InterestFromDay = %s, muốn %s", got.Format("2006-01-02"), tc.want.Format("2006-01-02"))
+			got, err := InterestFromDay(disburse, tc.base, tc.method)
+			if err != nil || !got.Equal(tc.want) {
+				t.Fatalf("InterestFromDay = %s, %v; muốn %s", got.Format("2006-01-02"), err, tc.want.Format("2006-01-02"))
 			}
 		})
+	}
+}
+
+// Cờ ngày và kiểu làm tròn khớp CHÍNH XÁC theo mã; mã lạ hoặc rỗng là lỗi có mã, không im lặng thành một chế độ.
+func TestInterestRejectsUnsupportedDateMethod(t *testing.T) {
+	for _, method := range []string{"", "CM124.003", "CM124.001,CM124.002", "CM124.002X", "xCM124.001", "cm124.002", " CM124.002", "CM124"} {
+		in := baseInput()
+		in.DateMethod = method
+		_, err := CalculateInterest(in)
+		if !hasInterestCode(err, ErrCodeInterestDateMethodUnsupported) {
+			t.Fatalf("cờ ngày %q: lỗi = %v, muốn mã %s", method, err, ErrCodeInterestDateMethodUnsupported)
+		}
+	}
+	if _, err := CalculateInterest(baseInput()); err != nil {
+		t.Fatalf("CM124.002 hợp lệ bị từ chối: %v", err)
+	}
+	in := baseInput()
+	in.DateMethod = DateMethodSkipFirstDay
+	if _, err := CalculateInterest(in); err != nil {
+		t.Fatalf("CM124.001 hợp lệ bị từ chối: %v", err)
+	}
+}
+
+func TestInterestRejectsUnsupportedRoundType(t *testing.T) {
+	for _, kind := range []string{"", "ROUND", "CEIL", "FLOOR", "CEILING", "HALF_UP", "CM163.999", "CM163", "cm163.001", " CM163.001", "CM163.001 "} {
+		in := baseInput()
+		in.RoundNo, in.RoundType = 1000, kind
+		if _, err := CalculateInterest(in); !hasInterestCode(err, ErrCodeInterestRoundTypeUnsupported) {
+			t.Fatalf("kiểu làm tròn %q: lỗi = %v, muốn mã %s", kind, err, ErrCodeInterestRoundTypeUnsupported)
+		}
+		if _, err := RoundInterest(dec("1500"), 1000, kind); !hasInterestCode(err, ErrCodeInterestRoundTypeUnsupported) {
+			t.Fatalf("RoundInterest kiểu %q: lỗi = %v", kind, err)
+		}
+	}
+	// Không làm tròn theo bước (ROUND_NO <= 0) thì kiểu không có nghĩa và không bị kiểm.
+	in := baseInput()
+	in.RoundNo, in.RoundType = 0, ""
+	if _, err := CalculateInterest(in); err != nil {
+		t.Fatalf("ROUND_NO 0 không cần kiểu: %v", err)
+	}
+}
+
+func TestInterestFromDayRejectsUnsupportedDateMethod(t *testing.T) {
+	for _, method := range []string{"", "CM124.003", "CM124.001,CM124.002", "cm124.002"} {
+		if _, err := InterestFromDay(dd(2026, 3, 10), nil, method); !hasInterestCode(err, ErrCodeInterestDateMethodUnsupported) {
+			t.Fatalf("cờ ngày %q: lỗi = %v", method, err)
+		}
 	}
 }
 
@@ -268,25 +323,26 @@ func TestRoundInterestHonoursCM163AndIsExact(t *testing.T) {
 		roundType string
 		want      string
 	}{
-		{"1293759.5", 1, "CM163.003", "1293759"}, // EPAS ra 1.293.760 vì mã CM163.003 thành HALF_UP
-		{"1293759.5", 1, "FLOOR", "1293759"},
-		{"1293759.5", 1, "CM163.002", "1293760"},
-		{"1293759.5", 1, "CEIL", "1293760"},
-		{"1293759.5", 1, "CM163.001", "1293760"},
-		{"1293759.5", 1, "ROUND", "1293760"},
-		{"1499.9999999999", 1000, "ROUND", "1000"}, // EPAS làm tròn kép ra 2.000
-		{"1499.9999999999", 10, "FLOOR", "1490"},
-		{"5000.0000000001", 1000, "CEIL", "6000"},
-		{"4999.9999999999", 1000, "FLOOR", "4000"},
-		{"-12345.5", 1, "ROUND", "-12346"}, // nửa ra xa số 0
-		{"500", 1000, "ROUND", "1000"},
-		{"499.9999999999", 1000, "ROUND", "0"},
-		{"12.5", 0, "CEIL", "12.5"}, // ROUND_NO 0 giữ nguyên
-		{"12.5", -3, "CEIL", "12.5"},
-		{"2500", 1000, "", "3000"}, // không kiểu: HALF_UP
+		{"1293759.5", 1, RoundModeFloor, "1293759"}, // EPAS ra 1.293.760 vì mã CM163.003 thành HALF_UP
+		{"1293759.5", 1, RoundModeCeiling, "1293760"},
+		{"1293759.5", 1, RoundModeHalfUp, "1293760"},
+		{"1499.9999999999", 1000, RoundModeHalfUp, "1000"}, // EPAS làm tròn kép ra 2.000
+		{"1499.9999999999", 10, RoundModeFloor, "1490"},
+		{"5000.0000000001", 1000, RoundModeCeiling, "6000"},
+		{"4999.9999999999", 1000, RoundModeFloor, "4000"},
+		{"-12345.5", 1, RoundModeHalfUp, "-12346"}, // nửa ra xa số 0
+		{"500", 1000, RoundModeHalfUp, "1000"},
+		{"499.9999999999", 1000, RoundModeHalfUp, "0"},
+		{"12.5", 0, RoundModeCeiling, "12.5"}, // ROUND_NO 0 giữ nguyên
+		{"12.5", -3, RoundModeCeiling, "12.5"},
+		{"12.5", 0, "", "12.5"}, // ROUND_NO <= 0: kiểu không có nghĩa
+		{"2500", 1000, RoundModeHalfUp, "3000"},
 	}
 	for _, tc := range tests {
-		got := RoundInterest(dec(tc.amount), tc.roundNo, tc.roundType)
+		got, err := RoundInterest(dec(tc.amount), tc.roundNo, tc.roundType)
+		if err != nil {
+			t.Fatalf("RoundInterest(%s, %d, %q): %v", tc.amount, tc.roundNo, tc.roundType, err)
+		}
 		if !got.Equal(dec(tc.want)) {
 			t.Fatalf("RoundInterest(%s, %d, %q) = %s, muốn %s", tc.amount, tc.roundNo, tc.roundType, got, tc.want)
 		}

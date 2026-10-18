@@ -7,8 +7,10 @@ package service
 //      vụ nên cửa sổ nửa mở [from, to) có to = ngày nghiệp vụ + 1 (G2-DPM-NGAY-01
 //      A / -02: nửa mở, dự chi liền kỳ không mất ngày); các case ghi "hiện trạng"
 //      là hành vi cần xác nhận nghiệp vụ, không liên quan quy ước đếm ngày.
-//   2. Số tiền dự chi một lần chạy = cửa sổ × interest.Calculate × Round(0),
-//      đúng như RunDaily ghép lại (ghép lại ở đây vì RunDaily cần DB + finance).
+//   2. Số tiền của MỘT cửa sổ = interest.Calculate × Round(0) (làm tròn đồng cho cửa sổ).
+//      RunDaily không còn dự chi theo cách này: từ 2026-10-18 dự chi theo lũy kế
+//      từng kỳ (accrual_cumulative.go, daily_accrual_test.go); bảng này chỉ khóa
+//      phép tính cửa sổ + số học của bộ tính lãi.
 //   3. Ngày đáo hạn = ngày mở + kỳ hạn tháng, kẹp cuối tháng (AddMonthsClamped).
 //   4. Bút toán tất toán 3 leg DPM_SETTLEMENT_V3 (gốc, lãi dự chi, tiền chi) và
 //      card trả lãi / nhập gốc (DPM_INTEREST_PAY, DPM_CAPITALIZE), card IBM —
@@ -48,7 +50,7 @@ func TestGoldenAccrualWindow(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			from, to, days, ok := accrualWindow(tc.openDate, tc.lastPosted, tc.businessDate)
+			from, to, days, ok := accrualWindow(tc.openDate, tc.lastPosted, tc.businessDate, "")
 			if ok != tc.wantOK || from != tc.wantFrom || to != tc.wantTo || days != tc.wantDays {
 				t.Fatalf("accrualWindow = (%s, %s, %d, %v), muốn (%s, %s, %d, %v)", from, to, days, ok, tc.wantFrom, tc.wantTo, tc.wantDays, tc.wantOK)
 			}
@@ -56,10 +58,10 @@ func TestGoldenAccrualWindow(t *testing.T) {
 	}
 }
 
-// dailyAccrualMinor ghép đúng các bước RunDaily thực hiện cho một sổ.
+// dailyAccrualMinor ghép cửa sổ + Calculate cho một sổ (không phải đường dự chi lũy kế).
 func dailyAccrualMinor(t *testing.T, openDate, lastPosted, businessDate string, principal int64, rate float64, denominator int) (int, int64) {
 	t.Helper()
-	from, to, days, ok := accrualWindow(openDate, lastPosted, businessDate)
+	from, to, days, ok := accrualWindow(openDate, lastPosted, businessDate, "")
 	if !ok {
 		return 0, 0
 	}
