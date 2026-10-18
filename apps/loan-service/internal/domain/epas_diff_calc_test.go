@@ -8,7 +8,6 @@ package domain
 
 import (
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -52,12 +51,18 @@ func newFromDay(c *egCase) (time.Time, string) {
 	if c.Product.DateMethod != nil {
 		method = *c.Product.DateMethod
 	}
+	// Mã cờ ngày không hỗ trợ: bộ tính sản xuất từ chối bằng mã lỗi.
+	if _, err := InterestFromDay(D, nil, method); err != nil {
+		return time.Time{}, "DATE_METHOD:" + err.(*InterestError).Code
+	}
 	from := func(base *int) time.Time {
 		if base == nil {
-			return InterestFromDay(D, nil, method)
+			t, _ := InterestFromDay(D, nil, method)
+			return t
 		}
-		t := dayTimeOf(*base)
-		return InterestFromDay(D, &t, method)
+		b := dayTimeOf(*base)
+		t, _ := InterestFromDay(D, &b, method)
+		return t
 	}
 	if fo := optDay(c.Calc.FromDate); fo != nil {
 		return dayTimeOf(*fo), ""
@@ -131,7 +136,7 @@ func newCalc(c *egCase) newOut {
 		in.RoundNo = *c.Product.RoundNo
 	}
 	if c.Product.RoundType != nil {
-		in.RoundType = *c.Product.RoundType
+		in.RoundType = fixtureRoundCode(*c.Product.RoundType)
 	}
 	for _, b := range mergeBalances(c.Balances, T) {
 		in.Balances = append(in.Balances, BalanceEntry{ValueDate: dayTimeOf(b.day), Balance: decimal.NewFromBigRat(b.bal, 10)})
@@ -173,6 +178,10 @@ func newCalc(c *egCase) newOut {
 			return newOut{Err: "PARAMETER_CONFIG_NOT_FOUND"}
 		case ErrCodeInterestBaseUndefined, ErrCodeInterestBaseUnknown:
 			return newOut{Err: "BASE_CODE:" + ie.Code}
+		case ErrCodeInterestDateMethodUnsupported:
+			return newOut{Err: "DATE_METHOD:" + ie.Code}
+		case ErrCodeInterestRoundTypeUnsupported:
+			return newOut{Err: "ROUND_TYPE:" + ie.Code}
 		}
 		return newOut{Err: ie.Code}
 	}
@@ -187,7 +196,7 @@ func newCalc(c *egCase) newOut {
 		} else {
 			t = t.Sub(decOrZero(c.Agreement.OffBalDueInterestAmt))
 		}
-		total = RoundInterest(decimal.Max(t, decimal.Zero), in.RoundNo, in.RoundType)
+		total, _ = RoundInterest(decimal.Max(t, decimal.Zero), in.RoundNo, in.RoundType)
 	}
 	return newOut{Total: ratFromDecimal(total), Raw: ratFromDecimal(res.Raw), Days: res.Days}
 }
@@ -197,6 +206,23 @@ func ratEqualWithin(a, b *big.Rat, tol *big.Rat) bool {
 	return d.Abs(d).Cmp(tol) <= 0
 }
 
+// fixtureRoundCode đưa tên kiểu làm tròn mà front-end EPAS lưu (ROUND, CEIL, FLOOR) về mã CM163 mà bộ tính sản xuất
+// chấp nhận; mã CM163.00x giữ nguyên, giá trị khác giữ nguyên để bị từ chối. Việc đổi tên-sang-mã là của dữ liệu
+// kiểm thử, không nằm trong mã sản xuất.
+func fixtureRoundCode(kind string) string {
+	switch kind {
+	case "ROUND":
+		return RoundModeHalfUp
+	case "CEIL":
+		return RoundModeCeiling
+	case "FLOOR":
+		return RoundModeFloor
+	}
+	return kind
+}
+
+// isBaseCodeCase: ca dùng mã cơ sở năm ngoài danh sách đã xác nhận (CSTL_02), gồm CSTL_01, CSTL_360, "360", thiếu mã.
+// Bộ tính sản xuất phải từ chối các ca này bằng mã lỗi, EPAS thì đoán 360/365/366 từ chuỗi.
 func isBaseCodeCase(c *egCase) bool {
-	return c.Product.BaseCode != nil && strings.Contains(*c.Product.BaseCode, "CSTL_01")
+	return c.Product.BaseCode == nil || *c.Product.BaseCode != "CSTL_02"
 }
