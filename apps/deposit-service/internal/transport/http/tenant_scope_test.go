@@ -182,16 +182,17 @@ func (w failingWorkflow) SubmitCase(context.Context, string, string, map[string]
 	return nil, w.submitErr
 }
 
-// Lỗi workflow không được để lại dòng yêu cầu SUBMITTED mồ côi (không có ca duyệt nào sẽ xử lý nó, nhưng nó vẫn hiện
-// trong danh sách chờ duyệt): dòng phải chuyển sang FAILED. Cần ARDA_TEST_DSN.
-func TestTenantScopeWorkflowFailureDoesNotLeaveOrphanRequest(t *testing.T) {
+// Lỗi workflow không được để lại dòng yêu cầu SUBMITTED mồ côi khi workflow từ chối chắc chắn (không có ca nào sẽ xử lý
+// nó mà nó vẫn hiện trong danh sách chờ duyệt): dòng chuyển sang FAILED. Cần ARDA_TEST_DSN.
+func TestTenantScopeWorkflowRejectionDoesNotLeaveOrphanRequest(t *testing.T) {
 	headers := map[string]string{"X-Tenant-Id": "system", "X-User-Id": "user-1", "X-Auth-Checked": "true"}
 	tests := []struct {
 		name string
 		wf   failingWorkflow
 	}{
-		{"CreateCase lỗi", failingWorkflow{createErr: errors.New("rpc error: code = PermissionDenied desc = verified tenant scope is required")}},
-		{"SubmitCase lỗi", failingWorkflow{submitErr: errors.New("rpc error: code = FailedPrecondition desc = case is not submittable")}},
+		{"CreateCase bị từ chối", failingWorkflow{createErr: status.Error(codes.PermissionDenied, "verified tenant scope is required")}},
+		{"CreateCase sai dữ liệu", failingWorkflow{createErr: status.Error(codes.InvalidArgument, "title is required")}},
+		{"SubmitCase bị từ chối", failingWorkflow{submitErr: status.Error(codes.FailedPrecondition, "case is not submittable")}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -205,6 +206,39 @@ func TestTenantScopeWorkflowFailureDoesNotLeaveOrphanRequest(t *testing.T) {
 			}
 			if n := countProductRequests(t, db, "FAILED"); n != 1 {
 				t.Fatalf("FAILED requests = %d, want 1", n)
+			}
+		})
+	}
+}
+
+// Timeout / mất kết nối không cho biết workflow đã tạo ca hay chưa: ca có thể đã sống còn phản hồi mất. Đóng FAILED lúc
+// đó sẽ làm người duyệt gặp "product request is not awaiting approval" và sản phẩm không bao giờ được tạo, nên dòng
+// phải giữ SUBMITTED.
+func TestTenantScopeAmbiguousWorkflowFailureKeepsRequestSubmitted(t *testing.T) {
+	headers := map[string]string{"X-Tenant-Id": "system", "X-User-Id": "user-1", "X-Auth-Checked": "true"}
+	tests := []struct {
+		name string
+		wf   failingWorkflow
+	}{
+		{"CreateCase hết hạn", failingWorkflow{createErr: status.Error(codes.DeadlineExceeded, "context deadline exceeded")}},
+		{"CreateCase Unavailable", failingWorkflow{createErr: status.Error(codes.Unavailable, "connection refused")}},
+		{"CreateCase bị hủy", failingWorkflow{createErr: status.Error(codes.Canceled, "context canceled")}},
+		{"CreateCase lỗi không rõ", failingWorkflow{createErr: errors.New("boom")}},
+		{"SubmitCase hết hạn", failingWorkflow{submitErr: status.Error(codes.DeadlineExceeded, "context deadline exceeded")}},
+		{"SubmitCase Unavailable", failingWorkflow{submitErr: status.Error(codes.Unavailable, "connection reset")}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := testdb.Open(t, func(db *sql.DB) error { return migration.Run(db, "postgres") })
+			rec := postProductRequest(t, db, tc.wf, headers)
+			if rec.Code != http.StatusBadGateway {
+				t.Fatalf("status = %d, want 502 (body %s)", rec.Code, rec.Body.String())
+			}
+			if n := countProductRequests(t, db, "SUBMITTED"); n != 1 {
+				t.Fatalf("SUBMITTED requests = %d, want 1 (request must stay approvable)", n)
+			}
+			if n := countProductRequests(t, db, "FAILED"); n != 0 {
+				t.Fatalf("FAILED requests = %d, want 0", n)
 			}
 		})
 	}
