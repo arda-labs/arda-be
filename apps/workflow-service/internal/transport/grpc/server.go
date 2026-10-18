@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/arda-labs/arda/apps/workflow-service/internal/repository"
 	"github.com/arda-labs/arda/apps/workflow-service/internal/service"
@@ -35,7 +36,17 @@ func (s *WorkflowServer) CreateCase(ctx context.Context, req *workflowv1.CreateC
 		IdempotencyKey:    req.GetIdempotencyKey(),
 	})
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		// A missing verified tenant is the caller's wiring (the BFF headers were not bound to the
+		// outgoing metadata), not bad input; say so, and log why — the logging interceptor only
+		// records the code and the (empty) tenant.
+		code := codes.InvalidArgument
+		if errors.Is(err, repository.ErrTenantScopeRequired) {
+			code = codes.PermissionDenied
+		}
+		slog.Warn("grpc CreateCase rejected",
+			"code", code.String(), "err", err,
+			"case_type", req.GetCaseType(), "domain_service", req.GetDomainService(), "tenant_id", req.GetTenantId())
+		return nil, status.Error(code, err.Error())
 	}
 	return businessCaseProto(bc), nil
 }
