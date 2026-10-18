@@ -335,7 +335,8 @@ func TestEpasOracleFixture(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skip("chua co fixture")
 	}
-	n := 0
+	strict := os.Getenv("EPAS_GOLDEN_STRICT") == "1"
+	n, matched := 0, 0
 	p3ReadLines(t, path, func(line []byte) {
 		var fx p3Fixture
 		if err := json.Unmarshal(line, &fx); err != nil {
@@ -348,6 +349,11 @@ func TestEpasOracleFixture(t *testing.T) {
 		}
 		seen := func(c *p3Calc) bool {
 			return c.Days == fx.ArdaSeen.Days && p3Same(c.Raw, fx.ArdaSeen.Raw) && p3Same(c.Rounded, fx.ArdaSeen.Rounded)
+		}
+		if eq(got.R) {
+			matched++
+		} else if strict {
+			t.Errorf("%s: strict: Arda %+v != EPAS %+v (lop %s, cum %s)", fx.ID, *got.R, fx.Epas, fx.Class, fx.Cluster)
 		}
 		switch fx.Class {
 		case "match":
@@ -368,5 +374,5 @@ func TestEpasOracleFixture(t *testing.T) {
 			}
 		}
 	})
-	t.Logf("fixture: %d ca", n)
+	t.Logf("fixture: %d ca, che do r khop EPAS: %d/%d", n, matched, n)
 }
