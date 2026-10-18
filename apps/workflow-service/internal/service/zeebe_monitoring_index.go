@@ -659,6 +659,86 @@ func (c *ZeebeMonitoringIndex) ListVariables(ctx context.Context, processInstanc
 	return variablesFromES(raw), nil
 }
 
+// ProcessVariables returns the current process-scope variables of an instance
+// as a name → value map (values decoded from the exporter's JSON strings;
+// numbers stay json.Number so large keys survive). It replaces the gateway
+// GET /v2/process-instances/{key}/variables call, which Zeebe 8.5 does not
+// serve. Only variables whose scope is the process instance itself are
+// returned, and for each name the record with the highest position wins
+// (UPDATED overrides CREATED). Exporter lag of a few seconds can make a fresh
+// instance report no variables yet; that is an empty map, not an error.
+func (c *ZeebeMonitoringIndex) ProcessVariables(ctx context.Context, processInstanceKey int64) (map[string]any, error) {
+	if !c.Enabled() {
+		return nil, fmt.Errorf("%w: ZEEBE_ES_URL is not configured", ErrZeebeVariablesUnavailable)
+	}
+	if processInstanceKey <= 0 {
+		return nil, fmt.Errorf("processInstanceKey is required")
+	}
+	raw, err := c.searchRaw(ctx, map[string]any{
+		"size":             monitoringRecordFetchLimit,
+		"track_total_hits": false,
+		"sort":             []any{map[string]any{"position": map[string]any{"order": "asc"}}},
+		"_source":          map[string]any{"includes": variableRecordIncludes},
+		"query": map[string]any{"bool": map[string]any{"filter": []any{
+			esTerm("valueType", "VARIABLE"),
+			esTerm("value.processInstanceKey", processInstanceKey),
+			esTerm("value.scopeKey", processInstanceKey),
+		}}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrZeebeVariablesUnavailable, err)
+	}
+	records, err := decodeHits[esVariableRecord](raw)
+	if err != nil {
+		return nil, fmt.Errorf("%w: decode elasticsearch variable search: %v", ErrZeebeVariablesUnavailable, err)
+	}
+	return processVariablesFromRecords(records, processInstanceKey), nil
+}
+
+func processVariablesFromRecords(records []esVariableRecord, processInstanceKey int64) map[string]any {
+	type latest struct {
+		position int64
+		value    any
+	}
+	byName := map[string]latest{}
+	for _, rec := range records {
+		switch strings.ToUpper(strings.TrimSpace(rec.Intent)) {
+		case "CREATED", "UPDATED", "MIGRATED":
+		default:
+			continue
+		}
+		name := strings.TrimSpace(rec.Value.Name)
+		if name == "" || jsonInt64(rec.Value.ScopeKey) != processInstanceKey {
+			continue
+		}
+		position := jsonInt64(rec.Position)
+		if prev, seen := byName[name]; seen && prev.position > position {
+			continue
+		}
+		byName[name] = latest{position: position, value: decodeVariableValue(rec.Value.Value)}
+	}
+	out := make(map[string]any, len(byName))
+	for name, item := range byName {
+		out[name] = item.value
+	}
+	return out
+}
+
+// decodeVariableValue parses the exporter's JSON-encoded variable value. A
+// value that is not valid JSON is kept as its raw string rather than dropped.
+func decodeVariableValue(encoded string) any {
+	dec := json.NewDecoder(strings.NewReader(encoded))
+	dec.UseNumber()
+	var value any
+	if err := dec.Decode(&value); err != nil {
+		return encoded
+	}
+	if dec.More() {
+		return encoded
+	}
+	return value
+}
+
 func variablesFromES(raw []byte) []ZeebeVariable {
 	records, err := decodeHits[esVariableRecord](raw)
 	if err != nil {

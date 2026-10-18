@@ -1827,13 +1827,15 @@ func (h *WorkflowHandler) getCase(w http.ResponseWriter, r *http.Request, id str
 	writeJSON(w, r, http.StatusOK, bc)
 }
 
-// caseVariables serves GET /api/workflow/cases/{id}/variables: the live
+// caseVariables serves GET /api/workflow/cases/{id}/variables: the current
 // Zeebe process-instance variables of the case (formation screens read the
-// appraisal/approval stage data plus amount/fundSource here).
+// appraisal/approval stage data plus amount/fundSource here). Zeebe 8.5 has no
+// REST variable API, so they are read from the exporter's Elasticsearch index;
+// an unavailable index is a 503 with a readable message, not a bad gateway.
 func (h *WorkflowHandler) caseVariables(w http.ResponseWriter, r *http.Request, id string) {
-	bc, err := h.caseRepo.GetCase(r.Context(), id)
+	bc, err := h.caseForCaseID(r.Context(), id)
 	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to query case: "+err.Error())
+		writeCaseScopeError(w, r, err)
 		return
 	}
 	if bc == nil {
@@ -1844,13 +1846,17 @@ func (h *WorkflowHandler) caseVariables(w http.ResponseWriter, r *http.Request, 
 		writeAPIError(w, r, http.StatusConflict, "Case has no process instance yet")
 		return
 	}
-	if h.zeebeRest == nil || !h.zeebeRest.Enabled() {
-		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe REST client is not configured")
+	if h.MonitoringIndex == nil || !h.MonitoringIndex.Enabled() {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Reading case variables requires ZEEBE_ES_URL (Zeebe Elasticsearch exporter)")
 		return
 	}
-	variables, err := h.zeebeRest.GetVariables(r.Context(), *bc.ProcessInstanceKey)
+	variables, err := h.MonitoringIndex.ProcessVariables(r.Context(), *bc.ProcessInstanceKey)
 	if err != nil {
-		writeAPIError(w, r, http.StatusBadGateway, err.Error())
+		if errors.Is(err, service.ErrZeebeVariablesUnavailable) {
+			writeAPIError(w, r, http.StatusServiceUnavailable, "Case variables are temporarily unavailable (Elasticsearch read model): "+err.Error())
+			return
+		}
+		writeAPIError(w, r, http.StatusInternalServerError, "Failed to read case variables: "+err.Error())
 		return
 	}
 	writeJSON(w, r, http.StatusOK, CaseVariables{CaseID: bc.ID, ProcessInstanceKey: strconv.FormatInt(*bc.ProcessInstanceKey, 10), Variables: variables})
