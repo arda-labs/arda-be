@@ -199,6 +199,58 @@ func dropReservedCaseVariables(variables map[string]any) []string {
 	return dropped
 }
 
+// routingCaseVariableKeys are the approval-routing and money variables the
+// owning domain service computes from its own records at submit (loan-service
+// derives amount, pgdLimit/gdLimit, fundSource and contractId from the
+// contract and the product limits). BPMN gateways (GW_ApprovalLevel:
+// amount > pgdLimit / amount > gdLimit, fundSource = "TW") and service-task
+// workers trust them, so after submit no human channel — task completion or
+// the Operate screen — may change them: a task holder lowering amount or
+// raising a limit would skip the GD/council tier, and a rewritten contractId
+// would approve a different contract.
+var routingCaseVariableKeys = map[string]struct{}{
+	"amount":        {},
+	"pgdLimit":      {},
+	"gdLimit":       {},
+	"fundSource":    {},
+	"contractId":    {},
+	"approvalLevel": {},
+}
+
+// IsProtectedCaseVariable reports whether key is service-owned (reserved) or
+// an approval-routing/money variable. Human channels after submit (task
+// completion, Operate variable edits) must never write such a key.
+func IsProtectedCaseVariable(key string) bool {
+	if _, reserved := reservedCaseVariableKeys[key]; reserved {
+		return true
+	}
+	_, routing := routingCaseVariableKeys[key]
+	return routing
+}
+
+// ProtectedCaseVariableKeys returns the protected keys present in variables,
+// sorted, without changing the map.
+func ProtectedCaseVariableKeys(variables map[string]any) []string {
+	var keys []string
+	for key := range variables {
+		if IsProtectedCaseVariable(key) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// DropProtectedCaseVariables removes every protected key from variables and
+// returns the dropped keys (sorted) for logging.
+func DropProtectedCaseVariables(variables map[string]any) []string {
+	dropped := ProtectedCaseVariableKeys(variables)
+	for _, key := range dropped {
+		delete(variables, key)
+	}
+	return dropped
+}
+
 // authoritativeCaseVariables builds the system variables for a case submit
 // from the persisted case and the verified actor.
 func authoritativeCaseVariables(bc *repository.BusinessCase, actor string) map[string]any {

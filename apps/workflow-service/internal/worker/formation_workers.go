@@ -44,14 +44,24 @@ func (w *FormationWorkers) contractID(job entities.Job) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	id, _ := vars["contractId"].(string)
-	if id == "" {
-		id, _ = vars["primaryObjectId"].(string)
+	return formationContractID(vars)
+}
+
+// formationContractID resolves the contract a formation job acts on. The case
+// primaryObjectId (service-owned, set from the persisted case at submit) is
+// authoritative; contractId is only a mirror sent by loan-service and must
+// match it. A mismatch means the process variables were rewritten after
+// submit, so the job fails closed instead of approving/rejecting a different
+// contract than the one the case was opened for.
+func formationContractID(vars map[string]any) (string, error) {
+	primary, _ := vars["primaryObjectId"].(string)
+	if primary == "" {
+		return "", fmt.Errorf("missing primaryObjectId variable")
 	}
-	if id == "" {
-		return "", fmt.Errorf("missing contractId variable")
+	if contractID, _ := vars["contractId"].(string); contractID != "" && contractID != primary {
+		return "", fmt.Errorf("contractId %q does not match case primaryObjectId %q", contractID, primary)
 	}
-	return id, nil
+	return primary, nil
 }
 
 // validate re-runs the loan-service formation check (contract exists and is
@@ -64,7 +74,7 @@ func (w *FormationWorkers) validate() worker.JobHandler {
 		ctx := context.Background()
 		id, err := w.contractID(job)
 		if err != nil {
-			_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).Send(ctx)
+			w.failContractScope(ctx, client, job, err)
 			return
 		}
 		ok, message, err := w.loanClient.CheckFormation(crmJobContext(job), id)
@@ -89,7 +99,7 @@ func (w *FormationWorkers) execute() worker.JobHandler {
 		ctx := context.Background()
 		id, err := w.contractID(job)
 		if err != nil {
-			_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).Send(ctx)
+			w.failContractScope(ctx, client, job, err)
 			return
 		}
 		if err := w.loanClient.UpdateContractStatus(crmJobContext(job), id, "APPROVED", ""); err != nil {
@@ -117,7 +127,7 @@ func (w *FormationWorkers) cancel() worker.JobHandler {
 		ctx := context.Background()
 		id, err := w.contractID(job)
 		if err != nil {
-			_, _ = client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).Send(ctx)
+			w.failContractScope(ctx, client, job, err)
 			return
 		}
 		if err := w.loanClient.UpdateContractStatus(crmJobContext(job), id, "REJECTED", "Rejected by checker"); err != nil {
@@ -147,6 +157,17 @@ func (w *FormationWorkers) complete(ctx context.Context, client worker.JobClient
 	}
 	_, err := cmd.Send(ctx)
 	return err
+}
+
+// failContractScope raises an incident (no retries) when the job cannot be
+// tied to the case contract; retrying would only repeat the same mismatch.
+func (w *FormationWorkers) failContractScope(ctx context.Context, client worker.JobClient, job entities.Job, err error) {
+	slog.Error("loan formation job rejected: contract scope", "jobType", job.GetType(),
+		"processInstanceKey", job.GetProcessInstanceKey(), "err", err)
+	_, sendErr := client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).ErrorMessage(err.Error()).Send(ctx)
+	if sendErr != nil {
+		slog.Error("loan formation fail-job send", "err", sendErr)
+	}
 }
 
 func (w *FormationWorkers) failJob(client worker.JobClient, job entities.Job, reason string) {

@@ -1,0 +1,13 @@
+{
+  "_note": "Mutating Operate* handlers that predate the audit gate (AP-AUD-02). Ratchet: only remove entries; a new mutating Operate handler must call h.recordOperateAudit.",
+  "unaudited": [
+    "OperateActivateJobDef",
+    "OperatePauseInstance",
+    "OperateResolveIncident",
+    "OperateResumeInstance",
+    "OperateRetryIncident",
+    "OperateSuspendJobDef",
+    "OperateUpdateJobRetries",
+    "OperateUserTaskAssign"
+  ]
+}

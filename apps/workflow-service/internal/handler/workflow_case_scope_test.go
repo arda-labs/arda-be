@@ -21,7 +21,9 @@ type fakeWorkflowCaseScope struct {
 	cases     map[string]*repository.BusinessCase
 	workItems map[int64]*repository.WorkItem
 	status    []string
+	audits    []fakeOperateAudit
 	err       error
+	auditErr  error
 }
 
 func (f *fakeWorkflowCaseScope) GetCase(_ context.Context, id string) (*repository.BusinessCase, error) {
@@ -56,6 +58,44 @@ func (f *fakeWorkflowCaseScope) SetCaseStatusByProcessKey(_ context.Context, key
 	return nil
 }
 
+// CancelOpenCaseByProcessKey mirrors the repository: terminal cases are
+// refused, an open one is cancelled together with its CASE_CANCELLED audit row.
+func (f *fakeWorkflowCaseScope) CancelOpenCaseByProcessKey(_ context.Context, key int64, actor, reason string) error {
+	if f.err != nil {
+		return f.err
+	}
+	bc := f.cases[strconv.FormatInt(key, 10)]
+	if bc == nil {
+		return repository.ErrNotFound
+	}
+	if repository.IsTerminalCaseStatus(bc.Status) {
+		return fmt.Errorf("%w: status %s", repository.ErrCaseNotOpen, bc.Status)
+	}
+	bc.Status = repository.CaseStatusCancelled
+	f.status = append(f.status, fmt.Sprintf("%d:%s", key, repository.CaseStatusCancelled))
+	f.audits = append(f.audits, fakeOperateAudit{CaseID: bc.ID, EventType: "CASE_CANCELLED", Actor: actor, Reason: reason})
+	return nil
+}
+
+func (f *fakeWorkflowCaseScope) AddOperateAuditEvent(_ context.Context, caseID, eventType, actor, reason string, data map[string]any) error {
+	if f.err != nil {
+		return f.err
+	}
+	if f.auditErr != nil {
+		return f.auditErr
+	}
+	if f.cases[caseID] == nil {
+		return repository.ErrNotFound
+	}
+	f.audits = append(f.audits, fakeOperateAudit{CaseID: caseID, EventType: eventType, Actor: actor, Reason: reason, Data: data})
+	return nil
+}
+
+type fakeOperateAudit struct {
+	CaseID, EventType, Actor, Reason string
+	Data                             map[string]any
+}
+
 func ownedCaseScope(caseID string, processInstanceKey int64) *fakeWorkflowCaseScope {
 	scope := &fakeWorkflowCaseScope{cases: map[string]*repository.BusinessCase{}}
 	scope.cases[strconv.FormatInt(processInstanceKey, 10)] = &repository.BusinessCase{
@@ -74,7 +114,8 @@ func ownedCaseScope(caseID string, processInstanceKey int64) *fakeWorkflowCaseSc
 // the case update (or Zeebe, for cancel).
 func TestOperateInstanceActionsRequireTenantOwnedCase(t *testing.T) {
 	scope := ownedCaseScope("case-1", 100)
-	h := &WorkflowHandler{caseScopeOverride: scope}
+	engine := &fakeOperateEngine{}
+	h := &WorkflowHandler{caseScopeOverride: scope, operateEngineOverride: engine}
 
 	pause := func(key int) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
@@ -113,10 +154,13 @@ func TestOperateInstanceActionsRequireTenantOwnedCase(t *testing.T) {
 	}
 	if w := func() *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
-		h.OperateCancelInstance(w, workflowTenantRequest("POST", "/api/workflow/operate/process-instances/100/cancel", "tenant-1"))
+		h.OperateCancelInstance(w, operateRequest("/api/workflow/operate/process-instances/100/cancel", `{"reason":"hồ sơ tạo nhầm"}`))
 		return w
 	}(); w.Code != http.StatusOK {
 		t.Fatalf("owned cancel status = %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+	if len(engine.cancelled) != 1 || engine.cancelled[0] != 100 {
+		t.Fatalf("engine cancels = %v, want only the owned instance 100", engine.cancelled)
 	}
 	if len(scope.status) != 3 || scope.status[1] != "100:ACTIVE" || scope.status[2] != "100:CANCELLED" {
 		t.Fatalf("owned mutations = %v, want resume + cancel on the caller tenant", scope.status)

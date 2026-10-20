@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -822,16 +823,22 @@ func (h *WorkflowHandler) OperateSetInstanceVariables(w http.ResponseWriter, r *
 		writeAPIError(w, r, http.StatusBadRequest, "Invalid process instance key")
 		return
 	}
-	bc, err := h.caseRepo.GetCaseByProcessInstanceKey(r.Context(), key)
+	bc, err := h.caseForProcessInstanceKey(r.Context(), key)
 	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "Failed to scope instance: "+err.Error())
+		writeCaseScopeError(w, r, err)
 		return
 	}
 	if bc == nil {
 		writeAPIError(w, r, http.StatusNotFound, "Process instance not found")
 		return
 	}
-	if h.zeebeSvc == nil {
+	actor := operateActor(r)
+	if actor == "" {
+		writeAPIError(w, r, http.StatusUnauthorized, "verified actor is required")
+		return
+	}
+	engine := h.operateEngine()
+	if engine == nil {
 		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
 		return
 	}
@@ -845,11 +852,73 @@ func (h *WorkflowHandler) OperateSetInstanceVariables(w http.ResponseWriter, r *
 		writeAPIError(w, r, http.StatusBadRequest, "variables must not be empty")
 		return
 	}
-	scope := req.ElementInstanceKey
-	if scope <= 0 {
-		scope = key
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		writeAPIError(w, r, http.StatusBadRequest, "reason is required to change process variables")
+		return
 	}
-	if err := h.zeebeSvc.SetVariables(r.Context(), scope, req.Variables, req.Local); err != nil {
+	// Tenant, case identity, maker/checker roles and the approval-routing /
+	// money variables are fixed at submit; Operate cannot rewrite them.
+	if protected := service.ProtectedCaseVariableKeys(req.Variables); len(protected) > 0 {
+		writeAPIError(w, r, http.StatusBadRequest, "protected process variables cannot be changed: "+strings.Join(protected, ", "))
+		return
+	}
+	// All tenants share one Zeebe tenant, so an element instance key from the
+	// body is only accepted when the read model proves it belongs to the
+	// process instance that was scoped to the caller's tenant above.
+	scope := key
+	model := h.operateReadModel()
+	if req.ElementInstanceKey > 0 && req.ElementInstanceKey != key {
+		if model == nil {
+			writeAPIError(w, r, http.StatusServiceUnavailable, "elementInstanceKey cannot be verified without the Zeebe read model (ZEEBE_ES_URL); omit it to update the process instance scope")
+			return
+		}
+		inProcess, err := elementInstanceInProcess(r.Context(), model, key, req.ElementInstanceKey)
+		if err != nil {
+			writeAPIError(w, r, http.StatusBadGateway, "Failed to verify element instance: "+err.Error())
+			return
+		}
+		if !inProcess {
+			writeAPIError(w, r, http.StatusNotFound, "Element instance not found in this process instance")
+			return
+		}
+		scope = req.ElementInstanceKey
+	}
+	names := variableNames(req.Variables)
+	audit := map[string]any{
+		"processInstanceKey": strconv.FormatInt(key, 10),
+		"elementInstanceKey": strconv.FormatInt(scope, 10),
+		"local":              req.Local,
+		"variables":          names,
+		"after":              req.Variables,
+	}
+	if model != nil {
+		if current, err := model.ProcessVariables(r.Context(), key); err == nil {
+			before := make(map[string]any, len(names))
+			for _, name := range names {
+				before[name] = current[name]
+			}
+			audit["before"] = before
+		} else {
+			audit["beforeUnavailable"] = err.Error()
+		}
+	} else {
+		audit["beforeUnavailable"] = "Zeebe read model is not configured"
+	}
+	// Audit first: without its timeline row the edit does not reach Zeebe.
+	if err := h.recordOperateAudit(r.Context(), bc.ID, operateEventVariablesSet, actor, reason, audit); err != nil {
+		writeCaseScopeError(w, r, err)
+		return
+	}
+	if err := engine.SetVariables(r.Context(), scope, req.Variables, req.Local); err != nil {
+		if auditErr := h.recordOperateAudit(r.Context(), bc.ID, operateEventVariablesSetFailed, actor, reason, map[string]any{
+			"processInstanceKey": strconv.FormatInt(key, 10),
+			"elementInstanceKey": strconv.FormatInt(scope, 10),
+			"variables":          names,
+			"error":              err.Error(),
+		}); auditErr != nil {
+			slog.Warn("operate variables failure audit not recorded", "caseId", bc.ID, "err", auditErr)
+		}
 		writeAPIError(w, r, http.StatusBadGateway, err.Error())
 		return
 	}

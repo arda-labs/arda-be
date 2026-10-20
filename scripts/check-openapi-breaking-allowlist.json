@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "document": "workflow-v1.json",
+    "change": "POST /api/workflow/operate/process-instances/{key}/cancel: request body is now required",
+    "reason": "AP-AUD-02: hủy instance qua Operate bắt buộc lý do ({\"reason\"}) để ghi CASE_CANCELLED; màn Operate ở arda-mfe phải gửi lý do.",
+    "expires": "2026-11-30"
+  }
+]
