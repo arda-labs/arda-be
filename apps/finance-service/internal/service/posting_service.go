@@ -705,6 +705,12 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 	if err != nil {
 		return nil, err
 	}
+	// Danh mục loại chứng từ được hủy (AP-REV-01): chứng từ sinh từ nghiệp vụ
+	// domain không đảo thẳng sổ cái được vì sổ chi tiết nghiệp vụ không được
+	// hoàn tác theo; chỉ chứng từ thủ công FIN_* trong danh mục mới được đảo.
+	if err := s.EnsureReversalAllowed(ctx, tenantID, original.Domain, original.DocType); err != nil {
+		return nil, err
+	}
 	reversalDate := req.GetAccountingDate()
 	if reversalDate == "" {
 		reversalDate = original.AccountingDate
@@ -798,14 +804,39 @@ func (s *PostingService) ReverseTransaction(ctx context.Context, req *financev1.
 		}
 	}
 
-	// Reversal lines post straight to the posted counters (nature-free — the
-	// flipped directions net the original entry out of the balances).
+	// Reversal lines post straight to the posted counters. Trước khi ghi,
+	// hiệu ứng ròng của các dòng đảo trên từng tài khoản không được làm số dư
+	// thực tế/khả dụng âm (AP-REV-02, trừ nature B) — đảo không được tạo ra
+	// số dư mà một bút toán xuôi sẽ bị checkReserve/checkPostActual chặn.
 	reversalKeys := balanceKeysFromRows(original.Lines)
 	reversalBalances, err := s.repo.EnsureAndLockBalances(ctx, tx, tenantID, reversalKeys)
 	if err != nil {
 		return nil, err
 	}
 	reversalIndex := balanceIndex(reversalBalances)
+	natures, err := s.repo.LoadAccountNatures(ctx, tenantID, reversalKeys)
+	if err != nil {
+		return nil, err
+	}
+	openings, err := s.repo.LoadOpeningSides(ctx, tenantID, reversalKeys, reversalDate)
+	if err != nil {
+		return nil, err
+	}
+	netDelta := make(map[repository.BalanceKey]int64, len(reversalKeys))
+	for _, l := range original.Lines {
+		flipped := "CREDIT"
+		if l.Direction == "CREDIT" {
+			flipped = "DEBIT"
+		}
+		k := repository.BalanceKey{BalTypeCode: l.BalTypeCode, CoaVersion: l.CoaVersion, AccountCode: l.AccountCode, CurrencyCode: l.Currency}
+		netDelta[k] += lineDelta(natures[k], flipped, l.AmountMinor)
+	}
+	for _, k := range reversalKeys {
+		nature := natures[k]
+		if err := checkReversal(*reversalIndex[k], naturalSignedOpening(openings[k], nature), nature, netDelta[k]); err != nil {
+			return nil, err
+		}
+	}
 	for _, l := range original.Lines {
 		flipped := "CREDIT"
 		if l.Direction == "CREDIT" {

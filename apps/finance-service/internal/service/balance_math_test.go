@@ -131,3 +131,29 @@ func TestCheckNatureBExempt(t *testing.T) {
 		t.Fatalf("nature-B post must be free: %v", err)
 	}
 }
+
+// Đảo (AP-REV-02): hiệu ứng ròng âm phải còn đủ cả số dư thực tế lẫn khả
+// dụng; nature B được miễn; hiệu ứng ròng dương luôn qua.
+func TestCheckReversal(t *testing.T) {
+	// TK nature D: posted Nợ 600 / Có 300 → thực tế 300; giữ chỗ Có 200 → khả dụng 100.
+	row := balanceRow(600, 300, 0, 200)
+	if err := checkReversal(row, 0, "D", -400); err == nil || !strings.HasPrefix(err.Error(), "BAL_ACTUAL_IS_NOT_ENOUGH") {
+		t.Fatalf("đảo vượt số dư thực tế phải bị chặn, nhận %v", err)
+	}
+	if err := checkReversal(row, 0, "D", -150); err == nil || !strings.HasPrefix(err.Error(), "BAL_AVAILABLE_IS_NOT_ENOUGH") {
+		t.Fatalf("đảo vượt số dư khả dụng phải bị chặn, nhận %v", err)
+	}
+	if err := checkReversal(row, 0, "D", -100); err != nil {
+		t.Fatalf("đảo vừa đủ khả dụng phải qua: %v", err)
+	}
+	if err := checkReversal(row, 0, "B", -10_000); err != nil {
+		t.Fatalf("nature B được miễn: %v", err)
+	}
+	if err := checkReversal(row, 0, "D", 10_000); err != nil {
+		t.Fatalf("hiệu ứng ròng dương phải qua: %v", err)
+	}
+	// Số dư đầu kỳ được tính vào thực tế.
+	if err := checkReversal(balanceRow(0, 0, 0, 0), 500, "D", -500); err != nil {
+		t.Fatalf("đầu kỳ 500 đủ cho đảo 500: %v", err)
+	}
+}

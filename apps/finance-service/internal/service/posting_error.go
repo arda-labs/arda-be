@@ -35,6 +35,8 @@ func ClassifyPostingError(err error) financev1.PostingErrorCode {
 		return financev1.PostingErrorCode_POSTING_ERROR_CODE_POSTING_DATE_EXCEEDS_BACKDATE
 	case errors.Is(err, ErrPostingDateBeforeClosingLock), strings.Contains(message, "POSTING_DATE_BEFORE_CLOSING_LOCK"):
 		return financev1.PostingErrorCode_POSTING_ERROR_CODE_POSTING_DATE_BEFORE_CLOSING_LOCK
+	case errors.Is(err, ErrReversalNotAllowed), strings.Contains(message, "REVERSAL_NOT_ALLOWED"):
+		return financev1.PostingErrorCode_POSTING_ERROR_CODE_REVERSAL_NOT_ALLOWED
 	case strings.Contains(message, "BAL_AVAILABLE_IS_NOT_ENOUGH"), strings.Contains(message, "BAL_ACTUAL_IS_NOT_ENOUGH"), strings.Contains(message, "INSUFFICIENT_BALANCE"):
 		return financev1.PostingErrorCode_POSTING_ERROR_CODE_INSUFFICIENT_BALANCE
 	case strings.Contains(message, "ACCOUNT_UNRESOLVED"), strings.Contains(message, "ACCOUNT_NOT_FOUND"):

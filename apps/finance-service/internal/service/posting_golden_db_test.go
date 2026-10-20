@@ -9,8 +9,12 @@ package service
 //      dòng (NO_LINES), kỳ đóng (PERIOD_CLOSED).
 //   2. Rule card seed (T3.3): từng document type → đúng (line, chiều,
 //      classification) như docs/accounting-rule-cards.md.
-//   3. Trial balance: post hai bút toán + số dư đầu kỳ + một bút toán đảo →
-//      Nợ/Có/số dư từng tài khoản, tổng Nợ = tổng Có.
+//   3. Trial balance: post hai bút toán + số dư đầu kỳ + các lần đảo →
+//      Nợ/Có/số dư từng tài khoản, tổng Nợ = tổng Có. Đổi có chủ đích
+//      (AP-REV-01/AP-REV-02): trước đây bảng này khóa kết quả đảo chứng từ
+//      lnm làm TK 1311 âm −300.000; nay đảo chứng từ domain bị từ chối
+//      REVERSAL_NOT_ALLOWED và đảo chứng từ thủ công làm số dư âm bị từ chối
+//      BAL_ACTUAL_IS_NOT_ENOUGH, nên không còn số dư âm nào.
 //
 // Chạy khi ARDA_TEST_DSN trỏ Postgres 18 (testdb). Số tiền minor unit.
 
@@ -265,14 +269,45 @@ func TestGoldenTrialBalance(t *testing.T) {
 			"5111": {0, 10_000, -10_000},
 		})
 	})
-	t.Run("đảo bút toán giải ngân ngày 08/09: dòng đảo cộng vào cả hai bên, số dư 1311 về 0 từ giải ngân", func(t *testing.T) {
-		if _, err := svc.ReverseTransaction(ctx, &financev1.ReverseRequest{TenantId: goldenFinTenant, JournalEntryId: disb.GetJournalEntryId(),
-			Reason: "golden", IdempotencyKey: "tb-disb-rev", Actor: "golden", AccountingDate: "2026-09-08"}); err != nil {
-			t.Fatalf("reverse: %v", err)
+	reverse := func(entryID, key string) error {
+		_, err := svc.ReverseTransaction(ctx, &financev1.ReverseRequest{TenantId: goldenFinTenant, JournalEntryId: entryID,
+			Reason: "golden", IdempotencyKey: key, Actor: "golden", AccountingDate: "2026-09-08"})
+		return err
+	}
+	t.Run("đảo chứng từ giải ngân lnm ngày 08/09 bị từ chối, số dư giữ nguyên", func(t *testing.T) {
+		// Trước AP-REV-01/02 lần đảo này thành công và khóa 1311 = −300.000.
+		if err := reverse(disb.GetJournalEntryId(), "tb-disb-rev"); err == nil || !strings.Contains(err.Error(), "REVERSAL_NOT_ALLOWED") {
+			t.Fatalf("đảo chứng từ domain phải bị từ chối REVERSAL_NOT_ALLOWED, nhận %v", err)
 		}
 		assertTB(t, "2026-09-08", map[string]want{
-			"1131": {910_000, 600_000, 1_310_000},
-			"1311": {600_000, 900_000, -300_000},
+			"1131": {310_000, 600_000, 710_000},
+			"1311": {600_000, 300_000, 300_000},
+			"5111": {0, 10_000, -10_000},
+		})
+	})
+	t.Run("08/09: đảo chứng từ thủ công làm 1311 âm bị từ chối, đảo hợp lệ vẫn ghi", func(t *testing.T) {
+		// m1: Nợ 1311 / Có 1131 100.000; m2: Nợ 1131 / Có 1311 350.000 → 1311 = 50.000.
+		m1, err := svc.PostTransaction(ctx, goldenFinTenant, goldenManualRequest("tb-m1", "2026-09-08",
+			goldenLine(1, "DEBIT", 100_000, "LNM_LOAN_PRINCIPAL", "", ""), goldenLine(2, "CREDIT", 100_000, "CASH_SETTLEMENT_ACCOUNT", "", "")))
+		if err != nil {
+			t.Fatalf("post m1: %v", err)
+		}
+		m2, err := svc.PostTransaction(ctx, goldenFinTenant, goldenManualRequest("tb-m2", "2026-09-08",
+			goldenLine(1, "DEBIT", 350_000, "CASH_SETTLEMENT_ACCOUNT", "", ""), goldenLine(2, "CREDIT", 350_000, "LNM_LOAN_PRINCIPAL", "", "")))
+		if err != nil {
+			t.Fatalf("post m2: %v", err)
+		}
+		// Đảo m1 = Có 1311 100.000 > 50.000 còn lại → âm → chặn.
+		if err := reverse(m1.GetJournalEntryId(), "tb-m1-rev"); err == nil || !strings.Contains(err.Error(), "BAL_ACTUAL_IS_NOT_ENOUGH:1311") {
+			t.Fatalf("đảo m1 phải bị từ chối BAL_ACTUAL_IS_NOT_ENOUGH:1311, nhận %v", err)
+		}
+		// Đảo m2 = Nợ 1311 / Có 1131 350.000 (1131 còn 960.000) → hợp lệ.
+		if err := reverse(m2.GetJournalEntryId(), "tb-m2-rev"); err != nil {
+			t.Fatalf("đảo m2: %v", err)
+		}
+		assertTB(t, "2026-09-08", map[string]want{
+			"1131": {660_000, 1_050_000, 610_000},
+			"1311": {1_050_000, 650_000, 400_000},
 			"5111": {0, 10_000, -10_000},
 		})
 	})

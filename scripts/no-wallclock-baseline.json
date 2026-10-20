@@ -1,7 +1,7 @@
 {
   "entries": [
     {
-      "location": "apps/finance-service/internal/service/posting_case_service.go:529",
+      "location": "apps/finance-service/internal/service/posting_case_service.go:538",
       "reason": "Technical fallback identifier entropy; not used as a financial date."
     },
     {
