@@ -192,3 +192,54 @@ func TestRunSystemRejectsConcurrentExecutor(t *testing.T) {
 		t.Fatalf("first executor: %v", err)
 	}
 }
+
+// AP-PER-01: bước tính lãi cho vay trả 200 nhưng báo một khế ước lỗi trong
+// result.failed. Bước phải FAILED, bước phụ thuộc không chạy, ngày không tiến.
+func TestRunSystemPartialStepFailureDoesNotAdvance(t *testing.T) {
+	var mu sync.Mutex
+	calls := map[string]int{}
+	db, svc, current := newEODIntegrationFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls[r.URL.Path]++
+		mu.Unlock()
+		if r.URL.Path == "/internal/jobs/accrual-daily" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"result":{"to_date":"x","processed":2,"skipped":0,"failed":["LN-002: post accrual: finance unavailable"]},"success":true,"errors":[],"messages":[]}`)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	date := current.Format("2006-01-02")
+	result, err := svc.RunSystem(context.Background(), date)
+	if err == nil {
+		t.Fatal("RunSystem succeeded although loan accrual reported a failed agreement")
+	}
+	var accrual *StepResult
+	for i := range result.Steps {
+		if result.Steps[i].JobCode == "LNM_ACCRUAL_DAILY" {
+			accrual = &result.Steps[i]
+		}
+	}
+	if accrual == nil || accrual.Status != "FAILED" || accrual.Failed != 1 || accrual.Processed != 2 {
+		t.Fatalf("accrual step = %+v, want FAILED with processed=2 failed=1", accrual)
+	}
+	var runStatus string
+	if err := db.QueryRow(`SELECT status FROM plt_job_runs WHERE tenant_id=$1 AND job_code='LNM_ACCRUAL_DAILY' AND business_date=$2::date`, eodTestTenant, date).Scan(&runStatus); err != nil {
+		t.Fatal(err)
+	}
+	if runStatus != "FAILED" {
+		t.Fatalf("accrual checkpoint = %s, want FAILED", runStatus)
+	}
+	var businessDate, gate string
+	if err := db.QueryRow(`SELECT business_date::text,status FROM plt_business_dates WHERE scope_type='SYSTEM' AND tenant_id IS NULL`).Scan(&businessDate, &gate); err != nil {
+		t.Fatal(err)
+	}
+	if businessDate != date || gate != "OPEN" {
+		t.Fatalf("partial failure changed SYSTEM date gate: date=%s status=%s, want %s OPEN", businessDate, gate, date)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls["/internal/jobs/provision-daily"] != 0 {
+		t.Fatalf("provision ran %d times on incomplete accrual data", calls["/internal/jobs/provision-daily"])
+	}
+}
