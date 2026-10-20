@@ -87,6 +87,10 @@ jobs:
         run: node scripts/check-ai-catalog.mjs
       - name: Validate migration conventions
         run: node scripts/check-migrations.mjs
+      - name: Validate money column semantics in migrations
+        run: node scripts/check-column-semantics.mjs
+      - name: Test money column semantics check
+        run: node --test scripts/check-column-semantics.test.mjs
       - name: Validate journal immutability writes
         run: node scripts/check-journal-invariants.mjs
       - name: Test journal mutation invariant
@@ -155,6 +159,7 @@ jobs:
           go test ./apps/crm-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
           go test ./apps/deposit-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
           go test ./apps/deposit-service/internal/transport/http -run '^TestTenantScope' -count=1 -v
+          go test ./apps/mdm-service/internal/repository -run '^TestTenantScope' -count=1 -v
           go test ./apps/capital-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
           go test ./apps/statistical-service/internal/transport/grpc -run '^TestCaseCommand' -count=1 -v
           go test ./apps/workflow-service/internal/migration -run 'CanaryAppliesAndRollsBack$' -count=1 -v
