@@ -902,6 +902,96 @@ func (r *CaseRepository) SetCaseStatusByProcessKey(ctx context.Context, processI
 	return nil
 }
 
+// ErrCaseNotOpen marks an Operate cancel on a case that already reached a
+// terminal status (COMPLETED, REJECTED, CANCELLED): its outcome may already be
+// posted, so the case is never rewritten to CANCELLED.
+var ErrCaseNotOpen = errors.New("case is not open")
+
+// IsTerminalCaseStatus reports whether a case status is final.
+func IsTerminalCaseStatus(status string) bool {
+	switch status {
+	case CaseStatusCompleted, CaseStatusRejected, CaseStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// CancelOpenCaseByProcessKey is the Operate cancel of a case: it only moves a
+// non-terminal case to CANCELLED and writes the CASE_CANCELLED timeline row
+// (actor, from/to status, reason) in the same transaction, so a cancel never
+// happens without its audit trail. ErrNotFound = no case for the key in the
+// verified tenant; ErrCaseNotOpen = the case is already terminal.
+func (r *CaseRepository) CancelOpenCaseByProcessKey(ctx context.Context, processInstanceKey int64, actor, reason string) error {
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var caseID, fromStatus string
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, status FROM business_cases
+		WHERE tenant_id = $1 AND process_instance_key = $2
+		FOR UPDATE
+	`, tenant, processInstanceKey).Scan(&caseID, &fromStatus)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if IsTerminalCaseStatus(fromStatus) {
+		return fmt.Errorf("%w: status %s", ErrCaseNotOpen, fromStatus)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE business_cases
+		SET status = $3, updated_at = CURRENT_TIMESTAMP
+		WHERE tenant_id = $1 AND id = $2
+	`, tenant, caseID, CaseStatusCancelled); err != nil {
+		return err
+	}
+	if err := addTimelineTx(ctx, tx, caseID, "CASE_CANCELLED", &fromStatus, ptr(CaseStatusCancelled), ptr(actor), reason); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// AddOperateAuditEvent records an Operate (administrative) action on a case
+// with its actor, reason and structured before/after data. The insert is
+// tenant-scoped like AddTimelineEvent but, unlike it, reports a case outside
+// the verified tenant as ErrNotFound instead of silently writing nothing.
+func (r *CaseRepository) AddOperateAuditEvent(ctx context.Context, caseID, eventType, actor, reason string, data map[string]any) error {
+	tenant, err := verifiedTenant(ctx)
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("encode operate audit data: %w", err)
+	}
+	res, err := r.db.ExecContext(ctx, `
+		INSERT INTO case_timeline_events (case_id, event_type, actor, note, data)
+		SELECT $2::varchar, $3::varchar, $4::varchar, $5::text, $6::jsonb
+		WHERE EXISTS (SELECT 1 FROM business_cases WHERE id = $2::varchar AND tenant_id = $1::varchar)
+	`, tenant, caseID, eventType, actor, reason, string(payload))
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *CaseRepository) GetCaseByProcessInstanceKey(ctx context.Context, processInstanceKey int64) (*BusinessCase, error) {
 	if processInstanceKey == 0 {
 		return nil, nil

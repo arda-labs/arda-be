@@ -153,3 +153,32 @@ func TestSubmitRequestHashUsesSanitizedVariables(t *testing.T) {
 		t.Fatal("idempotency hash must not depend on stripped reserved keys")
 	}
 }
+
+// TestDropProtectedCaseVariablesStripsRoutingKeys: sau submit, kênh người dùng
+// (hoàn tất task, Operate) không được ghi biến định tuyến phê duyệt/số tiền lẫn
+// khóa dành riêng; biến nghiệp vụ của bước (decision, appraisal*) vẫn đi qua.
+func TestDropProtectedCaseVariablesStripsRoutingKeys(t *testing.T) {
+	client := map[string]any{
+		"amount":          float64(1),
+		"pgdLimit":        float64(1e15),
+		"gdLimit":         float64(1e15),
+		"fundSource":      "BRANCH",
+		"contractId":      "contract-other",
+		"approvalLevel":   "PGD",
+		"tenantId":        "tenant-attacker",
+		"primaryObjectId": "contract-other",
+		"decision":        "APPROVE",
+		"appraisalAmount": float64(100),
+	}
+	dropped := DropProtectedCaseVariables(client)
+	want := []string{"amount", "approvalLevel", "contractId", "fundSource", "gdLimit", "pgdLimit", "primaryObjectId", "tenantId"}
+	if !reflect.DeepEqual(dropped, want) {
+		t.Fatalf("dropped = %v, want %v", dropped, want)
+	}
+	if len(client) != 2 || client["decision"] != "APPROVE" || client["appraisalAmount"] != float64(100) {
+		t.Fatalf("sanitized variables = %v, want only decision + appraisalAmount", client)
+	}
+	if got := ProtectedCaseVariableKeys(map[string]any{"decision": "APPROVE"}); len(got) != 0 {
+		t.Fatalf("ProtectedCaseVariableKeys(decision) = %v, want none", got)
+	}
+}

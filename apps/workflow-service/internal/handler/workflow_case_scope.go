@@ -23,6 +23,8 @@ type workflowCaseScope interface {
 	GetCaseByProcessInstanceKey(ctx context.Context, processInstanceKey int64) (*repository.BusinessCase, error)
 	FindWorkItemByJobKey(ctx context.Context, jobKey int64) (*repository.WorkItem, error)
 	SetCaseStatusByProcessKey(ctx context.Context, processInstanceKey int64, status string) error
+	CancelOpenCaseByProcessKey(ctx context.Context, processInstanceKey int64, actor, reason string) error
+	AddOperateAuditEvent(ctx context.Context, caseID, eventType, actor, reason string, data map[string]any) error
 }
 
 // caseScope returns the registry Zeebe-key authorization runs against, or nil

@@ -164,6 +164,15 @@ type SetVariablesRequest struct {
 	Variables          map[string]any `json:"variables"`
 	ElementInstanceKey int64          `json:"elementInstanceKey"`
 	Local              bool           `json:"local"`
+	// Reason is required: it is recorded with the actor and the before/after
+	// values on the case timeline (OPERATE_VARIABLES_SET).
+	Reason string `json:"reason"`
+}
+
+// CancelInstanceRequest is the body of POST /api/workflow/operate/process-instances/{key}/cancel.
+type CancelInstanceRequest struct {
+	// Reason is required and recorded on the CASE_CANCELLED timeline row.
+	Reason string `json:"reason"`
 }
 
 // SetVariablesResult answers POST /api/workflow/operate/process-instances/{key}/variables.

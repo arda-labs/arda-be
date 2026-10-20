@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -509,12 +510,42 @@ func (h *WorkflowHandler) OperateCancelInstance(w http.ResponseWriter, r *http.R
 		writeAPIError(w, r, http.StatusNotFound, "Process instance not found")
 		return
 	}
-	if err := h.setCaseStatusByProcessKey(r.Context(), key, "CANCELLED"); err != nil {
-		writeCaseScopeError(w, r, err)
+	actor := operateActor(r)
+	if actor == "" {
+		writeAPIError(w, r, http.StatusUnauthorized, "verified actor is required")
 		return
 	}
-	if h.zeebeSvc != nil {
-		_ = h.zeebeSvc.CancelWorkflow(r.Context(), key)
+	var req CancelInstanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeAPIError(w, r, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		writeAPIError(w, r, http.StatusBadRequest, "reason is required to cancel a process instance")
+		return
+	}
+	// A terminal case (COMPLETED may already be posted) is never rewritten to
+	// CANCELLED; the repository re-checks the status under a row lock.
+	if repository.IsTerminalCaseStatus(bc.Status) {
+		writeAPIError(w, r, http.StatusConflict, "case is not open: status "+bc.Status)
+		return
+	}
+	engine := h.operateEngine()
+	if engine == nil {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "Zeebe service is not configured")
+		return
+	}
+	// Cancel in the engine first: a failed engine cancel leaves the case open
+	// instead of marking a still-running instance CANCELLED. An instance the
+	// engine no longer has is only closed in the case projection.
+	if err := engine.CancelWorkflow(r.Context(), key); err != nil && !isZeebeNotFound(err) {
+		writeAPIError(w, r, http.StatusBadGateway, "Failed to cancel process instance: "+err.Error())
+		return
+	}
+	if err := h.cancelOpenCase(r.Context(), key, actor, reason); err != nil {
+		writeOperateCancelError(w, r, err)
+		return
 	}
 	writeJSON(w, r, http.StatusOK, StatusResult{Status: "cancelled"})
 }
@@ -726,4 +757,12 @@ func parsePathInt64(path, prefix, suffix string) (int64, bool) {
 	}
 	v, err := strconv.ParseInt(s, 10, 64)
 	return v, err == nil
+}
+
+func writeOperateCancelError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, repository.ErrCaseNotOpen) {
+		writeAPIError(w, r, http.StatusConflict, err.Error())
+		return
+	}
+	writeCaseScopeError(w, r, err)
 }

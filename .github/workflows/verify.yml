@@ -119,6 +119,8 @@ jobs:
         run: node scripts/check-workflow-workers.mjs
       - name: Check workflow-service callers carry tenant scope
         run: node scripts/check-workflow-callers.mjs
+      - name: Check workflow Operate mutations are audited and guarded
+        run: node scripts/check-operate-audit.mjs
       - name: Validate generated protobuf contracts
         run: node scripts/check-proto.mjs
       - name: Validate secret hygiene

@@ -47,6 +47,11 @@ type WorkflowHandler struct {
 	// authorization (workflow_case_scope.go) — tests inject a fake; production
 	// leaves it nil so caseRepo is used.
 	caseScopeOverride workflowCaseScope
+	// operateEngineOverride and operateReadModelOverride swap the Zeebe
+	// gateway and exporter read model behind the audited Operate mutations
+	// (operate_audit.go) — tests inject fakes; production leaves them nil.
+	operateEngineOverride    operateEngine
+	operateReadModelOverride operateReadModel
 }
 
 func NewWorkflowHandler(
@@ -753,6 +758,15 @@ func (h *WorkflowHandler) Cases(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// taskCompletionVariables is the only path from a task completion body to the
+// engine: it strips reserved and approval-routing keys (amount, pgdLimit,
+// gdLimit, fundSource, contractId, approvalLevel, tenantId, primaryObjectId…)
+// and normalizes the decision. The dropped keys are returned for logging.
+func taskCompletionVariables(raw map[string]any) (map[string]any, []string) {
+	dropped := service.DropProtectedCaseVariables(raw)
+	return withNormalizedDecision(raw), dropped
+}
+
 // CompleteUserTask completes a native BPMN user task (Zeebe REST) or falls
 // back to the job-based path. CRM v2 registration/adjustment and the
 // workbench both post here.
@@ -798,7 +812,14 @@ func (h *WorkflowHandler) CompleteUserTask(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
-	variables := withNormalizedDecision(req.Variables)
+	// Routing/money and service-owned variables are fixed at submit by the
+	// owning service; a task holder can only add step data and the decision.
+	variables, dropped := taskCompletionVariables(req.Variables)
+	if len(dropped) > 0 {
+		slog.Warn("ignoring protected variables on task completion",
+			"actor", actor, "jobKey", jobKey, "processInstanceKey", processInstanceKey,
+			"elementId", elementID, "keys", dropped)
+	}
 	decision := reviewDecisionFromVariables(variables)
 	comment := reviewCommentFromVariables(variables)
 	if elementID == "UT_CheckerReview" {

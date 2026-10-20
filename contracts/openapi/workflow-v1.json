@@ -330,6 +330,16 @@
         ],
         "type": "object"
       },
+      "CancelInstanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object",
+        "x-go-type": "github.com/arda-labs/arda/apps/workflow-service/internal/handler.CancelInstanceRequest"
+      },
       "CancelResult": {
         "additionalProperties": false,
         "properties": {
@@ -3398,6 +3408,9 @@
           },
           "local": {
             "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
           },
           "variables": {
             "additionalProperties": {},
@@ -7694,6 +7707,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelInstanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
