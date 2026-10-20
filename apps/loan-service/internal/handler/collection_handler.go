@@ -38,7 +38,11 @@ func (h *CollectionHandler) ListCollections(w http.ResponseWriter, r *http.Reque
 		writeErrorCode(w, http.StatusBadRequest, ardaerrors.CodeInvalidInput, err.Error())
 		return
 	}
-	items, total, err := h.svc.List(r.Context(), tenantID, orgScopeFromRequest(r).ListFilter(),
+	orgCodes, ok := requireOrgListFilter(w, r)
+	if !ok {
+		return
+	}
+	items, total, err := h.svc.List(r.Context(), tenantID, orgCodes,
 		r.URL.Query().Get("status"), r.URL.Query().Get("contract_code"),
 		listReq.Q, listReq.Sort, listReq.Order, listReq.Page, listReq.PerPage)
 	if err != nil {

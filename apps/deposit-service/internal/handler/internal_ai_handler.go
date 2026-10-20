@@ -77,7 +77,11 @@ func (h *InternalAIHandler) InternalAIListSavings(w http.ResponseWriter, r *http
 		aiBadRequest(w, r, ardaerrors.CodeInvalidInput, err.Error())
 		return
 	}
-	items, err := h.savings.ListSavings(r.Context(), tenantID, orgScopeFrom(r).listFilter(), aiStatus(r), aiQuery(r))
+	orgCodes, ok := requireOrgListFilter(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.savings.ListSavings(r.Context(), tenantID, orgCodes, aiStatus(r), aiQuery(r))
 	if err != nil {
 		ardahttp.WriteServiceError(w, r, err)
 		return

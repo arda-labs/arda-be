@@ -99,11 +99,32 @@ func orgScopeFrom(r *http.Request) orgScope {
 	return orgScope{ActiveOrgID: strings.TrimSpace(r.Header.Get("X-Org-Id")), OrgIDs: ids}
 }
 
-func (s orgScope) listFilter() []string {
-	if s.ActiveOrgID != "" && s.allows(s.ActiveOrgID) {
-		return []string{s.ActiveOrgID}
+// listFilter returns the org codes list queries may see. It fails closed
+// (AP-TEN-01, theo mẫu crm-service RequestScope.Validate): thiếu
+// X-User-Org-Ids hoặc X-Org-Id nằm ngoài phạm vi là lỗi, không bao giờ trả
+// về danh sách rỗng mà repository hiểu là "mọi đơn vị của tenant".
+func (s orgScope) listFilter() ([]string, error) {
+	if len(s.OrgIDs) == 0 {
+		return nil, errors.New("organization scope is required")
 	}
-	return s.OrgIDs
+	if s.ActiveOrgID != "" {
+		if !s.allows(s.ActiveOrgID) {
+			return nil, errors.New("active organization is not allowed")
+		}
+		return []string{s.ActiveOrgID}, nil
+	}
+	return s.OrgIDs, nil
+}
+
+// requireOrgListFilter writes 403 and returns false when the org scope is
+// missing or invalid.
+func requireOrgListFilter(w http.ResponseWriter, r *http.Request) ([]string, bool) {
+	orgCodes, err := orgScopeFrom(r).listFilter()
+	if err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeTenantScopeRequired, err.Error()))
+		return nil, false
+	}
+	return orgCodes, true
 }
 
 func (s orgScope) active() string {
@@ -292,8 +313,11 @@ func (h *DepositHandler) ListSavings(w http.ResponseWriter, r *http.Request) {
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	scope := orgScopeFrom(r)
-	items, err := h.svc.ListSavings(r.Context(), tenantID, scope.listFilter(),
+	orgCodes, ok := requireOrgListFilter(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListSavings(r.Context(), tenantID, orgCodes,
 		r.URL.Query().Get("status"), strings.TrimSpace(r.URL.Query().Get("q")))
 	if err != nil {
 		ardahttp.WriteServiceError(w, r, err)
@@ -317,8 +341,11 @@ func (h *DepositHandler) ListInterbankDeposits(w http.ResponseWriter, r *http.Re
 		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeForbidden, "tenant scope is required"))
 		return
 	}
-	scope := orgScopeFrom(r)
-	items, err := h.svc.ListInterbank(r.Context(), tenantID, scope.listFilter(), r.URL.Query().Get("status"))
+	orgCodes, ok := requireOrgListFilter(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListInterbank(r.Context(), tenantID, orgCodes, r.URL.Query().Get("status"))
 	if err != nil {
 		ardahttp.WriteServiceError(w, r, err)
 		return

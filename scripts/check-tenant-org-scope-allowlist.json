@@ -1,0 +1,1948 @@
+{
+  "$comment": [
+    "Ngoại lệ cho scripts/check-tenant-org-scope.mjs (AP-TEN-01 / BL-AP-003).",
+    "Mỗi dòng: hàm thực thi SQL trên bảng có tenant_id/org_code mà không có điều kiện tương ứng, kèm kind và lý do.",
+    "Chỉ được xóa dòng (khi sửa truy vấn) hoặc thêm dòng kèm lý do cụ thể đã được review; check fail nếu dòng hết hiệu lực."
+  ],
+  "orgColumns": [
+    "org_code"
+  ],
+  "allowlist": [
+    {
+      "file": "apps/ai-service/internal/repository/conversation_retention.go",
+      "func": "deleteConversationData",
+      "rule": "tenant",
+      "table": "ai_approvals",
+      "kind": "by_design",
+      "reason": "Job dọn dữ liệu theo hạn lưu giữ trên ai_approvals, chạy xuyên tenant theo thiết kế."
+    },
+    {
+      "file": "apps/ai-service/internal/repository/conversation_retention.go",
+      "func": "deleteConversationData",
+      "rule": "tenant",
+      "table": "ai_conversations",
+      "kind": "by_design",
+      "reason": "Job dọn dữ liệu theo hạn lưu giữ trên ai_conversations, chạy xuyên tenant theo thiết kế."
+    },
+    {
+      "file": "apps/ai-service/internal/repository/conversation_retention.go",
+      "func": "deleteConversationData",
+      "rule": "tenant",
+      "table": "ai_feedback",
+      "kind": "by_design",
+      "reason": "Job dọn dữ liệu theo hạn lưu giữ trên ai_feedback, chạy xuyên tenant theo thiết kế."
+    },
+    {
+      "file": "apps/ai-service/internal/repository/conversation_retention.go",
+      "func": "deleteConversationData",
+      "rule": "tenant",
+      "table": "ai_runs",
+      "kind": "by_design",
+      "reason": "Job dọn dữ liệu theo hạn lưu giữ trên ai_runs, chạy xuyên tenant theo thiết kế."
+    },
+    {
+      "file": "apps/ai-service/internal/repository/conversation_retention.go",
+      "func": "deleteConversationData",
+      "rule": "tenant",
+      "table": "ai_tool_executions",
+      "kind": "by_design",
+      "reason": "Job dọn dữ liệu theo hạn lưu giữ trên ai_tool_executions, chạy xuyên tenant theo thiết kế."
+    },
+    {
+      "file": "apps/ai-service/internal/repository/profile_store.go",
+      "func": "SQLRunStore.AddProfileModels",
+      "rule": "tenant",
+      "table": "ai_model_profiles",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: truy vấn ai_model_profiles theo id nội bộ chưa có điều kiện tenant_id."
+    },
+    {
+      "file": "apps/ai-service/internal/repository/run_store.go",
+      "func": "SQLRunStore.FinishTool",
+      "rule": "tenant",
+      "table": "ai_tool_executions",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: truy vấn ai_tool_executions theo id nội bộ chưa có điều kiện tenant_id."
+    },
+    {
+      "file": "apps/capital-service/internal/repository/capital_repo.go",
+      "func": "CapitalRepository.ApplyContractAmendment",
+      "rule": "org",
+      "table": "cfc_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi cfc_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/capital-service/internal/repository/capital_repo.go",
+      "func": "CapitalRepository.FundSourceStatement",
+      "rule": "org",
+      "table": "cfc_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên cfc_contracts chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/capital-service/internal/repository/capital_repo.go",
+      "func": "CapitalRepository.FundSourceTransactions",
+      "rule": "org",
+      "table": "cfc_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên cfc_contracts chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/capital-service/internal/repository/capital_repo.go",
+      "func": "CapitalRepository.GetContractByID",
+      "rule": "org",
+      "table": "cfc_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi cfc_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/capital-service/internal/repository/capital_repo.go",
+      "func": "CapitalRepository.SetContractCase",
+      "rule": "org",
+      "table": "cfc_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi cfc_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/capital-service/internal/repository/capital_repo.go",
+      "func": "CapitalRepository.UpdateContractStatus",
+      "rule": "org",
+      "table": "cfc_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi cfc_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/capital-service/internal/repository/reporting_repo.go",
+      "func": "CapitalRepository.ListMovementsForReporting",
+      "rule": "org",
+      "table": "cfc_contracts",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên cfc_contracts theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/crm-service/internal/repository/member_repository.go",
+      "func": "MemberRepository.ApplyApprovedCapital",
+      "rule": "org",
+      "table": "crm_members",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi crm_members theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/crm-service/internal/repository/member_repository.go",
+      "func": "MemberRepository.GetMember",
+      "rule": "org",
+      "table": "crm_members",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi crm_members theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/crm-service/internal/repository/member_repository.go",
+      "func": "MemberRepository.GetMemberByCode",
+      "rule": "org",
+      "table": "crm_members",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi crm_members theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/crm-service/internal/repository/member_repository.go",
+      "func": "MemberRepository.ListMemberRequestsForReporting",
+      "rule": "org",
+      "table": "crm_members",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên crm_members theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/crm-service/internal/repository/member_repository.go",
+      "func": "MemberRepository.UpdateMemberProfile",
+      "rule": "org",
+      "table": "crm_members",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi crm_members theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.ApplyIBMAccrual",
+      "rule": "org",
+      "table": "ibm_deposits",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi ibm_deposits theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.ApplyIBMTopUp",
+      "rule": "org",
+      "table": "ibm_deposits",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi ibm_deposits theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.ApplyIBMWithdraw",
+      "rule": "org",
+      "table": "ibm_deposits",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi ibm_deposits theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.ApplyTopUp",
+      "rule": "org",
+      "table": "dpm_savings",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi dpm_savings theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.ApplyWithdraw",
+      "rule": "org",
+      "table": "dpm_savings",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi dpm_savings theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.BeginInterestOpPosting",
+      "rule": "org",
+      "table": "dpm_savings",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi dpm_savings theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.CloseSavings",
+      "rule": "org",
+      "table": "dpm_savings",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi dpm_savings theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.CompensateInterestOp",
+      "rule": "org",
+      "table": "dpm_savings",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi dpm_savings theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.GetInterbankDepositByID",
+      "rule": "org",
+      "table": "ibm_deposits",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi ibm_deposits theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.GetSavingsByCode",
+      "rule": "org",
+      "table": "dpm_savings",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi dpm_savings theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.InterbankStatement",
+      "rule": "org",
+      "table": "ibm_deposits",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên ibm_deposits chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.InterbankTransactions",
+      "rule": "org",
+      "table": "ibm_deposits",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên ibm_deposits chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.ListActiveSavingsForAccrual",
+      "rule": "org",
+      "table": "dpm_savings",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên dpm_savings theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.MarkAccrualPosted",
+      "rule": "org",
+      "table": "dpm_savings",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi dpm_savings theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.SavingsStatement",
+      "rule": "org",
+      "table": "dpm_savings",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên dpm_savings chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.SavingsTransactions",
+      "rule": "org",
+      "table": "dpm_savings",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên dpm_savings chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.SetInterbankDepositCase",
+      "rule": "org",
+      "table": "ibm_deposits",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi ibm_deposits theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.SetInterbankDepositJournal",
+      "rule": "org",
+      "table": "ibm_deposits",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi ibm_deposits theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/deposit_repo.go",
+      "func": "DepositRepository.UpdateInterbankDepositStatus",
+      "rule": "org",
+      "table": "ibm_deposits",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi ibm_deposits theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/ibm_borrow_repo.go",
+      "func": "DepositRepository.GetIBMBorrowByID",
+      "rule": "org",
+      "table": "ibm_borrows",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi ibm_borrows theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/ibm_borrow_repo.go",
+      "func": "DepositRepository.SetIBMBorrowCase",
+      "rule": "org",
+      "table": "ibm_borrows",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi ibm_borrows theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/deposit-service/internal/repository/ibm_borrow_repo.go",
+      "func": "DepositRepository.UpdateIBMBorrowStatus",
+      "rule": "org",
+      "table": "ibm_borrows",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi ibm_borrows theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/finance-service/internal/repository/closing_repo.go",
+      "func": "PostingRepository.ClosingCandidateAccounts",
+      "rule": "org",
+      "table": "fin_trial_balance_daily",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên fin_trial_balance_daily theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/finance-service/internal/repository/config_repo.go",
+      "func": "ConfigRepository.ListAccountClassifications",
+      "rule": "org",
+      "table": "fin_account_classifications",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: danh sách fin_account_classifications chưa lọc đơn vị."
+    },
+    {
+      "file": "apps/finance-service/internal/repository/counterparty_repo.go",
+      "func": "ConfigRepository.ListCounterparties",
+      "rule": "org",
+      "table": "fin_counterparties",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: danh sách fin_counterparties chưa lọc đơn vị."
+    },
+    {
+      "file": "apps/finance-service/internal/repository/counterparty_repo.go",
+      "func": "ConfigRepository.SetCounterpartyActive",
+      "rule": "org",
+      "table": "fin_counterparties",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi fin_counterparties theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/finance-service/internal/repository/posting_repo.go",
+      "func": "PostingRepository.LastEntryID",
+      "rule": "tenant",
+      "table": "fin_journal_entries",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: truy vấn fin_journal_entries theo id nội bộ chưa có điều kiện tenant_id."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/audit_repo.go",
+      "func": "AuditRepository.PurgeByEventType",
+      "rule": "tenant",
+      "table": "iam_audit_logs",
+      "kind": "by_design",
+      "reason": "Job dọn dữ liệu theo hạn lưu giữ trên iam_audit_logs, chạy xuyên tenant theo thiết kế."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/audit_repo.go",
+      "func": "AuditRepository.PurgeOlderThan",
+      "rule": "tenant",
+      "table": "iam_audit_logs",
+      "kind": "by_design",
+      "reason": "Job dọn dữ liệu theo hạn lưu giữ trên iam_audit_logs, chạy xuyên tenant theo thiết kế."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/audit_repo.go",
+      "func": "AuditRepository.VerifyChain",
+      "rule": "tenant",
+      "table": "iam_audit_logs",
+      "kind": "by_design",
+      "reason": "Chuỗi hash audit IAM là một chuỗi toàn cục; kiểm/nối chuỗi phải đọc mọi tenant."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/audit_repo.go",
+      "func": "lastAuditHash",
+      "rule": "tenant",
+      "table": "iam_audit_logs",
+      "kind": "by_design",
+      "reason": "Chuỗi hash audit IAM là một chuỗi toàn cục; kiểm/nối chuỗi phải đọc mọi tenant."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/group_repository.go",
+      "func": "GroupRepository.ListUserGroups",
+      "rule": "tenant",
+      "table": "iam_groups",
+      "kind": "review",
+      "reason": "IAM tra iam_groups theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/role_repo.go",
+      "func": "RoleRepository.GetByCode",
+      "rule": "tenant",
+      "table": "iam_roles",
+      "kind": "review",
+      "reason": "IAM tra iam_roles theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/tenant_repository.go",
+      "func": "TenantRepository.EnsureMembership",
+      "rule": "tenant",
+      "table": "iam_tenant_memberships",
+      "kind": "review",
+      "reason": "IAM tra iam_tenant_memberships theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.AuditKratosIdentityConsistency",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.BumpAuthVersion",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.BumpAuthVersionByGroup",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.BumpAuthVersionByGroupRole",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.BumpAuthVersionByPermission",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.BumpAuthVersionByRole",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.CountActiveUsersWithRoleCode",
+      "rule": "tenant",
+      "table": "iam_groups",
+      "kind": "review",
+      "reason": "IAM tra iam_groups theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.CountActiveUsersWithRoleCode",
+      "rule": "tenant",
+      "table": "iam_roles",
+      "kind": "review",
+      "reason": "IAM tra iam_roles theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.CountActiveUsersWithRoleCode",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.DeleteUser",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetAuthVersion",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetDirectUserRoleCodesByUserIDs",
+      "rule": "tenant",
+      "table": "iam_roles",
+      "kind": "review",
+      "reason": "IAM tra iam_roles theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserByEmail",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserByID",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserByKratosIdentityID",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserBySubject",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserByUsername",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserGroupIDs",
+      "rule": "tenant",
+      "table": "iam_groups",
+      "kind": "review",
+      "reason": "IAM tra iam_groups theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserOrganizations",
+      "rule": "tenant",
+      "table": "iam_organizations",
+      "kind": "review",
+      "reason": "IAM tra iam_organizations theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserPermissions",
+      "rule": "tenant",
+      "table": "iam_groups",
+      "kind": "review",
+      "reason": "IAM tra iam_groups theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserRoleCodesByUserIDs",
+      "rule": "tenant",
+      "table": "iam_groups",
+      "kind": "review",
+      "reason": "IAM tra iam_groups theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserRoleCodesByUserIDs",
+      "rule": "tenant",
+      "table": "iam_roles",
+      "kind": "review",
+      "reason": "IAM tra iam_roles theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserRoles",
+      "rule": "tenant",
+      "table": "iam_groups",
+      "kind": "review",
+      "reason": "IAM tra iam_groups theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUserRoles",
+      "rule": "tenant",
+      "table": "iam_roles",
+      "kind": "review",
+      "reason": "IAM tra iam_roles theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.GetUsersByIDs",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.UpdateUserAvatar",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.UpdateUserCover",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.UpdateUserEmail",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.UpdateUserProfile",
+      "rule": "tenant",
+      "table": "iam_users",
+      "kind": "review",
+      "reason": "IAM tra iam_users theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.UserHasRoleCode",
+      "rule": "tenant",
+      "table": "iam_groups",
+      "kind": "review",
+      "reason": "IAM tra iam_groups theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/iam-service/internal/repository/user_repository.go",
+      "func": "UserRepository.UserHasRoleCode",
+      "rule": "tenant",
+      "table": "iam_roles",
+      "kind": "review",
+      "reason": "IAM tra iam_roles theo id/subject/username toàn cục; tenant xác định qua membership — cần rà soát từng hàm (nợ AP-TEN-01)."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/adjustment_repo.go",
+      "func": "applyAdjustmentSideEffect",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_daily_repo.go",
+      "func": "LoanRepository.CaptureAgreementDailySnapshots",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên lnm_agreements theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "getAgreementByCode",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.CloseContractByCode",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.GetAgreement",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.GetContract",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.GetContractByCode",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.ListAgreements",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: danh sách lnm_agreements chưa lọc đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.ListAgreements",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: danh sách lnm_contracts chưa lọc đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.ListContractCaseIDs",
+      "rule": "org",
+      "table": "lnm_collections",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên lnm_collections theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.ListContractCaseIDs",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên lnm_contracts theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.ListContractCaseIDs",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên lnm_disbursements theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.ListContracts",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: danh sách lnm_contracts chưa lọc đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.ListContractsPaged",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: danh sách lnm_contracts chưa lọc đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.SetContractWorkflowCase",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.UpdateContract",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/agreement_repo.go",
+      "func": "LoanRepository.UpdateContractStatus",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_collection_repo.go",
+      "func": "LoanRepository.GetCollectionBatch",
+      "rule": "org",
+      "table": "lnm_collection_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_collection_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_collection_repo.go",
+      "func": "LoanRepository.GetCollectionBatchRows",
+      "rule": "org",
+      "table": "lnm_collections",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_collections theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_collection_repo.go",
+      "func": "LoanRepository.ListCollectionBatches",
+      "rule": "org",
+      "table": "lnm_collection_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: danh sách lnm_collection_batches chưa lọc đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_collection_repo.go",
+      "func": "LoanRepository.SetCollectionBatchCase",
+      "rule": "org",
+      "table": "lnm_collection_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_collection_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_collection_repo.go",
+      "func": "LoanRepository.SetCollectionBatchPosted",
+      "rule": "org",
+      "table": "lnm_collection_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_collection_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_collection_repo.go",
+      "func": "LoanRepository.SetCollectionBatchStatus",
+      "rule": "org",
+      "table": "lnm_collections",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_collections theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_collection_repo.go",
+      "func": "setCollectionBatchStatus",
+      "rule": "org",
+      "table": "lnm_collection_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_collection_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.CancelDraftDisbursementBatch",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursement_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.CancelDraftDisbursementBatch",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.GetBatchRows",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.GetDisbursementBatch",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursement_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.ListDisbursementBatches",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: danh sách lnm_disbursement_batches chưa lọc đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.SetDisbursementBatchCase",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursement_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.SetDisbursementBatchPosted",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursement_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.SetDisbursementBatchStatus",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.SumCompleteForAgreement",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.SumPostedRegisterForAgreement",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.UpdateDraftDisbursementBatch",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursement_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "LoanRepository.UpdateDraftDisbursementBatch",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "selectDisbursementEventRows",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/batch_disbursement_repo.go",
+      "func": "setDisbursementBatchStatus",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursement_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/collection_repo.go",
+      "func": "LoanRepository.ApplyCollection",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/collection_repo.go",
+      "func": "LoanRepository.GetCollection",
+      "rule": "org",
+      "table": "lnm_collections",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_collections theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/collection_repo.go",
+      "func": "LoanRepository.SetCollectionCaseAndJournal",
+      "rule": "org",
+      "table": "lnm_collections",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_collections theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/collection_repo.go",
+      "func": "LoanRepository.SetCollectionStatus",
+      "rule": "org",
+      "table": "lnm_collections",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_collections theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/collection_repo.go",
+      "func": "LoanRepository.SettleCollectionTx",
+      "rule": "org",
+      "table": "lnm_collections",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_collections theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/contract_exposure_repo.go",
+      "func": "loadContractExposure",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/contract_exposure_repo.go",
+      "func": "loadContractExposure",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/contract_exposure_repo.go",
+      "func": "reserveContractAmount",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.GetDisbursement",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SetDisbursementCaseAndJournal",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SetDisbursementStatus",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SettleCompleteDisbursement",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SettleCompleteDisbursement",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SettleCompleteDisbursement",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SettleDisbursementComplete",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SettleDisbursementComplete",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SettleDisbursementComplete",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SettleDisbursementRegister",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SettleDisbursementRegister",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SettleDisbursementRegister",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SettleRegisterDisbursement",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "LoanRepository.SumCompleteForSource",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_repo.go",
+      "func": "setDisbursementStatus",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "getDisbursementBatchRows",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "LoanRepository.CompleteDisbursementWorkflowOutbox",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursement_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "LoanRepository.FailDisbursementWorkflowOutbox",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursement_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "LoanRepository.FailDisbursementWorkflowOutbox",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "LoanRepository.SubmitDisbursementBatch",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursement_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "LoanRepository.SubmitDisbursementBatch",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "validateAndReserveRegisterBatch",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "validateAndReserveRegisterBatch",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "validateCompleteBatch",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "validateCompleteBatch",
+      "rule": "org",
+      "table": "lnm_disbursement_batches",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursement_batches theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/disbursement_submission_repo.go",
+      "func": "validateCompleteBatch",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_disbursements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/general_provision_repo.go",
+      "func": "LoanRepository.GetGeneralProvision",
+      "rule": "org",
+      "table": "lnm_general_provisions",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_general_provisions theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/general_provision_repo.go",
+      "func": "LoanRepository.ResolveGeneralProvision",
+      "rule": "org",
+      "table": "lnm_general_provisions",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_general_provisions theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/general_provision_repo.go",
+      "func": "LoanRepository.SetGeneralProvisionCase",
+      "rule": "org",
+      "table": "lnm_general_provisions",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_general_provisions theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/general_provision_repo.go",
+      "func": "LoanRepository.SettleGeneralProvision",
+      "rule": "org",
+      "table": "lnm_general_provisions",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_general_provisions theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/general_provision_repo.go",
+      "func": "LoanRepository.SumGeneralProvisionOutstanding",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên lnm_agreements theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/general_provision_repo.go",
+      "func": "LoanRepository.SumGeneralProvisionOutstanding",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên lnm_contracts theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/plan_repo.go",
+      "func": "LoanRepository.ListPlans",
+      "rule": "org",
+      "table": "lnm_plans",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: danh sách lnm_plans chưa lọc đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/plan_repo.go",
+      "func": "LoanRepository.SetPlanStatus",
+      "rule": "org",
+      "table": "lnm_plans",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_plans theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/provision_repo.go",
+      "func": "LoanRepository.ListActiveAgreementsForAccrual",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên lnm_agreements theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/report_repo.go",
+      "func": "LoanRepository.CollectionVolume",
+      "rule": "org",
+      "table": "lnm_collections",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên lnm_collections chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/report_repo.go",
+      "func": "LoanRepository.LoanAppraisal",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên lnm_agreements chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/report_repo.go",
+      "func": "LoanRepository.LoanDiary",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên lnm_agreements chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/report_repo.go",
+      "func": "LoanRepository.LoanDiary",
+      "rule": "org",
+      "table": "lnm_collections",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên lnm_collections chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/report_repo.go",
+      "func": "LoanRepository.LoanDiary",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên lnm_disbursements chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/report_repo.go",
+      "func": "LoanRepository.LoanLedger",
+      "rule": "org",
+      "table": "lnm_collections",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên lnm_collections chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/report_repo.go",
+      "func": "LoanRepository.LoanLedger",
+      "rule": "org",
+      "table": "lnm_disbursements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên lnm_disbursements chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/report_repo.go",
+      "func": "LoanRepository.LoanReconciliation",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên lnm_agreements chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/report_repo.go",
+      "func": "LoanRepository.LoanStatement",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên lnm_agreements chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/report_repo.go",
+      "func": "LoanRepository.NPLBalance",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: báo cáo/sao kê trên lnm_agreements chỉ lọc tenant; handler chưa truyền phạm vi đơn vị."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/specific_provision_repo.go",
+      "func": "LoanRepository.AgreementProvisionBase",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/specific_provision_repo.go",
+      "func": "LoanRepository.AgreementProvisionBase",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/specific_provision_repo.go",
+      "func": "LoanRepository.SettleSpecificProvision",
+      "rule": "org",
+      "table": "lnm_agreements",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_agreements theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/specific_provision_repo.go",
+      "func": "LoanRepository.SettleSpecificProvision",
+      "rule": "org",
+      "table": "lnm_contracts",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi lnm_contracts theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/loan-service/internal/repository/vfu_repo.go",
+      "func": "LoanRepository.ListVfuMandates",
+      "rule": "org",
+      "table": "lnm_vfu_mandates",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: danh sách lnm_vfu_mandates chưa lọc đơn vị."
+    },
+    {
+      "file": "apps/media-service/internal/repository/media_repo.go",
+      "func": "MediaRepository.ClaimPendingOutbox",
+      "rule": "tenant",
+      "table": "media_outbox_events",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật media_outbox_events theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/media-service/internal/repository/media_repo.go",
+      "func": "MediaRepository.DeleteFileInternal",
+      "rule": "tenant",
+      "table": "media_files",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: truy vấn media_files theo id nội bộ chưa có điều kiện tenant_id."
+    },
+    {
+      "file": "apps/media-service/internal/repository/media_repo.go",
+      "func": "MediaRepository.GetExpiredTempFiles",
+      "rule": "tenant",
+      "table": "media_files",
+      "kind": "by_design",
+      "reason": "Job dọn dữ liệu theo hạn lưu giữ trên media_files, chạy xuyên tenant theo thiết kế."
+    },
+    {
+      "file": "apps/media-service/internal/repository/media_repo.go",
+      "func": "MediaRepository.GetFileInternal",
+      "rule": "tenant",
+      "table": "media_files",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: truy vấn media_files theo id nội bộ chưa có điều kiện tenant_id."
+    },
+    {
+      "file": "apps/media-service/internal/repository/media_repo.go",
+      "func": "MediaRepository.MarkOutboxFailed",
+      "rule": "tenant",
+      "table": "media_outbox_events",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật media_outbox_events theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/media-service/internal/repository/media_repo.go",
+      "func": "MediaRepository.MarkOutboxPublished",
+      "rule": "tenant",
+      "table": "media_outbox_events",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật media_outbox_events theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/config_repo.go",
+      "func": "NotificationRepository.GetDeliveryMailContext",
+      "rule": "tenant",
+      "table": "noti_deliveries",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_deliveries theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/config_repo.go",
+      "func": "NotificationRepository.GetDeliveryMailContext",
+      "rule": "tenant",
+      "table": "noti_notifications",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_notifications theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.ClaimPendingOutbox",
+      "rule": "tenant",
+      "table": "noti_outbox",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_outbox theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.ClaimQueuedDeliveries",
+      "rule": "tenant",
+      "table": "noti_deliveries",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_deliveries theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.MarkDeliveryFailed",
+      "rule": "tenant",
+      "table": "noti_deliveries",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_deliveries theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.MarkDeliverySent",
+      "rule": "tenant",
+      "table": "noti_deliveries",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_deliveries theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.MarkOutboxFailed",
+      "rule": "tenant",
+      "table": "noti_outbox",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_outbox theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.MarkOutboxPublished",
+      "rule": "tenant",
+      "table": "noti_outbox",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_outbox theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.ProcessEventOnce",
+      "rule": "tenant",
+      "table": "noti_event_inbox",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_event_inbox theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.recordEventFailure",
+      "rule": "tenant",
+      "table": "noti_event_inbox",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_event_inbox theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.ReplayOutboxDLQ",
+      "rule": "tenant",
+      "table": "noti_outbox",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_outbox theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.ReplayOutboxDLQ",
+      "rule": "tenant",
+      "table": "notification_outbox_dlq",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật notification_outbox_dlq theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/notification-service/internal/repository/notification_repository.go",
+      "func": "NotificationRepository.RetryDelivery",
+      "rule": "tenant",
+      "table": "noti_deliveries",
+      "kind": "by_design",
+      "reason": "Worker hàng đợi (outbox/inbox/delivery) claim và cập nhật noti_deliveries theo id nội bộ xuyên tenant; id không đến từ request người dùng."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/business_date_repo.go",
+      "func": "addVersionedHolidayTx",
+      "rule": "org",
+      "table": "plt_working_calendar_versions",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên plt_working_calendar_versions theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/business_date_repo.go",
+      "func": "addVersionedHolidayTx",
+      "rule": "tenant",
+      "table": "plt_working_calendar_versions",
+      "kind": "review",
+      "reason": "plt_working_calendar_versions có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/business_date_repo.go",
+      "func": "CalendarRepository.BusinessDateForScope",
+      "rule": "org",
+      "table": "plt_business_dates",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên plt_business_dates theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/business_date_repo.go",
+      "func": "CalendarRepository.BusinessDateForScope",
+      "rule": "tenant",
+      "table": "plt_business_dates",
+      "kind": "review",
+      "reason": "plt_business_dates có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/business_date_repo.go",
+      "func": "CalendarRepository.IsHolidayForScope",
+      "rule": "org",
+      "table": "plt_working_calendar_versions",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên plt_working_calendar_versions theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/business_date_repo.go",
+      "func": "CalendarRepository.IsHolidayForScope",
+      "rule": "tenant",
+      "table": "plt_working_calendar_versions",
+      "kind": "review",
+      "reason": "plt_working_calendar_versions có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/calendar_repo.go",
+      "func": "CalendarRepository.AddHoliday",
+      "rule": "org",
+      "table": "plt_working_calendar_versions",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên plt_working_calendar_versions theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/calendar_repo.go",
+      "func": "CalendarRepository.AddHoliday",
+      "rule": "tenant",
+      "table": "plt_working_calendar_versions",
+      "kind": "review",
+      "reason": "plt_working_calendar_versions có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/calendar_repo.go",
+      "func": "CalendarRepository.ClaimEOD",
+      "rule": "org",
+      "table": "plt_business_dates",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên plt_business_dates theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/calendar_repo.go",
+      "func": "CalendarRepository.ClaimEOD",
+      "rule": "tenant",
+      "table": "plt_business_dates",
+      "kind": "review",
+      "reason": "plt_business_dates có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/calendar_repo.go",
+      "func": "CalendarRepository.CompleteEOD",
+      "rule": "org",
+      "table": "plt_business_dates",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên plt_business_dates theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/calendar_repo.go",
+      "func": "CalendarRepository.CompleteEOD",
+      "rule": "tenant",
+      "table": "plt_business_dates",
+      "kind": "review",
+      "reason": "plt_business_dates có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/calendar_repo.go",
+      "func": "CalendarRepository.ListHolidays",
+      "rule": "org",
+      "table": "plt_working_calendar_versions",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên plt_working_calendar_versions theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/calendar_repo.go",
+      "func": "CalendarRepository.ListHolidays",
+      "rule": "tenant",
+      "table": "plt_working_calendar_versions",
+      "kind": "review",
+      "reason": "plt_working_calendar_versions có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/calendar_repo.go",
+      "func": "CalendarRepository.ReleaseEOD",
+      "rule": "org",
+      "table": "plt_business_dates",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên plt_business_dates theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/calendar_repo.go",
+      "func": "CalendarRepository.ReleaseEOD",
+      "rule": "tenant",
+      "table": "plt_business_dates",
+      "kind": "review",
+      "reason": "plt_business_dates có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/platform_repo.go",
+      "func": "PlatformRepository.GetGlobalParameter",
+      "rule": "tenant",
+      "table": "plt_system_parameters",
+      "kind": "review",
+      "reason": "plt_system_parameters có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/platform_repo.go",
+      "func": "PlatformRepository.ListLookupCategories",
+      "rule": "tenant",
+      "table": "plt_lookup_categories",
+      "kind": "review",
+      "reason": "plt_lookup_categories có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/platform_repo.go",
+      "func": "PlatformRepository.ListParameters",
+      "rule": "tenant",
+      "table": "plt_system_parameters",
+      "kind": "review",
+      "reason": "plt_system_parameters có dòng dùng chung (tenant_id NULL) và dòng theo tenant; điều kiện tenant ở dạng tùy chọn/COALESCE hoặc theo khóa EOD mà check không nhận ra — cần rà soát."
+    },
+    {
+      "file": "apps/platform-service/internal/repository/working_hours_repo.go",
+      "func": "PlatformRepository.SetWorkingHourActive",
+      "rule": "org",
+      "table": "plt_working_hours",
+      "kind": "debt",
+      "reason": "Nợ AP-TEN-01: đọc/ghi plt_working_hours theo id/mã chỉ lọc tenant, chưa có điều kiện đơn vị; cần truyền org scope từ handler."
+    },
+    {
+      "file": "apps/statistical-service/internal/repository/report_repo.go",
+      "func": "StatisticalRepository.TrialBalanceTotals",
+      "rule": "org",
+      "table": "rpt_fact_trial_balance_daily",
+      "kind": "decision",
+      "reason": "Xử lý hàng loạt/tổng hợp trên rpt_fact_trial_balance_daily theo cả tenant, không có tham số đơn vị — chờ quyết định nghiệp vụ (BL-AP-003) có tách theo đơn vị không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/case_repository.go",
+      "func": "CaseRepository.CaseRegistryVersion",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/case_repository.go",
+      "func": "CaseRepository.FinishCase",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/case_repository.go",
+      "func": "CaseRepository.FinishCase",
+      "rule": "tenant",
+      "table": "workflow_task_decisions",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi workflow_task_decisions theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/case_repository.go",
+      "func": "CaseRepository.FinishCaseByCaseID",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/case_repository.go",
+      "func": "CaseRepository.FinishCaseByCaseID",
+      "rule": "tenant",
+      "table": "workflow_task_decisions",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi workflow_task_decisions theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/case_repository.go",
+      "func": "CaseRepository.ListActiveCasesWithProcess",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/case_repository.go",
+      "func": "CaseRepository.MarkCaseAtStep",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/case_repository.go",
+      "func": "CaseRepository.MarkCaseStepCompleted",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/case_repository.go",
+      "func": "CaseRepository.SetCaseRegistryVersion",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/config_repository.go",
+      "func": "CaseRepository.ListSLAPolicies",
+      "rule": "tenant",
+      "table": "business_sla_policies",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_sla_policies theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/config_repository.go",
+      "func": "CaseRepository.UpdateSLAPolicy",
+      "rule": "tenant",
+      "table": "business_sla_policies",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_sla_policies theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/decision_repository.go",
+      "func": "CaseRepository.findDecisionByKey",
+      "rule": "tenant",
+      "table": "workflow_task_decisions",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi workflow_task_decisions theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/decision_repository.go",
+      "func": "CaseRepository.ListDispatchCandidates",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/decision_repository.go",
+      "func": "CaseRepository.ListDispatchCandidates",
+      "rule": "tenant",
+      "table": "workflow_task_decisions",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi workflow_task_decisions theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/decision_repository.go",
+      "func": "CaseRepository.MarkDecisionApplied",
+      "rule": "tenant",
+      "table": "workflow_task_decisions",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi workflow_task_decisions theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/decision_repository.go",
+      "func": "CaseRepository.MarkDecisionFailed",
+      "rule": "tenant",
+      "table": "workflow_task_decisions",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi workflow_task_decisions theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/registry_repository.go",
+      "func": "CaseRepository.CaseRegistryVersions",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/sla_outbox.go",
+      "func": "CaseRepository.EmitSLANotifications",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/work_item_repository.go",
+      "func": "CaseRepository.CompleteWorkItemByJob",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/work_item_repository.go",
+      "func": "CaseRepository.ListReconcileCandidates",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/work_item_repository.go",
+      "func": "CaseRepository.ReconcileWorkItem",
+      "rule": "tenant",
+      "table": "workflow_task_decisions",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi workflow_task_decisions theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    },
+    {
+      "file": "apps/workflow-service/internal/repository/work_item_repository.go",
+      "func": "CaseRepository.UpsertWorkItem",
+      "rule": "tenant",
+      "table": "business_cases",
+      "kind": "review",
+      "reason": "Worker workflow đọc/ghi business_cases theo case/job/decision id nội bộ (Zeebe) không kèm tenant_id — cần rà soát id có thể đến từ request người dùng không."
+    }
+  ]
+}
