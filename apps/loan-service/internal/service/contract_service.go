@@ -8,7 +8,6 @@ import (
 	ardaerrors "github.com/arda-labs/arda/libs/go/arda-errors"
 	workflowclient "github.com/arda-labs/arda/libs/go/arda-grpc/client/workflow"
 	"log/slog"
-	"math"
 	"strings"
 )
 
@@ -68,6 +67,14 @@ func (s *LoanService) SubmitContract(ctx context.Context, tenantID, actor, id st
 	if contract.Status != domain.ContractDraft {
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput, "only DRAFT contracts can be submitted")
 	}
+	// Hạn mức phê duyệt cho điều kiện GW_ApprovalLevel của BPMN
+	// (amount > pgdLimit / amount > gdLimit) được giải TRƯỚC khi mở case:
+	// lỗi tra cứu hoặc cấu hình sai chặn nộp mà không để lại case mồ côi;
+	// thiếu cấu hình đẩy hồ sơ lên Hội đồng (AP-APR-01, fail-closed).
+	pgdLimit, gdLimit, err := s.approvalLimits(ctx, tenantID, contract)
+	if err != nil {
+		return nil, err
+	}
 	caseCreated, err := s.workflow.CreateCase(ctx, workflowclient.CaseCreate{
 		TenantID:          tenantID,
 		CaseType:          "LOAN_FORMATION_V2",
@@ -82,11 +89,6 @@ func (s *LoanService) SubmitContract(ctx context.Context, tenantID, actor, id st
 	if err != nil {
 		return nil, ardaerrors.Wrap(ardaerrors.CodeBadGateway, "workflow create case failed", err)
 	}
-	// Approval-tier limits for the BPMN GW_ApprovalLevel conditions
-	// (amount > pgdLimit / amount > gdLimit): exact product row first, then
-	// the org-wide row; no configured limit → sentinel MaxInt keeps the old
-	// default-Execute-tier behavior (PGD review still runs) with a warn.
-	pgdLimit, gdLimit := s.approvalLimits(ctx, tenantID, contract)
 	vars := map[string]any{
 		"contractId":   contract.ID,
 		"contractCode": contract.ContractCode,
@@ -164,32 +166,23 @@ func (s *LoanService) UpdateContract(ctx context.Context, tenantID, id string, i
 	return item, nil
 }
 
-// approvalLimitSentinel is the no-config fallback for the BPMN approval-tier
-// variables: MaxInt keeps every submission on the default Execute tier (the
-// same behavior the hardcoded sentinels had before the limit table existed).
-const approvalLimitSentinel = math.MaxInt64
-
 // approvalLimits resolves the formation approval-tier limits for one
-// contract: the exact product row first, then the org-wide fallback, then
-// the sentinel (no config → default Execute tier, same behavior as the old
-// hardcoded MaxInt variables, with a warn). The product/org precedence lives
-// in PickApprovalLimit so it stays unit-testable without a database.
-func (s *LoanService) approvalLimits(ctx context.Context, tenantID string, contract domain.Contract) (pgd, gd int64) {
-	pgd, gd = approvalLimitSentinel, approvalLimitSentinel
+// contract: the exact product row first, then the org-wide fallback
+// (PickApprovalLimit). AP-APR-01: lookup failure → lỗi, chặn nộp; dòng cấu
+// hình sai → lỗi conflict; không có dòng nào → đẩy lên Hội đồng kèm cảnh
+// báo (ResolveApprovalLimits). Không còn nhánh nào hạ về cấp thực thi.
+func (s *LoanService) approvalLimits(ctx context.Context, tenantID string, contract domain.Contract) (pgd, gd int64, err error) {
 	product, org, err := s.repo.GetApprovalLimits(ctx, tenantID, contract.OrgCode, contract.ProductCode)
 	if err != nil {
-		// A lookup failure must not block submission — keep the sentinel
-		// behavior and surface the cause in the logs.
-		slog.Warn("approval limit lookup failed — using sentinels", "org", contract.OrgCode, "err", err)
-		return pgd, gd
+		return 0, 0, ardaerrors.Wrap(ardaerrors.CodeInternal, "approval limit lookup failed", err)
 	}
-	picked := PickApprovalLimit(org, product)
-	if picked.OrgCode == "" {
-		if contract.OrgCode != "" {
-			slog.Warn("no approval limit configured — using sentinels (default Execute tier)",
-				"org", contract.OrgCode, "product", contract.ProductCode)
-		}
-		return pgd, gd
+	pgd, gd, err = ResolveApprovalLimits(org, product)
+	if err != nil {
+		return 0, 0, err
 	}
-	return picked.PGDLimitMinor, picked.GDLimitMinor
+	if org == nil && product == nil {
+		slog.Warn("no approval limit configured — escalating to the Board tier",
+			"tenant", tenantID, "org", contract.OrgCode, "product", contract.ProductCode, "contract", contract.ID)
+	}
+	return pgd, gd, nil
 }
