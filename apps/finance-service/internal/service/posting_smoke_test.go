@@ -61,9 +61,11 @@ func TestPostingSmoke(t *testing.T) {
 		AccountingDate: "2026-09-07",
 		CurrencyCode:   "VND",
 		Description:    "Giải ngân HD-001",
+		// Chứng từ thủ công FIN_* để bước 7 đảo được: chứng từ domain (lnm)
+		// bị danh mục loại chứng từ được hủy từ chối (AP-REV-01).
 		BusinessReference: &financev1.BusinessReference{
-			Domain:       "lnm",
-			DocumentType: "LNM_DISBURSEMENT",
+			Domain:       "fin",
+			DocumentType: "FIN_DOUBLE_ENTRY",
 			DocumentCode: "DISB-1",
 			CaseId:       "22222222-2222-2222-2222-222222222222",
 		},

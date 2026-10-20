@@ -45,6 +45,10 @@ const (
 	PostingErrorCode_POSTING_ERROR_CODE_INVALID_DIRECTION                  PostingErrorCode = 16
 	PostingErrorCode_POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED            PostingErrorCode = 17
 	PostingErrorCode_POSTING_ERROR_CODE_UNKNOWN_DIMENSION                  PostingErrorCode = 18
+	// Loại chứng từ không nằm trong danh mục được hủy (fin_posting_policies.
+	// allow_cancel; mặc định chỉ chứng từ thủ công FIN_*). Chứng từ sinh từ
+	// nghiệp vụ domain phải hoàn tác qua domain, không đảo thẳng sổ cái.
+	PostingErrorCode_POSTING_ERROR_CODE_REVERSAL_NOT_ALLOWED PostingErrorCode = 19
 )
 
 // Enum value maps for PostingErrorCode.
@@ -69,6 +73,7 @@ var (
 		16: "POSTING_ERROR_CODE_INVALID_DIRECTION",
 		17: "POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED",
 		18: "POSTING_ERROR_CODE_UNKNOWN_DIMENSION",
+		19: "POSTING_ERROR_CODE_REVERSAL_NOT_ALLOWED",
 	}
 	PostingErrorCode_value = map[string]int32{
 		"POSTING_ERROR_CODE_UNSPECIFIED":                        0,
@@ -90,6 +95,7 @@ var (
 		"POSTING_ERROR_CODE_INVALID_DIRECTION":                  16,
 		"POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED":            17,
 		"POSTING_ERROR_CODE_UNKNOWN_DIMENSION":                  18,
+		"POSTING_ERROR_CODE_REVERSAL_NOT_ALLOWED":               19,
 	}
 )
 
@@ -1689,7 +1695,7 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\fdata_version\x18\x11 \x01(\x03R\vdataVersion\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xde\x06\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x8b\a\n" +
 	"\x10PostingErrorCode\x12\"\n" +
 	"\x1ePOSTING_ERROR_CODE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dPOSTING_ERROR_CODE_UNBALANCED\x10\x01\x12$\n" +
@@ -1710,7 +1716,8 @@ const file_arda_finance_v1_posting_proto_rawDesc = "" +
 	"\x1bPOSTING_ERROR_CODE_NO_LINES\x10\x0f\x12(\n" +
 	"$POSTING_ERROR_CODE_INVALID_DIRECTION\x10\x10\x12.\n" +
 	"*POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED\x10\x11\x12(\n" +
-	"$POSTING_ERROR_CODE_UNKNOWN_DIMENSION\x10\x12*\x9e\x01\n" +
+	"$POSTING_ERROR_CODE_UNKNOWN_DIMENSION\x10\x12\x12+\n" +
+	"'POSTING_ERROR_CODE_REVERSAL_NOT_ALLOWED\x10\x13*\x9e\x01\n" +
 	"\x0fPostingStrategy\x12 \n" +
 	"\x1cPOSTING_STRATEGY_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17POSTING_STRATEGY_SIMPLE\x10\x01\x12#\n" +

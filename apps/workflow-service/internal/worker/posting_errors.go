@@ -71,7 +71,10 @@ func isBusinessPostingErrorCode(code financev1.PostingErrorCode) bool {
 		financev1.PostingErrorCode_POSTING_ERROR_CODE_NO_LINES,
 		financev1.PostingErrorCode_POSTING_ERROR_CODE_INVALID_DIRECTION,
 		financev1.PostingErrorCode_POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED,
-		financev1.PostingErrorCode_POSTING_ERROR_CODE_UNKNOWN_DIMENSION:
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_UNKNOWN_DIMENSION,
+		// Đảo chứng từ không thuộc danh mục được hủy (AP-REV-01): lỗi nghiệp vụ,
+		// trả về maker thay vì retry job hủy giao dịch.
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_REVERSAL_NOT_ALLOWED:
 		return true
 	default:
 		return false
