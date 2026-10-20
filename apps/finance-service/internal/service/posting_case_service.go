@@ -384,6 +384,15 @@ func (s *PostingCaseService) createCancellationCase(ctx context.Context, tenantI
 		return nil, ardaerrors.New(ardaerrors.CodeInvalidInput,
 			fmt.Sprintf("cancellation_request.reference_entry_no %d has status %s; only POSTED entries can be cancelled", entryNo, ref.Status))
 	}
+	// Danh mục loại chứng từ được hủy (AP-REV-01): báo sớm cho maker thay vì
+	// để case tới bước execute mới bị ReverseTransaction từ chối.
+	if err := s.posting.EnsureReversalAllowed(ctx, tenantID, ref.Domain, ref.DocType); err != nil {
+		if errors.Is(err, ErrReversalNotAllowed) {
+			return nil, ardaerrors.New(ardaerrors.CodeInvalidInput,
+				fmt.Sprintf("cancellation_request.reference_entry_no %d: %s", entryNo, err.Error()))
+		}
+		return nil, ardaerrors.New(ardaerrors.CodeInternal, err.Error())
+	}
 
 	// The FE may pin the idempotency key; otherwise generate one so a partial
 	// create+submit failure never opens a second case for one attempt.

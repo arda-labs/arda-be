@@ -22,6 +22,10 @@ type PostingPolicy struct {
 	AllowBackdate    bool
 	MaxBackdateDays  int
 	CheckClosingLock bool
+	// AllowCancel là cờ danh mục loại chứng từ được hủy (EPAS
+	// com_cfg_process_type.is_cancel): NULL = theo mặc định trong mã
+	// (chỉ chứng từ thủ công FIN_*), TRUE/FALSE = ghi đè theo tenant.
+	AllowCancel sql.NullBool
 }
 
 // LoadPostingPolicy returns the policy row for (tenant, docType); found is
@@ -29,10 +33,10 @@ type PostingPolicy struct {
 func (r *PostingRepository) LoadPostingPolicy(ctx context.Context, tenantID, docType string) (*PostingPolicy, bool, error) {
 	var p PostingPolicy
 	err := r.db.QueryRowContext(ctx, `
-		SELECT allow_backdate, max_backdate_days, check_closing_lock
+		SELECT allow_backdate, max_backdate_days, check_closing_lock, allow_cancel
 		FROM fin_posting_policies
 		WHERE tenant_id = $1 AND business_doc_type = $2`, tenantID, docType).
-		Scan(&p.AllowBackdate, &p.MaxBackdateDays, &p.CheckClosingLock)
+		Scan(&p.AllowBackdate, &p.MaxBackdateDays, &p.CheckClosingLock, &p.AllowCancel)
 	if err == sql.ErrNoRows {
 		return nil, false, nil
 	}

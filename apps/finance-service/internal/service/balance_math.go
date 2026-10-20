@@ -123,6 +123,25 @@ func checkPostActual(row repository.BalanceRow, opening int64, nature, direction
 	return nil
 }
 
+// checkReversal kiểm hiệu ứng ròng của bút toán đảo lên một tài khoản
+// (AP-REV-02, EPAS ActualBalanceValidator khi hủy): netDelta là tổng
+// lineDelta của các dòng đảo trên tài khoản đó, row là bộ đếm TRƯỚC khi đảo.
+// Đảo làm giảm giá trị tự nhiên phải còn đủ cả số dư thực tế
+// (opening + posted) lẫn khả dụng (opening + posted + reserved). Tài khoản
+// lưỡng tính nature B được miễn (cùng quy tắc checkReserve/checkPostActual).
+func checkReversal(row repository.BalanceRow, opening int64, nature string, netDelta int64) error {
+	if nature == "B" || netDelta >= 0 {
+		return nil
+	}
+	if opening+naturalSignedPosted(row, nature)+netDelta < 0 {
+		return fmt.Errorf("BAL_ACTUAL_IS_NOT_ENOUGH:%s", row.Key.AccountCode)
+	}
+	if effectiveAvailable(row, opening, nature)+netDelta < 0 {
+		return fmt.Errorf("BAL_AVAILABLE_IS_NOT_ENOUGH:%s", row.Key.AccountCode)
+	}
+	return nil
+}
+
 // applyReserve adds one line's amount to the reserved counter it belongs to.
 func applyReserve(row *repository.BalanceRow, direction string, amount int64) {
 	if direction == "DEBIT" {

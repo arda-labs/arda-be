@@ -139,6 +139,8 @@ func aiSignedRequest(t *testing.T, router http.Handler, path, tenantID, token st
 	}
 	if tenantID != "" {
 		req.Header.Set("X-Tenant-Id", tenantID)
+		// Phạm vi đơn vị của chủ thể ủy quyền; danh sách fail-closed khi thiếu (AP-TEN-01).
+		req.Header.Set("X-User-Org-Ids", "ORG-01")
 	}
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)

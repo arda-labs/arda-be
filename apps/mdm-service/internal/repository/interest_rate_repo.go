@@ -123,6 +123,10 @@ func (r *InterestRateRepository) Delete(ctx context.Context, tenantID, id string
 
 const tierColumns = `id, rate_id, effective_from::text, effective_to::text, amount_from_minor, amount_to_minor, rate_value, min_rate, max_rate, decision_no, decision_date::text, created_at, updated_at`
 
+// tierColumnsT là tierColumns gắn tiền tố t. cho từng cột; dùng khi câu lệnh
+// join mdm_interest_rates h (cả hai bảng có created_at/updated_at).
+const tierColumnsT = `t.id, t.rate_id, t.effective_from::text, t.effective_to::text, t.amount_from_minor, t.amount_to_minor, t.rate_value, t.min_rate, t.max_rate, t.decision_no, t.decision_date::text, t.created_at, t.updated_at`
+
 func scanTier(scanner interface{ Scan(...any) error }) (domain.InterestRateTier, error) {
 	var item domain.InterestRateTier
 	err := scanner.Scan(&item.ID, &item.RateID, &item.EffectiveFrom, &item.EffectiveTo, &item.AmountFrom, &item.AmountTo, &item.RateValue, &item.MinRate, &item.MaxRate, &item.DecisionNo, &item.DecisionDate, &item.CreatedAt, &item.UpdatedAt)
@@ -131,11 +135,11 @@ func scanTier(scanner interface{ Scan(...any) error }) (domain.InterestRateTier,
 
 func (r *InterestRateRepository) ListTiers(ctx context.Context, tenantID, rateID string) ([]domain.InterestRateTier, error) {
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT t.%s
+		SELECT %s
 		FROM mdm_interest_rate_tiers t
 		JOIN mdm_interest_rates h ON h.id = t.rate_id
 		WHERE t.rate_id = $1 AND (h.tenant_id IS NULL OR h.tenant_id = $2)
-		ORDER BY t.effective_from DESC, t.amount_from_minor NULLS FIRST`, tierColumns), rateID, tenantID)
+		ORDER BY t.effective_from DESC, t.amount_from_minor NULLS FIRST`, tierColumnsT), rateID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,10 +158,10 @@ func (r *InterestRateRepository) ListTiers(ctx context.Context, tenantID, rateID
 
 func (r *InterestRateRepository) GetTier(ctx context.Context, tenantID, rateID, tierID string) (domain.InterestRateTier, error) {
 	row := r.db.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT t.%s
+		SELECT %s
 		FROM mdm_interest_rate_tiers t
 		JOIN mdm_interest_rates h ON h.id = t.rate_id
-		WHERE t.id = $1 AND t.rate_id = $2 AND (h.tenant_id IS NULL OR h.tenant_id = $3)`, tierColumns), tierID, rateID, tenantID)
+		WHERE t.id = $1 AND t.rate_id = $2 AND (h.tenant_id IS NULL OR h.tenant_id = $3)`, tierColumnsT), tierID, rateID, tenantID)
 	item, err := scanTier(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.InterestRateTier{}, fmt.Errorf("%w", ErrNotFound)
@@ -165,16 +169,26 @@ func (r *InterestRateRepository) GetTier(ctx context.Context, tenantID, rateID, 
 	return item, err
 }
 
+// Quy ước ghi: bảng lãi toàn cục (tenant_id IS NULL) chỉ được đọc qua API; mọi
+// thao tác ghi tier (tạo/sửa/xóa) chỉ khớp bảng lãi do chính tenant sở hữu
+// (h.tenant_id = $tenant). Hàng toàn cục chỉ được đổi qua migration.
+
 func (r *InterestRateRepository) CreateTier(ctx context.Context, tenantID, rateID string, tier domain.InterestRateTier) (domain.InterestRateTier, error) {
-	if _, err := r.Get(ctx, tenantID, rateID); err != nil {
-		return domain.InterestRateTier{}, err
+	if strings.TrimSpace(tenantID) == "" {
+		return domain.InterestRateTier{}, fmt.Errorf("%w", ErrNotFound)
 	}
 	row := r.db.QueryRowContext(ctx, fmt.Sprintf(`
 		INSERT INTO mdm_interest_rate_tiers (id, rate_id, effective_from, effective_to, amount_from_minor, amount_to_minor, rate_value, min_rate, max_rate, decision_no, decision_date)
-		VALUES ($1, $2, $3::date, $4::date, $5, $6, $7, $8, $9, $10, $11::date)
+		SELECT $1::varchar, h.id, $3::date, $4::date, $5::bigint, $6::bigint, $7::numeric, $8::numeric, $9::numeric, $10::varchar, $11::date
+		FROM mdm_interest_rates h
+		WHERE h.id = $2::varchar AND h.tenant_id = $12::varchar
 		RETURNING %s`, tierColumns),
-		tier.ID, rateID, tier.EffectiveFrom, tier.EffectiveTo, tier.AmountFrom, tier.AmountTo, tier.RateValue, tier.MinRate, tier.MaxRate, tier.DecisionNo, tier.DecisionDate)
-	return scanTier(row)
+		tier.ID, rateID, tier.EffectiveFrom, tier.EffectiveTo, tier.AmountFrom, tier.AmountTo, tier.RateValue, tier.MinRate, tier.MaxRate, tier.DecisionNo, tier.DecisionDate, tenantID)
+	created, err := scanTier(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.InterestRateTier{}, fmt.Errorf("%w", ErrNotFound)
+	}
+	return created, err
 }
 
 func (r *InterestRateRepository) UpdateTier(ctx context.Context, tenantID, rateID, tierID string, tier domain.InterestRateTier) (domain.InterestRateTier, error) {
@@ -183,8 +197,8 @@ func (r *InterestRateRepository) UpdateTier(ctx context.Context, tenantID, rateI
 		SET effective_from = $3::date, effective_to = $4::date, amount_from_minor = $5, amount_to_minor = $6,
 		    rate_value = $7, min_rate = $8, max_rate = $9, decision_no = $10, decision_date = $11::date, updated_at = now()
 		FROM mdm_interest_rates h
-		WHERE h.id = t.rate_id AND t.id = $1 AND t.rate_id = $2 AND (h.tenant_id IS NULL OR h.tenant_id = $12)
-		RETURNING t.%s`, tierColumns),
+		WHERE h.id = t.rate_id AND t.id = $1 AND t.rate_id = $2 AND h.tenant_id = $12
+		RETURNING %s`, tierColumnsT),
 		tierID, rateID, tier.EffectiveFrom, tier.EffectiveTo, tier.AmountFrom, tier.AmountTo, tier.RateValue, tier.MinRate, tier.MaxRate, tier.DecisionNo, tier.DecisionDate, tenantID)
 	updated, err := scanTier(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -197,7 +211,7 @@ func (r *InterestRateRepository) DeleteTier(ctx context.Context, tenantID, rateI
 	res, err := r.db.ExecContext(ctx, `
 		DELETE FROM mdm_interest_rate_tiers t
 		USING mdm_interest_rates h
-		WHERE h.id = t.rate_id AND t.id = $1 AND t.rate_id = $2 AND (h.tenant_id IS NULL OR h.tenant_id = $3)`,
+		WHERE h.id = t.rate_id AND t.id = $1 AND t.rate_id = $2 AND h.tenant_id = $3`,
 		tierID, rateID, tenantID)
 	if err != nil {
 		return err

@@ -70,6 +70,10 @@ enum PostingErrorCode {
   POSTING_ERROR_CODE_INVALID_DIRECTION = 16;
   POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED = 17;
   POSTING_ERROR_CODE_UNKNOWN_DIMENSION = 18;
+  // Loại chứng từ không nằm trong danh mục được hủy (fin_posting_policies.
+  // allow_cancel; mặc định chỉ chứng từ thủ công FIN_*). Chứng từ sinh từ
+  // nghiệp vụ domain phải hoàn tác qua domain, không đảo thẳng sổ cái.
+  POSTING_ERROR_CODE_REVERSAL_NOT_ALLOWED = 19;
 }
 
 message ListPostingRulesRequest {

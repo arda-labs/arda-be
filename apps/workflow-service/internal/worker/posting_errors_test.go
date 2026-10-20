@@ -78,3 +78,12 @@ func TestClassifyPostingErrorSupportsLegacyPolicyMessages(t *testing.T) {
 		t.Fatal("transport failure must remain transient")
 	}
 }
+
+// Hủy giao dịch tham chiếu chứng từ không thuộc danh mục được hủy
+// (AP-REV-01): lỗi nghiệp vụ trả về maker, không retry.
+func TestClassifyPostingErrorReversalNotAllowedIsBusiness(t *testing.T) {
+	code, business := classifyPostingError(errors.New("rpc error: code = FailedPrecondition desc = REVERSAL_NOT_ALLOWED: chứng từ lnm/LNM_COLLECTION"))
+	if !business || code != financev1.PostingErrorCode_POSTING_ERROR_CODE_REVERSAL_NOT_ALLOWED {
+		t.Fatalf("classification = %s/%t", code, business)
+	}
+}
