@@ -22,6 +22,9 @@ export const allowlist = new Set([
   // Chuẩn hóa outstanding_amt_minor (trừ pending_disburse_amt_minor) khi đổi
   // công thức số dư rời nhau; dữ liệu trước mốc này mang nghĩa cũ.
   "apps/loan-service/migrations/20261008120000_lnm_contract_reservations.sql",
+  // Sửa seed hạn mức phê duyệt sai đơn vị 100 lần (AP-APR-01, #73); chỉ đổi dòng
+  // còn đúng giá trị sai cũ, không đổi nghĩa cột. Vào main trước check này.
+  "apps/loan-service/migrations/20261020100000_lnm_approval_limits_units.sql",
 ])
 
 // Bỏ chú thích, thay chuỗi '...' bằng '' và bỏ thân hàm/thủ tục ($$ ... $$ sau
