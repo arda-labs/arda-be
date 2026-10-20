@@ -2,7 +2,7 @@ module github.com/arda-labs/arda/libs/go/arda-doc
 
 go 1.27.2
 
-require github.com/xuri/excelize/v2 v2.11.1-0.20260930021559-01a9ff32fb3c
+require github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
 
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
