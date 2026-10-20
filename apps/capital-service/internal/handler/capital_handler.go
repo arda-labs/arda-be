@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -29,11 +30,32 @@ func orgScopeFromCap(r *http.Request) capOrgScope {
 	return capOrgScope{ActiveOrgID: strings.TrimSpace(r.Header.Get("X-Org-Id")), OrgIDs: ids}
 }
 
-func (s capOrgScope) listFilter() []string {
-	if s.ActiveOrgID != "" && s.allows(s.ActiveOrgID) {
-		return []string{s.ActiveOrgID}
+// listFilter returns the org codes list queries may see. It fails closed
+// (AP-TEN-01, theo mẫu crm-service RequestScope.Validate): thiếu
+// X-User-Org-Ids hoặc X-Org-Id nằm ngoài phạm vi là lỗi, không bao giờ trả
+// về danh sách rỗng mà repository hiểu là "mọi đơn vị của tenant".
+func (s capOrgScope) listFilter() ([]string, error) {
+	if len(s.OrgIDs) == 0 {
+		return nil, errors.New("organization scope is required")
 	}
-	return s.OrgIDs
+	if s.ActiveOrgID != "" {
+		if !s.allows(s.ActiveOrgID) {
+			return nil, errors.New("active organization is not allowed")
+		}
+		return []string{s.ActiveOrgID}, nil
+	}
+	return s.OrgIDs, nil
+}
+
+// requireOrgListFilter writes 403 and returns false when the org scope is
+// missing or invalid.
+func requireOrgListFilter(w http.ResponseWriter, r *http.Request) ([]string, bool) {
+	orgCodes, err := orgScopeFromCap(r).listFilter()
+	if err != nil {
+		ardahttp.WriteProblem(w, r, http.StatusForbidden, ardaerrors.New(ardaerrors.CodeTenantScopeRequired, err.Error()))
+		return nil, false
+	}
+	return orgCodes, true
 }
 
 func (s capOrgScope) active() string {
@@ -220,6 +242,10 @@ func (h *CapitalHandler) ListContracts(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, r)
 		return
 	}
+	orgCodes, ok := requireOrgListFilter(w, r)
+	if !ok {
+		return
+	}
 	list := ardahttp.ParseListQuery(r.URL.Query())
 	page := list.Page
 	if page < 1 {
@@ -227,7 +253,7 @@ func (h *CapitalHandler) ListContracts(w http.ResponseWriter, r *http.Request) {
 	}
 	items, total, err := h.svc.ListContracts(r.Context(), repository.ListContractsParams{
 		TenantID: tenantID,
-		OrgCodes: orgScopeFromCap(r).listFilter(),
+		OrgCodes: orgCodes,
 		Status:   r.URL.Query().Get("status"),
 		Q:        list.Q,
 		Sort:     list.Sort,

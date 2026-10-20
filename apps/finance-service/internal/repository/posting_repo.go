@@ -356,16 +356,18 @@ type JournalEntryRef struct {
 	ID      string
 	EntryNo int64
 	Status  string
+	Domain  string
+	DocType string
 }
 
 // FindEntryByEntryNo resolves a human journal number to its entry id/status.
 // ErrNoRows (wrapped) means the entry_no does not exist for the tenant.
 func (r *PostingRepository) FindEntryByEntryNo(ctx context.Context, tenantID string, entryNo int64) (*JournalEntryRef, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, entry_no, status FROM fin_journal_entries
+		SELECT id, entry_no, status, business_domain, business_doc_type FROM fin_journal_entries
 		WHERE tenant_id = $1 AND entry_no = $2`, tenantID, entryNo)
 	var out JournalEntryRef
-	if err := row.Scan(&out.ID, &out.EntryNo, &out.Status); err != nil {
+	if err := row.Scan(&out.ID, &out.EntryNo, &out.Status, &out.Domain, &out.DocType); err != nil {
 		return nil, err
 	}
 	return &out, nil

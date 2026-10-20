@@ -184,6 +184,10 @@ type StepResult struct {
 	JobCode  string `json:"job_code"`
 	Status   string `json:"status"`
 	Error    string `json:"error,omitempty"`
+	// Processed/Failed là trạng thái có cấu trúc mà bước tự báo trong
+	// result.processed/result.failed (xem eodStepOutcome).
+	Processed int `json:"processed,omitempty"`
+	Failed    int `json:"failed,omitempty"`
 }
 
 // eodStepTemplate is one COB step of the fixed catalog. The owner service
@@ -552,12 +556,98 @@ func (s *EODService) runStep(ctx context.Context, tenantID, code, endpoint, busi
 		}
 		return step
 	}
+	// HTTP 2xx chưa đủ: bước xử lý theo từng khế ước/sổ có thể trả 200 kèm
+	// danh sách lỗi một phần. Bất kỳ failed > 0 (hoặc thân không đọc được) là
+	// FAILED để ngày không tiến và bước phụ thuộc không chạy trên dữ liệu thiếu.
+	outcome, err := eodStepOutcome(body)
+	step.Processed = outcome.Processed
+	step.Failed = outcome.Failed
+	if err != nil || outcome.Failed > 0 {
+		step.Status = "FAILED"
+		if err != nil {
+			step.Error = "unreadable step status: " + err.Error()
+		} else {
+			step.Error = fmt.Sprintf("step reported %d failed item(s): %s", outcome.Failed, truncate(outcome.Detail, 300))
+		}
+		if markErr := s.markRun(ctx, tenantID, code, businessDate, "FAILED", step.Error); markErr != nil {
+			step.Error += "; persist failure: " + markErr.Error()
+		}
+		return step
+	}
 	step.Status = "DONE"
 	if err := s.markRun(ctx, tenantID, code, businessDate, "DONE", ""); err != nil {
 		step.Status = "FAILED"
 		step.Error = "persist successful step checkpoint: " + err.Error()
 	}
 	return step
+}
+
+// eodStepStatus là trạng thái có cấu trúc một bước EOD trả về trong phong bì
+// thành công: result.processed (số mục đã xử lý) và result.failed (số nguyên
+// hoặc mảng mô tả mục lỗi, ví dụ RunResult.FailedDetail của tính lãi cho vay).
+type eodStepStatus struct {
+	Processed int
+	Failed    int
+	Detail    string
+}
+
+// eodStepOutcome đọc thân phản hồi 2xx của một bước EOD. Thân rỗng (204) nghĩa
+// là bước không báo chi tiết. success=false hoặc failed > 0 tính là lỗi; thân
+// không phải JSON hợp lệ trả lỗi để runStep đánh FAILED (fail-closed).
+func eodStepOutcome(body []byte) (eodStepStatus, error) {
+	var out eodStepStatus
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return out, nil
+	}
+	var envelope struct {
+		Success *bool           `json:"success"`
+		Result  json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return out, fmt.Errorf("decode step response: %w", err)
+	}
+	if envelope.Success != nil && !*envelope.Success {
+		out.Failed = 1
+		out.Detail = "step response has success=false"
+		return out, nil
+	}
+	var result map[string]json.RawMessage
+	if len(envelope.Result) == 0 || json.Unmarshal(envelope.Result, &result) != nil {
+		// Kết quả không phải object (null, mảng, số): không có trạng thái mục.
+		return out, nil
+	}
+	if raw, ok := result["processed"]; ok {
+		if err := json.Unmarshal(raw, &out.Processed); err != nil {
+			return out, fmt.Errorf("decode result.processed: %w", err)
+		}
+	}
+	raw, ok := result["failed"]
+	if !ok || string(raw) == "null" {
+		return out, nil
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err == nil {
+		out.Failed = len(items)
+		details := make([]string, 0, len(items))
+		for _, item := range items {
+			var text string
+			if json.Unmarshal(item, &text) != nil {
+				text = string(item)
+			}
+			details = append(details, text)
+		}
+		out.Detail = strings.Join(details, "; ")
+		return out, nil
+	}
+	var count int
+	if err := json.Unmarshal(raw, &count); err != nil {
+		return out, fmt.Errorf("result.failed must be a count or a list: %w", err)
+	}
+	if count < 0 {
+		return out, fmt.Errorf("result.failed must not be negative (%d)", count)
+	}
+	out.Failed = count
+	return out, nil
 }
 
 func (s *EODService) markRun(ctx context.Context, tenantID, code, businessDate, status, errMsg string) error {

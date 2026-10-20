@@ -47,6 +47,7 @@ func TestValidationCodesCrossGRPCBoundary(t *testing.T) {
 		financev1.PostingErrorCode_POSTING_ERROR_CODE_INVALID_DIRECTION,
 		financev1.PostingErrorCode_POSTING_ERROR_CODE_CLASSIFICATION_REQUIRED,
 		financev1.PostingErrorCode_POSTING_ERROR_CODE_UNKNOWN_DIMENSION,
+		financev1.PostingErrorCode_POSTING_ERROR_CODE_REVERSAL_NOT_ALLOWED,
 	} {
 		t.Run(code.String(), func(t *testing.T) {
 			message := code.String()[len("POSTING_ERROR_CODE_"):]
