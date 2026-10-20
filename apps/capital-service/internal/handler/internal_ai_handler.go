@@ -113,13 +113,17 @@ func (h *InternalAIHandler) InternalAIListContracts(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
+	orgCodes, ok := requireOrgListFilter(w, r)
+	if !ok {
+		return
+	}
 	page := listReq.Page
 	if page < 1 {
 		page = 1
 	}
 	items, total, err := h.source.ListContracts(r.Context(), repository.ListContractsParams{
 		TenantID: tenantID,
-		OrgCodes: orgScopeFromCap(r).listFilter(),
+		OrgCodes: orgCodes,
 		Status:   status,
 		Q:        aiQuery(r),
 		Sort:     listReq.Sort,

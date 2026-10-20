@@ -48,7 +48,11 @@ func (h *DisbursementHandler) ListDisbursements(w http.ResponseWriter, r *http.R
 			"flow_type must be one of: REGISTER, COMPLETE")
 		return
 	}
-	items, total, err := h.svc.List(r.Context(), tenantID, orgScopeFromRequest(r).ListFilter(),
+	orgCodes, ok := requireOrgListFilter(w, r)
+	if !ok {
+		return
+	}
+	items, total, err := h.svc.List(r.Context(), tenantID, orgCodes,
 		r.URL.Query().Get("status"), r.URL.Query().Get("contract_code"), flowType,
 		listReq.Q, listReq.Sort, listReq.Order, listReq.Page, listReq.PerPage)
 	if err != nil {
