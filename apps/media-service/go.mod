@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/media-service
 
-go 1.27.2
+go 1.27.4
 
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
 

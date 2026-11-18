@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/loan-service
 
-go 1.27.2
+go 1.27.4
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-businessdate v0.0.0

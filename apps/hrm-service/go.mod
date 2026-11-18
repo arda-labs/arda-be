@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/hrm-service
 
-go 1.27.2
+go 1.27.4
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-config v0.0.0

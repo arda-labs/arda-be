@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/libs/go/arda-media
 
-go 1.27.2
+go 1.27.4
 
 require github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
 
