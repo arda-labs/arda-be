@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/libs/go/arda-doc
 
-go 1.27.2
+go 1.27.4
 
 require github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
 

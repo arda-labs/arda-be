@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/loan-service
 
-go 1.27.2
+go 1.27.4
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-businessdate v0.0.0
@@ -19,7 +19,7 @@ require (
 	github.com/nats-io/nats.go v1.53.1
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/shopspring/decimal v1.4.0
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 )
 
 require (
@@ -39,8 +39,8 @@ require (
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

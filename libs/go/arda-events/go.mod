@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/libs/go/arda-events
 
-go 1.27.2
+go 1.27.4
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0

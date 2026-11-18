@@ -1,6 +1,6 @@
 module github.com/arda-labs/arda/apps/workflow-service
 
-go 1.27.2
+go 1.27.4
 
 replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc
 
@@ -31,8 +31,8 @@ require (
 	github.com/camunda/zeebe/clients/go/v8 v8.5.5
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/nats-io/nats.go v1.53.1
-	google.golang.org/grpc v1.84.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/grpc v1.85.0
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
@@ -68,7 +68,7 @@ require (
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

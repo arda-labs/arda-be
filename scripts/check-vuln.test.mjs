@@ -39,7 +39,25 @@ function expect(name, cond, detail = "") {
 }
 
 const original = await readFile(target, "utf8")
-const base = JSON.parse(original.replace(/^﻿/, ""))
+const committed = JSON.parse(original.replace(/^﻿/, ""))
+
+// The committed allowlist is empty whenever no advisory is being accepted, which
+// is the healthy state. The mutation tests below need one entry to corrupt, so
+// they work from a synthetic one instead of depending on what is committed.
+const fixtureEntry = {
+  id: "GO-0000-0000",
+  module: "example.com/fixture",
+  title: "synthetic entry for gate tests",
+  scope: "reachable",
+  impact: "none, test fixture",
+  compensatingControls: ["none, test fixture"],
+  reviewed: "2020-01-01",
+  revisitWhen: "never, test fixture",
+  reviewBy: "2999-01-01",
+}
+const base = committed.accepted?.length
+  ? committed
+  : { ...committed, accepted: [fixtureEntry] }
 
 try {
   console.log("check-vuln: allowlist negative tests")
