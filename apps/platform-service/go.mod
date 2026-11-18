@@ -4,6 +4,7 @@ go 1.27.2
 
 require (
 	github.com/arda-labs/arda/libs/go/arda-businessdate v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-events v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
@@ -15,13 +16,11 @@ require (
 	github.com/nats-io/nats.go v1.53.1
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/robfig/cron/v3 v3.0.1
-	google.golang.org/grpc v1.84.0
-	google.golang.org/protobuf v1.36.11
-	gopkg.in/yaml.v3 v3.0.1
+	google.golang.org/grpc v1.85.0
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
-	github.com/arda-labs/arda/libs/go/arda-config v0.0.0
 	github.com/arda-labs/arda/libs/go/arda-time v0.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -39,7 +38,8 @@ require (
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-grpc => ../../libs/go/arda-grpc

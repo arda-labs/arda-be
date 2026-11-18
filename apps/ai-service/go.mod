@@ -11,9 +11,23 @@ replace github.com/arda-labs/arda/libs/go/arda-http => ../../libs/go/arda-http
 replace github.com/arda-labs/arda/libs/go/arda-errors => ../../libs/go/arda-errors
 
 require (
+	github.com/arda-labs/arda/libs/go/arda-crypto v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
+	github.com/arda-labs/arda/libs/go/arda-redis v0.0.0-00010101000000-000000000000
+	github.com/arda-labs/arda/libs/go/arda-time v0.0.0
+	github.com/dlclark/regexp2/v2 v2.5.2
+	github.com/dop251/goja v0.0.0-20260822123354-58e940e0d230
+	github.com/jackc/pgx/v5 v5.10.0
+	github.com/nats-io/nats.go v1.53.1
+	github.com/redis/go-redis/v9 v9.22.0
+	gopkg.in/yaml.v3 v3.0.1
+)
+
+require (
 	github.com/arda-labs/arda/libs/go/arda-errors v0.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/dlclark/regexp2/v2 v2.5.2
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -24,6 +38,7 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/pressly/goose/v3 v3.27.1 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
@@ -32,23 +47,8 @@ require (
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	google.golang.org/grpc v1.84.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
-)
-
-require (
-	github.com/arda-labs/arda/libs/go/arda-crypto v0.0.0
-	github.com/arda-labs/arda/libs/go/arda-grpc v0.0.0
-	github.com/arda-labs/arda/libs/go/arda-http v0.0.0
-	github.com/arda-labs/arda/libs/go/arda-postgres v0.0.0
-	github.com/arda-labs/arda/libs/go/arda-redis v0.0.0-00010101000000-000000000000
-	github.com/arda-labs/arda/libs/go/arda-time v0.0.0
-	github.com/dop251/goja v0.0.0-20260822123354-58e940e0d230
-	github.com/jackc/pgx/v5 v5.10.0
-	github.com/nats-io/nats.go v1.53.1
-	github.com/pressly/goose/v3 v3.27.1
-	github.com/redis/go-redis/v9 v9.22.0
-	gopkg.in/yaml.v3 v3.0.1
+	google.golang.org/grpc v1.85.0 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 )
 
 replace github.com/arda-labs/arda/libs/go/arda-postgres => ../../libs/go/arda-postgres
