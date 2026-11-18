@@ -23,7 +23,6 @@ import (
 	"math/big"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -249,7 +248,7 @@ func ardaOutstanding(c *egCase, rows []mergedBal, d, windowStart int) *big.Rat {
 	return v
 }
 
-func ardaRate(c *egCase, d int) float64 {
+func ardaRate(c *egCase, d int) decimal.Decimal {
 	best := -1
 	var bestRate *string
 	for _, r := range c.Rates {
@@ -263,10 +262,9 @@ func ardaRate(c *egCase, d int) float64 {
 		bestRate = c.Agreement.InterestRate
 	}
 	if bestRate == nil {
-		return 0
+		return decimal.Zero
 	}
-	f, _ := strconv.ParseFloat(*bestRate, 64)
-	return f
+	return decimal.RequireFromString(*bestRate)
 }
 
 func ardaRateRat(c *egCase, d int) *big.Rat {

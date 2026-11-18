@@ -12,7 +12,11 @@ package domain
 // docs/accounting-rule-cards.md §LNM_ACCRUAL, libs/go/arda-money.
 // Mọi số tiền là minor unit (VND không có phần thập phân).
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/shopspring/decimal"
+)
 
 func TestGoldenDaysBetween(t *testing.T) {
 	cases := []struct {
@@ -47,44 +51,55 @@ func TestGoldenAccruedInterestMinor(t *testing.T) {
 	cases := []struct {
 		name        string
 		outstanding int64
-		ratePercent float64
+		ratePercent string
 		days        int
 		currency    string
 		want        int64
 	}{
 		// 1 tỷ × 12%/năm × 30/30 ngày /100/12 = 10.000.000
-		{"tròn 30 ngày, 1 tỷ, 12%/năm → đúng 1 tháng lãi", 1_000_000_000, 12, 30, "VND", 10_000_000},
+		{"tròn 30 ngày, 1 tỷ, 12%/năm → đúng 1 tháng lãi", 1_000_000_000, "12", 30, "VND", 10_000_000},
 		// 1 tỷ × (12 × 31/30 = 12,4)/100/12 = 10.333.333,33 → 10.333.333
-		{"tháng 31 ngày tính 31/30 tháng → 10.333.333", 1_000_000_000, 12, 31, "VND", 10_333_333},
+		{"tháng 31 ngày tính 31/30 tháng → 10.333.333", 1_000_000_000, "12", 31, "VND", 10_333_333},
 		// 1 tỷ × (12 × 29/30)/1200 = 9.666.666,67 → 9.666.667
-		{"tháng 2 năm nhuận 29 ngày → 9.666.667", 1_000_000_000, 12, 29, "VND", 9_666_667},
+		{"tháng 2 năm nhuận 29 ngày → 9.666.667", 1_000_000_000, "12", 29, "VND", 9_666_667},
 		// 100 triệu × 8,5/30/1200 = 23.611,11 → 23.611
-		{"1 ngày, 100 triệu, 8,5%/năm → 23.611", 100_000_000, 8.5, 1, "VND", 23_611},
-		{"nửa tháng 15 ngày, 1 triệu, 12% → 5.000", 1_000_000, 12, 15, "VND", 5_000},
+		{"1 ngày, 100 triệu, 8,5%/năm → 23.611", 100_000_000, "8.5", 1, "VND", 23_611},
+		{"nửa tháng 15 ngày, 1 triệu, 12% → 5.000", 1_000_000, "12", 15, "VND", 5_000},
 		// 500 triệu × 8,5 × 6/30 /1200 = 708.333,33 → 708.333
-		{"6 ngày, 500 triệu, 8,5% → 708.333", 500_000_000, 8.5, 6, "VND", 708_333},
-		{"0 ngày → 0", 1_000_000_000, 12, 0, "VND", 0},
-		{"lãi suất 0% → 0", 1_000_000_000, 0, 30, "VND", 0},
-		{"dư nợ 0 → 0", 0, 12, 30, "VND", 0},
-		{"dư nợ âm được chặn về 0 (không sinh lãi âm)", -1_000_000, 12, 30, "VND", 0},
+		{"6 ngày, 500 triệu, 8,5% → 708.333", 500_000_000, "8.5", 6, "VND", 708_333},
+		{"0 ngày → 0", 1_000_000_000, "12", 0, "VND", 0},
+		{"lãi suất 0% → 0", 1_000_000_000, "0", 30, "VND", 0},
+		{"dư nợ 0 → 0", 0, "12", 30, "VND", 0},
+		{"dư nợ âm được chặn về 0 (không sinh lãi âm)", -1_000_000, "12", 30, "VND", 0},
 		// 50 × 12/1200 = 0,5 → làm tròn nửa-lên thành 1 đồng
-		{"làm tròn nửa-lên: 0,5 đồng → 1 đồng", 50, 12, 30, "VND", 1},
+		{"làm tròn nửa-lên: 0,5 đồng → 1 đồng", 50, "12", 30, "VND", 1},
 		// 40 × 12/1200 = 0,4 → 0
-		{"làm tròn: 0,4 đồng → 0 đồng", 40, 12, 30, "VND", 0},
+		{"làm tròn: 0,4 đồng → 0 đồng", 40, "12", 30, "VND", 0},
 		// 1.000.001 × 1% = 10.000,01 → 10.000
-		{"phần lẻ dưới 0,5 bị bỏ", 1_000_001, 12, 30, "VND", 10_000},
+		{"phần lẻ dưới 0,5 bị bỏ", 1_000_001, "12", 30, "VND", 10_000},
 		// USD: 1.234,56 × 6%/12 = 6,1728 → 6,17 USD = 617 cent
-		{"USD làm tròn về cent: $1.234,56 × 6%/12 → 617 cent", 123_456, 6, 30, "USD", 617},
-		{"tiền tệ rỗng mặc định VND", 1_000_000, 12, 15, "", 5_000},
+		{"USD làm tròn về cent: $1.234,56 × 6%/12 → 617 cent", 123_456, "6", 30, "USD", 617},
+		{"tiền tệ rỗng mặc định VND", 1_000_000, "12", 15, "", 5_000},
+		// HOA-7: đường float64 cũ tính 7,1 × 1/30 hơi thấp hơn giá trị đúng nên
+		// làm tròn 248,5 xuống 248. Tính decimal chính xác phải ra 249.
+		// 1.260.000 × 7,1 × 1 / 36.000 = 248,5 → 249
+		{"đúng nửa đồng không bị float kéo xuống: 248,5 → 249", 1_260_000, "7.1", 1, "VND", 249},
+		// 1.260.000 × 7,1 × 7 / 36.000 = 1.739,5 → 1.740
+		{"đúng nửa đồng, 7 ngày: 1.739,5 → 1.740", 1_260_000, "7.1", 7, "VND", 1_740},
+		// 1.170.000 × 7,1 × 2 / 36.000 = 461,5 → 462
+		{"đúng nửa đồng, 2 ngày: 461,5 → 462", 1_170_000, "7.1", 2, "VND", 462},
+		// Lãi suất có 6 chữ số thập phân (NUMERIC(9,6)) giữ nguyên độ chính xác:
+		// 1 tỷ × 8,654321 × 30 / 36.000 = 7.211.934,166… → 7.211.934
+		{"lãi suất 6 chữ số thập phân", 1_000_000_000, "8.654321", 30, "VND", 7_211_934},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := AccruedInterestMinor(tc.outstanding, tc.ratePercent, tc.days, tc.currency)
+			got, err := AccruedInterestMinor(tc.outstanding, decimal.RequireFromString(tc.ratePercent), tc.days, tc.currency)
 			if err != nil {
 				t.Fatalf("lỗi: %v", err)
 			}
 			if got != tc.want {
-				t.Fatalf("AccruedInterestMinor(%d, %v, %d, %q) = %d, muốn %d",
+				t.Fatalf("AccruedInterestMinor(%d, %s, %d, %q) = %d, muốn %d",
 					tc.outstanding, tc.ratePercent, tc.days, tc.currency, got, tc.want)
 			}
 		})
