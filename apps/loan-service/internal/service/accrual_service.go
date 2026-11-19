@@ -102,7 +102,11 @@ func (s *AccrualService) RunDaily(ctx context.Context, tenantID, toDate, actor s
 		if currency == "" {
 			currency = "VND"
 		}
-		interestMinor, err := domain.AccruedInterestMinor(a.OutstandingAmt, a.InterestRate, days, currency)
+		if !a.InterestRate.Valid {
+			result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": interest rate is not set")
+			continue
+		}
+		interestMinor, err := domain.AccruedInterestMinor(a.OutstandingAmt, a.InterestRate.Decimal, days, currency)
 		if err != nil {
 			result.FailedDetail = append(result.FailedDetail, a.AgreementCode+": convert interest: "+err.Error())
 			continue

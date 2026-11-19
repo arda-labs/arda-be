@@ -1,6 +1,10 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/shopspring/decimal"
+)
 
 func TestDaysBetween(t *testing.T) {
 	tests := []struct {
@@ -26,18 +30,18 @@ func TestAccruedInterestMinor(t *testing.T) {
 	tests := []struct {
 		name      string
 		principal int64
-		rate      float64
+		rate      string
 		days      int
 		currency  string
 		want      int64
 	}{
-		{"full month", 1_000_000, 12, 30, "VND", 10_000},
-		{"half month", 1_000_000, 12, 15, "VND", 5_000},
-		{"default currency", 1_000_000, 12, 15, "", 5_000},
+		{"full month", 1_000_000, "12", 30, "VND", 10_000},
+		{"half month", 1_000_000, "12", 15, "VND", 5_000},
+		{"default currency", 1_000_000, "12", 15, "", 5_000},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := AccruedInterestMinor(tt.principal, tt.rate, tt.days, tt.currency)
+			got, err := AccruedInterestMinor(tt.principal, decimal.RequireFromString(tt.rate), tt.days, tt.currency)
 			if err != nil || got != tt.want {
 				t.Fatalf("AccruedInterestMinor() = (%d, %v), want (%d, nil)", got, err, tt.want)
 			}

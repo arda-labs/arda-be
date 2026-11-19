@@ -2,16 +2,20 @@ package repository
 
 import (
 	"context"
+
+	"github.com/shopspring/decimal"
 )
 
 // AccruableAgreement is one ACTIVE agreement eligible for accrual.
 type AccruableAgreement struct {
-	ID                string
-	ContractCode      string
-	AgreementCode     string
-	DisburseDate      string
-	OutstandingAmt    int64
-	InterestRate      float64
+	ID             string
+	ContractCode   string
+	AgreementCode  string
+	DisburseDate   string
+	OutstandingAmt int64
+	// InterestRate is the annual percent rate (NUMERIC(9,6)) scanned exactly;
+	// it is never converted through float64. Invalid when the column is NULL.
+	InterestRate      decimal.NullDecimal
 	DebtGroupCode     string
 	AccClassification string
 	CurrencyCode      string
