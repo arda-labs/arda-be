@@ -77,6 +77,10 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin main
           node scripts/check-openapi-breaking.mjs
+      - name: Enforce the feature freeze (HOA-8)
+        run: |
+          node --test scripts/check-feature-freeze.test.mjs
+          node scripts/check-feature-freeze.mjs
       - name: Check auth-gateway policy against generated OpenAPI
         run: node scripts/check-openapi-policy.mjs
       - name: Validate JSON field naming (snake_case, protocol exceptions allowlisted)
