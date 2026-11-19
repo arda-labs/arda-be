@@ -1,5 +1,21 @@
 # AGENTS.md
 
+## ⛔ Feature freeze (HOA-8) — read before writing code
+
+Until GĐ1 is done (the LNM.201.02 pilot of spec → test → code), **do not add
+features**. Arda's logic has drifted from the business baseline, so new
+feature work would be redone.
+
+- Do NOT: add a service under `apps/`, add a `.bpmn` process (Zeebe is being
+  replaced by Temporal), add files to `apps/ai-service/`, or add a new
+  `scripts/check-*.mjs` gate (write behaviour tests instead).
+- Allowed: bug fixes, security work, and the GĐ0/GĐ1 issues of the Linear
+  project `arda`.
+- CI enforces this with `scripts/check-feature-freeze.mjs`. A legitimate
+  exception needs the PR label `freeze-exception` plus a reason in the PR.
+- If a task asks for one of the blocked items, stop and ask instead of
+  working around the gate.
+
 ## Cursor Cloud specific instructions
 
 Durable, non-obvious notes for running this Go backend inside a Cursor Cloud VM.
